@@ -9,6 +9,12 @@
 /test/tmp/
 /test/version_tmp/
 /tmp/
+/lib/
+/include/
+/bin/
+/share/
+.pytest_cache/
+__pycache__
 
 # Used by dotenv library to load environment variables.
 # .env
@@ -48,3 +54,4 @@ build-iPhoneSimulator/
 
 # unless supporting rvm < 1.11.0 or doing something fancy, ignore this:
 .rvmrc
+pip-selfcheck.json
