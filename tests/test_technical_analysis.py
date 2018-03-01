@@ -115,8 +115,24 @@ def test_piercing_reversal():
 
     assert ta.piercing_reversal(price_data, trend='down') == True
 
+def test_push_reversal():
+    # close, open, high, low
+    price_data = [
+        [98, 101, 101, 98],
+        [100.9, 97.8, 101, 97]
+    ]
+
+    assert ta.push_reversal(price_data) == True
+
+    price_data = [
+        [101, 96, 100, 96],
+        [96.2, 101.3, 101.5, 96]
+    ]
+
+    assert ta.push_reversal(price_data, trend='down') == True
+
 def test_detect_reversal():
-    df = pd.read_csv('./tests/data/fb.csv')
+    df = pd.read_csv('./tests/data/m.csv')
 
     #  ipdb.set_trace()
     result = ta.detect_reversal(df)

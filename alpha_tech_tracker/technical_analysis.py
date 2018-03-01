@@ -133,6 +133,39 @@ def piercing_reversal(price_data, trend='up'):
 
     return detected
 
+def push_reversal(price_data, trend='up'):
+    # data point order: close, open, high, low
+    day1_price = price_data[0]
+    day2_price = price_data[1]
+    difference_tolerance = 0.2 # 20%
+    candle_position_shift_tolerance = 0.005
+    daily_price_movement_percentage = 0.015 # at least 1.5%
+    detected = False
+
+    first_candle_direction = day1_price[0] - day1_price[1]
+    second_candle_direction = day2_price[0] - day2_price[1]
+
+    day1_move_price_precentage = abs(first_candle_direction) / day1_price[0]
+    day2_move_price_precentage = abs(second_candle_direction) / day2_price[0]
+
+    # the first and second candle needs to move in differnet direction
+    if first_candle_direction * second_candle_direction > 0:
+        return False
+
+    is_price_movement_within_range = abs(day1_move_price_precentage - day2_move_price_precentage) / day1_move_price_precentage < difference_tolerance
+    is_daily_price_movement_large_enough = day2_move_price_precentage > daily_price_movement_percentage
+    is_first_day_close_near_second_day_open = abs(day1_price[0] - day2_price[1]) / day1_price[0] < candle_position_shift_tolerance
+    is_first_day_open_near_second_day_close = abs(day1_price[1] - day2_price[0]) / day1_price[1] < candle_position_shift_tolerance
+
+
+    if trend == 'up' and second_candle_direction > 0 and is_price_movement_within_range and is_daily_price_movement_large_enough and is_first_day_open_near_second_day_close:
+        detected = True
+
+    if trend == 'down' and second_candle_direction < 0 and is_price_movement_within_range and is_daily_price_movement_large_enough and is_first_day_open_near_second_day_close:
+        detected = True
+
+    return detected
+
 
 def detect_reversal(df):
     def test(row):
@@ -145,7 +178,7 @@ def detect_reversal(df):
         ]
 
         #  return long_tail_reversal_combo(price_data, trend='down')
-        return piercing_reversal(price_data, trend='down')
+        return push_reversal(price_data, trend='down')
 
 
     #  df['reversal'] = df.rolling(2, axis=0).apply(map_price_data)
