@@ -90,6 +90,8 @@ def test_engulfing_reversal():
         [103, 98, 103.3, 97.8]
     ]
 
+    assert ta.engulfing_reversal(price_data) == True
+
     price_data = [
         [61.360001, 61.730000, 61.919998, 61.049999],
         [62.290001, 61.240002, 62.470001, 61.209999]
@@ -97,8 +99,24 @@ def test_engulfing_reversal():
 
     assert ta.engulfing_reversal(price_data) == True
 
+def test_piercing_reversal():
+    # close, open, high, low
+    price_data = [
+        [98, 101, 101, 98],
+        [100, 96, 100, 96]
+    ]
+
+    assert ta.piercing_reversal(price_data) == True
+
+    price_data = [
+        [100, 96, 100, 96],
+        [97, 101, 101, 97]
+    ]
+
+    assert ta.piercing_reversal(price_data, trend='down') == True
+
 def test_detect_reversal():
-    df = pd.read_csv('./tests/data/slb.csv')
+    df = pd.read_csv('./tests/data/fb.csv')
 
     #  ipdb.set_trace()
     result = ta.detect_reversal(df)

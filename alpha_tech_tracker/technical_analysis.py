@@ -100,7 +100,36 @@ def engulfing_reversal(price_data, trend='up'):
         if trend == 'up' and second_day_price_diff > 0 and is_second_day_open_lower and is_second_day_close_higher:
             detected = True
         if trend == 'down' and second_day_price_diff < 0 and is_second_day_open_higher and is_second_day_close_lower:
-            detected = False
+            detected = True
+
+    return detected
+
+
+def piercing_reversal(price_data, trend='up'):
+    # data point order: close, open, high, low
+    detected = False
+    d = price_data
+    daily_movement_minimum = 0.015 # percentage
+
+    firt_day_candle_mid_point = abs(d[0][0] - d[0][1]) / 2.0
+
+    is_first_day_down = d[0][0] < d[0][1]
+    is_second_day_up = d[1][0] > d[1][1]
+
+    is_second_candle_close_above_mid_point = d[1][0] > d[0][0] + firt_day_candle_mid_point
+    is_second_candle_open_below_firt_day_close = d[1][1] < d[0][0]
+    is_close_below_first_candle_open = d[1][0] < d[0][1]
+
+    # the last day's move range needs to be large than percentage  of open price
+    if abs((d[1][0] - d[1][1])) / d[1][1] < daily_movement_minimum:
+        return False
+
+    if is_first_day_down and trend == 'up':
+        if is_second_candle_close_above_mid_point and is_second_candle_open_below_firt_day_close and is_close_below_first_candle_open:
+            detected = True
+    elif not is_first_day_down and trend == 'down':
+        if not is_second_candle_close_above_mid_point and not is_second_candle_open_below_firt_day_close and not is_close_below_first_candle_open:
+            detected = True
 
     return detected
 
@@ -116,7 +145,7 @@ def detect_reversal(df):
         ]
 
         #  return long_tail_reversal_combo(price_data, trend='down')
-        return engulfing_reversal(price_data, trend='up')
+        return piercing_reversal(price_data, trend='down')
 
 
     #  df['reversal'] = df.rolling(2, axis=0).apply(map_price_data)
