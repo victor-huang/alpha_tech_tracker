@@ -167,18 +167,36 @@ def push_reversal(price_data, trend='up'):
     return detected
 
 
+def gap_move(price_data, trend='up'):
+    # data point order: close, open, high, low
+    day1_price = price_data[0]
+    day2_price = price_data[1]
+
+    gap_percentage = 1
+    detected = False
+
+    if trend == 'up':
+        if day2_price[1] > (day1_price[2] * (1 + gap_percentage / 100.0)) and day2_price[3] > day1_price[2]:
+            detected = True
+    else:
+        if day2_price[1] < (day1_price[3] * (1 - gap_percentage / 100.0)) and day2_price[2] < day1_price[3]:
+            detected = True
+
+    return detected
+
+
 def detect_reversal(df):
     def test(row):
         ipdb.set_trace()
 
-    def map_price_data(rows):
+    def map_price_data(rows, detection=push_reversal):
         price_data = [
             [rows[0]['Close'], rows[0]['Open'], rows[0]['High'], rows[0]['Low']],
             [rows[1]['Close'], rows[1]['Open'], rows[1]['High'], rows[1]['Low']]
         ]
 
         #  return long_tail_reversal_combo(price_data, trend='down')
-        return push_reversal(price_data, trend='down')
+        return detection(price_data, trend='up')
 
 
     #  df['reversal'] = df.rolling(2, axis=0).apply(map_price_data)
@@ -191,7 +209,7 @@ def detect_reversal(df):
 
         rows = [df.iloc[index - 1], row]
 
-        reversal_detected.append(map_price_data(rows))
+        reversal_detected.append(map_price_data(rows, gap_move))
 
     df['reversal'] = Series(reversal_detected, index=df.index)
 

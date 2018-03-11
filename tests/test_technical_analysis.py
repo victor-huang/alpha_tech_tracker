@@ -99,6 +99,7 @@ def test_engulfing_reversal():
 
     assert ta.engulfing_reversal(price_data) == True
 
+
 def test_piercing_reversal():
     # close, open, high, low
     price_data = [
@@ -114,6 +115,7 @@ def test_piercing_reversal():
     ]
 
     assert ta.piercing_reversal(price_data, trend='down') == True
+
 
 def test_push_reversal():
     # close, open, high, low
@@ -131,8 +133,27 @@ def test_push_reversal():
 
     assert ta.push_reversal(price_data, trend='down') == True
 
+
+def test_gap_move():
+
+    # gap up move
+    price_data = [
+        [100, 98, 101, 97],
+        [104, 103.5, 104, 103.5]
+    ]
+
+    assert ta.gap_move(price_data) == True
+
+    # gap down move
+    price_data = [
+        [100, 98, 101, 97],
+        [93, 95, 96, 93]
+    ]
+    assert ta.gap_move(price_data, trend='down') == True
+
+
 def test_detect_reversal():
-    df = pd.read_csv('./tests/data/m.csv')
+    df = pd.read_csv('./tests/data/aapl.csv')
 
     #  ipdb.set_trace()
     result = ta.detect_reversal(df)
