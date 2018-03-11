@@ -135,11 +135,19 @@ def test_push_reversal():
 
 
 def test_gap_move():
+    # good to use aapl as test data
 
     # gap up move
     price_data = [
         [100, 98, 101, 97],
         [104, 103.5, 104, 103.5]
+    ]
+
+    assert ta.gap_move(price_data) == True
+
+    price_date = [
+        [166.600006,  168.500000,  165.279999,  168.110001,  166.827652,  41393400],
+        [174.000000,  174.259995,  171.119995,  172.500000,  171.184174,  59398600]
     ]
 
     assert ta.gap_move(price_data) == True
