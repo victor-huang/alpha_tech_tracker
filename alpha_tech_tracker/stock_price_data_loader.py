@@ -11,4 +11,3 @@ def load_from_csv():
     adjusted_close_df.set_index('Date', inplace=True)
 
     result_df = ta.moving_average_summary([20, 50, 100, 150, 200], adjusted_close_df)
-    ipdb.set_trace()

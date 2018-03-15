@@ -1,3 +1,4 @@
+import datetime
 import numpy
 from numpy.testing import assert_array_equal
 import pandas as pd
@@ -5,6 +6,7 @@ import pytest
 import ipdb
 
 import alpha_tech_tracker.technical_analysis as ta
+from alpha_tech_tracker.wave import Wave
 
 # nice print settings
 pd.set_option('display.expand_frame_repr', False)
@@ -161,7 +163,11 @@ def test_gap_move():
 
 
 def test_detect_reversal():
-    df = pd.read_csv('./tests/data/aapl.csv')
-
+    #  df = pd.read_csv('./tests/data/aapl.csv')
+    df = pd.read_csv('./tests/data/eog_down_wave.csv')
+    df.set_index('Date', inplace=True)
+    df = df['2016-12-13':'2017-08-18']
+    #  df.index = range(len(df.index))
+    df.reset_index(inplace=True)
     #  ipdb.set_trace()
     result = ta.detect_reversal(df)

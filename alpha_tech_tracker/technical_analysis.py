@@ -1,7 +1,11 @@
+import datetime
 import pandas as pd
 from pandas import Series
+import numpy as np
 
+from alpha_tech_tracker.wave import Wave
 import ipdb
+
 
 def moving_average(window, df):
     """
@@ -185,6 +189,39 @@ def gap_move(price_data, trend='up'):
     return detected
 
 
+def wave_detection(df):
+    """ detecte the length and the waves in the given data frame period """
+    """
+    the wave object: {
+        high: the hiest price,
+        low: the lowest price,
+        num_high: number of times high is updated
+        num_low: number of time low is updated
+        start: start date of the wave
+        end: end date of the wave
+    }
+    """
+
+    df = df.set_index('Date').rename(str.lower, axis='columns')
+    wave = None
+    all_waves = []
+
+    for index, row in df.iterrows():
+        date = datetime.datetime.strptime(index, '%Y-%m-%d').date()
+
+        if not wave:
+            wave = Wave(date, row)
+            all_waves.append(wave)
+        else:
+           new_wave = wave.count(date, row)
+
+           if new_wave:
+               all_waves.append(new_wave)
+               wave = new_wave
+
+    return all_waves
+
+
 def detect_reversal(df):
     def test(row):
         ipdb.set_trace()
@@ -209,11 +246,11 @@ def detect_reversal(df):
 
         rows = [df.iloc[index - 1], row]
 
-        reversal_detected.append(map_price_data(rows, gap_move))
+        reversal_detected.append(map_price_data(rows, long_tail_reversal_combo))
 
     df['reversal'] = Series(reversal_detected, index=df.index)
 
     #  df['reversal'] = df.rolling(2, axis=0).apply(map_price_data)
     #  df['reversal'] = pd.rolling_apply(df, 2, map_price_data)
-    ipdb.set_trace()
+    #  ipdb.set_trace()
 
