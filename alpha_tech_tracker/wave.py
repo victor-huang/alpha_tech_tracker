@@ -67,9 +67,6 @@ class Wave:
         if self.direction() == 'down' and self.low + self.price_range() * bounce_threshold < price_data_dict['close']:
             return True
 
-        #  if date == datetime.date(2017,1,27):
-            #  ipdb.set_trace()
-
         if self.direction() == 'up' and self.high - self.price_range() * bounce_threshold > price_data_dict['close']:
             return True
 
