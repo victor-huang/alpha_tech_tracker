@@ -49,6 +49,16 @@ def test_moving_average_summary():
     assert ma_df.iloc(0)[5].get(1) == 20
 
 
+def test_detect_moving_average_trend():
+    df = pd.read_csv('./tests/data/regn.csv')
+    df.set_index('Date', inplace=True)
+    df = df.filter(['Close'], axis=1)
+    df.rename(str.lower, inplace=True)
+
+    result_df = ta.detect_moving_average_trend(df)
+
+
+
 def test_long_tail_reversal():
     # hammer
     price_data = [100.5, 99.5, 101, 98] # clost, open, high, low

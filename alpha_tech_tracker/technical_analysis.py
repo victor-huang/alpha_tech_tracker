@@ -1,4 +1,5 @@
 import datetime
+from functools import reduce
 import pandas as pd
 from pandas import Series
 import numpy as np
@@ -7,9 +8,18 @@ from alpha_tech_tracker.wave import Wave
 import ipdb
 
 
+def is_sorted(x, order=-1):
+    if order == 1:
+        key = lambda x: x
+    else:
+        key = lambda x: -x
+
+    """ check for descending order by default """
+    return all([key(x[i]) <= key(x[i + 1]) for i in range(len(x) - 1)])
+
 def moving_average(window, df):
     """
-        data frame should has two series: time, and value
+    data frame should has two series: time, and value
     :return: a time serires data frame of the moving average
     """
 
@@ -19,7 +29,8 @@ def moving_average(window, df):
 
 def moving_average_summary(windows, df):
     """
-        calculate multiple moving average based on specified window sizes
+    calculate multiple moving average based on specified window sizes
+    :windows: a list of moving average window size. e.g [50, 100]
     :return: a data frame containing all moving average stats.
     """
 
@@ -35,12 +46,72 @@ def moving_average_summary(windows, df):
 
     return all_ma_df
 
+def detect_moving_average_trend(df):
+    """
+    :return: "up". "down", "n/a"
+    """
+
+    all_moving_avg_df = moving_average_summary([20, 50, 150, 200], df)
+    mv_labels = ['mavg_50', 'mavg_150', 'mavg_200']
+
+    # sort the df with latest date first
+    all_moving_avg_df = df.join(all_moving_avg_df).sort_index(ascending=False, axis=0)
+
+    up_trend_days = []
+    down_trend_days = []
+    num_of_days_mv_up_trend = 0
+    num_of_days_mv_down_trend = 0
+    later_day_trend = None #is_sorted(all_moving_avg_df.iloc[0].values[1:])
+
+    for index, row in all_moving_avg_df.iterrows():
+        mv_prices = [row[l] for l in mv_labels ]
+
+        # decending order, mv20 > mv50 > mv150 > mv200
+        if is_sorted(mv_prices):
+            if later_day_trend is None or later_day_trend == 'up':
+                num_of_days_mv_up_trend += 1
+
+            if later_day_trend and later_day_trend != 'up':
+                # reset is needed
+                print('Switch to down {}'.format(row))
+                up_trend_days.append(num_of_days_mv_up_trend)
+                num_of_days_mv_up_trend = 0
+                num_of_days_mv_down_trend = 0
+
+            later_day_trend = 'up'
+        elif is_sorted(mv_prices, 1):
+            if later_day_trend is None or later_day_trend == 'down':
+               num_of_days_mv_down_trend += 1
+
+            if later_day_trend and later_day_trend != 'down':
+                print('Switch to up {}'.format(row))
+                # reset is needed
+                down_trend_days.append(num_of_days_mv_down_trend)
+                num_of_days_mv_up_trend = 0
+                num_of_days_mv_down_trend = 0
+
+            later_day_trend = 'down'
+        else:
+            if later_day_trend == 'up':
+                print('Switch to down {}'.format(row))
+                up_trend_days.append(num_of_days_mv_up_trend)
+
+            if later_day_trend == 'down':
+                print('Switch to up {}'.format(row))
+                down_trend_days.append(num_of_days_mv_down_trend)
+
+            num_of_days_mv_up_trend = 0
+            num_of_days_mv_down_trend = 0
+            later_day_trend = 'n/a'
+
+    ipdb.set_trace()
+    
 
 ### Reversal Patterns ###
 
 def long_tail_reversal(close, open, high, low, trend='up'):
     """
-        try to detect if a chandle stick fall in the pattern of a doji, long-shadow and hammer
+    try to detect if a chandle stick fall in the pattern of a doji, long-shadow and hammer
     """
     daily_movement_minimum = 0.01 # percentage
 
