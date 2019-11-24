@@ -53,8 +53,12 @@ class MockOrderEngine():
         return order != None
 
     def execute_orders(self):
-        for order in self.orders:
+        open_orders = [x for x in self.orders if x.status == 'open']
+
+        for order in open_orders:
             order.status = 'executed'
             order.executed_price = order.price
             order.executed_at = datetime.now()
+
+        return open_orders
 

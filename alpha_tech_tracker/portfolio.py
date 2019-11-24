@@ -75,9 +75,9 @@ class Portfolio(object):
         # total pnl summary
         total_diff = total_close - total_open
 
-        if diff > 0:
+        if total_diff > 0:
             summary_pnl['result'] = 'profit'
-        elif diff < 0:
+        elif total_diff < 0:
             summary_pnl['result'] = 'loss'
         else:
             summary_pnl['result'] = 'even'
