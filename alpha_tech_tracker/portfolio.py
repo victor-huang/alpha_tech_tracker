@@ -12,7 +12,7 @@ class Position(object):
         self.quantity = quantity
         self.type = type
         self.open_price = Decimal(str(open_price))
-        self.open_at = datetime.now()
+        self.open_at = open_at
 
         if close_price:
             self.close_price = Decimal(str(close_price))
@@ -24,13 +24,17 @@ class Portfolio(object):
     def __init__(self):
         self.positions = []
 
+    def find_position(self, position_id):
+        return next((x for x in self.positions if x.id == position_id), None)
+
     def add_position(self, *, symbol, open_price, quantity, type='stock', open_at=datetime.now()):
         new_position = Position(symbol=symbol, open_price=open_price, quantity=quantity, type=type, open_at=open_at)
         self.positions.append(new_position)
         return new_position
 
     def close_position(self, *, id, close_price, closed_at=datetime.now()):
-        found_position = next((x for x in self.positions if x.id == id), None)
+        found_position = self.find_position(id)
+
         if found_position:
             found_position.status = 'closed'
             found_position.close_price = close_price
@@ -45,12 +49,17 @@ class Portfolio(object):
             'pnl_percent': None
         }
 
+        if not self.positions:
+            return summary_pnl
+
         total_open = Decimal(0)
         total_close = Decimal(0)
 
         for position in self.positions:
 
             position_pnl = {
+                'open_at': position.open_at,
+                'closed_at': position.closed_at,
                 'symbol': position.symbol,
                 'total_open': position.quantity * position.open_price,
                 'total_close': position.quantity * position.close_price

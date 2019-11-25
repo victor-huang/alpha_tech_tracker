@@ -1,3 +1,10 @@
+alpaca-trade-api==0.35
 pandas==0.22
+urllib3==1.24
 pytest==3.4.1
 ipdb==0.11
+redis==3.2.1
+plotly==4.3.0
+nbformat==4.4.0
+
+#-e file:///Users/victor/work/alpaca-trade-api-python#egg=alpaca-trade-api

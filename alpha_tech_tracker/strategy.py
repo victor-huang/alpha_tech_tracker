@@ -1,17 +1,21 @@
 from datetime import time
 from datetime import datetime
+from datetime import timedelta
 from decimal import Decimal
+
 #  from functools import reduce
 import pandas as pd
 from pandas import Series
 import pprint as pp
 #  import numpy as np
+import plotly.graph_objects as go
 
 from alpha_tech_tracker.order_engine import OrderEngine
 from alpha_tech_tracker.portfolio import Portfolio
 from alpha_tech_tracker.signal import Signal
 import alpha_tech_tracker.technical_analysis as ta
 import alpha_tech_tracker.alpaca_engine as alpaca
+from alpha_tech_tracker.wave import Wave
 
 import ipdb
 
@@ -53,6 +57,7 @@ class SimpleStrategy(Strategy):
         self.pending_positions_data_by_order = {}
         self.active_order_to_position_map = {}
         self.order_engine = OrderEngine()
+        self.waves = []
 
     def prepare_market_data(self):
         #  alpaca.get_historical_ochl_data('AMZN', start_date='2019-11-20', end_date='2019-11-23')
@@ -65,25 +70,65 @@ class SimpleStrategy(Strategy):
         moving_avgs_df = ta.moving_average_summary([20, 50, 100, 200], close_price_df)
         self.market_data_df = df
         self.moving_avgs_df = moving_avgs_df
-        #  moving_avg_trends = ta.detect_moving_average_trend(close_price_df)
+
+    def plot_data(self, df):
+        # getting y-axis to work
+        # https://github.com/plotly/plotly.py/issues/932
+        fig = go.Figure(data=[go.Candlestick(x=df.index,
+                        open=df['open'],
+                        high=df['high'],
+                        low=df['low'],
+                        close=df['close'])],
+                        layout={
+                            'xaxis': { 'rangeslider': { 'visible': False } }
+                        }
+        )
+        fig.write_html('amzn_chart.html', auto_open=True)
+
+    def set_trace_at(self, stop_at_time_str):
+        if self.market_data_df[-1:].index[0] == datetime.strptime(stop_at_time_str, '%Y-%m-%d %H:%M:%S%z'):
+            ipdb.set_trace()
 
     # start='2019-11-13', end='2019-11-16' interestnig
-    def simulate(self, *, start='2019-03-11', end='2019-03-18'):
+    #  def simulate(self, *, start='2019-11-18', end='2019-11-23'):
+    # down trend start='2019-07-22', end='2019-08-03'
+    # down trend start='2019-11-08', end='2019-11-20'
+    # down trend start='2019-05-23', end='2019-06-04'
+    # up trend start='2019-09-30', end='2019-10-18')
+    # up trend start='2019-06-03', end='2019-06-12'
+    # up trend start='2019-06-28', end='2019-07-11')
+    # up trend start='2019-03-08', end='2019-03-22' # highest profits
+    # update trend start='2019-03-28', end='2019-04-24'
+    # consolidation  start='2019-08-01', end='2019-09-17'
+    # long uptrend test start='2019-03-13', end='2019-05-09'
+    def simulate(self, *, start='2019-03-13', end='2019-05-09'):
+        self.simulation_mode_on = True
+
         df = alpaca.get_historical_ochl_data(self.symbol, start_date=start, end_date=end)
         #  df.to_json('./amzn_5min_2019-11-13_2019-11-23')
 
         preload_data_period = 200
-        #  future_market_data_df = df[preload_data_period + 1:preload_data_period + 101]
-        future_market_data_df = df[preload_data_period + 1:]
-
+        #  future_market_data_df = df[preload_data_period + 1: preload_data_period + 200]
+        future_market_data_df = df[1:]
         close_price_df = df[:preload_data_period][['close']].copy()
-        moving_avgs_df = ta.moving_average_summary([20, 50, 100, 200], close_price_df)
-        self.market_data_df = df[:preload_data_period].copy()
+        moving_avgs_df = ta.moving_average_summary([20, 50, 150, 200], close_price_df)
+        self.market_data_df = df[:1].copy()
+        #  t_time = datetime.strptime('2019-11-22 13:45:00-0500', '%Y-%m-%d %H:%M:%S%z')
+        #  self.market_data_df = df[:t_time].copy()
         self.moving_avgs_df = moving_avgs_df
 
-        for index_timestamp, market_data_row in future_market_data_df.iterrows():
-            #  if self.is_after_hours(index_timestamp):
-                #  continue
+        #  self.plot_data(df)
+        #  ipdb.set_trace()
+
+        for period_index, (index_timestamp, market_data_row) in enumerate(future_market_data_df.iterrows()):
+            if self.is_after_hours(index_timestamp):
+                continue
+            if period_index <= preload_data_period:
+                # preloading data until enough data to caculating moving average
+                self.add_data_point_to_wave(index_timestamp, market_data_row)
+                self.market_data_df.loc[index_timestamp] = market_data_row
+                continue
+
             # generate signals
 
             print("{}, price: {}, market_data_size: {}".format(index_timestamp, market_data_row['close'], len(self.market_data_df)))
@@ -102,14 +147,64 @@ class SimpleStrategy(Strategy):
             for order in executed_orders:
                 self.order_event_handler(order)
 
-            #  ipdb.set_trace()
-
         for p in self.portfolio.positions:
             if p.status == 'open':
                 p.close_price = Decimal(future_market_data_df[-1:]['close'][0])
                 p.status == 'closed'
 
         pp.pprint(self.portfolio.calculate_pnl())
+
+    # TODO:
+    # wave count accrose days, which should not happen in 5-mins in intervals
+    # return: the waves from oldest to latest order
+    def waves_anlyasis(self, last_n_period=78, df=None): # 78, 5-mins periods is a trading day, 120 is a bit more than a day and a half
+        df = self.market_data_df[-last_n_period:]
+        wave = None
+        all_waves = []
+
+        for timestamp_index, row in df.iterrows():
+            if not wave:
+                wave = Wave(timestamp_index, row)
+                all_waves.append(wave)
+            else:
+                new_wave = wave.count(timestamp_index, row,
+                        time_increment=timedelta(minutes=5))
+
+                if new_wave:
+                    all_waves.append(new_wave)
+                    wave = new_wave
+
+        for w in all_waves[-20:]:
+            #  print(w.__dict__)
+            summary = w.summary()
+            print(summary)
+
+        return all_waves
+
+    def waves_for_last_n_period(self, n=78):
+        all_waves = []
+        total_time_period = 0
+
+        for w in self.waves[-20:]:
+            summary = w.summary()
+            print(summary)
+            total_time_period += summary['length']
+            all_waves.append(w)
+
+            if total_time_period >= n:
+                break
+
+        return all_waves
+
+    def add_data_point_to_wave(self, timestamp_index, current_data_row):
+        if not self.waves:
+            wave = Wave(timestamp_index, current_data_row)
+            self.waves.append(wave)
+        else:
+            new_wave = self.waves[-1].count(timestamp_index, current_data_row,
+                    time_increment=timedelta(minutes=5))
+            if new_wave:
+                self.waves.append(new_wave)
 
     def generate_signals(self, index_timestamp, current_data_row):
         price_data = self.df_to_price_data_array(self.get_latest_periods_market_data(index_timestamp, current_data_row, n=2))
@@ -119,12 +214,14 @@ class SimpleStrategy(Strategy):
 
         signals = []
 
+        daily_movement_minimum = 0.01 / (12 * 8)
+
         for name, detection_fn in reversal_fns.items():
-            if detection_fn(price_data, trend='up'):
+            if detection_fn(price_data, trend='up', daily_movement_minimum=daily_movement_minimum):
                 # name, category, symbol=None, signaled_at=datetime.now()):
                 signal_name = name + '-' + 'up_trend'
                 signals.append(Signal(name=signal_name, category='ta', trend='up', symbol=self.symbol, signaled_at=index_timestamp))
-            if detection_fn(price_data, trend='down'):
+            if detection_fn(price_data, trend='down', daily_movement_minimum=daily_movement_minimum):
                 signal_name = name + '-' + 'down_trend'
                 signals.append(Signal(name=signal_name, category='ta', trend='down', symbol=self.symbol, signaled_at=index_timestamp))
 
@@ -142,11 +239,25 @@ class SimpleStrategy(Strategy):
 
 
     # return the potential upside target in price
-    def upside_potential(self, current_price):
+    def upside_potential(self, current_price, waves=[]):
         last_n_price_data_df = self.market_data_df[-20:]
-        return last_n_price_data_df['close'].max() - current_price
+        last_n_price_data_df['close'].max() - current_price
 
-    def downside_risk(self, current_price):
+        waves_stats = Wave.waves_stats(waves)
+        price_points = [ w.price_range() for w in waves[-3:] if w.direction() == 'up'] + [
+                last_n_price_data_df['close'].max() - current_price]
+
+        #  self.set_trace_at('2019-05-24 12:50:00-0400')
+        #  self.set_trace_at('2019-05-28 10:00:00-0400')
+
+        if waves_stats['up_wave_move_length'] >= 102 and waves_stats['up_magnitude_ratio'] > 0.6:
+            # up too much lately, take less risk
+            return min(price_points) * 0.95
+        else:
+        #  self.set_trace_at('2019-03-12 10:20:00-0400')
+            return max(price_points) * 0.95
+
+    def downside_risk(self, current_price, waves=[]):
         mavg_20_price = self.moving_avgs_df[-1:]['mavg_20'][0]
 
         if current_price < mavg_20_price:
@@ -160,37 +271,45 @@ class SimpleStrategy(Strategy):
         else:
             return (current_price - risk_price) * 1.1
 
-    def risk_reward_ratio(self, current_price):
-        return self.upside_potential(current_price) / self.downside_risk(current_price)
+    def risk_reward_ratio(self, current_price, waves=[]):
+        return self.upside_potential(current_price, waves=waves) / self.downside_risk(current_price, waves=waves)
 
     def check_buy_condition(self):
         current_price = self.market_data_df[-1:]['close'][0]
+        waves = self.waves_for_last_n_period()
+        waves_stats = Wave.waves_stats(waves)
 
-        print("** up: {}, down {}, ratio {}".format(self.upside_potential(current_price),
-            self.downside_risk(current_price), self.risk_reward_ratio(current_price)))
+        print("** up: {}, down {}, ratio {}".format(self.upside_potential(current_price, waves=waves),
+            self.downside_risk(current_price, waves=waves),
+            self.risk_reward_ratio(current_price, waves=waves)))
 
-        #  open_positions = [x for x in self.portfolio.positions if x.status == 'open']
+        #  self.set_trace_at('2019-03-12 10:20:00-0400')
 
-        if self.risk_reward_ratio(current_price) > 1.5 and not self.active_positions and not self.is_close_to_after_hours():
-            # open a new position
-            new_order = self.order_engine.place(symbol=self.symbol, side='buy',
-                    price=current_price, quantity=100, type='limit')
-            #  new_position = self.portfolio.add_position(symbol=self.symbol, open_price=current_price,
-                    #  quantity=100)
-            self.pending_positions_data_by_order[new_order.id] = {
-                'target_price': self.upside_potential(current_price) + current_price,
-                'cut_loss_price': current_price - self.downside_risk(current_price)
-            }
+        if self.risk_reward_ratio(current_price, waves=waves) > 1.5 and not self.active_positions and not self.is_close_to_after_hours():
+            if waves_stats['up_waves_ratio'] >= 0.5 and waves_stats['up_magnitude_ratio'] > 0.6:
+                # open a new position
+                new_order = self.order_engine.place(symbol=self.symbol, side='buy',
+                        price=current_price, quantity=100, type='limit')
+                #  new_position = self.portfolio.add_position(symbol=self.symbol, open_price=current_price,
+                        #  quantity=100)
+                self.pending_positions_data_by_order[new_order.id] = {
+                    #  'target_price': self.upside_potential(current_price) + current_price,
+                    'target_price': self.upside_potential(current_price, waves=waves) + current_price,
+                    'cut_loss_price': current_price - self.downside_risk(current_price),
+                    'attempt_open_at': self.current_time_period()
+                }
 
-            self.active_order_to_position_map[new_order.id] = None
-            print('Buy 100 stock at price {}, target price: {}, cut loss at: {}'.format(current_price, self.upside_potential(current_price) + current_price, current_price - self.downside_risk(current_price)))
-
+                self.active_order_to_position_map[new_order.id] = None
+                print('Buy 100 stock at price {}, target price: {}, cut loss at: {}'.format(current_price, self.pending_positions_data_by_order[new_order.id]['target_price'], self.pending_positions_data_by_order[new_order.id]['cut_loss_price']))
 
     def is_right_before_market_close(self):
         return self.market_data_df[-1:].index[0].strftime('%H:%M') == '15:55'
 
     def current_time_period(self):
         return self.market_data_df[-1:].index[0]
+
+    def current_time_period_price(self):
+        return self.market_data_df[-1:]['close'][0]
 
     def is_close_to_after_hours(self, current_timestamp=None):
         if not current_timestamp:
@@ -210,9 +329,12 @@ class SimpleStrategy(Strategy):
 
     def check_sell_condition(self):
         current_price = self.market_data_df[-1:]['close'][0]
-        current_time_period =  self.market_data_df[-1:]
+        current_time_period = self.market_data_df[-1:]
 
         for position_id, targets in self.active_positions.items():
+            waves = self.waves_for_last_n_period()
+            #  waves_stats = Wave.waves_stats(waves)
+            #  self.is_waves_loosing_steam(position_id, waves=waves)
             if current_price >= targets['target_price'] or current_price <= targets['cut_loss_price'] or self.is_right_before_market_close():
                 # close the position
                 print('Close the position {} at price {}'.format(position_id, current_price))
@@ -223,6 +345,18 @@ class SimpleStrategy(Strategy):
 
                     self.active_order_to_position_map[new_order.id] = position_id
 
+    def is_waves_loosing_steam(self, position_id, waves=[]):
+        current_price = self.current_time_period_price()
+        position_target_data = self.active_positions[position_id]
+        last_3_waves = waves[-3:]
+
+        if len(last_3_waves) < 3:
+            return None
+        else:
+            position = self.portfolio.find_position(position_id)
+
+            if last_3_waves[0].start > position.open_at and position.open_price > current_price:
+                return True
 
     def close_all_open_positions(self):
         pass
@@ -240,10 +374,16 @@ class SimpleStrategy(Strategy):
         else:
             self.check_sell_condition()
 
-    def market_data_event_handler(self, index_timestamp, market_data_row):
+    def update_market_data_related_stats(self, index_timestamp, market_data_row):
         self.market_data_df.loc[index_timestamp] = market_data_row
+
         close_price_df = self.market_data_df[['close']].copy()
         self.moving_avgs_df = ta.moving_average_summary([20, 50, 100, 200], close_price_df)
+
+        self.add_data_point_to_wave(index_timestamp, market_data_row)
+
+    def market_data_event_handler(self, index_timestamp, market_data_row):
+        self.update_market_data_related_stats(index_timestamp, market_data_row)
 
         open_positions = [x for x in self.portfolio.positions if x.status == 'open']
         print("# of active positions: {}, open positions: {}, pending positions {}".format(
@@ -253,7 +393,12 @@ class SimpleStrategy(Strategy):
     def order_event_handler(self, order):
         if self.active_order_to_position_map[order.id] == None:
             # add position
-            new_position = self.portfolio.add_position(symbol=order.symbol, open_price=Decimal(round(order.executed_price, 2)), quantity=order.quantity, open_at=order.executed_at)
+            if self.simulation_mode_on:
+                open_at = self.pending_positions_data_by_order[order.id]['attempt_open_at']
+            else:
+                open_at = order.executed_at
+
+            new_position = self.portfolio.add_position(symbol=order.symbol, open_price=Decimal(round(order.executed_price, 2)), quantity=order.quantity, open_at=open_at)
 
             self.pending_positions_data_by_order[order.id]
             self.active_positions[new_position.id] = self.pending_positions_data_by_order[order.id]
@@ -262,7 +407,13 @@ class SimpleStrategy(Strategy):
         else:
             # close position
             position_id = self.active_order_to_position_map[order.id]
-            self.portfolio.close_position(id=position_id, close_price=Decimal(round(order.executed_price, 2)), closed_at=order.executed_at)
+
+            if self.simulation_mode_on:
+                closed_at = self.current_time_period()
+            else:
+                closed_at = order.executed_at
+
+            self.portfolio.close_position(id=position_id, close_price=Decimal(round(order.executed_price, 2)), closed_at=closed_at)
 
             del self.active_order_to_position_map[order.id]
             del self.active_positions[position_id]

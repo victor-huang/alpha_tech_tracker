@@ -2,6 +2,8 @@ import datetime
 import pandas as pd
 from pandas import Series
 
+import ipdb
+
 class Wave:
     def __init__(self, start, price_data_dict):
         self.start = start
@@ -24,6 +26,41 @@ class Wave:
             'low': pands_series['Low']
         }
 
+    @classmethod
+    def waves_stats(cls, waves):
+        number_of_up_waves = 0
+        number_of_down_waves = 0
+        total_up_wave_move = 0
+        total_down_wave_move = 0
+        up_wave_move_length = 0
+        down_wave_move_length = 0
+
+        for wave in waves:
+            wave_direction = wave.direction()
+            wave_summary = wave.summary()
+
+            if wave_direction == 'up':
+                number_of_up_waves += 1
+                total_up_wave_move += wave_summary['price_range']
+                up_wave_move_length += wave_summary['length']
+            if wave_direction == 'down':
+                number_of_down_waves += 1
+                total_down_wave_move += wave_summary['price_range']
+                down_wave_move_length += wave_summary['length']
+
+        return {
+            'up_waves_ratio': number_of_up_waves / (number_of_down_waves + number_of_up_waves),
+            'up_magnitude_ratio': total_up_wave_move / (total_up_wave_move + total_down_wave_move),
+            'number_of_up_waves': number_of_up_waves,
+            'number_of_down_waves': number_of_down_waves,
+            'up_wave_move_length': up_wave_move_length,
+            'down_wave_move_length': down_wave_move_length
+        }
+
+
+    def length(self):
+        return len(self.df)
+
     def direction(self):
         if self.num_high + self.num_low < 3:
             return 'n/a'
@@ -37,20 +74,31 @@ class Wave:
         return abs(self.high - self.low)
 
     def summary(self):
-        summary = {}
+        if self.end:
+            end_time = self.end.isoformat()
+        else:
+            end_time = None
 
-        if self.direction() == 'up':
+        summary = {
+            'start': self.start.isoformat(),
+            'end': end_time,
+            'direction': self.direction()
+        }
+
+        if summary['direction'] == 'up':
             summary['movement_in_percentage'] = self.high / self.low - 1
         else:
             summary['movement_in_percentage'] = self.low / self.high - 1
 
-        summary['length'] = len(self.df)
+        summary['length'] = self.length()
+        summary['price_range'] = self.price_range()
 
         return summary
 
     def is_create_new_wave(self, date, price_data_dict):
+        maximum_wave_length = 78 # a trading day has 78 5 mins intervals
         minimum_wave_length = 7
-        minimum_wave_price_change = 0.03 # wave needs ot be at leat 2% change of the lowest price
+        minimum_wave_price_change = 0.03 / (12 * 8)# wave needs ot be at leat 2% change of the lowest price
         bounce_threshold = 0.236 # fibonacci ratio
 
         if self.direction() == 'up':
@@ -59,7 +107,10 @@ class Wave:
             wave_end_date = self.low_date
 
         #  wave_length = len(self.df[self.start:wave_end_date])
-        wave_length = len(self.df)
+        wave_length = self.length()
+
+        if wave_length >= maximum_wave_length:
+            return True
 
         if abs(self.high - self.low) / self.low < minimum_wave_price_change or wave_length < minimum_wave_length:
             return False
@@ -71,7 +122,8 @@ class Wave:
             return True
 
 
-    def count(self, date, price_data_dict, skip_create_new_wave=False):
+    def count(self, date, price_data_dict, skip_create_new_wave=False, time_increment=datetime.timedelta(days=1)):
+
         #  if is_create_new_wave(date, price_data_dict):
         if self.is_create_new_wave(date, price_data_dict):
             if self.direction() == 'up':
@@ -79,9 +131,9 @@ class Wave:
             else:
                 self.end = self.low_date
 
-            re_process_date_df = self.df[self.end + datetime.timedelta(days=1):self.df.index[-1]]
+            re_process_date_df = self.df[self.end + time_increment:self.df.index[-1]].copy()
             re_process_date_df.loc[date] = price_data_dict
-            self.df = self.df[self.start:self.end]
+            self.df = self.df[self.start:self.end].copy()
 
             new_wave = None
 
