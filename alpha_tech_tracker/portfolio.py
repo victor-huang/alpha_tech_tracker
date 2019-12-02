@@ -46,7 +46,11 @@ class Portfolio(object):
         summary_pnl = {
             'positions_pnl': [],
             'result': None,
-            'pnl_percent': None
+            'pnl_percent': None,
+            'number_of_profit_positions': 0,
+            'number_of_loss_positions': 0,
+            'max_loss': 0,
+            'max_profit': 0
         }
 
         if not self.positions:
@@ -72,8 +76,17 @@ class Portfolio(object):
 
             if diff > 0:
                 position_pnl['result'] = 'profit'
+                summary_pnl['number_of_profit_positions'] += 1
+
+                if diff > summary_pnl['max_profit']:
+                    summary_pnl['max_profit'] = diff
+
             elif diff < 0:
                 position_pnl['result'] = 'loss'
+                summary_pnl['number_of_loss_positions'] += 1
+
+                if diff < summary_pnl['max_loss']:
+                    summary_pnl['max_loss'] = diff
             else:
                 position_pnl['result'] = 'even'
 

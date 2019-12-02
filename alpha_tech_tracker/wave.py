@@ -16,6 +16,10 @@ class Wave:
         self.df = pd.DataFrame([price_data_dict], index=[start])
         self.end = None
         self.next_wave = None
+        self.maximum_wave_length = 78 # a trading day has 78 5 mins intervals
+        self.minimum_wave_length = 7
+        self.minimum_wave_price_change = 0.03 / (12 * 8)# wave needs ot be at leat 2% change of the lowest price
+        self.bounce_threshold = 0.236 # fibonacci ratio
 
     @classmethod
     def yahoo_data_to_data_dict(cls, pands_series):
@@ -34,8 +38,10 @@ class Wave:
         total_down_wave_move = 0
         up_wave_move_length = 0
         down_wave_move_length = 0
+        strong_up_wave_index = -1
+        strong_down_wave_index = -1
 
-        for wave in waves:
+        for index, wave in enumerate(waves):
             wave_direction = wave.direction()
             wave_summary = wave.summary()
 
@@ -43,10 +49,15 @@ class Wave:
                 number_of_up_waves += 1
                 total_up_wave_move += wave_summary['price_range']
                 up_wave_move_length += wave_summary['length']
+                if wave_summary['length'] > wave.maximum_wave_length * 0.6:
+                    strong_up_wave_index = index
+
             if wave_direction == 'down':
                 number_of_down_waves += 1
                 total_down_wave_move += wave_summary['price_range']
                 down_wave_move_length += wave_summary['length']
+                if wave_summary['length'] > wave.maximum_wave_length * 0.6:
+                    strong_down_wave_index = index
 
         return {
             'up_waves_ratio': number_of_up_waves / (number_of_down_waves + number_of_up_waves),
@@ -54,7 +65,9 @@ class Wave:
             'number_of_up_waves': number_of_up_waves,
             'number_of_down_waves': number_of_down_waves,
             'up_wave_move_length': up_wave_move_length,
-            'down_wave_move_length': down_wave_move_length
+            'down_wave_move_length': down_wave_move_length,
+            'strong_up_wave_index': strong_up_wave_index,
+            'strong_down_wave_index': strong_down_wave_index
         }
 
 
@@ -96,10 +109,10 @@ class Wave:
         return summary
 
     def is_create_new_wave(self, date, price_data_dict):
-        maximum_wave_length = 78 # a trading day has 78 5 mins intervals
-        minimum_wave_length = 7
-        minimum_wave_price_change = 0.03 / (12 * 8)# wave needs ot be at leat 2% change of the lowest price
-        bounce_threshold = 0.236 # fibonacci ratio
+        maximum_wave_length = self.maximum_wave_length
+        minimum_wave_length = self.minimum_wave_length
+        minimum_wave_price_change = self.minimum_wave_price_change
+        bounce_threshold = self.bounce_threshold
 
         if self.direction() == 'up':
             wave_end_date = self.high_date
