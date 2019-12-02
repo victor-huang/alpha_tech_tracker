@@ -7,6 +7,7 @@ import ipdb
 
 import alpha_tech_tracker.technical_analysis as ta
 from alpha_tech_tracker.wave import Wave
+import alpha_tech_tracker.alpaca_engine as data_source
 
 # nice print settings
 pd.set_option('display.expand_frame_repr', False)
@@ -94,6 +95,25 @@ def test_long_tail_reversal_combo():
 
     assert ta.long_tail_reversal_combo(price_data) == True
 
+def test_long_tail_reversal_combo_2():
+    price_data = [
+        # clost, open, high, low
+        [1793.89, 1795.22, 1796.1197, 1792.6024],
+        [1794.86, 1793.91, 1795.41, 1792.6]
+    ]
+
+    minimum = 0.01 / (12 * 8)
+    assert ta.long_tail_reversal_combo(price_data, daily_movement_minimum=minimum) == True
+
+def test_long_tail_reversal_combo_up_day_and_then_reversal():
+    price_data = [
+        # clost, open, high, low
+        [1576.6933, 1572.84, 1577.57, 1572.715],
+        [1576.7378, 1576.99, 1577.77, 1575.0448]
+    ]
+
+    minimum = 0.01 / (12 * 8)
+    assert ta.long_tail_reversal_combo(price_data, daily_movement_minimum=minimum) == False
 
 def test_engulfing_reversal():
     price_data = [
@@ -181,3 +201,38 @@ def test_detect_reversal():
     df.reset_index(inplace=True)
     #  ipdb.set_trace()
     result = ta.detect_reversal(df)
+
+def test_data_from_polygon_io():
+    df = data_source.get_historical_ochl_data('AMZN', start_date='2019-07-23', end_date='2019-07-24')
+    start_datetime = datetime.datetime.strptime('2019-07-23 9:30:00', '%Y-%m-%d %H:%M:%S')
+    end_datetime = datetime.datetime.strptime('2019-07-24 16:00:00', '%Y-%m-%d %H:%M:%S')
+    filter_df = df[start_datetime:end_datetime]
+    filter_df.reset_index(inplace=True)
+
+    result = ta.detect_reversal(filter_df)
+
+    print(filter_df)
+
+    filter_df.set_index('timestamp', inplace=True)
+    wave_df = filter_df.rename(str.lower, axis='columns')
+    wave = None
+    all_waves = []
+
+    ipdb.set_trace()
+
+    for index, row in wave_df.iterrows():
+        date = index # datetime.datetime.strptime(index, '%Y-%m-%d').date()
+
+        if not wave:
+            wave = Wave(date, row)
+            all_waves.append(wave)
+        else:
+           new_wave = wave.count(date, row)
+
+           if new_wave:
+               all_waves.append(new_wave)
+               wave = new_wave
+
+    ipdb.set_trace()
+    print('asdf')
+

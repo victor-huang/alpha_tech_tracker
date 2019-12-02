@@ -46,6 +46,7 @@ def moving_average_summary(windows, df):
 
     return all_ma_df
 
+# TODO: need follow up, not working yet
 def detect_moving_average_trend(df):
     """
     :return: "up". "down", "n/a"
@@ -104,38 +105,39 @@ def detect_moving_average_trend(df):
             num_of_days_mv_down_trend = 0
             later_day_trend = 'n/a'
 
-    ipdb.set_trace()
-    
+    return later_day_trend
 
 ### Reversal Patterns ###
 
-def long_tail_reversal(close, open, high, low, trend='up'):
+def long_tail_reversal(close, open, high, low, trend='up', daily_movement_minimum=0.01):
     """
     try to detect if a chandle stick fall in the pattern of a doji, long-shadow and hammer
+    :daily_movement_minimum: default to 0.01 (1%)
     """
-    daily_movement_minimum = 0.01 # percentage
-
     detected = False
-    mid_point = (high - low) / 2.0 + low
+    mid_point_magnatude_scaling = 0.8
 
     # the move range needs to be large than percentage  of open price
     if abs((high - low)) / open < daily_movement_minimum:
         return False
 
     if trend == 'up':
+        mid_point = (high - low) / 2.0 * mid_point_magnatude_scaling + low
         # both open and close need to above mid-point
         if open >= mid_point and close >= mid_point:
             detected = True
     else:
+        mid_point = (high - low) / 2.0 * ( 1 + (1 - mid_point_magnatude_scaling)) + low
         if open <= mid_point and close <= mid_point:
             detected = True
 
     return detected
 
 
-def long_tail_reversal_combo(price_data, trend='up'):
+def long_tail_reversal_combo(price_data, trend='up', daily_movement_minimum=0.01):
     """
     :price_data: a consecutive two days' price data array [(close, open, high, low)]
+    :daily_movement_minimum: default to 0.01 (1%)
     """
 
     detected = False
@@ -144,18 +146,21 @@ def long_tail_reversal_combo(price_data, trend='up'):
     day_2_low = price_data[1][-1]
     day_1_close = price_data[0][0]
     day_2_high = price_data[1][-2]
+    day_1_low = min([price_data[0][0], price_data[0][1]])
+    day_1_high = max([price_data[0][0], price_data[0][1]])
+
 
     if trend == 'up':
-        if day_2_low < day_1_close and long_tail_reversal(*price_data[1], trend=trend):
+        if day_2_low < day_1_low and long_tail_reversal(*price_data[1], trend=trend, daily_movement_minimum=daily_movement_minimum):
             detected = True
     else:
-        if day_2_high > day_1_close and long_tail_reversal(*price_data[1], trend=trend):
+        if day_2_high > day_1_high and long_tail_reversal(*price_data[1], trend=trend, daily_movement_minimum=daily_movement_minimum):
             detected = True
 
     return detected
 
 
-def engulfing_reversal(price_data, trend='up'):
+def engulfing_reversal(price_data, trend='up', daily_movement_minimum=None):
     detected = False
 
     first_candle_size = abs(price_data[0][1] - price_data[0][0])
@@ -208,13 +213,13 @@ def piercing_reversal(price_data, trend='up'):
 
     return detected
 
-def push_reversal(price_data, trend='up'):
+def push_reversal(price_data, trend='up', daily_movement_minimum=0.015):
     # data point order: close, open, high, low
     day1_price = price_data[0]
     day2_price = price_data[1]
     difference_tolerance = 0.2 # 20%
     candle_position_shift_tolerance = 0.005
-    daily_price_movement_percentage = 0.015 # at least 1.5%
+    daily_price_movement_percentage = daily_movement_minimum # at least 1.5%
     detected = False
 
     first_candle_direction = day1_price[0] - day1_price[1]
@@ -242,12 +247,12 @@ def push_reversal(price_data, trend='up'):
     return detected
 
 
-def gap_move(price_data, trend='up'):
+def gap_move(price_data, trend='up', daily_movement_minimum=1):
     # data point order: close, open, high, low
     day1_price = price_data[0]
     day2_price = price_data[1]
 
-    gap_percentage = 1
+    gap_percentage = daily_movement_minimum
     detected = False
 
     if trend == 'up':
@@ -306,6 +311,15 @@ def detect_reversal(df):
         #  return long_tail_reversal_combo(price_data, trend='down')
         return detection(price_data, trend='up')
 
+    def map_polygon_io_price_data(rows, detection=push_reversal):
+        price_data = [
+            [rows[0]['close'], rows[0]['open'], rows[0]['high'], rows[0]['low']],
+            [rows[1]['close'], rows[1]['open'], rows[1]['high'], rows[1]['low']]
+        ]
+
+        #  return long_tail_reversal_combo(price_data, trend='down')
+        return detection(price_data, trend='up')
+
 
     #  df['reversal'] = df.rolling(2, axis=0).apply(map_price_data)
     reversal_detected = []
@@ -317,7 +331,7 @@ def detect_reversal(df):
 
         rows = [df.iloc[index - 1], row]
 
-        reversal_detected.append(map_price_data(rows, long_tail_reversal_combo))
+        reversal_detected.append(map_polygon_io_price_data(rows, long_tail_reversal_combo))
 
     df['reversal'] = Series(reversal_detected, index=df.index)
 
