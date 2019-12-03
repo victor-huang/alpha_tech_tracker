@@ -64,7 +64,7 @@ class SimpleStrategy(Strategy):
         self.maximum_position_loss = 3000
         self.buy_trigger_up_waves_ratio = 0.5 # v1 0.5
         #  self.buy_trigger_up_magnitude_ratio = 0.55 # v1 0.6
-        self.buy_trigger_up_magnitude_ratio = 0.55 # v1 0.6, v2 0.55
+        self.buy_trigger_up_magnitude_ratio = 0.6 # v1 0.6, v2 0.55
         self.moving_average_periods = [20, 50, 100, 200]
 
         self.bullish_up_wave_move_size = 100 # 78 is the max wave length
