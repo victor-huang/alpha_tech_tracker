@@ -5,7 +5,7 @@ import uuid
 import ipdb
 
 class Position(object):
-    def __init__(self, *, open_price, symbol, quantity, type='stock', open_at=datetime.now(), close_price=None):
+    def __init__(self, *, open_price, symbol, quantity, type='stock', open_at=datetime.now(), close_price=None, close_at=None, open_order_id=None, close_order_id=None):
         self.status = 'open'
         self.id = uuid.uuid1()
         self.symbol = symbol
@@ -13,12 +13,24 @@ class Position(object):
         self.type = type
         self.open_price = Decimal(str(open_price))
         self.open_at = open_at
+        self.open_order_id = open_order_id
+        self.close_order_id = None
 
         if close_price:
             self.close_price = Decimal(str(close_price))
 
         self.closed_at = None
 
+    def value(self):
+        if self.closed_at:
+            value = self.close_price * self.quantity
+        else:
+            value = self.open_price * self.quantity
+
+        if type == 'option':
+            value = value * 100
+
+        return value
 
 class Portfolio(object):
     def __init__(self):
@@ -27,18 +39,22 @@ class Portfolio(object):
     def find_position(self, position_id):
         return next((x for x in self.positions if x.id == position_id), None)
 
-    def add_position(self, *, symbol, open_price, quantity, type='stock', open_at=datetime.now()):
-        new_position = Position(symbol=symbol, open_price=open_price, quantity=quantity, type=type, open_at=open_at)
+    def add_position(self, *, symbol, open_price, quantity, open_order_id, type='stock', open_at=datetime.now()):
+        if open_order_id == None:
+            raise ValueError('open_order_id can not be None')
+
+        new_position = Position(symbol=symbol, open_price=open_price, quantity=quantity, type=type, open_at=open_at, open_order_id=open_order_id)
         self.positions.append(new_position)
         return new_position
 
-    def close_position(self, *, id, close_price, closed_at=datetime.now()):
+    def close_position(self, *, id, close_price, close_order_id, closed_at=datetime.now()):
         found_position = self.find_position(id)
 
         if found_position:
             found_position.status = 'closed'
             found_position.close_price = close_price
             found_position.closed_at = closed_at
+            found_position.close_order_id = close_order_id
 
         return found_position
 
@@ -61,12 +77,19 @@ class Portfolio(object):
 
         for position in self.positions:
 
+            position_total_open = position.quantity * position.open_price
+            position_total_close = position.quantity * position.close_price
+
+            if position.type == 'option':
+                position_total_open *= 100
+                position_total_close *= 100
+
             position_pnl = {
                 'open_at': position.open_at,
                 'closed_at': position.closed_at,
                 'symbol': position.symbol,
-                'total_open': position.quantity * position.open_price,
-                'total_close': position.quantity * position.close_price
+                'total_open': position_total_open,
+                'total_close': position_total_close
             }
 
             total_open += position_pnl['total_open']
@@ -107,6 +130,7 @@ class Portfolio(object):
         summary_pnl['total_open'] = total_open
         summary_pnl['total_close'] = total_close
         summary_pnl['pnl'] = total_diff
-        summary_pnl['pnl_percent'] = total_close / total_open - 1
+        avg_total_open = total_open / len(self.positions)
+        summary_pnl['pnl_percent'] = total_diff / avg_total_open
 
         return summary_pnl

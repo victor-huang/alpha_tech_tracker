@@ -408,15 +408,21 @@ class SimpleStrategy(Strategy):
 
             if (waves_stats['up_waves_ratio'] >= self.buy_trigger_up_waves_ratio and waves_stats['up_magnitude_ratio'] > self.buy_trigger_up_magnitude_ratio) or self.has_strong_buy_after_sell_off(waves_stats):
                 # open a new position
-                new_order = self.order_engine.place(symbol=self.symbol, side='buy',
-                        price=current_price, quantity=100, type='limit')
+
+                strike_price = current_price - 80
+                option_price = current_price - strike_price
+                order_quantity = 1
+
+                new_order = self.order_engine.place(symbol=self.symbol, side='buy', asset_type='option',
+                        price=option_price, quantity=order_quantity, type='limit', strike_price=strike_price)
 
                 #  self.set_trace_at('2019-06-07 09:30:00-0400')
                 self.pending_positions_data_by_order[new_order.id] = {
                     #  'target_price': self.upside_potential(current_price) + current_price,
                     'target_price': self.upside_potential(current_price, waves=waves) + current_price,
                     'cut_loss_price': current_price - self.downside_risk(current_price),
-                    'attempt_open_at': current_time_period                }
+                    'attempt_open_at': current_time_period
+                }
 
                 self.active_order_to_position_map[new_order.id] = None
                 print('Buy 100 stock at price {}, target price: {}, cut loss at: {}'.format(current_price, self.pending_positions_data_by_order[new_order.id]['target_price'], self.pending_positions_data_by_order[new_order.id]['cut_loss_price']))
@@ -464,12 +470,19 @@ class SimpleStrategy(Strategy):
 
             #  self.set_trace_at('2018-02-14 09:45:00-0500')
             if current_price >= targets['target_price'] or current_price <= targets['cut_loss_price'] or self.is_right_before_market_close() or self.is_waves_loosing_steam(position_id, waves=waves) or self.is_maximum_loss_reached(position_id):
-                # close the position
-                print('Close the position {} at price {}'.format(position_id, current_price))
 
                 if position_id not in self.active_order_to_position_map.values():
-                    new_order = self.order_engine.place(symbol=self.symbol, side='sell',
-                            price=current_price, quantity=100, type='limit')
+                    # close the position
+
+                    position = self.portfolio.find_position(position_id)
+                    open_order = self.order_engine.find_order(position.open_order_id)
+                    print('Close the position {} at price {}'.format(position_id, current_price))
+                    strike_price = open_order.strike_price
+                    option_price = current_price - strike_price
+                    order_quantity = 1
+
+                    new_order = self.order_engine.place(symbol=self.symbol, side='sell', asset_type='option',
+                            price=option_price, quantity=order_quantity, type='limit', strike_price=strike_price)
 
                     self.active_order_to_position_map[new_order.id] = position_id
 
@@ -546,7 +559,7 @@ class SimpleStrategy(Strategy):
             else:
                 open_at = order.executed_at
 
-            new_position = self.portfolio.add_position(symbol=order.symbol, open_price=Decimal(round(order.executed_price, 2)), quantity=order.quantity, open_at=open_at)
+            new_position = self.portfolio.add_position(symbol=order.symbol, open_price=Decimal(round(order.executed_price, 2)), type='option', quantity=order.quantity, open_at=open_at, open_order_id=order.id)
 
             self.pending_positions_data_by_order[order.id]
             self.active_positions[new_position.id] = self.pending_positions_data_by_order[order.id]
@@ -561,7 +574,7 @@ class SimpleStrategy(Strategy):
             else:
                 closed_at = order.executed_at
 
-            self.portfolio.close_position(id=position_id, close_price=Decimal(round(order.executed_price, 2)), closed_at=closed_at)
+            self.portfolio.close_position(id=position_id, close_price=Decimal(round(order.executed_price, 2)), closed_at=closed_at, close_order_id=order.id)
 
             del self.active_order_to_position_map[order.id]
             del self.active_positions[position_id]
