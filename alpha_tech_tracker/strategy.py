@@ -1,5 +1,6 @@
 from datetime import time
 from datetime import datetime
+from datetime import timezone
 from datetime import timedelta
 from decimal import Decimal
 
@@ -15,6 +16,8 @@ from alpha_tech_tracker.portfolio import Portfolio
 from alpha_tech_tracker.signal import Signal
 import alpha_tech_tracker.technical_analysis as ta
 import alpha_tech_tracker.alpaca_engine as alpaca
+from alpha_tech_tracker.alpaca_engine import DataAggregator
+from alpha_tech_tracker.sms import send_sms
 from alpha_tech_tracker.wave import Wave
 
 import ipdb
@@ -60,7 +63,12 @@ class SimpleStrategy(Strategy):
         self.order_engine = OrderEngine()
         self.waves = []
         self.cached_waves_last_wave = {}
+        self.sender_phone_number = '4086130570'
+        self.disabled_sending_sms = False
+        self.only_send_real_time_trade_alert = True
 
+        #  self.market_data_timeout = 300
+        self.market_data_timeout = 900 # number of second not receiving 5min agg data
         self.maximum_position_loss = 3000
         self.buy_trigger_up_waves_ratio = 0.5 # v1 0.5
         #  self.buy_trigger_up_magnitude_ratio = 0.55 # v1 0.6
@@ -176,7 +184,7 @@ class SimpleStrategy(Strategy):
     # update trend start='2019-03-28', end='2019-04-24'
     # consolidation  start='2019-08-01', end='2019-09-17'
     # long uptrend test start='2019-03-13', end='2019-05-09'
-    def simulate(self, *, start='2019-03-13', end='2019-05-09', use_saved_data=False):
+    def simulate(self, *, start='2019-03-13', end='2019-05-09', use_saved_data=False, stream_data=False):
         self.simulation_mode_on = True
 
         self.trade_counts_by_date = {}
@@ -209,7 +217,7 @@ class SimpleStrategy(Strategy):
 
         #  self.plot_data(df, chart_html_file_name='{}_chart_{}.html'.format(self.symbol, start + '_' + end)) # graph on
 
-        for period_index, (index_timestamp, market_data_row) in enumerate(future_market_data_df.iterrows()):
+        for period_index, (index_timestamp, market_data_row) in enumerate(self.market_data_generator(future_market_data_df.iterrows(), stream_data=stream_data)):
             if self.is_after_hours(index_timestamp):
                 continue
             if period_index <= preload_data_period:
@@ -242,6 +250,16 @@ class SimpleStrategy(Strategy):
                 p.status == 'closed'
 
         pp.pprint(self.portfolio.calculate_pnl())
+
+    def market_data_generator(self, enumerator, stream_data=False):
+        for x in enumerator:
+            yield(x)
+
+        if stream_data:
+            for x in DataAggregator.fetch_5_mins_aggregated_data(timeout=self.market_data_timeout,
+                                                                symbol=self.symbol):
+                yield(x)
+
 
     # TODO:
     # wave count accrose days, which should not happen in 5-mins in intervals
@@ -425,7 +443,8 @@ class SimpleStrategy(Strategy):
                 }
 
                 self.active_order_to_position_map[new_order.id] = None
-                print('Buy 100 stock at price {}, target price: {}, cut loss at: {}'.format(current_price, self.pending_positions_data_by_order[new_order.id]['target_price'], self.pending_positions_data_by_order[new_order.id]['cut_loss_price']))
+                print('[{}] - Buy position at price {}, target price: {}, cut loss at: {}'.format(current_time_period, current_price, self.pending_positions_data_by_order[new_order.id]['target_price'], self.pending_positions_data_by_order[new_order.id]['cut_loss_price']))
+                self.send_sms_on_conditions(self.sender_phone_number, '[{}] Buy {} at {}'.format(current_time_period, self.symbol, current_price))
 
                 self.trade_counts_by_date[current_date] += 1
 
@@ -462,7 +481,7 @@ class SimpleStrategy(Strategy):
 
     def check_sell_condition(self):
         current_price = self.market_data_df[-1:]['close'][0]
-        current_time_period = self.market_data_df[-1:]
+        current_time_period = self.current_time_period()
 
         for position_id, targets in self.active_positions.items():
             waves = self.waves_for_last_n_period()
@@ -476,7 +495,8 @@ class SimpleStrategy(Strategy):
 
                     position = self.portfolio.find_position(position_id)
                     open_order = self.order_engine.find_order(position.open_order_id)
-                    print('Close the position {} at price {}'.format(position_id, current_price))
+                    print('[{}] - Close the position {} at price {}'.format(current_time_period, position_id, current_price))
+                    self.send_sms_on_conditions(self.sender_phone_number, '[{}] Close {} at {}'.format(current_time_period, self.symbol, current_price))
                     strike_price = open_order.strike_price
                     option_price = current_price - strike_price
                     order_quantity = 1
@@ -544,6 +564,7 @@ class SimpleStrategy(Strategy):
         self.add_data_point_to_wave(index_timestamp, market_data_row)
 
     def market_data_event_handler(self, index_timestamp, market_data_row):
+        print("Market data: {}".format(market_data_row))
         self.update_market_data_related_stats(index_timestamp, market_data_row)
 
         open_positions = [x for x in self.portfolio.positions if x.status == 'open']
@@ -579,3 +600,15 @@ class SimpleStrategy(Strategy):
             del self.active_order_to_position_map[order.id]
             del self.active_positions[position_id]
 
+
+    def send_sms_on_conditions(self, phone_number, msg):
+        if self.disabled_sending_sms:
+            return
+
+        current_time_period = self.current_time_period()
+        if self.only_send_real_time_trade_alert:
+            if datetime.now(timezone.utc) - timedelta(minutes=10) <= current_time_period and current_time_period <= datetime.now(timezone.utc) + timedelta(minutes=10):
+                send_sms(phone_number, msg)
+
+        else:
+            send_sms(phone_number, msg)
