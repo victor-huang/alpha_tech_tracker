@@ -70,10 +70,22 @@ class SimpleStrategy(Strategy):
         #  self.market_data_timeout = 300
         self.market_data_timeout = 900 # number of second not receiving 5min agg data
         self.maximum_position_loss = 3000
+
         self.buy_trigger_up_waves_ratio = 0.5 # v1 0.5
         #  self.buy_trigger_up_magnitude_ratio = 0.55 # v1 0.6
         self.buy_trigger_up_magnitude_ratio = 0.6 # v1 0.6, v2 0.55
+        self.buy_trigger_risk_reward_ratio = 1.5
+
+        self.strong_buy_after_sell_off_up_waves_ratio = 0.5
+        self.strong_buy_after_sell_off_up_magnitude_ratio = 0.38
+
+        self.waves_loosing_steam_up_magnitude_ratio = 0.38
+        self.waves_loosing_steam_down_wave_length_ratio = 0.38
+        self.waves_loosing_steam_down_wave_pickup_steam_up_magnitude_ratio = 0.2
+
         self.moving_average_periods = [20, 50, 100, 200]
+        self.discounted_magnitudues_factor = 0.95
+        self.max_trade_per_day = 2
 
         self.bullish_up_wave_move_size = 100 # 78 is the max wave length
         self.bullish_up_wave_magnitude_ratio = 0.6
@@ -358,8 +370,6 @@ class SimpleStrategy(Strategy):
 
     # return the potential upside target in price
     def upside_potential(self, current_price, waves=[]):
-        discounted_magnitudues_factor = 0.95
-
         last_n_price_data_df = self.market_data_df[-20:]
         last_n_price_data_df['close'].max() - current_price
 
@@ -371,9 +381,9 @@ class SimpleStrategy(Strategy):
         #  self.set_trace_at('2018-02-20 10:00:00-0500')
         if waves_stats['up_waves_ratio'] > self.bullish_up_waves_ratio and waves_stats['up_wave_move_length'] >= self.bullish_up_wave_move_size and waves_stats['up_magnitude_ratio'] > self.bullish_up_wave_magnitude_ratio:
             # up too much lately, take less risk
-            return min(upside_magnitudes) * discounted_magnitudues_factor
+            return min(upside_magnitudes) * self.discounted_magnitudues_factor
         else:
-            return max(upside_magnitudes) * discounted_magnitudues_factor
+            return max(upside_magnitudes) * self.discounted_magnitudues_factor
 
     def downside_risk(self, current_price, waves=[]):
         mavg_20_price = self.moving_avgs_df[-1:]['mavg_20'][0]
@@ -393,7 +403,7 @@ class SimpleStrategy(Strategy):
         return self.upside_potential(current_price, waves=waves) / self.downside_risk(current_price, waves=waves)
 
     def has_strong_buy_after_sell_off(self, waves_stats):
-        return waves_stats['strong_up_wave_index'] > waves_stats['strong_down_wave_index'] and waves_stats['up_waves_ratio'] <= 0.5 and waves_stats['up_magnitude_ratio'] > 0.38
+        return waves_stats['strong_up_wave_index'] > waves_stats['strong_down_wave_index'] and waves_stats['up_waves_ratio'] <= self.strong_buy_after_sell_off_up_waves_ratio and waves_stats['up_magnitude_ratio'] > self.strong_buy_after_sell_off_up_magnitude_ratio
 
     def check_buy_condition(self):
         current_price = self.market_data_df[-1:]['close'][0]
@@ -409,14 +419,13 @@ class SimpleStrategy(Strategy):
         #  self.set_trace_at('2019-04-17 10:00:00-0400')
         #  self.set_trace_at('2019-04-16 09:55:00-0400')
 
-        if self.risk_reward_ratio(current_price, waves=waves) > 1.5 and not self.active_positions and not self.is_close_to_after_hours() and not self.is_right_before_market_close():
+        if self.risk_reward_ratio(current_price, waves=waves) > self.buy_trigger_risk_reward_ratio and not self.active_positions and not self.is_close_to_after_hours() and not self.is_right_before_market_close():
             current_time_period = self.current_time_period()
             current_date = current_time_period.date()
 
             if current_date not in self.trade_counts_by_date:
                 self.trade_counts_by_date[current_date] = 0
-            elif self.trade_counts_by_date[current_date] >= 2:
-                # don't make more than 2 trades per day
+            elif self.trade_counts_by_date[current_date] >= self.max_trade_per_day:
                 print("Maximum trade per day reached")
                 return
 
@@ -529,9 +538,9 @@ class SimpleStrategy(Strategy):
             #  {'up_waves_ratio': 0.3333333333333333, 'up_magnitude_ratio': 0.1453418167288059, 'number_of_up_waves': 1, 'number_of_down_waves': 2, 'up_wave_move_length': 2, 'down_wave_move_length': 17, 'strong_up_wave_index': -1, 'strong_down_wave_index': -1}
 
             #  self.set_trace_at('2019-04-16 15:25:00-0400'), sharp sell off case
-            is_sharp_sell_off = waves_stats['up_magnitude_ratio'] < 0.38 and waves_stats['down_wave_move_length'] / (waves_stats['down_wave_move_length'] + waves_stats['up_wave_move_length']) < 0.45
+            is_sharp_sell_off = waves_stats['up_magnitude_ratio'] < self.waves_loosing_steam_up_magnitude_ratio and waves_stats['down_wave_move_length'] / (waves_stats['down_wave_move_length'] + waves_stats['up_wave_move_length']) < self.waves_loosing_steam_down_wave_length_ratio
 
-            is_down_wave_pickup_steam = waves_stats['up_wave_move_length'] * 3 < waves_stats['down_wave_move_length'] and waves_stats['up_magnitude_ratio'] < 0.2
+            is_down_wave_pickup_steam = waves_stats['up_wave_move_length'] * 3 < waves_stats['down_wave_move_length'] and waves_stats['up_magnitude_ratio'] < self.waves_loosing_steam_down_wave_pickup_steam_up_magnitude_ratio
 
             if last_few_waves[0].start > position.open_at and position.open_price > current_price or is_down_wave_pickup_steam:
                 return True

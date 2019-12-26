@@ -230,7 +230,7 @@ class DataAggregator(object):
                 print('Timeout on waiting new data')
                 break
 
-        conn.loop.stop()
+        conn.loop.call_soon_threadsafe(conn.loop.stop)
         print('Request to stop Event Loop')
 
         stream_thread.join()
