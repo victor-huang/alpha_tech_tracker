@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime
 import json
 import pprint
@@ -108,10 +109,21 @@ def save_ticker_min_agg_to_json(agg_data):
     f.write("\n")
     f.close
 
+def simulate_stream_minute_aggreated_market_data_from_file(file_path, symbol, limit=500):
+
+    for line in open(file_path).readlines()[limit * -1:]:
+        data = json.loads(line)
+        data['symbol'] = symbol
+        agg_data = Agg(data)
+
+        promise = DataAggregator.handle_streaming_minute_agg_data({}, {}, agg_data)
+        asyncio.async(promise)
+
 
 class DataAggregator(object):
     key_id = 'PKX2ZYMDG183VHH2VPYS'
     secret_key = 'HM6fKUfOVohXWj5JG1bD57hM6LE0xM5NaX9aoUCT'
+    generator_queues = []
 
     def __init__(self):
         self.raw_data_df = pd.DataFrame([], columns = ['open', 'high',
@@ -130,9 +142,11 @@ class DataAggregator(object):
 
         if len(self.raw_data_df) >= 5 and latest_timestamp.minute % 5 == 0:
             self.aggregate_to_5_minutes()
+            five_mins_handlers = self.handlers.get('5min')
 
-            for handler in self.handlers['5min']:
-                handler(self.aggregated_df.iloc[-1].copy())
+            if five_mins_handlers:
+                for handler in five_mins_handlers:
+                    handler(self.aggregated_df.iloc[-1].copy())
 
     def aggregate_to_5_minutes(self):
         interval = 5
@@ -145,7 +159,7 @@ class DataAggregator(object):
             'volume': sum(self.raw_data_df[-interval:]['volume'])
         })
 
-        aggregated_seires.name = self.raw_data_df.iloc[-1].name
+        aggregated_seires.name = self.raw_data_df.iloc[-5].name
         self.aggregated_df = self.aggregated_df.append(aggregated_seires)
 
     def register(self, interval, fn):
@@ -235,3 +249,76 @@ class DataAggregator(object):
 
         stream_thread.join()
         print('Waiting for market data stream thread to join')
+
+    @classmethod
+    def start_streaming_market_data(cls, timeout=300, symbols=[]):
+        if not symbols:
+            raise ValueError("Symbols can not be empty")
+
+        cls.aggregators_by_symbol = {}
+        cls.stop_streaming_thread = False
+
+        for symbol in symbols:
+            cls.aggregators_by_symbol[symbol] = DataAggregator()
+
+
+        async def handle_streaming_minute_agg_data(conn, channel, data):
+            debug("debug: ", pprint.pformat(data))
+
+            if isinstance(data, Agg):
+                #  save_ticker_min_agg_to_json(data)
+                aggregator = cls.aggregators_by_symbol.get(data.symbol)
+
+                if aggregator:
+                    aggregator.add(data)
+                else:
+                    debug('No aggregator for symbol {}'.format(data.symbol))
+
+
+        stream_connection = StreamConn(key_id=cls.key_id, secret_key=cls.secret_key)
+        stream_connection.on(r'.*')(handle_streaming_minute_agg_data)
+        subscribe_channels = ['AM.{}'.format(symbol) for symbol in symbols]
+
+        stream_thread = threading.Thread(
+                target=stream_connection.run,
+                args=([subscribe_channels]
+        ))
+
+        cls.stream_thread = stream_thread
+        cls.stream_connection = stream_connection
+        cls.stream_thread.start()
+        cls.handle_streaming_minute_agg_data = handle_streaming_minute_agg_data
+
+    @classmethod
+    def stop_streaming_market_data(cls):
+        cls.stop_streaming_thread = True
+        cls.stream_connection.loop.call_soon_threadsafe(cls.stream_connection.loop.stop)
+        print('Request to stop Event Loop')
+        cls.stream_thread.join()
+
+        for g_queue in cls.generator_queues:
+            g_queue.put(None)
+
+
+    @classmethod
+    def build_mins_aggregated_data_generator(cls, symbol, timeout=300):
+        agg_interval = '5min'
+        new_agg_data_queue = queue.Queue()
+        cls.generator_queues.append(new_agg_data_queue)
+        aggregator = cls.aggregators_by_symbol[symbol]
+        aggregator.register(agg_interval, lambda data: new_agg_data_queue.put(data))
+
+        while True:
+            print('waiting on data')
+            try:
+                data = new_agg_data_queue.get(timeout=timeout)
+
+                if data is not None:
+                    time_index = data.name
+                    yield((time_index, data))
+                else:
+                    print('market data generator stoped')
+                    break
+            except queue.Empty:
+                print("Timeout getting data")
+                break

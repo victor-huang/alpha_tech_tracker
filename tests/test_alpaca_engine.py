@@ -1,3 +1,6 @@
+import json
+import time
+import threading
 from unittest.mock import MagicMock
 
 import alpha_tech_tracker.alpaca_engine as alpaca
@@ -96,3 +99,27 @@ def test_convert_realtime_data_to_5min_interval_data():
 def test_stream():
     #  alpaca.test_stream()
     [print(x) for x in DataAggregator.fetch_5_mins_aggregated_data()]
+
+def test_start_streaming_market_data():
+    #  from alpha_tech_tracker.strategy import SimpleStrategy
+
+    DataAggregator.start_streaming_market_data(symbols=['AMZN'])
+    generator_lambd = lambda : print(['*' for x in DataAggregator.build_mins_aggregated_data_generator('AMZN')])
+
+    thread = threading.Thread(target=generator_lambd)
+    thread.start()
+    time.sleep(2)
+
+    alpaca.simulate_stream_minute_aggreated_market_data_from_file(
+        './market_data/amzn_min_aggs',
+        'AMZN',
+        40
+    )
+
+    #  new_strategy_1 = SimpleStrategy(symbol='AMZN')
+    #  new_strategy_1.simulate(start='2020-01-01', end='2020-01-02', use_saved_data=False, stream_data=True)
+
+    #  ipdb.set_trace()
+    # safely stops and cleanup
+    DataAggregator.stop_streaming_market_data()
+    thread.join()

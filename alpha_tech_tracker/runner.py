@@ -1,5 +1,6 @@
 #  from __future__ import absolute_import
 
+import threading
 from time import sleep
 import os
 import sys
@@ -8,7 +9,9 @@ import sys
 from daemonize import Daemonize
 import ipdb
 
+from alpha_tech_tracker.alpaca_engine import DataAggregator
 from alpha_tech_tracker.strategy import SimpleStrategy
+from alpha_tech_tracker.nvda_strategy import NVDAStrategy
 
 
 pid = "./runner.pid"
@@ -45,7 +48,44 @@ pid = "./runner.pid"
 
 def run_strategy():
     new_strategy_1 = SimpleStrategy(symbol='AMZN')
-    new_strategy_1.simulate(start='2019-12-16', end='2019-12-20', use_saved_data=False, stream_data=False)
+    new_strategy_2 = SimpleStrategy(symbol='NFLX')
+    sim_thread_1 = threading.Thread(target=new_strategy_1.simulate, kwargs={ 'start': '2020-01-01', 'end': '2020-01-20', 'use_saved_data': False, 'stream_data': False })
+    sim_thread_2 = threading.Thread(target=new_strategy_2.simulate, kwargs={'start': '2020-01-01', 'end': '2020-01-20', 'use_saved_data': False, 'stream_data': False })
+    sim_thread_1.start()
+    sim_thread_2.start()
+
+    #  new_strategy_1 = SimpleStrategy(symbol='AMZN')
+    #  new_strategy_1.simulate(start='2020-01-01', end='2020-01-10', use_saved_data=False, stream_data=True)
+    #  new_strategy_2 = SimpleStrategy(symbol='NFLX')
+    #  new_strategy_2.simulate(start='2020-01-01', end='2020-01-10', use_saved_data=False, stream_data=False)
+    #  nvda_strategy = NVDAStrategy(symbol='NVDA')
+    #  nvda_strategy.simulate(start='2020-01-01', end='2020-01-10', use_saved_data=False, stream_data=False)
+
+    #  nvda_strategy.simulate(start='2018-01-01', end='2018-06-01', use_saved_data=False, stream_data=False)
+    # loss  'pnl': Decimal('-1086.0000000000027853275242'),
+
+    #  nvda_strategy.simulate(start='2018-01-01', end='2018-03-01', use_saved_data=False, stream_data=False)
+    #  'pnl': Decimal('-242.99999999999926103555481'),
+    #  nvda_strategy.simulate(start='2018-06-01', end='2018-11-01', use_saved_data=False, stream_data=False)
+    # 'pnl': Decimal('-614.99999999999914734871710'),
+    
+    #  nvda_strategy.simulate(start='2018-12-01', end='2019-01-01', use_saved_data=False, stream_data=False)
+    #  'pnl': Decimal('171.99999999999988631316228'),
+    
+
+    #  nvda_strategy.simulate(start='2017-01-01', end='2017-04-01', use_saved_data=False, stream_data=False)
+    #  'pnl': Decimal('-223.99999999999948840923026'),
+    #  nvda_strategy.simulate(start='2017-04-01', end='2017-08-01', use_saved_data=False, stream_data=False)
+     #  'pnl': Decimal('-531.0000000000016484591469'),
+
+    #  nvda_strategy.simulate(start='2017-08-01', end='2017-12-30', use_saved_data=False, stream_data=False)
+     #  'pnl': Decimal('-1001.0000000000019326762412'),
+
+    #  nvda_strategy.simulate(start='2019-12-01', end='2020-01-10', use_saved_data=False, stream_data=False)
+    #  nvda_strategy.simulate(start='2019-10-11', end='2019-11-22', use_saved_data=False, stream_data=False)
+
+    sim_thread_2.join()
+    sim_thread_1.join()
 
 def start():
     #  while True:
@@ -53,7 +93,10 @@ def start():
     #  daemon = Daemonize(app="strategy_runner", pid=pid, action=run_strategy, foreground=False, verbose=True, logger=stdout_file)
     #  #  ipdb.set_trace()
     #  daemon.start()
+
+    DataAggregator.start_streaming_market_data(symbols=['AMZN', 'NFLX'])
     run_strategy()
+    DataAggregator.stop_streaming_market_data()
 
 def stop():
     #  daemon = Daemonize(app="strategy_runner", pid=pid, action=main, keep_fds=keep_fds)

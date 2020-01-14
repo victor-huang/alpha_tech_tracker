@@ -66,9 +66,10 @@ class SimpleStrategy(Strategy):
         self.sender_phone_number = '4086130570'
         self.disabled_sending_sms = False
         self.only_send_real_time_trade_alert = True
+        self.plot_market_data_candle_stick_chart = False
 
         #  self.market_data_timeout = 300
-        self.market_data_timeout = 900 # number of second not receiving 5min agg data
+        self.market_data_timeout = 3600 * 7 # number of second not receiving 5min agg data
         self.maximum_position_loss = 3000
 
         self.buy_trigger_up_waves_ratio = 0.5 # v1 0.5
@@ -227,7 +228,8 @@ class SimpleStrategy(Strategy):
         #  self.market_data_df = df[:t_time].copy()
         self.moving_avgs_df = moving_avgs_df
 
-        #  self.plot_data(df, chart_html_file_name='{}_chart_{}.html'.format(self.symbol, start + '_' + end)) # graph on
+        if self.plot_market_data_candle_stick_chart:
+            self.plot_data(df, chart_html_file_name='{}_chart_{}.html'.format(self.symbol, start + '_' + end)) # graph on
 
         for period_index, (index_timestamp, market_data_row) in enumerate(self.market_data_generator(future_market_data_df.iterrows(), stream_data=stream_data)):
             if self.is_after_hours(index_timestamp):
@@ -268,8 +270,7 @@ class SimpleStrategy(Strategy):
             yield(x)
 
         if stream_data:
-            for x in DataAggregator.fetch_5_mins_aggregated_data(timeout=self.market_data_timeout,
-                                                                symbol=self.symbol):
+            for x in DataAggregator.build_mins_aggregated_data_generator(symbol=self.symbol, timeout=self.market_data_timeout):
                 yield(x)
 
 
@@ -379,6 +380,7 @@ class SimpleStrategy(Strategy):
 
         #  self.set_trace_at('2019-06-07 09:30:00-0400')
         #  self.set_trace_at('2018-02-20 10:00:00-0500')
+        #  self.set_trace_at('2019-12-10 10:35:00-0500')
         if waves_stats['up_waves_ratio'] > self.bullish_up_waves_ratio and waves_stats['up_wave_move_length'] >= self.bullish_up_wave_move_size and waves_stats['up_magnitude_ratio'] > self.bullish_up_wave_magnitude_ratio:
             # up too much lately, take less risk
             return min(upside_magnitudes) * self.discounted_magnitudues_factor
@@ -417,7 +419,6 @@ class SimpleStrategy(Strategy):
         #  self.set_trace_at('2019-03-22 09:55:00-0400')
         #  self.set_trace_at('2019-03-29 13:35:00-0400')
         #  self.set_trace_at('2019-04-17 10:00:00-0400')
-        #  self.set_trace_at('2019-04-16 09:55:00-0400')
 
         if self.risk_reward_ratio(current_price, waves=waves) > self.buy_trigger_risk_reward_ratio and not self.active_positions and not self.is_close_to_after_hours() and not self.is_right_before_market_close():
             current_time_period = self.current_time_period()
@@ -436,6 +437,7 @@ class SimpleStrategy(Strategy):
             if (waves_stats['up_waves_ratio'] >= self.buy_trigger_up_waves_ratio and waves_stats['up_magnitude_ratio'] > self.buy_trigger_up_magnitude_ratio) or self.has_strong_buy_after_sell_off(waves_stats):
                 # open a new position
 
+                #  self.set_trace_at('2019-12-10 09:55:00-0500')
                 strike_price = current_price - 80
                 option_price = current_price - strike_price
                 order_quantity = 1
@@ -447,7 +449,7 @@ class SimpleStrategy(Strategy):
                 self.pending_positions_data_by_order[new_order.id] = {
                     #  'target_price': self.upside_potential(current_price) + current_price,
                     'target_price': self.upside_potential(current_price, waves=waves) + current_price,
-                    'cut_loss_price': current_price - self.downside_risk(current_price),
+                    'cut_loss_price': current_price - self.downside_risk(current_price, waves=waves),
                     'attempt_open_at': current_time_period
                 }
 
@@ -542,6 +544,8 @@ class SimpleStrategy(Strategy):
 
             is_down_wave_pickup_steam = waves_stats['up_wave_move_length'] * 3 < waves_stats['down_wave_move_length'] and waves_stats['up_magnitude_ratio'] < self.waves_loosing_steam_down_wave_pickup_steam_up_magnitude_ratio
 
+            #  self.set_trace_at('2019-12-10 10:00:00-0500')
+
             if last_few_waves[0].start > position.open_at and position.open_price > current_price or is_down_wave_pickup_steam:
                 return True
 
@@ -573,7 +577,7 @@ class SimpleStrategy(Strategy):
         self.add_data_point_to_wave(index_timestamp, market_data_row)
 
     def market_data_event_handler(self, index_timestamp, market_data_row):
-        print("Market data: {}".format(market_data_row))
+        #  print("Market data: {}".format(market_data_row))
         self.update_market_data_related_stats(index_timestamp, market_data_row)
 
         open_positions = [x for x in self.portfolio.positions if x.status == 'open']
