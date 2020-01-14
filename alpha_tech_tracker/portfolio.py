@@ -5,7 +5,7 @@ import uuid
 import ipdb
 
 class Position(object):
-    def __init__(self, *, open_price, symbol, quantity, type='stock', open_at=datetime.now(), close_price=None, close_at=None, open_order_id=None, close_order_id=None):
+    def __init__(self, *, open_price, symbol, quantity, type='stock', open_at=datetime.now(), close_price=None, close_at=None, open_order_id=None, close_order_id=None, osi_key=None):
         self.status = 'open'
         self.id = uuid.uuid1()
         self.symbol = symbol
@@ -15,6 +15,7 @@ class Position(object):
         self.open_at = open_at
         self.open_order_id = open_order_id
         self.close_order_id = None
+        self.osi_key = osi_key
 
         if close_price:
             self.close_price = Decimal(str(close_price))
@@ -32,6 +33,7 @@ class Position(object):
 
         return value
 
+
 class Portfolio(object):
     def __init__(self):
         self.positions = []
@@ -39,11 +41,11 @@ class Portfolio(object):
     def find_position(self, position_id):
         return next((x for x in self.positions if x.id == position_id), None)
 
-    def add_position(self, *, symbol, open_price, quantity, open_order_id, type='stock', open_at=datetime.now()):
+    def add_position(self, *, symbol, open_price, quantity, open_order_id, type='stock', open_at=datetime.now(), osi_key=None):
         if open_order_id == None:
             raise ValueError('open_order_id can not be None')
 
-        new_position = Position(symbol=symbol, open_price=open_price, quantity=quantity, type=type, open_at=open_at, open_order_id=open_order_id)
+        new_position = Position(symbol=symbol, open_price=open_price, quantity=quantity, type=type, open_at=open_at, open_order_id=open_order_id, osi_key=osi_key)
         self.positions.append(new_position)
         return new_position
 
@@ -112,6 +114,9 @@ class Portfolio(object):
                     summary_pnl['max_loss'] = diff
             else:
                 position_pnl['result'] = 'even'
+
+            if position.osi_key:
+                position_pnl['osi_key'] = position.osi_key
 
             position_pnl['pnl'] = diff
             position_pnl['pnl_percent'] = position_pnl['total_close'] / position_pnl['total_open'] - 1

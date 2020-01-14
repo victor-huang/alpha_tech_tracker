@@ -29,10 +29,10 @@ class Strategy(object):
     def simulate(self, *, start, end):
         pass
 
-    def check_buy_condition(self):
+    def check_open_position_condition(self):
         pass
 
-    def check_sell_condition(self):
+    def check_close_position_condition(self):
         pass
 
     def close_all_open_positions(self):
@@ -55,6 +55,15 @@ class SimpleStrategy(Strategy):
         # load 300 5-min interval data, so we can generate 200-d
         # moving average lines
         self.symbol = symbol
+        self.open_side = 'buy'
+        self.close_side = 'sell'
+        self.asset_type = 'option'
+        self.target_option_strike_price_delta = 80 # amount deep in the money
+        self.target_option_expiry = "Weekly_2020"
+        self.target_option_type = 'call'
+        self.osi_key = '{}-{}-{}'.format(self.symbol,
+            self.target_option_expiry, self.target_option_type)
+
         self.signals_by_times = {}
         self.portfolio = Portfolio()
         self.active_positions = {}
@@ -407,7 +416,7 @@ class SimpleStrategy(Strategy):
     def has_strong_buy_after_sell_off(self, waves_stats):
         return waves_stats['strong_up_wave_index'] > waves_stats['strong_down_wave_index'] and waves_stats['up_waves_ratio'] <= self.strong_buy_after_sell_off_up_waves_ratio and waves_stats['up_magnitude_ratio'] > self.strong_buy_after_sell_off_up_magnitude_ratio
 
-    def check_buy_condition(self):
+    def check_open_position_condition(self):
         current_price = self.market_data_df[-1:]['close'][0]
         waves = self.waves_for_last_n_period()
         waves_stats = Wave.waves_stats(waves)
@@ -438,12 +447,17 @@ class SimpleStrategy(Strategy):
                 # open a new position
 
                 #  self.set_trace_at('2019-12-10 09:55:00-0500')
-                strike_price = current_price - 80
-                option_price = current_price - strike_price
+                if self.target_option_type == 'call':
+                    strike_price = current_price - self.target_option_strike_price_delta
+                    option_price = current_price - strike_price
+                else:
+                    strike_price = current_price + self.target_option_strike_price_delta
+                    option_price = strike_price - current_price
+
                 order_quantity = 1
 
-                new_order = self.order_engine.place(symbol=self.symbol, side='buy', asset_type='option',
-                        price=option_price, quantity=order_quantity, type='limit', strike_price=strike_price)
+                new_order = self.order_engine.place(symbol=self.symbol, side=self.open_side, asset_type=self.asset_type,
+                        price=option_price, quantity=order_quantity, type='limit', strike_price=strike_price, osi_key=self.osi_key)
 
                 #  self.set_trace_at('2019-06-07 09:30:00-0400')
                 self.pending_positions_data_by_order[new_order.id] = {
@@ -454,8 +468,8 @@ class SimpleStrategy(Strategy):
                 }
 
                 self.active_order_to_position_map[new_order.id] = None
-                print('[{}] - Buy position at price {}, target price: {}, cut loss at: {}'.format(current_time_period, current_price, self.pending_positions_data_by_order[new_order.id]['target_price'], self.pending_positions_data_by_order[new_order.id]['cut_loss_price']))
-                self.send_sms_on_conditions(self.sender_phone_number, '[{}] Buy {} at {}'.format(current_time_period, self.symbol, current_price))
+                print('[{}] - Open {} position at stock price {}, target price: {}, cut loss at: {}'.format(current_time_period, self.target_option_type, current_price, self.pending_positions_data_by_order[new_order.id]['target_price'], self.pending_positions_data_by_order[new_order.id]['cut_loss_price']))
+                self.send_sms_on_conditions(self.sender_phone_number, '[{}] Open {} {} at {}'.format(current_time_period, self.target_option_type, self.symbol, current_price))
 
                 self.trade_counts_by_date[current_date] += 1
 
@@ -490,7 +504,7 @@ class SimpleStrategy(Strategy):
 
         return current_time >= time(9, 30) and current_time <= time(9, 30 + delta)
 
-    def check_sell_condition(self):
+    def check_close_position_condition(self):
         current_price = self.market_data_df[-1:]['close'][0]
         current_time_period = self.current_time_period()
 
@@ -506,14 +520,19 @@ class SimpleStrategy(Strategy):
 
                     position = self.portfolio.find_position(position_id)
                     open_order = self.order_engine.find_order(position.open_order_id)
-                    print('[{}] - Close the position {} at price {}'.format(current_time_period, position_id, current_price))
-                    self.send_sms_on_conditions(self.sender_phone_number, '[{}] Close {} at {}'.format(current_time_period, self.symbol, current_price))
+                    print('[{}] - Close the {} position {} at stock price {}'.format(current_time_period, open_order.option_type(), position_id, current_price))
+                    self.send_sms_on_conditions(self.sender_phone_number, '[{}] Close {} {} at {}'.format(current_time_period, open_order.option_type(), self.symbol, current_price))
                     strike_price = open_order.strike_price
-                    option_price = current_price - strike_price
+
+                    if open_order.option_type() == 'call':
+                        option_price = current_price - strike_price
+                    else:
+                        option_price = strike_price - current_price
+
                     order_quantity = 1
 
-                    new_order = self.order_engine.place(symbol=self.symbol, side='sell', asset_type='option',
-                            price=option_price, quantity=order_quantity, type='limit', strike_price=strike_price)
+                    new_order = self.order_engine.place(symbol=self.symbol, side='sell', asset_type=self.asset_type,
+                            price=option_price, quantity=order_quantity, type='limit', strike_price=strike_price, osi_key=self.osi_key)
 
                     self.active_order_to_position_map[new_order.id] = position_id
 
@@ -564,9 +583,9 @@ class SimpleStrategy(Strategy):
             if self.is_market_open_within(3) and signal.name == 'long_tail_reversal_combo-up_trend':
                 print("Skip buy condition check")
                 return
-            self.check_buy_condition()
+            self.check_open_position_condition()
         else:
-            self.check_sell_condition()
+            self.check_close_position_condition()
 
     def update_market_data_related_stats(self, index_timestamp, market_data_row):
         self.market_data_df.loc[index_timestamp] = market_data_row
@@ -583,7 +602,7 @@ class SimpleStrategy(Strategy):
         open_positions = [x for x in self.portfolio.positions if x.status == 'open']
         print("# of active positions: {}, open positions: {}, pending positions {}".format(
             len(self.active_positions), len(open_positions), len(self.pending_positions_data_by_order)))
-        self.check_sell_condition()
+        self.check_close_position_condition()
 
     def order_event_handler(self, order):
         if self.active_order_to_position_map[order.id] == None:
@@ -593,7 +612,7 @@ class SimpleStrategy(Strategy):
             else:
                 open_at = order.executed_at
 
-            new_position = self.portfolio.add_position(symbol=order.symbol, open_price=Decimal(round(order.executed_price, 2)), type='option', quantity=order.quantity, open_at=open_at, open_order_id=order.id)
+            new_position = self.portfolio.add_position(symbol=order.symbol, open_price=Decimal(round(order.executed_price, 2)), type=self.asset_type, quantity=order.quantity, open_at=open_at, open_order_id=order.id, osi_key=order.osi_key)
 
             self.pending_positions_data_by_order[order.id]
             self.active_positions[new_position.id] = self.pending_positions_data_by_order[order.id]

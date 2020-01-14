@@ -3,7 +3,7 @@ from decimal import Decimal
 import uuid
 
 class Order(object):
-    def __init__(self, *, asset_type='stock', symbol, exchange, side, price, quantity, type, executed_price=None, executed_at=datetime.now(), status='open', strike_price=None):
+    def __init__(self, *, asset_type='stock', symbol, exchange, side, price, quantity, type, executed_price=None, executed_at=datetime.now(), status='open', strike_price=None, osi_key=None):
         self.id = uuid.uuid1()
         self.asset_type = asset_type # stock, option
         self.type = type # sell/buy
@@ -13,12 +13,17 @@ class Order(object):
         self.exchange = exchange
         self.price = price
         self.strike_price = strike_price
+        self.osi_key = osi_key
         self.quantity = quantity
         self.executed_price = executed_price
         self.executed_at = executed_at
         self.fee = 0
         self.cost = 0
 
+    def option_type(self):
+        # e.g. amzn-jun_2_2020-call
+        if self.asset_type == 'option':
+            return self.osi_key.split('-')[2]
 
 class OrderEngine(object):
     def __init__(self, *, engine='mock'):
@@ -46,11 +51,11 @@ class MockOrderEngine():
     def find_order(self, order_id):
         return next((x for x in self.orders if x.id == order_id), None)
 
-    def place(self, *, asset_type='stock', symbol, exchange='mockEx', side, price, quantity, type, strike_price=None):
+    def place(self, *, asset_type='stock', symbol, exchange='mockEx', side, price, quantity, type, strike_price=None, osi_key=None):
         if asset_type == 'option' and strike_price == None:
             raise ValueError('strike_price needs to be set for Option')
 
-        new_order = Order(asset_type=asset_type, side=side, symbol=symbol, exchange=exchange, price=price, quantity=quantity, type=type, strike_price=strike_price)
+        new_order = Order(asset_type=asset_type, side=side, symbol=symbol, exchange=exchange, price=price, quantity=quantity, type=type, strike_price=strike_price, osi_key=osi_key)
 
         self.orders.append(new_order)
 
