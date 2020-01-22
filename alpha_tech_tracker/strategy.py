@@ -72,6 +72,10 @@ class SimpleStrategy(Strategy):
         self.order_engine = OrderEngine()
         self.waves = []
         self.cached_waves_last_wave = {}
+        self.open_position_triggers = []
+        self.close_position_triggers = [
+            self.is_waves_loosing_steam
+        ]
         self.sender_phone_number = '4086130570'
         self.disabled_sending_sms = False
         self.only_send_real_time_trade_alert = True
@@ -143,37 +147,30 @@ class SimpleStrategy(Strategy):
         if self.market_data_df[-1:].index[0] == datetime.strptime(stop_at_time_str, '%Y-%m-%d %H:%M:%S%z'):
             ipdb.set_trace()
 
-    def export_data_to_json(self, symbol, start='', end=''):
-        date_range = [
-            ['2018-01-01', '2018-03-31'],
-            ['2018-04-01', '2018-06-30'],
-            ['2018-06-01', '2018-08-31'],
-            ['2018-09-01', '2018-12-31']
-            ['2019-01-01', '2019-03-31'],
-            ['2019-04-01', '2019-06-30'],
-            ['2019-06-01', '2019-08-31'],
-            ['2019-09-01', '2019-12-31']
-        ]
+    def export_data_to_json(self, symbol, date_range=[], start='', end=''):
 
         for (start, end) in date_range:
             file_name = './test_data/{}_{}_{}.json'.format(symbol, start, end)
+            end_date = datetime.strptime(end, '%Y-%m-%d')
+            end_date_str = (end_date + timedelta(days=1)).strftime('%Y-%m-%d')
             print(file_name)
-            ipdb.set_trace()
-            df = alpaca.get_historical_ochl_data(symbol, start_date=start, end_date=end)
+            df = alpaca.get_historical_ochl_data(symbol, start_date=start, end_date=end_date_str)
             df.to_json(file_name,  orient='index')
 
-    def read_data_from_files(self, symbol, start='', end=''):
-        date_range = [
-            ['2018-01-01', '2018-03-31'],
-            ['2018-04-01', '2018-06-30'],
-            ['2018-06-01', '2018-08-31'],
-            ['2018-09-01', '2018-12-31'],
-            ['2019-01-01', '2019-03-31'],
-            ['2019-04-01', '2019-06-30'],
-            ['2019-06-01', '2019-08-31'],
-            ['2019-09-01', '2019-12-31']
-        ]
+    def read_data_from_files(self, symbol, date_range=[], start='', end=''):
+        # for amazon
+        #  date_range = [
+            #  ['2018-01-01', '2018-03-31'],
+            #  ['2018-04-01', '2018-06-30'],
+            #  ['2018-06-01', '2018-08-31'],
+            #  ['2018-09-01', '2018-12-31'],
+            #  ['2019-01-01', '2019-03-31'],
+            #  ['2019-04-01', '2019-06-30'],
+            #  ['2019-06-01', '2019-08-31'],
+            #  ['2019-09-01', '2019-12-31']
+        #  ]
 
+        
         loaded_data_df = pd.DataFrame()
 
         for (r_start, r_end) in date_range:
@@ -206,7 +203,7 @@ class SimpleStrategy(Strategy):
     # update trend start='2019-03-28', end='2019-04-24'
     # consolidation  start='2019-08-01', end='2019-09-17'
     # long uptrend test start='2019-03-13', end='2019-05-09'
-    def simulate(self, *, start='2019-03-13', end='2019-05-09', use_saved_data=False, stream_data=False):
+    def simulate(self, *, start='2019-03-13', end='2019-05-09', use_saved_data=False, stream_data=False, market_data_file_date_rage=[]):
         self.simulation_mode_on = True
 
         self.trade_counts_by_date = {}
@@ -216,7 +213,7 @@ class SimpleStrategy(Strategy):
 
         if use_saved_data:
             end_date_str = end_date.strftime('%Y-%m-%d')
-            df = self.read_data_from_files('AMZN', start=start, end=end_date_str)
+            df = self.read_data_from_files(self.symbol, date_range=market_data_file_date_rage, start=start, end=end_date_str)
         else:
             end_date_str = (end_date + timedelta(days=1)).strftime('%Y-%m-%d')
             df = alpaca.get_historical_ochl_data(self.symbol, start_date=start, end_date=end_date_str)
@@ -429,9 +426,14 @@ class SimpleStrategy(Strategy):
         #  self.set_trace_at('2019-03-29 13:35:00-0400')
         #  self.set_trace_at('2019-04-17 10:00:00-0400')
 
-        if self.risk_reward_ratio(current_price, waves=waves) > self.buy_trigger_risk_reward_ratio and not self.active_positions and not self.is_close_to_after_hours() and not self.is_right_before_market_close():
+        if (self.risk_reward_ratio(current_price, waves=waves) > self.buy_trigger_risk_reward_ratio
+                and not self.active_positions
+                and not self.is_close_to_after_hours() 
+                and not self.is_right_before_market_close()):
+
             current_time_period = self.current_time_period()
             current_date = current_time_period.date()
+
 
             if current_date not in self.trade_counts_by_date:
                 self.trade_counts_by_date[current_date] = 0
@@ -443,35 +445,28 @@ class SimpleStrategy(Strategy):
 
             #  self.set_trace_at('2019-04-16 09:55:00-0400')
 
-            if (waves_stats['up_waves_ratio'] >= self.buy_trigger_up_waves_ratio and waves_stats['up_magnitude_ratio'] > self.buy_trigger_up_magnitude_ratio) or self.has_strong_buy_after_sell_off(waves_stats):
+            if ((waves_stats['up_waves_ratio'] >= self.buy_trigger_up_waves_ratio
+                    and waves_stats['up_magnitude_ratio'] > self.buy_trigger_up_magnitude_ratio)
+                    or self.has_strong_buy_after_sell_off(waves_stats)
+                    or self.check_all_open_position_triggers(waves=waves)):
+
                 # open a new position
+                self.open_position(
+                    target_price=self.upside_potential(current_price, waves=waves) +
+                                    current_price,
+                    cut_loss_price=current_price -
+                        self.downside_risk(current_price, waves=waves)
+                )
 
-                #  self.set_trace_at('2019-12-10 09:55:00-0500')
-                if self.target_option_type == 'call':
-                    strike_price = current_price - self.target_option_strike_price_delta
-                    option_price = current_price - strike_price
-                else:
-                    strike_price = current_price + self.target_option_strike_price_delta
-                    option_price = strike_price - current_price
+    def check_all_open_position_triggers(self, waves=[]):
+        return any(fn(waves=waves) for fn in self.open_position_triggers)
 
-                order_quantity = 1
+    def check_all_close_position_triggers(self, *, position_id=None, target={}, waves=[], **kwargs):
+        kwargs['position_id'] = position_id
+        kwargs['target'] = target
+        kwargs['waves'] = waves
 
-                new_order = self.order_engine.place(symbol=self.symbol, side=self.open_side, asset_type=self.asset_type,
-                        price=option_price, quantity=order_quantity, type='limit', strike_price=strike_price, osi_key=self.osi_key)
-
-                #  self.set_trace_at('2019-06-07 09:30:00-0400')
-                self.pending_positions_data_by_order[new_order.id] = {
-                    #  'target_price': self.upside_potential(current_price) + current_price,
-                    'target_price': self.upside_potential(current_price, waves=waves) + current_price,
-                    'cut_loss_price': current_price - self.downside_risk(current_price, waves=waves),
-                    'attempt_open_at': current_time_period
-                }
-
-                self.active_order_to_position_map[new_order.id] = None
-                print('[{}] - Open {} position at stock price {}, target price: {}, cut loss at: {}'.format(current_time_period, self.target_option_type, current_price, self.pending_positions_data_by_order[new_order.id]['target_price'], self.pending_positions_data_by_order[new_order.id]['cut_loss_price']))
-                self.send_sms_on_conditions(self.sender_phone_number, '[{}] Open {} {} at {}'.format(current_time_period, self.target_option_type, self.symbol, current_price))
-
-                self.trade_counts_by_date[current_date] += 1
+        return any(fn(**kwargs) for fn in self.close_position_triggers)
 
     def is_right_before_market_close(self):
         return self.market_data_df[-1:].index[0].strftime('%H:%M') == '15:55'
@@ -480,6 +475,9 @@ class SimpleStrategy(Strategy):
         return self.market_data_df[-1:].index[0]
 
     def current_time_period_price(self):
+        return self.market_data_df[-1:]['close'][0]
+
+    def current_price(self):
         return self.market_data_df[-1:]['close'][0]
 
     def is_close_to_after_hours(self, current_timestamp=None):
@@ -505,36 +503,22 @@ class SimpleStrategy(Strategy):
         return current_time >= time(9, 30) and current_time <= time(9, 30 + delta)
 
     def check_close_position_condition(self):
-        current_price = self.market_data_df[-1:]['close'][0]
+        current_price = self.current_price()
         current_time_period = self.current_time_period()
 
-        for position_id, targets in self.active_positions.items():
+        for position_id, target in self.active_positions.items():
             waves = self.waves_for_last_n_period()
             waves_stats = Wave.waves_stats(waves)
 
             #  self.set_trace_at('2018-02-14 09:45:00-0500')
-            if current_price >= targets['target_price'] or current_price <= targets['cut_loss_price'] or self.is_right_before_market_close() or self.is_waves_loosing_steam(position_id, waves=waves) or self.is_maximum_loss_reached(position_id):
+            if (current_price >= target['target_price']
+                    or current_price <= target['cut_loss_price']
+                    or self.is_right_before_market_close()
+                    or self.is_maximum_loss_reached(position_id)
+                    or self.check_all_close_position_triggers(position_id=position_id,
+                        target=target, waves=waves)):
 
-                if position_id not in self.active_order_to_position_map.values():
-                    # close the position
-
-                    position = self.portfolio.find_position(position_id)
-                    open_order = self.order_engine.find_order(position.open_order_id)
-                    print('[{}] - Close the {} position {} at stock price {}'.format(current_time_period, open_order.option_type(), position_id, current_price))
-                    self.send_sms_on_conditions(self.sender_phone_number, '[{}] Close {} {} at {}'.format(current_time_period, open_order.option_type(), self.symbol, current_price))
-                    strike_price = open_order.strike_price
-
-                    if open_order.option_type() == 'call':
-                        option_price = current_price - strike_price
-                    else:
-                        option_price = strike_price - current_price
-
-                    order_quantity = 1
-
-                    new_order = self.order_engine.place(symbol=self.symbol, side='sell', asset_type=self.asset_type,
-                            price=option_price, quantity=order_quantity, type='limit', strike_price=strike_price, osi_key=self.osi_key)
-
-                    self.active_order_to_position_map[new_order.id] = position_id
+                self.close_position(position_id)
 
     def is_maximum_loss_reached(self, position_id):
         position = self.portfolio.find_position(position_id)
@@ -544,7 +528,7 @@ class SimpleStrategy(Strategy):
 
         return False
 
-    def is_waves_loosing_steam(self, position_id, waves=[]):
+    def is_waves_loosing_steam(self, position_id=None, waves=[], target={}):
         num_of_waves = 3
         current_price = self.current_time_period_price()
         position_target_data = self.active_positions[position_id]
@@ -644,3 +628,83 @@ class SimpleStrategy(Strategy):
 
         else:
             send_sms(phone_number, msg)
+
+
+    def open_position(self, order_quantity=1, target_price=None, cut_loss_price=None):
+        current_price = self.current_price()
+
+        if self.target_option_type == 'call':
+            strike_price = current_price - self.target_option_strike_price_delta
+            option_price = current_price - strike_price
+        else:
+            strike_price = current_price + self.target_option_strike_price_delta
+            option_price = strike_price - current_price
+
+        new_order = self.order_engine.place(
+            symbol=self.symbol,
+            side=self.open_side,
+            asset_type=self.asset_type,
+            price=option_price,
+            quantity=order_quantity,
+            type='limit',
+            strike_price=strike_price,
+            osi_key=self.osi_key
+        )
+
+        current_time_period = self.current_time_period()
+
+        self.pending_positions_data_by_order[new_order.id] = {
+            'target_price': target_price,
+            'cut_loss_price': cut_loss_price,
+            'attempt_open_at': current_time_period
+        }
+
+        self.active_order_to_position_map[new_order.id] = None
+        print('[{}] - Open {} position at stock price {}, target price: {}, cut loss at: {}'.format(current_time_period, self.target_option_type, current_price, self.pending_positions_data_by_order[new_order.id]['target_price'], self.pending_positions_data_by_order[new_order.id]['cut_loss_price']))
+
+        self.send_sms_on_conditions(self.sender_phone_number, '[{}] Open {} {} at {}'.format(current_time_period, self.target_option_type, self.symbol, current_price))
+
+        current_date = current_time_period.date()
+        self.trade_counts_by_date[current_date] += 1
+
+
+    def close_position(self, position_id):
+        if position_id in self.active_order_to_position_map.values():
+            return
+
+        current_price = self.current_price()
+        current_time_period = self.current_time_period()
+        position = self.portfolio.find_position(position_id)
+        open_order = self.order_engine.find_order(position.open_order_id)
+
+        print('[{}] - Close the {} position {} at stock price {}'.format(current_time_period, open_order.option_type(), position_id, current_price))
+
+        self.send_sms_on_conditions(self.sender_phone_number, '[{}] Close {} {} at {}'.format(current_time_period, open_order.option_type(), self.symbol, current_price))
+        strike_price = open_order.strike_price
+
+        if open_order.option_type() == 'call':
+            option_price = current_price - strike_price
+        else:
+            option_price = strike_price - current_price
+
+        order_quantity = 1
+
+        new_order = self.order_engine.place(symbol=self.symbol, side='sell', asset_type=self.asset_type,
+                price=option_price, quantity=order_quantity, type='limit', strike_price=strike_price, osi_key=self.osi_key)
+
+        self.active_order_to_position_map[new_order.id] = position_id
+
+    def buy_sell_trigger_condition_components(self, targets=[], waves=[]):
+        pass
+
+        # return true/false
+        open_position_triggers = [
+            func1,
+            func2,
+            func3
+        ]
+
+        close_position_triggers = [
+            func1,
+            func2
+        ]
