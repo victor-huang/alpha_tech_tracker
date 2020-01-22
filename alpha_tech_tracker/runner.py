@@ -44,15 +44,24 @@ pid = "./runner.pid"
 #  sys.stdout = stdout_file
 #  keep_fds = [stdout_file, stderr_file]
 
+    #  new_strategy = NVDAStrategy(symbol='NVDA')
+
+    #  new_strategy.simulate(start='2020-01-01', end='2020-01-20', use_saved_data=False, stream_data=False)
 
 
 def run_strategy():
     new_strategy_1 = SimpleStrategy(symbol='AMZN')
     new_strategy_2 = SimpleStrategy(symbol='NFLX')
-    sim_thread_1 = threading.Thread(target=new_strategy_1.simulate, kwargs={ 'start': '2020-01-01', 'end': '2020-01-20', 'use_saved_data': False, 'stream_data': False })
-    sim_thread_2 = threading.Thread(target=new_strategy_2.simulate, kwargs={'start': '2020-01-01', 'end': '2020-01-20', 'use_saved_data': False, 'stream_data': False })
+    nvda_strategy = NVDAStrategy(symbol='NVDA')
+    is_streaming = False
+
+    sim_thread_1 = threading.Thread(target=new_strategy_1.simulate, kwargs={ 'start': '2020-01-10', 'end': '2020-01-29', 'use_saved_data': False, 'stream_data': is_streaming })
+    sim_thread_2 = threading.Thread(target=new_strategy_2.simulate, kwargs={'start': '2020-01-10', 'end': '2020-01-29', 'use_saved_data': False, 'stream_data': is_streaming })
+    sim_thread_3 = threading.Thread(target=nvda_strategy.simulate, kwargs={'start': '2020-01-10', 'end': '2020-01-29', 'use_saved_data': False, 'stream_data':  is_streaming})
+
     sim_thread_1.start()
     sim_thread_2.start()
+    sim_thread_3.start()
 
     #  new_strategy_1 = SimpleStrategy(symbol='AMZN')
     #  new_strategy_1.simulate(start='2020-01-01', end='2020-01-10', use_saved_data=False, stream_data=True)
@@ -84,8 +93,9 @@ def run_strategy():
     #  nvda_strategy.simulate(start='2019-12-01', end='2020-01-10', use_saved_data=False, stream_data=False)
     #  nvda_strategy.simulate(start='2019-10-11', end='2019-11-22', use_saved_data=False, stream_data=False)
 
-    sim_thread_2.join()
     sim_thread_1.join()
+    sim_thread_2.join()
+    sim_thread_3.join()
 
 def start():
     #  while True:
@@ -94,7 +104,7 @@ def start():
     #  #  ipdb.set_trace()
     #  daemon.start()
 
-    DataAggregator.start_streaming_market_data(symbols=['AMZN', 'NFLX'])
+    DataAggregator.start_streaming_market_data(symbols=['AMZN', 'NFLX', 'NVDA'])
     run_strategy()
     DataAggregator.stop_streaming_market_data()
 
