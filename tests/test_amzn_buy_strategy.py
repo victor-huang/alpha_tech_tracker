@@ -13,7 +13,7 @@ def test_strategy_simulation():
     new_strategy_1 = SimpleStrategy(symbol='AMZN')
     new_strategy_2 = SimpleStrategy(symbol='AMZN')
 
-    new_strategy_1.simulate(start='2019-12-10', end='2019-12-15', use_saved_data=False, stream_data=False)
+    new_strategy_1.simulate(start='2019-01-01', end='2019-01-15', use_saved_data=True, stream_data=False)
 
     return
 

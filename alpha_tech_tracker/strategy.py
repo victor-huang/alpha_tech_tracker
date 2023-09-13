@@ -159,19 +159,18 @@ class SimpleStrategy(Strategy):
 
     def read_data_from_files(self, symbol, date_range=[], start='', end=''):
         # for amazon
-        #  date_range = [
-            #  ['2018-01-01', '2018-03-31'],
-            #  ['2018-04-01', '2018-06-30'],
-            #  ['2018-06-01', '2018-08-31'],
-            #  ['2018-09-01', '2018-12-31'],
-            #  ['2019-01-01', '2019-03-31'],
-            #  ['2019-04-01', '2019-06-30'],
-            #  ['2019-06-01', '2019-08-31'],
-            #  ['2019-09-01', '2019-12-31']
-        #  ]
+        date_range = [
+            ['2018-01-01', '2018-03-31'],
+            ['2018-04-01', '2018-06-30'],
+            ['2018-06-01', '2018-08-31'],
+            ['2018-09-01', '2018-12-31'],
+            ['2019-01-01', '2019-03-31'],
+            ['2019-04-01', '2019-06-30'],
+            ['2019-06-01', '2019-08-31'],
+            ['2019-09-01', '2019-12-31']
+        ]
 
-        
-        loaded_data_df = pd.DataFrame()
+        test_data_df_list = []
 
         for (r_start, r_end) in date_range:
             file_name = './test_data/{}_{}_{}.json'.format(symbol, r_start, r_end)
@@ -180,14 +179,11 @@ class SimpleStrategy(Strategy):
             if df[start:end].empty:
                 continue
 
-            #  if loaded_data_df == None:
-                #  loaded_data_df = df
-            #  else:
-            loaded_data_df = loaded_data_df.append(df[start:end])
+            test_data_df_list.append(df[start:end])
+        # efficient way to constructing df: https://stackoverflow.com/questions/75956209/error-dataframe-object-has-no-attribute-append
+        loaded_data_df = pd.concat(test_data_df_list)
 
-        #  ipdb.set_trace()
         # set to Easten time zone
-        #  loaded_data_df.index = loaded_data_df.index.tz_localize(0).tz_convert(-3600*4)
         loaded_data_df.index = loaded_data_df.index.tz_localize(0).tz_convert('America/New_York')
         return loaded_data_df
 

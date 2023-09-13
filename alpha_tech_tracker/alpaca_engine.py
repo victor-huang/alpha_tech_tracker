@@ -117,7 +117,7 @@ def simulate_stream_minute_aggreated_market_data_from_file(file_path, symbol, li
         agg_data = Agg(data)
 
         promise = DataAggregator.handle_streaming_minute_agg_data({}, {}, agg_data)
-        asyncio.async(promise)
+        asyncio.ensure_future(promise)
 
 
 class DataAggregator(object):
