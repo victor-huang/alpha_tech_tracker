@@ -8,5 +8,6 @@ plotly==4.3.0
 nbformat==4.4.0
 daemonize==2.5.0
 twilio==6.35.1
+alpaca-py==0.10.0
 
 #-e file:///Users/victor/work/alpaca-trade-api-python#egg=alpaca-trade-api

@@ -2,8 +2,6 @@ from datetime import datetime
 from decimal import Decimal
 import uuid
 
-import ipdb
-
 class Signal(object):
     def __init__(self, *, name, category, symbol=None, trend=None, signaled_at=datetime.now()):
         # caategory: marco, sector , assert, technical, fundmental, 
