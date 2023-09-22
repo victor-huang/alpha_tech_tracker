@@ -19,8 +19,8 @@ import alpha_tech_tracker.alpaca_engine as alpaca
 from alpha_tech_tracker.alpaca_engine import DataAggregator
 from alpha_tech_tracker.sms import send_sms
 from alpha_tech_tracker.wave import Wave
+from alpha_tech_tracker.alpaca_py_engine import get_historical_stock_data
 
-import ipdb
 
 class Strategy(object):
     def __init__(self):
@@ -212,7 +212,7 @@ class SimpleStrategy(Strategy):
             df = self.read_data_from_files(self.symbol, date_range=market_data_file_date_rage, start=start, end=end_date_str)
         else:
             end_date_str = (end_date + timedelta(days=1)).strftime('%Y-%m-%d')
-            df = alpaca.get_historical_ochl_data(self.symbol, start_date=start, end_date=end_date_str)
+            df = get_historical_stock_data(self.symbol, start, end_date_str)
 
         #  df.to_json('./amzn_2018_01_2018_03.json', orient='table')
         #  self.export_data_to_json('AMZN')
