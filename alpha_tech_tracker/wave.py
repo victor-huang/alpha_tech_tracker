@@ -40,10 +40,12 @@ class Wave:
         down_wave_move_length = 0
         strong_up_wave_index = -1
         strong_down_wave_index = -1
+        total_wave_length = 0
 
         for index, wave in enumerate(waves):
             wave_direction = wave.direction()
             wave_summary = wave.summary()
+            total_wave_length += wave.length()
 
             if wave_direction == 'up':
                 number_of_up_waves += 1
@@ -67,7 +69,8 @@ class Wave:
             'up_wave_move_length': up_wave_move_length,
             'down_wave_move_length': down_wave_move_length,
             'strong_up_wave_index': strong_up_wave_index,
-            'strong_down_wave_index': strong_down_wave_index
+            'strong_down_wave_index': strong_down_wave_index,
+            'average_wave_length': total_wave_length / len(waves)
         }
 
 
