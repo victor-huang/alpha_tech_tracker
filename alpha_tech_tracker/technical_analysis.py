@@ -142,7 +142,6 @@ def long_tail_reversal_combo(price_data, trend='up', daily_movement_minimum=0.01
 
     detected = False
 
-    day_1_clos = price_data[0][0]
     day_2_low = price_data[1][-1]
     day_1_close = price_data[0][0]
     day_2_high = price_data[1][-2]
