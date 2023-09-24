@@ -1,11 +1,12 @@
 from datetime import datetime
 from decimal import Decimal
 import uuid
+import pandas as pd
 
 import ipdb
 
 class Position(object):
-    def __init__(self, *, open_price, symbol, quantity, type='stock', open_at=datetime.now(), close_price=None, close_at=None, open_order_id=None, close_order_id=None, osi_key=None):
+    def __init__(self, *, open_price, symbol, quantity, type='stock', open_at=datetime.now(), close_price=None, close_at=None, open_order_id=None, close_order_id=None, osi_key=None, strike_price=None):
         self.status = 'open'
         self.id = uuid.uuid1()
         self.symbol = symbol
@@ -16,6 +17,7 @@ class Position(object):
         self.open_order_id = open_order_id
         self.close_order_id = None
         self.osi_key = osi_key
+        self.strike_price = strike_price
 
         if close_price:
             self.close_price = Decimal(str(close_price))
@@ -41,11 +43,11 @@ class Portfolio(object):
     def find_position(self, position_id):
         return next((x for x in self.positions if x.id == position_id), None)
 
-    def add_position(self, *, symbol, open_price, quantity, open_order_id, type='stock', open_at=datetime.now(), osi_key=None):
+    def add_position(self, *, symbol, open_price, quantity, open_order_id, type='stock', open_at=datetime.now(), osi_key=None, strike_price=None):
         if open_order_id == None:
             raise ValueError('open_order_id can not be None')
 
-        new_position = Position(symbol=symbol, open_price=open_price, quantity=quantity, type=type, open_at=open_at, open_order_id=open_order_id, osi_key=osi_key)
+        new_position = Position(symbol=symbol, open_price=open_price, quantity=quantity, type=type, open_at=open_at, open_order_id=open_order_id, osi_key=osi_key, strike_price=strike_price)
         self.positions.append(new_position)
         return new_position
 
@@ -59,6 +61,29 @@ class Portfolio(object):
             found_position.close_order_id = close_order_id
 
         return found_position
+
+    def bucket_positions_pnl_by_time(self):
+        df = pd.DataFrame([vars(p) for p in self.positions])
+        df.set_index('closed_at', inplace=True)
+
+        def calculate_pl(row):
+            if row['type'] == 'stock':
+                return (row['close_price'] - row['open_price']) * row['quantity']
+            else:  # Assuming other type is 'option' for this example
+                return 100 * (row['close_price'] - row['open_price']) * row['quantity']
+
+        df['P&L'] = df.apply(calculate_pl, axis=1)
+
+        daily_pl = df.groupby(pd.Grouper(freq='D'))['P&L'].sum()
+        weekly_pl = df.groupby(pd.Grouper(freq='W-SUN'))['P&L'].sum()
+        monthly_pl = df.groupby(pd.Grouper(freq='M'))['P&L'].sum()
+
+        return {
+            'daily': daily_pl,
+            'weekly': weekly_pl,
+            'monthly': monthly_pl,
+        }
+
 
     def calculate_pnl(self):
         summary_pnl = {
