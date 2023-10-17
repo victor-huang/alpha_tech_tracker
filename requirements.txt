@@ -9,5 +9,7 @@ nbformat==4.4.0
 daemonize==2.5.0
 twilio==6.35.1
 alpaca-py==0.10.0
+oauthlib==3.2.2
+rauth==0.7.3 # for etrade api client example
 
 #-e file:///Users/victor/work/alpaca-trade-api-python#egg=alpaca-trade-api
