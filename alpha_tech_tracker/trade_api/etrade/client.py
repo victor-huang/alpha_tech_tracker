@@ -1,12 +1,12 @@
 import json
 import logging
+import os
 import random
 import string
 import time
 import urllib.parse
 import uuid
 import webbrowser
-import os
 
 from requests_oauthlib import OAuth1Session
 
@@ -79,6 +79,9 @@ class EtradeAPIClient:
 
         return [expiry_year, expiry_month, expiry_day, strike_price]
 
+    def round_nearest(self, x, smallest_unit):
+        return round(x / smallest_unit) * smallest_unit
+
     def authorize_session(self):
         session = OAuth1Session(
             self._api_key, client_secret=self._client_secret, callback_uri="oob"
@@ -123,7 +126,9 @@ class EtradeAPIClient:
 
         return option_quote
 
-    def get_price_from_quote(self, quote, percentage_deviate_from_mid_point=-0.1):
+    def get_price_from_quote(
+        self, quote, percentage_deviate_from_mid_point=-0.1, smallest_unit=0.05
+    ):
         """
         params:
             percentage_deviate_from_mid_point: percentage deviation from the mid point price, positive means scale toward ask, negative meann scale toward bid
@@ -135,10 +140,11 @@ class EtradeAPIClient:
         mid_price_diff = (ask - bid) / 2
         mid_price = bid + mid_price_diff
 
-        selected_price = round(
+        selected_price = self.round_nearest(
             bid + mid_price_diff * (1 + percentage_deviate_from_mid_point),
-            decimal_place,
+            smallest_unit,
         )
+        selected_price = round(selected_price, decimal_place)
 
         print(
             f"Price, Bid: {bid}, Ask: {ask}, Mid: {mid_price}, SMid: {selected_price}"
@@ -179,7 +185,7 @@ class EtradeAPIClient:
                         "orderTerm": "GOOD_FOR_DAY",
                         "marketSession": "REGULAR",
                         "stopPrice": "",
-                        "limitPrice": "10",  # this is not being used
+                        "limitPrice": price,  # this is not being used
                         "Instrument": [
                             {
                                 "Product": {
@@ -227,12 +233,19 @@ class EtradeAPIClient:
         order_action="BUY_OPEN",
         quantity=1,
     ):
+        if price_type == "SMART_MARKET":
+            quote = self.get_option_quote(symbol, option_key, option_type=option_type)
+            price_info = self.get_price_from_quote(quote)
+            price = price_info["s-mid"]
+            price_type = "LIMIT"
+
         if preview_order is None:
             preview_order_by_id = self.preview_option_order(
                 symbol=symbol,
                 option_key=option_key,
                 order_action=order_action,
                 price_type=price_type,
+                price=price,
                 option_type=option_type,
                 quantity=quantity,
             )
@@ -300,12 +313,35 @@ class EtradeAPIClient:
 
         return order_info
 
+    def cancel_order(self, order_id):
+        account_id = self._selected_account_id
+
+        cancel_order_payload = {"CancelOrderRequest": {"orderId": order_id}}
+
+        cancel_order_endpoint = (
+            f"https://{self._base_url_host}/v1/accounts/{account_id}/orders/cancel.json"
+        )
+
+        response = self._session.put(cancel_order_endpoint, json=cancel_order_payload)
+        cancel_order_info = self._parse_response(response)
+
+        return cancel_order_info
+
+    def order_status(self, order_id):
+        account_id = self._selected_account_id
+        order_status_endpoint = f"https://{self._base_url_host}/v1/accounts/{account_id}/orders/{order_id}.json"
+        response = self._session.get(order_status_endpoint)
+
+        order_status_info = self._parse_response(response)
+
+        return order_status_info
+
 
 """
 Example client init and auth
 """
-client = EtradeAPIClient(selected_account_id="")
-client.authorize_session()
+#  client = EtradeAPIClient(selected_account_id="<account_id>")
+#  client.authorize_session()
 
 
 """
@@ -347,9 +383,7 @@ Buy call option without preview step
 Get Option Quote and prices
 """
 
-quote = client.get_option_quote(
-    symbol="TSLA", option_key="2023-10-20 s240", option_type="CALL"
-)
-client.get_price_from_quote(quote)
-
-#  import ipdb; ipdb.set_trace()
+#  quote = client.get_option_quote(
+#  symbol="TSLA", option_key="2023-10-20 s240", option_type="CALL"
+#  )
+#  client.get_price_from_quote(quote)
