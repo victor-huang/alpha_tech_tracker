@@ -265,7 +265,15 @@ class SimpleStrategy(Strategy):
                 p.close_price = Decimal(future_market_data_df[-1:]['close'][0])
                 p.status == 'closed'
 
-        pp.pprint(self.portfolio.calculate_pnl())
+        pln_info = self.portfolio.calculate_pnl()
+
+        pp.pprint(pln_info)
+
+        pp.pprint(f"number_of_loss_positions: {pln_info['number_of_loss_positions']}")
+        pp.pprint(
+            f"number_of_profit_positions: {pln_info['number_of_profit_positions']}"
+        )
+        pp.pprint(f"pnl: {pln_info['pnl']}")
 
     def market_data_generator(self, enumerator, stream_data=False):
         for x in enumerator:
