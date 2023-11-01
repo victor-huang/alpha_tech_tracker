@@ -21,14 +21,21 @@ class Order(object):
         self.cost = 0
 
     def option_type(self):
-        # e.g. amzn-jun_2_2020-call
+        # e.g. osa_key = TSLA--231013C00240000
         if self.asset_type == 'option':
-            return self.osi_key.split('-')[2]
+            symbol, reminder = self.osi_key.split('--')
+            if 'C' in reminder:
+                return 'call'
+            else:
+                return 'put'
 
 class OrderEngine(object):
-    def __init__(self, *, engine='mock'):
-        if engine == 'mock':
+    def __init__(self, *, engine_name='mock', client=None):
+        self.engine_name = engine_name
+        if self.engine_name == 'mock':
             self.engine = MockOrderEngine()
+        elif self.engine_name == 'etrade':
+            self.engine = ETradeOrderEngine(client=client)
 
     def place(self, *args, **keyword_args):
         return self.engine.place(*args, **keyword_args)
@@ -43,6 +50,13 @@ class OrderEngine(object):
     def find_order(self, order_id):
         return self.engine.find_order(order_id)
 
+    def close_all_open_orders(self):
+        return self.engine.close_all_open_orders()
+
+    def sync_orders(self):
+        return self.engine.sync_orders()
+
+
 
 class MockOrderEngine():
     def __init__(self):
@@ -51,7 +65,7 @@ class MockOrderEngine():
     def find_order(self, order_id):
         return next((x for x in self.orders if x.id == order_id), None)
 
-    def place(self, *, asset_type='stock', symbol, exchange='mockEx', side, price, quantity, type, strike_price=None, osi_key=None):
+    def place(self, *, asset_type='stock', symbol, exchange='mockEx', side, price, quantity, type, strike_price=None, osi_key=None, option_key=None):
         if asset_type == 'option' and strike_price == None:
             raise ValueError('strike_price needs to be set for Option')
 
@@ -65,9 +79,14 @@ class MockOrderEngine():
         order = next((x for x in self.orders if x.id == id), None)
 
         if order:
-            self.orders.remove(order)
+            order.status = 'canceled'
 
         return order != None
+
+    def close_all_open_orders(self):
+        for order in self.orders:
+            if order.status == 'open':
+                self.cancel(order.id)
 
     def execute_orders(self):
         open_orders = [x for x in self.orders if x.status == 'open']
@@ -84,3 +103,65 @@ class MockOrderEngine():
 
         return open_orders
 
+
+class ETradeOrderEngine(MockOrderEngine):
+    def __init__(self, client):
+        self.orders = []
+        self._client = client
+
+
+    def place(self, *, asset_type='stock', symbol, exchange='mockEx', side, price, quantity, type, strike_price=None, osi_key=None, option_key=None):
+        if asset_type == 'option' and strike_price == None:
+            raise ValueError('strike_price needs to be set for Option')
+
+        new_order = Order(asset_type=asset_type, side=side, symbol=symbol, exchange=exchange, price=price, quantity=quantity, type=type, strike_price=strike_price, osi_key=osi_key)
+
+
+        if asset_type == 'option' and side == 'buy':
+            order_action = 'BUY_OPEN'
+            price_type = type.upper()
+
+        if asset_type == 'option' and side == 'sell':
+            order_action = 'SELL_CLOSE'
+            price_type = type.upper()
+
+
+        if asset_type == 'option' and order_action:
+            order = self._client.place_option_order(
+                symbol=symbol,
+                option_key=option_key,
+                price=price,
+                order_action=order_action,
+                price_type=price_type,
+            )
+            etrade_order_id = order['PlaceOrderResponse']['OrderIds'][0]['orderId']
+            new_order.id = etrade_order_id
+        else:
+            raise ValueError(f"Asset Type: {asset_type} not supported.")
+
+        self.orders.append(new_order)
+
+        return new_order
+
+    def get_smart_limit_order():
+        pass
+
+
+    def cancel(self, id):
+        order = next((x for x in self.orders if x.id == id), None)
+
+        if order:
+            order.status = 'canceled'
+
+        resp = self._client.cancel_order(order.id)
+        return order != None
+
+    def sync_orders(self):
+        # check order satus and update them
+        for order in self.orders:
+            status_info = self._client.order_status(order.id)
+            order_status = status_info['OrdersResponse']['Order'][0]['OrderDetail'][0]['status'].lower()
+            order.status = order_status
+
+            # get executed_at, executed_price, commission_fee, status
+            print(f"Synced order: {order.id}, {status_info}")
