@@ -3,19 +3,31 @@ import ipdb
 
 from alpha_tech_tracker.strategy import SimpleStrategy
 
+
 def test_create_an_instance_of_simple_strategy():
-    new_strategy = SimpleStrategy(symbol='AMZN')
+    new_strategy = SimpleStrategy(symbol="AMZN")
 
     assert isinstance(new_strategy, SimpleStrategy)
 
 
 def test_strategy_simulation():
-    new_strategy_1 = SimpleStrategy(symbol='AMZN')
-    new_strategy_2 = SimpleStrategy(symbol='AMZN')
+    new_strategy_1 = SimpleStrategy(symbol="AMZN")
+    new_strategy_2 = SimpleStrategy(symbol="AMZN")
 
-    new_strategy_1.simulate(start='2019-01-01', end='2019-01-15', use_saved_data=False, stream_data=False)
+    # up
+    # + $11869
+    #  new_strategy_1.simulate(start='2020-06-30', end='2020-7-13', use_saved_data=False, stream_data=False)
+    # + $17226.9
+    #  new_strategy_1.simulate(start='2020-3-31', end='2020-4-29', use_saved_data=False, stream_data=False)
 
+    new_strategy_1.simulate(
+        start="2023-5-16", end="2023-7-14", use_saved_data=False, stream_data=False
+    )
+
+    # down
+    #  new_strategy_1.simulate(start='2020-9-2', end='2020-9-18', use_saved_data=False, stream_data=False)
     return
+    #  new_strategy_1.simulate(start='2019-01-01', end='2019-01-15', use_saved_data=False, stream_data=False)
 
     # test uptrede
     #  new_strategy_1.simulate(start='2019-05-30', end='2019-07-22')
@@ -32,49 +44,47 @@ def test_strategy_simulation():
     # $1500 - $1900 => 40k buy and hold, this profit 15k
     # new_strategy_2.simulate(start='2018-05-15', end='2018-10-05')
 
-
-    new_strategy_0 = SimpleStrategy(symbol='AMZN')
-    new_strategy_0.simulate(start='2019-06-10', end='2019-07-11')
+    new_strategy_0 = SimpleStrategy(symbol="AMZN")
+    new_strategy_0.simulate(start="2019-06-10", end="2019-07-11")
     print("**--**--up--(start='2019-06-10', end='2019-07-11'")
     # 'pnl': Decimal('2636.999999999966348696031'),
-    #v2 'pnl': Decimal('3047.000000000002728484105'),
+    # v2 'pnl': Decimal('3047.000000000002728484105'),
 
-    new_strategy_00 = SimpleStrategy(symbol='AMZN')
-    new_strategy_00.simulate(start='2019-03-13', end='2019-05-06')
+    new_strategy_00 = SimpleStrategy(symbol="AMZN")
+    new_strategy_00.simulate(start="2019-03-13", end="2019-05-06")
     print("**--**--up--(start='2019-03-13', end='2019-05-06')")
     # 'pnl': Decimal('2636.999999999966348696031'),
-    #v2  'pnl': Decimal('3839.999999999940882844383'),
+    # v2  'pnl': Decimal('3839.999999999940882844383'),
 
-    new_strategy_1 = SimpleStrategy(symbol='AMZN')
-    new_strategy_1.simulate(start='2018-04-02', end='2018-09-08')
+    new_strategy_1 = SimpleStrategy(symbol="AMZN")
+    new_strategy_1.simulate(start="2018-04-02", end="2018-09-08")
     print("**--**--up--(start='2018-04-02', end='2018-09-08')")
     # 'pnl': Decimal('9672.00000000000272848409'),
-    #v2 'pnl': Decimal('3754.99999999992724042384'),
-    
-    new_strategy_2 = SimpleStrategy(symbol='AMZN')
-    new_strategy_2.simulate(start='2018-01-03', end='2018-03-24')
+    # v2 'pnl': Decimal('3754.99999999992724042384'),
+
+    new_strategy_2 = SimpleStrategy(symbol="AMZN")
+    new_strategy_2.simulate(start="2018-01-03", end="2018-03-24")
     print("**--**--up--start='2018-01-03', end='2018-03-24'")
     # 'pnl': Decimal('1881.000000000062755134423'),
-    #v2 'pnl': Decimal('4218.999999999937244865579'),
+    # v2 'pnl': Decimal('4218.999999999937244865579'),
 
-
-    new_strategy_3 = SimpleStrategy(symbol='AMZN')
-    new_strategy_3.simulate(start='2018-03-12', end='2018-04-07')
+    new_strategy_3 = SimpleStrategy(symbol="AMZN")
+    new_strategy_3.simulate(start="2018-03-12", end="2018-04-07")
     print("**--**--down--(start='2018-03-12', end='2018-04-07')")
     # 'pnl': Decimal('-525.999999999999090505298'),
-    #v2 'pnl': Decimal('-920.000000000004547473509'),
+    # v2 'pnl': Decimal('-920.000000000004547473509'),
 
-    new_strategy_4 = SimpleStrategy(symbol='AMZN')
-    new_strategy_4.simulate(start='2018-09-29', end='2018-11-24')
+    new_strategy_4 = SimpleStrategy(symbol="AMZN")
+    new_strategy_4.simulate(start="2018-09-29", end="2018-11-24")
     print("**--**--down--(start='2018-09-24', end='2018-11-24')")
     # 'pnl': Decimal('5449.000000000000909494701'),
-    #v2 'pnl': Decimal('4490.999999999985448084771'),
+    # v2 'pnl': Decimal('4490.999999999985448084771'),
 
-    new_strategy_4 = SimpleStrategy(symbol='AMZN')
-    new_strategy_4.simulate(start='2019-07-15', end='2019-09-30')
+    new_strategy_4 = SimpleStrategy(symbol="AMZN")
+    new_strategy_4.simulate(start="2019-07-15", end="2019-09-30")
     print("**--**--down--(start='2019-07-15', end='2019-10-06')")
     # 'pnl': Decimal('-2499.000000000000909494701'),
-    #v2 'pnl': Decimal('767.000000000030013325161'),
+    # v2 'pnl': Decimal('767.000000000030013325161'),
 
     #  ipdb.set_trace()
     # {'pnl': Decimal('-6585.000000000036379788073'),
@@ -88,7 +98,6 @@ def test_strategy_simulation():
 
     #  new_strategy_2.simulate(start='2018-09-24', end='2018-12-24'), downtrend make money???
     #  new_strategy_2.simulate(start='2018-12-20', end='2019-01-16')
-
 
     #  new_strategy_2.simulate(start='2018-02-07', end='2018-03-13')
     #  new_strategy_2.simulate(start='2018-02-07', end='2018-02-15')
@@ -112,9 +121,8 @@ def test_strategy_simulation():
 #  new_strategy_down_trend.simulate(start='2018-10-07', end='2018-12-24')
 
 
-#Note:
+# Note:
 # delya wave length help in down trend performance??
-
 
 
 #  {'closed_at': Timestamp('2019-03-29 10:50:00-0400', tz='America/New_York'),
