@@ -1,3 +1,9 @@
+"""
+This engine file is depreacted, due to its usage of a legacy version of alpaca api
+look at https://github.com/alpacahq/alpaca-py/blob/master/alpaca/common/websocket.py#L18
+for the new websockt api to get live min data
+"""
+
 import asyncio
 from datetime import datetime
 import json
