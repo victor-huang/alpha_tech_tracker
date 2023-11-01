@@ -3,6 +3,7 @@ from datetime import datetime
 from datetime import timezone
 from datetime import timedelta
 from decimal import Decimal
+from contextlib import contextmanager
 
 #  from functools import reduce
 import pandas as pd
@@ -17,9 +18,9 @@ from alpha_tech_tracker.portfolio import Portfolio
 from alpha_tech_tracker.signal import Signal
 import alpha_tech_tracker.technical_analysis as ta
 import alpha_tech_tracker.alpaca_engine as alpaca
-from alpha_tech_tracker.alpaca_engine import DataAggregator
-from alpha_tech_tracker.sms import send_sms
+from alpha_tech_tracker.sms import send_sms_via_imessage as send_sms
 from alpha_tech_tracker.wave import Wave
+from alpha_tech_tracker.alpaca_py_engine import DataAggregator
 from alpha_tech_tracker.alpaca_py_engine import get_historical_stock_data
 
 
@@ -52,7 +53,14 @@ class Strategy(object):
 # good at up trend, good protection on sharp downtrend
 # ok loos on long consolidation e.g (start='2019-08-06', end='2019-09-23')
 class SimpleStrategy(Strategy):
-    def __init__(self, *, symbol="None"):
+    def __init__(
+        self,
+        *,
+        symbol="None",
+        buy_trigger_risk_reward_ratio=1.2,
+        trade_api_client=None,
+        skip_place_historical_trades=False,
+    ):
         # load 300 5-min interval data, so we can generate 200-d
         # moving average lines
         self.symbol = symbol
@@ -60,18 +68,28 @@ class SimpleStrategy(Strategy):
         self.close_side = "sell"
         self.asset_type = "option"
         self.target_option_strike_price_delta = 30  # amount deep in the money
-        self.target_option_expiry = "Weekly_2020"
+        self.target_option_expiry = "231019"
         self.target_option_type = "call"
-        self.osi_key = "{}-{}-{}".format(
-            self.symbol, self.target_option_expiry, self.target_option_type
-        )
+        self.target_option_type_code = self.target_option_type[0].upper()
+        self.target_strike_price = "0023000"
+        # more info: https://www.optionstaxguy.com/option-symbols-osi
+        # TSLA--231013C00240000, 2023-10-13 CALL 00 strike price $240
+        self.osi_key = f"{self.symbol}--{self.target_option_expiry}{self.target_option_type_code}{self.target_strike_price}"
+        self.option_key = "2023-11-03 s190"
 
         self.signals_by_times = {}
         self.portfolio = Portfolio()
         self.active_positions = {}
         self.pending_positions_data_by_order = {}
         self.active_order_to_position_map = {}
-        self.order_engine = OrderEngine()
+
+        self.trade_api_client = trade_api_client
+        if self.trade_api_client:
+            engine = OrderEngine(engine_name="etrade", client=self.trade_api_client)
+        else:
+            engine = OrderEngine()
+
+        self.order_engine = engine
         self.waves = []
         self.cached_waves_last_wave = {}
         self.open_position_triggers = []
@@ -79,7 +97,9 @@ class SimpleStrategy(Strategy):
         self.sender_phone_number = "4086130570"
         self.disabled_sending_sms = False
         self.only_send_real_time_trade_alert = True
-        self.plot_market_data_candle_stick_chart = True
+        self.skip_place_historical_trades = skip_place_historical_trades
+
+        self.plot_market_data_candle_stick_chart = False
 
         #  self.market_data_timeout = 300
         self.market_data_timeout = (
@@ -90,7 +110,7 @@ class SimpleStrategy(Strategy):
         self.buy_trigger_up_waves_ratio = 0.4  # v1 0.5
         #  self.buy_trigger_up_magnitude_ratio = 0.55 # v1 0.6
         self.buy_trigger_up_magnitude_ratio = 0.51  # v1 0.6, v2 0.55
-        self.buy_trigger_risk_reward_ratio = 1.3
+        self.buy_trigger_risk_reward_ratio = 1.3  # was 1.3 at 10/25
 
         self.strong_buy_after_sell_off_up_waves_ratio = 0.5
         self.strong_buy_after_sell_off_up_magnitude_ratio = 0.38
@@ -100,7 +120,9 @@ class SimpleStrategy(Strategy):
         self.waves_loosing_steam_down_wave_pickup_steam_up_magnitude_ratio = 0.2
 
         self.moving_average_periods = [20, 50, 100, 200]
-        self.discounted_magnitudues_factor = 0.80
+        self.discounted_magnitudues_factor = (
+            0.80  # can be tune to according to volatility
+        )
         self.max_trade_per_day = 2
 
         self.bullish_up_wave_move_size = 50  # 78 is the max wave length
@@ -108,11 +130,10 @@ class SimpleStrategy(Strategy):
         self.bullish_up_waves_ratio = 0.51
 
         self.signal_trigger_params = {
-            #  'gap_move': {
-            #  'daily_movement_minimum': 0.5 # 50%
-            #  },
+            "gap_move": {"daily_movement_minimum": 0.5},  # 50%
             "long_tail_reversal_combo": {"daily_movement_minimum": 0.01 / (12 * 4)},
             "engulfing_reversal": {"daily_movement_minimum": 0.01 / (12 * 4)},
+            #  'push_reversal': {"daily_movement_minimum": 0.01 / (12 * 4)},
         }
 
     def prepare_market_data(self):
@@ -270,11 +291,13 @@ class SimpleStrategy(Strategy):
             if self.is_after_hours(index_timestamp):
                 continue
             if period_index <= preload_data_period:
+                #  print(f"--------{period_index}")
                 # preloading data until enough data to caculating moving average
                 self.add_data_point_to_wave(index_timestamp, market_data_row)
                 self.market_data_df.loc[index_timestamp] = market_data_row
                 continue
 
+            #  import ipdb; ipdb.set_trace()
             # generate signals
 
             print(
@@ -317,6 +340,8 @@ class SimpleStrategy(Strategy):
             f"number_of_profit_positions: {pln_info['number_of_profit_positions']}"
         )
         pp.pprint(f"pnl: {pln_info['pnl']}")
+
+        return pln_info
 
     def market_data_generator(self, enumerator, stream_data=False):
         for x in enumerator:
@@ -400,7 +425,7 @@ class SimpleStrategy(Strategy):
             "long_tail_reversal_combo": ta.long_tail_reversal_combo,
             "engulfing_reversal": ta.engulfing_reversal,
             #  'push_reversal': ta.push_reversal,
-            #  'gap_move': ta.gap_move
+            "gap_move": ta.gap_move,
         }
 
         signals = []
@@ -479,7 +504,9 @@ class SimpleStrategy(Strategy):
         mavg_20_price = self.moving_avgs_df[-1:]["mavg_20"][0]
 
         if current_price < mavg_20_price:
-            last_n_price_data_df = self.market_data_df[-10:]
+            last_n_price_data_df = self.market_data_df[
+                -3:
+            ]  #  important to review when downside volatility is big
             risk_price = last_n_price_data_df["close"].min()
         else:
             risk_price = mavg_20_price
@@ -503,6 +530,12 @@ class SimpleStrategy(Strategy):
             > self.strong_buy_after_sell_off_up_magnitude_ratio
         )
 
+    def should_skip_place_historical_trade(self):
+        return (
+            datetime.now(timezone.utc) - self.current_time_period()
+            > timedelta(minutes=10)
+        ) and self.skip_place_historical_trades
+
     def check_open_position_condition(self):
         current_price = self.market_data_df[-1:]["close"][0]
         waves = self.waves_for_last_n_period()
@@ -517,16 +550,13 @@ class SimpleStrategy(Strategy):
             )
         )
 
-        #  self.set_trace_at('2019-03-22 09:55:00-0400')
-        #  self.set_trace_at('2019-03-29 13:35:00-0400')
-        #  self.set_trace_at('2019-04-17 10:00:00-0400')
-
         if (
             self.risk_reward_ratio(current_price, waves=waves)
             > self.buy_trigger_risk_reward_ratio
             and not self.active_positions
             and not self.is_close_to_after_hours()
             and not self.is_right_before_market_close()
+            and not self.should_skip_place_historical_trade()
         ):
             current_time_period = self.current_time_period()
             current_date = current_time_period.date()
@@ -567,7 +597,7 @@ class SimpleStrategy(Strategy):
 
                 pp.pprint(waves_stats)
                 print(
-                    f"-----end? {is_likely_at_end_of_a_up_wave}, {last_3_waves_directions[-1]}, last wave length: {waves[-1].length()}, avg wave length x2 {waves_stats['average_wave_length'] * 2} "
+                    f"is_likely_at_end_of_a_up_wave: {is_likely_at_end_of_a_up_wave}, {last_3_waves_directions[-1]}, last wave length: {waves[-1].length()}, avg wave length x2 {waves_stats['average_wave_length'] * 2} "
                 )
 
                 # open a new position
@@ -644,6 +674,14 @@ class SimpleStrategy(Strategy):
             ):
                 self.close_position(position_id)
 
+                if (
+                    self.is_right_before_market_close()
+                    and self.order_engine.engine_name == "etrade"
+                ):
+                    # TODO: this doesn't cancel all open orders
+                    #  self.close_all_open_orders()
+                    pass
+
     def is_maximum_loss_reached(self, position_id):
         position = self.portfolio.find_position(position_id)
 
@@ -706,6 +744,9 @@ class SimpleStrategy(Strategy):
 
     def close_all_open_positions(self):
         pass
+
+    def close_all_open_orders(self):
+        self.order_engine.close_all_open_orders()
 
     def signal_event_handler(self, signal):
         datetime_hash = signal.signaled_at
@@ -837,9 +878,10 @@ class SimpleStrategy(Strategy):
             asset_type=self.asset_type,
             price=Decimal(str(option_price)),
             quantity=order_quantity,
-            type="limit",
+            type="smart_market",
             strike_price=Decimal(str(strike_price)),
             osi_key=self.osi_key,
+            option_key=self.option_key,
         )
 
         current_time_period = self.current_time_period()
@@ -913,9 +955,11 @@ class SimpleStrategy(Strategy):
             asset_type=self.asset_type,
             price=option_price,
             quantity=order_quantity,
-            type="limit",
+            type="smart_market",
             strike_price=strike_price,
             osi_key=self.osi_key,
+            option_key=self.option_key,
+            #  option_key='2023-10-27 s230',
         )
 
         self.active_order_to_position_map[new_order.id] = position_id
@@ -927,3 +971,39 @@ class SimpleStrategy(Strategy):
         open_position_triggers = [func1, func2, func3]
 
         close_position_triggers = [func1, func2]
+
+    @classmethod
+    @contextmanager
+    def optimize_params(cls, symbol, params={}):
+        """
+        TODO: need to figurt out the list of params we can set and how to control the index enumeration
+        example usage:
+            with SimpleStrategy.optimize_params(symbol='TSLA') as (strategy, params, pnl_data_collector):
+                result = strategy.simulate(start='2023-8-18', end='2023-9-21', use_saved_data=False, stream_data=False)
+                pnl_data_collector.append(result)
+        """
+        pnl_data_per_params = []
+
+        for index in range(0, 1):
+            buy_trigger_risk_reward_ratio = 0.8 + index / 10.0
+            params = {"buy_trigger_risk_reward_ratio": 1.3}
+
+            strategy = cls(
+                symbol=symbol,
+                buy_trigger_risk_reward_ratio=buy_trigger_risk_reward_ratio,
+            )
+
+            pnl_data_collector = []
+            yield (strategy, params, pnl_data_collector)
+
+            pnl_data_per_params.append(
+                {
+                    "param_id": str(params),
+                    "pnl_data": pnl_data_collector[
+                        0
+                    ],  # assumed only have one pnl data point
+                }
+            )
+
+        max_attr = max(pnl_data_per_params, key=lambda x: x["pnl_data"]["pnl"])
+        print(max_attr)
