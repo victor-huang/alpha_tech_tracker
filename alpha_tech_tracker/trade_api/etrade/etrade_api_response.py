@@ -582,3 +582,121 @@ option_quote = {
         ]
     }
 }
+
+
+order_status_executed_order = {
+    "OrdersResponse": {
+        "Order": [
+            {
+                "orderId": 12937,
+                "orderType": "OPTN",
+                "OrderDetail": [
+                    {
+                        "placedTime": 1697641737039,
+                        "executedTime": 1697641738993,
+                        "orderValue": 1925.5113,
+                        "status": "EXECUTED",
+                        "orderTerm": "GOOD_FOR_DAY",
+                        "priceType": "LIMIT",
+                        "limitPrice": 19.25,
+                        "stopPrice": 0,
+                        "marketSession": "REGULAR",
+                        "allOrNone": False,
+                        "netPrice": 0,
+                        "netBid": 0,
+                        "netAsk": 0,
+                        "gcd": 0,
+                        "ratio": "",
+                        "Instrument": [
+                            {
+                                "symbolDescription": "TSLA Oct 20 '23 $230 Call",
+                                "orderAction": "BUY_OPEN",
+                                "quantityType": "QUANTITY",
+                                "orderedQuantity": 1,
+                                "filledQuantity": 1.0,
+                                "averageExecutionPrice": 19.25,
+                                "estimatedCommission": 0.5113,
+                                "estimatedFees": 0.0,
+                                "Product": {
+                                    "symbol": "TSLA",
+                                    "securityType": "OPTN",
+                                    "callPut": "CALL",
+                                    "expiryYear": 2023,
+                                    "expiryMonth": 10,
+                                    "expiryDay": 20,
+                                    "strikePrice": 230,
+                                    "productId": {
+                                        "symbol": "TSLA--231020C00230000",
+                                        "typeCode": "OPTION",
+                                    },
+                                },
+                            }
+                        ],
+                    }
+                ],
+                "Events": {
+                    "Event": [
+                        {
+                            "name": "ORDER_PLACED",
+                            "dateTime": 1697641737039,
+                            "Instrument": [
+                                {
+                                    "symbolDescription": "TSLA Oct 20 '23 $230 Call",
+                                    "orderAction": "BUY_OPEN",
+                                    "quantityType": "QUANTITY",
+                                    "orderedQuantity": 1,
+                                    "filledQuantity": 1.0,
+                                    "averageExecutionPrice": 19.25,
+                                    "estimatedCommission": 0.5113,
+                                    "estimatedFees": 0.0,
+                                    "Product": {
+                                        "symbol": "TSLA",
+                                        "securityType": "OPTN",
+                                        "callPut": "CALL",
+                                        "expiryYear": 2023,
+                                        "expiryMonth": 10,
+                                        "expiryDay": 20,
+                                        "strikePrice": 230,
+                                        "productId": {
+                                            "symbol": "TSLA--231020C00230000",
+                                            "typeCode": "OPTION",
+                                        },
+                                    },
+                                }
+                            ],
+                        },
+                        {
+                            "name": "ORDER_EXECUTED",
+                            "dateTime": 1697641738993,
+                            "Instrument": [
+                                {
+                                    "symbolDescription": "TSLA Oct 20 '23 $230 Call",
+                                    "orderAction": "BUY_OPEN",
+                                    "quantityType": "QUANTITY",
+                                    "orderedQuantity": 1,
+                                    "filledQuantity": 1.0,
+                                    "averageExecutionPrice": 19.25,
+                                    "estimatedCommission": 0.5113,
+                                    "estimatedFees": 0.0,
+                                    "Product": {
+                                        "symbol": "TSLA",
+                                        "securityType": "OPTN",
+                                        "callPut": "CALL",
+                                        "expiryYear": 2023,
+                                        "expiryMonth": 10,
+                                        "expiryDay": 20,
+                                        "strikePrice": 230,
+                                        "productId": {
+                                            "symbol": "TSLA--231020C00230000",
+                                            "typeCode": "OPTION",
+                                        },
+                                    },
+                                }
+                            ],
+                        },
+                    ]
+                },
+            }
+        ]
+    }
+}
