@@ -1,7 +1,4 @@
-from alpha_tech_tracker.alpaca_py_engine import (
-    DataAggregator,
-    wss_client
-)
+from alpha_tech_tracker.alpaca_py_engine import DataAggregator, wss_client
 
 
 """
@@ -66,8 +63,8 @@ Name: (TSLA, 2023-09-11 08:00:00+00:00), dtype: float64
 class TestDataAggregator:
     # integration test
     def test_straeming_5_min_aggregate_data(self):
-        DataAggregator.fetch_5_mins_aggregated_data(symbol='TSLA')
-        [print(x) for x in DataAggregator.fetch_5_mins_aggregated_data(symbol='TSLA')]
+        DataAggregator.fetch_5_mins_aggregated_data(symbol="TSLA")
+        [print(x) for x in DataAggregator.fetch_5_mins_aggregated_data(symbol="TSLA")]
 
     # DataAggregator.start_streaming_market_data(symbols=['TSLA', 'QQQ'])
 
@@ -95,7 +92,7 @@ def test_stream_client_and_data_handler():
         print(data)
 
     async def trade_data_handler(data):
-        #symbol='TSLA' timestamp=datetime.datetime(2023, 9, 25, 16, 0, 3, 355190, tzinfo=datetime.timezone.utc) exchange='V' price=246.11 size=100.0 id=5143 conditions=['@'] tape='C'
+        # symbol='TSLA' timestamp=datetime.datetime(2023, 9, 25, 16, 0, 3, 355190, tzinfo=datetime.timezone.utc) exchange='V' price=246.11 size=100.0 id=5143 conditions=['@'] tape='C'
         print(data)
 
     #  wss_client.subscribe_quotes(quote_data_handler, "TSLA")
