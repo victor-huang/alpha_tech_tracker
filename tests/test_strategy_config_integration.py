@@ -4,7 +4,6 @@ Integration tests demonstrating real-world config usage patterns.
 These tests show how the config system will be used in practice.
 """
 
-import pytest
 from alpha_tech_tracker.strategy_config import (
     StrategyConfig,
     TradingInstrumentConfig,

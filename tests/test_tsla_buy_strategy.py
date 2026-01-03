@@ -1,8 +1,4 @@
-from decimal import Decimal
-import ipdb
-
 from alpha_tech_tracker.tsla_strategy import SimpleStrategy
-from alpha_tech_tracker.trade_api.etrade.client import EtradeAPIClient
 
 
 def test_create_an_instance_of_simple_strategy():

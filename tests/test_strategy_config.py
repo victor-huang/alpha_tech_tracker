@@ -5,7 +5,6 @@ Validates that all config classes instantiate correctly, presets work,
 and parameters have sensible defaults.
 """
 
-import pytest
 from alpha_tech_tracker.strategy_config import (
     TradingInstrumentConfig,
     EntryTriggerConfig,

@@ -1,6 +1,3 @@
-from decimal import Decimal
-import ipdb
-
 from alpha_tech_tracker.strategy import SimpleStrategy
 
 

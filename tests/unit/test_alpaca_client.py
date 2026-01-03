@@ -8,7 +8,7 @@ Coverage Target: Critical paths only
 """
 
 import pytest
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import Mock, patch
 from alpha_tech_tracker.trade_api.alpaca_client.client import (
     AlpacaAPIClient,
     APIError,

@@ -3,12 +3,9 @@ import logging
 import os
 import random
 import string
-import time
 import urllib.parse
-import uuid
 import webbrowser
 import threading
-import time
 import queue
 
 from requests_oauthlib import OAuth1Session
@@ -87,7 +84,7 @@ class EtradeAPIClient:
 
     def read_oauth_verifier_from_file(self, json_file_path, delete_after_read=True):
         try:
-            with open(json_file_path, 'r') as file:
+            with open(json_file_path, "r") as file:
                 data = json.load(file)
                 logger.info(f"File {json_file_path} content: {data}")
 
@@ -95,7 +92,7 @@ class EtradeAPIClient:
                     os.remove(json_file_path)
                     logger.info(f"Deleted file {json_file_path} after reading")
 
-                return data['oauth_verifier']
+                return data["oauth_verifier"]
         except Exception as e:
             logger.error(f"Failed to read file {json_file_path}: {e}")
 
@@ -132,7 +129,6 @@ class EtradeAPIClient:
         access_token = urllib.parse.quote(request_token_info["oauth_token"])
         token_secret = urllib.parse.quote(request_token_info["oauth_token_secret"])
 
-
         authorization_url = f"https://us.etrade.com/e/t/etws/authorize?key={self._api_key}&token={access_token}"
         webbrowser.open(authorization_url)
 
@@ -147,12 +143,16 @@ class EtradeAPIClient:
             except Exception as e:
                 logger.error(f"Problem reading input from user. error: {e}")
 
-            logger.info(f"***************oauth_verifier from user input is: {oauth_verifier}")
+            logger.info(
+                f"***************oauth_verifier from user input is: {oauth_verifier}"
+            )
 
             try:
-                data_file_path = '/home/ec2-user/alpha_tech_tracker/web_server/auth_call_back_data.json'
+                data_file_path = "/home/ec2-user/alpha_tech_tracker/web_server/auth_call_back_data.json"
                 oauth_verifier = self.read_oauth_verifier_from_file(data_file_path)
-                logger.info(f"***************oauth_verifier from Oauth callback is: {oauth_verifier}")
+                logger.info(
+                    f"***************oauth_verifier from Oauth callback is: {oauth_verifier}"
+                )
             except Exception as e:
                 logger.error(f"Problem reading data file: {data_file_path}, error: {e}")
 
@@ -173,7 +173,7 @@ class EtradeAPIClient:
         response = self._session.get(list_account_api_url)
         accounts = self._parse_response(response)
 
-        return accounts['AccountListResponse']['Accounts']['Account']
+        return accounts["AccountListResponse"]["Accounts"]["Account"]
 
     def get_stock_quote(self, symbols):
         quote_api_url = self._base_url() + "/v1/market/quote/" + symbols + ".json"
@@ -459,4 +459,3 @@ Get Option Quote and prices
 Connection Errors
 """
 #  API Error:  401 {"Error":{"message":"oauth_problem=token_rejected"}}
-

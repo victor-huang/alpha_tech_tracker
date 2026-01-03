@@ -7,7 +7,6 @@ from contextlib import contextmanager
 
 #  from functools import reduce
 import pandas as pd
-from pandas import Series
 import pprint as pp
 
 #  import numpy as np
@@ -18,6 +17,7 @@ from alpha_tech_tracker.portfolio import Portfolio
 from alpha_tech_tracker.signal import Signal
 import alpha_tech_tracker.technical_analysis as ta
 import alpha_tech_tracker.alpaca_engine as alpaca
+
 # for running on Mac
 # from alpha_tech_tracker.sms import send_sms_via_imessage as send_sms
 
@@ -27,7 +27,7 @@ from alpha_tech_tracker.sms import send_sms
 from alpha_tech_tracker.wave import Wave
 from alpha_tech_tracker.alpaca_py_engine import DataAggregator
 from alpha_tech_tracker.alpaca_py_engine import get_historical_stock_data
-from alpha_tech_tracker.strategy_config import StrategyConfig, TradingInstrumentConfig
+from alpha_tech_tracker.strategy_config import StrategyConfig
 
 
 class Strategy(object):
@@ -58,7 +58,6 @@ class Strategy(object):
 
     def __init__(self):
         """Initialize base strategy. Subclasses should override with config."""
-        pass
 
     def simulate(self, *, start, end):
         """
@@ -78,7 +77,6 @@ class Strategy(object):
             - Executing virtual trades
             - Computing final P&L
         """
-        pass
 
     def check_open_position_condition(self):
         """
@@ -94,7 +92,6 @@ class Strategy(object):
             - Risk/reward ratios
             - Maximum daily trade limits
         """
-        pass
 
     def check_close_position_condition(self):
         """
@@ -110,7 +107,6 @@ class Strategy(object):
             - Momentum fading ("waves losing steam")
             - Time-based exits
         """
-        pass
 
     def close_all_open_positions(self):
         """
@@ -125,7 +121,6 @@ class Strategy(object):
             Subclasses should iterate active_positions and place
             closing orders through order_engine.
         """
-        pass
 
     def signal_event_handler(self):
         """
@@ -139,7 +134,6 @@ class Strategy(object):
             2. This handler evaluates if signal should trigger trade
             3. If yes, place order through order_engine
         """
-        pass
 
     def market_event_handler(self):
         """
@@ -155,7 +149,6 @@ class Strategy(object):
             4. Check entry/exit conditions
             5. Execute trades if conditions met
         """
-        pass
 
     def order_event_handler(self):
         """
@@ -170,7 +163,6 @@ class Strategy(object):
             3. Send alerts (SMS, etc.)
             4. Log trade details
         """
-        pass
 
 
 # good at up trend, good protection on sharp downtrend
@@ -260,6 +252,7 @@ class SimpleStrategy(Strategy):
         This strategy was originally designed for TSLA options but works with
         any liquid stock or option. Adjust config for different volatility profiles.
     """
+
     def __init__(
         self,
         *,
@@ -304,7 +297,9 @@ class SimpleStrategy(Strategy):
         self.open_side = "buy"
         self.close_side = "sell"
         self.asset_type = config.instrument.asset_type
-        self.target_option_strike_price_delta = config.instrument.option_strike_price_delta
+        self.target_option_strike_price_delta = (
+            config.instrument.option_strike_price_delta
+        )
         self.target_option_expiry = config.instrument.option_expiry
         self.target_option_type = config.instrument.option_type
         self.target_option_type_code = self.target_option_type[0].upper()
@@ -335,10 +330,14 @@ class SimpleStrategy(Strategy):
         # Notification Config
         self.send_to_phone_number = config.notifications.phone_number or "4086130570"
         self.disabled_sending_sms = config.notifications.disabled
-        self.only_send_real_time_trade_alert = config.notifications.only_real_time_alerts
+        self.only_send_real_time_trade_alert = (
+            config.notifications.only_real_time_alerts
+        )
 
         # Market Data Config
-        self.plot_market_data_candle_stick_chart = config.market_data.plot_candlestick_chart
+        self.plot_market_data_candle_stick_chart = (
+            config.market_data.plot_candlestick_chart
+        )
         self.market_data_timeout = config.market_data.market_data_timeout
         self.moving_average_periods = config.market_data.moving_average_periods
 
@@ -352,17 +351,29 @@ class SimpleStrategy(Strategy):
         self.buy_trigger_up_waves_ratio = config.entry.up_waves_ratio
         self.buy_trigger_up_magnitude_ratio = config.entry.up_magnitude_ratio
         self.buy_trigger_risk_reward_ratio = config.entry.risk_reward_ratio
-        self.strong_buy_after_sell_off_up_waves_ratio = config.entry.strong_buy_after_selloff_up_waves_ratio
-        self.strong_buy_after_sell_off_up_magnitude_ratio = config.entry.strong_buy_after_selloff_up_magnitude_ratio
+        self.strong_buy_after_sell_off_up_waves_ratio = (
+            config.entry.strong_buy_after_selloff_up_waves_ratio
+        )
+        self.strong_buy_after_sell_off_up_magnitude_ratio = (
+            config.entry.strong_buy_after_selloff_up_magnitude_ratio
+        )
 
         # Exit Trigger Config
         self.waves_loosing_steam_up_magnitude_ratio = config.exit.up_magnitude_ratio
-        self.waves_loosing_steam_down_wave_length_ratio = config.exit.down_wave_length_ratio
-        self.waves_loosing_steam_down_wave_pickup_steam_up_magnitude_ratio = config.exit.down_wave_pickup_steam_up_magnitude_ratio
+        self.waves_loosing_steam_down_wave_length_ratio = (
+            config.exit.down_wave_length_ratio
+        )
+        self.waves_loosing_steam_down_wave_pickup_steam_up_magnitude_ratio = (
+            config.exit.down_wave_pickup_steam_up_magnitude_ratio
+        )
 
         # Advanced Signal Config
-        self.bullish_up_wave_move_size = config.advanced_signals.bullish_up_wave_move_size
-        self.bullish_up_wave_magnitude_ratio = config.advanced_signals.bullish_up_wave_magnitude_ratio
+        self.bullish_up_wave_move_size = (
+            config.advanced_signals.bullish_up_wave_move_size
+        )
+        self.bullish_up_wave_magnitude_ratio = (
+            config.advanced_signals.bullish_up_wave_magnitude_ratio
+        )
         self.bullish_up_waves_ratio = config.advanced_signals.bullish_up_waves_ratio
         self.signal_trigger_params = config.advanced_signals.signal_trigger_params
 
@@ -833,8 +844,10 @@ class SimpleStrategy(Strategy):
                 # open a new position
                 self.open_position(
                     order_quantity=self.trade_size,
-                    target_price=self.upside_potential(current_price, waves=waves) + current_price,
-                    cut_loss_price=current_price - self.downside_risk(current_price, waves=waves),
+                    target_price=self.upside_potential(current_price, waves=waves)
+                    + current_price,
+                    cut_loss_price=current_price
+                    - self.downside_risk(current_price, waves=waves),
                 )
 
     def check_all_open_position_triggers(self, waves=[]):
@@ -1042,9 +1055,9 @@ class SimpleStrategy(Strategy):
             )
 
             self.pending_positions_data_by_order[order.id]
-            self.active_positions[
-                new_position.id
-            ] = self.pending_positions_data_by_order[order.id]
+            self.active_positions[new_position.id] = (
+                self.pending_positions_data_by_order[order.id]
+            )
             del self.pending_positions_data_by_order[order.id]
             del self.active_order_to_position_map[order.id]
         else:

@@ -1,6 +1,5 @@
 import os
-import asyncio
-from datetime import date, datetime, time, timedelta
+from datetime import datetime
 import json
 import pprint
 import threading
@@ -9,11 +8,10 @@ import os
 import sys
 
 import pandas as pd
-from pandas import Timestamp
 from pytz import timezone
 
-from alpaca.data.historical import CryptoHistoricalDataClient, StockHistoricalDataClient
-from alpaca.data.requests import CryptoBarsRequest, StockBarsRequest
+from alpaca.data.historical import StockHistoricalDataClient
+from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
 from alpaca.data.live import StockDataStream
 
@@ -51,8 +49,6 @@ def test_stock_bar_data_api():
     ipdb.set_trace()
     # only use timestamp as index
     bars.df.reset_index(level=0, drop=True)
-
-    pass
 
 
 def save_ticker_min_agg_to_json(agg_data):

@@ -7,7 +7,6 @@ Validates that:
 3. All config values are correctly mapped to instance variables
 """
 
-import pytest
 from alpha_tech_tracker.tsla_strategy import SimpleStrategy
 from alpha_tech_tracker.strategy_config import (
     StrategyConfig,

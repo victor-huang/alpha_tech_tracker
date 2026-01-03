@@ -1,20 +1,16 @@
-import json
 import logging
 import os
 import random
 import string
-from datetime import datetime
 
 from alpaca.trading.client import TradingClient
 from alpaca.data.historical import StockHistoricalDataClient, OptionHistoricalDataClient
 from alpaca.trading.requests import (
     MarketOrderRequest,
     LimitOrderRequest,
-    GetOrdersRequest,
-    GetOrderByIdRequest,
     GetOptionContractsRequest,
 )
-from alpaca.trading.enums import OrderSide, TimeInForce, QueryOrderStatus, OrderType
+from alpaca.trading.enums import OrderSide, TimeInForce
 from alpaca.data.requests import StockLatestQuoteRequest, OptionLatestQuoteRequest
 
 logger = logging.getLogger("trade_api.alpaca")
@@ -197,7 +193,11 @@ class AlpacaAPIClient:
             limit=limit,
         )
         response = self._trading_client.get_option_contracts(request)
-        contracts = response.option_contracts if hasattr(response, 'option_contracts') else response
+        contracts = (
+            response.option_contracts
+            if hasattr(response, "option_contracts")
+            else response
+        )
 
         return [
             {
