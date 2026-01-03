@@ -700,3 +700,51 @@ order_status_executed_order = {
         ]
     }
 }
+
+account_list = {
+    "AccountListResponse": {
+        "Accounts": {
+            "Account": [
+                {
+                    "accountDesc": "Individual " "Brokerage",
+                    "accountId": "120677388",
+                    "accountIdKey": "hljFUErtWKajjMny9PYbwg",
+                    "accountMode": "MARGIN",
+                    "accountName": "",
+                    "accountStatus": "CLOSED",
+                    "accountType": "INDIVIDUAL",
+                    "closedDate": 1527919740,
+                    "fcManagedMssbClosedAccount": False,
+                    "institutionType": "BROKERAGE",
+                    "shareWorksAccount": False,
+                },
+                {
+                    "accountDesc": "Rollover " "IRA",
+                    "accountId": "120848609",
+                    "accountIdKey": "HPCo7GIYN4Qy9dT3Jszqtg",
+                    "accountMode": "CASH",
+                    "accountName": "",
+                    "accountStatus": "ACTIVE",
+                    "accountType": "IRA_ROLLOVER",
+                    "closedDate": 0,
+                    "fcManagedMssbClosedAccount": False,
+                    "institutionType": "BROKERAGE",
+                    "shareWorksAccount": False,
+                },
+                {
+                    'accountDesc': 'Trading',
+                    'accountId': '712793764',
+                    'accountIdKey': 'IgItVLi3690yUCGDu_CGoA',
+                    'accountMode': 'MARGIN',
+                    'accountName': 'Trading',
+                    'accountStatus': 'ACTIVE',
+                    'accountType': 'INDIVIDUAL',
+                    'closedDate': 0,
+                    'fcManagedMssbClosedAccount': False,
+                    'institutionType': 'BROKERAGE',
+                    'shareWorksAccount': False
+                },
+            ]
+        }
+    }
+}

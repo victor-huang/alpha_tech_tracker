@@ -10,3 +10,10 @@ def test_get_stock_quote():
 
     assert quote_response["QuoteResponse"] != None
     assert "TSLA" in str(quote_response["QuoteResponse"])
+
+
+# integration test
+def test_get_accounts():
+    client = EtradeAPIClient()
+    client.authorize_session()
+    quote_response = client.get_accounts()

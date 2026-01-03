@@ -7,6 +7,9 @@ import time
 import urllib.parse
 import uuid
 import webbrowser
+import threading
+import time
+import queue
 
 from requests_oauthlib import OAuth1Session
 
@@ -82,9 +85,45 @@ class EtradeAPIClient:
     def round_nearest(self, x, smallest_unit):
         return round(x / smallest_unit) * smallest_unit
 
+    def read_oauth_verifier_from_file(self, json_file_path, delete_after_read=True):
+        try:
+            with open(json_file_path, 'r') as file:
+                data = json.load(file)
+                logger.info(f"File {json_file_path} content: {data}")
+
+                if delete_after_read:
+                    os.remove(json_file_path)
+                    logger.info(f"Deleted file {json_file_path} after reading")
+
+                return data['oauth_verifier']
+        except Exception as e:
+            logger.error(f"Failed to read file {json_file_path}: {e}")
+
+    def input_with_timeout(self, prompt, timeout=20):
+        """Function to get user input with a timeout."""
+        input_queue = queue.Queue()
+
+        def get_input():
+            user_input = input(prompt)
+            input_queue.put(user_input)
+            return user_input
+
+        input_thread = threading.Thread(target=get_input)
+        input_thread.start()
+        input_thread.join(timeout)
+
+        if input_thread.is_alive():
+            logger.warning("Input timeout. No input received.")
+            return None
+        else:
+            return input_queue.get()
+
     def authorize_session(self):
+        callback_url = "oob"
+        #  callback_url = "http://ec2-18-221-156-115.us-east-2.compute.amazonaws.com/etrade_oauth_callback"
+
         session = OAuth1Session(
-            self._api_key, client_secret=self._client_secret, callback_uri="oob"
+            self._api_key, client_secret=self._client_secret, callback_uri=callback_url
         )
 
         request_token_url = "https://api.etrade.com/oauth/request_token"
@@ -93,11 +132,32 @@ class EtradeAPIClient:
         access_token = urllib.parse.quote(request_token_info["oauth_token"])
         token_secret = urllib.parse.quote(request_token_info["oauth_token_secret"])
 
+
         authorization_url = f"https://us.etrade.com/e/t/etws/authorize?key={self._api_key}&token={access_token}"
         webbrowser.open(authorization_url)
+
         print(f"Please go to {authorization_url} and authorize access")
 
-        oauth_verifier = input("Auth Text: ")
+        oauth_verifier = None
+        remain_retries = 2
+
+        while oauth_verifier is None and remain_retries > 0:
+            try:
+                oauth_verifier = self.input_with_timeout("Auth Text: ")
+            except Exception as e:
+                logger.error(f"Problem reading input from user. error: {e}")
+
+            logger.info(f"***************oauth_verifier from user input is: {oauth_verifier}")
+
+            try:
+                data_file_path = '/home/ec2-user/alpha_tech_tracker/web_server/auth_call_back_data.json'
+                oauth_verifier = self.read_oauth_verifier_from_file(data_file_path)
+                logger.info(f"***************oauth_verifier from Oauth callback is: {oauth_verifier}")
+            except Exception as e:
+                logger.error(f"Problem reading data file: {data_file_path}, error: {e}")
+
+            remain_retries -= 1
+
         redirect_response = f"https://127.0.0.1/callback?oauth_token={access_token}&oauth_token_secret={token_secret}&oauth_verifier={oauth_verifier}"
         session.parse_authorization_response(redirect_response)
 
@@ -106,8 +166,14 @@ class EtradeAPIClient:
         logger.info(access_token_info)
 
         self._session = session
-
         return session
+
+    def get_accounts(self):
+        list_account_api_url = self._base_url() + "/v1/accounts/list.json"
+        response = self._session.get(list_account_api_url)
+        accounts = self._parse_response(response)
+
+        return accounts['AccountListResponse']['Accounts']['Account']
 
     def get_stock_quote(self, symbols):
         quote_api_url = self._base_url() + "/v1/market/quote/" + symbols + ".json"
@@ -387,3 +453,10 @@ Get Option Quote and prices
 #  symbol="TSLA", option_key="2023-10-20 s240", option_type="CALL"
 #  )
 #  client.get_price_from_quote(quote)
+
+
+"""
+Connection Errors
+"""
+#  API Error:  401 {"Error":{"message":"oauth_problem=token_rejected"}}
+
