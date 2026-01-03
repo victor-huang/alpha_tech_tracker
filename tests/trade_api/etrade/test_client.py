@@ -4,7 +4,7 @@ from alpha_tech_tracker.trade_api.etrade.client import EtradeAPIClient
 # integration test
 def test_get_stock_quote():
     account_id = None
-    client = EtradeAPIClient(selected_account_id=account_id)
+    client = EtradeAPIClient(selected_account_id=account_id, is_sandbox_enabled=True)
     client.authorize_session()
     quote_response = client.get_stock_quote("TSLA")
 
@@ -14,6 +14,6 @@ def test_get_stock_quote():
 
 # integration test
 def test_get_accounts():
-    client = EtradeAPIClient()
+    client = EtradeAPIClient(is_sandbox_enabled=True)
     client.authorize_session()
     quote_response = client.get_accounts()

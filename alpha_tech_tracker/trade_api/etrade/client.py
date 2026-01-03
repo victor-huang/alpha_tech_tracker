@@ -126,7 +126,7 @@ class EtradeAPIClient:
             self._api_key, client_secret=self._client_secret, callback_uri=callback_url
         )
 
-        request_token_url = "https://api.etrade.com/oauth/request_token"
+        request_token_url = f"https://{self._base_url_host}/oauth/request_token"
         request_token_info = session.fetch_request_token(request_token_url)
 
         access_token = urllib.parse.quote(request_token_info["oauth_token"])
@@ -161,7 +161,7 @@ class EtradeAPIClient:
         redirect_response = f"https://127.0.0.1/callback?oauth_token={access_token}&oauth_token_secret={token_secret}&oauth_verifier={oauth_verifier}"
         session.parse_authorization_response(redirect_response)
 
-        access_token_url = "https://api.etrade.com/oauth/access_token"
+        access_token_url = f"https://{self._base_url_host}/oauth/access_token"
         access_token_info = session.fetch_access_token(access_token_url)
         logger.info(access_token_info)
 
