@@ -133,6 +133,7 @@ class ETradeOrderEngine(MockOrderEngine):
                 price=price,
                 order_action=order_action,
                 price_type=price_type,
+                quantity=quantity,
             )
             etrade_order_id = order['PlaceOrderResponse']['OrderIds'][0]['orderId']
             new_order.id = etrade_order_id

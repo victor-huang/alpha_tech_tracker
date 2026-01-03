@@ -18,7 +18,12 @@ from alpha_tech_tracker.portfolio import Portfolio
 from alpha_tech_tracker.signal import Signal
 import alpha_tech_tracker.technical_analysis as ta
 import alpha_tech_tracker.alpaca_engine as alpaca
-from alpha_tech_tracker.sms import send_sms_via_imessage as send_sms
+# for running on Mac
+# from alpha_tech_tracker.sms import send_sms_via_imessage as send_sms
+
+# use Twillio to send
+from alpha_tech_tracker.sms import send_sms
+
 from alpha_tech_tracker.wave import Wave
 from alpha_tech_tracker.alpaca_py_engine import DataAggregator
 from alpha_tech_tracker.alpaca_py_engine import get_historical_stock_data
@@ -68,14 +73,15 @@ class SimpleStrategy(Strategy):
         self.close_side = "sell"
         self.asset_type = "option"
         self.target_option_strike_price_delta = 30  # amount deep in the money
-        self.target_option_expiry = "231019"
+        self.target_option_expiry = "240614"
         self.target_option_type = "call"
         self.target_option_type_code = self.target_option_type[0].upper()
-        self.target_strike_price = "0023000"
+        self.target_strike_price = "0016500"
         # more info: https://www.optionstaxguy.com/option-symbols-osi
         # TSLA--231013C00240000, 2023-10-13 CALL 00 strike price $240
         self.osi_key = f"{self.symbol}--{self.target_option_expiry}{self.target_option_type_code}{self.target_strike_price}"
-        self.option_key = "2023-11-03 s190"
+        #  self.option_key = "2024-04-26 s190"
+        self.option_key = "2024-06-14 s165"
 
         self.signals_by_times = {}
         self.portfolio = Portfolio()
@@ -94,7 +100,7 @@ class SimpleStrategy(Strategy):
         self.cached_waves_last_wave = {}
         self.open_position_triggers = []
         self.close_position_triggers = [self.is_waves_loosing_steam]
-        self.sender_phone_number = "4086130570"
+        self.send_to_phone_number = "4086130570"
         self.disabled_sending_sms = False
         self.only_send_real_time_trade_alert = True
         self.skip_place_historical_trades = skip_place_historical_trades
@@ -105,7 +111,7 @@ class SimpleStrategy(Strategy):
         self.market_data_timeout = (
             3600 * 7
         )  # number of second not receiving 5min agg data
-        self.maximum_position_loss = 1000
+        self.maximum_position_loss = 800
 
         self.buy_trigger_up_waves_ratio = 0.4  # v1 0.5
         #  self.buy_trigger_up_magnitude_ratio = 0.55 # v1 0.6
@@ -135,6 +141,8 @@ class SimpleStrategy(Strategy):
             "engulfing_reversal": {"daily_movement_minimum": 0.01 / (12 * 4)},
             #  'push_reversal': {"daily_movement_minimum": 0.01 / (12 * 4)},
         }
+
+        self.trade_size = 2
 
     def prepare_market_data(self):
         #  alpaca.get_historical_ochl_data('AMZN', start_date='2019-11-20', end_date='2019-11-23')
@@ -602,10 +610,9 @@ class SimpleStrategy(Strategy):
 
                 # open a new position
                 self.open_position(
-                    target_price=self.upside_potential(current_price, waves=waves)
-                    + current_price,
-                    cut_loss_price=current_price
-                    - self.downside_risk(current_price, waves=waves),
+                    order_quantity=self.trade_size,
+                    target_price=self.upside_potential(current_price, waves=waves) + current_price,
+                    cut_loss_price=current_price - self.downside_risk(current_price, waves=waves),
                 )
 
     def check_all_open_position_triggers(self, waves=[]):
@@ -904,7 +911,7 @@ class SimpleStrategy(Strategy):
         )
 
         self.send_sms_on_conditions(
-            self.sender_phone_number,
+            self.send_to_phone_number,
             "[{}] Open {} {} at {}".format(
                 current_time_period, self.target_option_type, self.symbol, current_price
             ),
@@ -932,7 +939,7 @@ class SimpleStrategy(Strategy):
         )
 
         self.send_sms_on_conditions(
-            self.sender_phone_number,
+            self.send_to_phone_number,
             "[{}] Close {} {} at {}".format(
                 current_time_period,
                 open_order.option_type(),
@@ -947,7 +954,7 @@ class SimpleStrategy(Strategy):
         else:
             option_price = strike_price - current_price
 
-        order_quantity = 1
+        order_quantity = self.trade_size
 
         new_order = self.order_engine.place(
             symbol=self.symbol,

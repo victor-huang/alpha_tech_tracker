@@ -58,12 +58,12 @@ class SimpleStrategy(Strategy):
         self.open_side = 'buy'
         self.close_side = 'sell'
         self.asset_type = 'option'
-        self.target_option_strike_price_delta = 80 # amount deep in the money
+        self.target_option_strike_price_delta = 20 # amount deep in the money
         self.target_option_expiry = "Weekly_2020"
         self.target_option_type = 'call'
-        self.osi_key = '{}-{}-{}'.format(self.symbol,
-            self.target_option_expiry, self.target_option_type)
-
+        self.target_option_type_code = self.target_option_type[0].upper()
+        self.target_strike_price = "0023000"
+        self.osi_key = f"{self.symbol}--{self.target_option_expiry}{self.target_option_type_code}{self.target_strike_price}"
         self.signals_by_times = {}
         self.portfolio = Portfolio()
         self.active_positions = {}
@@ -83,12 +83,12 @@ class SimpleStrategy(Strategy):
 
         #  self.market_data_timeout = 300
         self.market_data_timeout = 3600 * 7 # number of second not receiving 5min agg data
-        self.maximum_position_loss = 3000
+        self.maximum_position_loss = 1000
 
         self.buy_trigger_up_waves_ratio = 0.5 # v1 0.5
         #  self.buy_trigger_up_magnitude_ratio = 0.55 # v1 0.6
         self.buy_trigger_up_magnitude_ratio = 0.6 # v1 0.6, v2 0.55
-        self.buy_trigger_risk_reward_ratio = 1.5
+        self.buy_trigger_risk_reward_ratio = 1.3
 
         self.strong_buy_after_sell_off_up_waves_ratio = 0.5
         self.strong_buy_after_sell_off_up_magnitude_ratio = 0.38
@@ -98,10 +98,10 @@ class SimpleStrategy(Strategy):
         self.waves_loosing_steam_down_wave_pickup_steam_up_magnitude_ratio = 0.2
 
         self.moving_average_periods = [20, 50, 100, 200]
-        self.discounted_magnitudues_factor = 0.95
+        self.discounted_magnitudues_factor = 0.85
         self.max_trade_per_day = 2
 
-        self.bullish_up_wave_move_size = 100 # 78 is the max wave length
+        self.bullish_up_wave_move_size = 60 # 78 is the max wave length
         self.bullish_up_wave_magnitude_ratio = 0.6
         self.bullish_up_waves_ratio = 0.6
 
@@ -111,7 +111,7 @@ class SimpleStrategy(Strategy):
 
             },
             'long_tail_reversal_combo': {
-                'daily_movement_minimum': 0.01 / (12 * 8)
+                'daily_movement_minimum': 0.01 / (12 * 4)
             }
 
         }
@@ -266,14 +266,22 @@ class SimpleStrategy(Strategy):
                 p.status == 'closed'
 
         pln_info = self.portfolio.calculate_pnl()
-
         pp.pprint(pln_info)
+        pnl_buckets = self.portfolio.bucket_positions_pnl_by_time()
+
+        pd.set_option("display.max_rows", None)
+
+        pp.pprint(pnl_buckets["daily"])
+        pp.pprint(pnl_buckets["weekly"])
+        pp.pprint(pnl_buckets["monthly"])
 
         pp.pprint(f"number_of_loss_positions: {pln_info['number_of_loss_positions']}")
         pp.pprint(
             f"number_of_profit_positions: {pln_info['number_of_profit_positions']}"
         )
         pp.pprint(f"pnl: {pln_info['pnl']}")
+
+        return pln_info
 
     def market_data_generator(self, enumerator, stream_data=False):
         for x in enumerator:

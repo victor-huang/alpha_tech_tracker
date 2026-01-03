@@ -21,7 +21,7 @@ def test_strategy_simulation():
     #  new_strategy_1.simulate(start='2020-3-31', end='2020-4-29', use_saved_data=False, stream_data=False)
 
     new_strategy_1.simulate(
-        start="2023-5-16", end="2023-7-14", use_saved_data=False, stream_data=False
+        start="2023-01-01", end="2023-10-31", use_saved_data=False, stream_data=False
     )
 
     # down
