@@ -1,0 +1,21 @@
+
+
+Existing System Description:
+* backtesting engine to run stock trading strategies with historical data and generate performance reports
+* stock technical indicator signals generation
+* real-time market data streaming and processing for live trading
+* order engine and API integration to E*TRADE and Alpaca
+
+Project goals:
+Review the existing codebase and understand the current architecture and implementation patterns and propose possible solutions to bring existing libraries up-to-date with just adequate test coverage to ensure reliability during modernization efforts.
+
+---------AI Analysis clarifying questions
+  1. What's driving this now?
+    it was an ad-hoc project, it is time to refactor it to become more maintainable and increase overall test coverage for better long-term sustainability. clean up some simple technical debts in the codebase
+  2. What does "adequate test coverage" mean to you?
+    let's do critical path only
+  3. Current pain points?
+    - Strategy class and then SimpleStrategy class is harder to understand all the configurations available
+  4. Constraints?
+    - keep the codebase simple and readable, avoid over-engineering
+    
