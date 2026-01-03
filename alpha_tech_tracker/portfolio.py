@@ -56,7 +56,7 @@ class Portfolio(object):
 
         if found_position:
             found_position.status = 'closed'
-            found_position.close_price = close_price
+            found_position.close_price = Decimal(str(close_price))
             found_position.closed_at = closed_at
             found_position.close_order_id = close_order_id
 
