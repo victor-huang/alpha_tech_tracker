@@ -27,62 +27,292 @@ from alpha_tech_tracker.sms import send_sms
 from alpha_tech_tracker.wave import Wave
 from alpha_tech_tracker.alpaca_py_engine import DataAggregator
 from alpha_tech_tracker.alpaca_py_engine import get_historical_stock_data
+from alpha_tech_tracker.strategy_config import StrategyConfig, TradingInstrumentConfig
 
 
 class Strategy(object):
+    """
+    Base class for all trading strategies.
+
+    Defines the interface that all strategy implementations must follow.
+    Strategies analyze market data, generate trading signals, and execute trades
+    through the order engine.
+
+    Key Responsibilities:
+        - Market data processing (market_event_handler)
+        - Signal generation (signal_event_handler)
+        - Position entry/exit decisions (check_open/close_position_condition)
+        - Order execution (order_event_handler)
+        - Backtesting and simulation (simulate)
+
+    Lifecycle:
+        1. Initialize strategy with configuration
+        2. Run simulation with historical data OR connect to live feed
+        3. Process market events → Generate signals → Execute orders
+        4. Manage open positions → Close when conditions met
+        5. Track P&L in portfolio
+
+    Subclass Requirements:
+        All methods must be implemented by subclasses (currently abstract).
+    """
+
     def __init__(self):
+        """Initialize base strategy. Subclasses should override with config."""
         pass
 
     def simulate(self, *, start, end):
+        """
+        Run strategy simulation over historical data.
+
+        Args:
+            start: Start date (YYYY-MM-DD format)
+            end: End date (YYYY-MM-DD format)
+
+        Returns:
+            Portfolio with P&L results
+
+        Note:
+            Subclasses should implement full backtesting logic including:
+            - Loading historical market data
+            - Processing each bar chronologically
+            - Executing virtual trades
+            - Computing final P&L
+        """
         pass
 
     def check_open_position_condition(self):
+        """
+        Evaluate whether conditions are met to enter a new position.
+
+        Returns:
+            bool: True if should open position, False otherwise
+
+        Note:
+            Subclasses implement entry logic based on:
+            - Technical indicators (moving averages, momentum)
+            - Wave analysis (trend strength)
+            - Risk/reward ratios
+            - Maximum daily trade limits
+        """
         pass
 
     def check_close_position_condition(self):
+        """
+        Evaluate whether conditions are met to close open positions.
+
+        Returns:
+            bool: True if should close positions, False otherwise
+
+        Note:
+            Subclasses implement exit logic based on:
+            - Profit targets reached
+            - Stop-loss triggered
+            - Momentum fading ("waves losing steam")
+            - Time-based exits
+        """
         pass
 
     def close_all_open_positions(self):
+        """
+        Close all currently open positions immediately.
+
+        Used for:
+            - Emergency exits
+            - End of day closes
+            - Risk management overrides
+
+        Note:
+            Subclasses should iterate active_positions and place
+            closing orders through order_engine.
+        """
         pass
 
     def signal_event_handler(self):
+        """
+        Handle trading signal events.
+
+        Called when a new trading signal is generated (buy/sell alert).
+        Subclasses decide whether to act on the signal based on strategy rules.
+
+        Typical Flow:
+            1. Signal generated (e.g., "bullish reversal detected")
+            2. This handler evaluates if signal should trigger trade
+            3. If yes, place order through order_engine
+        """
         pass
 
     def market_event_handler(self):
+        """
+        Handle market data events (new price bar received).
+
+        Called for each new market data point (e.g., every 5-minute bar).
+        This is the main processing loop for real-time trading.
+
+        Typical Flow:
+            1. New bar arrives (OHLCV data)
+            2. Update technical indicators
+            3. Update wave analysis
+            4. Check entry/exit conditions
+            5. Execute trades if conditions met
+        """
         pass
 
     def order_event_handler(self):
+        """
+        Handle order execution events (fill confirmations).
+
+        Called when orders are filled, partially filled, or rejected.
+        Subclasses update portfolio and positions based on order status.
+
+        Typical Flow:
+            1. Order filled notification received
+            2. Update position in portfolio
+            3. Send alerts (SMS, etc.)
+            4. Log trade details
+        """
         pass
 
 
 # good at up trend, good protection on sharp downtrend
 # ok loos on long consolidation e.g (start='2019-08-06', end='2019-09-23')
 class SimpleStrategy(Strategy):
+    """
+    Wave-based momentum trading strategy for options and stocks.
+
+    **Strategy Overview:**
+    Identifies price momentum by tracking "waves" (consecutive price movements in the same direction).
+    Enters positions when upward momentum is strong and exits when momentum fades.
+
+    **Best Performing Conditions:**
+    ✅ Strong uptrends - Captures momentum with good protection
+    ✅ Sharp downtrends - Exits quickly to limit losses
+    ⚠️  Choppy/sideways markets - May incur small losses from whipsaws
+
+    **Entry Logic (check_open_position_condition):**
+    Opens position when ALL conditions met:
+        1. **Wave Analysis**: Recent waves show strong upward momentum
+           - up_waves_ratio >= threshold (e.g., 40% of waves are up-waves)
+           - up_magnitude_ratio >= threshold (e.g., 51% of movement is upward)
+
+        2. **Risk/Reward**: Favorable risk/reward ratio
+           - Expected upside / expected downside >= threshold (e.g., 1.3x)
+
+        3. **Risk Management**: Within risk limits
+           - Daily trade limit not exceeded (max_trade_per_day)
+           - No existing open positions (one position at a time)
+
+    **Exit Logic (check_close_position_condition):**
+    Closes position when ANY condition met:
+        1. **Waves Losing Steam**: Momentum fading
+           - Up-movement drops below threshold (e.g., < 38% upward)
+           - Down-waves growing (indicating reversal)
+
+        2. **Stop-Loss**: Maximum loss reached
+           - Position loss >= maximum_position_loss (e.g., $800)
+
+        3. **Time-Based**: Data timeout or end of day
+
+    **Wave Analysis:**
+    Waves track consecutive price movements:
+        - Up-wave: Series of higher highs and higher lows
+        - Down-wave: Series of lower highs and lower lows
+        - Wave ends when price reverses beyond threshold (Fibonacci 23.6%)
+
+    **Configuration:**
+    Strategy behavior controlled by StrategyConfig with groups:
+        - Entry triggers: When to buy (wave ratios, risk/reward)
+        - Exit triggers: When to sell (momentum loss thresholds)
+        - Risk management: Stop-loss, position sizing, trade limits
+        - Instrument: Stock vs option, strike selection
+
+    **Example Usage:**
+        # Conservative configuration
+        config = StrategyConfig.conservative_tsla()
+        strategy = SimpleStrategy(config=config, trade_api_client=client)
+        strategy.simulate(start="2023-01-01", end="2023-12-31")
+
+        # Review results
+        pnl = strategy.portfolio.calculate_pnl()
+        print(f"Total P&L: ${pnl['pnl']}")
+        print(f"Win rate: {pnl['number_of_profit_positions'] / len(strategy.portfolio.positions)}")
+
+    **Backtesting:**
+    Call simulate() with historical date range to backtest performance:
+        - use_saved_data=True: Load from local JSON files
+        - use_saved_data=False: Fetch from Alpaca API
+        - stream_data=True: Simulate real-time bar-by-bar processing
+
+    **Live Trading:**
+    Connect to live data feed and API client:
+        - DataAggregator streams 5-minute bars
+        - market_event_handler processes each bar
+        - Orders executed through trade_api_client (ETrade or Alpaca)
+
+    Attributes:
+        config (StrategyConfig): Complete strategy configuration
+        symbol (str): Stock ticker being traded
+        portfolio (Portfolio): Tracks all positions and P&L
+        order_engine (OrderEngine): Handles order placement/execution
+        waves (list[Wave]): Historical wave analysis
+        active_positions (dict): Currently open positions
+
+    Note:
+        This strategy was originally designed for TSLA options but works with
+        any liquid stock or option. Adjust config for different volatility profiles.
+    """
     def __init__(
         self,
         *,
-        symbol="None",
-        buy_trigger_risk_reward_ratio=1.2,
+        config=None,
+        symbol=None,
+        buy_trigger_risk_reward_ratio=None,
         trade_api_client=None,
         skip_place_historical_trades=False,
     ):
-        # load 300 5-min interval data, so we can generate 200-d
-        # moving average lines
-        self.symbol = symbol
+        """
+        Initialize SimpleStrategy with configuration.
+
+        Args:
+            config: StrategyConfig object with all parameters (recommended)
+            symbol: Stock symbol (legacy, use config instead)
+            buy_trigger_risk_reward_ratio: Risk/reward ratio (legacy, use config instead)
+            trade_api_client: Trading API client (ETrade or Alpaca)
+            skip_place_historical_trades: Skip order placement during backtesting
+
+        Example:
+            # New way (recommended):
+            config = StrategyConfig.conservative_tsla()
+            strategy = SimpleStrategy(config=config, trade_api_client=client)
+
+            # Old way (backward compatible):
+            strategy = SimpleStrategy(symbol="TSLA", trade_api_client=client)
+        """
+        # Backward compatibility: create config from legacy parameters
+        if config is None:
+            if symbol is None:
+                symbol = "None"
+            config = StrategyConfig.default_for_symbol(symbol)
+            if buy_trigger_risk_reward_ratio is not None:
+                config.entry.risk_reward_ratio = buy_trigger_risk_reward_ratio
+
+        # Store config for reference
+        self.config = config
+
+        # Map config to instance variables (for existing code compatibility)
+        # Trading Instrument
+        self.symbol = config.instrument.symbol
         self.open_side = "buy"
         self.close_side = "sell"
-        self.asset_type = "option"
-        self.target_option_strike_price_delta = 30  # amount deep in the money
-        self.target_option_expiry = "240614"
-        self.target_option_type = "call"
+        self.asset_type = config.instrument.asset_type
+        self.target_option_strike_price_delta = config.instrument.option_strike_price_delta
+        self.target_option_expiry = config.instrument.option_expiry
+        self.target_option_type = config.instrument.option_type
         self.target_option_type_code = self.target_option_type[0].upper()
-        self.target_strike_price = "0016500"
-        # more info: https://www.optionstaxguy.com/option-symbols-osi
-        # TSLA--231013C00240000, 2023-10-13 CALL 00 strike price $240
-        self.osi_key = f"{self.symbol}--{self.target_option_expiry}{self.target_option_type_code}{self.target_strike_price}"
-        #  self.option_key = "2024-04-26 s190"
-        self.option_key = "2024-06-14 s165"
+        self.target_strike_price = "0016500"  # TODO: Calculate from strike_price_delta
+        self.osi_key = config.instrument.osi_key
+        self.option_key = config.instrument.option_key
 
+        # Portfolio and Order Management
         self.signals_by_times = {}
         self.portfolio = Portfolio()
         self.active_positions = {}
@@ -100,49 +330,41 @@ class SimpleStrategy(Strategy):
         self.cached_waves_last_wave = {}
         self.open_position_triggers = []
         self.close_position_triggers = [self.is_waves_loosing_steam]
-        self.send_to_phone_number = "4086130570"
-        self.disabled_sending_sms = False
-        self.only_send_real_time_trade_alert = True
         self.skip_place_historical_trades = skip_place_historical_trades
 
-        self.plot_market_data_candle_stick_chart = False
+        # Notification Config
+        self.send_to_phone_number = config.notifications.phone_number or "4086130570"
+        self.disabled_sending_sms = config.notifications.disabled
+        self.only_send_real_time_trade_alert = config.notifications.only_real_time_alerts
 
-        #  self.market_data_timeout = 300
-        self.market_data_timeout = (
-            3600 * 7
-        )  # number of second not receiving 5min agg data
-        self.maximum_position_loss = 800
+        # Market Data Config
+        self.plot_market_data_candle_stick_chart = config.market_data.plot_candlestick_chart
+        self.market_data_timeout = config.market_data.market_data_timeout
+        self.moving_average_periods = config.market_data.moving_average_periods
 
-        self.buy_trigger_up_waves_ratio = 0.4  # v1 0.5
-        #  self.buy_trigger_up_magnitude_ratio = 0.55 # v1 0.6
-        self.buy_trigger_up_magnitude_ratio = 0.51  # v1 0.6, v2 0.55
-        self.buy_trigger_risk_reward_ratio = 1.3  # was 1.3 at 10/25
+        # Risk Management Config
+        self.maximum_position_loss = config.risk.maximum_position_loss
+        self.max_trade_per_day = config.risk.max_trades_per_day
+        self.trade_size = config.risk.trade_size
+        self.discounted_magnitudues_factor = config.risk.discounted_magnitudes_factor
 
-        self.strong_buy_after_sell_off_up_waves_ratio = 0.5
-        self.strong_buy_after_sell_off_up_magnitude_ratio = 0.38
+        # Entry Trigger Config
+        self.buy_trigger_up_waves_ratio = config.entry.up_waves_ratio
+        self.buy_trigger_up_magnitude_ratio = config.entry.up_magnitude_ratio
+        self.buy_trigger_risk_reward_ratio = config.entry.risk_reward_ratio
+        self.strong_buy_after_sell_off_up_waves_ratio = config.entry.strong_buy_after_selloff_up_waves_ratio
+        self.strong_buy_after_sell_off_up_magnitude_ratio = config.entry.strong_buy_after_selloff_up_magnitude_ratio
 
-        self.waves_loosing_steam_up_magnitude_ratio = 0.38
-        self.waves_loosing_steam_down_wave_length_ratio = 0.38
-        self.waves_loosing_steam_down_wave_pickup_steam_up_magnitude_ratio = 0.2
+        # Exit Trigger Config
+        self.waves_loosing_steam_up_magnitude_ratio = config.exit.up_magnitude_ratio
+        self.waves_loosing_steam_down_wave_length_ratio = config.exit.down_wave_length_ratio
+        self.waves_loosing_steam_down_wave_pickup_steam_up_magnitude_ratio = config.exit.down_wave_pickup_steam_up_magnitude_ratio
 
-        self.moving_average_periods = [20, 50, 100, 200]
-        self.discounted_magnitudues_factor = (
-            0.80  # can be tune to according to volatility
-        )
-        self.max_trade_per_day = 2
-
-        self.bullish_up_wave_move_size = 50  # 78 is the max wave length
-        self.bullish_up_wave_magnitude_ratio = 0.51
-        self.bullish_up_waves_ratio = 0.51
-
-        self.signal_trigger_params = {
-            "gap_move": {"daily_movement_minimum": 0.5},  # 50%
-            "long_tail_reversal_combo": {"daily_movement_minimum": 0.01 / (12 * 4)},
-            "engulfing_reversal": {"daily_movement_minimum": 0.01 / (12 * 4)},
-            #  'push_reversal': {"daily_movement_minimum": 0.01 / (12 * 4)},
-        }
-
-        self.trade_size = 2
+        # Advanced Signal Config
+        self.bullish_up_wave_move_size = config.advanced_signals.bullish_up_wave_move_size
+        self.bullish_up_wave_magnitude_ratio = config.advanced_signals.bullish_up_wave_magnitude_ratio
+        self.bullish_up_waves_ratio = config.advanced_signals.bullish_up_waves_ratio
+        self.signal_trigger_params = config.advanced_signals.signal_trigger_params
 
     def prepare_market_data(self):
         #  alpaca.get_historical_ochl_data('AMZN', start_date='2019-11-20', end_date='2019-11-23')
