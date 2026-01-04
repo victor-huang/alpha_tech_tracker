@@ -42,6 +42,9 @@ def test_save_ticker_min_agg_to_redis():
     )
 
 
+@pytest.mark.skip(
+    reason="Data persistence test - appends to market_data/amzn_min_aggs file, run manually when needed"
+)
 def test_save_ticker_min_agg_to_json():
     agg_data = Agg(
         {

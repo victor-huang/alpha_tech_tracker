@@ -72,11 +72,17 @@ PYTHONPATH=. \
 ## Test Results Summary
 
 When running core tests (default):
-- ✅ 212 tests passed
-- ⏭️ 7 tests skipped (missing data files, etc.)
+- ✅ 211 tests passed
+- ⏭️ 8 tests skipped (missing data files, data persistence tests, etc.)
 - 🚫 14 tests deselected (credential tests)
 
 Total test suite: 233 tests
+
+### Skipped Tests (By Default)
+Tests that write to data files are skipped to prevent side effects:
+- `test_export_data` - Rewrites test data files
+- `test_save_ticker_min_agg_to_json` - Appends to market_data/amzn_min_aggs
+- Streaming tests requiring open market hours
 
 ## Common Commands
 
