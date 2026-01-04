@@ -35,10 +35,11 @@ def mock_alpaca_clients_on_import(monkeypatch):
     """
     Mock Alpaca client initialization at module level.
 
-    This fixture runs automatically for all tests and prevents both:
+    This fixture runs automatically for all tests and prevents:
     - New API: StockHistoricalDataClient and StockDataStream (alpaca_py_engine.py)
-    - Old API: tradeapi.REST (alpaca_engine.py - deprecated)
     from requiring credentials during module import.
+
+    Note: The deprecated alpaca_engine.py tests are skipped entirely.
     """
     # Set dummy environment variables if not present
     if not os.environ.get("ALPACA_KEY_ID"):
@@ -50,25 +51,12 @@ def mock_alpaca_clients_on_import(monkeypatch):
     mock_stock_client = MagicMock()
     mock_wss_client = MagicMock()
 
-    # Mock the old API client class (alpaca_engine.py - deprecated)
-    mock_rest_api = MagicMock()
-    mock_rest_api.polygon.historic_agg.return_value.df = pd.DataFrame({
-        "open": [100.0],
-        "high": [101.0],
-        "low": [99.0],
-        "close": [100.5],
-        "volume": [1000]
-    })
-
     with patch("alpha_tech_tracker.alpaca_py_engine.StockHistoricalDataClient", return_value=mock_stock_client):
         with patch("alpha_tech_tracker.alpaca_py_engine.StockDataStream", return_value=mock_wss_client):
-            # Also mock the deprecated alpaca-trade-api REST client
-            with patch("alpha_tech_tracker.alpaca_engine.tradeapi.REST", return_value=mock_rest_api):
-                yield {
-                    "stock_client": mock_stock_client,
-                    "wss_client": mock_wss_client,
-                    "rest_api": mock_rest_api,
-                }
+            yield {
+                "stock_client": mock_stock_client,
+                "wss_client": mock_wss_client,
+            }
 
 
 # ============================================================================
