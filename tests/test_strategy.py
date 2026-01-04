@@ -1,3 +1,5 @@
+import pytest
+
 from alpha_tech_tracker.strategy import SimpleStrategy
 
 
@@ -14,6 +16,9 @@ def test_strategy_simulation():
     # for QQQ  new_strategy_1.simulate(start='2019-10-23', end='2019-11-20', use_saved_data=False)
 
 
+@pytest.mark.skip(
+    reason="Data export test - rewrites test data files, run manually when needed"
+)
 def test_export_data():
     new_strategy_1 = SimpleStrategy(symbol="NVDA")
     date_range = [["2019-12-01", "2020-01-15"]]
