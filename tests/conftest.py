@@ -40,7 +40,22 @@ def mock_alpaca_clients_on_import(monkeypatch):
     from requiring credentials during module import.
 
     Note: The deprecated alpaca_engine.py tests are skipped entirely.
+
+    If real Alpaca credentials are provided (ALPACA_API_KEY or ALPACA_KEY_ID),
+    the mocking is skipped to allow integration tests to use real API.
     """
+    # Check if real credentials are available
+    has_real_creds = bool(
+        os.environ.get("ALPACA_API_KEY") or
+        os.environ.get("ALPACA_KEY_ID")
+    )
+
+    if has_real_creds:
+        # Real credentials provided - don't mock, allow real API calls
+        yield {}
+        return
+
+    # No real credentials - set up mocks for unit tests
     # Set dummy environment variables if not present
     if not os.environ.get("ALPACA_KEY_ID"):
         monkeypatch.setenv("ALPACA_KEY_ID", "test_key_id")

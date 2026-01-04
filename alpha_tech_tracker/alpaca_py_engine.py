@@ -26,10 +26,12 @@ def get_stock_client():
     Get or create the stock historical data client.
 
     Lazy initialization allows tests to mock without credentials.
+    Supports both ALPACA_API_KEY and ALPACA_KEY_ID naming conventions.
     """
     global _stock_client
     if _stock_client is None:
-        key_id = os.environ.get("ALPACA_KEY_ID")
+        # Support both naming conventions
+        key_id = os.environ.get("ALPACA_API_KEY") or os.environ.get("ALPACA_KEY_ID")
         secret_key = os.environ.get("ALPACA_SECRET_KEY")
         _stock_client = StockHistoricalDataClient(key_id, secret_key)
     return _stock_client
@@ -40,10 +42,12 @@ def get_wss_client():
     Get or create the WebSocket stream client.
 
     Lazy initialization allows tests to mock without credentials.
+    Supports both ALPACA_API_KEY and ALPACA_KEY_ID naming conventions.
     """
     global _wss_client
     if _wss_client is None:
-        key_id = os.environ.get("ALPACA_KEY_ID")
+        # Support both naming conventions
+        key_id = os.environ.get("ALPACA_API_KEY") or os.environ.get("ALPACA_KEY_ID")
         secret_key = os.environ.get("ALPACA_SECRET_KEY")
         _wss_client = StockDataStream(key_id, secret_key)
     return _wss_client

@@ -98,7 +98,19 @@ class Portfolio(object):
         return found_position
 
     def bucket_positions_pnl_by_time(self):
-        df = pd.DataFrame([vars(p) for p in self.positions])
+        # Filter only closed positions (where closed_at is not None)
+        closed_positions = [p for p in self.positions if p.closed_at is not None]
+
+        # If no closed positions, return empty buckets
+        if not closed_positions:
+            empty_series = pd.Series(dtype=float)
+            return {
+                "daily": empty_series,
+                "weekly": empty_series,
+                "monthly": empty_series,
+            }
+
+        df = pd.DataFrame([vars(p) for p in closed_positions])
         df.set_index("closed_at", inplace=True)
 
         def calculate_pl(row):
