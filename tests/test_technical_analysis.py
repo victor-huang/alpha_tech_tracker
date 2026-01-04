@@ -1,12 +1,13 @@
 import datetime
-import numpy
-from numpy.testing import assert_array_equal
-import pandas as pd
+
 import ipdb
+import numpy
+import pandas as pd
+from numpy.testing import assert_array_equal
 
 import alpha_tech_tracker.technical_analysis as ta
+from alpha_tech_tracker.alpaca_py_engine import get_historical_stock_data
 from alpha_tech_tracker.wave import Wave
-import alpha_tech_tracker.alpaca_engine as data_source
 
 # nice print settings
 pd.set_option("display.expand_frame_repr", False)
@@ -190,9 +191,7 @@ def test_detect_reversal():
 
 
 def test_data_from_polygon_io():
-    df = data_source.get_historical_ochl_data(
-        "AMZN", start_date="2019-07-23", end_date="2019-07-24"
-    )
+    df = get_historical_stock_data("AMZN", "2019-07-23", "2019-07-24")
     start_datetime = datetime.datetime.strptime(
         "2019-07-23 9:30:00", "%Y-%m-%d %H:%M:%S"
     )

@@ -1,33 +1,25 @@
-from datetime import time
-from datetime import datetime
-from datetime import timezone
-from datetime import timedelta
-from decimal import Decimal
+import pprint as pp
 from contextlib import contextmanager
+from datetime import datetime, time, timedelta, timezone
+from decimal import Decimal
 
 #  from functools import reduce
 import pandas as pd
-import pprint as pp
 
 #  import numpy as np
 import plotly.graph_objects as go
 
+import alpha_tech_tracker.technical_analysis as ta
+from alpha_tech_tracker.alpaca_py_engine import (
+    DataAggregator,
+    get_historical_stock_data,
+)
 from alpha_tech_tracker.order_engine import OrderEngine
 from alpha_tech_tracker.portfolio import Portfolio
 from alpha_tech_tracker.signal import Signal
-import alpha_tech_tracker.technical_analysis as ta
-import alpha_tech_tracker.alpaca_engine as alpaca
-
-# for running on Mac
-# from alpha_tech_tracker.sms import send_sms_via_imessage as send_sms
-
-# use Twillio to send
 from alpha_tech_tracker.sms import send_sms
-
-from alpha_tech_tracker.wave import Wave
-from alpha_tech_tracker.alpaca_py_engine import DataAggregator
-from alpha_tech_tracker.alpaca_py_engine import get_historical_stock_data
 from alpha_tech_tracker.strategy_config import StrategyConfig
+from alpha_tech_tracker.wave import Wave
 
 
 class Strategy(object):
@@ -421,9 +413,7 @@ class SimpleStrategy(Strategy):
             end_date = datetime.strptime(end, "%Y-%m-%d")
             end_date_str = (end_date + timedelta(days=1)).strftime("%Y-%m-%d")
             print(file_name)
-            df = alpaca.get_historical_ochl_data(
-                symbol, start_date=start, end_date=end_date_str
-            )
+            df = get_historical_stock_data(symbol, start, end_date_str)
             df.to_json(file_name, orient="index")
 
     def read_data_from_files(self, symbol, date_range=[], start="", end=""):

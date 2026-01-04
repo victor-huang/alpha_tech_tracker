@@ -1,30 +1,46 @@
 """
-This engine file is depreacted, due to its usage of a legacy version of alpaca api
-look at https://github.com/alpacahq/alpaca-py/blob/master/alpaca/common/websocket.py#L18
-for the new websockt api to get live min data
+DEPRECATED - DO NOT USE THIS FILE
+
+This engine file is deprecated and should NOT be used in any new code.
+It uses a legacy version of the alpaca API that is no longer maintained.
+
+USE INSTEAD: alpha_tech_tracker.alpaca_py_engine
+
+Migration guide:
+- get_historical_ochl_data() → get_historical_stock_data()
+- DataAggregator (legacy) → DataAggregator (new, from alpaca_py_engine)
+
+For new WebSocket API:
+https://github.com/alpacahq/alpaca-py/blob/master/alpaca/common/websocket.py#L18
+
+This file is kept only for reference and will be removed in a future release.
 """
 
+import warnings
+
+warnings.warn(
+    "alpaca_engine.py is deprecated. Use alpaca_py_engine.py instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
 import asyncio
-from datetime import datetime
 import json
-import pprint
-import threading
-import queue
 import os
+import pprint
+import queue
 import sys
+import threading
+from datetime import datetime
 
 import alpaca_trade_api as tradeapi
-from alpaca_trade_api.polygon.entity import (
-    Agg,
-)
-from alpaca_trade_api.stream2 import StreamConn
-
-
-from alpha_tech_tracker.redis_client import redis_client
-
 import ipdb
 import pandas as pd
+from alpaca_trade_api.polygon.entity import Agg
+from alpaca_trade_api.stream2 import StreamConn
 from pandas import Timestamp
+
+from alpha_tech_tracker.redis_client import redis_client
 
 key_id = os.environ.get("ALPACA_KEY_ID")
 secret_key = os.environ.get("ALPACA_SECRET_KEY")
