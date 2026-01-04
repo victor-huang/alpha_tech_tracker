@@ -1,5 +1,7 @@
 alpaca-trade-api==0.35
+numpy==1.24.4
 pandas==2.0.3
+pytz==2023.3.post1
 urllib3==1.24
 pytest==7.4.2
 ipdb==0.13.13

@@ -1,51 +1,56 @@
 import datetime
-import numpy
-from numpy.testing import assert_array_equal
 import pandas as pd
-import pytest
-import ipdb
 
 from alpha_tech_tracker.wave import Wave
 
 # nice print settings
-pd.set_option('display.expand_frame_repr', False)
+pd.set_option("display.expand_frame_repr", False)
 pd.options.display.max_rows = 999
 
 
-def generate_test_waves(wave_data_file='./tests/data/eog_down_wave.csv', start=None, end=None):
+def generate_test_waves(
+    wave_data_file="./tests/data/eog_down_wave.csv", start=None, end=None
+):
     df = pd.read_csv(wave_data_file)
-    df.set_index('Date', inplace=True)
+    df.set_index("Date", inplace=True)
 
     if start and end:
         df = df[start:end]
 
-    wave_df = df.rename(str.lower, axis='columns')
+    wave_df = df.rename(str.lower, axis="columns")
     wave = None
     all_waves = []
 
     for index, row in wave_df.iterrows():
-        date = datetime.datetime.strptime(index, '%Y-%m-%d').date()
+        date = datetime.datetime.strptime(index, "%Y-%m-%d").date()
 
         if not wave:
             wave = Wave(date, row)
             all_waves.append(wave)
         else:
-           new_wave = wave.count(date, row)
+            new_wave = wave.count(date, row)
 
-           if new_wave:
-               all_waves.append(new_wave)
-               wave = new_wave
+            if new_wave:
+                all_waves.append(new_wave)
+                wave = new_wave
 
     return all_waves
 
 
 def test_c_wave_is_create_new_wave():
-    all_waves = generate_test_waves(wave_data_file='./tests/data/eog_down_wave.csv', start='2016-12-13', end='2017-01-06')
+    all_waves = generate_test_waves(
+        wave_data_file="./tests/data/eog_down_wave.csv",
+        start="2016-12-13",
+        end="2017-01-06",
+    )
 
     for wave in all_waves:
         s = wave.summary()
-        print("Wave direction: {0}, gain: {1:.2f}, length {2}".format(wave.direction(),
-            s['movement_in_percentage'], s['length']))
+        print(
+            "Wave direction: {0}, gain: {1:.2f}, length {2}".format(
+                wave.direction(), s["movement_in_percentage"], s["length"]
+            )
+        )
         print(wave.df)
 
     assert len(all_waves) == 2
@@ -61,8 +66,12 @@ def test_c_wave_is_create_new_wave():
 
 
 def test_c_wave_summary():
-    all_waves = generate_test_waves(wave_data_file='./tests/data/eog_down_wave.csv', start='2016-12-13', end='2017-01-06')
+    all_waves = generate_test_waves(
+        wave_data_file="./tests/data/eog_down_wave.csv",
+        start="2016-12-13",
+        end="2017-01-06",
+    )
 
     summary = all_waves[0].summary()
-    assert summary['length'] == 13
-    assert summary['movement_in_percentage'].round(4) == -0.0736
+    assert summary["length"] == 13
+    assert summary["movement_in_percentage"].round(4) == -0.0736

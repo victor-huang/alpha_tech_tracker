@@ -1,14 +1,12 @@
 import datetime
 import pandas as pd
-from pandas import Series
 
-import ipdb
 
 class Wave:
     def __init__(self, start, price_data_dict):
         self.start = start
-        self.high = price_data_dict['high']
-        self.low = price_data_dict['low']
+        self.high = price_data_dict["high"]
+        self.low = price_data_dict["low"]
         self.num_high = 1
         self.num_low = 1
         self.high_date = start
@@ -16,18 +14,20 @@ class Wave:
         self.df = pd.DataFrame([price_data_dict], index=[start])
         self.end = None
         self.next_wave = None
-        self.maximum_wave_length = 78 # a trading day has 78 5 mins intervals
+        self.maximum_wave_length = 78  # a trading day has 78 5 mins intervals
         self.minimum_wave_length = 7
-        self.minimum_wave_price_change = 0.03 / (12 * 8)# wave needs ot be at leat 2% change of the lowest price
-        self.bounce_threshold = 0.236 # fibonacci ratio
+        self.minimum_wave_price_change = 0.03 / (
+            12 * 8
+        )  # wave needs ot be at leat 2% change of the lowest price
+        self.bounce_threshold = 0.236  # fibonacci ratio
 
     @classmethod
     def yahoo_data_to_data_dict(cls, pands_series):
         return {
-            'open': pands_series['Open'],
-            'close': pands_series['Close'],
-            'high': pands_series['High'],
-            'low': pands_series['Low']
+            "open": pands_series["Open"],
+            "close": pands_series["Close"],
+            "high": pands_series["High"],
+            "low": pands_series["Low"],
         }
 
     @classmethod
@@ -47,44 +47,45 @@ class Wave:
             wave_summary = wave.summary()
             total_wave_length += wave.length()
 
-            if wave_direction == 'up':
+            if wave_direction == "up":
                 number_of_up_waves += 1
-                total_up_wave_move += wave_summary['price_range']
-                up_wave_move_length += wave_summary['length']
-                if wave_summary['length'] > wave.maximum_wave_length * 0.6:
+                total_up_wave_move += wave_summary["price_range"]
+                up_wave_move_length += wave_summary["length"]
+                if wave_summary["length"] > wave.maximum_wave_length * 0.6:
                     strong_up_wave_index = index
 
-            if wave_direction == 'down':
+            if wave_direction == "down":
                 number_of_down_waves += 1
-                total_down_wave_move += wave_summary['price_range']
-                down_wave_move_length += wave_summary['length']
-                if wave_summary['length'] > wave.maximum_wave_length * 0.6:
+                total_down_wave_move += wave_summary["price_range"]
+                down_wave_move_length += wave_summary["length"]
+                if wave_summary["length"] > wave.maximum_wave_length * 0.6:
                     strong_down_wave_index = index
 
         return {
-            'up_waves_ratio': number_of_up_waves / (number_of_down_waves + number_of_up_waves),
-            'up_magnitude_ratio': total_up_wave_move / (total_up_wave_move + total_down_wave_move),
-            'number_of_up_waves': number_of_up_waves,
-            'number_of_down_waves': number_of_down_waves,
-            'up_wave_move_length': up_wave_move_length,
-            'down_wave_move_length': down_wave_move_length,
-            'strong_up_wave_index': strong_up_wave_index,
-            'strong_down_wave_index': strong_down_wave_index,
-            'average_wave_length': total_wave_length / len(waves)
+            "up_waves_ratio": number_of_up_waves
+            / (number_of_down_waves + number_of_up_waves),
+            "up_magnitude_ratio": total_up_wave_move
+            / (total_up_wave_move + total_down_wave_move),
+            "number_of_up_waves": number_of_up_waves,
+            "number_of_down_waves": number_of_down_waves,
+            "up_wave_move_length": up_wave_move_length,
+            "down_wave_move_length": down_wave_move_length,
+            "strong_up_wave_index": strong_up_wave_index,
+            "strong_down_wave_index": strong_down_wave_index,
+            "average_wave_length": total_wave_length / len(waves),
         }
-
 
     def length(self):
         return len(self.df)
 
     def direction(self):
         if self.num_high + self.num_low < 3:
-            return 'n/a'
+            return "n/a"
 
         if self.num_high > self.num_low:
-            return 'up'
+            return "up"
         else:
-            return 'down'
+            return "down"
 
     def price_range(self):
         return abs(self.high - self.low)
@@ -96,18 +97,18 @@ class Wave:
             end_time = None
 
         summary = {
-            'start': self.start.isoformat(),
-            'end': end_time,
-            'direction': self.direction()
+            "start": self.start.isoformat(),
+            "end": end_time,
+            "direction": self.direction(),
         }
 
-        if summary['direction'] == 'up':
-            summary['movement_in_percentage'] = self.high / self.low - 1
+        if summary["direction"] == "up":
+            summary["movement_in_percentage"] = self.high / self.low - 1
         else:
-            summary['movement_in_percentage'] = self.low / self.high - 1
+            summary["movement_in_percentage"] = self.low / self.high - 1
 
-        summary['length'] = self.length()
-        summary['price_range'] = self.price_range()
+        summary["length"] = self.length()
+        summary["price_range"] = self.price_range()
 
         return summary
 
@@ -117,7 +118,7 @@ class Wave:
         minimum_wave_price_change = self.minimum_wave_price_change
         bounce_threshold = self.bounce_threshold
 
-        if self.direction() == 'up':
+        if self.direction() == "up":
             wave_end_date = self.high_date
         else:
             wave_end_date = self.low_date
@@ -128,28 +129,46 @@ class Wave:
         if wave_length >= maximum_wave_length:
             return True
 
-        if abs(self.high - self.low) / self.low < minimum_wave_price_change or wave_length < minimum_wave_length:
+        if (
+            abs(self.high - self.low) / self.low < minimum_wave_price_change
+            or wave_length < minimum_wave_length
+        ):
             return False
 
-        if self.direction() == 'down' and self.low + self.price_range() * bounce_threshold < price_data_dict['close']:
+        if (
+            self.direction() == "down"
+            and self.low + self.price_range() * bounce_threshold
+            < price_data_dict["close"]
+        ):
             return True
 
-        if self.direction() == 'up' and self.high - self.price_range() * bounce_threshold > price_data_dict['close']:
+        if (
+            self.direction() == "up"
+            and self.high - self.price_range() * bounce_threshold
+            > price_data_dict["close"]
+        ):
             return True
 
-
-    def count(self, date, price_data_dict, skip_create_new_wave=False, time_increment=datetime.timedelta(days=1)):
+    def count(
+        self,
+        date,
+        price_data_dict,
+        skip_create_new_wave=False,
+        time_increment=datetime.timedelta(days=1),
+    ):
 
         #  if is_create_new_wave(date, price_data_dict):
         if self.is_create_new_wave(date, price_data_dict):
-            if self.direction() == 'up':
+            if self.direction() == "up":
                 self.end = self.high_date
             else:
                 self.end = self.low_date
 
-            re_process_date_df = self.df[self.end + time_increment:self.df.index[-1]].copy()
+            re_process_date_df = self.df[
+                self.end + time_increment : self.df.index[-1]
+            ].copy()
             re_process_date_df.loc[date] = price_data_dict
-            self.df = self.df[self.start:self.end].copy()
+            self.df = self.df[self.start : self.end].copy()
 
             new_wave = None
 
@@ -170,12 +189,12 @@ class Wave:
             # return the new wave
             #  # create a new wave
             #  new_wave = Wave()
-        if price_data_dict['close'] > self.high:
-            self.high = price_data_dict['close']
+        if price_data_dict["close"] > self.high:
+            self.high = price_data_dict["close"]
             self.num_high += 1
             self.high_date = date
-        elif price_data_dict['close'] < self.low:
-            self.low = price_data_dict['close']
+        elif price_data_dict["close"] < self.low:
+            self.low = price_data_dict["close"]
             self.num_low += 1
             self.low_date = date
 

@@ -1,81 +1,106 @@
 """
-This engine file is depreacted, due to its usage of a legacy version of alpaca api
-look at https://github.com/alpacahq/alpaca-py/blob/master/alpaca/common/websocket.py#L18
-for the new websockt api to get live min data
+DEPRECATED - DO NOT USE THIS FILE
+
+This engine file is deprecated and should NOT be used in any new code.
+It uses a legacy version of the alpaca API that is no longer maintained.
+
+USE INSTEAD: alpha_tech_tracker.alpaca_py_engine
+
+Migration guide:
+- get_historical_ochl_data() → get_historical_stock_data()
+- DataAggregator (legacy) → DataAggregator (new, from alpaca_py_engine)
+
+For new WebSocket API:
+https://github.com/alpacahq/alpaca-py/blob/master/alpaca/common/websocket.py#L18
+
+This file is kept only for reference and will be removed in a future release.
 """
 
+import warnings
+
+warnings.warn(
+    "alpaca_engine.py is deprecated. Use alpaca_py_engine.py instead.",
+    DeprecationWarning,
+    stacklevel=2,
+)
+
 import asyncio
-from datetime import datetime
 import json
-import pprint
-import threading
-import queue
 import os
+import pprint
+import queue
 import sys
+import threading
+from datetime import datetime
 
 import alpaca_trade_api as tradeapi
-from alpaca_trade_api.polygon.entity import (
-    Quote, Trade, Agg, Entity,
-)
-from alpaca_trade_api.polygon.stream2 import StreamConn as PolygonStreamConn
+import ipdb
+import pandas as pd
+from alpaca_trade_api.polygon.entity import Agg
 from alpaca_trade_api.stream2 import StreamConn
-
+from pandas import Timestamp
 
 from alpha_tech_tracker.redis_client import redis_client
 
-import ipdb
-import pandas as pd
-from pandas import Timestamp
-
-key_id = os.environ.get('ALPACA_KEY_ID')
-secret_key = os.environ.get('ALPACA_SECRET_KEY')
+key_id = os.environ.get("ALPACA_KEY_ID")
+secret_key = os.environ.get("ALPACA_SECRET_KEY")
 
 api = tradeapi.REST(key_id, secret_key)
 
 # curl "https://api.polygon.io/v1/historic/quotes/SPY/2018-06-01?apiKey=$APCA_API_KEY_ID"
 
+
 def now():
     now = datetime.now()
+
 
 def test_api():
     # polygon/REST.historic_agg(size, symbol, _from=None, to=None, limit=None)
     # https://api.polygon.io/v2/aggs/ticker/AAPL/range/5/minute/2019-01-01/2019-02-01?apiKey=PKX2ZYMDG183VHH2VPYS
-    df = api.polygon.historic_agg('minute', 'AMZN', limit=100).df
+    df = api.polygon.historic_agg("minute", "AMZN", limit=100).df
 
     ipdb.set_trace()
 
     # historic_agg_v2(self, symbol, multiplier, timespan, _from, to, unadjusted=False, limit=None)
 
-    amzn_df = api.polygon.historic_agg_v2('AMZN', 5, 'minute', '2019-07-23', '2019-07-24').df
+    amzn_df = api.polygon.historic_agg_v2(
+        "AMZN", 5, "minute", "2019-07-23", "2019-07-24"
+    ).df
     # historic_trades(self, symbol, date, offset=None, limit=None):
-    trades = api.polygon.historic_trades('AMZN', '2019-07-24')
+    trades = api.polygon.historic_trades("AMZN", "2019-07-24")
 
     # snapshot data
-    snapshot = api.polygon.snapshot('CMG')
-    with pd.option_context('display.max_rows', None, 'display.max_columns', None):  # more options can be specified also
+    snapshot = api.polygon.snapshot("CMG")
+    with pd.option_context(
+        "display.max_rows", None, "display.max_columns", None
+    ):  # more options can be specified also
         print(amzn_df)
+
 
 def ts():
     return pd.Timestamp.now()
 
+
 def debug(*args, **kwargs):
     print(ts(), " ", *args, file=sys.stderr, **kwargs)
+
 
 async def on_data(conn, channel, data):
     #  if opt.debug or not (channel in ('AM', 'Q', 'A', 'T')):
     debug("debug: ", pprint.pformat(data))
+
 
 def test_stream():
     conn = StreamConn(key_id=key_id, secret_key=secret_key)
     #  conn = PolygonStreamConn(key_id=key_id)
 
     #  conn.register(r'.*', on_data)
-    on_data1 = conn.on(r'.*')(on_data)
+    on_data1 = conn.on(r".*")(on_data)
 
     #  conn.run(['AM.*','XQ.*'])
     #  conn.run(['Q.*', 'T.*', 'AM.AMZN', 'A.*'])
     #  conn.run(['Q.AMZN'])
-    conn.run(['AM.GOOGL'])
+    conn.run(["AM.GOOGL"])
     # sample output
     #  Entity({'ev': 'status', 'message': 'subscribed to: A.*', 'status': 'success'})
     # [{"ev":"T","sym":"MSFT","p":114.178,"x":"5","s":270,"t":1564101092822, .... }]
@@ -84,42 +109,56 @@ def test_stream():
     # construct real time 5 mins trade data for technical analysis signals
     # integrate with moving average and 7 days historical data to find resistant and support levels
 
-def get_historical_ochl_data(symbol, interval=5, start_date=str(now), end_date=str(now)):
-    return api.polygon.historic_agg_v2(symbol, interval, 'minute', start_date, end_date).df
+
+def get_historical_ochl_data(
+    symbol, interval=5, start_date=str(now), end_date=str(now)
+):
+    return api.polygon.historic_agg_v2(
+        symbol, interval, "minute", start_date, end_date
+    ).df
+
 
 def save_ticker_min_agg_to_redis(agg_data):
-    selected_agg_attributes = ['open', 'high', 'low', 'close', 'volume', 'start' , 'end']
+    selected_agg_attributes = ["open", "high", "low", "close", "volume", "start", "end"]
 
-    selected_agg_data = {k: v for k, v in agg_data._raw.items() if k in selected_agg_attributes}
+    selected_agg_data = {
+        k: v for k, v in agg_data._raw.items() if k in selected_agg_attributes
+    }
     #  selected_agg_data['start'] = datetime.utcfromtimestamp(selected_agg_data['start'] / 1000)
     #  selected_agg_data['end'] = datetime.utcfromtimestamp(selected_agg_data['end'] / 1000)
 
-    cache_key = agg_data.symbol.lower() + "_" + str(selected_agg_data['end'])
+    cache_key = agg_data.symbol.lower() + "_" + str(selected_agg_data["end"])
     redis_client.set_object(cache_key, selected_agg_data)
+
 
 def save_ticker_min_agg_to_json(agg_data):
     #
     # save df to json df.to_json(file_path, orient='records')
     # pd.read_json('amzn_5min_sample.json', orient='records')
 
-    selected_agg_attributes = ['open', 'high', 'low', 'close', 'volume', 'start' , 'end']
-    selected_agg_data = {k: v for k, v in agg_data._raw.items() if k in selected_agg_attributes}
+    selected_agg_attributes = ["open", "high", "low", "close", "volume", "start", "end"]
+    selected_agg_data = {
+        k: v for k, v in agg_data._raw.items() if k in selected_agg_attributes
+    }
 
-    data_dir = './market_data'
+    data_dir = "./market_data"
     #  file_name = agg_data.symbol.lower() + "_" + str(selected_agg_data['end'])
     file_name = agg_data.symbol.lower() + "_min_aggs"
-    file_path = '{}/{}'.format(data_dir, file_name)
+    file_path = "{}/{}".format(data_dir, file_name)
 
     f = open(file_path, "a+")
     f.write(json.dumps(selected_agg_data))
     f.write("\n")
     f.close
 
-def simulate_stream_minute_aggreated_market_data_from_file(file_path, symbol, limit=500):
 
-    for line in open(file_path).readlines()[limit * -1:]:
+def simulate_stream_minute_aggreated_market_data_from_file(
+    file_path, symbol, limit=500
+):
+
+    for line in open(file_path).readlines()[limit * -1 :]:
         data = json.loads(line)
-        data['symbol'] = symbol
+        data["symbol"] = symbol
         agg_data = Agg(data)
 
         promise = DataAggregator.handle_streaming_minute_agg_data({}, {}, agg_data)
@@ -127,28 +166,54 @@ def simulate_stream_minute_aggreated_market_data_from_file(file_path, symbol, li
 
 
 class DataAggregator(object):
-    key_id = 'PKX2ZYMDG183VHH2VPYS'
-    secret_key = 'HM6fKUfOVohXWj5JG1bD57hM6LE0xM5NaX9aoUCT'
+    key_id = "PKX2ZYMDG183VHH2VPYS"
+    secret_key = "HM6fKUfOVohXWj5JG1bD57hM6LE0xM5NaX9aoUCT"
     generator_queues = []
 
     def __init__(self):
-        self.raw_data_df = pd.DataFrame([], columns = ['open', 'high',
-            'low', 'close', 'volume', ])
-        self.aggregated_df = pd.DataFrame([], columns = ['open', 'high',
-            'low', 'close', 'volume', ])
+        self.raw_data_df = pd.DataFrame(
+            [],
+            columns=[
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume",
+            ],
+        )
+        self.aggregated_df = pd.DataFrame(
+            [],
+            columns=[
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume",
+            ],
+        )
         self.handlers = {}
-        self.selected_agg_attributes = ['open', 'high', 'low', 'close', 'volume', 'start' , 'end']
+        self.selected_agg_attributes = [
+            "open",
+            "high",
+            "low",
+            "close",
+            "volume",
+            "start",
+            "end",
+        ]
 
     def add(self, data):
-        selected_data = {k: v for k, v in data._raw.items() if k in self.selected_agg_attributes}
+        selected_data = {
+            k: v for k, v in data._raw.items() if k in self.selected_agg_attributes
+        }
         new_series = pd.Series(selected_data)
-        new_series.name = Timestamp(new_series['end'], unit='ms', tz='America/New_York')
+        new_series.name = Timestamp(new_series["end"], unit="ms", tz="America/New_York")
         self.raw_data_df = self.raw_data_df.append(new_series)
         latest_timestamp = self.raw_data_df.iloc[-1].name
 
         if len(self.raw_data_df) >= 5 and latest_timestamp.minute % 5 == 0:
             self.aggregate_to_5_minutes()
-            five_mins_handlers = self.handlers.get('5min')
+            five_mins_handlers = self.handlers.get("5min")
 
             if five_mins_handlers:
                 for handler in five_mins_handlers:
@@ -157,19 +222,21 @@ class DataAggregator(object):
     def aggregate_to_5_minutes(self):
         interval = 5
 
-        aggregated_seires = pd.Series({
-            'open': self.raw_data_df.iloc[-interval]['open'],
-            'close': self.raw_data_df.iloc[-1]['close'],
-            'low': min(self.raw_data_df[-interval:]['low']),
-            'high': max(self.raw_data_df[-interval:]['high']),
-            'volume': sum(self.raw_data_df[-interval:]['volume'])
-        })
+        aggregated_seires = pd.Series(
+            {
+                "open": self.raw_data_df.iloc[-interval]["open"],
+                "close": self.raw_data_df.iloc[-1]["close"],
+                "low": min(self.raw_data_df[-interval:]["low"]),
+                "high": max(self.raw_data_df[-interval:]["high"]),
+                "volume": sum(self.raw_data_df[-interval:]["volume"]),
+            }
+        )
 
         aggregated_seires.name = self.raw_data_df.iloc[-5].name
         self.aggregated_df = self.aggregated_df.append(aggregated_seires)
 
     def register(self, interval, fn):
-        if interval not in ['5min']:
+        if interval not in ["5min"]:
             raise ValueError("interval needs to be: ['5min']")
 
         if interval in self.handlers:
@@ -190,7 +257,7 @@ class DataAggregator(object):
 
         new_agg_data_queue = queue.Queue()
         aggregator = DataAggregator()
-        aggregator.register('5min', lambda data: new_agg_data_queue.put(data))
+        aggregator.register("5min", lambda data: new_agg_data_queue.put(data))
 
         async def on_data_2(conn, channel, data):
             #  if opt.debug or not (channel in ('AM', 'Q', 'A', 'T')):
@@ -203,58 +270,58 @@ class DataAggregator(object):
         #  ipdb.set_trace()
         conn = StreamConn(key_id=cls.key_id, secret_key=cls.secret_key)
 
-        on_data1 = conn.on(r'.*')(on_data_2)
+        on_data1 = conn.on(r".*")(on_data_2)
 
         #  conn.run(['Q.*', 'T.*', 'AM.AMZN', 'A.*'])
         #  conn.run(['AM.AMZN'])
         #  ipdb.set_trace()
-        subscribe_channels = ['AM.{}'.format(symbol)]
+        subscribe_channels = ["AM.{}".format(symbol)]
 
         stream_thread = threading.Thread(target=conn.run, args=([subscribe_channels]))
         stream_thread.start()
         #  conn.run(['AM.AMZN'])
         #  data = {
-            #  'average': 1937.4642,
-            #  'close': 1940.09,
-            #  'dailyopen': 1942,
-            #  'end': 1564170660000,
-            #  'high': 1940.651,
-            #  'low': 1939.665,
-            #  'open': 1940.16,
-            #  'start': 1564170600000,
-            #  'symbol': 'AMZN',
-            #  'totalvolume': 4430955,
-            #  'volume': 10000,
-            #  'vwap': 1940.116
+        #  'average': 1937.4642,
+        #  'close': 1940.09,
+        #  'dailyopen': 1942,
+        #  'end': 1564170660000,
+        #  'high': 1940.651,
+        #  'low': 1939.665,
+        #  'open': 1940.16,
+        #  'start': 1564170600000,
+        #  'symbol': 'AMZN',
+        #  'totalvolume': 4430955,
+        #  'volume': 10000,
+        #  'vwap': 1940.116
         #  }
 
         #  for i in range(7):
-            #  agg_data = Agg(data)
-            #  aggregator.add(agg_data)
+        #  agg_data = Agg(data)
+        #  aggregator.add(agg_data)
 
-            #  data['start'] += 60000
-            #  data['end'] += 60000
-            #  data['close'] += 1
-            #  data['open'] -= 1
-            #  data['high'] += 2
-            #  data['low'] -= 1
+        #  data['start'] += 60000
+        #  data['end'] += 60000
+        #  data['close'] += 1
+        #  data['open'] -= 1
+        #  data['high'] += 2
+        #  data['low'] -= 1
 
         while True:
             try:
-                print('waiting on data')
+                print("waiting on data")
                 data = new_agg_data_queue.get(timeout=timeout)
                 time_index = data.name
 
-                yield((time_index, data))
+                yield ((time_index, data))
             except queue.Empty:
-                print('Timeout on waiting new data')
+                print("Timeout on waiting new data")
                 break
 
         conn.loop.call_soon_threadsafe(conn.loop.stop)
-        print('Request to stop Event Loop')
+        print("Request to stop Event Loop")
 
         stream_thread.join()
-        print('Waiting for market data stream thread to join')
+        print("Waiting for market data stream thread to join")
 
     @classmethod
     def start_streaming_market_data(cls, timeout=300, symbols=[]):
@@ -267,7 +334,6 @@ class DataAggregator(object):
         for symbol in symbols:
             cls.aggregators_by_symbol[symbol] = DataAggregator()
 
-
         async def handle_streaming_minute_agg_data(conn, channel, data):
             debug("debug: ", pprint.pformat(data))
 
@@ -278,17 +344,15 @@ class DataAggregator(object):
                 if aggregator:
                     aggregator.add(data)
                 else:
-                    debug('No aggregator for symbol {}'.format(data.symbol))
-
+                    debug("No aggregator for symbol {}".format(data.symbol))
 
         stream_connection = StreamConn(key_id=cls.key_id, secret_key=cls.secret_key)
-        stream_connection.on(r'.*')(handle_streaming_minute_agg_data)
-        subscribe_channels = ['AM.{}'.format(symbol) for symbol in symbols]
+        stream_connection.on(r".*")(handle_streaming_minute_agg_data)
+        subscribe_channels = ["AM.{}".format(symbol) for symbol in symbols]
 
         stream_thread = threading.Thread(
-                target=stream_connection.run,
-                args=([subscribe_channels]
-        ))
+            target=stream_connection.run, args=([subscribe_channels])
+        )
 
         cls.stream_thread = stream_thread
         cls.stream_connection = stream_connection
@@ -299,31 +363,30 @@ class DataAggregator(object):
     def stop_streaming_market_data(cls):
         cls.stop_streaming_thread = True
         cls.stream_connection.loop.call_soon_threadsafe(cls.stream_connection.loop.stop)
-        print('Request to stop Event Loop')
+        print("Request to stop Event Loop")
         cls.stream_thread.join()
 
         for g_queue in cls.generator_queues:
             g_queue.put(None)
 
-
     @classmethod
     def build_mins_aggregated_data_generator(cls, symbol, timeout=300):
-        agg_interval = '5min'
+        agg_interval = "5min"
         new_agg_data_queue = queue.Queue()
         cls.generator_queues.append(new_agg_data_queue)
         aggregator = cls.aggregators_by_symbol[symbol]
         aggregator.register(agg_interval, lambda data: new_agg_data_queue.put(data))
 
         while True:
-            print('waiting on data')
+            print("waiting on data")
             try:
                 data = new_agg_data_queue.get(timeout=timeout)
 
                 if data is not None:
                     time_index = data.name
-                    yield((time_index, data))
+                    yield ((time_index, data))
                 else:
-                    print('market data generator stoped')
+                    print("market data generator stoped")
                     break
             except queue.Empty:
                 print("Timeout getting data")

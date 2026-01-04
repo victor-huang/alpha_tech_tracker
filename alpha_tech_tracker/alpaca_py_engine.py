@@ -1,6 +1,5 @@
 import os
-import asyncio
-from datetime import date, datetime, time, timedelta
+from datetime import datetime
 import json
 import pprint
 import threading
@@ -9,21 +8,60 @@ import os
 import sys
 
 import pandas as pd
-from pandas import Timestamp
 from pytz import timezone
 
-from alpaca.data.historical import CryptoHistoricalDataClient, StockHistoricalDataClient
-from alpaca.data.requests import CryptoBarsRequest, StockBarsRequest
+from alpaca.data.historical import StockHistoricalDataClient
+from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
 from alpaca.data.live import StockDataStream
 
 
-key_id = os.environ.get("ALPACA_KEY_ID")
-secret_key = os.environ.get("ALPACA_SECRET_KEY")
+# Lazy initialization of clients to avoid requiring credentials at import time
+_stock_client = None
+_wss_client = None
 
 
-stock_client = StockHistoricalDataClient(key_id, secret_key)
-wss_client = StockDataStream(key_id, secret_key)
+def get_stock_client():
+    """
+    Get or create the stock historical data client.
+
+    Lazy initialization allows tests to mock without credentials.
+    Supports both ALPACA_API_KEY and ALPACA_KEY_ID naming conventions.
+    """
+    global _stock_client
+    if _stock_client is None:
+        # Support both naming conventions
+        key_id = os.environ.get("ALPACA_API_KEY") or os.environ.get("ALPACA_KEY_ID")
+        secret_key = os.environ.get("ALPACA_SECRET_KEY")
+        _stock_client = StockHistoricalDataClient(key_id, secret_key)
+    return _stock_client
+
+
+def get_wss_client():
+    """
+    Get or create the WebSocket stream client.
+
+    Lazy initialization allows tests to mock without credentials.
+    Supports both ALPACA_API_KEY and ALPACA_KEY_ID naming conventions.
+    """
+    global _wss_client
+    if _wss_client is None:
+        # Support both naming conventions
+        key_id = os.environ.get("ALPACA_API_KEY") or os.environ.get("ALPACA_KEY_ID")
+        secret_key = os.environ.get("ALPACA_SECRET_KEY")
+        _wss_client = StockDataStream(key_id, secret_key)
+    return _wss_client
+
+
+# For backward compatibility - use getters instead
+@property
+def stock_client():
+    return get_stock_client()
+
+
+@property
+def wss_client():
+    return get_wss_client()
 
 
 def ts():
@@ -42,7 +80,7 @@ def test_stock_bar_data_api():
         end=datetime.strptime("2023-09-11", "%Y-%m-%d"),
     )
 
-    bars = stock_client.get_stock_bars(stock_request_params)
+    bars = get_stock_client().get_stock_bars(stock_request_params)
 
     bars.df  # to get the coodsponding dataframe
 
@@ -51,8 +89,6 @@ def test_stock_bar_data_api():
     ipdb.set_trace()
     # only use timestamp as index
     bars.df.reset_index(level=0, drop=True)
-
-    pass
 
 
 def save_ticker_min_agg_to_json(agg_data):
@@ -93,7 +129,7 @@ def get_historical_stock_data(ticker, start, end):
         end=datetime.strptime(end, "%Y-%m-%d"),
     )
 
-    bars = stock_client.get_stock_bars(stock_request_params)
+    bars = get_stock_client().get_stock_bars(stock_request_params)
     df = bars.df.reset_index(level=0, drop=True)
     df.index = df.index.tz_convert("America/New_York")
 

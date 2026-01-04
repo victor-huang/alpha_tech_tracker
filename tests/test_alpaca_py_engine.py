@@ -1,3 +1,4 @@
+import pytest
 from alpha_tech_tracker.alpaca_py_engine import DataAggregator, wss_client
 
 
@@ -62,6 +63,7 @@ Name: (TSLA, 2023-09-11 08:00:00+00:00), dtype: float64
 
 class TestDataAggregator:
     # integration test
+    @pytest.mark.skip(reason="Requires market to be open - real-time streaming test")
     def test_straeming_5_min_aggregate_data(self):
         DataAggregator.fetch_5_mins_aggregated_data(symbol="TSLA")
         [print(x) for x in DataAggregator.fetch_5_mins_aggregated_data(symbol="TSLA")]
@@ -70,6 +72,7 @@ class TestDataAggregator:
 
 
 # integration test
+@pytest.mark.skip(reason="Requires market to be open - real-time streaming test")
 def test_stream_client_and_data_handler():
     """
     https://alpaca.markets/docs/market-data/

@@ -1,8 +1,5 @@
-from decimal import Decimal
-import ipdb
-
 from alpha_tech_tracker.tsla_strategy import SimpleStrategy
-from alpha_tech_tracker.trade_api.etrade.client import EtradeAPIClient
+import pytest
 
 
 def test_create_an_instance_of_simple_strategy():
@@ -11,6 +8,9 @@ def test_create_an_instance_of_simple_strategy():
     assert isinstance(new_strategy, SimpleStrategy)
 
 
+@pytest.mark.skip(
+    reason="Run manually to fine tune strategy parameters and test performance"
+)
 def test_strategy_simulation():
     #  client = EtradeAPIClient(selected_account_id="")
     #  client.authorize_session()

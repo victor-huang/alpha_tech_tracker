@@ -1,6 +1,10 @@
+import pytest
+
 from alpha_tech_tracker.trade_api.alpaca_client.client import AlpacaAPIClient
 
 
+@pytest.mark.alpaca
+@pytest.mark.credentials
 def test_get_accounts():
     client = AlpacaAPIClient(is_paper_trading=True)
     account_info = client.get_accounts()
@@ -11,6 +15,8 @@ def test_get_accounts():
     assert "portfolio_value" in account_info
 
 
+@pytest.mark.alpaca
+@pytest.mark.credentials
 def test_get_stock_quote():
     client = AlpacaAPIClient(is_paper_trading=True)
     quote_response = client.get_stock_quote("TSLA")
@@ -21,6 +27,8 @@ def test_get_stock_quote():
     assert "ask" in quote_response["QuoteResponse"]["QuoteData"][0]["All"]
 
 
+@pytest.mark.alpaca
+@pytest.mark.credentials
 def test_get_multiple_stock_quotes():
     client = AlpacaAPIClient(is_paper_trading=True)
     quotes = client.get_stock_quote(["TSLA", "AAPL"])
@@ -31,8 +39,9 @@ def test_get_multiple_stock_quotes():
     assert quotes["AAPL"]["QuoteResponse"] is not None
 
 
+@pytest.mark.alpaca
+@pytest.mark.credentials
 def test_get_option_quote():
-    import pytest
     client = AlpacaAPIClient(is_paper_trading=True)
 
     try:
@@ -57,10 +66,14 @@ def test_get_option_quote():
         assert "ask" in quote_response["QuoteResponse"]["QuoteData"][0]["All"]
     except Exception as e:
         if "400" in str(e) or "subscription" in str(e).lower():
-            pytest.skip(f"Options data not available (may require subscription): {str(e)}")
+            pytest.skip(
+                f"Options data not available (may require subscription): {str(e)}"
+            )
         raise
 
 
+@pytest.mark.alpaca
+@pytest.mark.credentials
 def test_get_price_from_quote():
     client = AlpacaAPIClient(is_paper_trading=True)
     quote = client.get_stock_quote("TSLA")
@@ -73,6 +86,8 @@ def test_get_price_from_quote():
     assert price_info["bid"] < price_info["ask"]
 
 
+@pytest.mark.alpaca
+@pytest.mark.credentials
 def test_get_options_contracts():
     client = AlpacaAPIClient(is_paper_trading=True)
     contracts = client.get_options_contracts(
@@ -87,6 +102,8 @@ def test_get_options_contracts():
     assert contracts[0]["underlying_symbol"] == "TSLA"
 
 
+@pytest.mark.alpaca
+@pytest.mark.credentials
 def test_place_stock_order():
     client = AlpacaAPIClient(is_paper_trading=True)
 
@@ -103,8 +120,9 @@ def test_place_stock_order():
     client.cancel_order(order["order_id"])
 
 
+@pytest.mark.alpaca
+@pytest.mark.credentials
 def test_place_option_order():
-    import pytest
     client = AlpacaAPIClient(is_paper_trading=True)
 
     try:
@@ -141,6 +159,8 @@ def test_place_option_order():
         raise
 
 
+@pytest.mark.alpaca
+@pytest.mark.credentials
 def test_order_status():
     client = AlpacaAPIClient(is_paper_trading=True)
 
@@ -159,6 +179,8 @@ def test_order_status():
     client.cancel_order(order_id)
 
 
+@pytest.mark.alpaca
+@pytest.mark.credentials
 def test_cancel_order():
     client = AlpacaAPIClient(is_paper_trading=True)
 
