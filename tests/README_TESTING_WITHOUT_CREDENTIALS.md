@@ -148,9 +148,11 @@ def test_custom_scenario(monkeypatch):
 
 ### Core Tests (No Credentials)
 ```bash
-# Default - runs automatically mocked tests
-PYTHONPATH=. TWILIO_ACCOUNT_ID="test" TWILIO_AUTH_TOKEN="test" \
-  pytest tests/ -v
+# Default - runs automatically mocked tests (no credentials needed)
+PYTHONPATH=. pytest tests/ -v
+
+# Note: TWILIO_ACCOUNT_ID and TWILIO_AUTH_TOKEN are optional
+# They are only needed if you actually send SMS notifications
 ```
 
 ### With Real Credentials (Optional)
@@ -159,6 +161,11 @@ PYTHONPATH=. TWILIO_ACCOUNT_ID="test" TWILIO_AUTH_TOKEN="test" \
 PYTHONPATH=. \
   ALPACA_API_KEY="..." ALPACA_SECRET_KEY="..." \
   pytest tests/ -m "alpaca" -v
+
+# With Twilio (optional, only if testing SMS notifications)
+PYTHONPATH=. \
+  TWILIO_ACCOUNT_ID="..." TWILIO_AUTH_TOKEN="..." \
+  pytest tests/ -v
 ```
 
 ## Benefits

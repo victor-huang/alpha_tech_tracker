@@ -39,8 +39,6 @@ jobs:
       - name: Run tests
         env:
           PYTHONPATH: .
-          TWILIO_ACCOUNT_ID: test
-          TWILIO_AUTH_TOKEN: test
         run: |
           pytest tests/ -v --tb=short --cov=alpha_tech_tracker --cov-report=xml --cov-report=term-missing
 
