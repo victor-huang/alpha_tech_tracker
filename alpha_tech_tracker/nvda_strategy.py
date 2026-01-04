@@ -35,11 +35,8 @@ class NVDAStrategy(SimpleStrategy):
         self.sender_phone_number = "4086130570"
         self.plot_market_data_candle_stick_chart = False
         self.open_position_triggers = []
-        self.close_position_triggers = [
-            #  self.is_waves_loosing_steam
-        ]
+        self.close_position_triggers = []
 
-        #  self.market_data_timeout = 300
         self.market_data_timeout = 900  # number of second not receiving 5min agg data
         self.maximum_position_loss = 3000
 
@@ -96,14 +93,6 @@ class NVDAStrategy(SimpleStrategy):
         potential = higest_price - current_price
 
         return max([potential, 0]) * 1.8 * self.discounted_magnitudues_factor
-        #  self.set_trace_at('2019-06-07 09:30:00-0400')
-        #  self.set_trace_at('2018-02-20 10:00:00-0500')
-        #  self.set_trace_at('2019-12-10 10:35:00-0500')
-        #  if waves_stats['up_waves_ratio'] > self.bullish_up_waves_ratio and waves_stats['up_wave_move_length'] >= self.bullish_up_wave_move_size and waves_stats['up_magnitude_ratio'] > self.bullish_up_wave_magnitude_ratio:
-        #  # up too much lately, take less risk
-        #  return min(upside_magnitudes) * self.discounted_magnitudues_factor
-        #  else:
-        #  return max(upside_magnitudes) * self.discounted_magnitudues_factor
 
     def downside_risk(self, current_price, waves=[]):
         waves_stats = Wave.waves_stats(waves)
@@ -112,62 +101,3 @@ class NVDAStrategy(SimpleStrategy):
         potential = abs(current_price - lowest_price) * 1.3
 
         return max([potential, 0.01]) * self.discounted_magnitudues_factor
-
-        #  mavg_20_price = self.moving_avgs_df[-1:]['mavg_20'][0]
-
-        #  last_up_wave = None
-        #  last_down_wave = None
-
-        #  for w in reversed(waves):
-        #  if w.direction() == 'up' and last_up_wave == None:
-        #  last_up_wave = w
-        #  if w.direction() == 'down' and last_down_wave == None:
-        #  last_down_wave = w
-        #  if last_up_wave and last_down_wave:
-        #  break
-
-        #  if last_up_wave.low < current_price:
-        #  last_wave_retrace_price = waves[-1].high - (last_down_wave.high - last_down_wave.low)
-        #  else:
-        #  last_wave_retrace_point = (last_up_wave.high - last_up_wave.low) * 0.5
-        #  last_wave_retrace_price = last_up_wave.low + last_wave_retrace_point
-
-        #  risk_price = last_wave_retrace_price
-        #  #  if current_price < last_wave_retrace_price:
-        #  #  last_n_price_data_df = self.market_data_df[-10:]
-        #  #  risk_price = last_n_price_data_df['close'].min()
-        #  #  else:
-        #  #  risk_price = last_wave_retrace_price
-
-        #  #  self.set_trace_at('2019-12-18 10:10:00-0500')
-        #  if current_price - risk_price == 0:
-        #  return 0.01
-        #  else:
-        #  return (current_price - risk_price) * 1.1
-
-    #  def check_close_position_condition(self):
-    #  current_price = self.market_data_df[-1:]['close'][0]
-    #  current_time_period = self.current_time_period()
-
-    #  for position_id, targets in self.active_positions.items():
-    #  waves = self.waves_for_last_n_period()
-    #  waves_stats = Wave.waves_stats(waves)
-
-    #  #  self.set_trace_at('2018-02-14 09:45:00-0500')
-    #  if current_price >= targets['target_price'] or current_price <= targets['cut_loss_price'] or self.is_right_before_market_close() or self.is_maximum_loss_reached(position_id):
-
-    #  if position_id not in self.active_order_to_position_map.values():
-    #  # close the position
-
-    #  position = self.portfolio.find_position(position_id)
-    #  open_order = self.order_engine.find_order(position.open_order_id)
-    #  print('[{}] - Close the position {} at price {}'.format(current_time_period, position_id, current_price))
-    #  self.send_sms_on_conditions(self.sender_phone_number, '[{}] Close {} at {}'.format(current_time_period, self.symbol, current_price))
-    #  strike_price = open_order.strike_price
-    #  option_price = current_price - strike_price
-    #  order_quantity = 1
-
-    #  new_order = self.order_engine.place(symbol=self.symbol, side='sell', asset_type='option',
-    #  price=option_price, quantity=order_quantity, type='limit', strike_price=strike_price)
-
-    #  self.active_order_to_position_map[new_order.id] = position_id

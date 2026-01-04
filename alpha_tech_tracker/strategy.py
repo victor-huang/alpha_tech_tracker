@@ -4,11 +4,8 @@ from datetime import timezone
 from datetime import timedelta
 from decimal import Decimal
 
-#  from functools import reduce
 import pandas as pd
 import pprint as pp
-
-#  import numpy as np
 import plotly.graph_objects as go
 
 from alpha_tech_tracker.order_engine import OrderEngine
@@ -48,12 +45,8 @@ class Strategy(object):
         pass
 
 
-# good at up trend, good protection on sharp downtrend
-# ok loos on long consolidation e.g (start='2019-08-06', end='2019-09-23')
 class SimpleStrategy(Strategy):
     def __init__(self, *, symbol="None"):
-        # load 300 5-min interval data, so we can generate 200-d
-        # moving average lines
         self.symbol = symbol
         self.open_side = "buy"
         self.close_side = "sell"
@@ -79,15 +72,13 @@ class SimpleStrategy(Strategy):
         self.only_send_real_time_trade_alert = True
         self.plot_market_data_candle_stick_chart = False
 
-        #  self.market_data_timeout = 300
         self.market_data_timeout = (
             3600 * 7
         )  # number of second not receiving 5min agg data
         self.maximum_position_loss = 1000
 
-        self.buy_trigger_up_waves_ratio = 0.5  # v1 0.5
-        #  self.buy_trigger_up_magnitude_ratio = 0.55 # v1 0.6
-        self.buy_trigger_up_magnitude_ratio = 0.6  # v1 0.6, v2 0.55
+        self.buy_trigger_up_waves_ratio = 0.5
+        self.buy_trigger_up_magnitude_ratio = 0.6
         self.buy_trigger_risk_reward_ratio = 1.3
 
         self.strong_buy_after_sell_off_up_waves_ratio = 0.5
@@ -111,12 +102,8 @@ class SimpleStrategy(Strategy):
         }
 
     def prepare_market_data(self):
-        #  alpaca.get_historical_ochl_data('AMZN', start_date='2019-11-20', end_date='2019-11-23')
-        # it has 4xx data points
-        #  df = pd.read_json('./market_data/amzn_5min_sample.json')[:200]
         ipdb.set_trace()
         df = pd.read_json("./market_data/amzn_5min_2019-11-13_2019-11-23.json")
-        #  df = alpaca.get_historical_ochl_data(self.symbol, start_date='2019-11-18', end_date='2019-11-23')[:200]
 
         close_price_df = df[["close"]].copy()
         moving_avgs_df = ta.moving_average_summary(
@@ -126,7 +113,6 @@ class SimpleStrategy(Strategy):
         self.moving_avgs_df = moving_avgs_df
 
     def plot_data(self, df, chart_html_file_name="chart.html"):
-        # getting y-axis to work
         # https://github.com/plotly/plotly.py/issues/932
         fig = go.Figure(
             data=[
@@ -161,7 +147,6 @@ class SimpleStrategy(Strategy):
             df.to_json(file_name, orient="index")
 
     def read_data_from_files(self, symbol, date_range=[], start="", end=""):
-        # for amazon
         date_range = [
             ["2018-01-01", "2018-03-31"],
             ["2018-04-01", "2018-06-30"],
@@ -183,27 +168,14 @@ class SimpleStrategy(Strategy):
                 continue
 
             test_data_df_list.append(df[start:end])
-        # efficient way to constructing df: https://stackoverflow.com/questions/75956209/error-dataframe-object-has-no-attribute-append
+        # https://stackoverflow.com/questions/75956209/error-dataframe-object-has-no-attribute-append
         loaded_data_df = pd.concat(test_data_df_list)
 
-        # set to Easten time zone
         loaded_data_df.index = loaded_data_df.index.tz_localize(0).tz_convert(
             "America/New_York"
         )
         return loaded_data_df
 
-    # start='2019-11-13', end='2019-11-16' interestnig
-    #  def simulate(self, *, start='2019-11-18', end='2019-11-23'):
-    # down trend start='2019-07-22', end='2019-08-03'
-    # down trend start='2019-11-08', end='2019-11-20'
-    # down trend start='2019-05-23', end='2019-06-04'
-    # up trend start='2019-09-30', end='2019-10-18')
-    # up trend start='2019-06-03', end='2019-06-12'
-    # up trend start='2019-06-28', end='2019-07-11')
-    # up trend start='2019-03-08', end='2019-03-22' # highest profits
-    # update trend start='2019-03-28', end='2019-04-24'
-    # consolidation  start='2019-08-01', end='2019-09-17'
-    # long uptrend test start='2019-03-13', end='2019-05-09'
     def simulate(
         self,
         *,
@@ -217,7 +189,6 @@ class SimpleStrategy(Strategy):
 
         self.trade_counts_by_date = {}
 
-        # the api need +1 day for end date
         end_date = datetime.strptime(end, "%Y-%m-%d")
 
         if use_saved_data:
@@ -232,22 +203,13 @@ class SimpleStrategy(Strategy):
             end_date_str = (end_date + timedelta(days=1)).strftime("%Y-%m-%d")
             df = get_historical_stock_data(self.symbol, start, end_date_str)
 
-        #  df.to_json('./amzn_2018_01_2018_03.json', orient='table')
-        #  self.export_data_to_json('AMZN')
-
-        #  dfr = pd.read_json('./amzn_2018_01_2018_03.json',  orient='table')
-        #  df.to_json('./amzn_5min_2019-11-13_2019-11-23')
-
         preload_data_period = 200
-        #  future_market_data_df = df[preload_data_period + 1: preload_data_period + 200]
         future_market_data_df = df[1:]
         close_price_df = df[:preload_data_period][["close"]].copy()
         moving_avgs_df = ta.moving_average_summary(
             self.moving_average_periods, close_price_df
         )
         self.market_data_df = df[:1].copy()
-        #  t_time = datetime.strptime('2019-11-22 13:45:00-0500', '%Y-%m-%d %H:%M:%S%z')
-        #  self.market_data_df = df[:t_time].copy()
         self.moving_avgs_df = moving_avgs_df
 
         if self.plot_market_data_candle_stick_chart:
@@ -411,7 +373,6 @@ class SimpleStrategy(Strategy):
             if detection_fn(
                 price_data, trend="up", daily_movement_minimum=daily_movement_minimum
             ):
-                # name, category, symbol=None, signaled_at=datetime.now()):
                 signal_name = name + "-" + "up_trend"
                 signals.append(
                     Signal(
@@ -460,9 +421,6 @@ class SimpleStrategy(Strategy):
             w.price_range() for w in waves[-5:] if w.direction() == "up"
         ] + [last_n_price_data_df["close"].max() - current_price]
 
-        #  self.set_trace_at('2019-06-07 09:30:00-0400')
-        #  self.set_trace_at('2018-02-20 10:00:00-0500')
-        #  self.set_trace_at('2019-12-10 10:35:00-0500')
         if (
             waves_stats["up_waves_ratio"] > self.bullish_up_waves_ratio
             and waves_stats["up_wave_move_length"] >= self.bullish_up_wave_move_size
@@ -515,10 +473,6 @@ class SimpleStrategy(Strategy):
             )
         )
 
-        #  self.set_trace_at('2019-03-22 09:55:00-0400')
-        #  self.set_trace_at('2019-03-29 13:35:00-0400')
-        #  self.set_trace_at('2019-04-17 10:00:00-0400')
-
         if (
             self.risk_reward_ratio(current_price, waves=waves)
             > self.buy_trigger_risk_reward_ratio
@@ -535,10 +489,6 @@ class SimpleStrategy(Strategy):
             elif self.trade_counts_by_date[current_date] >= self.max_trade_per_day:
                 print("Maximum trade per day reached")
                 return
-
-            #  self.set_trace_at('2019-06-07 09:30:00-0400')
-
-            #  self.set_trace_at('2019-04-16 09:55:00-0400')
 
             if (
                 (
@@ -612,7 +562,6 @@ class SimpleStrategy(Strategy):
             waves = self.waves_for_last_n_period()
             waves_stats = Wave.waves_stats(waves)
 
-            #  self.set_trace_at('2018-02-14 09:45:00-0500')
             if (
                 current_price >= target["target_price"]
                 or current_price <= target["cut_loss_price"]
@@ -647,9 +596,6 @@ class SimpleStrategy(Strategy):
             position = self.portfolio.find_position(position_id)
             waves_stats = Wave.waves_stats(last_few_waves)
 
-            #  {'up_waves_ratio': 0.3333333333333333, 'up_magnitude_ratio': 0.1453418167288059, 'number_of_up_waves': 1, 'number_of_down_waves': 2, 'up_wave_move_length': 2, 'down_wave_move_length': 17, 'strong_up_wave_index': -1, 'strong_down_wave_index': -1}
-
-            #  self.set_trace_at('2019-04-16 15:25:00-0400'), sharp sell off case
             is_sharp_sell_off = (
                 waves_stats["up_magnitude_ratio"]
                 < self.waves_loosing_steam_up_magnitude_ratio
@@ -667,8 +613,6 @@ class SimpleStrategy(Strategy):
                 and waves_stats["up_magnitude_ratio"]
                 < self.waves_loosing_steam_down_wave_pickup_steam_up_magnitude_ratio
             )
-
-            #  self.set_trace_at('2019-12-10 10:00:00-0500')
 
             if (
                 last_few_waves[0].start > position.open_at
