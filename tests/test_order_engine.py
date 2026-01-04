@@ -52,7 +52,9 @@ def test_cancel_a_place_order_in_mock_engine():
     )
 
     assert new_order_engine.cancel(new_order.id) == True
-    assert len(new_order_engine.engine.orders) == 0
+    # Canceled orders remain in the list with status="canceled" for history tracking
+    assert len(new_order_engine.engine.orders) == 1
+    assert new_order_engine.engine.orders[0].status == "canceled"
 
 
 class TestOrder:

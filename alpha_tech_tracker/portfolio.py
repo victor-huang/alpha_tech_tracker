@@ -196,7 +196,6 @@ class Portfolio(object):
         summary_pnl["total_open"] = total_open
         summary_pnl["total_close"] = total_close
         summary_pnl["pnl"] = total_diff
-        avg_total_open = total_open / len(self.positions)
-        summary_pnl["pnl_percent"] = total_diff / avg_total_open
+        summary_pnl["pnl_percent"] = total_diff / total_open
 
         return summary_pnl
