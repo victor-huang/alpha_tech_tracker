@@ -16,6 +16,13 @@
 .pytest_cache/
 __pycache__
 
+# Coverage reports
+.coverage
+coverage.xml
+htmlcov/
+*.cover
+.hypothesis/
+
 # Used by dotenv library to load environment variables.
 # .env
 
