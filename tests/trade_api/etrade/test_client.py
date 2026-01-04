@@ -1,7 +1,11 @@
+import pytest
+
 from alpha_tech_tracker.trade_api.etrade.client import EtradeAPIClient
 
 
-# integration test
+@pytest.mark.etrade
+@pytest.mark.credentials
+@pytest.mark.integration
 def test_get_stock_quote():
     account_id = None
     client = EtradeAPIClient(selected_account_id=account_id, is_sandbox_enabled=True)
@@ -12,7 +16,9 @@ def test_get_stock_quote():
     assert "TSLA" in str(quote_response["QuoteResponse"])
 
 
-# integration test
+@pytest.mark.etrade
+@pytest.mark.credentials
+@pytest.mark.integration
 def test_get_accounts():
     client = EtradeAPIClient(is_sandbox_enabled=True)
     client.authorize_session()

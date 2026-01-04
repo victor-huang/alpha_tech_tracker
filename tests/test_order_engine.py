@@ -1,5 +1,7 @@
 from decimal import Decimal
 
+import pytest
+
 from alpha_tech_tracker.order_engine import OrderEngine
 from alpha_tech_tracker.order_engine import Order
 from alpha_tech_tracker.trade_api.etrade.client import EtradeAPIClient
@@ -88,6 +90,9 @@ class TestOrder:
 
 # these are integration test that requires interaction with Etrade
 class TestETradeOrderEngine:
+    @pytest.mark.etrade
+    @pytest.mark.credentials
+    @pytest.mark.integration
     def test_should_be_able_to_place_a_trade(self):
         client = EtradeAPIClient(selected_account_id="")
         client.authorize_session()
@@ -114,6 +119,9 @@ class TestETradeOrderEngine:
 
         assert new_order.id is not None
 
+    @pytest.mark.etrade
+    @pytest.mark.credentials
+    @pytest.mark.integration
     def test_sync_orders_should_update_order_status(self):
         client = EtradeAPIClient(selected_account_id="")
         client.authorize_session()
