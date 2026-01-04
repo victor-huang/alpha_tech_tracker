@@ -9,6 +9,7 @@ def test_create_an_instance_of_simple_strategy():
     assert isinstance(new_strategy, SimpleStrategy)
 
 
+@pytest.mark.skip(reason="Requires real Alpaca API data - use test_amzn_buy_strategy.py for detailed backtests")
 def test_strategy_simulation():
     new_strategy_1 = SimpleStrategy(symbol="AMZN")
 
