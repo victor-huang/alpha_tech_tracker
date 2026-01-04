@@ -67,7 +67,7 @@ python -m pytest tests/
 PYTHONPATH=. pytest tests/ -v
 ```
 
-**Result:** 211 passed, 8 skipped, 14 deselected (credential tests auto-skipped)
+**Result:** 209 passed, 10 skipped, 14 deselected (credential tests auto-skipped)
 
 ### Run only Alpaca tests
 ```bash
@@ -204,14 +204,17 @@ class TestETradeOrderEngine:
 ## Current Test Results
 
 When running with default configuration (auto-applies `"not credentials"`):
-- ✅ 211 tests passed
-- ⏭️ 8 tests skipped (missing data files, data persistence tests, streaming tests)
+- ✅ 209 tests passed
+- ⏭️ 10 tests skipped (missing data files, data persistence tests, strategy tuning tests, streaming tests)
 - 🚫 14 tests deselected (credential tests)
 - ⚠️ 3 warnings (deprecation warnings, non-critical)
+- ⚡ **Test suite runs in ~4 seconds** (down from ~68 seconds)
 
-### Tests Skipped to Prevent Side Effects
+### Tests Skipped to Prevent Side Effects or for Performance
 - `test_export_data` - Rewrites test data files in test_data/
 - `test_save_ticker_min_agg_to_json` - Appends to market_data/amzn_min_aggs
+- `test_strategy_simulation` (AMZN) - Lengthy backtest for strategy tuning (~10 months of data)
+- `test_strategy_simulation` (TSLA) - Lengthy backtest for strategy tuning (~multiple historical scenarios)
 - `test_detect_moving_average_trend` - Missing test data file (regn.csv)
 - Streaming tests that require market to be open
 
