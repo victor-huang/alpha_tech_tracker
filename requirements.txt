@@ -14,5 +14,9 @@ alpaca-py==0.43.2
 oauthlib==3.2.2
 rauth==0.7.3 # for etrade api client example
 requests_oauthlib==1.3.1
+yfinance==1.2.0
+multitasking==0.0.11
+mplfinance==0.12.10b0
+matplotlib==3.7.5
 
 #-e file:///Users/victor/work/alpaca-trade-api-python#egg=alpaca-trade-api

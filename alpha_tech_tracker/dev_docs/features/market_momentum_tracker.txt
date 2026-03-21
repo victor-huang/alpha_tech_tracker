@@ -1,0 +1,7 @@
+givin a list of market leader stock tickers, i like to see how the stock first 15 - 30 minutes price volume action in candle stick form, can predict the stock price movement for the day.
+is this methodology used any where? is there a official name for it?
+
+let's implement a similar one our own rule:
+here is the rule for the first 15 - 30 minutes price volume momentum indicator(let's call it op_momentum_guide):
+the first 15 or 20 minutes set the price range, at the end of the period, if stock price is above the mid-point of the range, it is bullish indicator, if the price close at the bottom 10% of the range, it is bearish indicator.
+we will combine this with the moving average lines, if price is above the 20-period moving average, it is bullish indicator, if price is below the 20-period moving average, it is bearish indicator. and the price needs to be above 200-period moving average for bullish signal to be valid. for bearish signals, the price needs to be below 200-period moving average.
