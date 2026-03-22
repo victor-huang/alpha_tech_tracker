@@ -93,10 +93,16 @@ def parse_args():
         "--end", type=str, default=None,
         help="End date for backtest window, YYYY-MM-DD (default: today, requires --start)"
     )
+    parser.add_argument(
+        "--stop-pct", type=float, default=0.15,
+        help="Hard stop as a fraction of OR range from the favorable end (default: 0.15). "
+             "Bull: exit if price drops below OR_high - stop_pct * OR_range. "
+             "Bear: exit if price rises above OR_low + stop_pct * OR_range."
+    )
     return parser.parse_args()
 
 
-def compute_signals_with_backtest(df: pd.DataFrame, opening_bars: int, bearish_ma200: bool = False) -> pd.DataFrame:
+def compute_signals_with_backtest(df: pd.DataFrame, opening_bars: int, bearish_ma200: bool = False, stop_pct: float = 0.40) -> pd.DataFrame:
     df = df.copy()
     df["MA20"] = df["Close"].rolling(20).mean()
     df["MA50"] = df["Close"].rolling(50).mean()
@@ -131,27 +137,49 @@ def compute_signals_with_backtest(df: pd.DataFrame, opening_bars: int, bearish_m
         else:
             continue
 
+        # Hard stop: bull exits if price drops back below the stop level after first crossing above it.
+        # Bear exits if price rises back above the stop level after first crossing below it.
+        # If price never crosses the stop level (no breakout confirmation), fall back to 20% from favorable end of OR range.
+        # Bull fallback: OR_high - 20% × OR_range (80th percentile). Bear fallback: OR_low + 20% × OR_range (20th percentile).
+        bull_hard_stop = or_high - stop_pct * or_range
+        bear_hard_stop = or_low + stop_pct * or_range
+        hard_stop_price = bull_hard_stop if signal == "BULLISH" else bear_hard_stop
+        bull_fallback = or_high - 0.20 * or_range
+        bear_fallback = or_low + 0.20 * or_range
+        fallback_price = bull_fallback if signal == "BULLISH" else bear_fallback
+
         post_open = day_df.iloc[opening_bars:]
         bars_held = 0
         max_favorable_move = 0.0
-        exit_price = midpoint  # default: hard stop at midpoint if immediately violated
-        exit_reason = "hard_stop"
+        exit_price = fallback_price
+        exit_reason = "fallback_20pct"
+        hard_stop_armed = False
 
         for _, bar in post_open.iterrows():
             bar_ma50 = bar["MA50"]
 
             if signal == "BULLISH":
-                below_midpoint = bar["Close"] <= midpoint
+                if not hard_stop_armed and bar["Close"] > hard_stop_price:
+                    hard_stop_armed = True
+                hard_stop_hit = hard_stop_armed and bar["Close"] <= hard_stop_price
+                fallback_hit = not hard_stop_armed and bar["Close"] <= fallback_price
                 trailing_stop_hit = (not pd.isna(bar_ma50)) and bar["Close"] < bar_ma50
                 move = bar["Close"] - midpoint
             else:
-                below_midpoint = bar["Close"] >= midpoint
+                if not hard_stop_armed and bar["Close"] < hard_stop_price:
+                    hard_stop_armed = True
+                hard_stop_hit = hard_stop_armed and bar["Close"] >= hard_stop_price
+                fallback_hit = not hard_stop_armed and bar["Close"] >= fallback_price
                 trailing_stop_hit = (not pd.isna(bar_ma50)) and bar["Close"] > bar_ma50
                 move = midpoint - bar["Close"]
 
-            if below_midpoint:
-                exit_price = midpoint
+            if hard_stop_hit:
+                exit_price = hard_stop_price
                 exit_reason = "hard_stop"
+                break
+            elif fallback_hit:
+                exit_price = fallback_price
+                exit_reason = "fallback_20pct"
                 break
             elif trailing_stop_hit:
                 exit_price = bar["Close"]
@@ -185,7 +213,7 @@ def compute_signals_with_backtest(df: pd.DataFrame, opening_bars: int, bearish_m
             "max_favorable_move": round(max_favorable_move, 2),
             "held_to_close": exit_reason == "end_of_day",
             "total_post_bars": len(post_open),
-            "success": bars_held >= SUCCESS_BARS,
+            "success": pnl > 0,
         })
 
     return pd.DataFrame(rows)
@@ -456,14 +484,16 @@ def print_monthly_breakdown(all_results: dict, opening_bars: int):
 
 
 def print_summary(all_results: dict, backtest_days: int, opening_bars: int):
-    print(f"\n{'='*70}")
+    print(f"\n{'='*96}")
     print(f"  SUMMARY — op_momentum_guide  |  Last {backtest_days} days  |  {opening_bars * 5}-min opening")
-    print(f"{'='*70}")
+    print(f"{'='*96}")
     print(f"  {'Ticker':<8} {'Signals':>8} {'Wins':>6} {'Fails':>6} {'Rate':>7} "
-          f"{'AvgMins(W)':>11} {'WinP&L':>9} {'LossP&L':>9} {'NetP&L':>9}")
-    print(f"  {'─'*68}")
+          f"{'AvgMins(W)':>11} {'AvgWin%':>8} {'AvgLoss%':>9} {'EV/Trade':>9} {'WinP&L':>9} {'LossP&L':>9} {'NetP&L':>9}")
+    print(f"  {'─'*94}")
 
     total_net = 0.0
+    all_win_pcts = []
+    all_loss_pcts = []
     for ticker, results in all_results.items():
         if results.empty:
             print(f"  {ticker:<8} {'no signals':>8}")
@@ -471,24 +501,53 @@ def print_summary(all_results: dict, backtest_days: int, opening_bars: int):
         total = len(results)
         wins = int(results["success"].sum())
         fails = total - wins
-        rate = wins / total * 100
+        win_rate = wins / total
+        loss_rate = fails / total
         avg_mins = results[results["success"]]["bars_held"].mean() * 5 if wins else 0
-        win_pnl = results[results["success"]]["pnl"].sum()
-        loss_pnl = results[~results["success"]]["pnl"].sum()
+
+        win_rows = results[results["success"]]
+        loss_rows = results[~results["success"]]
+
+        win_pct_series = win_rows["pnl"] / win_rows["entry_price"] * 100
+        avg_win_pct = win_pct_series.mean() if wins else 0
+        all_win_pcts.extend(win_pct_series.tolist())
+
+        loss_pct_series = loss_rows["pnl"].abs() / loss_rows["entry_price"] * 100
+        avg_loss_pct = loss_pct_series.mean() if fails else 0
+        all_loss_pcts.extend(loss_pct_series.tolist())
+
+        ev = win_rate * avg_win_pct - loss_rate * avg_loss_pct
+
+        win_pnl = win_rows["pnl"].sum()
+        loss_pnl = loss_rows["pnl"].sum()
         net_pnl = results["pnl"].sum()
         total_net += net_pnl
+
+        ev_str = f"+{ev:.3f}%" if ev >= 0 else f"{ev:.3f}%"
         net_str = f"+${net_pnl:.2f}" if net_pnl >= 0 else f"-${abs(net_pnl):.2f}"
         win_str = f"+${win_pnl:.2f}" if win_pnl >= 0 else f"-${abs(win_pnl):.2f}"
         loss_str = f"-${abs(loss_pnl):.2f}"
         print(
-            f"  {ticker:<8} {total:>8} {wins:>6} {fails:>6} {rate:>6.0f}%"
-            f" {avg_mins:>10.0f}m  {win_str:>9}  {loss_str:>9}  {net_str:>9}"
+            f"  {ticker:<8} {total:>8} {wins:>6} {fails:>6} {win_rate*100:>6.0f}%"
+            f" {avg_mins:>10.0f}m  {avg_win_pct:>7.2f}%  {avg_loss_pct:>8.2f}%  {ev_str:>9}"
+            f"  {win_str:>9}  {loss_str:>9}  {net_str:>9}"
         )
 
-    print(f"  {'─'*68}")
+    print(f"  {'─'*94}")
     total_str = f"+${total_net:.2f}" if total_net >= 0 else f"-${abs(total_net):.2f}"
-    print(f"  {'TOTAL':<8} {'':>8} {'':>6} {'':>6} {'':>7} {'':>11} {'':>9} {'':>9} {total_str:>9}")
-    print(f"{'='*70}")
+    overall_avg_win_pct = sum(all_win_pcts) / len(all_win_pcts) if all_win_pcts else 0
+    overall_avg_loss_pct = sum(all_loss_pcts) / len(all_loss_pcts) if all_loss_pcts else 0
+    total_wins = sum(len(r[r["success"]]) for r in all_results.values() if not r.empty)
+    total_sigs = sum(len(r) for r in all_results.values() if not r.empty)
+    overall_win_rate = total_wins / total_sigs if total_sigs else 0
+    overall_ev = overall_win_rate * overall_avg_win_pct - (1 - overall_win_rate) * overall_avg_loss_pct
+    overall_ev_str = f"+{overall_ev:.3f}%" if overall_ev >= 0 else f"{overall_ev:.3f}%"
+    print(
+        f"  {'TOTAL':<8} {'':>8} {'':>6} {'':>6} {'':>7} {'':>11}"
+        f"  {overall_avg_win_pct:>7.2f}%  {overall_avg_loss_pct:>8.2f}%  {overall_ev_str:>9}"
+        f"  {'':>9}  {'':>9} {total_str:>9}"
+    )
+    print(f"{'='*96}")
 
 
 if __name__ == "__main__":
@@ -496,6 +555,7 @@ if __name__ == "__main__":
     source = args.source
     opening_bars = args.opening_bars
     bearish_ma200 = args.bearish_ma200
+    stop_pct = args.stop_pct
     tickers = args.tickers if args.tickers else TICKERS
 
     if args.start:
@@ -514,9 +574,9 @@ if __name__ == "__main__":
     bearish_filter = "MA20 + MA200" if bearish_ma200 else "MA20 only"
     print(f"\nop_momentum_guide backtest — {period_label} ({source})")
     print(f"Tickers           : {', '.join(tickers)}")
-    print(f"Success threshold : price held correct side of midpoint for >= {SUCCESS_BARS * 5} min")
     print(f"Opening period    : first {opening_bars * 5} min ({opening_bars} x 5-min bars)")
-    print(f"Exit rule         : MA50 trailing stop  |  hard stop at midpoint")
+    print(f"Exit rule         : MA50 trailing stop  |  hard stop at {stop_pct*100:.0f}% from favorable end of OR")
+    print(f"  → Bull hard stop: OR_high - {stop_pct*100:.0f}% × OR_range  |  Bear hard stop: OR_low + {stop_pct*100:.0f}% × OR_range")
     print(f"Bearish filter    : {bearish_filter}  (use --bearish-ma200 to add MA200 requirement)")
 
     print(f"\nFetching {len(tickers)} tickers from {source} ({cutoff} → {end_date})...")
@@ -541,7 +601,7 @@ if __name__ == "__main__":
             if d >= cutoff:
                 trading_dates.add(d)
 
-        results = compute_signals_with_backtest(df, opening_bars, bearish_ma200)
+        results = compute_signals_with_backtest(df, opening_bars, bearish_ma200, stop_pct)
         if not results.empty:
             results = results[results["date"] >= cutoff].reset_index(drop=True)
 

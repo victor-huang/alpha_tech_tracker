@@ -5,3 +5,17 @@ let's implement a similar one our own rule:
 here is the rule for the first 15 - 30 minutes price volume momentum indicator(let's call it op_momentum_guide):
 the first 15 or 20 minutes set the price range, at the end of the period, if stock price is above the mid-point of the range, it is bullish indicator, if the price close at the bottom 10% of the range, it is bearish indicator.
 we will combine this with the moving average lines, if price is above the 20-period moving average, it is bullish indicator, if price is below the 20-period moving average, it is bearish indicator. and the price needs to be above 200-period moving average for bullish signal to be valid. for bearish signals, the price needs to be below 200-period moving average.
+
+
+=====Finding ticker in non-tech sectors that works well with the strategy====
+review this signal guide and some of the past backtest result: alpha_tech_tracker/op_momentum_strategy/OP_MOMENTUM_GUIDE.md
+can you help us to find a some non-tech sector tickers that works well with this strategy? especially in the past 90 days
+
+=====
+
+review the backtest code in alpha_tech_tracker/op_momentum_strategy/op_momentum_backtest.py, we want to implement a real trade engine with Alpaca's option trading API. our project already have installed alpaca api python binary, you can read about the latest option trading api here: https://docs.alpaca.markets/docs/options-trading-overview
+
+let's say we will have 25000 in the account, and we are going to keep two active trading symbol per day, we will select the best two ticker base on the past 30 days performance, and we will trade these two tickers for the day, and ignore other symbols.
+we will pick the weekly expired options with strike price that's about 10% lower than the current stock price. e.g. stock at $100, we will pick 100 % 10 = $90 strike price call options call on the bullish signal and signal. for bearish signal, we will pick put options with the strike price to be 10% higher than the current stock price. e.g. stock at $100, we will pick 100 % 10 = $110 strike price put options.
+
+can you do some research and provide a detailed plan on how to implement this real trade engine?
