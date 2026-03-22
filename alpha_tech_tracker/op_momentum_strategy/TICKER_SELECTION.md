@@ -92,6 +92,63 @@ Settings: 90-day, stop-pct 0.35, win = pnl > 0
 - **COIN** — near-zero EV (+0.037%), eliminated.
 - **TSLA / ISRG** — EV below +0.40% threshold, eliminated.
 
+### Batch 5 — Non-tech sector screen (Q1 2026 rotation candidates)
+
+Tickers: HOOD, BNTX, VRT, OXY, EXPE, AA
+Settings: 90-day (Dec 2025 – Mar 2026), stop-pct 0.15, win = pnl > 0
+
+| Ticker | Signals | Win Rate | AvgWin% | AvgLoss% | EV/Trade | Win P&L | Loss P&L | Net P&L |
+|---|---|---|---|---|---|---|---|---|
+| EXPE | 29 | 45% | 1.97% | 0.21% | **+0.770%** | +$65 | -$9 | +$57 |
+| AA | 31 | 55% | 0.89% | 0.35% | +0.327% | +$9 | -$3 | +$6 |
+| OXY | 34 | 56% | 0.55% | 0.21% | +0.215% | +$5 | -$2 | +$3 |
+| HOOD | 28 | 36% | 1.07% | 0.30% | +0.187% | +$9 | -$5 | +$4 |
+| VRT | 33 | 48% | 0.57% | 0.19% | +0.179% | +$19 | -$7 | +$11 |
+| BNTX | 20 | 50% | 0.55% | 0.23% | +0.159% | +$6 | -$2 | +$4 |
+
+**Notes:**
+- **EXPE** — standout result: EV/Trade +0.770% beats most confirmed tech tickers. AvgLoss% (0.21%) is extremely tight; AvgWin% (1.97%) provides strong asymmetry. 120-min avg hold on wins confirms follow-through. Promoted to watch.
+- **AA** — bull signal strong (15/18 = 83%) but bear signal broken (2/13 = 15%). Regime-dependent; eliminated for now.
+- **HOOD, OXY, VRT, BNTX** — positive EV but all below +0.40% threshold. Eliminated.
+
+### Batch 6 — Q1 2026 sector rotation leaders (Energy / Materials / Industrials)
+
+Motivation: Q1 2026 marked a clear rotation out of tech into Energy (+21–25% YTD), Materials (+17.9%), and Industrials (+14–16%). Screened high-beta sector leaders across both 90-day and 365-day windows.
+
+Tickers: GEV, HWM, FCX, VLO, FANG, MPC, DVN
+Settings: 90-day (Dec 2025 – Mar 2026) and 365-day (Mar 2025 – Mar 2026), stop-pct 0.15, win = pnl > 0
+
+#### 90-day results
+
+| Ticker | Sector | Signals | Win Rate | AvgWin% | AvgLoss% | EV/Trade | Net P&L |
+|---|---|---|---|---|---|---|---|
+| FANG | Energy/E&P | 27 | 63% | 0.59% | 0.28% | +0.269% | +$12 |
+| VLO | Energy/Refining | 29 | 55% | 0.57% | 0.20% | +0.225% | +$13 |
+| FCX | Materials/Copper | 31 | 42% | 0.67% | 0.15% | +0.191% | +$4 |
+| GEV | Industrials/Power | 31 | 42% | 0.69% | 0.19% | +0.180% | +$47 |
+| MPC | Energy/Refining | 28 | 50% | 0.44% | 0.19% | +0.121% | +$7 |
+| HWM | Industrials/Aerospace | 33 | 39% | 0.49% | 0.23% | +0.055% | +$3 |
+| DVN | Energy/E&P | 29 | 52% | 0.27% | 0.25% | +0.021% | +$0 |
+
+#### 365-day results
+
+| Ticker | Sector | Signals | Win Rate | AvgWin% | AvgLoss% | EV/Trade | Net P&L | Bull% | Bear% |
+|---|---|---|---|---|---|---|---|---|---|
+| FANG | Energy/E&P | 112 | 50% | 0.73% | 0.18% | **+0.279%** | +$45 | 58% | 38% |
+| GEV | Industrials/Power | 132 | 43% | 0.89% | 0.20% | **+0.273%** | +$207 | 53% | 18% |
+| DVN | Energy/E&P | 126 | 49% | 0.70% | 0.16% | **+0.263%** | +$11 | 53% | 43% |
+| VLO | Energy/Refining | 121 | 52% | 0.65% | 0.17% | **+0.259%** | +$45 | 62% | 36% |
+| FCX | Materials/Copper | 113 | 38% | 0.60% | 0.15% | +0.133% | +$8 | 56% | 16% |
+| MPC | Energy/Refining | 130 | 45% | 0.46% | 0.13% | +0.137% | +$30 | 58% | 27% |
+| HWM | Industrials/Aerospace | 133 | 44% | 0.33% | 0.16% | +0.057% | +$14 | 55% | 18% |
+
+**Notes:**
+- **FANG** — most balanced signal across bull and bear (58%/38%) over 365 days. Only ticker in this batch with reliable bearish follow-through. EV/Trade +0.279% over 365d. Added to candidate list for further validation.
+- **GEV** — large dollar P&L (+$207) driven by high stock price (~$500–$890 range). EV/Trade +0.273% over 365d. Bear signal structurally weak (18%) — essentially a bull-only play. Added to candidate list for further validation.
+- **VLO** — strong bull signal (62%) over 365d; bear side improving (36%) with longer window. Positive EV but below threshold; eliminated for now.
+- **DVN** — best bear signal in batch (43% over 365d). Low stock price compresses dollar P&L. EV/Trade +0.263%. Eliminated for now.
+- **FCX, MPC, HWM** — below threshold; eliminated.
+
 ### Batch 4 — Memory/storage sector screen
 
 Tickers: AMTA, STX, MU, SNDK
@@ -159,7 +216,7 @@ All metrics use `win = pnl > 0` and `stop-pct 0.35`. Ranked by 6-month EV/Trade.
 | 10 | CRWD | 44% | 1.05% | 0.38% | +0.244% | +0.500% | ⬇️ Downgraded |
 
 **Confirmed (EV/Trade > +0.49% over 6m):** SNDK, AMD, CVNA, SHOP, APP
-**Watch (positive EV but below threshold over 6m):** MRNA (low win rate), CRWV (low win rate)
+**Watch (positive EV but below threshold over 6m):** MRNA (low win rate), CRWV (low win rate), EXPE (90d only — needs 6m validation), FANG (365d +0.279% — needs threshold run), GEV (365d +0.273% — bull-only, needs bear filter study)
 **Backup:** SPOT, META — positive EV but thin returns
 **Downgraded:** CRWD — 90-day was uncharacteristically strong; 6-month EV/Trade dropped to +0.244%
 
@@ -237,3 +294,6 @@ The tradeoff: tighter stops compress AvgWin% significantly. At 0.10, the strateg
 - [ ] Set live-trade signal threshold: only take signal if EV/Trade confirmed > +0.40% over rolling 60 days
 - [ ] Consider position sizing rule: scale size proportional to EV/Trade — larger on SNDK/AMD, smaller on CRWV/MRNA
 - [ ] Explore per-ticker stop-pct: run APP with 0.70–0.80 while keeping rest at 0.35
+- [ ] Run EXPE 6-month validation (180-day) — 90d EV/Trade +0.770% is strong; needs longer window confirmation
+- [ ] Run FANG 6-month validation and tighter stop-pct sweep (0.10) — 365d EV/Trade +0.279%; closest non-tech/energy candidate to threshold
+- [ ] Investigate GEV bull-only filter — 365d bear success 18% drags EV/Trade; test with bearish signals disabled or --bearish-ma200 to see if bull-only EV/Trade clears +0.40%
