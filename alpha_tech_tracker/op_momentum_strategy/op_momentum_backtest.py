@@ -550,6 +550,35 @@ def print_summary(all_results: dict, backtest_days: int, opening_bars: int):
     print(f"{'='*96}")
 
 
+def fetch_bars(tickers: list, start_date: date, end_date: date, source: str = "alpaca") -> dict:
+    if source == "yfinance":
+        return fetch_yfinance_bars(tickers, start_date, end_date)
+    return fetch_alpaca_bars(tickers, start_date, end_date)
+
+
+def run_backtest(
+    tickers: list,
+    start_date: date,
+    end_date: date,
+    opening_bars: int = 3,
+    bearish_ma200: bool = False,
+    stop_pct: float = 0.15,
+    source: str = "alpaca",
+) -> dict:
+    ticker_dfs = fetch_bars(tickers, start_date, end_date, source=source)
+    all_results = {}
+    for ticker in tickers:
+        df = ticker_dfs.get(ticker, pd.DataFrame())
+        if df.empty:
+            all_results[ticker] = pd.DataFrame()
+            continue
+        results = compute_signals_with_backtest(df, opening_bars, bearish_ma200, stop_pct)
+        if not results.empty:
+            results = results[results["date"] >= start_date].reset_index(drop=True)
+        all_results[ticker] = results
+    return all_results
+
+
 if __name__ == "__main__":
     args = parse_args()
     source = args.source
