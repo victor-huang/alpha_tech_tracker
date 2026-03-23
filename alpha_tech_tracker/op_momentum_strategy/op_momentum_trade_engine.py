@@ -10,15 +10,19 @@ from typing import Optional
 import pandas as pd
 import pytz
 
+from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.live import StockDataStream
-from alpaca.data.requests import OptionLatestQuoteRequest
+from alpaca.data.enums import DataFeed
+from alpaca.data.requests import OptionLatestQuoteRequest, StockBarsRequest
 from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
 from alpaca.trading.enums import OrderSide, TimeInForce
 from alpaca.trading.requests import LimitOrderRequest, MarketOrderRequest
 
+from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import fetch_bars
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector import (
     DEFAULT_TICKERS,
-    ROLLING_LOOKBACK_DAYS,
+    _safe_bars_end,
+    score_ticker,
     select_top_n,
 )
 from alpha_tech_tracker.trade_api.alpaca_client.client import (
@@ -40,13 +44,16 @@ TICKERS = DEFAULT_TICKERS
 ACCOUNT_BUDGET = 25_000
 MAX_ACTIVE_SYMBOLS = 2
 OPENING_BARS = 3
+OPENING_START_TIME = "09:30"
 STOP_PCT = _D("0.15")
 STRIKE_CALL_OFFSET = _D("0.90")
 STRIKE_PUT_OFFSET = _D("1.10")
 CAPITAL_PER_SYMBOL = _D("0.45")
 EOD_EXIT_TIME = "15:55"
-MA_WARMUP_DAYS = 30
+MA_WARMUP_DAYS = 7
+ROLLING_LOOKBACK_DAYS = 30
 BEARISH_MA200 = False
+SIGNAL_BUFFER_MINUTES = 2
 
 
 # ---------------------------------------------------------------------------
@@ -64,6 +71,22 @@ class SignalEvent:
     or_low: Decimal
     or_range: Decimal
     ma50_at_signal: Decimal
+
+
+# ---------------------------------------------------------------------------
+# Aggregated 5-minute bar (built from live 1-minute bars)
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class _FiveMinBar:
+    symbol: str
+    timestamp: datetime
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float
 
 
 # ---------------------------------------------------------------------------
@@ -87,6 +110,13 @@ class ActivePosition:
     hard_stop_armed: bool = False
     is_closed: bool = False
     exit_reason: str = ""
+    entry_time: Optional[datetime] = None
+    exit_time: Optional[datetime] = None
+    simulated_entry_mid: Optional[Decimal] = None
+    simulated_exit_mid: Optional[Decimal] = None
+    exit_order_id: Optional[str] = None
+    entry_fill_price: Optional[Decimal] = None
+    exit_fill_price: Optional[Decimal] = None
 
 
 # ---------------------------------------------------------------------------
@@ -104,22 +134,45 @@ class TickerSelector:
     previous trading day so the engine still gets a ranked list to watch.
     """
 
-    def __init__(self, tickers: list, top_n: int):
+    def __init__(
+        self,
+        tickers: list,
+        top_n: int,
+        stop_pct: float = float(STOP_PCT),
+        opening_start_time: str = OPENING_START_TIME,
+    ):
         self._tickers = tickers
         self._top_n = top_n
+        self._stop_pct = stop_pct
+        self._opening_start_time = opening_start_time
+        self.rolling_stats: dict = {}
 
     def select(self) -> list:
         today = datetime.now(ET).date()
+
+        # Pre-fetch bars once — covers both the rolling lookback window and
+        # the MA warmup window, so all select_top_n calls below reuse this data.
+        fetch_start = today - timedelta(days=max(ROLLING_LOOKBACK_DAYS, 30) + 5)
+        ticker_dfs = fetch_bars(
+            self._tickers,
+            fetch_start,
+            _safe_bars_end(today),
+            source="alpaca",
+        )
+
         result = select_top_n(
             n=self._top_n,
             tickers=self._tickers,
             lookback_days=ROLLING_LOOKBACK_DAYS,
             opening_bars=OPENING_BARS,
             bearish_ma200=BEARISH_MA200,
-            stop_pct=float(STOP_PCT),
+            stop_pct=self._stop_pct,
             source="alpaca",
             target_date=today,
+            ticker_dfs=ticker_dfs,
+            opening_start_time=self._opening_start_time,
         )
+        self.rolling_stats = result.get("rolling_stats", {})
 
         picks = result["picks"]
 
@@ -140,10 +193,13 @@ class TickerSelector:
                 lookback_days=ROLLING_LOOKBACK_DAYS,
                 opening_bars=OPENING_BARS,
                 bearish_ma200=BEARISH_MA200,
-                stop_pct=float(STOP_PCT),
+                stop_pct=self._stop_pct,
                 source="alpaca",
                 target_date=prev_day,
+                ticker_dfs=ticker_dfs,
+                opening_start_time=self._opening_start_time,
             )
+            self.rolling_stats = result.get("rolling_stats", {})
             picks = result["picks"]
 
         selected = [p["ticker"] for p in picks]
@@ -208,19 +264,25 @@ class OptionContractSelector:
             expiry,
         )
 
+        # Fetch contracts over a ±20% range around the current stock price so we
+        # always capture available strikes regardless of their spacing, then pick
+        # the one closest to our computed target.
+        search_low = (stock_price * _D("0.80")).quantize(incr, rounding=ROUND_HALF_UP)
+        search_high = (stock_price * _D("1.20")).quantize(incr, rounding=ROUND_HALF_UP)
         contracts = self._client.get_options_contracts(
             underlying_symbol=ticker,
             expiration_date=expiry,
             option_type=option_type,
-            strike_price_gte=str(target_strike - incr),
-            strike_price_lte=str(target_strike + incr),
-            limit=20,
+            strike_price_gte=str(search_low),
+            strike_price_lte=str(search_high),
+            limit=50,
         )
 
         if not contracts:
             raise RuntimeError(
                 f"No {option_type} contracts found for {ticker} "
-                f"expiry={expiry} strike~{target_strike}"
+                f"expiry={expiry} strike~{target_strike} "
+                f"(searched {search_low}–{search_high})"
             )
 
         best = min(contracts, key=lambda c: abs(_D(c["strike_price"]) - target_strike))
@@ -295,36 +357,63 @@ class LiveSignalEngine:
         opening_bars: int = OPENING_BARS,
         bearish_ma200: bool = BEARISH_MA200,
         on_signal=None,
+        opening_start_time: str = OPENING_START_TIME,
     ):
         self._tickers = tickers
         self._opening_bars = opening_bars
         self._bearish_ma200 = bearish_ma200
+        self._opening_start_time = opening_start_time
+        self._opening_start = datetime.strptime(opening_start_time, "%H:%M").time()
         self._on_signal = on_signal  # callable(SignalEvent)
         self._api_key = api_key
         self._secret_key = secret_key
 
         # rolling 5-min dataframes keyed by ticker
         self._history: dict = {}
-        # opening bars collected today keyed by ticker
+        # opening 5-min bars collected today keyed by ticker
         self._opening_buf: dict = {t: [] for t in tickers}
         self._signal_fired: dict = {t: False for t in tickers}
+        # 1-min bar accumulator for building synthetic 5-min bars
+        self._minute_buf: dict = {
+            t: {"period_start": None, "bars": []} for t in tickers
+        }
+        # flag so we only kick off one historical catchup per session
+        self._opening_catchup_done: bool = False
         self._session_date = datetime.now(ET).date()
         self._stream: StockDataStream = None
         self._lock = threading.Lock()
 
     def _warmup(self):
         hist_client = StockHistoricalDataClient(self._api_key, self._secret_key)
-        end_dt = datetime.now(ET)
+        now_et = datetime.now(ET)
+        market_open = now_et.replace(hour=9, minute=30, second=0, microsecond=0)
+        if now_et >= market_open:
+            end_dt = now_et
+        else:
+            prev = now_et.date() - timedelta(days=1)
+            while prev.weekday() >= 5:
+                prev -= timedelta(days=1)
+            end_dt = ET.localize(
+                datetime.combine(prev, datetime.strptime("16:00", "%H:%M").time())
+            )
         start_dt = end_dt - timedelta(days=MA_WARMUP_DAYS)
 
+        logger.info(
+            "Fetching historical 5-min bars for %d tickers: %s to %s",
+            len(self._tickers),
+            start_dt.strftime("%Y-%m-%d %H:%M ET"),
+            end_dt.strftime("%Y-%m-%d %H:%M ET"),
+        )
         request = StockBarsRequest(
             symbol_or_symbols=self._tickers,
             timeframe=TimeFrame(amount=5, unit=TimeFrameUnit.Minute),
             start=start_dt,
             end=end_dt,
+            feed=DataFeed.IEX,
         )
         bars = hist_client.get_stock_bars(request)
         all_df = bars.df
+        logger.info("Historical fetch complete — processing bars per ticker")
 
         for ticker in self._tickers:
             try:
@@ -336,7 +425,13 @@ class LiveSignalEngine:
                 df["MA50"] = df["Close"].rolling(50).mean()
                 df["MA200"] = df["Close"].rolling(200).mean()
                 self._history[ticker] = df
-                logger.info("Warmed up %s with %d bars", ticker, len(df))
+                last_close = df["Close"].iloc[-1] if not df.empty else float("nan")
+                logger.info(
+                    "Warmed up %-6s — %d bars, last close=%.2f",
+                    ticker,
+                    len(df),
+                    last_close,
+                )
             except KeyError:
                 self._history[ticker] = pd.DataFrame(
                     columns=[
@@ -435,6 +530,106 @@ class LiveSignalEngine:
         if self._on_signal:
             self._on_signal(event)
 
+    def _aggregate_bars(
+        self, ticker: str, period_start: datetime, bars: list
+    ) -> _FiveMinBar:
+        return _FiveMinBar(
+            symbol=ticker,
+            timestamp=period_start,
+            open=float(bars[0].open),
+            high=max(float(b.high) for b in bars),
+            low=min(float(b.low) for b in bars),
+            close=float(bars[-1].close),
+            volume=sum(float(b.volume) for b in bars),
+        )
+
+    def _process_five_min_bar(self, bar: _FiveMinBar):
+        ticker = bar.symbol
+        if self._signal_fired.get(ticker):
+            # Keep appending for MA50 tracking used by PositionMonitor
+            self._append_bar(ticker, bar)
+            return
+
+        latest = self._append_bar(ticker, bar)
+
+        bar_time = bar.timestamp.astimezone(ET).time()
+        if bar_time < self._opening_start:
+            # Bar is before the opening window — update history for MAs but
+            # do not count toward the opening range buffer.
+            return
+
+        buf = self._opening_buf[ticker]
+
+        if len(buf) < self._opening_bars:
+            buf.append(bar)
+            logger.debug("%s: opening bar %d/%d", ticker, len(buf), self._opening_bars)
+
+        if len(buf) == self._opening_bars and not self._signal_fired[ticker]:
+            self._signal_fired[ticker] = True
+            self._try_fire_signal(ticker, latest)
+
+    def _catch_up_all_opening_bars(self, today):
+        """
+        Fetch today's opening-range 5-min bars from the historical API and
+        replay them so that any ticker whose opening buffer was incomplete due
+        to a stream gap can still fire its signal.
+        """
+        or_start = ET.localize(datetime.combine(today, self._opening_start))
+        or_end = or_start + timedelta(minutes=self._opening_bars * 5)
+        logger.info(
+            "Catching up opening bars for all tickers (%s–%s ET)",
+            or_start.strftime("%H:%M"),
+            or_end.strftime("%H:%M"),
+        )
+        hist_client = StockHistoricalDataClient(self._api_key, self._secret_key)
+        request = StockBarsRequest(
+            symbol_or_symbols=self._tickers,
+            timeframe=TimeFrame(amount=5, unit=TimeFrameUnit.Minute),
+            start=or_start,
+            end=or_end,
+            feed=DataFeed.IEX,
+        )
+        try:
+            bars = hist_client.get_stock_bars(request)
+            all_df = bars.df
+        except Exception:
+            logger.exception("Failed to fetch opening bar catchup data")
+            return
+
+        for ticker in self._tickers:
+            if self._signal_fired.get(ticker):
+                continue
+            try:
+                tick_df = all_df.xs(ticker, level=0).copy()
+            except KeyError:
+                logger.warning("No catchup data for %s", ticker)
+                continue
+            tick_df.index = tick_df.index.tz_convert(ET)
+            tick_df.columns = [c.capitalize() for c in tick_df.columns]
+
+            for ts, row in tick_df.iterrows():
+                synthetic = _FiveMinBar(
+                    symbol=ticker,
+                    timestamp=ts,
+                    open=float(row["Open"]),
+                    high=float(row["High"]),
+                    low=float(row["Low"]),
+                    close=float(row["Close"]),
+                    volume=float(row["Volume"]),
+                )
+                with self._lock:
+                    existing = self._history.get(ticker, pd.DataFrame())
+                    if not existing.empty and ts in existing.index:
+                        continue  # already have this bar from live stream
+                    self._process_five_min_bar(synthetic)
+
+            logger.info(
+                "Catchup: %s has %d/%d opening bars",
+                ticker,
+                len(self._opening_buf.get(ticker, [])),
+                self._opening_bars,
+            )
+
     async def _handle_bar(self, bar):
         ticker = bar.symbol
         if ticker not in self._tickers:
@@ -446,29 +641,78 @@ class LiveSignalEngine:
         with self._lock:
             if ts.date() != today:
                 return
-            if self._signal_fired.get(ticker):
-                # still append for MA50 tracking in PositionMonitor
-                self._append_bar(ticker, bar)
-                return
 
-            market_open = ET.localize(
+            actual_market_open = ET.localize(
                 datetime.combine(today, datetime.strptime("09:30", "%H:%M").time())
             )
-            if ts < market_open:
+            if ts < actual_market_open:
                 return
 
-            latest = self._append_bar(ticker, bar)
-            buf = self._opening_buf[ticker]
-
-            if len(buf) < self._opening_bars:
-                buf.append(bar)
-                logger.debug(
-                    "%s: opening bar %d/%d", ticker, len(buf), self._opening_bars
+            # If we're past the opening range close and any ticker's buffer is
+            # still incomplete (e.g. stream dropped during the opening window),
+            # kick off a one-time historical catchup in a background thread.
+            or_open = ET.localize(datetime.combine(today, self._opening_start))
+            or_close = or_open + timedelta(minutes=self._opening_bars * 5)
+            if ts >= or_close and not self._opening_catchup_done:
+                any_incomplete = any(
+                    not self._signal_fired.get(t)
+                    and len(self._opening_buf.get(t, [])) < self._opening_bars
+                    for t in self._tickers
                 )
+                if any_incomplete:
+                    self._opening_catchup_done = True
+                    logger.info(
+                        "Opening range closed but buffers incomplete — starting historical catchup"
+                    )
+                    threading.Thread(
+                        target=self._catch_up_all_opening_bars,
+                        args=(today,),
+                        daemon=True,
+                    ).start()
 
-            if len(buf) == self._opening_bars and not self._signal_fired[ticker]:
-                self._signal_fired[ticker] = True
-                self._try_fire_signal(ticker, latest)
+            logger.debug(
+                "1-min bar  %-6s  %s  O=%.2f H=%.2f L=%.2f C=%.2f  vol=%d",
+                ticker,
+                ts.strftime("%H:%M"),
+                float(bar.open),
+                float(bar.high),
+                float(bar.low),
+                float(bar.close),
+                int(bar.volume),
+            )
+
+            # Determine which 5-min period this 1-min bar belongs to
+            period_start = ts.replace(second=0, microsecond=0) - timedelta(
+                minutes=ts.minute % 5
+            )
+            mbuf = self._minute_buf.setdefault(
+                ticker, {"period_start": None, "bars": []}
+            )
+
+            if mbuf["period_start"] is None:
+                mbuf["period_start"] = period_start
+
+            if period_start == mbuf["period_start"]:
+                mbuf["bars"].append(bar)
+            else:
+                # New 5-min period started: finalize and process the previous one
+                if mbuf["bars"]:
+                    five_min_bar = self._aggregate_bars(
+                        ticker, mbuf["period_start"], mbuf["bars"]
+                    )
+                    logger.info(
+                        "5-min bar  %-6s  %s  O=%.2f H=%.2f L=%.2f C=%.2f  (%d 1-min bars)",
+                        ticker,
+                        mbuf["period_start"].strftime("%H:%M"),
+                        five_min_bar.open,
+                        five_min_bar.high,
+                        five_min_bar.low,
+                        five_min_bar.close,
+                        len(mbuf["bars"]),
+                    )
+                    self._process_five_min_bar(five_min_bar)
+                mbuf["period_start"] = period_start
+                mbuf["bars"] = [bar]
 
     def get_latest_bar(self, ticker: str) -> Optional[pd.Series]:
         df = self._history.get(ticker)
@@ -479,7 +723,11 @@ class LiveSignalEngine:
     def start(self):
         logger.info("Warming up historical bars for %s", self._tickers)
         self._warmup()
-        self._stream = StockDataStream(self._api_key, self._secret_key)
+        self._stream = StockDataStream(
+            self._api_key,
+            self._secret_key,
+            websocket_params={"ping_interval": 20, "ping_timeout": 40},
+        )
         self._stream.subscribe_bars(self._handle_bar, *self._tickers)
         logger.info("Starting live data stream for %s", self._tickers)
         thread = threading.Thread(target=self._stream.run, daemon=True)
@@ -498,9 +746,15 @@ class LiveSignalEngine:
 class PositionMonitor:
     """Monitors open option positions and exits on stop conditions."""
 
-    def __init__(self, alpaca_client: AlpacaAPIClient, signal_engine: LiveSignalEngine):
+    def __init__(
+        self,
+        alpaca_client: AlpacaAPIClient,
+        signal_engine: LiveSignalEngine,
+        simulate: bool = False,
+    ):
         self._client = alpaca_client
         self._signal_engine = signal_engine
+        self._simulate = simulate
         self._positions: list = []
         self._lock = threading.Lock()
 
@@ -560,6 +814,7 @@ class PositionMonitor:
     def _close_position(self, pos: ActivePosition, reason: str):
         pos.is_closed = True
         pos.exit_reason = reason
+        pos.exit_time = datetime.now(ET)
         logger.info(
             "EXIT %s %s reason=%s opt=%s contracts=%d",
             pos.ticker,
@@ -568,6 +823,8 @@ class PositionMonitor:
             pos.option_symbol,
             pos.contracts,
         )
+        mid = None
+        exit_limit = None
         try:
             quote_resp = self._client._option_data_client.get_option_latest_quote(
                 OptionLatestQuoteRequest(symbol_or_symbols=[pos.option_symbol])
@@ -575,6 +832,14 @@ class PositionMonitor:
             quote = quote_resp[pos.option_symbol]
             bid = _D(quote.bid_price)
             ask = _D(quote.ask_price)
+            mid = (bid + ask) / _D("2")
+            logger.info(
+                "EXIT QUOTE %s: bid=%s ask=%s mid=%s",
+                pos.option_symbol,
+                bid,
+                ask,
+                mid.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
+            )
             fallback = (ask * _D("0.98")).quantize(_D("0.01"), rounding=ROUND_HALF_UP)
             exit_limit = bid.quantize(_D("0.01"), rounding=ROUND_HALF_UP) or fallback
         except Exception:
@@ -582,7 +847,21 @@ class PositionMonitor:
                 "Could not fetch exit quote for %s, using market order",
                 pos.option_symbol,
             )
-            exit_limit = None
+
+        if self._simulate:
+            sim_mid = (
+                mid.quantize(_D("0.01"), rounding=ROUND_HALF_UP)
+                if mid is not None
+                else _D("0")
+            )
+            pos.simulated_exit_mid = sim_mid
+            logger.info(
+                "SIMULATE SELL_CLOSE %s contracts=%d simulated_fill=%.2f (no order placed)",
+                pos.option_symbol,
+                pos.contracts,
+                sim_mid,
+            )
+            return
 
         try:
             if exit_limit:
@@ -606,7 +885,8 @@ class PositionMonitor:
                     quantity=pos.contracts,
                     _option_symbol_override=pos.option_symbol,
                 )
-            logger.info("Close order placed: %s", order.get("order_id"))
+            pos.exit_order_id = order.get("order_id")
+            logger.info("Close order placed: %s", pos.exit_order_id)
         except Exception:
             logger.exception("Failed to place close order for %s", pos.option_symbol)
 
@@ -616,18 +896,200 @@ class PositionMonitor:
                 if not pos.is_closed:
                     self._close_position(pos, reason)
 
-    def print_summary(self):
-        print(f"\n{'=' * 72}")
-        print("  DAILY TRADE SUMMARY")
-        print(f"{'=' * 72}")
-        print(f"  {'Ticker':<7} {'Signal':<9} {'Option':<26} {'Qty':>4}  Exit Reason")
-        print(f"  {'─' * 70}")
-        for pos in self._positions:
-            print(
-                f"  {pos.ticker:<7} {pos.signal:<9} {pos.option_symbol:<26} "
-                f"{pos.contracts:>4}  {pos.exit_reason or 'open'}"
+    def _fetch_option_mid(self, option_symbol: str) -> Optional[Decimal]:
+        try:
+            resp = self._client._option_data_client.get_option_latest_quote(
+                OptionLatestQuoteRequest(symbol_or_symbols=[option_symbol])
             )
-        print(f"{'=' * 72}\n")
+            q = resp[option_symbol]
+            return (_D(q.bid_price) + _D(q.ask_price)) / _D("2")
+        except Exception:
+            return None
+
+    def _refresh_fill_prices(self, positions: list):
+        """Lazily fetch and cache order fill prices for live-mode positions."""
+        for p in positions:
+            if p.entry_fill_price is None and p.entry_order_id:
+                try:
+                    s = self._client.order_status(p.entry_order_id)
+                    if s.get("filled_avg_price") is not None:
+                        p.entry_fill_price = _D(str(s["filled_avg_price"]))
+                except Exception:
+                    pass
+            if p.is_closed and p.exit_fill_price is None and p.exit_order_id:
+                try:
+                    s = self._client.order_status(p.exit_order_id)
+                    if s.get("filled_avg_price") is not None:
+                        p.exit_fill_price = _D(str(s["filled_avg_price"]))
+                except Exception:
+                    pass
+
+    def print_status(self):
+        now = datetime.now(ET)
+        with self._lock:
+            open_pos = [p for p in self._positions if not p.is_closed]
+            closed_pos = [p for p in self._positions if p.is_closed]
+
+        has_sim = any(p.simulated_entry_mid is not None for p in self._positions)
+
+        if not has_sim:
+            self._refresh_fill_prices(open_pos + closed_pos)
+
+        def _fmt(dt: Optional[datetime]) -> str:
+            return dt.strftime("%H:%M") if dt else "—"
+
+        def _pnl(
+            entry: Optional[Decimal],
+            exit_: Optional[Decimal],
+            signal: str,
+            contracts: int,
+        ) -> Optional[Decimal]:
+            if entry is None or exit_ is None:
+                return None
+            raw = (exit_ - entry) if signal == "BULLISH" else (entry - exit_)
+            return raw * _D(contracts) * _D("100")
+
+        def _pnl_str(pnl: Optional[Decimal]) -> str:
+            if pnl is None:
+                return ""
+            sign = "+" if pnl >= 0 else ""
+            return f"  {sign}${pnl:.2f}"
+
+        bar = "━" * 82
+        sep = "─" * 80
+        print(f"\n{bar}")
+        print(
+            f"  POSITION STATUS  {now.strftime('%H:%M ET')}  |  "
+            f"open={len(open_pos)}  closed={len(closed_pos)}"
+        )
+        print(bar)
+
+        if open_pos:
+            print("  OPEN POSITIONS")
+            print(f"  {sep}")
+            for p in open_pos:
+                if has_sim:
+                    entry_price = p.simulated_entry_mid
+                else:
+                    entry_price = p.entry_fill_price
+                    current_mid = self._fetch_option_mid(p.option_symbol)
+                unrealized = (
+                    _pnl(entry_price, p.simulated_entry_mid, p.signal, p.contracts)
+                    if has_sim
+                    else _pnl(entry_price, current_mid, p.signal, p.contracts)
+                )
+                entry_str = f"  entry=${entry_price:.2f}" if entry_price else ""
+                unreal_str = (
+                    f"  unreal={_pnl_str(unrealized).strip()}"
+                    if unrealized is not None
+                    else ""
+                )
+                print(
+                    f"  {p.ticker:<7} {p.signal:<9} {p.option_symbol:<26} "
+                    f"x{p.contracts}  in={_fmt(p.entry_time)}{entry_str}{unreal_str}"
+                )
+        else:
+            print("  No open positions")
+
+        if closed_pos:
+            print(f"\n  CLOSED POSITIONS")
+            print(f"  {sep}")
+            total_pnl = _D("0")
+            for p in closed_pos:
+                if has_sim:
+                    entry_price = p.simulated_entry_mid
+                    exit_price = p.simulated_exit_mid
+                else:
+                    entry_price = p.entry_fill_price
+                    exit_price = p.exit_fill_price
+                pnl = _pnl(entry_price, exit_price, p.signal, p.contracts)
+                if pnl is not None:
+                    total_pnl += pnl
+                print(
+                    f"  {p.ticker:<7} {p.signal:<9} {p.option_symbol:<26} "
+                    f"x{p.contracts}  {_fmt(p.entry_time)}→{_fmt(p.exit_time)}"
+                    f"  {p.exit_reason}{_pnl_str(pnl)}"
+                )
+            any_pnl = any(
+                (
+                    _pnl(
+                        p.simulated_entry_mid if has_sim else p.entry_fill_price,
+                        p.simulated_exit_mid if has_sim else p.exit_fill_price,
+                        p.signal,
+                        p.contracts,
+                    )
+                )
+                is not None
+                for p in closed_pos
+            )
+            if any_pnl:
+                sign = "+" if total_pnl >= 0 else ""
+                print(f"  {sep}")
+                print(f"  Running P&L: {sign}${total_pnl:.2f}")
+
+        print(f"{bar}\n")
+
+    def print_summary(self):
+        has_sim = any(pos.simulated_entry_mid is not None for pos in self._positions)
+
+        def _fmt_time(dt: Optional[datetime]) -> str:
+            return dt.strftime("%H:%M") if dt else "—"
+
+        if has_sim:
+            width = 114
+            print(f"\n{'=' * width}")
+            print("  DAILY TRADE SUMMARY  [SIMULATE MODE]")
+            print(f"{'=' * width}")
+            print(
+                f"  {'Ticker':<7} {'Signal':<9} {'Option':<26} {'Qty':>4}"
+                f"  {'Entry':>5} {'Exit':>5}  {'EntryMid':>9} {'ExitMid':>9} {'Opt P&L':>10}  Exit Reason"
+            )
+            print(f"  {'─' * 112}")
+            for pos in self._positions:
+                entry_mid = pos.simulated_entry_mid
+                exit_mid = pos.simulated_exit_mid
+                if entry_mid is not None and exit_mid is not None:
+                    raw_pnl = (
+                        (exit_mid - entry_mid)
+                        if pos.signal == "BULLISH"
+                        else (entry_mid - exit_mid)
+                    )
+                    pnl_total = raw_pnl * _D(pos.contracts) * _D("100")
+                    pnl_str = (
+                        f"+${pnl_total:.2f}"
+                        if pnl_total >= 0
+                        else f"-${abs(pnl_total):.2f}"
+                    )
+                    entry_str = f"${entry_mid:.2f}"
+                    exit_str = f"${exit_mid:.2f}"
+                else:
+                    pnl_str = entry_str = exit_str = "—"
+                print(
+                    f"  {pos.ticker:<7} {pos.signal:<9} {pos.option_symbol:<26} "
+                    f"{pos.contracts:>4}"
+                    f"  {_fmt_time(pos.entry_time):>5} {_fmt_time(pos.exit_time):>5}"
+                    f"  {entry_str:>9} {exit_str:>9} {pnl_str:>10}"
+                    f"  {pos.exit_reason or 'open'}"
+                )
+            print(f"{'=' * width}\n")
+        else:
+            width = 86
+            print(f"\n{'=' * width}")
+            print("  DAILY TRADE SUMMARY")
+            print(f"{'=' * width}")
+            print(
+                f"  {'Ticker':<7} {'Signal':<9} {'Option':<26} {'Qty':>4}"
+                f"  {'Entry':>5} {'Exit':>5}  Exit Reason"
+            )
+            print(f"  {'─' * 84}")
+            for pos in self._positions:
+                print(
+                    f"  {pos.ticker:<7} {pos.signal:<9} {pos.option_symbol:<26} "
+                    f"{pos.contracts:>4}"
+                    f"  {_fmt_time(pos.entry_time):>5} {_fmt_time(pos.exit_time):>5}"
+                    f"  {pos.exit_reason or 'open'}"
+                )
+            print(f"{'=' * width}\n")
 
 
 # ---------------------------------------------------------------------------
@@ -647,19 +1109,35 @@ class OpMomentumTradeEngine:
       5. Monitor stops intraday; close on hard stop, MA50 trail, or EOD.
     """
 
-    def __init__(self, alpaca_client: AlpacaAPIClient, is_paper: bool = True):
+    def __init__(
+        self,
+        alpaca_client: AlpacaAPIClient,
+        is_paper: bool = True,
+        stop_pct: float = float(STOP_PCT),
+        simulate: bool = False,
+        opening_start_time: str = OPENING_START_TIME,
+    ):
         self._client = alpaca_client
         self._api_key = alpaca_client._api_key
         self._secret_key = alpaca_client._secret_key
+        self._stop_pct = _D(str(stop_pct))
+        self._simulate = simulate
+        self._opening_start_time = opening_start_time
         self._monitor: PositionMonitor = None
         self._signal_engine: LiveSignalEngine = None
+        self._pending_signals: dict = {}
+        self._signal_lock = threading.Lock()
+        self._rolling_stats: dict = {}
+        self._signal_collection_deadline: Optional[datetime] = None
+        self._open_position_count: int = 0
 
-    def _on_signal(self, event: SignalEvent):
+    def _enter_position(self, event: SignalEvent):
+        """Select contract, size, place order, and register with position monitor."""
         logger.info(
-            "Handling signal: %s %s @ %.2f",
+            "Entering position: %s %s @ %.2f",
             event.ticker,
             event.signal,
-            event.stock_price,
+            float(event.stock_price),
         )
         try:
             selector = OptionContractSelector(self._client)
@@ -668,6 +1146,8 @@ class OpMomentumTradeEngine:
             )
         except Exception:
             logger.exception("Could not select option contract for %s", event.ticker)
+            with self._signal_lock:
+                self._open_position_count -= 1
             return
 
         try:
@@ -675,6 +1155,8 @@ class OpMomentumTradeEngine:
             contracts, limit_price = sizer.compute(option_symbol)
         except Exception:
             logger.exception("Could not size position for %s", option_symbol)
+            with self._signal_lock:
+                self._open_position_count -= 1
             return
 
         try:
@@ -687,12 +1169,16 @@ class OpMomentumTradeEngine:
             )
         except Exception:
             logger.exception("Failed to place entry order for %s", option_symbol)
+            with self._signal_lock:
+                self._open_position_count -= 1
             return
 
-        bull_hard_stop = event.or_high - STOP_PCT * event.or_range
-        bear_hard_stop = event.or_low + STOP_PCT * event.or_range
+        bull_hard_stop = event.or_high - self._stop_pct * event.or_range
+        bear_hard_stop = event.or_low + self._stop_pct * event.or_range
         bull_fallback = event.or_high - _D("0.20") * event.or_range
         bear_fallback = event.or_low + _D("0.20") * event.or_range
+
+        sim_entry_mid = order.get("simulated_fill_mid") if self._simulate else None
 
         pos = ActivePosition(
             ticker=event.ticker,
@@ -704,14 +1190,103 @@ class OpMomentumTradeEngine:
             or_high=event.or_high,
             or_low=event.or_low,
             or_range=event.or_range,
-            hard_stop_price=bull_hard_stop
-            if event.signal == "BULLISH"
-            else bear_hard_stop,
-            fallback_price=bull_fallback
-            if event.signal == "BULLISH"
-            else bear_fallback,
+            hard_stop_price=(
+                bull_hard_stop if event.signal == "BULLISH" else bear_hard_stop
+            ),
+            fallback_price=(
+                bull_fallback if event.signal == "BULLISH" else bear_fallback
+            ),
+            entry_time=datetime.now(ET),
+            simulated_entry_mid=sim_entry_mid,
         )
         self._monitor.add_position(pos)
+
+    def _on_signal(self, event: SignalEvent):
+        now = datetime.now(ET)
+        with self._signal_lock:
+            if (
+                self._signal_collection_deadline
+                and now < self._signal_collection_deadline
+            ):
+                self._pending_signals[event.ticker] = event
+                logger.info("Buffered signal: %s %s", event.ticker, event.signal)
+                return
+            if self._open_position_count >= MAX_ACTIVE_SYMBOLS:
+                logger.info(
+                    "Max positions reached (%d), skipping %s",
+                    MAX_ACTIVE_SYMBOLS,
+                    event.ticker,
+                )
+                return
+            self._open_position_count += 1
+
+        self._enter_position(event)
+
+    def _signal_selection_loop(self):
+        """Wait for signal collection deadline, rank buffered signals, enter top N."""
+        deadline = self._signal_collection_deadline
+        logger.info(
+            "Signal collection window open until %s ET",
+            deadline.strftime("%H:%M:%S"),
+        )
+        while datetime.now(ET) < deadline:
+            time.sleep(0.5)
+
+        with self._signal_lock:
+            pending = dict(self._pending_signals)
+            self._pending_signals.clear()
+
+        if not pending:
+            logger.info("Signal collection window closed: no signals buffered")
+            return
+
+        logger.info(
+            "Signal collection window closed: ranking %d buffered signal(s)",
+            len(pending),
+        )
+
+        scored = []
+        for ticker, event in pending.items():
+            stats = self._rolling_stats.get(ticker, {})
+            if stats.get("ev_trade", 0) <= 0:
+                logger.info(
+                    "Skipping %s: ev_trade=%.3f <= 0", ticker, stats.get("ev_trade", 0)
+                )
+                continue
+            midpoint = (event.or_high + event.or_low) / _D("2")
+            entry_vs_mid_pct = (
+                float(abs(event.entry_price - midpoint) / midpoint * 100)
+                if midpoint != 0
+                else 0.0
+            )
+            or_range_pct = (
+                float(event.or_range / event.entry_price * 100)
+                if event.entry_price != 0
+                else 0.0
+            )
+            sig_dict = {
+                "entry_vs_mid_pct": entry_vs_mid_pct,
+                "or_range_pct": or_range_pct,
+            }
+            score = score_ticker(sig_dict, stats)
+            scored.append((score, ticker, event))
+            logger.info(
+                "Ranked %s: score=%.3f ev_trade=%.3f",
+                ticker,
+                score,
+                stats.get("ev_trade", 0),
+            )
+
+        scored.sort(key=lambda x: x[0], reverse=True)
+
+        for score, ticker, event in scored:
+            with self._signal_lock:
+                if self._open_position_count >= MAX_ACTIVE_SYMBOLS:
+                    logger.info("Max positions reached, stopping selection")
+                    break
+                self._open_position_count += 1
+            logger.info("Selecting %s from buffer (score=%.3f)", ticker, score)
+            self._enter_position(event)
 
     def _place_entry(
         self,
@@ -719,9 +1294,46 @@ class OpMomentumTradeEngine:
         signal: str,
         option_symbol: str,
         contracts: int,
-        limit_price: float,
+        limit_price: Decimal,
     ) -> dict:
         option_type = "CALL" if signal == "BULLISH" else "PUT"
+
+        entry_mid = limit_price
+        try:
+            quote_resp = self._client._option_data_client.get_option_latest_quote(
+                OptionLatestQuoteRequest(symbol_or_symbols=[option_symbol])
+            )
+            quote = quote_resp[option_symbol]
+            bid = _D(quote.bid_price)
+            ask = _D(quote.ask_price)
+            entry_mid = (bid + ask) / _D("2")
+            logger.info(
+                "ENTRY QUOTE %s: bid=%s ask=%s mid=%s",
+                option_symbol,
+                bid,
+                ask,
+                entry_mid.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
+            )
+        except Exception:
+            logger.warning(
+                "Could not fetch entry quote for %s, using sizer mid", option_symbol
+            )
+
+        if self._simulate:
+            sim_mid = entry_mid.quantize(_D("0.01"), rounding=ROUND_HALF_UP)
+            logger.info(
+                "SIMULATE BUY_OPEN %s %s contracts=%d simulated_fill=%.2f (no order placed)",
+                option_symbol,
+                option_type,
+                contracts,
+                sim_mid,
+            )
+            return {
+                "order_id": f"sim-{option_symbol}",
+                "status": "simulated",
+                "simulated_fill_mid": sim_mid,
+            }
+
         logger.info(
             "Placing BUY_OPEN: %s %s %d @ %.2f",
             option_symbol,
@@ -732,7 +1344,7 @@ class OpMomentumTradeEngine:
         order = self._client.place_option_order(
             symbol=ticker,
             option_key=None,
-            price=limit_price,
+            price=float(limit_price),
             price_type="LIMIT",
             option_type=option_type,
             order_action="BUY_OPEN",
@@ -749,6 +1361,7 @@ class OpMomentumTradeEngine:
     def _monitor_loop(self, active_tickers: list):
         """Polls PositionMonitor on each new bar arrival, and forces EOD close."""
         eod_h, eod_m = [int(x) for x in EOD_EXIT_TIME.split(":")]
+        last_status_print = datetime.now(ET)
         while True:
             now = datetime.now(ET)
             if now.hour > eod_h or (now.hour == eod_h and now.minute >= eod_m):
@@ -758,33 +1371,64 @@ class OpMomentumTradeEngine:
 
             for ticker in active_tickers:
                 self._monitor.on_bar(ticker)
+
+            if (now - last_status_print).total_seconds() >= 300:
+                self._monitor.print_status()
+                last_status_print = now
+
             time.sleep(30)
 
     def run(self, tickers_override: list = None):
         api_key = self._api_key
         secret_key = self._secret_key
 
+        all_tickers = tickers_override or TICKERS
+
         ticker_selector = TickerSelector(
-            tickers=tickers_override or TICKERS,
+            tickers=all_tickers,
             top_n=MAX_ACTIVE_SYMBOLS,
+            stop_pct=float(self._stop_pct),
+            opening_start_time=self._opening_start_time,
         )
-        active_tickers = ticker_selector.select()
-        print(f"\nActive tickers for today: {active_tickers}")
+        pre_market_picks = ticker_selector.select()
+        self._rolling_stats = ticker_selector.rolling_stats
+        print(f"\nPre-market top picks: {pre_market_picks}")
+        print(f"Subscribing all {len(all_tickers)} tickers to live stream...")
+
+        today = datetime.now(ET).date()
+        opening_start = datetime.strptime(self._opening_start_time, "%H:%M").time()
+        or_open_et = ET.localize(datetime.combine(today, opening_start))
+        or_close_et = or_open_et + timedelta(minutes=OPENING_BARS * 5)
+        self._signal_collection_deadline = or_close_et + timedelta(
+            minutes=SIGNAL_BUFFER_MINUTES
+        )
+        logger.info(
+            "Signal collection deadline: %s ET",
+            self._signal_collection_deadline.strftime("%H:%M:%S"),
+        )
 
         self._signal_engine = LiveSignalEngine(
-            tickers=active_tickers,
+            tickers=all_tickers,
             api_key=api_key,
             secret_key=secret_key,
             opening_bars=OPENING_BARS,
             bearish_ma200=BEARISH_MA200,
             on_signal=self._on_signal,
+            opening_start_time=self._opening_start_time,
         )
-        self._monitor = PositionMonitor(self._client, self._signal_engine)
+        self._monitor = PositionMonitor(
+            self._client, self._signal_engine, simulate=self._simulate
+        )
 
         self._signal_engine.start()
 
+        selection_thread = threading.Thread(
+            target=self._signal_selection_loop, daemon=True
+        )
+        selection_thread.start()
+
         monitor_thread = threading.Thread(
-            target=self._monitor_loop, args=(active_tickers,), daemon=True
+            target=self._monitor_loop, args=(all_tickers,), daemon=True
         )
         monitor_thread.start()
         monitor_thread.join()
@@ -897,10 +1541,28 @@ def parse_args():
         help="Use live trading account (default: paper trading)",
     )
     parser.add_argument(
+        "--simulate",
+        action="store_true",
+        default=False,
+        help="Simulate order fills at mid bid/ask — no real orders placed",
+    )
+    parser.add_argument(
         "--tickers",
         nargs="+",
         default=None,
         help="Override ticker universe, e.g. --tickers NVDA CRWD",
+    )
+    parser.add_argument(
+        "--stop-pct",
+        type=float,
+        default=float(STOP_PCT),
+        help=f"Hard stop as fraction of OR range (default: {float(STOP_PCT)})",
+    )
+    parser.add_argument(
+        "--opening-start",
+        type=str,
+        default=OPENING_START_TIME,
+        help=f"Opening window start time HH:MM ET (default: {OPENING_START_TIME})",
     )
     parser.add_argument(
         "--log-level",
@@ -918,6 +1580,13 @@ if __name__ == "__main__":
         datefmt="%Y-%m-%d %H:%M:%S",
     )
 
-    client = AlpacaAPIClient(is_paper_trading=not args.live)
-    engine = OpMomentumTradeEngine(alpaca_client=client, is_paper=not args.live)
+    is_paper = not (args.live or args.simulate)
+    client = AlpacaAPIClient(is_paper_trading=is_paper)
+    engine = OpMomentumTradeEngine(
+        alpaca_client=client,
+        is_paper=is_paper,
+        stop_pct=args.stop_pct,
+        simulate=args.simulate,
+        opening_start_time=args.opening_start,
+    )
     engine.run(tickers_override=args.tickers)

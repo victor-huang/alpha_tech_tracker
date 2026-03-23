@@ -1,12 +1,37 @@
 import argparse
 import pandas as pd
-from datetime import date, timedelta
+import pytz
+from datetime import date, datetime, timedelta
 
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import (
     fetch_bars,
     run_backtest,
     compute_signals_with_backtest,
 )
+
+
+_ET = pytz.timezone("America/New_York")
+
+
+def _safe_bars_end(target_date: date):
+    """
+    Returns the safe end boundary for intraday bar fetches to avoid Alpaca's
+    'recent SIP data' restriction.
+
+    - Historical date (before today): return date + 1 (safe, already in the past).
+    - Today, pre-market (before 9:30 AM ET): return target_date so the request
+      ends at yesterday's close.
+    - Today, market open or later: return the current datetime in ET so the
+      request ends right now rather than at midnight UTC tonight (which is still
+      in the future and triggers the 403).
+    """
+    now_et = datetime.now(_ET)
+    if target_date < now_et.date():
+        return target_date + timedelta(days=1)
+    market_open = now_et.replace(hour=9, minute=30, second=0, microsecond=0)
+    if now_et >= market_open:
+        return now_et
+    return target_date
 
 
 # DEFAULT_TICKERS = ["SNDK", "APP", "SHOP", "CVNA", "AMD", "META", "EXPE", "FANG"]
@@ -27,6 +52,7 @@ DEFAULT_TICKERS = [
 ]
 ROLLING_LOOKBACK_DAYS = 60
 OPENING_BARS = 3
+OPENING_START_TIME = "09:30"
 STOP_PCT = 0.15
 
 
@@ -167,11 +193,25 @@ def select_top_n(
     stop_pct: float,
     source: str,
     target_date: date = None,
+    ticker_dfs: dict = None,
+    opening_start_time: str = OPENING_START_TIME,
 ) -> list:
     if target_date is None:
         target_date = date.today()
 
     lookback_start = target_date - timedelta(days=lookback_days)
+
+    if ticker_dfs is None:
+        # Single fetch covering both the rolling lookback and MA warmup windows.
+        # MA warmup needs 30 days; use min() so a longer lookback_days still works.
+        ma_warmup_start = target_date - timedelta(days=30)
+        fetch_start = min(lookback_start, ma_warmup_start)
+        ticker_dfs = fetch_bars(
+            tickers,
+            fetch_start,
+            _safe_bars_end(target_date),
+            source=source,
+        )
 
     all_results = run_backtest(
         tickers=tickers,
@@ -181,20 +221,16 @@ def select_top_n(
         bearish_ma200=bearish_ma200,
         stop_pct=stop_pct,
         source=source,
+        ticker_dfs=ticker_dfs,
+        opening_start_time=opening_start_time,
     )
 
     rolling_stats = {
         ticker: compute_ticker_stats(df) for ticker, df in all_results.items()
     }
 
-    # Fetch today's bars for signal detection (need buffer for MA warmup)
-    ma_warmup_start = target_date - timedelta(days=30)
-    today_bars = fetch_bars(
-        tickers, ma_warmup_start, target_date + timedelta(days=1), source=source
-    )
-
     today_signals = compute_today_signals(
-        today_bars, opening_bars, bearish_ma200, stop_pct, target_date
+        ticker_dfs, opening_bars, bearish_ma200, stop_pct, target_date
     )
 
     scored = []
@@ -234,6 +270,7 @@ def select_top_n(
         "picks": top,
         "no_signal": no_signal,
         "negative_ev": negative_ev,
+        "rolling_stats": rolling_stats,
     }
 
 
@@ -282,6 +319,12 @@ def _parse_args():
         type=int,
         default=OPENING_BARS,
         help=f"Number of 5-min bars in opening period (default: {OPENING_BARS})",
+    )
+    parser.add_argument(
+        "--opening-start",
+        type=str,
+        default=OPENING_START_TIME,
+        help=f"Opening window start time HH:MM ET (default: {OPENING_START_TIME})",
     )
     return parser.parse_args()
 
@@ -340,6 +383,7 @@ if __name__ == "__main__":
         stop_pct=args.stop_pct,
         source=args.source,
         target_date=target_date,
+        opening_start_time=args.opening_start,
     )
 
     picks = result["picks"]

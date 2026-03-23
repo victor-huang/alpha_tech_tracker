@@ -4,6 +4,7 @@ import pandas as pd
 import yfinance as yf
 from datetime import date, datetime, timedelta
 
+from alpaca.data.enums import DataFeed
 from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
@@ -46,6 +47,7 @@ def fetch_alpaca_bars(tickers: list, start_date: date, end_date: date) -> dict:
         timeframe=TimeFrame(amount=5, unit=TimeFrameUnit.Minute),
         start=fetch_start,
         end=fetch_end,
+        feed=DataFeed.IEX,
     )
     bars = client.get_stock_bars(request)
 
@@ -123,7 +125,12 @@ def compute_signals_with_backtest(
     opening_bars: int,
     bearish_ma200: bool = False,
     stop_pct: float = 0.40,
+    opening_start_time: str = "09:30",
 ) -> pd.DataFrame:
+    from datetime import time as dtime
+
+    opening_start_t = datetime.strptime(opening_start_time, "%H:%M").time()
+
     df = df.copy()
     df["MA20"] = df["Close"].rolling(20).mean()
     df["MA50"] = df["Close"].rolling(50).mean()
@@ -131,7 +138,10 @@ def compute_signals_with_backtest(
 
     rows = []
     for date_, day_df in df.groupby(df.index.date):
-        opening = day_df.head(opening_bars)
+        # Bars from opening_start onward define the opening range and post-open window.
+        # All day bars (from 09:30) remain in df for accurate MA calculations.
+        day_from_start = day_df[day_df.index.time >= opening_start_t]
+        opening = day_from_start.head(opening_bars)
         if len(opening) < opening_bars:
             continue
 
@@ -169,7 +179,7 @@ def compute_signals_with_backtest(
         bear_fallback = or_low + 0.20 * or_range
         fallback_price = bull_fallback if signal == "BULLISH" else bear_fallback
 
-        post_open = day_df.iloc[opening_bars:]
+        post_open = day_from_start.iloc[opening_bars:]
         bars_held = 0
         max_favorable_move = 0.0
         exit_price = fallback_price
@@ -200,7 +210,11 @@ def compute_signals_with_backtest(
                 break
             elif fallback_hit:
                 if signal == "BULLISH":
-                    exit_price = fallback_price if bar["High"] >= fallback_price else bar["Close"]
+                    exit_price = (
+                        fallback_price
+                        if bar["High"] >= fallback_price
+                        else bar["Close"]
+                    )
                 else:
                     exit_price = fallback_price
                 exit_reason = "fallback_20pct"
@@ -267,7 +281,9 @@ def print_successful_days(ticker: str, results: pd.DataFrame, backtest_days: int
         return
 
     for _, r in wins.iterrows():
-        pnl_str = f"+${abs(r['pnl']):.2f}" if r["pnl"] >= 0 else f"-${abs(r['pnl']):.2f}"
+        pnl_str = (
+            f"+${abs(r['pnl']):.2f}" if r["pnl"] >= 0 else f"-${abs(r['pnl']):.2f}"
+        )
         print(
             f"  {str(r['date']):<12} {r['signal']:<9} "
             f"{r['midpoint']:>7.2f} {r['entry_price']:>7.2f} {r['exit_price']:>7.2f} "
@@ -627,7 +643,10 @@ def print_summary(all_results: dict, backtest_days: int, opening_bars: int):
 
 
 def fetch_bars(
-    tickers: list, start_date: date, end_date: date, source: str = "alpaca"
+    tickers: list,
+    start_date: date,
+    end_date: date,
+    source: str = "alpaca",
 ) -> dict:
     if source == "yfinance":
         return fetch_yfinance_bars(tickers, start_date, end_date)
@@ -663,6 +682,7 @@ def fetch_daily_bars(
         timeframe=TimeFrame(amount=1, unit=TimeFrameUnit.Day),
         start=datetime.combine(start_date, datetime.min.time()),
         end=datetime.combine(end_date + timedelta(days=1), datetime.min.time()),
+        feed=DataFeed.IEX,
     )
     bars = client.get_stock_bars(request)
     result = {}
@@ -685,8 +705,11 @@ def run_backtest(
     bearish_ma200: bool = False,
     stop_pct: float = 0.15,
     source: str = "alpaca",
+    ticker_dfs: dict = None,
+    opening_start_time: str = "09:30",
 ) -> dict:
-    ticker_dfs = fetch_bars(tickers, start_date, end_date, source=source)
+    if ticker_dfs is None:
+        ticker_dfs = fetch_bars(tickers, start_date, end_date, source=source)
     all_results = {}
     for ticker in tickers:
         df = ticker_dfs.get(ticker, pd.DataFrame())
@@ -694,7 +717,7 @@ def run_backtest(
             all_results[ticker] = pd.DataFrame()
             continue
         results = compute_signals_with_backtest(
-            df, opening_bars, bearish_ma200, stop_pct
+            df, opening_bars, bearish_ma200, stop_pct, opening_start_time
         )
         if not results.empty:
             results = results[results["date"] >= start_date].reset_index(drop=True)

@@ -20,12 +20,16 @@ def _D(x) -> Decimal:
 
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine import (
     CAPITAL_PER_SYMBOL,
+    MAX_ACTIVE_SYMBOLS,
     ActivePosition,
     LiveSignalEngine,
+    OpMomentumTradeEngine,
     OptionContractSelector,
     PositionMonitor,
     PositionSizer,
+    SignalEvent,
     TickerSelector,
+    _FiveMinBar,
     _next_friday,
     _strike_increment,
 )
@@ -153,9 +157,9 @@ class TestOptionContractSelector:
             underlying_symbol="NVDA",
             expiration_date=date(2026, 3, 27),
             option_type="call",
-            strike_price_gte="720",
-            strike_price_lte="740",
-            limit=20,
+            strike_price_gte="656",
+            strike_price_lte="984",
+            limit=50,
         )
 
     @patch(_NEXT_FRIDAY_PATH, return_value=date(2026, 3, 27))
@@ -208,8 +212,9 @@ class TestOptionContractSelector:
         symbol = selector.select("COIN", "BEARISH", 100.0)
 
         call_args = client.get_options_contracts.call_args
-        assert call_args.kwargs["strike_price_lte"] == "115"
-        assert call_args.kwargs["strike_price_gte"] == "105"
+        assert call_args.kwargs["strike_price_lte"] == "120"
+        assert call_args.kwargs["strike_price_gte"] == "80"
+        assert call_args.kwargs["limit"] == 50
         assert symbol == "COIN260328P00110000"
 
 
@@ -281,11 +286,18 @@ class TestPositionSizer:
 _SELECT_TOP_N_PATH = (
     "alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine.select_top_n"
 )
+_FETCH_BARS_PATH = (
+    "alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine.fetch_bars"
+)
 
 
 class TestTickerSelector:
     @patch(_SELECT_TOP_N_PATH)
-    def test_returns_top_n_tickers_by_composite_score(self, mock_select_top_n):
+    @patch(_FETCH_BARS_PATH)
+    def test_returns_top_n_tickers_by_composite_score(
+        self, mock_fetch_bars, mock_select_top_n
+    ):
+        mock_fetch_bars.return_value = {}
         mock_select_top_n.return_value = {
             "picks": [
                 {"ticker": "NVDA", "signal": "BULLISH", "score": 4.2, "ev_trade": 0.8},
@@ -293,20 +305,36 @@ class TestTickerSelector:
             ],
             "no_signal": ["COIN"],
             "negative_ev": [],
+            "rolling_stats": {
+                "NVDA": {"ev_trade": 0.8, "win_rate": 0.6, "avg_win_pct": 2.0},
+                "CRWD": {"ev_trade": 0.5, "win_rate": 0.5, "avg_win_pct": 1.5},
+            },
         }
 
         selector = TickerSelector(tickers=["NVDA", "CRWD", "COIN"], top_n=2)
         result = selector.select()
 
         assert result == ["NVDA", "CRWD"]
+        assert "NVDA" in selector.rolling_stats
+        mock_fetch_bars.assert_called_once()
         mock_select_top_n.assert_called_once()
 
     @patch(_SELECT_TOP_N_PATH)
+    @patch(_FETCH_BARS_PATH)
     def test_falls_back_to_previous_day_when_today_has_no_picks(
-        self, mock_select_top_n
+        self, mock_fetch_bars, mock_select_top_n
     ):
+        mock_fetch_bars.return_value = {}
+        fallback_stats = {
+            "NVDA": {"ev_trade": 0.6, "win_rate": 0.55, "avg_win_pct": 1.8}
+        }
         mock_select_top_n.side_effect = [
-            {"picks": [], "no_signal": ["NVDA", "CRWD"], "negative_ev": []},
+            {
+                "picks": [],
+                "no_signal": ["NVDA", "CRWD"],
+                "negative_ev": [],
+                "rolling_stats": {},
+            },
             {
                 "picks": [
                     {
@@ -318,6 +346,7 @@ class TestTickerSelector:
                 ],
                 "no_signal": ["CRWD"],
                 "negative_ev": [],
+                "rolling_stats": fallback_stats,
             },
         ]
 
@@ -325,7 +354,149 @@ class TestTickerSelector:
         result = selector.select()
 
         assert result == ["NVDA"]
+        assert selector.rolling_stats == fallback_stats
+        mock_fetch_bars.assert_called_once()
         assert mock_select_top_n.call_count == 2
+
+
+# ---------------------------------------------------------------------------
+# TestSignalBuffer — _on_signal buffering and post-deadline behavior
+# ---------------------------------------------------------------------------
+
+
+def _make_signal_event(
+    ticker="NVDA", signal="BULLISH", entry=105.0, or_high=107.0, or_low=97.0
+):
+    or_range = _D(str(or_high)) - _D(str(or_low))
+    return SignalEvent(
+        ticker=ticker,
+        signal=signal,
+        entry_price=_D(str(entry)),
+        stock_price=_D(str(entry)),
+        or_high=_D(str(or_high)),
+        or_low=_D(str(or_low)),
+        or_range=or_range,
+        ma50_at_signal=_D("100"),
+    )
+
+
+def _make_engine_with_mock_client():
+    client = _make_alpaca_client()
+    engine = OpMomentumTradeEngine(alpaca_client=client, simulate=True)
+    return engine
+
+
+class TestSignalBuffer:
+    def test_on_signal_buffers_when_before_deadline(self):
+        engine = _make_engine_with_mock_client()
+        future_deadline = datetime.now(ET) + timedelta(minutes=5)
+        engine._signal_collection_deadline = future_deadline
+
+        event = _make_signal_event("NVDA")
+        engine._on_signal(event)
+
+        assert "NVDA" in engine._pending_signals
+        assert engine._open_position_count == 0
+
+    def test_on_signal_overwrites_earlier_signal_for_same_ticker(self):
+        engine = _make_engine_with_mock_client()
+        engine._signal_collection_deadline = datetime.now(ET) + timedelta(minutes=5)
+
+        engine._on_signal(_make_signal_event("AMD", entry=100.0))
+        engine._on_signal(_make_signal_event("AMD", entry=102.0))
+
+        assert len(engine._pending_signals) == 1
+        assert float(engine._pending_signals["AMD"].entry_price) == 102.0
+
+    def test_on_signal_skips_when_max_positions_reached_after_deadline(self):
+        engine = _make_engine_with_mock_client()
+        engine._signal_collection_deadline = datetime.now(ET) - timedelta(minutes=1)
+        engine._open_position_count = MAX_ACTIVE_SYMBOLS
+
+        with patch.object(engine, "_enter_position") as mock_enter:
+            engine._on_signal(_make_signal_event("NVDA"))
+            mock_enter.assert_not_called()
+
+    def test_on_signal_calls_enter_position_after_deadline_when_slot_available(self):
+        engine = _make_engine_with_mock_client()
+        engine._signal_collection_deadline = datetime.now(ET) - timedelta(minutes=1)
+        engine._open_position_count = 0
+
+        with patch.object(engine, "_enter_position") as mock_enter:
+            event = _make_signal_event("NVDA")
+            engine._on_signal(event)
+            mock_enter.assert_called_once_with(event)
+
+        assert engine._open_position_count == 1
+
+
+class TestSignalSelectionLoop:
+    def test_no_action_when_no_signals_buffered(self):
+        engine = _make_engine_with_mock_client()
+        engine._signal_collection_deadline = datetime.now(ET) - timedelta(seconds=1)
+
+        with patch.object(engine, "_enter_position") as mock_enter:
+            engine._signal_selection_loop()
+            mock_enter.assert_not_called()
+
+    def test_skips_tickers_with_no_rolling_stats(self):
+        engine = _make_engine_with_mock_client()
+        engine._signal_collection_deadline = datetime.now(ET) - timedelta(seconds=1)
+        engine._pending_signals = {"NVDA": _make_signal_event("NVDA")}
+        engine._rolling_stats = {}
+
+        with patch.object(engine, "_enter_position") as mock_enter:
+            engine._signal_selection_loop()
+            mock_enter.assert_not_called()
+
+    def test_skips_tickers_with_negative_ev(self):
+        engine = _make_engine_with_mock_client()
+        engine._signal_collection_deadline = datetime.now(ET) - timedelta(seconds=1)
+        engine._pending_signals = {"NVDA": _make_signal_event("NVDA")}
+        engine._rolling_stats = {
+            "NVDA": {"ev_trade": -0.1, "win_rate": 0.4, "avg_win_pct": 1.0}
+        }
+
+        with patch.object(engine, "_enter_position") as mock_enter:
+            engine._signal_selection_loop()
+            mock_enter.assert_not_called()
+
+    def test_enters_top_n_scored_signals(self):
+        engine = _make_engine_with_mock_client()
+        engine._signal_collection_deadline = datetime.now(ET) - timedelta(seconds=1)
+        engine._pending_signals = {
+            "AMD": _make_signal_event("AMD", entry=105.0, or_high=107.0, or_low=97.0),
+            "NVDA": _make_signal_event("NVDA", entry=106.0, or_high=108.0, or_low=96.0),
+            "META": _make_signal_event("META", entry=104.0, or_high=106.0, or_low=98.0),
+        }
+        engine._rolling_stats = {
+            "AMD": {"ev_trade": 0.5, "win_rate": 0.5, "avg_win_pct": 2.0},
+            "NVDA": {"ev_trade": 0.8, "win_rate": 0.6, "avg_win_pct": 3.0},
+            "META": {"ev_trade": 0.3, "win_rate": 0.45, "avg_win_pct": 1.5},
+        }
+
+        entered_tickers = []
+        with patch.object(
+            engine,
+            "_enter_position",
+            side_effect=lambda e: entered_tickers.append(e.ticker),
+        ):
+            engine._signal_selection_loop()
+
+        assert len(entered_tickers) == MAX_ACTIVE_SYMBOLS
+
+    def test_respects_max_active_symbols_limit(self):
+        engine = _make_engine_with_mock_client()
+        engine._signal_collection_deadline = datetime.now(ET) - timedelta(seconds=1)
+        engine._open_position_count = MAX_ACTIVE_SYMBOLS
+        engine._pending_signals = {"NVDA": _make_signal_event("NVDA")}
+        engine._rolling_stats = {
+            "NVDA": {"ev_trade": 1.0, "win_rate": 0.6, "avg_win_pct": 3.0}
+        }
+
+        with patch.object(engine, "_enter_position") as mock_enter:
+            engine._signal_selection_loop()
+            mock_enter.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
@@ -478,6 +649,119 @@ class TestLiveSignalEngine:
 
         assert latest is not None
         assert latest["Close"] == 104.0
+
+    def test_aggregate_bars_builds_correct_ohlcv(self):
+        engine = LiveSignalEngine(
+            tickers=["AMD"], api_key="k", secret_key="s", opening_bars=3
+        )
+        period_start = ET.localize(datetime(2026, 3, 24, 9, 30))
+        bars = _make_mock_bars(
+            "AMD",
+            highs=[101.0, 102.0, 103.0, 104.0, 105.0],
+            lows=[99.0, 100.0, 101.0, 102.0, 103.0],
+        )
+        for i, b in enumerate(bars):
+            b.open = 100.0 + i
+            b.close = 100.5 + i
+            b.volume = 1000.0
+
+        result = engine._aggregate_bars("AMD", period_start, bars)
+
+        assert result.symbol == "AMD"
+        assert result.timestamp == period_start
+        assert result.open == 100.0
+        assert result.high == 105.0
+        assert result.low == 99.0
+        assert result.close == 104.5
+        assert result.volume == 5000.0
+
+    def test_process_five_min_bar_accumulates_opening_bars(self):
+        fired_events = []
+        engine = LiveSignalEngine(
+            tickers=["AMD"],
+            api_key="k",
+            secret_key="s",
+            opening_bars=3,
+            on_signal=fired_events.append,
+        )
+        closes = [104.0, 105.0, 106.0]
+        df = self._make_history_df(closes, ma20=100.0, ma200=90.0)
+        engine._history["AMD"] = df
+
+        bar1 = _FiveMinBar(
+            "AMD",
+            ET.localize(datetime(2026, 3, 24, 9, 30)),
+            102.0,
+            103.0,
+            101.0,
+            102.5,
+            1000.0,
+        )
+        bar2 = _FiveMinBar(
+            "AMD",
+            ET.localize(datetime(2026, 3, 24, 9, 35)),
+            103.0,
+            104.0,
+            102.0,
+            103.5,
+            1000.0,
+        )
+
+        engine._process_five_min_bar(bar1)
+        assert len(engine._opening_buf["AMD"]) == 1
+        assert len(fired_events) == 0
+
+        engine._process_five_min_bar(bar2)
+        assert len(engine._opening_buf["AMD"]) == 2
+        assert len(fired_events) == 0
+
+    def test_process_five_min_bar_calls_try_fire_signal_on_third_bar(self):
+        engine = LiveSignalEngine(
+            tickers=["AMD"],
+            api_key="k",
+            secret_key="s",
+            opening_bars=3,
+        )
+        closes = [104.0, 105.0, 106.0]
+        engine._history["AMD"] = self._make_history_df(closes, ma20=100.0, ma200=90.0)
+
+        bars = [
+            _FiveMinBar(
+                "AMD",
+                ET.localize(datetime(2026, 3, 24, 9, 30)),
+                104.0,
+                105.0,
+                99.0,
+                104.0,
+                1000.0,
+            ),
+            _FiveMinBar(
+                "AMD",
+                ET.localize(datetime(2026, 3, 24, 9, 35)),
+                104.0,
+                106.0,
+                100.0,
+                105.0,
+                1000.0,
+            ),
+            _FiveMinBar(
+                "AMD",
+                ET.localize(datetime(2026, 3, 24, 9, 40)),
+                105.0,
+                107.0,
+                103.0,
+                106.0,
+                1000.0,
+            ),
+        ]
+
+        with patch.object(engine, "_try_fire_signal") as mock_fire:
+            for b in bars:
+                engine._process_five_min_bar(b)
+
+        mock_fire.assert_called_once()
+        assert mock_fire.call_args[0][0] == "AMD"
+        assert engine._signal_fired["AMD"] is True
 
 
 # ---------------------------------------------------------------------------
