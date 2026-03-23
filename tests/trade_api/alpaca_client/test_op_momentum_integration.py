@@ -1,4 +1,7 @@
+import threading
+
 import pytest
+from alpaca.data.live import StockDataStream
 
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine import (
     OptionContractSelector,
@@ -13,17 +16,23 @@ _NO_POSITION_CODE = "40310000"  # account not eligible to trade uncovered contra
 
 def _skip_if_options_not_enabled(exc: Exception):
     msg = str(exc)
-    if any(code in msg for code in _OPTIONS_NOT_ENABLED_CODES) or "not authorized" in msg.lower():
+    if (
+        any(code in msg for code in _OPTIONS_NOT_ENABLED_CODES)
+        or "not authorized" in msg.lower()
+    ):
         pytest.skip(f"Options trading not enabled on this account: {exc}")
 
 
 def _skip_if_no_position(exc: Exception):
     if _NO_POSITION_CODE in str(exc):
-        pytest.skip(f"SELL_CLOSE requires an existing position (expected for test accounts): {exc}")
+        pytest.skip(
+            f"SELL_CLOSE requires an existing position (expected for test accounts): {exc}"
+        )
 
 
 def _fetch_qqq_price(client: AlpacaAPIClient) -> float:
     from alpaca.data.requests import StockLatestQuoteRequest
+
     resp = client._stock_data_client.get_stock_latest_quote(
         StockLatestQuoteRequest(symbol_or_symbols=["QQQ"])
     )
@@ -154,6 +163,7 @@ class TestPositionSizerIntegration:
         assert isinstance(contracts, int)
         assert contracts >= 1
         from decimal import Decimal
+
         assert isinstance(limit_price, Decimal)
         assert limit_price > Decimal("0")
 
@@ -173,6 +183,7 @@ class TestPositionSizerIntegration:
         assert isinstance(contracts, int)
         assert contracts >= 1
         from decimal import Decimal
+
         assert isinstance(limit_price, Decimal)
         assert limit_price > Decimal("0")
 
@@ -300,3 +311,46 @@ class TestPlaceOptionOrderWithSymbolOverrideIntegration:
         finally:
             if order_id:
                 client.cancel_order(order_id)
+
+
+@pytest.mark.alpaca
+@pytest.mark.credentials
+class TestMarketDataStreamIntegration:
+    def test_subscribe_to_qqq_quote_feed_receives_data(self):
+        """
+        Connects to Alpaca's live data stream for QQQ, subscribes to quote updates,
+        and waits up to 15 seconds for at least one quote to arrive.
+
+        Skips gracefully outside market hours when no quotes are streaming.
+        """
+        client = AlpacaAPIClient(is_paper_trading=_IS_PAPER)
+        received = threading.Event()
+        received_quote = {}
+
+        async def on_quote(quote):
+            received_quote["symbol"] = quote.symbol
+            received_quote["bid"] = quote.bid_price
+            received_quote["ask"] = quote.ask_price
+            received.set()
+
+        stream = StockDataStream(client._api_key, client._secret_key)
+        stream.subscribe_quotes(on_quote, _TEST_TICKER)
+
+        stream_thread = threading.Thread(target=stream.run, daemon=True)
+        stream_thread.start()
+
+        try:
+            data_arrived = received.wait(timeout=15)
+        finally:
+            stream.stop()
+            stream_thread.join(timeout=5)
+
+        if not data_arrived:
+            pytest.skip(
+                f"No quote data received for {_TEST_TICKER} within 15s "
+                "(market may be closed or stream delayed)"
+            )
+
+        assert received_quote["symbol"] == _TEST_TICKER
+        assert received_quote["bid"] >= 0
+        assert received_quote["ask"] >= received_quote["bid"]
