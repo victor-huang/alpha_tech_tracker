@@ -10,7 +10,7 @@ from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
 
 
 TICKERS = ["NVDA", "CRWD", "COIN", "JNJ", "XOM", "CAT"]
-SUCCESS_BARS = 3       # "long enough" = held correct side for >= 3 bars (15 min)
+SUCCESS_BARS = 3  # "long enough" = held correct side for >= 3 bars (15 min)
 YFINANCE_MAX_DAYS = 60  # yfinance hard limit for 5-minute data
 
 
@@ -37,8 +37,8 @@ def fetch_alpaca_bars(tickers: list, start_date: date, end_date: date) -> dict:
     secret_key = os.environ.get("ALPACA_SECRET_KEY")
     client = StockHistoricalDataClient(key_id, secret_key)
 
-    # Add extra buffer (200 bars * 5min ≈ 16 trading days) so MA200 can warm up
-    fetch_start = datetime.combine(start_date - timedelta(days=30), datetime.min.time())
+    # MA200 on 5-min bars = 200 bars × 5 min = ~2.6 trading days; 5 calendar days is enough.
+    fetch_start = datetime.combine(start_date - timedelta(days=5), datetime.min.time())
     fetch_end = datetime.combine(end_date, datetime.min.time())
 
     request = StockBarsRequest(
@@ -66,43 +66,64 @@ def fetch_alpaca_bars(tickers: list, start_date: date, end_date: date) -> dict:
 def parse_args():
     parser = argparse.ArgumentParser(description="op_momentum_guide backtest")
     parser.add_argument(
-        "--days", type=int, default=14,
-        help="Number of calendar days to backtest (default: 14)"
+        "--days",
+        type=int,
+        default=14,
+        help="Number of calendar days to backtest (default: 14)",
     )
     parser.add_argument(
-        "--opening-bars", type=int, default=3,
-        help="Number of 5-min bars in the opening period (default: 3 = 15 min, 4 = 20 min)"
+        "--opening-bars",
+        type=int,
+        default=3,
+        help="Number of 5-min bars in the opening period (default: 3 = 15 min, 4 = 20 min)",
     )
     parser.add_argument(
-        "--bearish-ma200", action="store_true", default=False,
-        help="Require price < MA200 for bearish signal (use in bearish market regime, default: off)"
+        "--bearish-ma200",
+        action="store_true",
+        default=False,
+        help="Require price < MA200 for bearish signal (use in bearish market regime, default: off)",
     )
     parser.add_argument(
-        "--source", choices=["alpaca", "yfinance"], default="alpaca",
-        help="Market data source (default: alpaca). yfinance is limited to 60 days."
+        "--source",
+        choices=["alpaca", "yfinance"],
+        default="alpaca",
+        help="Market data source (default: alpaca). yfinance is limited to 60 days.",
     )
     parser.add_argument(
-        "--tickers", nargs="+", default=None,
-        help="Override TICKERS list, e.g. --tickers NVDA CRWD COIN"
+        "--tickers",
+        nargs="+",
+        default=None,
+        help="Override TICKERS list, e.g. --tickers NVDA CRWD COIN",
     )
     parser.add_argument(
-        "--start", type=str, default=None,
-        help="Start date for backtest window, YYYY-MM-DD (overrides --days)"
+        "--start",
+        type=str,
+        default=None,
+        help="Start date for backtest window, YYYY-MM-DD (overrides --days)",
     )
     parser.add_argument(
-        "--end", type=str, default=None,
-        help="End date for backtest window, YYYY-MM-DD (default: today, requires --start)"
+        "--end",
+        type=str,
+        default=None,
+        help="End date for backtest window, YYYY-MM-DD (default: today, requires --start)",
     )
     parser.add_argument(
-        "--stop-pct", type=float, default=0.15,
+        "--stop-pct",
+        type=float,
+        default=0.15,
         help="Hard stop as a fraction of OR range from the favorable end (default: 0.15). "
-             "Bull: exit if price drops below OR_high - stop_pct * OR_range. "
-             "Bear: exit if price rises above OR_low + stop_pct * OR_range."
+        "Bull: exit if price drops below OR_high - stop_pct * OR_range. "
+        "Bear: exit if price rises above OR_low + stop_pct * OR_range.",
     )
     return parser.parse_args()
 
 
-def compute_signals_with_backtest(df: pd.DataFrame, opening_bars: int, bearish_ma200: bool = False, stop_pct: float = 0.40) -> pd.DataFrame:
+def compute_signals_with_backtest(
+    df: pd.DataFrame,
+    opening_bars: int,
+    bearish_ma200: bool = False,
+    stop_pct: float = 0.40,
+) -> pd.DataFrame:
     df = df.copy()
     df["MA20"] = df["Close"].rolling(20).mean()
     df["MA50"] = df["Close"].rolling(50).mean()
@@ -196,25 +217,27 @@ def compute_signals_with_backtest(df: pd.DataFrame, opening_bars: int, bearish_m
         else:
             pnl = close - exit_price
 
-        rows.append({
-            "date": date_,
-            "signal": signal,
-            "or_high": round(or_high, 2),
-            "or_low": round(or_low, 2),
-            "midpoint": round(midpoint, 2),
-            "entry_price": round(close, 2),
-            "exit_price": round(exit_price, 2),
-            "pnl": round(pnl, 2),
-            "exit_reason": exit_reason,
-            "ma20": round(ma20, 2),
-            "ma200": round(ma200, 2),
-            "bars_held": bars_held,
-            "mins_held": bars_held * 5,
-            "max_favorable_move": round(max_favorable_move, 2),
-            "held_to_close": exit_reason == "end_of_day",
-            "total_post_bars": len(post_open),
-            "success": pnl > 0,
-        })
+        rows.append(
+            {
+                "date": date_,
+                "signal": signal,
+                "or_high": round(or_high, 2),
+                "or_low": round(or_low, 2),
+                "midpoint": round(midpoint, 2),
+                "entry_price": round(close, 2),
+                "exit_price": round(exit_price, 2),
+                "pnl": round(pnl, 2),
+                "exit_reason": exit_reason,
+                "ma20": round(ma20, 2),
+                "ma200": round(ma200, 2),
+                "bars_held": bars_held,
+                "mins_held": bars_held * 5,
+                "max_favorable_move": round(max_favorable_move, 2),
+                "held_to_close": exit_reason == "end_of_day",
+                "total_post_bars": len(post_open),
+                "success": pnl > 0,
+            }
+        )
 
     return pd.DataFrame(rows)
 
@@ -222,14 +245,16 @@ def compute_signals_with_backtest(df: pd.DataFrame, opening_bars: int, bearish_m
 def print_successful_days(ticker: str, results: pd.DataFrame, backtest_days: int):
     wins = results[results["success"]].reset_index(drop=True)
 
-    print(f"\n{'='*96}")
-    print(f"  {ticker}  |  Successful signal days  |  Last {backtest_days} calendar days")
-    print(f"{'='*96}")
+    print(f"\n{'=' * 96}")
+    print(
+        f"  {ticker}  |  Successful signal days  |  Last {backtest_days} calendar days"
+    )
+    print(f"{'=' * 96}")
     print(
         f"  {'Date':<12} {'Signal':<9} {'Mid':>7} {'Entry':>7} {'Exit':>7} "
         f"{'P&L':>8} {'MinsHeld':>9} {'MaxMove':>9}  Exit Reason"
     )
-    print(f"  {'-'*94}")
+    print(f"  {'-' * 94}")
 
     if wins.empty:
         print("  No successful signals in this period.")
@@ -258,27 +283,37 @@ def print_stats(ticker: str, results: pd.DataFrame):
     bull = results[results["signal"] == "BULLISH"]
     bear = results[results["signal"] == "BEARISH"]
 
-    avg_mins_success = results[results["success"]]["bars_held"].mean() * 5 if successes else 0
-    avg_move = results[results["success"]]["max_favorable_move"].mean() if successes else 0
+    avg_mins_success = (
+        results[results["success"]]["bars_held"].mean() * 5 if successes else 0
+    )
+    avg_move = (
+        results[results["success"]]["max_favorable_move"].mean() if successes else 0
+    )
     held_all_day = int(results["held_to_close"].sum())
     total_pnl = results["pnl"].sum()
     win_pnl = results[results["success"]]["pnl"].sum()
     loss_pnl = results[~results["success"]]["pnl"].sum()
 
     print(f"\n  {ticker} — Stats")
-    print(f"  {'─'*52}")
+    print(f"  {'─' * 52}")
     print(f"  Signals fired      : {total}  (bull={len(bull)}, bear={len(bear)})")
-    print(f"  Success / Fail     : {successes} / {failures}  →  {rate:.0f}% success rate")
+    print(
+        f"  Success / Fail     : {successes} / {failures}  →  {rate:.0f}% success rate"
+    )
     print(f"  Held all day       : {held_all_day} / {total}")
     print(f"  Avg mins held (W)  : {avg_mins_success:.0f} min")
     print(f"  Avg max move (W)   : ${avg_move:.2f} from midpoint")
     print(f"  Win P&L            : +${win_pnl:.2f}")
     print(f"  Loss P&L           : -${abs(loss_pnl):.2f}")
-    print(f"  Net P&L            : {'+'if total_pnl>=0 else ''}${total_pnl:.2f}")
+    print(f"  Net P&L            : {'+' if total_pnl >= 0 else ''}${total_pnl:.2f}")
     if not bull.empty:
-        print(f"  Bullish success    : {int(bull['success'].sum())}/{len(bull)} = {bull['success'].mean()*100:.0f}%")
+        print(
+            f"  Bullish success    : {int(bull['success'].sum())}/{len(bull)} = {bull['success'].mean() * 100:.0f}%"
+        )
     if not bear.empty:
-        print(f"  Bearish success    : {int(bear['success'].sum())}/{len(bear)} = {bear['success'].mean()*100:.0f}%")
+        print(
+            f"  Bearish success    : {int(bear['success'].sum())}/{len(bear)} = {bear['success'].mean() * 100:.0f}%"
+        )
 
 
 def print_daily_pnl(all_results: dict, backtest_days: int):
@@ -287,7 +322,9 @@ def print_daily_pnl(all_results: dict, backtest_days: int):
     for ticker, df in all_results.items():
         if df.empty:
             continue
-        tmp = df[["date", "signal", "entry_price", "exit_price", "pnl", "success"]].copy()
+        tmp = df[
+            ["date", "signal", "entry_price", "exit_price", "pnl", "success"]
+        ].copy()
         tmp["ticker"] = ticker
         frames.append(tmp)
 
@@ -297,9 +334,11 @@ def print_daily_pnl(all_results: dict, backtest_days: int):
     combined = pd.concat(frames, ignore_index=True)
     all_dates = sorted(combined["date"].unique())
 
-    print(f"\n{'='*82}")
-    print(f"  DAILY P&L REPORT  |  Last {backtest_days} calendar days  |  1 share per signal")
-    print(f"{'='*82}")
+    print(f"\n{'=' * 82}")
+    print(
+        f"  DAILY P&L REPORT  |  Last {backtest_days} calendar days  |  1 share per signal"
+    )
+    print(f"{'=' * 82}")
 
     grand_total = 0.0
     for d in all_dates:
@@ -312,25 +351,33 @@ def print_daily_pnl(all_results: dict, backtest_days: int):
         grand_total += day_pnl
 
         pnl_str = f"+${day_pnl:.2f}" if day_pnl >= 0 else f"-${abs(day_pnl):.2f}"
-        print(f"\n  {d}  |  signals={len(day)}  wins={win_count}  losses={loss_count}  "
-              f"day P&L: {pnl_str}")
-        print(f"  {'─'*78}")
-        print(f"  {'Ticker':<7} {'Signal':<9} {'Entry':>8} {'Exit':>8} {'P&L':>9}  Result")
-        print(f"  {'─'*78}")
+        print(
+            f"\n  {d}  |  signals={len(day)}  wins={win_count}  losses={loss_count}  "
+            f"day P&L: {pnl_str}"
+        )
+        print(f"  {'─' * 78}")
+        print(
+            f"  {'Ticker':<7} {'Signal':<9} {'Entry':>8} {'Exit':>8} {'P&L':>9}  Result"
+        )
+        print(f"  {'─' * 78}")
 
         for _, r in day.iterrows():
             result = "WIN " if r["success"] else "LOSS"
-            pnl_str_row = f"+${r['pnl']:.2f}" if r["pnl"] >= 0 else f"-${abs(r['pnl']):.2f}"
+            pnl_str_row = (
+                f"+${r['pnl']:.2f}" if r["pnl"] >= 0 else f"-${abs(r['pnl']):.2f}"
+            )
             print(
                 f"  {r['ticker']:<7} {r['signal']:<9} "
                 f"{r['entry_price']:>8.2f} {r['exit_price']:>8.2f} "
                 f"{pnl_str_row:>9}  {result}"
             )
 
-    grand_str = f"+${grand_total:.2f}" if grand_total >= 0 else f"-${abs(grand_total):.2f}"
-    print(f"\n{'='*82}")
+    grand_str = (
+        f"+${grand_total:.2f}" if grand_total >= 0 else f"-${abs(grand_total):.2f}"
+    )
+    print(f"\n{'=' * 82}")
     print(f"  TOTAL P&L ({backtest_days}-day window, 1 share per signal): {grand_str}")
-    print(f"{'='*82}")
+    print(f"{'=' * 82}")
 
 
 def print_pnl_distribution(all_results: dict, backtest_days: int, trading_dates: list):
@@ -358,16 +405,18 @@ def print_pnl_distribution(all_results: dict, backtest_days: int, trading_dates:
     header += f"  {'DayTotal':>{col_w}}  Tickers W/L"
     divider = "  " + "─" * (12 + (col_w + 2) * (len(tickers) + 1) + 16)
 
-    print(f"\n{'='*len(divider)}")
-    print(f"  P&L DISTRIBUTION — Last {backtest_days} calendar days  |  MA50 trailing stop")
-    print(f"{'='*len(divider)}")
+    print(f"\n{'=' * len(divider)}")
+    print(
+        f"  P&L DISTRIBUTION — Last {backtest_days} calendar days  |  MA50 trailing stop"
+    )
+    print(f"{'=' * len(divider)}")
     print(header)
     print(divider)
 
     ticker_totals = {t: 0.0 for t in tickers}
-    ticker_wins   = {t: 0   for t in tickers}
-    ticker_trades = {t: 0   for t in tickers}
-    grand_total   = 0.0
+    ticker_wins = {t: 0 for t in tickers}
+    ticker_trades = {t: 0 for t in tickers}
+    grand_total = 0.0
 
     for d in all_dates:
         day = combined[combined["date"] == d]
@@ -399,7 +448,9 @@ def print_pnl_distribution(all_results: dict, backtest_days: int, trading_dates:
         if win_count == 0 and loss_count == 0:
             row += f"  {'no signal':>{col_w}}  —"
         else:
-            day_str = f"+${day_total:.2f}" if day_total >= 0 else f"-${abs(day_total):.2f}"
+            day_str = (
+                f"+${day_total:.2f}" if day_total >= 0 else f"-${abs(day_total):.2f}"
+            )
             row += f"  {day_str:>{col_w}}  {win_count}W / {loss_count}L"
         print(row)
 
@@ -411,20 +462,22 @@ def print_pnl_distribution(all_results: dict, backtest_days: int, trading_dates:
         v = ticker_totals[t]
         tag = f"+${v:.2f}" if v >= 0 else f"-${abs(v):.2f}"
         total_row += f"  {tag:>{col_w}}"
-    grand_str = f"+${grand_total:.2f}" if grand_total >= 0 else f"-${abs(grand_total):.2f}"
+    grand_str = (
+        f"+${grand_total:.2f}" if grand_total >= 0 else f"-${abs(grand_total):.2f}"
+    )
     total_row += f"  {grand_str:>{col_w}}"
     print(total_row)
 
     # win rate row
-    rate_row  = f"  {'WIN RATE':<12}"
+    rate_row = f"  {'WIN RATE':<12}"
     for t in tickers:
         n = ticker_trades[t]
         w = ticker_wins[t]
-        rate_row += f"  {f'{w}/{n} = {w/n*100:.0f}%' if n else '—':>{col_w}}"
+        rate_row += f"  {f'{w}/{n} = {w / n * 100:.0f}%' if n else '—':>{col_w}}"
     rate_row += f"  {'':>{col_w}}"
     print(rate_row)
 
-    print(f"{'='*len(divider)}\n")
+    print(f"{'=' * len(divider)}\n")
 
 
 def print_monthly_breakdown(all_results: dict, opening_bars: int):
@@ -444,11 +497,13 @@ def print_monthly_breakdown(all_results: dict, opening_bars: int):
     tickers = list(all_results.keys())
     months = sorted(combined["month"].unique())
 
-    print(f"\n{'='*70}")
+    print(f"\n{'=' * 70}")
     print(f"  MONTHLY BREAKDOWN — op_momentum_guide  |  {opening_bars * 5}-min opening")
-    print(f"{'='*70}")
-    print(f"  {'Month':<10} {'Ticker':<8} {'Signals':>8} {'Wins':>6} {'Fails':>6} {'Rate':>7} {'NetP&L':>9}")
-    print(f"  {'─'*68}")
+    print(f"{'=' * 70}")
+    print(
+        f"  {'Month':<10} {'Ticker':<8} {'Signals':>8} {'Wins':>6} {'Fails':>6} {'Rate':>7} {'NetP&L':>9}"
+    )
+    print(f"  {'─' * 68}")
 
     for month in months:
         month_data = combined[combined["month"] == month]
@@ -466,30 +521,40 @@ def print_monthly_breakdown(all_results: dict, opening_bars: int):
             month_net += net
             net_str = f"+${net:.2f}" if net >= 0 else f"-${abs(net):.2f}"
             month_label = str(month) if first else ""
-            print(f"  {month_label:<10} {ticker:<8} {total:>8} {wins:>6} {fails:>6} {rate:>6.0f}%  {net_str:>9}")
+            print(
+                f"  {month_label:<10} {ticker:<8} {total:>8} {wins:>6} {fails:>6} {rate:>6.0f}%  {net_str:>9}"
+            )
             first = False
 
         net_str = f"+${month_net:.2f}" if month_net >= 0 else f"-${abs(month_net):.2f}"
-        print(f"  {'':10} {'─'*58}")
-        print(f"  {'':10} {'Month total':<8} {'':>8} {'':>6} {'':>6} {'':>7}  {net_str:>9}")
+        print(f"  {'':10} {'─' * 58}")
+        print(
+            f"  {'':10} {'Month total':<8} {'':>8} {'':>6} {'':>6} {'':>7}  {net_str:>9}"
+        )
         print()
 
     grand = combined["pnl"].sum()
     grand_str = f"+${grand:.2f}" if grand >= 0 else f"-${abs(grand):.2f}"
-    print(f"  {'─'*68}")
-    print(f"  {'TOTAL':<10} {'all':<8} {len(combined):>8} {int(combined['success'].sum()):>6} "
-          f"{len(combined) - int(combined['success'].sum()):>6} "
-          f"{combined['success'].mean()*100:>6.0f}%  {grand_str:>9}")
-    print(f"{'='*70}")
+    print(f"  {'─' * 68}")
+    print(
+        f"  {'TOTAL':<10} {'all':<8} {len(combined):>8} {int(combined['success'].sum()):>6} "
+        f"{len(combined) - int(combined['success'].sum()):>6} "
+        f"{combined['success'].mean() * 100:>6.0f}%  {grand_str:>9}"
+    )
+    print(f"{'=' * 70}")
 
 
 def print_summary(all_results: dict, backtest_days: int, opening_bars: int):
-    print(f"\n{'='*96}")
-    print(f"  SUMMARY — op_momentum_guide  |  Last {backtest_days} days  |  {opening_bars * 5}-min opening")
-    print(f"{'='*96}")
-    print(f"  {'Ticker':<8} {'Signals':>8} {'Wins':>6} {'Fails':>6} {'Rate':>7} "
-          f"{'AvgMins(W)':>11} {'AvgWin%':>8} {'AvgLoss%':>9} {'EV/Trade':>9} {'WinP&L':>9} {'LossP&L':>9} {'NetP&L':>9}")
-    print(f"  {'─'*94}")
+    print(f"\n{'=' * 96}")
+    print(
+        f"  SUMMARY — op_momentum_guide  |  Last {backtest_days} days  |  {opening_bars * 5}-min opening"
+    )
+    print(f"{'=' * 96}")
+    print(
+        f"  {'Ticker':<8} {'Signals':>8} {'Wins':>6} {'Fails':>6} {'Rate':>7} "
+        f"{'AvgMins(W)':>11} {'AvgWin%':>8} {'AvgLoss%':>9} {'EV/Trade':>9} {'WinP&L':>9} {'LossP&L':>9} {'NetP&L':>9}"
+    )
+    print(f"  {'─' * 94}")
 
     total_net = 0.0
     all_win_pcts = []
@@ -528,32 +593,82 @@ def print_summary(all_results: dict, backtest_days: int, opening_bars: int):
         win_str = f"+${win_pnl:.2f}" if win_pnl >= 0 else f"-${abs(win_pnl):.2f}"
         loss_str = f"-${abs(loss_pnl):.2f}"
         print(
-            f"  {ticker:<8} {total:>8} {wins:>6} {fails:>6} {win_rate*100:>6.0f}%"
+            f"  {ticker:<8} {total:>8} {wins:>6} {fails:>6} {win_rate * 100:>6.0f}%"
             f" {avg_mins:>10.0f}m  {avg_win_pct:>7.2f}%  {avg_loss_pct:>8.2f}%  {ev_str:>9}"
             f"  {win_str:>9}  {loss_str:>9}  {net_str:>9}"
         )
 
-    print(f"  {'─'*94}")
+    print(f"  {'─' * 94}")
     total_str = f"+${total_net:.2f}" if total_net >= 0 else f"-${abs(total_net):.2f}"
     overall_avg_win_pct = sum(all_win_pcts) / len(all_win_pcts) if all_win_pcts else 0
-    overall_avg_loss_pct = sum(all_loss_pcts) / len(all_loss_pcts) if all_loss_pcts else 0
+    overall_avg_loss_pct = (
+        sum(all_loss_pcts) / len(all_loss_pcts) if all_loss_pcts else 0
+    )
     total_wins = sum(len(r[r["success"]]) for r in all_results.values() if not r.empty)
     total_sigs = sum(len(r) for r in all_results.values() if not r.empty)
     overall_win_rate = total_wins / total_sigs if total_sigs else 0
-    overall_ev = overall_win_rate * overall_avg_win_pct - (1 - overall_win_rate) * overall_avg_loss_pct
+    overall_ev = (
+        overall_win_rate * overall_avg_win_pct
+        - (1 - overall_win_rate) * overall_avg_loss_pct
+    )
     overall_ev_str = f"+{overall_ev:.3f}%" if overall_ev >= 0 else f"{overall_ev:.3f}%"
     print(
         f"  {'TOTAL':<8} {'':>8} {'':>6} {'':>6} {'':>7} {'':>11}"
         f"  {overall_avg_win_pct:>7.2f}%  {overall_avg_loss_pct:>8.2f}%  {overall_ev_str:>9}"
         f"  {'':>9}  {'':>9} {total_str:>9}"
     )
-    print(f"{'='*96}")
+    print(f"{'=' * 96}")
 
 
-def fetch_bars(tickers: list, start_date: date, end_date: date, source: str = "alpaca") -> dict:
+def fetch_bars(
+    tickers: list, start_date: date, end_date: date, source: str = "alpaca"
+) -> dict:
     if source == "yfinance":
         return fetch_yfinance_bars(tickers, start_date, end_date)
     return fetch_alpaca_bars(tickers, start_date, end_date)
+
+
+def fetch_daily_bars(
+    tickers: list, start_date: date, end_date: date, source: str = "alpaca"
+) -> dict:
+    """Fetch 1-day bars for the given tickers. Returns {ticker: DataFrame} with date index."""
+    if source == "yfinance":
+        result = {}
+        for ticker in tickers:
+            df = yf.download(
+                ticker,
+                start=start_date,
+                end=end_date + timedelta(days=1),
+                interval="1d",
+                auto_adjust=True,
+                progress=False,
+            )
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.droplevel(1)
+            df.index = pd.to_datetime(df.index).date
+            result[ticker] = df
+        return result
+
+    key_id = os.environ.get("ALPACA_API_KEY") or os.environ.get("ALPACA_KEY_ID")
+    secret_key = os.environ.get("ALPACA_SECRET_KEY")
+    client = StockHistoricalDataClient(key_id, secret_key)
+    request = StockBarsRequest(
+        symbol_or_symbols=tickers,
+        timeframe=TimeFrame(amount=1, unit=TimeFrameUnit.Day),
+        start=datetime.combine(start_date, datetime.min.time()),
+        end=datetime.combine(end_date + timedelta(days=1), datetime.min.time()),
+    )
+    bars = client.get_stock_bars(request)
+    result = {}
+    for ticker in tickers:
+        if ticker in bars.df.index.get_level_values(0):
+            df = bars.df.xs(ticker, level=0).copy()
+            df.index = [pd.Timestamp(t).date() for t in df.index]
+            df.columns = [c.capitalize() for c in df.columns]
+            result[ticker] = df
+        else:
+            result[ticker] = pd.DataFrame()
+    return result
 
 
 def run_backtest(
@@ -572,7 +687,9 @@ def run_backtest(
         if df.empty:
             all_results[ticker] = pd.DataFrame()
             continue
-        results = compute_signals_with_backtest(df, opening_bars, bearish_ma200, stop_pct)
+        results = compute_signals_with_backtest(
+            df, opening_bars, bearish_ma200, stop_pct
+        )
         if not results.empty:
             results = results[results["date"] >= start_date].reset_index(drop=True)
         all_results[ticker] = results
@@ -593,7 +710,9 @@ if __name__ == "__main__":
     else:
         end_date = date.today()
         if source == "yfinance" and args.days > YFINANCE_MAX_DAYS:
-            print(f"Warning: yfinance only supports up to {YFINANCE_MAX_DAYS} days for 5-min data. Capping at {YFINANCE_MAX_DAYS}.")
+            print(
+                f"Warning: yfinance only supports up to {YFINANCE_MAX_DAYS} days for 5-min data. Capping at {YFINANCE_MAX_DAYS}."
+            )
             args.days = YFINANCE_MAX_DAYS
         cutoff = end_date - timedelta(days=args.days)
 
@@ -603,10 +722,18 @@ if __name__ == "__main__":
     bearish_filter = "MA20 + MA200" if bearish_ma200 else "MA20 only"
     print(f"\nop_momentum_guide backtest — {period_label} ({source})")
     print(f"Tickers           : {', '.join(tickers)}")
-    print(f"Opening period    : first {opening_bars * 5} min ({opening_bars} x 5-min bars)")
-    print(f"Exit rule         : MA50 trailing stop  |  hard stop at {stop_pct*100:.0f}% from favorable end of OR")
-    print(f"  → Bull hard stop: OR_high - {stop_pct*100:.0f}% × OR_range  |  Bear hard stop: OR_low + {stop_pct*100:.0f}% × OR_range")
-    print(f"Bearish filter    : {bearish_filter}  (use --bearish-ma200 to add MA200 requirement)")
+    print(
+        f"Opening period    : first {opening_bars * 5} min ({opening_bars} x 5-min bars)"
+    )
+    print(
+        f"Exit rule         : MA50 trailing stop  |  hard stop at {stop_pct * 100:.0f}% from favorable end of OR"
+    )
+    print(
+        f"  → Bull hard stop: OR_high - {stop_pct * 100:.0f}% × OR_range  |  Bear hard stop: OR_low + {stop_pct * 100:.0f}% × OR_range"
+    )
+    print(
+        f"Bearish filter    : {bearish_filter}  (use --bearish-ma200 to add MA200 requirement)"
+    )
 
     print(f"\nFetching {len(tickers)} tickers from {source} ({cutoff} → {end_date})...")
 
@@ -630,7 +757,9 @@ if __name__ == "__main__":
             if d >= cutoff:
                 trading_dates.add(d)
 
-        results = compute_signals_with_backtest(df, opening_bars, bearish_ma200, stop_pct)
+        results = compute_signals_with_backtest(
+            df, opening_bars, bearish_ma200, stop_pct
+        )
         if not results.empty:
             results = results[results["date"] >= cutoff].reset_index(drop=True)
 
