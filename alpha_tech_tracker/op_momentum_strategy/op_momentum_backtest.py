@@ -199,7 +199,10 @@ def compute_signals_with_backtest(
                 exit_reason = "hard_stop"
                 break
             elif fallback_hit:
-                exit_price = fallback_price
+                if signal == "BULLISH":
+                    exit_price = fallback_price if bar["High"] >= fallback_price else bar["Close"]
+                else:
+                    exit_price = fallback_price
                 exit_reason = "fallback_20pct"
                 break
             elif trailing_stop_hit:
@@ -209,7 +212,10 @@ def compute_signals_with_backtest(
             else:
                 bars_held += 1
                 max_favorable_move = max(max_favorable_move, move)
-                exit_price = bar["Close"]
+                if signal == "BULLISH":
+                    exit_price = max(bar["Close"], midpoint)
+                else:
+                    exit_price = min(bar["Close"], midpoint)
                 exit_reason = "end_of_day"
 
         if signal == "BULLISH":
@@ -261,7 +267,7 @@ def print_successful_days(ticker: str, results: pd.DataFrame, backtest_days: int
         return
 
     for _, r in wins.iterrows():
-        pnl_str = f"+${r['pnl']:.2f}" if r["pnl"] >= 0 else f"-${abs(r['pnl']):.2f}"
+        pnl_str = f"+${abs(r['pnl']):.2f}" if r["pnl"] >= 0 else f"-${abs(r['pnl']):.2f}"
         print(
             f"  {str(r['date']):<12} {r['signal']:<9} "
             f"{r['midpoint']:>7.2f} {r['entry_price']:>7.2f} {r['exit_price']:>7.2f} "
@@ -364,7 +370,7 @@ def print_daily_pnl(all_results: dict, backtest_days: int):
         for _, r in day.iterrows():
             result = "WIN " if r["success"] else "LOSS"
             pnl_str_row = (
-                f"+${r['pnl']:.2f}" if r["pnl"] >= 0 else f"-${abs(r['pnl']):.2f}"
+                f"+${abs(r['pnl']):.2f}" if r["pnl"] >= 0 else f"-${abs(r['pnl']):.2f}"
             )
             print(
                 f"  {r['ticker']:<7} {r['signal']:<9} "

@@ -199,8 +199,8 @@ def _print_daily_table(
         pnl = row["pnl"]
         pnl_pct = row["pnl_pct"]
         result = "WIN" if row["success"] else "LOSS"
-        pnl_str = f"+${pnl:.2f}" if pnl >= 0 else f"-${abs(pnl):.2f}"
-        pnl_pct_str = f"+{pnl_pct:.2f}%" if pnl_pct >= 0 else f"{pnl_pct:.2f}%"
+        pnl_str = f"+${abs(pnl):.2f}" if pnl >= 0 else f"-${abs(pnl):.2f}"
+        pnl_pct_str = f"+{abs(pnl_pct):.2f}%" if pnl_pct >= 0 else f"{pnl_pct:.2f}%"
 
         print(
             f"  {str(row['date']):<12} {row['rank']:<5} {row['ticker']:<6} "
@@ -247,19 +247,14 @@ def _print_day_summary(
     total = wins + losses
     if total == 0:
         return
-    pnl_str = f"+${day_pnl:.2f}" if day_pnl >= 0 else f"-${abs(day_pnl):.2f}"
+    pnl_str = f"+${abs(day_pnl):.2f}" if day_pnl >= 0 else f"-${abs(day_pnl):.2f}"
     avg_pct = sum(day_pnl_pcts) / len(day_pnl_pcts)
-    avg_pct_str = f"+{avg_pct:.2f}%" if avg_pct >= 0 else f"{avg_pct:.2f}%"
-    running_str = (
-        f"+${running_total:.2f}"
-        if running_total >= 0
-        else f"-${abs(running_total):.2f}"
-    )
+    avg_pct_str = f"+{abs(avg_pct):.2f}%" if avg_pct >= 0 else f"{avg_pct:.2f}%"
     cap_pnl_str = (
-        f"+${day_cap_pnl:.2f}" if day_cap_pnl >= 0 else f"-${abs(day_cap_pnl):.2f}"
+        f"+${abs(day_cap_pnl):.2f}" if day_cap_pnl >= 0 else f"-${abs(day_cap_pnl):.2f}"
     )
     day_ret_pct = day_cap_pnl / initial_capital * 100
-    day_ret_str = f"+{day_ret_pct:.2f}%" if day_ret_pct >= 0 else f"{day_ret_pct:.2f}%"
+    day_ret_str = f"+{abs(day_ret_pct):.2f}%" if day_ret_pct >= 0 else f"{day_ret_pct:.2f}%"
     print(
         f"  {'':12} {'':5} {'':6} {'':9} {'':5}  "
         f"{'':>7} {'':>7} {pnl_str:>7} {avg_pct_str:>7}  "
