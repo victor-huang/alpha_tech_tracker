@@ -278,64 +278,54 @@ class TestPositionSizer:
 # TestTickerSelector
 # ---------------------------------------------------------------------------
 
-_HIST_CLIENT_PATH = "alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine.StockHistoricalDataClient"
-
-
-def _make_ticker_df(rows):
-    """rows: list of (ticker, date_str, close)"""
-    idx = pd.MultiIndex.from_tuples(
-        [(t, pd.Timestamp(d)) for t, d, _ in rows],
-        names=["symbol", "timestamp"],
-    )
-    return pd.DataFrame({"close": [c for _, _, c in rows]}, index=idx)
+_SELECT_TOP_N_PATH = (
+    "alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine.select_top_n"
+)
 
 
 class TestTickerSelector:
-    @patch(_HIST_CLIENT_PATH)
-    def test_returns_top_n_tickers_by_30d_return(self, mock_hist_cls):
-        mock_client = Mock()
-        mock_hist_cls.return_value = mock_client
+    @patch(_SELECT_TOP_N_PATH)
+    def test_returns_top_n_tickers_by_composite_score(self, mock_select_top_n):
+        mock_select_top_n.return_value = {
+            "picks": [
+                {"ticker": "NVDA", "signal": "BULLISH", "score": 4.2, "ev_trade": 0.8},
+                {"ticker": "CRWD", "signal": "BEARISH", "score": 3.1, "ev_trade": 0.5},
+            ],
+            "no_signal": ["COIN"],
+            "negative_ev": [],
+        }
 
-        mock_df = _make_ticker_df(
-            [
-                ("NVDA", "2026-02-20", 100.0),
-                ("NVDA", "2026-03-20", 130.0),  # +30%
-                ("CRWD", "2026-02-20", 50.0),
-                ("CRWD", "2026-03-20", 55.0),  # +10%
-                ("COIN", "2026-02-20", 80.0),
-                ("COIN", "2026-03-20", 72.0),  # -10%
-            ]
-        )
-        mock_client.get_stock_bars.return_value = Mock(df=mock_df)
-
-        selector = TickerSelector(
-            tickers=["NVDA", "CRWD", "COIN"], top_n=2, api_key="k", secret_key="s"
-        )
+        selector = TickerSelector(tickers=["NVDA", "CRWD", "COIN"], top_n=2)
         result = selector.select()
 
         assert result == ["NVDA", "CRWD"]
+        mock_select_top_n.assert_called_once()
 
-    @patch(_HIST_CLIENT_PATH)
-    def test_skips_ticker_with_only_one_bar(self, mock_hist_cls):
-        mock_client = Mock()
-        mock_hist_cls.return_value = mock_client
+    @patch(_SELECT_TOP_N_PATH)
+    def test_falls_back_to_previous_day_when_today_has_no_picks(
+        self, mock_select_top_n
+    ):
+        mock_select_top_n.side_effect = [
+            {"picks": [], "no_signal": ["NVDA", "CRWD"], "negative_ev": []},
+            {
+                "picks": [
+                    {
+                        "ticker": "NVDA",
+                        "signal": "BULLISH",
+                        "score": 3.0,
+                        "ev_trade": 0.6,
+                    }
+                ],
+                "no_signal": ["CRWD"],
+                "negative_ev": [],
+            },
+        ]
 
-        mock_df = _make_ticker_df(
-            [
-                ("NVDA", "2026-02-20", 100.0),
-                ("NVDA", "2026-03-20", 120.0),  # +20%
-                ("CRWD", "2026-03-20", 55.0),  # only 1 bar → skipped
-            ]
-        )
-        mock_client.get_stock_bars.return_value = Mock(df=mock_df)
-
-        selector = TickerSelector(
-            tickers=["NVDA", "CRWD"], top_n=2, api_key="k", secret_key="s"
-        )
+        selector = TickerSelector(tickers=["NVDA", "CRWD"], top_n=2)
         result = selector.select()
 
-        assert "NVDA" in result
-        assert "CRWD" not in result
+        assert result == ["NVDA"]
+        assert mock_select_top_n.call_count == 2
 
 
 # ---------------------------------------------------------------------------

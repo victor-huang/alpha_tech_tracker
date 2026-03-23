@@ -10,13 +10,17 @@ from typing import Optional
 import pandas as pd
 import pytz
 
-from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.live import StockDataStream
-from alpaca.data.requests import OptionLatestQuoteRequest, StockBarsRequest
+from alpaca.data.requests import OptionLatestQuoteRequest
 from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
 from alpaca.trading.enums import OrderSide, TimeInForce
 from alpaca.trading.requests import LimitOrderRequest, MarketOrderRequest
 
+from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector import (
+    DEFAULT_TICKERS,
+    ROLLING_LOOKBACK_DAYS,
+    select_top_n,
+)
 from alpha_tech_tracker.trade_api.alpaca_client.client import (
     AlpacaAPIClient,
     APIInvalidArgumentError,
@@ -32,7 +36,7 @@ def _D(x) -> Decimal:
     return Decimal(str(x))
 
 
-TICKERS = ["NVDA", "CRWD", "COIN", "JNJ", "XOM", "CAT"]
+TICKERS = DEFAULT_TICKERS
 ACCOUNT_BUDGET = 25_000
 MAX_ACTIVE_SYMBOLS = 2
 OPENING_BARS = 3
@@ -91,44 +95,63 @@ class ActivePosition:
 
 
 class TickerSelector:
-    """Ranks tickers by 30-day return and returns the top N."""
+    """
+    Selects the top N tickers using the momentum selector's composite scoring:
+    60-day rolling EV gate + today's opening-range signal + composite score.
 
-    def __init__(self, tickers: list, top_n: int, api_key: str, secret_key: str):
+    If called before the opening range closes (pre-9:45 AM ET), today's intraday
+    signals are not yet available. In that case the selector falls back to the
+    previous trading day so the engine still gets a ranked list to watch.
+    """
+
+    def __init__(self, tickers: list, top_n: int):
         self._tickers = tickers
         self._top_n = top_n
-        self._client = StockHistoricalDataClient(api_key, secret_key)
 
     def select(self) -> list:
-        end_dt = datetime.now(ET).replace(hour=0, minute=0, second=0, microsecond=0)
-        start_dt = end_dt - timedelta(days=35)
-
-        request = StockBarsRequest(
-            symbol_or_symbols=self._tickers,
-            timeframe=TimeFrame.Day,
-            start=start_dt,
-            end=end_dt,
+        today = datetime.now(ET).date()
+        result = select_top_n(
+            n=self._top_n,
+            tickers=self._tickers,
+            lookback_days=ROLLING_LOOKBACK_DAYS,
+            opening_bars=OPENING_BARS,
+            bearish_ma200=BEARISH_MA200,
+            stop_pct=float(STOP_PCT),
+            source="alpaca",
+            target_date=today,
         )
-        bars = self._client.get_stock_bars(request)
-        df = bars.df
 
-        returns = {}
-        for ticker in self._tickers:
-            try:
-                ticker_df = df.xs(ticker, level=0).sort_index()
-                if len(ticker_df) < 2:
-                    continue
-                oldest_close = ticker_df.iloc[0]["close"]
-                latest_close = ticker_df.iloc[-1]["close"]
-                returns[ticker] = (latest_close - oldest_close) / oldest_close
-            except KeyError:
-                logger.warning("No 30-day data for %s, skipping", ticker)
+        picks = result["picks"]
 
-        ranked = sorted(returns, key=returns.get, reverse=True)
-        selected = ranked[: self._top_n]
+        if not picks:
+            # Opening range hasn't closed yet — fall back to the most recent
+            # trading day that has complete intraday data (yesterday or earlier).
+            prev_day = today - timedelta(days=1)
+            while prev_day.weekday() >= 5:  # skip weekends
+                prev_day -= timedelta(days=1)
+            logger.info(
+                "No picks for today (%s) — falling back to %s for pre-market selection",
+                today,
+                prev_day,
+            )
+            result = select_top_n(
+                n=self._top_n,
+                tickers=self._tickers,
+                lookback_days=ROLLING_LOOKBACK_DAYS,
+                opening_bars=OPENING_BARS,
+                bearish_ma200=BEARISH_MA200,
+                stop_pct=float(STOP_PCT),
+                source="alpaca",
+                target_date=prev_day,
+            )
+            picks = result["picks"]
+
+        selected = [p["ticker"] for p in picks]
         logger.info(
-            "30-day returns: %s → selected: %s",
-            {t: f"{v:.2%}" for t, v in returns.items()},
-            selected,
+            "Selector picks: %s | no_signal: %s | negative_ev: %s",
+            [{p["ticker"]: f"score={p['score']} ev={p['ev_trade']}%"} for p in picks],
+            result.get("no_signal", []),
+            result.get("negative_ev", []),
         )
         return selected
 
@@ -744,8 +767,6 @@ class OpMomentumTradeEngine:
         ticker_selector = TickerSelector(
             tickers=tickers_override or TICKERS,
             top_n=MAX_ACTIVE_SYMBOLS,
-            api_key=api_key,
-            secret_key=secret_key,
         )
         active_tickers = ticker_selector.select()
         print(f"\nActive tickers for today: {active_tickers}")
