@@ -821,7 +821,8 @@ class TestPositionMonitor:
         assert pos.is_closed is True
         assert pos.exit_reason == "hard_stop"
 
-    def test_bullish_trailing_stop_triggers_below_ma50(self):
+    def test_bullish_trailing_stop_triggers_below_ma20(self):
+        # MA20=106 > hard_stop=103.5 (activation gate passes) and close=104 < MA20=106
         client = _make_alpaca_client()
         client.place_option_order.return_value = {"order_id": "close-2"}
         client.order_status.return_value = {
@@ -838,17 +839,17 @@ class TestPositionMonitor:
         pos.hard_stop_armed = True
 
         closes = [104.0]
-        df = _build_history_df(closes, ma20=95.0, ma50=105.0, ma200=90.0)
+        df = _build_history_df(closes, ma20=106.0, ma50=105.0, ma200=90.0)
         engine = _make_signal_engine_with_history("NVDA", df)
         monitor = PositionMonitor(client, engine)
         monitor.add_position(pos)
 
-        # close 104 < MA50 105 → trailing stop
-        _set_latest_bar(engine, "NVDA", close=104.0, ma50=105.0)
+        # MA20=106 > hard_stop=103.5 → gate passes; close=104 < MA20=106 → trailing stop
+        _set_latest_bar(engine, "NVDA", close=104.0, ma50=105.0, ma20=106.0)
         monitor.on_bar("NVDA")
 
         assert pos.is_closed is True
-        assert pos.exit_reason == "trailing_stop_ma50"
+        assert pos.exit_reason == "trailing_stop_ma20"
 
     def test_bullish_fallback_triggers_when_not_yet_armed(self):
         client = _make_alpaca_client()
@@ -928,10 +929,8 @@ class TestPositionMonitor:
         assert pos.is_closed is True
         assert pos.exit_reason == "hard_stop"
 
-    def test_bearish_trailing_stop_triggers_above_ma50(self):
-        # Bearish trailing stop: close CROSSES ABOVE MA50 (trend reversing up)
-        # hard_stop_price=96.5 (high), armed=True; close=93 < 96.5 → hard_stop does NOT fire
-        # MA50=92 < close=93 → close > MA50 → trailing stop fires
+    def test_bearish_trailing_stop_triggers_above_ma20(self):
+        # MA20=88 < or_low=90 (activation gate passes) and close=93 > MA20=88
         client = _make_alpaca_client()
         client.place_option_order.return_value = {"order_id": "close-5"}
         client.order_status.return_value = {
@@ -946,24 +945,23 @@ class TestPositionMonitor:
             signal="BEARISH",
             or_high=_D("100"),
             or_low=_D("90"),
-            hard_stop_price=_D("96.5"),  # high; close=93 < 96.5 → armed check fails
+            hard_stop_price=_D("96.5"),
             fallback_price=_D("98"),
         )
         pos.hard_stop_armed = True
 
         closes = [93.0]
-        df = _build_history_df(closes, ma20=110.0, ma50=92.0, ma200=115.0)
+        df = _build_history_df(closes, ma20=88.0, ma50=92.0, ma200=115.0)
         engine = _make_signal_engine_with_history("NVDA", df)
         monitor = PositionMonitor(client, engine)
         monitor.add_position(pos)
 
-        # armed AND close=93 >= hard_stop=96.5 → False (no hard_stop exit)
-        # close=93 > MA50=92 → trailing stop fires
-        _set_latest_bar(engine, "NVDA", close=93.0, ma50=92.0)
+        # MA20=88 < or_low=90 → gate passes; close=93 > MA20=88 → trailing stop
+        _set_latest_bar(engine, "NVDA", close=93.0, ma50=92.0, ma20=88.0)
         monitor.on_bar("NVDA")
 
         assert pos.is_closed is True
-        assert pos.exit_reason == "trailing_stop_ma50"
+        assert pos.exit_reason == "trailing_stop_ma20"
 
     def test_position_not_closed_while_favorable(self):
         client = _make_alpaca_client()
@@ -1083,11 +1081,13 @@ def _build_history_df(closes, ma20, ma50, ma200):
     return df
 
 
-def _set_latest_bar(engine, ticker, close, ma50):
+def _set_latest_bar(engine, ticker, close, ma50, ma20=None):
     """Overwrite the last row of history to simulate a new bar."""
     df = engine._history[ticker].copy()
     df.iloc[-1, df.columns.get_loc("Close")] = float(close)
     df.iloc[-1, df.columns.get_loc("MA50")] = float(ma50)
+    if ma20 is not None:
+        df.iloc[-1, df.columns.get_loc("MA20")] = float(ma20)
     engine._history[ticker] = df
 
 

@@ -58,6 +58,7 @@ MA_WARMUP_DAYS = 7
 ROLLING_LOOKBACK_DAYS = 30
 BEARISH_MA200 = False
 SIGNAL_BUFFER_MINUTES = 2
+TRAILING_MA = "ma20"
 
 _clicksend_cfg: dict = {}
 
@@ -883,10 +884,12 @@ class PositionMonitor:
         alpaca_client: AlpacaAPIClient,
         signal_engine: LiveSignalEngine,
         simulate: bool = False,
+        trailing_ma: str = TRAILING_MA,
     ):
         self._client = alpaca_client
         self._signal_engine = signal_engine
         self._simulate = simulate
+        self._trailing_ma = trailing_ma
         self._positions: list = []
         self._lock = threading.Lock()
 
@@ -907,17 +910,23 @@ class PositionMonitor:
             return
 
         close = _D(latest["Close"])
+        ma20 = latest.get("MA20")
+        ma20_val = _D(ma20) if ma20 is not None and not pd.isna(ma20) else None
         ma50 = latest.get("MA50")
-        ma50_val = _D(ma50) if not pd.isna(ma50) else None
+        ma50_val = _D(ma50) if ma50 is not None and not pd.isna(ma50) else None
 
         with self._lock:
             for pos in self._positions:
                 if pos.ticker != ticker or pos.is_closed:
                     continue
-                self._evaluate_stop(pos, close, ma50_val)
+                self._evaluate_stop(pos, close, ma20_val, ma50_val)
 
     def _evaluate_stop(
-        self, pos: ActivePosition, close: Decimal, ma50: Optional[Decimal]
+        self,
+        pos: ActivePosition,
+        close: Decimal,
+        ma20: Optional[Decimal],
+        ma50: Optional[Decimal],
     ):
         exit_reason = None
 
@@ -928,7 +937,19 @@ class PositionMonitor:
                 exit_reason = "hard_stop"
             elif not pos.hard_stop_armed and close <= pos.fallback_price:
                 exit_reason = "fallback_20pct"
-            elif ma50 is not None and close < ma50:
+            elif (
+                self._trailing_ma in ("ma20", "both")
+                and ma20 is not None
+                and ma20 > pos.hard_stop_price
+                and close < ma20
+            ):
+                exit_reason = "trailing_stop_ma20"
+            elif (
+                self._trailing_ma in ("ma50", "both")
+                and ma50 is not None
+                and ma50 > pos.hard_stop_price
+                and close < ma50
+            ):
                 exit_reason = "trailing_stop_ma50"
         else:
             if not pos.hard_stop_armed and close < pos.hard_stop_price:
@@ -937,7 +958,19 @@ class PositionMonitor:
                 exit_reason = "hard_stop"
             elif not pos.hard_stop_armed and close >= pos.fallback_price:
                 exit_reason = "fallback_20pct"
-            elif ma50 is not None and close > ma50:
+            elif (
+                self._trailing_ma in ("ma20", "both")
+                and ma20 is not None
+                and ma20 < pos.or_low
+                and close > ma20
+            ):
+                exit_reason = "trailing_stop_ma20"
+            elif (
+                self._trailing_ma in ("ma50", "both")
+                and ma50 is not None
+                and ma50 < pos.or_low
+                and close > ma50
+            ):
                 exit_reason = "trailing_stop_ma50"
 
         if exit_reason:
@@ -987,7 +1020,9 @@ class PositionMonitor:
                 else _D("0")
             )
             pos.simulated_exit_mid = sim_mid
-            _send_sms(f"[SIMULATE] SELL {pos.option_symbol} x{pos.contracts} reason={reason} @ ~{sim_mid}")
+            _send_sms(
+                f"[SIMULATE] SELL {pos.option_symbol} x{pos.contracts} reason={reason} @ ~{sim_mid}"
+            )
             logger.info(
                 "SIMULATE SELL_CLOSE %s contracts=%d simulated_fill=%.2f (no order placed)",
                 pos.option_symbol,
@@ -1003,7 +1038,9 @@ class PositionMonitor:
                 pos.option_symbol,
                 pos.contracts,
             )
-            _send_sms(f"SELL {pos.option_symbol} x{pos.contracts} reason={reason} closing {pos.ticker}")
+            _send_sms(
+                f"SELL {pos.option_symbol} x{pos.contracts} reason={reason} closing {pos.ticker}"
+            )
             order = _place_with_fill_escalation(
                 client=self._client,
                 ticker=pos.ticker,
@@ -1233,7 +1270,7 @@ class OpMomentumTradeEngine:
       2. Pre-warm historical bars for MA computation.
       3. Stream live 5-min bars; fire signal after opening range.
       4. On signal: select option contract, size position, place BUY order.
-      5. Monitor stops intraday; close on hard stop, MA50 trail, or EOD.
+      5. Monitor stops intraday; close on hard stop, MA trailing stop, or EOD.
     """
 
     def __init__(
@@ -1243,6 +1280,7 @@ class OpMomentumTradeEngine:
         stop_pct: float = float(STOP_PCT),
         simulate: bool = False,
         opening_start_time: str = OPENING_START_TIME,
+        trailing_ma: str = TRAILING_MA,
     ):
         self._client = alpaca_client
         self._api_key = alpaca_client._api_key
@@ -1250,6 +1288,7 @@ class OpMomentumTradeEngine:
         self._stop_pct = _D(str(stop_pct))
         self._simulate = simulate
         self._opening_start_time = opening_start_time
+        self._trailing_ma = trailing_ma
         self._monitor: PositionMonitor = None
         self._signal_engine: LiveSignalEngine = None
         self._pending_signals: dict = {}
@@ -1448,7 +1487,9 @@ class OpMomentumTradeEngine:
 
         if self._simulate:
             sim_mid = entry_mid.quantize(_D("0.01"), rounding=ROUND_HALF_UP)
-            _send_sms(f"[SIMULATE] BUY {option_type} {option_symbol} x{contracts} @ ~{sim_mid}")
+            _send_sms(
+                f"[SIMULATE] BUY {option_type} {option_symbol} x{contracts} @ ~{sim_mid}"
+            )
             logger.info(
                 "SIMULATE BUY_OPEN %s %s contracts=%d simulated_fill=%.2f (no order placed)",
                 option_symbol,
@@ -1537,7 +1578,10 @@ class OpMomentumTradeEngine:
             opening_start_time=self._opening_start_time,
         )
         self._monitor = PositionMonitor(
-            self._client, self._signal_engine, simulate=self._simulate
+            self._client,
+            self._signal_engine,
+            simulate=self._simulate,
+            trailing_ma=self._trailing_ma,
         )
 
         self._signal_engine.start()
@@ -1701,6 +1745,7 @@ def _send_sms(message: str):
         return
     try:
         import clicksend_client
+
         configuration = clicksend_client.Configuration()
         configuration.username = username
         configuration.password = api_key
@@ -1827,6 +1872,13 @@ def parse_args():
         help=f"Hard stop as fraction of OR range (default: {float(STOP_PCT)})",
     )
     parser.add_argument(
+        "--trailing-ma",
+        type=str,
+        default=TRAILING_MA,
+        choices=["ma20", "ma50", "both"],
+        help="Trailing MA stop: ma20, ma50, or both (default: ma20)",
+    )
+    parser.add_argument(
         "--opening-start",
         type=str,
         default=OPENING_START_TIME,
@@ -1870,6 +1922,7 @@ if __name__ == "__main__":
             stop_pct=args.stop_pct,
             simulate=args.simulate,
             opening_start_time=args.opening_start,
+            trailing_ma=args.trailing_ma,
         )
         engine.run(tickers_override=args.tickers)
         sys.exit(0)
@@ -1924,6 +1977,7 @@ if __name__ == "__main__":
             stop_pct=args.stop_pct,
             simulate=args.simulate,
             opening_start_time=args.opening_start,
+            trailing_ma=args.trailing_ma,
         )
         engine.run(tickers_override=args.tickers)
     finally:
