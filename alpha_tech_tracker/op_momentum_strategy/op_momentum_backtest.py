@@ -35,15 +35,18 @@ def fetch_yfinance_bars(tickers: list, start_date: date, end_date: date) -> dict
 
 
 def fetch_alpaca_bars(tickers: list, start_date: date, end_date: date) -> dict:
-    key_id = os.environ.get("ALPACA_API_KEY") or os.environ.get("ALPACA_KEY_ID")
+    key_id = os.environ.get("ALPACA_API_KEY")
     secret_key = os.environ.get("ALPACA_SECRET_KEY")
     client = StockHistoricalDataClient(key_id, secret_key)
 
-    if end_date >= date.today():
-        et = pytz.timezone("America/New_York")
-        now_et = datetime.now(tz=et)
+    end_date_only = end_date.date() if isinstance(end_date, datetime) else end_date
+    et = pytz.timezone("America/New_York")
+    now_et = datetime.now(tz=et)
+    today_et = now_et.date()
+    if end_date_only >= today_et:
+        market_open_et = now_et.replace(hour=9, minute=30, second=0, microsecond=0)
         market_close_et = now_et.replace(hour=16, minute=0, second=0, microsecond=0)
-        if now_et < market_close_et:
+        if market_open_et <= now_et < market_close_et:
             raise ValueError(
                 f"end_date {end_date} includes today but market hasn't closed yet "
                 f"(current ET time: {now_et.strftime('%H:%M')}). "
@@ -52,7 +55,10 @@ def fetch_alpaca_bars(tickers: list, start_date: date, end_date: date) -> dict:
 
     # MA200 on 5-min bars = 200 bars × 5 min = ~2.6 trading days; 5 calendar days is enough.
     fetch_start = datetime.combine(start_date - timedelta(days=5), datetime.min.time())
-    fetch_end = datetime.combine(end_date + timedelta(days=1), datetime.min.time())
+    if isinstance(end_date, datetime):
+        fetch_end = end_date
+    else:
+        fetch_end = datetime.combine(end_date + timedelta(days=1), datetime.min.time())
 
     request = StockBarsRequest(
         symbol_or_symbols=tickers,
@@ -721,7 +727,7 @@ def fetch_daily_bars(
             result[ticker] = df
         return result
 
-    key_id = os.environ.get("ALPACA_API_KEY") or os.environ.get("ALPACA_KEY_ID")
+    key_id = os.environ.get("ALPACA_API_KEY")
     secret_key = os.environ.get("ALPACA_SECRET_KEY")
     client = StockHistoricalDataClient(key_id, secret_key)
     request = StockBarsRequest(

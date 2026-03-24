@@ -1,5 +1,9 @@
 import argparse
+import json
 import logging
+import os
+import signal
+import sys
 from decimal import Decimal, ROUND_HALF_UP
 import threading
 import time
@@ -1638,12 +1642,133 @@ AlpacaAPIClient.place_option_order = _patched_place_option_order
 
 
 # ---------------------------------------------------------------------------
+# Daemon helpers
+# ---------------------------------------------------------------------------
+
+_PID_FILE = os.path.expanduser("~/.op_momentum_daemon.pid")
+_LOG_FILE = os.path.join(
+    os.path.dirname(__file__), "..", "..", "logs", "op_momentum.log"
+)
+_CONFIG_FILE = os.path.join(os.path.dirname(__file__), "config.json")
+
+
+def _load_config(config_file: str = _CONFIG_FILE):
+    """
+    Load credentials from config.json and inject them into the environment
+    for any key not already set. Environment variables always take precedence.
+
+    Config file format (alpha_tech_tracker/op_momentum_strategy/config.json):
+        {
+          "alpaca": {
+            "api_key": "YOUR_KEY",
+            "secret_key": "YOUR_SECRET"
+          }
+        }
+    """
+    if not os.path.exists(config_file):
+        return
+
+    with open(config_file) as f:
+        cfg = json.load(f)
+
+    alpaca = cfg.get("alpaca", {})
+    mapping = {
+        "api_key": "ALPACA_API_KEY",
+        "secret_key": "ALPACA_SECRET_KEY",
+    }
+    for cfg_key, env_key in mapping.items():
+        if alpaca.get(cfg_key) and not os.environ.get(env_key):
+            os.environ[env_key] = alpaca[cfg_key]
+
+
+def _write_pid(pid_file: str):
+    with open(pid_file, "w") as f:
+        f.write(str(os.getpid()))
+
+
+def _read_pid(pid_file: str):
+    try:
+        with open(pid_file) as f:
+            return int(f.read().strip())
+    except (FileNotFoundError, ValueError):
+        return None
+
+
+def _remove_pid(pid_file: str):
+    try:
+        os.remove(pid_file)
+    except FileNotFoundError:
+        pass
+
+
+def _is_running(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+        return True
+    except (OSError, ProcessLookupError):
+        return False
+
+
+def _daemonize(log_file: str):
+    """Double-fork to detach from terminal and run as a background daemon."""
+    pid = os.fork()
+    if pid > 0:
+        sys.exit(0)
+
+    os.setsid()
+
+    pid = os.fork()
+    if pid > 0:
+        sys.exit(0)
+
+    sys.stdout.flush()
+    sys.stderr.flush()
+
+    with open(os.devnull) as dev_null:
+        os.dup2(dev_null.fileno(), sys.stdin.fileno())
+
+    log_fd = open(log_file, "a")
+    os.dup2(log_fd.fileno(), sys.stdout.fileno())
+    os.dup2(log_fd.fileno(), sys.stderr.fileno())
+    log_fd.close()
+
+
+def _daemon_stop(pid_file: str, log_file: str):
+    pid = _read_pid(pid_file)
+    if pid is None or not _is_running(pid):
+        print("Daemon is not running.")
+        _remove_pid(pid_file)
+        return
+
+    print(f"Stopping daemon (PID {pid})...")
+    os.kill(pid, signal.SIGTERM)
+
+    for _ in range(20):
+        time.sleep(0.5)
+        if not _is_running(pid):
+            break
+    else:
+        os.kill(pid, signal.SIGKILL)
+        print(f"Daemon (PID {pid}) force-killed.")
+        _remove_pid(pid_file)
+        return
+
+    _remove_pid(pid_file)
+    print(f"Daemon stopped (PID {pid}).")
+
+
+# ---------------------------------------------------------------------------
 # Entrypoint
 # ---------------------------------------------------------------------------
 
 
 def parse_args():
     parser = argparse.ArgumentParser(description="OpMomentum live trade engine")
+    parser.add_argument(
+        "action",
+        choices=["run", "start", "stop", "status", "restart"],
+        help="run: foreground | start: daemon | stop | status | restart",
+    )
     parser.add_argument(
         "--live",
         action="store_true",
@@ -1675,6 +1800,18 @@ def parse_args():
         help=f"Opening window start time HH:MM ET (default: {OPENING_START_TIME})",
     )
     parser.add_argument(
+        "--pid-file",
+        type=str,
+        default=_PID_FILE,
+        help=f"PID file path (default: {_PID_FILE})",
+    )
+    parser.add_argument(
+        "--log-file",
+        type=str,
+        default=_LOG_FILE,
+        help=f"Log file path (default: {_LOG_FILE})",
+    )
+    parser.add_argument(
         "--log-level",
         default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
@@ -1684,19 +1821,77 @@ def parse_args():
 
 if __name__ == "__main__":
     args = parse_args()
+    _load_config()
+
+    if args.action == "run":
+        logging.basicConfig(
+            level=getattr(logging, args.log_level),
+            format="%(asctime)s %(levelname)s %(name)s — %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+        is_paper = not (args.live or args.simulate)
+        client = AlpacaAPIClient(is_paper_trading=is_paper)
+        engine = OpMomentumTradeEngine(
+            alpaca_client=client,
+            is_paper=is_paper,
+            stop_pct=args.stop_pct,
+            simulate=args.simulate,
+            opening_start_time=args.opening_start,
+        )
+        engine.run(tickers_override=args.tickers)
+        sys.exit(0)
+
+    if args.action == "status":
+        pid = _read_pid(args.pid_file)
+        if pid and _is_running(pid):
+            print(f"Daemon running (PID {pid}) — log: {args.log_file}")
+        else:
+            print("Daemon is not running.")
+        sys.exit(0)
+
+    if args.action == "stop":
+        _daemon_stop(args.pid_file, args.log_file)
+        sys.exit(0)
+
+    if args.action == "restart":
+        _daemon_stop(args.pid_file, args.log_file)
+
+    # start / restart — check not already running
+    existing_pid = _read_pid(args.pid_file)
+    if existing_pid and _is_running(existing_pid):
+        print(
+            f"Daemon already running (PID {existing_pid}). Use 'restart' or 'stop' first."
+        )
+        sys.exit(1)
+
+    print(f"Starting daemon — logs: {args.log_file}")
+    _daemonize(args.log_file)
+
+    # --- daemon process only beyond this point ---
+    _write_pid(args.pid_file)
+
     logging.basicConfig(
         level=getattr(logging, args.log_level),
         format="%(asctime)s %(levelname)s %(name)s — %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
+        handlers=[logging.FileHandler(args.log_file)],
+    )
+    logger.info(
+        "Daemon started — api_key_set=%s config_file=%s",
+        bool(os.environ.get("ALPACA_API_KEY")),
+        _CONFIG_FILE,
     )
 
-    is_paper = not (args.live or args.simulate)
-    client = AlpacaAPIClient(is_paper_trading=is_paper)
-    engine = OpMomentumTradeEngine(
-        alpaca_client=client,
-        is_paper=is_paper,
-        stop_pct=args.stop_pct,
-        simulate=args.simulate,
-        opening_start_time=args.opening_start,
-    )
-    engine.run(tickers_override=args.tickers)
+    try:
+        is_paper = not (args.live or args.simulate)
+        client = AlpacaAPIClient(is_paper_trading=is_paper)
+        engine = OpMomentumTradeEngine(
+            alpaca_client=client,
+            is_paper=is_paper,
+            stop_pct=args.stop_pct,
+            simulate=args.simulate,
+            opening_start_time=args.opening_start,
+        )
+        engine.run(tickers_override=args.tickers)
+    finally:
+        _remove_pid(args.pid_file)

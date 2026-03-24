@@ -20,6 +20,7 @@ import pytest
 # Test Data Directory
 # ============================================================================
 
+
 @pytest.fixture
 def test_data_dir():
     """Return path to test data directory."""
@@ -29,6 +30,7 @@ def test_data_dir():
 # ============================================================================
 # Mock Alpaca Clients (for tests that import alpaca_engine/alpaca_py_engine)
 # ============================================================================
+
 
 @pytest.fixture(autouse=True)
 def mock_alpaca_clients_on_import(monkeypatch):
@@ -41,14 +43,11 @@ def mock_alpaca_clients_on_import(monkeypatch):
 
     Note: The deprecated alpaca_engine.py tests are skipped entirely.
 
-    If real Alpaca credentials are provided (ALPACA_API_KEY or ALPACA_KEY_ID),
+    If real Alpaca credentials are provided via ALPACA_API_KEY,
     the mocking is skipped to allow integration tests to use real API.
     """
     # Check if real credentials are available
-    has_real_creds = bool(
-        os.environ.get("ALPACA_API_KEY") or
-        os.environ.get("ALPACA_KEY_ID")
-    )
+    has_real_creds = bool(os.environ.get("ALPACA_API_KEY"))
 
     if has_real_creds:
         # Real credentials provided - don't mock, allow real API calls
@@ -57,8 +56,8 @@ def mock_alpaca_clients_on_import(monkeypatch):
 
     # No real credentials - set up mocks for unit tests
     # Set dummy environment variables if not present
-    if not os.environ.get("ALPACA_KEY_ID"):
-        monkeypatch.setenv("ALPACA_KEY_ID", "test_key_id")
+    if not os.environ.get("ALPACA_API_KEY"):
+        monkeypatch.setenv("ALPACA_API_KEY", "test_key_id")
     if not os.environ.get("ALPACA_SECRET_KEY"):
         monkeypatch.setenv("ALPACA_SECRET_KEY", "test_secret_key")
 
@@ -66,8 +65,14 @@ def mock_alpaca_clients_on_import(monkeypatch):
     mock_stock_client = MagicMock()
     mock_wss_client = MagicMock()
 
-    with patch("alpha_tech_tracker.alpaca_py_engine.StockHistoricalDataClient", return_value=mock_stock_client):
-        with patch("alpha_tech_tracker.alpaca_py_engine.StockDataStream", return_value=mock_wss_client):
+    with patch(
+        "alpha_tech_tracker.alpaca_py_engine.StockHistoricalDataClient",
+        return_value=mock_stock_client,
+    ):
+        with patch(
+            "alpha_tech_tracker.alpaca_py_engine.StockDataStream",
+            return_value=mock_wss_client,
+        ):
             yield {
                 "stock_client": mock_stock_client,
                 "wss_client": mock_wss_client,
@@ -77,6 +82,7 @@ def mock_alpaca_clients_on_import(monkeypatch):
 # ============================================================================
 # Sample Market Data Fixtures
 # ============================================================================
+
 
 @pytest.fixture
 def sample_stock_bars():
@@ -95,7 +101,9 @@ def sample_stock_bars():
     current = start_date
     while len(timestamps) < periods:
         # Add bars during market hours
-        if current.hour >= 9 and (current.hour < 16 or (current.hour == 16 and current.minute == 0)):
+        if current.hour >= 9 and (
+            current.hour < 16 or (current.hour == 16 and current.minute == 0)
+        ):
             if not (current.hour == 9 and current.minute < 30):  # Skip before 9:30
                 timestamps.append(current)
         current += pd.Timedelta(minutes=5)
@@ -114,6 +122,7 @@ def sample_stock_bars():
     volatility = 0.01
 
     import numpy as np
+
     np.random.seed(42)  # For reproducibility
 
     prices = []
@@ -174,6 +183,7 @@ def sample_account_info():
 # Mock Historical Data Function
 # ============================================================================
 
+
 @pytest.fixture
 def mock_get_historical_stock_data(sample_stock_bars):
     """
@@ -200,6 +210,7 @@ def mock_historical_data_function(sample_stock_bars):
 # Static Test Data Loaders
 # ============================================================================
 
+
 @pytest.fixture
 def load_test_data_json():
     """
@@ -209,12 +220,14 @@ def load_test_data_json():
         def test_something(load_test_data_json):
             data = load_test_data_json("NVDA_2019-12-01_2020-01-15.json")
     """
+
     def _load(filename):
         test_data_path = Path(__file__).parent / "test_data" / filename
         if not test_data_path.exists():
             pytest.skip(f"Test data file not found: {filename}")
         with open(test_data_path, "r") as f:
             return json.load(f)
+
     return _load
 
 
@@ -227,17 +240,20 @@ def load_test_data_csv():
         def test_something(load_test_data_csv):
             df = load_test_data_csv("eog_down_wave.csv")
     """
+
     def _load(filename):
         test_data_path = Path(__file__).parent / "test_data" / filename
         if not test_data_path.exists():
             pytest.skip(f"Test data file not found: {filename}")
         return pd.read_csv(test_data_path)
+
     return _load
 
 
 # ============================================================================
 # Strategy Testing Fixtures
 # ============================================================================
+
 
 @pytest.fixture
 def mock_strategy_dependencies(sample_stock_bars, sample_account_info):
@@ -252,12 +268,16 @@ def mock_strategy_dependencies(sample_stock_bars, sample_account_info):
     mocks = {}
 
     # Mock historical data fetching
-    with patch("alpha_tech_tracker.alpaca_py_engine.get_historical_stock_data") as mock_hist:
+    with patch(
+        "alpha_tech_tracker.alpaca_py_engine.get_historical_stock_data"
+    ) as mock_hist:
         mock_hist.return_value = sample_stock_bars
         mocks["historical_data"] = mock_hist
 
         # Mock account info
-        with patch("alpha_tech_tracker.trade_api.alpaca_client.client.AlpacaAPIClient") as mock_client_class:
+        with patch(
+            "alpha_tech_tracker.trade_api.alpaca_client.client.AlpacaAPIClient"
+        ) as mock_client_class:
             mock_client = MagicMock()
             mock_client.get_accounts.return_value = sample_account_info
             mock_client_class.return_value = mock_client
@@ -270,6 +290,7 @@ def mock_strategy_dependencies(sample_stock_bars, sample_account_info):
 # Decimal Precision Helpers
 # ============================================================================
 
+
 @pytest.fixture
 def assert_decimal_equal():
     """
@@ -281,15 +302,20 @@ def assert_decimal_equal():
             expected = Decimal("10.123")
             assert_decimal_equal(result, expected, places=2)
     """
+
     def _assert(actual, expected, places=2):
         tolerance = Decimal(10) ** -places
-        assert abs(actual - expected) < tolerance, f"{actual} != {expected} (within {places} places)"
+        assert abs(actual - expected) < tolerance, (
+            f"{actual} != {expected} (within {places} places)"
+        )
+
     return _assert
 
 
 # ============================================================================
 # Environment Variable Management
 # ============================================================================
+
 
 @pytest.fixture
 def clean_env(monkeypatch):
@@ -300,11 +326,11 @@ def clean_env(monkeypatch):
     tests don't accidentally use real API keys.
     """
     # Remove real credentials if present
-    for key in ["ALPACA_KEY_ID", "ALPACA_SECRET_KEY", "ALPACA_API_KEY"]:
+    for key in ["ALPACA_API_KEY", "ALPACA_SECRET_KEY"]:
         monkeypatch.delenv(key, raising=False)
 
     # Set test credentials
-    monkeypatch.setenv("ALPACA_KEY_ID", "test_key")
+    monkeypatch.setenv("ALPACA_API_KEY", "test_key")
     monkeypatch.setenv("ALPACA_SECRET_KEY", "test_secret")
 
     yield
@@ -313,6 +339,7 @@ def clean_env(monkeypatch):
 # ============================================================================
 # Pytest Configuration Hooks
 # ============================================================================
+
 
 def pytest_configure(config):
     """Configure pytest with custom markers."""

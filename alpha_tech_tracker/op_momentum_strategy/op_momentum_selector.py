@@ -108,7 +108,7 @@ def compute_today_signals(
     target_date: date = None,
 ) -> dict:
     if target_date is None:
-        target_date = date.today()
+        target_date = datetime.now(_ET).date()
 
     signals = {}
     for ticker, df in ticker_dfs.items():
@@ -197,7 +197,7 @@ def select_top_n(
     opening_start_time: str = OPENING_START_TIME,
 ) -> list:
     if target_date is None:
-        target_date = date.today()
+        target_date = datetime.now(_ET).date()
 
     lookback_start = target_date - timedelta(days=lookback_days)
 

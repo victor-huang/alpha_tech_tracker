@@ -62,3 +62,4 @@ build-iPhoneSimulator/
 # unless supporting rvm < 1.11.0 or doing something fancy, ignore this:
 .rvmrc
 pip-selfcheck.json
+alpha_tech_tracker/op_momentum_strategy/config.json

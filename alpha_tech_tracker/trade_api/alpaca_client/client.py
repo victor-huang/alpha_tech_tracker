@@ -39,7 +39,7 @@ class AlpacaAPIClient:
         is_paper_trading=True,
         selected_account_id=None,
     ):
-        self._api_key = api_key or os.environ.get("ALPACA_API_KEY") or os.environ.get("ALPACA_KEY_ID")
+        self._api_key = api_key or os.environ.get("ALPACA_API_KEY")
         self._secret_key = secret_key or os.environ.get("ALPACA_SECRET_KEY")
         self._is_paper_trading = is_paper_trading
         self._selected_account_id = selected_account_id
