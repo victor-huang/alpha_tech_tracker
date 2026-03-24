@@ -40,6 +40,7 @@ def run_selector_backtest(
     bearish_ma200: bool = False,
     stop_pct: float = STOP_PCT,
     source: str = "alpaca",
+    trailing_ma: str = "ma20",
 ) -> tuple:
     """
     Walk each trading day in [eval_start, eval_end], apply rolling selector
@@ -64,7 +65,7 @@ def run_selector_backtest(
             full_results[ticker] = pd.DataFrame()
             continue
         full_results[ticker] = compute_signals_with_backtest(
-            df, opening_bars, bearish_ma200, stop_pct
+            df, opening_bars, bearish_ma200, stop_pct, trailing_ma=trailing_ma
         )
 
     trading_days = sorted(
@@ -254,7 +255,9 @@ def _print_day_summary(
         f"+${abs(day_cap_pnl):.2f}" if day_cap_pnl >= 0 else f"-${abs(day_cap_pnl):.2f}"
     )
     day_ret_pct = day_cap_pnl / initial_capital * 100
-    day_ret_str = f"+{abs(day_ret_pct):.2f}%" if day_ret_pct >= 0 else f"{day_ret_pct:.2f}%"
+    day_ret_str = (
+        f"+{abs(day_ret_pct):.2f}%" if day_ret_pct >= 0 else f"{day_ret_pct:.2f}%"
+    )
     print(
         f"  {'':12} {'':5} {'':6} {'':9} {'':5}  "
         f"{'':>7} {'':>7} {pnl_str:>7} {avg_pct_str:>7}  "
@@ -615,6 +618,13 @@ def _parse_args():
         default=OPENING_BARS,
         help=f"Number of 5-min bars in opening period (default: {OPENING_BARS})",
     )
+    parser.add_argument(
+        "--trailing-ma",
+        choices=["ma20", "ma50", "both"],
+        default="ma20",
+        help="Trailing MA stop to use once MA is above hard stop (default: ma20). "
+        "ma20: use MA20 only. ma50: use MA50 only. both: use MA20 then MA50.",
+    )
     return parser.parse_args()
 
 
@@ -630,6 +640,7 @@ if __name__ == "__main__":
     print(f"  Tickers      : {', '.join(tickers)}")
     print(f"  Lookback     : {args.lookback}d rolling")
     print(f"  Stop pct     : {args.stop_pct}")
+    print(f"  Trailing MA  : {args.trailing_ma}")
     print(f"  Source       : {args.source}")
 
     trade_rows, full_results, trading_days = run_selector_backtest(
@@ -642,6 +653,7 @@ if __name__ == "__main__":
         bearish_ma200=args.bearish_ma200,
         stop_pct=args.stop_pct,
         source=args.source,
+        trailing_ma=args.trailing_ma,
     )
 
     baseline_df = _collect_baseline(full_results, eval_start, eval_end)

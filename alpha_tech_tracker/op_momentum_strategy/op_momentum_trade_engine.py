@@ -743,6 +743,132 @@ class LiveSignalEngine:
 # ---------------------------------------------------------------------------
 
 
+def _place_with_fill_escalation(
+    client: AlpacaAPIClient,
+    ticker: str,
+    option_symbol: str,
+    option_type: str,
+    contracts: int,
+    order_action: str,
+) -> dict:
+    """
+    Place a limit order at mid price, then escalate if unfilled:
+      - After 60s unfilled: cancel + re-place at ask (buy) or bid (sell)
+      - After another 60s unfilled: cancel + market order
+    """
+    is_buy = order_action == "BUY_OPEN"
+
+    def _fetch_mid_bid_ask():
+        quote_resp = client._option_data_client.get_option_latest_quote(
+            OptionLatestQuoteRequest(symbol_or_symbols=[option_symbol])
+        )
+        q = quote_resp[option_symbol]
+        bid = _D(q.bid_price)
+        ask = _D(q.ask_price)
+        mid = (bid + ask) / _D("2")
+        return bid, ask, mid
+
+    def _place_limit(price: Decimal) -> dict:
+        rounded = price.quantize(_D("0.01"), rounding=ROUND_HALF_UP)
+        return client.place_option_order(
+            symbol=ticker,
+            option_key=None,
+            price=float(rounded),
+            price_type="LIMIT",
+            option_type=option_type,
+            order_action=order_action,
+            quantity=contracts,
+            _option_symbol_override=option_symbol,
+        )
+
+    def _place_market() -> dict:
+        return client.place_option_order(
+            symbol=ticker,
+            option_key=None,
+            price_type="MARKET",
+            option_type=option_type,
+            order_action=order_action,
+            quantity=contracts,
+            _option_symbol_override=option_symbol,
+        )
+
+    def _is_filled(order_id: str) -> bool:
+        try:
+            status = client.order_status(order_id)
+            return status.get("status") == "filled"
+        except Exception:
+            return False
+
+    def _cancel_safely(order_id: str):
+        try:
+            client.cancel_order(order_id)
+        except Exception:
+            logger.warning(
+                "Could not cancel order %s (may already be filled)", order_id
+            )
+
+    # Step 1: limit at mid
+    try:
+        bid, ask, mid = _fetch_mid_bid_ask()
+        logger.info(
+            "FILL_ESC step1 %s %s: bid=%s ask=%s mid=%s",
+            order_action,
+            option_symbol,
+            bid,
+            ask,
+            mid.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
+        )
+    except Exception:
+        logger.warning(
+            "Could not fetch quote for %s, falling back to market", option_symbol
+        )
+        return _place_market()
+
+    order = _place_limit(mid)
+    order_id = order.get("order_id")
+    logger.info("FILL_ESC step1 order placed: id=%s", order_id)
+
+    time.sleep(60)
+    if _is_filled(order_id):
+        logger.info("FILL_ESC step1 filled: %s", order_id)
+        return order
+
+    # Step 2: cancel + limit at ask (buy) or bid (sell)
+    _cancel_safely(order_id)
+    try:
+        bid, ask, mid = _fetch_mid_bid_ask()
+        aggressive_price = ask if is_buy else bid
+        logger.info(
+            "FILL_ESC step2 %s %s: aggressive_price=%s",
+            order_action,
+            option_symbol,
+            aggressive_price.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
+        )
+    except Exception:
+        logger.warning(
+            "Could not fetch quote for step2 %s, using market", option_symbol
+        )
+        return _place_market()
+
+    order = _place_limit(aggressive_price)
+    order_id = order.get("order_id")
+    logger.info("FILL_ESC step2 order placed: id=%s", order_id)
+
+    time.sleep(60)
+    if _is_filled(order_id):
+        logger.info("FILL_ESC step2 filled: %s", order_id)
+        return order
+
+    # Step 3: cancel + market
+    _cancel_safely(order_id)
+    logger.info(
+        "FILL_ESC step3 %s %s: placing market order", order_action, option_symbol
+    )
+    order = _place_market()
+    logger.info("FILL_ESC step3 market order placed: id=%s", order.get("order_id"))
+    return order
+
+
 class PositionMonitor:
     """Monitors open option positions and exits on stop conditions."""
 
@@ -864,27 +990,20 @@ class PositionMonitor:
             return
 
         try:
-            if exit_limit:
-                order = self._client.place_option_order(
-                    symbol=pos.ticker,
-                    option_key=None,
-                    price=float(exit_limit),
-                    price_type="LIMIT",
-                    option_type="CALL" if pos.signal == "BULLISH" else "PUT",
-                    order_action="SELL_CLOSE",
-                    quantity=pos.contracts,
-                    _option_symbol_override=pos.option_symbol,
-                )
-            else:
-                order = self._client.place_option_order(
-                    symbol=pos.ticker,
-                    option_key=None,
-                    price_type="MARKET",
-                    option_type="CALL" if pos.signal == "BULLISH" else "PUT",
-                    order_action="SELL_CLOSE",
-                    quantity=pos.contracts,
-                    _option_symbol_override=pos.option_symbol,
-                )
+            option_type = "CALL" if pos.signal == "BULLISH" else "PUT"
+            logger.info(
+                "Placing SELL_CLOSE with fill escalation: %s %d contracts",
+                pos.option_symbol,
+                pos.contracts,
+            )
+            order = _place_with_fill_escalation(
+                client=self._client,
+                ticker=pos.ticker,
+                option_symbol=pos.option_symbol,
+                option_type=option_type,
+                contracts=pos.contracts,
+                order_action="SELL_CLOSE",
+            )
             pos.exit_order_id = order.get("order_id")
             logger.info("Close order placed: %s", pos.exit_order_id)
         except Exception:
@@ -1335,28 +1454,19 @@ class OpMomentumTradeEngine:
             }
 
         logger.info(
-            "Placing BUY_OPEN: %s %s %d @ %.2f",
+            "Placing BUY_OPEN with fill escalation: %s %s %d",
             option_symbol,
             option_type,
             contracts,
-            limit_price,
         )
-        order = self._client.place_option_order(
-            symbol=ticker,
-            option_key=None,
-            price=float(limit_price),
-            price_type="LIMIT",
+        return _place_with_fill_escalation(
+            client=self._client,
+            ticker=ticker,
+            option_symbol=option_symbol,
             option_type=option_type,
+            contracts=contracts,
             order_action="BUY_OPEN",
-            quantity=contracts,
-            _option_symbol_override=option_symbol,
         )
-        logger.info(
-            "Entry order placed: id=%s status=%s",
-            order.get("order_id"),
-            order.get("status"),
-        )
-        return order
 
     def _monitor_loop(self, active_tickers: list):
         """Polls PositionMonitor on each new bar arrival, and forces EOD close."""

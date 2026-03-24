@@ -769,10 +769,26 @@ class TestLiveSignalEngine:
 # ---------------------------------------------------------------------------
 
 
+_SLEEP_PATH = (
+    "alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine.time.sleep"
+)
+
+
 class TestPositionMonitor:
+    @pytest.fixture(autouse=True)
+    def patch_sleep(self, monkeypatch):
+        monkeypatch.setattr(
+            "alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine.time.sleep",
+            lambda _: None,
+        )
+
     def test_bullish_hard_stop_arms_then_triggers(self):
         client = _make_alpaca_client()
         client.place_option_order.return_value = {"order_id": "close-1"}
+        client.order_status.return_value = {
+            "status": "filled",
+            "filled_avg_price": 5.25,
+        }
         client._option_data_client.get_option_latest_quote.return_value = {
             "NVDA260328C00900000": _make_option_quote(bid=5.0, ask=5.5)
         }
@@ -808,6 +824,10 @@ class TestPositionMonitor:
     def test_bullish_trailing_stop_triggers_below_ma50(self):
         client = _make_alpaca_client()
         client.place_option_order.return_value = {"order_id": "close-2"}
+        client.order_status.return_value = {
+            "status": "filled",
+            "filled_avg_price": 5.25,
+        }
         client._option_data_client.get_option_latest_quote.return_value = {
             "NVDA260328C00900000": _make_option_quote(bid=5.0, ask=5.5)
         }
@@ -833,6 +853,10 @@ class TestPositionMonitor:
     def test_bullish_fallback_triggers_when_not_yet_armed(self):
         client = _make_alpaca_client()
         client.place_option_order.return_value = {"order_id": "close-3"}
+        client.order_status.return_value = {
+            "status": "filled",
+            "filled_avg_price": 5.25,
+        }
         client._option_data_client.get_option_latest_quote.return_value = {
             "NVDA260328C00900000": _make_option_quote(bid=5.0, ask=5.5)
         }
@@ -864,6 +888,10 @@ class TestPositionMonitor:
         #   close=92.5 → armed AND 92.5 >= 91.5 → exit "hard_stop"
         client = _make_alpaca_client()
         client.place_option_order.return_value = {"order_id": "close-4"}
+        client.order_status.return_value = {
+            "status": "filled",
+            "filled_avg_price": 5.25,
+        }
         client._option_data_client.get_option_latest_quote.return_value = {
             "NVDA260328C00900000": _make_option_quote(bid=5.0, ask=5.5)
         }
@@ -906,6 +934,10 @@ class TestPositionMonitor:
         # MA50=92 < close=93 → close > MA50 → trailing stop fires
         client = _make_alpaca_client()
         client.place_option_order.return_value = {"order_id": "close-5"}
+        client.order_status.return_value = {
+            "status": "filled",
+            "filled_avg_price": 5.25,
+        }
         client._option_data_client.get_option_latest_quote.return_value = {
             "NVDA260328C00900000": _make_option_quote(bid=5.0, ask=5.5)
         }
@@ -957,6 +989,10 @@ class TestPositionMonitor:
     def test_close_all_marks_all_open_positions_closed(self):
         client = _make_alpaca_client()
         client.place_option_order.return_value = {"order_id": "eod-close"}
+        client.order_status.return_value = {
+            "status": "filled",
+            "filled_avg_price": 5.25,
+        }
         client._option_data_client.get_option_latest_quote.return_value = {
             "NVDA260328C00900000": _make_option_quote(bid=5.0, ask=5.5)
         }

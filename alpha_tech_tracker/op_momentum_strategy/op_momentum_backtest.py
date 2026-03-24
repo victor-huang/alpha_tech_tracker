@@ -1,6 +1,7 @@
 import argparse
 import os
 import pandas as pd
+import pytz
 import yfinance as yf
 from datetime import date, datetime, timedelta
 
@@ -38,9 +39,20 @@ def fetch_alpaca_bars(tickers: list, start_date: date, end_date: date) -> dict:
     secret_key = os.environ.get("ALPACA_SECRET_KEY")
     client = StockHistoricalDataClient(key_id, secret_key)
 
+    if end_date >= date.today():
+        et = pytz.timezone("America/New_York")
+        now_et = datetime.now(tz=et)
+        market_close_et = now_et.replace(hour=16, minute=0, second=0, microsecond=0)
+        if now_et < market_close_et:
+            raise ValueError(
+                f"end_date {end_date} includes today but market hasn't closed yet "
+                f"(current ET time: {now_et.strftime('%H:%M')}). "
+                f"Re-run after 16:00 ET."
+            )
+
     # MA200 on 5-min bars = 200 bars × 5 min = ~2.6 trading days; 5 calendar days is enough.
     fetch_start = datetime.combine(start_date - timedelta(days=5), datetime.min.time())
-    fetch_end = datetime.combine(end_date, datetime.min.time())
+    fetch_end = datetime.combine(end_date + timedelta(days=1), datetime.min.time())
 
     request = StockBarsRequest(
         symbol_or_symbols=tickers,
@@ -117,6 +129,13 @@ def parse_args():
         "Bull: exit if price drops below OR_high - stop_pct * OR_range. "
         "Bear: exit if price rises above OR_low + stop_pct * OR_range.",
     )
+    parser.add_argument(
+        "--trailing-ma",
+        choices=["ma20", "ma50", "both"],
+        default="ma20",
+        help="Trailing MA stop to use once MA is above hard stop (default: ma20). "
+        "ma20: use MA20 only. ma50: use MA50 only. both: use MA20 then MA50.",
+    )
     return parser.parse_args()
 
 
@@ -126,6 +145,7 @@ def compute_signals_with_backtest(
     bearish_ma200: bool = False,
     stop_pct: float = 0.40,
     opening_start_time: str = "09:30",
+    trailing_ma: str = "ma20",
 ) -> pd.DataFrame:
     from datetime import time as dtime
 
@@ -187,6 +207,7 @@ def compute_signals_with_backtest(
         hard_stop_armed = False
 
         for _, bar in post_open.iterrows():
+            bar_ma20 = bar["MA20"]
             bar_ma50 = bar["MA50"]
 
             if signal == "BULLISH":
@@ -194,14 +215,36 @@ def compute_signals_with_backtest(
                     hard_stop_armed = True
                 hard_stop_hit = hard_stop_armed and bar["Close"] <= hard_stop_price
                 fallback_hit = not hard_stop_armed and bar["Close"] <= fallback_price
-                trailing_stop_hit = (not pd.isna(bar_ma50)) and bar["Close"] < bar_ma50
+                ma20_trailing_stop_hit = (
+                    trailing_ma in ("ma20", "both")
+                    and (not pd.isna(bar_ma20))
+                    and bar_ma20 > hard_stop_price
+                    and bar["Close"] < bar_ma20
+                )
+                trailing_stop_hit = (
+                    trailing_ma in ("ma50", "both")
+                    and (not pd.isna(bar_ma50))
+                    and bar_ma50 > hard_stop_price
+                    and bar["Close"] < bar_ma50
+                )
                 move = bar["Close"] - midpoint
             else:
                 if not hard_stop_armed and bar["Close"] < hard_stop_price:
                     hard_stop_armed = True
                 hard_stop_hit = hard_stop_armed and bar["Close"] >= hard_stop_price
                 fallback_hit = not hard_stop_armed and bar["Close"] >= fallback_price
-                trailing_stop_hit = (not pd.isna(bar_ma50)) and bar["Close"] > bar_ma50
+                ma20_trailing_stop_hit = (
+                    trailing_ma in ("ma20", "both")
+                    and (not pd.isna(bar_ma20))
+                    and bar_ma20 < or_low
+                    and bar["Close"] > bar_ma20
+                )
+                trailing_stop_hit = (
+                    trailing_ma in ("ma50", "both")
+                    and (not pd.isna(bar_ma50))
+                    and bar_ma50 < or_low
+                    and bar["Close"] > bar_ma50
+                )
                 move = midpoint - bar["Close"]
 
             if hard_stop_hit:
@@ -218,6 +261,10 @@ def compute_signals_with_backtest(
                 else:
                     exit_price = fallback_price
                 exit_reason = "fallback_20pct"
+                break
+            elif ma20_trailing_stop_hit:
+                exit_price = bar["Close"]
+                exit_reason = "trailing_stop_ma20"
                 break
             elif trailing_stop_hit:
                 exit_price = bar["Close"]
@@ -429,7 +476,7 @@ def print_pnl_distribution(all_results: dict, backtest_days: int, trading_dates:
 
     print(f"\n{'=' * len(divider)}")
     print(
-        f"  P&L DISTRIBUTION — Last {backtest_days} calendar days  |  MA50 trailing stop"
+        f"  P&L DISTRIBUTION — Last {backtest_days} calendar days  |  MA20/MA50 trailing stop"
     )
     print(f"{'=' * len(divider)}")
     print(header)
@@ -707,6 +754,7 @@ def run_backtest(
     source: str = "alpaca",
     ticker_dfs: dict = None,
     opening_start_time: str = "09:30",
+    trailing_ma: str = "ma20",
 ) -> dict:
     if ticker_dfs is None:
         ticker_dfs = fetch_bars(tickers, start_date, end_date, source=source)
@@ -717,7 +765,7 @@ def run_backtest(
             all_results[ticker] = pd.DataFrame()
             continue
         results = compute_signals_with_backtest(
-            df, opening_bars, bearish_ma200, stop_pct, opening_start_time
+            df, opening_bars, bearish_ma200, stop_pct, opening_start_time, trailing_ma
         )
         if not results.empty:
             results = results[results["date"] >= start_date].reset_index(drop=True)
@@ -748,14 +796,20 @@ if __name__ == "__main__":
     backtest_days = (end_date - cutoff).days
     period_label = f"{cutoff} → {end_date}  ({backtest_days} calendar days)"
 
+    trailing_ma = args.trailing_ma
     bearish_filter = "MA20 + MA200" if bearish_ma200 else "MA20 only"
+    trailing_ma_label = {
+        "ma20": "MA20 only",
+        "ma50": "MA50 only",
+        "both": "MA20 then MA50",
+    }[trailing_ma]
     print(f"\nop_momentum_guide backtest — {period_label} ({source})")
     print(f"Tickers           : {', '.join(tickers)}")
     print(
         f"Opening period    : first {opening_bars * 5} min ({opening_bars} x 5-min bars)"
     )
     print(
-        f"Exit rule         : MA50 trailing stop  |  hard stop at {stop_pct * 100:.0f}% from favorable end of OR"
+        f"Exit rule         : trailing stop ({trailing_ma_label}, when MA > hard stop)  |  hard stop at {stop_pct * 100:.0f}% from favorable end of OR"
     )
     print(
         f"  → Bull hard stop: OR_high - {stop_pct * 100:.0f}% × OR_range  |  Bear hard stop: OR_low + {stop_pct * 100:.0f}% × OR_range"
@@ -787,7 +841,7 @@ if __name__ == "__main__":
                 trading_dates.add(d)
 
         results = compute_signals_with_backtest(
-            df, opening_bars, bearish_ma200, stop_pct
+            df, opening_bars, bearish_ma200, stop_pct, trailing_ma=trailing_ma
         )
         if not results.empty:
             results = results[results["date"] >= cutoff].reset_index(drop=True)

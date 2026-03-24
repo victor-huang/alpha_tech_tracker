@@ -297,3 +297,110 @@ The tradeoff: tighter stops compress AvgWin% significantly. At 0.10, the strateg
 - [ ] Run EXPE 6-month validation (180-day) — 90d EV/Trade +0.770% is strong; needs longer window confirmation
 - [ ] Run FANG 6-month validation and tighter stop-pct sweep (0.10) — 365d EV/Trade +0.279%; closest non-tech/energy candidate to threshold
 - [ ] Investigate GEV bull-only filter — 365d bear success 18% drags EV/Trade; test with bearish signals disabled or --bearish-ma200 to see if bull-only EV/Trade clears +0.40%
+
+---
+
+## Selector Portfolio Backtests — op_momentum_selector
+
+The sections below cover **portfolio-level** results from `op_momentum_selector_backtest.py`, which scores and ranks all tickers daily, picks the top-3 by rolling EV gate + scoring formula, and simulates capital compounding ($10,000 / 3 slots = $3,333 per position).
+
+### Ticker Universe
+
+**Original 8:** SNDK, APP, SHOP, CVNA, AMD, META, EXPE, FANG
+
+**Expanded 13 (current DEFAULT_TICKERS):** adds ISSC, FN, UI, MU, ANAB — selected after screening two custom batches over the 90-day window (Dec 2025 – Mar 2026).
+
+Custom batch ranking that identified the additions (total P&L%, 90d):
+
+| Ticker | Total P&L% | Win Rate | Notes |
+|--------|-----------|----------|-------|
+| ISSC | +23.92% | 62% | Top performer, high win rate |
+| FN | +21.40% | 53% | Strong momentum |
+| UI | +14.15% | 40% | Consistent |
+| MU | +12.47% | 38% | Memory sector |
+| ANAB | +9.52% | 45% | Biotech volatility |
+
+---
+
+### MA20 Trailing Stop Logic
+
+Added to `op_momentum_backtest.py` (`compute_signals_with_backtest`).
+
+**BULLISH:** once `MA20 > hard_stop_price` (= `OR_high − stop_pct × OR_range`), the trade exits if `Close < MA20`. This only activates when MA20 has risen above the safety floor, confirming the uptrend is real before locking in profit.
+
+**BEARISH:** once `MA20 < OR_low`, the trade exits if `Close > MA20`. Uses `OR_low` (not `hard_stop_price`) as the threshold because `hard_stop = OR_low + stop_pct × OR_range` is above the entry — triggering on MA20 < hard_stop would fire before the trade is in profit.
+
+Exit priority order: `hard_stop` → `fallback_20pct` → `trailing_stop_ma20` → `trailing_stop_ma50` → `end_of_day`
+
+Controlled via `--trailing-ma {ma20 | ma50 | both}` (default: `both`).
+
+---
+
+### Full-Year Results 2021–2025 (13 tickers, stop-pct 0.15, --trailing-ma ma20)
+
+Log files: `back_test_result/selector_bt_{year}_ma20.log`
+
+| Year | Strategy Return | Final Portfolio | QQQ Return | Alpha vs QQQ | Win Rate | Avg Win | Avg Loss | EV/Trade |
+|------|----------------|-----------------|-----------|--------------|----------|---------|----------|----------|
+| 2021 | **+55.57%** | $15,556.87 | +28.50% | +27.1pp | 31% | +1.39% | -0.29% | +0.234% |
+| 2022 | **+97.61%** | $19,760.54 | -33.68% | +131.3pp | 35% | +2.03% | -0.42% | +0.436% |
+| 2023 | **+50.02%** | $15,001.69 | +54.81% | -4.8pp | 31% | +1.37% | -0.32% | +0.212% |
+| 2024 | **+27.65%** | $12,764.55 | +26.98% | +0.7pp | 31% | +1.04% | -0.28% | +0.125% |
+| 2025 | **+72.68%** | $17,268.36 | +20.36% | +52.3pp | 36% | +1.55% | -0.38% | +0.310% |
+
+**5-year compound (sequential):** $10K × 1.5557 × 1.9761 × 1.5002 × 1.2765 × 1.7268 ≈ **$99,900** (~10× in 5 years)
+
+---
+
+### Past 90 Days (Dec 23 2025 – Mar 23 2026, stop-pct 0.15, --trailing-ma ma20)
+
+Log file: `back_test_result/selector_bt_90d_ma20.log`
+
+| Metric | Value |
+|--------|-------|
+| Strategy return | **+38.86%** |
+| Final portfolio | $13,885.70 |
+| QQQ return | -5.45% |
+| Alpha vs QQQ | **+44.3pp** |
+| Trades | 180 (73W / 107L) |
+| Win rate | 41% |
+| Avg win | +2.25% |
+| Avg loss | -0.44% |
+| EV/trade | **+0.648%** |
+
+The past 90 days show the strongest EV/trade (+0.648%) of any period tested, driven by the volatile tariff selloff environment where OR breakouts produced extended directional moves.
+
+---
+
+### MA20 vs No Trailing Stop — Head-to-Head (stop-pct 0.15)
+
+| Year | No trailing MA | MA20 stop | Δ |
+|------|--------------|-----------|---|
+| 2021 | +35.95% | **+55.57%** | +19.6pp |
+| 2022 | +77.36% | **+97.61%** | +20.2pp |
+| 2023 | **+69.06%** | +50.02% | -19.0pp |
+| 2024 | +26.92% | **+27.65%** | +0.7pp |
+| 2025 | +68.95% | **+72.68%** | +3.7pp |
+
+MA20 trailing stop wins in 4 of 5 years. The exception is 2023 — a slow, grinding bull market where MA20 was triggered too early on winning trades before the full trend developed. MA20 adds most value in high-volatility trending years (2021: +19.6pp, 2022: +20.2pp) where it lets winners run while cutting fast when momentum stalls.
+
+---
+
+### Ticker Universe Comparison (90-day + 15-month, stop-pct 0.15, no trailing MA)
+
+| Period | Orig 8 Return | Expanded 13 Return | QQQ | Winner |
+|--------|--------------|-------------------|-----|--------|
+| 90 days (Dec 25 – Mar 26) | +36.86% | **+47.57%** | -6.00% | 13 (+10.7pp) |
+| 15 months (Jan 25 – Mar 26) | +114.04% | **+137.05%** | +14.08% | 13 (+23.0pp) |
+
+Full-year head-to-head (stop-pct 0.15, no trailing MA):
+
+| Year | Orig 8 | Expanded 13 | Winner |
+|------|--------|-------------|--------|
+| 2021 | +35.61% | +35.95% | 13 (+0.3pp) |
+| 2022 | +71.65% | **+77.36%** | 13 (+5.7pp) |
+| 2023 | +56.49% | **+69.06%** | 13 (+12.6pp) |
+| 2024 | **+31.02%** | +26.92% | 8 (+4.1pp) |
+| 2025 | +54.35% | **+68.95%** | 13 (+14.6pp) |
+
+Expanded 13 wins in 4 of 5 years. 2024 is the only exception — the 5 added tickers (higher-beta small/mid caps) underperformed in the low-volatility 2024 melt-up.
