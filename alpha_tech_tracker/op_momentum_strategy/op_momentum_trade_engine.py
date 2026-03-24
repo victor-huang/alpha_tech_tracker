@@ -59,6 +59,8 @@ ROLLING_LOOKBACK_DAYS = 30
 BEARISH_MA200 = False
 SIGNAL_BUFFER_MINUTES = 2
 
+_clicksend_cfg: dict = {}
+
 
 # ---------------------------------------------------------------------------
 # Signal event
@@ -985,6 +987,7 @@ class PositionMonitor:
                 else _D("0")
             )
             pos.simulated_exit_mid = sim_mid
+            _send_sms(f"[SIMULATE] SELL {pos.option_symbol} x{pos.contracts} reason={reason} @ ~{sim_mid}")
             logger.info(
                 "SIMULATE SELL_CLOSE %s contracts=%d simulated_fill=%.2f (no order placed)",
                 pos.option_symbol,
@@ -1000,6 +1003,7 @@ class PositionMonitor:
                 pos.option_symbol,
                 pos.contracts,
             )
+            _send_sms(f"SELL {pos.option_symbol} x{pos.contracts} reason={reason} closing {pos.ticker}")
             order = _place_with_fill_escalation(
                 client=self._client,
                 ticker=pos.ticker,
@@ -1444,6 +1448,7 @@ class OpMomentumTradeEngine:
 
         if self._simulate:
             sim_mid = entry_mid.quantize(_D("0.01"), rounding=ROUND_HALF_UP)
+            _send_sms(f"[SIMULATE] BUY {option_type} {option_symbol} x{contracts} @ ~{sim_mid}")
             logger.info(
                 "SIMULATE BUY_OPEN %s %s contracts=%d simulated_fill=%.2f (no order placed)",
                 option_symbol,
@@ -1463,6 +1468,7 @@ class OpMomentumTradeEngine:
             option_type,
             contracts,
         )
+        _send_sms(f"BUY {option_type} {option_symbol} x{contracts} entering {ticker}")
         return _place_with_fill_escalation(
             client=self._client,
             ticker=ticker,
@@ -1679,6 +1685,33 @@ def _load_config(config_file: str = _CONFIG_FILE):
     for cfg_key, env_key in mapping.items():
         if alpaca.get(cfg_key) and not os.environ.get(env_key):
             os.environ[env_key] = alpaca[cfg_key]
+
+    _clicksend_cfg.clear()
+    _clicksend_cfg.update(cfg.get("clicksend", {}))
+
+
+def _send_sms(message: str):
+    if not _clicksend_cfg.get("enabled"):
+        return
+    username = _clicksend_cfg.get("username")
+    api_key = _clicksend_cfg.get("api_key")
+    to_num = _clicksend_cfg.get("to_number")
+    if not all([username, api_key, to_num]):
+        logger.debug("SMS skipped — clicksend config incomplete")
+        return
+    try:
+        import clicksend_client
+        configuration = clicksend_client.Configuration()
+        configuration.username = username
+        configuration.password = api_key
+        api = clicksend_client.SMSApi(clicksend_client.ApiClient(configuration))
+        sms = clicksend_client.SmsMessageCollection(
+            messages=[clicksend_client.SmsMessage(to=to_num, body=message)]
+        )
+        api.sms_send_post(sms)
+        logger.info("SMS sent: %s", message)
+    except Exception:
+        logger.warning("SMS failed", exc_info=True)
 
 
 def _write_pid(pid_file: str):
