@@ -34,16 +34,18 @@ def fetch_yfinance_bars(tickers: list, start_date: date, end_date: date) -> dict
     return result
 
 
-def fetch_alpaca_bars(tickers: list, start_date: date, end_date: date) -> dict:
+def fetch_alpaca_bars(
+    tickers: list, start_date: date, end_date, allow_intraday: bool = False
+) -> dict:
     key_id = os.environ.get("ALPACA_API_KEY")
     secret_key = os.environ.get("ALPACA_SECRET_KEY")
     client = StockHistoricalDataClient(key_id, secret_key)
 
-    end_date_only = end_date.date() if isinstance(end_date, datetime) else end_date
     et = pytz.timezone("America/New_York")
     now_et = datetime.now(tz=et)
     today_et = now_et.date()
-    if end_date_only >= today_et:
+    end_date_only = end_date.date() if isinstance(end_date, datetime) else end_date
+    if not allow_intraday and end_date_only >= today_et:
         market_open_et = now_et.replace(hour=9, minute=30, second=0, microsecond=0)
         market_close_et = now_et.replace(hour=16, minute=0, second=0, microsecond=0)
         if market_open_et <= now_et < market_close_et:
@@ -698,12 +700,15 @@ def print_summary(all_results: dict, backtest_days: int, opening_bars: int):
 def fetch_bars(
     tickers: list,
     start_date: date,
-    end_date: date,
+    end_date,
     source: str = "alpaca",
+    allow_intraday: bool = False,
 ) -> dict:
     if source == "yfinance":
         return fetch_yfinance_bars(tickers, start_date, end_date)
-    return fetch_alpaca_bars(tickers, start_date, end_date)
+    return fetch_alpaca_bars(
+        tickers, start_date, end_date, allow_intraday=allow_intraday
+    )
 
 
 def fetch_daily_bars(

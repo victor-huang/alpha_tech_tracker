@@ -165,6 +165,7 @@ class TickerSelector:
             fetch_start,
             _safe_bars_end(today),
             source="alpaca",
+            allow_intraday=True,
         )
 
         result = select_top_n(
@@ -1110,7 +1111,7 @@ class PositionMonitor:
         ) -> Optional[Decimal]:
             if entry is None or exit_ is None:
                 return None
-            raw = (exit_ - entry) if signal == "BULLISH" else (entry - exit_)
+            raw = exit_ - entry
             return raw * _D(contracts) * _D("100")
 
         def _pnl_str(pnl: Optional[Decimal]) -> str:
