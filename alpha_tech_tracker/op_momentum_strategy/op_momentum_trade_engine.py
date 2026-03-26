@@ -66,6 +66,8 @@ MAX_LOSS_PCT = None
 ARMED_MA20_EXIT = False
 REGIME_FILTER = False
 REGIME_MA = 5
+RANK_WEIGHTED_SIZING = False
+RANK_WEIGHTS = [0.50, 0.30, 0.20]
 
 _clicksend_cfg: dict = {}
 
@@ -321,10 +323,10 @@ class PositionSizer:
     def __init__(self, alpaca_client: AlpacaAPIClient):
         self._client = alpaca_client
 
-    def compute(self, option_symbol: str) -> tuple:
+    def compute(self, option_symbol: str, capital_weight: Decimal = _D("1")) -> tuple:
         account = self._client.get_accounts()
         buying_power = _D(account.get("buying_power", ACCOUNT_BUDGET))
-        budget = buying_power * CAPITAL_PER_SYMBOL
+        budget = buying_power * CAPITAL_PER_SYMBOL * capital_weight
 
         quote_resp = self._client._option_data_client.get_option_latest_quote(
             OptionLatestQuoteRequest(symbol_or_symbols=[option_symbol])
@@ -343,9 +345,10 @@ class PositionSizer:
         contracts = max(1, int(budget / (mid * _D("100"))))
         limit_price = mid.quantize(_D("0.01"), rounding=ROUND_HALF_UP)
         logger.info(
-            "%s: budget=%s mid=%s → %d contracts (cost=%s)",
+            "%s: budget=%s (weight=%.2f) mid=%s → %d contracts (cost=%s)",
             option_symbol,
             budget,
+            float(capital_weight),
             mid,
             contracts,
             contracts * mid * _D("100"),
@@ -1346,6 +1349,7 @@ class OpMomentumTradeEngine:
         armed_ma20_exit: bool = ARMED_MA20_EXIT,
         regime_filter: bool = REGIME_FILTER,
         regime_ma: int = REGIME_MA,
+        rank_weighted_sizing: bool = RANK_WEIGHTED_SIZING,
     ):
         self._client = alpaca_client
         self._api_key = alpaca_client._api_key
@@ -1358,6 +1362,7 @@ class OpMomentumTradeEngine:
         self._armed_ma20_exit = armed_ma20_exit
         self._regime_filter = regime_filter
         self._regime_ma = regime_ma
+        self._rank_weighted_sizing = rank_weighted_sizing
         self._monitor: PositionMonitor = None
         self._signal_engine: LiveSignalEngine = None
         self._pending_signals: dict = {}
@@ -1366,13 +1371,14 @@ class OpMomentumTradeEngine:
         self._signal_collection_deadline: Optional[datetime] = None
         self._open_position_count: int = 0
 
-    def _enter_position(self, event: SignalEvent):
+    def _enter_position(self, event: SignalEvent, rank: int = 0):
         """Select contract, size, place order, and register with position monitor."""
         logger.info(
-            "Entering position: %s %s @ %.2f",
+            "Entering position: %s %s @ %.2f (rank=%d)",
             event.ticker,
             event.signal,
             float(event.stock_price),
+            rank,
         )
         try:
             selector = OptionContractSelector(self._client)
@@ -1387,7 +1393,11 @@ class OpMomentumTradeEngine:
 
         try:
             sizer = PositionSizer(self._client)
-            contracts, limit_price = sizer.compute(option_symbol)
+            if self._rank_weighted_sizing and rank < len(RANK_WEIGHTS):
+                capital_weight = _D(str(RANK_WEIGHTS[rank]))
+            else:
+                capital_weight = _D("1")
+            contracts, limit_price = sizer.compute(option_symbol, capital_weight)
         except Exception:
             logger.exception("Could not size position for %s", option_symbol)
             with self._signal_lock:
@@ -1455,7 +1465,7 @@ class OpMomentumTradeEngine:
                 return
             self._open_position_count += 1
 
-        self._enter_position(event)
+        self._enter_position(event, rank=0)
 
     def _signal_selection_loop(self):
         """Wait for signal collection deadline, rank buffered signals, enter top N."""
@@ -1514,14 +1524,14 @@ class OpMomentumTradeEngine:
 
         scored.sort(key=lambda x: x[0], reverse=True)
 
-        for score, ticker, event in scored:
+        for rank, (score, ticker, event) in enumerate(scored):
             with self._signal_lock:
                 if self._open_position_count >= MAX_ACTIVE_SYMBOLS:
                     logger.info("Max positions reached, stopping selection")
                     break
                 self._open_position_count += 1
-            logger.info("Selecting %s from buffer (score=%.3f)", ticker, score)
-            self._enter_position(event)
+            logger.info("Selecting %s from buffer (score=%.3f rank=%d)", ticker, score, rank)
+            self._enter_position(event, rank=rank)
 
     def _place_entry(
         self,
@@ -1976,6 +1986,12 @@ def parse_args():
         help=f"N-day MA period for QQQ regime filter (default: {REGIME_MA}).",
     )
     parser.add_argument(
+        "--rank-weighted-sizing",
+        action="store_true",
+        default=RANK_WEIGHTED_SIZING,
+        help=f"Weight position size by ticker rank using {RANK_WEIGHTS} (default: off).",
+    )
+    parser.add_argument(
         "--opening-start",
         type=str,
         default=OPENING_START_TIME,
@@ -2024,6 +2040,7 @@ if __name__ == "__main__":
             armed_ma20_exit=args.armed_ma20_exit,
             regime_filter=args.regime_filter,
             regime_ma=args.regime_ma,
+            rank_weighted_sizing=args.rank_weighted_sizing,
         )
         engine.run(tickers_override=args.tickers)
         sys.exit(0)
@@ -2083,6 +2100,7 @@ if __name__ == "__main__":
             armed_ma20_exit=args.armed_ma20_exit,
             regime_filter=args.regime_filter,
             regime_ma=args.regime_ma,
+            rank_weighted_sizing=args.rank_weighted_sizing,
         )
         engine.run(tickers_override=args.tickers)
     finally:

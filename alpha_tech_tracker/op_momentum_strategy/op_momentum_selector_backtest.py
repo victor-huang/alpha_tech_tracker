@@ -173,10 +173,29 @@ def _collect_baseline(
 INITIAL_CAPITAL = 10_000.0
 
 
+def _parse_weights(weights_input: list, n: int) -> list:
+    """Return per-rank capital fractions summing to 1.0.
+    weights_input is e.g. [50, 30, 20]; falls back to equal weights if None or wrong length."""
+    if weights_input and len(weights_input) == n:
+        total = sum(weights_input)
+        return [w / total for w in weights_input]
+    return [1.0 / n] * n
+
+
+def _weights_label(weights: list, initial_capital: float) -> str:
+    if len(set(round(w, 6) for w in weights)) == 1:
+        return f"${initial_capital * weights[0]:,.0f}/slot × {len(weights)} slots"
+    pcts = "/".join(f"{w * 100:.0f}%" for w in weights)
+    return f"weighted {pcts} × {len(weights)} slots"
+
+
 def _print_daily_table(
-    trade_rows: list, n: int, initial_capital: float = INITIAL_CAPITAL
+    trade_rows: list,
+    n: int,
+    initial_capital: float = INITIAL_CAPITAL,
+    weights: list = None,
 ):
-    capital_per_pick = initial_capital / n
+    weights = weights or _parse_weights(None, n)
     sep = "\u2501" * 90
     print(f"\n{sep}")
     print(
@@ -231,7 +250,8 @@ def _print_daily_table(
         day_pnl += pnl
         day_pnl_pcts.append(pnl_pct)
         running_total += pnl
-        day_cap_pnl += (capital_per_pick / row["entry_price"]) * pnl
+        slot_capital = initial_capital * weights[row["rank"] - 1]
+        day_cap_pnl += (slot_capital / row["entry_price"]) * pnl
         if row["success"]:
             day_wins += 1
         else:
@@ -332,14 +352,15 @@ def _print_stats_block(label: str, stats: dict):
 
 
 def _capital_stats_from_trades(
-    trade_rows: list, n: int, initial_capital: float
+    trade_rows: list, n: int, initial_capital: float, weights: list = None
 ) -> dict:
-    capital_per_pick = initial_capital / n
+    weights = weights or _parse_weights(None, n)
     total_cap_pnl = 0.0
     days_with_picks = set()
     daily_cap_pnls = {}
     for row in trade_rows:
-        cap_pnl = (capital_per_pick / row["entry_price"]) * row["pnl"]
+        slot_capital = initial_capital * weights[row["rank"] - 1]
+        cap_pnl = (slot_capital / row["entry_price"]) * row["pnl"]
         total_cap_pnl += cap_pnl
         d = row["date"]
         days_with_picks.add(d)
@@ -349,7 +370,7 @@ def _capital_stats_from_trades(
     avg_daily_ret = sum(daily_returns) / len(daily_returns) if daily_returns else 0.0
     return {
         "initial_capital": initial_capital,
-        "capital_per_pick": capital_per_pick,
+        "weights": weights,
         "n": n,
         "total_cap_pnl": total_cap_pnl,
         "total_return_pct": total_cap_pnl / initial_capital * 100,
@@ -382,7 +403,8 @@ def _print_capital_stats_block(stats: dict):
         else f"{stats['avg_daily_ret_pct']:.2f}%"
     )
     print(
-        f"\n  CAPITAL SIMULATION  (${stats['initial_capital']:,.0f} initial | ${stats['capital_per_pick']:,.0f}/slot × {stats['n']} slots)"
+        f"\n  CAPITAL SIMULATION  (${stats['initial_capital']:,.0f} initial | "
+        f"{_weights_label(stats['weights'], stats['initial_capital'])})"
     )
     print(f"  {'─' * 48}")
     print(f"  Total return ($)    : {cap_pnl_str}")
@@ -393,16 +415,17 @@ def _print_capital_stats_block(stats: dict):
 
 
 def _period_capital_groups(
-    trade_rows: list, n: int, initial_capital: float, key_fn
+    trade_rows: list, n: int, initial_capital: float, key_fn, weights: list = None
 ) -> dict:
-    capital_per_pick = initial_capital / n
+    weights = weights or _parse_weights(None, n)
     groups = {}
     for row in trade_rows:
         key = key_fn(row["date"])
         if key not in groups:
             groups[key] = {"picks": 0, "wins": 0, "losses": 0, "cap_pnl": 0.0}
         groups[key]["picks"] += 1
-        groups[key]["cap_pnl"] += (capital_per_pick / row["entry_price"]) * row["pnl"]
+        slot_capital = initial_capital * weights[row["rank"] - 1]
+        groups[key]["cap_pnl"] += (slot_capital / row["entry_price"]) * row["pnl"]
         if row["success"]:
             groups[key]["wins"] += 1
         else:
@@ -521,6 +544,7 @@ def _print_summary(
     stop_pct: float,
     initial_capital: float = INITIAL_CAPITAL,
     qqq_closes: pd.Series = None,
+    weights: list = None,
 ):
     sep = "\u2501" * 70
     print(f"\n{sep}")
@@ -549,8 +573,9 @@ def _print_summary(
         )
 
     if trade_rows:
+        weights = weights or _parse_weights(None, n)
         _print_capital_stats_block(
-            _capital_stats_from_trades(trade_rows, n, initial_capital)
+            _capital_stats_from_trades(trade_rows, n, initial_capital, weights)
         )
 
         def _week_key(d):
@@ -560,9 +585,10 @@ def _print_summary(
         def _month_key(d):
             return f"{d.year}-{d.month:02d}"
 
+        wlabel = _weights_label(weights, initial_capital)
         _print_period_table(
-            f"WEEKLY BREAKDOWN  (${initial_capital:,.0f} initial | ${initial_capital / n:,.0f}/slot × {n} slots)",
-            _period_capital_groups(trade_rows, n, initial_capital, _week_key),
+            f"WEEKLY BREAKDOWN  (${initial_capital:,.0f} initial | {wlabel})",
+            _period_capital_groups(trade_rows, n, initial_capital, _week_key, weights),
             initial_capital,
         )
         if qqq_closes is not None and not qqq_closes.empty:
@@ -573,8 +599,8 @@ def _print_summary(
             )
 
         _print_period_table(
-            f"MONTHLY BREAKDOWN  (${initial_capital:,.0f} initial | ${initial_capital / n:,.0f}/slot × {n} slots)",
-            _period_capital_groups(trade_rows, n, initial_capital, _month_key),
+            f"MONTHLY BREAKDOWN  (${initial_capital:,.0f} initial | {wlabel})",
+            _period_capital_groups(trade_rows, n, initial_capital, _month_key, weights),
             initial_capital,
         )
         if qqq_closes is not None and not qqq_closes.empty:
@@ -669,6 +695,14 @@ def _parse_args():
         default=5,
         help="N-day MA period for QQQ regime filter (default: 5).",
     )
+    parser.add_argument(
+        "--weights",
+        nargs="+",
+        type=int,
+        default=None,
+        help="Position weights per rank (e.g. --weights 50 30 20). "
+        "Must match --top count. Default: equal weights.",
+    )
     return parser.parse_args()
 
 
@@ -678,9 +712,12 @@ if __name__ == "__main__":
     eval_start = date.fromisoformat(args.start)
     eval_end = date.fromisoformat(args.end) if args.end else date.today()
 
+    weights = _parse_weights(args.weights, args.top)
+
     print(f"\nSelector Backtest")
     print(f"  Eval window  : {eval_start} → {eval_end}")
     print(f"  Top-N        : {args.top}")
+    print(f"  Weights      : {_weights_label(weights, INITIAL_CAPITAL)}")
     print(f"  Tickers      : {', '.join(tickers)}")
     print(f"  Lookback     : {args.lookback}d rolling")
     print(f"  Stop pct     : {args.stop_pct}")
@@ -719,7 +756,7 @@ if __name__ == "__main__":
     )
     qqq_closes = qqq_df["Close"] if not qqq_df.empty else pd.Series(dtype=float)
 
-    _print_daily_table(trade_rows, n=args.top)
+    _print_daily_table(trade_rows, n=args.top, weights=weights)
     _print_summary(
         trade_rows,
         baseline_df,
@@ -730,4 +767,5 @@ if __name__ == "__main__":
         stop_pct=args.stop_pct,
         initial_capital=INITIAL_CAPITAL,
         qqq_closes=qqq_closes,
+        weights=weights,
     )
