@@ -144,6 +144,20 @@ def parse_args():
         help="Trailing MA stop to use once MA is above hard stop (default: ma20). "
         "ma20: use MA20 only. ma50: use MA50 only. both: use MA20 then MA50.",
     )
+    parser.add_argument(
+        "--max-loss-pct",
+        type=float,
+        default=None,
+        help="Per-trade max loss as a fraction of entry price (e.g. 0.02 = 2%%). "
+        "Exit immediately if loss exceeds this threshold. Default: disabled.",
+    )
+    parser.add_argument(
+        "--armed-ma20-exit",
+        action="store_true",
+        default=False,
+        help="Once hard stop is armed, use MA20 as the trailing exit instead of hard_stop_price. "
+        "Lets winners run further but increases loss size on reversals. Default: off.",
+    )
     return parser.parse_args()
 
 
@@ -154,6 +168,8 @@ def compute_signals_with_backtest(
     stop_pct: float = 0.40,
     opening_start_time: str = "09:30",
     trailing_ma: str = "ma20",
+    max_loss_pct: float = None,
+    armed_ma20_exit: bool = False,
 ) -> pd.DataFrame:
     from datetime import time as dtime
 
@@ -217,74 +233,121 @@ def compute_signals_with_backtest(
         for _, bar in post_open.iterrows():
             bar_ma20 = bar["MA20"]
             bar_ma50 = bar["MA50"]
+            bar_close = bar["Close"]
 
             if signal == "BULLISH":
-                if not hard_stop_armed and bar["Close"] > hard_stop_price:
+                if not hard_stop_armed and bar_close > hard_stop_price:
                     hard_stop_armed = True
-                hard_stop_hit = hard_stop_armed and bar["Close"] <= hard_stop_price
-                fallback_hit = not hard_stop_armed and bar["Close"] <= fallback_price
-                ma20_trailing_stop_hit = (
-                    trailing_ma in ("ma20", "both")
-                    and (not pd.isna(bar_ma20))
-                    and bar_ma20 > hard_stop_price
-                    and bar["Close"] < bar_ma20
-                )
-                trailing_stop_hit = (
-                    trailing_ma in ("ma50", "both")
-                    and (not pd.isna(bar_ma50))
-                    and bar_ma50 > hard_stop_price
-                    and bar["Close"] < bar_ma50
-                )
-                move = bar["Close"] - midpoint
+                move = bar_close - midpoint
             else:
-                if not hard_stop_armed and bar["Close"] < hard_stop_price:
+                if not hard_stop_armed and bar_close < hard_stop_price:
                     hard_stop_armed = True
-                hard_stop_hit = hard_stop_armed and bar["Close"] >= hard_stop_price
-                fallback_hit = not hard_stop_armed and bar["Close"] >= fallback_price
-                ma20_trailing_stop_hit = (
-                    trailing_ma in ("ma20", "both")
-                    and (not pd.isna(bar_ma20))
-                    and bar_ma20 < or_low
-                    and bar["Close"] > bar_ma20
+                move = midpoint - bar_close
+
+            # Max loss guard — highest priority exit
+            if max_loss_pct is not None:
+                loss_pct = (
+                    (close - bar_close) / close
+                    if signal == "BULLISH"
+                    else (bar_close - close) / close
                 )
+                if loss_pct >= max_loss_pct:
+                    exit_price = bar_close
+                    exit_reason = "max_loss"
+                    break
+
+            if signal == "BULLISH":
+                fallback_hit = not hard_stop_armed and bar_close <= fallback_price
+                if hard_stop_armed and armed_ma20_exit:
+                    # Armed MA20 mode: MA20 replaces hard_stop as the trailing exit
+                    if trailing_ma in ("ma20", "both") and not pd.isna(bar_ma20):
+                        ma20_trailing_stop_hit = bar_close < bar_ma20
+                        ma20_exit_price, ma20_exit_reason = (
+                            bar_close,
+                            "trailing_stop_ma20",
+                        )
+                    else:
+                        ma20_trailing_stop_hit = bar_close <= hard_stop_price
+                        ma20_exit_price, ma20_exit_reason = hard_stop_price, "hard_stop"
+                else:
+                    hard_stop_hit = hard_stop_armed and bar_close <= hard_stop_price
+                    ma20_trailing_stop_hit = (
+                        not hard_stop_hit
+                        and trailing_ma in ("ma20", "both")
+                        and not pd.isna(bar_ma20)
+                        and bar_ma20 > hard_stop_price
+                        and bar_close < bar_ma20
+                    )
+                    ma20_exit_price, ma20_exit_reason = (
+                        (hard_stop_price, "hard_stop")
+                        if hard_stop_hit
+                        else (bar_close, "trailing_stop_ma20")
+                    )
+                    ma20_trailing_stop_hit = ma20_trailing_stop_hit or hard_stop_hit
                 trailing_stop_hit = (
                     trailing_ma in ("ma50", "both")
-                    and (not pd.isna(bar_ma50))
-                    and bar_ma50 < or_low
-                    and bar["Close"] > bar_ma50
+                    and not pd.isna(bar_ma50)
+                    and bar_ma50 > hard_stop_price
+                    and bar_close < bar_ma50
                 )
-                move = midpoint - bar["Close"]
+            else:
+                fallback_hit = not hard_stop_armed and bar_close >= fallback_price
+                if hard_stop_armed and armed_ma20_exit:
+                    if trailing_ma in ("ma20", "both") and not pd.isna(bar_ma20):
+                        ma20_trailing_stop_hit = bar_close > bar_ma20
+                        ma20_exit_price, ma20_exit_reason = (
+                            bar_close,
+                            "trailing_stop_ma20",
+                        )
+                    else:
+                        ma20_trailing_stop_hit = bar_close >= hard_stop_price
+                        ma20_exit_price, ma20_exit_reason = hard_stop_price, "hard_stop"
+                else:
+                    hard_stop_hit = hard_stop_armed and bar_close >= hard_stop_price
+                    ma20_trailing_stop_hit = (
+                        not hard_stop_hit
+                        and trailing_ma in ("ma20", "both")
+                        and not pd.isna(bar_ma20)
+                        and bar_ma20 < or_low
+                        and bar_close > bar_ma20
+                    )
+                    ma20_exit_price, ma20_exit_reason = (
+                        (hard_stop_price, "hard_stop")
+                        if hard_stop_hit
+                        else (bar_close, "trailing_stop_ma20")
+                    )
+                    ma20_trailing_stop_hit = ma20_trailing_stop_hit or hard_stop_hit
+                trailing_stop_hit = (
+                    trailing_ma in ("ma50", "both")
+                    and not pd.isna(bar_ma50)
+                    and bar_ma50 < or_low
+                    and bar_close > bar_ma50
+                )
 
-            if hard_stop_hit:
-                exit_price = hard_stop_price
-                exit_reason = "hard_stop"
-                break
-            elif fallback_hit:
+            if fallback_hit:
                 if signal == "BULLISH":
                     exit_price = (
-                        fallback_price
-                        if bar["High"] >= fallback_price
-                        else bar["Close"]
+                        fallback_price if bar["High"] >= fallback_price else bar_close
                     )
                 else:
                     exit_price = fallback_price
                 exit_reason = "fallback_20pct"
                 break
             elif ma20_trailing_stop_hit:
-                exit_price = bar["Close"]
-                exit_reason = "trailing_stop_ma20"
+                exit_price = ma20_exit_price
+                exit_reason = ma20_exit_reason
                 break
             elif trailing_stop_hit:
-                exit_price = bar["Close"]
+                exit_price = bar_close
                 exit_reason = "trailing_stop_ma50"
                 break
             else:
                 bars_held += 1
                 max_favorable_move = max(max_favorable_move, move)
                 if signal == "BULLISH":
-                    exit_price = max(bar["Close"], midpoint)
+                    exit_price = max(bar_close, midpoint)
                 else:
-                    exit_price = min(bar["Close"], midpoint)
+                    exit_price = min(bar_close, midpoint)
                 exit_reason = "end_of_day"
 
         if signal == "BULLISH":
@@ -766,6 +829,8 @@ def run_backtest(
     ticker_dfs: dict = None,
     opening_start_time: str = "09:30",
     trailing_ma: str = "ma20",
+    max_loss_pct: float = None,
+    armed_ma20_exit: bool = False,
 ) -> dict:
     if ticker_dfs is None:
         ticker_dfs = fetch_bars(tickers, start_date, end_date, source=source)
@@ -776,7 +841,14 @@ def run_backtest(
             all_results[ticker] = pd.DataFrame()
             continue
         results = compute_signals_with_backtest(
-            df, opening_bars, bearish_ma200, stop_pct, opening_start_time, trailing_ma
+            df,
+            opening_bars,
+            bearish_ma200,
+            stop_pct,
+            opening_start_time,
+            trailing_ma,
+            max_loss_pct=max_loss_pct,
+            armed_ma20_exit=armed_ma20_exit,
         )
         if not results.empty:
             results = results[results["date"] >= start_date].reset_index(drop=True)
@@ -808,6 +880,8 @@ if __name__ == "__main__":
     period_label = f"{cutoff} → {end_date}  ({backtest_days} calendar days)"
 
     trailing_ma = args.trailing_ma
+    max_loss_pct = args.max_loss_pct
+    armed_ma20_exit = args.armed_ma20_exit
     bearish_filter = "MA20 + MA200" if bearish_ma200 else "MA20 only"
     trailing_ma_label = {
         "ma20": "MA20 only",
@@ -852,7 +926,13 @@ if __name__ == "__main__":
                 trading_dates.add(d)
 
         results = compute_signals_with_backtest(
-            df, opening_bars, bearish_ma200, stop_pct, trailing_ma=trailing_ma
+            df,
+            opening_bars,
+            bearish_ma200,
+            stop_pct,
+            trailing_ma=trailing_ma,
+            max_loss_pct=max_loss_pct,
+            armed_ma20_exit=armed_ma20_exit,
         )
         if not results.empty:
             results = results[results["date"] >= cutoff].reset_index(drop=True)

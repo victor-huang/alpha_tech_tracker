@@ -41,6 +41,8 @@ def run_selector_backtest(
     stop_pct: float = STOP_PCT,
     source: str = "alpaca",
     trailing_ma: str = "ma20",
+    max_loss_pct: float = None,
+    armed_ma20_exit: bool = False,
 ) -> tuple:
     """
     Walk each trading day in [eval_start, eval_end], apply rolling selector
@@ -65,7 +67,13 @@ def run_selector_backtest(
             full_results[ticker] = pd.DataFrame()
             continue
         full_results[ticker] = compute_signals_with_backtest(
-            df, opening_bars, bearish_ma200, stop_pct, trailing_ma=trailing_ma
+            df,
+            opening_bars,
+            bearish_ma200,
+            stop_pct,
+            trailing_ma=trailing_ma,
+            max_loss_pct=max_loss_pct,
+            armed_ma20_exit=armed_ma20_exit,
         )
 
     trading_days = sorted(
@@ -625,6 +633,20 @@ def _parse_args():
         help="Trailing MA stop to use once MA is above hard stop (default: ma20). "
         "ma20: use MA20 only. ma50: use MA50 only. both: use MA20 then MA50.",
     )
+    parser.add_argument(
+        "--max-loss-pct",
+        type=float,
+        default=None,
+        help="Per-trade max loss as a fraction of entry price (e.g. 0.02 = 2%%). "
+        "Exit immediately if loss exceeds this threshold. Default: disabled.",
+    )
+    parser.add_argument(
+        "--armed-ma20-exit",
+        action="store_true",
+        default=False,
+        help="Once hard stop is armed, use MA20 as the trailing exit instead of hard_stop_price. "
+        "Lets winners run further but increases loss size on reversals. Default: off.",
+    )
     return parser.parse_args()
 
 
@@ -641,6 +663,10 @@ if __name__ == "__main__":
     print(f"  Lookback     : {args.lookback}d rolling")
     print(f"  Stop pct     : {args.stop_pct}")
     print(f"  Trailing MA  : {args.trailing_ma}")
+    print(
+        f"  Max loss pct : {f'{args.max_loss_pct * 100:.1f}%' if args.max_loss_pct else 'disabled'}"
+    )
+    print(f"  Armed MA20   : {'on' if args.armed_ma20_exit else 'off'}")
     print(f"  Source       : {args.source}")
 
     trade_rows, full_results, trading_days = run_selector_backtest(
@@ -654,6 +680,8 @@ if __name__ == "__main__":
         stop_pct=args.stop_pct,
         source=args.source,
         trailing_ma=args.trailing_ma,
+        max_loss_pct=args.max_loss_pct,
+        armed_ma20_exit=args.armed_ma20_exit,
     )
 
     baseline_df = _collect_baseline(full_results, eval_start, eval_end)
