@@ -763,6 +763,86 @@ class TestLiveSignalEngine:
         assert mock_fire.call_args[0][0] == "AMD"
         assert engine._signal_fired["AMD"] is True
 
+    def test_regime_filter_suppresses_bullish_signal_on_bearish_day(self):
+        fired_events = []
+        engine = LiveSignalEngine(
+            tickers=["NVDA"],
+            api_key="k",
+            secret_key="s",
+            opening_bars=3,
+            on_signal=fired_events.append,
+            regime_filter=True,
+        )
+        today = datetime.now(ET).date()
+        engine._bearish_regime_dates = {today}
+
+        closes = [102.0, 103.0, 106.0]
+        df = self._make_history_df(closes, ma20=100.0, ma200=90.0)
+        engine._history["NVDA"] = df
+
+        opening_bars = _make_mock_bars(
+            "NVDA", highs=[103.0, 104.0, 107.0], lows=[101.0, 102.0, 105.0]
+        )
+        engine._opening_buf["NVDA"] = opening_bars
+
+        engine._try_fire_signal("NVDA", df.iloc[-1])
+
+        assert len(fired_events) == 0
+
+    def test_regime_filter_allows_bullish_signal_on_non_bearish_day(self):
+        fired_events = []
+        engine = LiveSignalEngine(
+            tickers=["NVDA"],
+            api_key="k",
+            secret_key="s",
+            opening_bars=3,
+            on_signal=fired_events.append,
+            regime_filter=True,
+        )
+        engine._bearish_regime_dates = set()  # today is not bearish
+
+        closes = [102.0, 103.0, 106.0]
+        df = self._make_history_df(closes, ma20=100.0, ma200=90.0)
+        engine._history["NVDA"] = df
+
+        opening_bars = _make_mock_bars(
+            "NVDA", highs=[103.0, 104.0, 107.0], lows=[101.0, 102.0, 105.0]
+        )
+        engine._opening_buf["NVDA"] = opening_bars
+
+        engine._try_fire_signal("NVDA", df.iloc[-1])
+
+        assert len(fired_events) == 1
+        assert fired_events[0].signal == "BULLISH"
+
+    def test_regime_filter_does_not_suppress_bearish_signal(self):
+        fired_events = []
+        engine = LiveSignalEngine(
+            tickers=["NVDA"],
+            api_key="k",
+            secret_key="s",
+            opening_bars=3,
+            on_signal=fired_events.append,
+            regime_filter=True,
+        )
+        today = datetime.now(ET).date()
+        engine._bearish_regime_dates = {today}  # bearish regime active
+
+        # OR range 95-105, bottom_30=97, close=96 → BEARISH
+        closes = [100.0, 98.0, 96.0]
+        df = self._make_history_df(closes, ma20=105.0, ma200=110.0)
+        engine._history["NVDA"] = df
+
+        opening_bars = _make_mock_bars(
+            "NVDA", highs=[101.0, 99.0, 97.0], lows=[99.0, 97.0, 95.0]
+        )
+        engine._opening_buf["NVDA"] = opening_bars
+
+        engine._try_fire_signal("NVDA", df.iloc[-1])
+
+        assert len(fired_events) == 1
+        assert fired_events[0].signal == "BEARISH"
+
 
 # ---------------------------------------------------------------------------
 # TestPositionMonitor — stop evaluation logic
@@ -1012,6 +1092,179 @@ class TestPositionMonitor:
         assert pos1.exit_reason == "end_of_day"
         assert pos2.is_closed is True
         assert pos2.exit_reason == "end_of_day"
+
+    def test_max_loss_pct_exits_bullish_position_immediately(self):
+        # entry_stock_price=104, close=101 → loss = (104-101)/104 ≈ 2.88% ≥ max_loss_pct=2%
+        client = _make_alpaca_client()
+        client.place_option_order.return_value = {"order_id": "close-ml-1"}
+        client.order_status.return_value = {"status": "filled", "filled_avg_price": 5.0}
+        client._option_data_client.get_option_latest_quote.return_value = {
+            "NVDA260328C00900000": _make_option_quote(bid=5.0, ask=5.5)
+        }
+
+        pos = _make_active_position(
+            signal="BULLISH", hard_stop_price=_D("103.5"), fallback_price=_D("103.0")
+        )
+
+        closes = [101.0]
+        df = _build_history_df(closes, ma20=90.0, ma50=90.0, ma200=85.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine, max_loss_pct=0.02)
+        monitor.add_position(pos)
+
+        _set_latest_bar(engine, "NVDA", close=101.0, ma50=90.0)
+        monitor.on_bar("NVDA")
+
+        assert pos.is_closed is True
+        assert pos.exit_reason == "max_loss"
+
+    def test_max_loss_pct_exits_bearish_position_immediately(self):
+        # BEARISH: entry_stock_price=104, close=107 → loss = (107-104)/104 ≈ 2.88% ≥ 2%
+        client = _make_alpaca_client()
+        client.place_option_order.return_value = {"order_id": "close-ml-2"}
+        client.order_status.return_value = {"status": "filled", "filled_avg_price": 5.0}
+        client._option_data_client.get_option_latest_quote.return_value = {
+            "NVDA260328C00900000": _make_option_quote(bid=5.0, ask=5.5)
+        }
+
+        pos = _make_active_position(
+            signal="BEARISH",
+            or_high=_D("105"),
+            or_low=_D("95"),
+            hard_stop_price=_D("96.5"),
+            fallback_price=_D("97.0"),
+        )
+
+        closes = [107.0]
+        df = _build_history_df(closes, ma20=110.0, ma50=110.0, ma200=115.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine, max_loss_pct=0.02)
+        monitor.add_position(pos)
+
+        _set_latest_bar(engine, "NVDA", close=107.0, ma50=110.0)
+        monitor.on_bar("NVDA")
+
+        assert pos.is_closed is True
+        assert pos.exit_reason == "max_loss"
+
+    def test_max_loss_pct_does_not_exit_when_loss_within_threshold(self):
+        # entry_stock_price=104, close=103 → loss = 1/104 ≈ 0.96% < 2%
+        client = _make_alpaca_client()
+        client._option_data_client.get_option_latest_quote.return_value = {
+            "NVDA260328C00900000": _make_option_quote(bid=5.0, ask=5.5)
+        }
+
+        pos = _make_active_position(
+            signal="BULLISH", hard_stop_price=_D("101.0"), fallback_price=_D("102.0")
+        )
+
+        closes = [103.0]
+        df = _build_history_df(closes, ma20=90.0, ma50=90.0, ma200=85.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine, max_loss_pct=0.02)
+        monitor.add_position(pos)
+
+        _set_latest_bar(engine, "NVDA", close=103.0, ma50=90.0)
+        monitor.on_bar("NVDA")
+
+        assert pos.is_closed is False
+
+    def test_armed_ma20_exit_bullish_trails_ma20_once_armed(self):
+        # hard_stop=103.5
+        # bar 1: close=106 > 103.5 → arm; MA20=104 < close=106 → close < MA20 is False → no exit
+        # bar 2: close=105 < MA20=108 → exit trailing_stop_ma20
+        client = _make_alpaca_client()
+        client.place_option_order.return_value = {"order_id": "close-ame-1"}
+        client.order_status.return_value = {"status": "filled", "filled_avg_price": 5.0}
+        client._option_data_client.get_option_latest_quote.return_value = {
+            "NVDA260328C00900000": _make_option_quote(bid=5.0, ask=5.5)
+        }
+
+        pos = _make_active_position(
+            signal="BULLISH", hard_stop_price=_D("103.5"), fallback_price=_D("103.0")
+        )
+
+        closes = [106.0, 105.0]
+        df = _build_history_df(closes, ma20=104.0, ma50=90.0, ma200=85.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine, armed_ma20_exit=True)
+        monitor.add_position(pos)
+
+        # Bar 1: arm; MA20=104 < close=106 → close not below MA20 → no exit
+        _set_latest_bar(engine, "NVDA", close=106.0, ma50=90.0, ma20=104.0)
+        monitor.on_bar("NVDA")
+        assert pos.hard_stop_armed is True
+        assert pos.is_closed is False
+
+        # Bar 2: armed + close=105 < MA20=108 → trailing_stop_ma20
+        _set_latest_bar(engine, "NVDA", close=105.0, ma50=90.0, ma20=108.0)
+        monitor.on_bar("NVDA")
+        assert pos.is_closed is True
+        assert pos.exit_reason == "trailing_stop_ma20"
+
+    def test_armed_ma20_exit_bearish_trails_ma20_once_armed(self):
+        # OR: 90-100; hard_stop=96.5
+        # bar 1: close=93 < 96.5 → arm; MA20=95 > close=93 → close > MA20 is False → no exit
+        # bar 2: close=95 > MA20=88 → exit trailing_stop_ma20
+        client = _make_alpaca_client()
+        client.place_option_order.return_value = {"order_id": "close-ame-2"}
+        client.order_status.return_value = {"status": "filled", "filled_avg_price": 5.0}
+        client._option_data_client.get_option_latest_quote.return_value = {
+            "NVDA260328C00900000": _make_option_quote(bid=5.0, ask=5.5)
+        }
+
+        pos = _make_active_position(
+            signal="BEARISH",
+            or_high=_D("100"),
+            or_low=_D("90"),
+            hard_stop_price=_D("96.5"),
+            fallback_price=_D("98.0"),
+        )
+
+        closes = [93.0, 95.0]
+        df = _build_history_df(closes, ma20=95.0, ma50=110.0, ma200=115.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine, armed_ma20_exit=True)
+        monitor.add_position(pos)
+
+        # Bar 1: arm; MA20=95 > close=93 → close not above MA20 → no exit
+        _set_latest_bar(engine, "NVDA", close=93.0, ma50=110.0, ma20=95.0)
+        monitor.on_bar("NVDA")
+        assert pos.hard_stop_armed is True
+        assert pos.is_closed is False
+
+        # Bar 2: armed + close=95 > MA20=88 → trailing_stop_ma20
+        _set_latest_bar(engine, "NVDA", close=95.0, ma50=110.0, ma20=88.0)
+        monitor.on_bar("NVDA")
+        assert pos.is_closed is True
+        assert pos.exit_reason == "trailing_stop_ma20"
+
+    def test_armed_ma20_exit_falls_back_to_hard_stop_when_ma20_unavailable(self):
+        # armed + no MA20 → hard stop is used as exit
+        client = _make_alpaca_client()
+        client.place_option_order.return_value = {"order_id": "close-ame-3"}
+        client.order_status.return_value = {"status": "filled", "filled_avg_price": 5.0}
+        client._option_data_client.get_option_latest_quote.return_value = {
+            "NVDA260328C00900000": _make_option_quote(bid=5.0, ask=5.5)
+        }
+
+        pos = _make_active_position(
+            signal="BULLISH", hard_stop_price=_D("103.5"), fallback_price=_D("103.0")
+        )
+        pos.hard_stop_armed = True
+
+        closes = [103.0]
+        df = _build_history_df(closes, ma20=float("nan"), ma50=90.0, ma200=85.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine, armed_ma20_exit=True)
+        monitor.add_position(pos)
+
+        # No MA20 available + armed + close=103 ≤ hard_stop=103.5 → hard_stop
+        _set_latest_bar(engine, "NVDA", close=103.0, ma50=90.0)
+        monitor.on_bar("NVDA")
+
+        assert pos.is_closed is True
+        assert pos.exit_reason == "hard_stop"
 
     def test_already_closed_position_is_not_closed_again(self):
         client = _make_alpaca_client()

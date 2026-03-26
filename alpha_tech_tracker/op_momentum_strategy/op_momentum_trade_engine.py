@@ -22,7 +22,10 @@ from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
 from alpaca.trading.enums import OrderSide, TimeInForce
 from alpaca.trading.requests import LimitOrderRequest, MarketOrderRequest
 
-from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import fetch_bars
+from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import (
+    build_bearish_regime_dates,
+    fetch_bars,
+)
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector import (
     DEFAULT_TICKERS,
     _safe_bars_end,
@@ -59,6 +62,10 @@ ROLLING_LOOKBACK_DAYS = 30
 BEARISH_MA200 = False
 SIGNAL_BUFFER_MINUTES = 2
 TRAILING_MA = "ma20"
+MAX_LOSS_PCT = None
+ARMED_MA20_EXIT = False
+REGIME_FILTER = False
+REGIME_MA = 5
 
 _clicksend_cfg: dict = {}
 
@@ -366,6 +373,8 @@ class LiveSignalEngine:
         bearish_ma200: bool = BEARISH_MA200,
         on_signal=None,
         opening_start_time: str = OPENING_START_TIME,
+        regime_filter: bool = REGIME_FILTER,
+        regime_ma: int = REGIME_MA,
     ):
         self._tickers = tickers
         self._opening_bars = opening_bars
@@ -373,6 +382,9 @@ class LiveSignalEngine:
         self._opening_start_time = opening_start_time
         self._opening_start = datetime.strptime(opening_start_time, "%H:%M").time()
         self._on_signal = on_signal  # callable(SignalEvent)
+        self._regime_filter = regime_filter
+        self._regime_ma = regime_ma
+        self._bearish_regime_dates: set = set()
         self._api_key = api_key
         self._secret_key = secret_key
 
@@ -512,6 +524,15 @@ class LiveSignalEngine:
                 midpoint,
                 or_low,
                 bottom_30,
+            )
+            return
+
+        if (
+            signal == "BULLISH"
+            and datetime.now(ET).date() in self._bearish_regime_dates
+        ):
+            logger.info(
+                "%s: BULLISH signal suppressed by regime filter (QQQ bearish)", ticker
             )
             return
 
@@ -731,6 +752,17 @@ class LiveSignalEngine:
     def start(self):
         logger.info("Warming up historical bars for %s", self._tickers)
         self._warmup()
+        if self._regime_filter:
+            today = datetime.now(ET).date()
+            lookback_start = today - timedelta(days=self._regime_ma * 3 + 10)
+            self._bearish_regime_dates = build_bearish_regime_dates(
+                lookback_start, today, regime_ma=self._regime_ma
+            )
+            logger.info(
+                "Regime filter ON (QQQ MA%d): %d bearish dates in lookback",
+                self._regime_ma,
+                len(self._bearish_regime_dates),
+            )
         self._stream = StockDataStream(
             self._api_key,
             self._secret_key,
@@ -886,11 +918,15 @@ class PositionMonitor:
         signal_engine: LiveSignalEngine,
         simulate: bool = False,
         trailing_ma: str = TRAILING_MA,
+        max_loss_pct: Optional[float] = MAX_LOSS_PCT,
+        armed_ma20_exit: bool = ARMED_MA20_EXIT,
     ):
         self._client = alpaca_client
         self._signal_engine = signal_engine
         self._simulate = simulate
         self._trailing_ma = trailing_ma
+        self._max_loss_pct = max_loss_pct
+        self._armed_ma20_exit = armed_ma20_exit
         self._positions: list = []
         self._lock = threading.Lock()
 
@@ -931,10 +967,28 @@ class PositionMonitor:
     ):
         exit_reason = None
 
+        # Max loss guard — highest priority, checked before all other exits
+        if self._max_loss_pct is not None:
+            entry = pos.entry_stock_price
+            loss_pct = (
+                (entry - close) / entry
+                if pos.signal == "BULLISH"
+                else (close - entry) / entry
+            )
+            if loss_pct >= _D(str(self._max_loss_pct)):
+                self._close_position(pos, "max_loss")
+                return
+
         if pos.signal == "BULLISH":
             if not pos.hard_stop_armed and close > pos.hard_stop_price:
                 pos.hard_stop_armed = True
-            if pos.hard_stop_armed and close <= pos.hard_stop_price:
+            if pos.hard_stop_armed and self._armed_ma20_exit:
+                if ma20 is not None:
+                    if close < ma20:
+                        exit_reason = "trailing_stop_ma20"
+                elif close <= pos.hard_stop_price:
+                    exit_reason = "hard_stop"
+            elif pos.hard_stop_armed and close <= pos.hard_stop_price:
                 exit_reason = "hard_stop"
             elif not pos.hard_stop_armed and close <= pos.fallback_price:
                 exit_reason = "fallback_20pct"
@@ -955,7 +1009,13 @@ class PositionMonitor:
         else:
             if not pos.hard_stop_armed and close < pos.hard_stop_price:
                 pos.hard_stop_armed = True
-            if pos.hard_stop_armed and close >= pos.hard_stop_price:
+            if pos.hard_stop_armed and self._armed_ma20_exit:
+                if ma20 is not None:
+                    if close > ma20:
+                        exit_reason = "trailing_stop_ma20"
+                elif close >= pos.hard_stop_price:
+                    exit_reason = "hard_stop"
+            elif pos.hard_stop_armed and close >= pos.hard_stop_price:
                 exit_reason = "hard_stop"
             elif not pos.hard_stop_armed and close >= pos.fallback_price:
                 exit_reason = "fallback_20pct"
@@ -1282,6 +1342,10 @@ class OpMomentumTradeEngine:
         simulate: bool = False,
         opening_start_time: str = OPENING_START_TIME,
         trailing_ma: str = TRAILING_MA,
+        max_loss_pct: Optional[float] = MAX_LOSS_PCT,
+        armed_ma20_exit: bool = ARMED_MA20_EXIT,
+        regime_filter: bool = REGIME_FILTER,
+        regime_ma: int = REGIME_MA,
     ):
         self._client = alpaca_client
         self._api_key = alpaca_client._api_key
@@ -1290,6 +1354,10 @@ class OpMomentumTradeEngine:
         self._simulate = simulate
         self._opening_start_time = opening_start_time
         self._trailing_ma = trailing_ma
+        self._max_loss_pct = max_loss_pct
+        self._armed_ma20_exit = armed_ma20_exit
+        self._regime_filter = regime_filter
+        self._regime_ma = regime_ma
         self._monitor: PositionMonitor = None
         self._signal_engine: LiveSignalEngine = None
         self._pending_signals: dict = {}
@@ -1577,12 +1645,16 @@ class OpMomentumTradeEngine:
             bearish_ma200=BEARISH_MA200,
             on_signal=self._on_signal,
             opening_start_time=self._opening_start_time,
+            regime_filter=self._regime_filter,
+            regime_ma=self._regime_ma,
         )
         self._monitor = PositionMonitor(
             self._client,
             self._signal_engine,
             simulate=self._simulate,
             trailing_ma=self._trailing_ma,
+            max_loss_pct=self._max_loss_pct,
+            armed_ma20_exit=self._armed_ma20_exit,
         )
 
         self._signal_engine.start()
@@ -1880,6 +1952,30 @@ def parse_args():
         help="Trailing MA stop: ma20, ma50, or both (default: ma20)",
     )
     parser.add_argument(
+        "--max-loss-pct",
+        type=float,
+        default=MAX_LOSS_PCT,
+        help="Per-trade max loss as a fraction of entry stock price (e.g. 0.02 = 2%%). Default: disabled.",
+    )
+    parser.add_argument(
+        "--armed-ma20-exit",
+        action="store_true",
+        default=ARMED_MA20_EXIT,
+        help="Once hard stop is armed, use MA20 as trailing exit instead of hard_stop_price. Default: off.",
+    )
+    parser.add_argument(
+        "--regime-filter",
+        action="store_true",
+        default=REGIME_FILTER,
+        help="Suppress BULLISH signals on days when QQQ is below its N-day MA. Default: off.",
+    )
+    parser.add_argument(
+        "--regime-ma",
+        type=int,
+        default=REGIME_MA,
+        help=f"N-day MA period for QQQ regime filter (default: {REGIME_MA}).",
+    )
+    parser.add_argument(
         "--opening-start",
         type=str,
         default=OPENING_START_TIME,
@@ -1924,6 +2020,10 @@ if __name__ == "__main__":
             simulate=args.simulate,
             opening_start_time=args.opening_start,
             trailing_ma=args.trailing_ma,
+            max_loss_pct=args.max_loss_pct,
+            armed_ma20_exit=args.armed_ma20_exit,
+            regime_filter=args.regime_filter,
+            regime_ma=args.regime_ma,
         )
         engine.run(tickers_override=args.tickers)
         sys.exit(0)
@@ -1979,6 +2079,10 @@ if __name__ == "__main__":
             simulate=args.simulate,
             opening_start_time=args.opening_start,
             trailing_ma=args.trailing_ma,
+            max_loss_pct=args.max_loss_pct,
+            armed_ma20_exit=args.armed_ma20_exit,
+            regime_filter=args.regime_filter,
+            regime_ma=args.regime_ma,
         )
         engine.run(tickers_override=args.tickers)
     finally:
