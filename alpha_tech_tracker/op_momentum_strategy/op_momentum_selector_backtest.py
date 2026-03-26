@@ -3,6 +3,7 @@ import pandas as pd
 from datetime import date, timedelta
 
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import (
+    build_bearish_regime_dates,
     compute_signals_with_backtest,
     fetch_bars,
     fetch_daily_bars,
@@ -43,6 +44,8 @@ def run_selector_backtest(
     trailing_ma: str = "ma20",
     max_loss_pct: float = None,
     armed_ma20_exit: bool = False,
+    regime_filter: bool = False,
+    regime_ma: int = 5,
 ) -> tuple:
     """
     Walk each trading day in [eval_start, eval_end], apply rolling selector
@@ -59,6 +62,12 @@ def run_selector_backtest(
     print(f"Fetching bars for {len(tickers)} tickers ({eval_start} → {eval_end})...")
     all_bars = fetch_bars(tickers, fetch_start, eval_end, source=source)
 
+    bearish_regime_dates = (
+        build_bearish_regime_dates(eval_start, eval_end, source, regime_ma)
+        if regime_filter
+        else None
+    )
+
     print("Pre-computing backtest signals and outcomes...")
     full_results = {}
     for ticker in tickers:
@@ -74,6 +83,7 @@ def run_selector_backtest(
             trailing_ma=trailing_ma,
             max_loss_pct=max_loss_pct,
             armed_ma20_exit=armed_ma20_exit,
+            bearish_regime_dates=bearish_regime_dates,
         )
 
     trading_days = sorted(
@@ -647,6 +657,18 @@ def _parse_args():
         help="Once hard stop is armed, use MA20 as the trailing exit instead of hard_stop_price. "
         "Lets winners run further but increases loss size on reversals. Default: off.",
     )
+    parser.add_argument(
+        "--regime-filter",
+        action="store_true",
+        default=False,
+        help="Skip BULLISH signals on days when QQQ close is below its N-day MA. Default: off.",
+    )
+    parser.add_argument(
+        "--regime-ma",
+        type=int,
+        default=5,
+        help="N-day MA period for QQQ regime filter (default: 5).",
+    )
     return parser.parse_args()
 
 
@@ -667,6 +689,9 @@ if __name__ == "__main__":
         f"  Max loss pct : {f'{args.max_loss_pct * 100:.1f}%' if args.max_loss_pct else 'disabled'}"
     )
     print(f"  Armed MA20   : {'on' if args.armed_ma20_exit else 'off'}")
+    print(
+        f"  Regime filter: {'QQQ MA' + str(args.regime_ma) if args.regime_filter else 'off'}"
+    )
     print(f"  Source       : {args.source}")
 
     trade_rows, full_results, trading_days = run_selector_backtest(
@@ -682,6 +707,8 @@ if __name__ == "__main__":
         trailing_ma=args.trailing_ma,
         max_loss_pct=args.max_loss_pct,
         armed_ma20_exit=args.armed_ma20_exit,
+        regime_filter=args.regime_filter,
+        regime_ma=args.regime_ma,
     )
 
     baseline_df = _collect_baseline(full_results, eval_start, eval_end)

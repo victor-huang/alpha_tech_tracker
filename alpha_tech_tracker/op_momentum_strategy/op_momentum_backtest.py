@@ -158,6 +158,18 @@ def parse_args():
         help="Once hard stop is armed, use MA20 as the trailing exit instead of hard_stop_price. "
         "Lets winners run further but increases loss size on reversals. Default: off.",
     )
+    parser.add_argument(
+        "--regime-filter",
+        action="store_true",
+        default=False,
+        help="Skip BULLISH signals on days when QQQ close is below its N-day MA. Default: off.",
+    )
+    parser.add_argument(
+        "--regime-ma",
+        type=int,
+        default=5,
+        help="N-day MA period for QQQ regime filter (default: 5).",
+    )
     return parser.parse_args()
 
 
@@ -170,6 +182,7 @@ def compute_signals_with_backtest(
     trailing_ma: str = "ma20",
     max_loss_pct: float = None,
     armed_ma20_exit: bool = False,
+    bearish_regime_dates: set = None,
 ) -> pd.DataFrame:
     from datetime import time as dtime
 
@@ -210,6 +223,13 @@ def compute_signals_with_backtest(
         elif close <= bottom_30_threshold and bearish_ma_ok:
             signal = "BEARISH"
         else:
+            continue
+
+        if (
+            bearish_regime_dates
+            and date_ in bearish_regime_dates
+            and signal == "BULLISH"
+        ):
             continue
 
         # Hard stop: bull exits if price drops back below the stop level after first crossing above it.
@@ -818,6 +838,22 @@ def fetch_daily_bars(
     return result
 
 
+def build_bearish_regime_dates(
+    start_date: date, end_date: date, source: str = "alpaca", regime_ma: int = 5
+) -> set:
+    """Return the set of dates where QQQ daily close is below its regime_ma-day MA."""
+    fetch_start = start_date - timedelta(days=regime_ma * 3 + 10)
+    qqq_df = fetch_daily_bars(["QQQ"], fetch_start, end_date, source=source).get(
+        "QQQ", pd.DataFrame()
+    )
+    if qqq_df.empty:
+        return set()
+    qqq_df = qqq_df.copy()
+    qqq_df["regime_ma"] = qqq_df["Close"].rolling(regime_ma).mean()
+    bearish = qqq_df[qqq_df["Close"] < qqq_df["regime_ma"]]
+    return set(bearish.index)
+
+
 def run_backtest(
     tickers: list,
     start_date: date,
@@ -831,9 +867,16 @@ def run_backtest(
     trailing_ma: str = "ma20",
     max_loss_pct: float = None,
     armed_ma20_exit: bool = False,
+    regime_filter: bool = False,
+    regime_ma: int = 5,
 ) -> dict:
     if ticker_dfs is None:
         ticker_dfs = fetch_bars(tickers, start_date, end_date, source=source)
+    bearish_regime_dates = (
+        build_bearish_regime_dates(start_date, end_date, source, regime_ma)
+        if regime_filter
+        else None
+    )
     all_results = {}
     for ticker in tickers:
         df = ticker_dfs.get(ticker, pd.DataFrame())
@@ -849,6 +892,7 @@ def run_backtest(
             trailing_ma,
             max_loss_pct=max_loss_pct,
             armed_ma20_exit=armed_ma20_exit,
+            bearish_regime_dates=bearish_regime_dates,
         )
         if not results.empty:
             results = results[results["date"] >= start_date].reset_index(drop=True)
@@ -882,6 +926,8 @@ if __name__ == "__main__":
     trailing_ma = args.trailing_ma
     max_loss_pct = args.max_loss_pct
     armed_ma20_exit = args.armed_ma20_exit
+    regime_filter = args.regime_filter
+    regime_ma = args.regime_ma
     bearish_filter = "MA20 + MA200" if bearish_ma200 else "MA20 only"
     trailing_ma_label = {
         "ma20": "MA20 only",
@@ -910,6 +956,12 @@ if __name__ == "__main__":
     else:
         ticker_dfs = fetch_yfinance_bars(tickers, cutoff, end_date)
 
+    bearish_regime_dates = (
+        build_bearish_regime_dates(cutoff, end_date, source, regime_ma)
+        if regime_filter
+        else None
+    )
+
     all_results = {}
     trading_dates = set()
 
@@ -933,6 +985,7 @@ if __name__ == "__main__":
             trailing_ma=trailing_ma,
             max_loss_pct=max_loss_pct,
             armed_ma20_exit=armed_ma20_exit,
+            bearish_regime_dates=bearish_regime_dates,
         )
         if not results.empty:
             results = results[results["date"] >= cutoff].reset_index(drop=True)
