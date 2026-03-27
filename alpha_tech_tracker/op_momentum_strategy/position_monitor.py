@@ -1,0 +1,409 @@
+import logging
+import threading
+from datetime import datetime
+from decimal import ROUND_HALF_UP
+from typing import Optional
+
+import pandas as pd
+import pytz
+
+from alpaca.data.requests import OptionLatestQuoteRequest
+
+from alpha_tech_tracker.trade_api.alpaca_client.client import AlpacaAPIClient
+
+from .config import (
+    ARMED_MA20_EXIT,
+    MAX_LOSS_PCT,
+    TRAILING_MA,
+    _send_sms,
+)
+from .models import ActivePosition, _D
+from .order_executor import _place_with_fill_escalation
+
+logger = logging.getLogger(__name__)
+
+ET = pytz.timezone("America/New_York")
+
+
+class PositionMonitor:
+    """Monitors open option positions and exits on stop conditions."""
+
+    def __init__(
+        self,
+        alpaca_client: AlpacaAPIClient,
+        signal_engine,
+        simulate: bool = False,
+        trailing_ma: str = TRAILING_MA,
+        max_loss_pct: Optional[float] = MAX_LOSS_PCT,
+        armed_ma20_exit: bool = ARMED_MA20_EXIT,
+    ):
+        self._client = alpaca_client
+        self._signal_engine = signal_engine
+        self._simulate = simulate
+        self._trailing_ma = trailing_ma
+        self._max_loss_pct = max_loss_pct
+        self._armed_ma20_exit = armed_ma20_exit
+        self._positions: list = []
+        self._lock = threading.Lock()
+
+    def add_position(self, position: ActivePosition):
+        with self._lock:
+            self._positions.append(position)
+            logger.info(
+                "Tracking position: %s %s opt=%s contracts=%d",
+                position.ticker,
+                position.signal,
+                position.option_symbol,
+                position.contracts,
+            )
+
+    def on_bar(self, ticker: str):
+        latest = self._signal_engine.get_latest_bar(ticker)
+        if latest is None:
+            return
+
+        close = _D(latest["Close"])
+        ma20 = latest.get("MA20")
+        ma20_val = _D(ma20) if ma20 is not None and not pd.isna(ma20) else None
+        ma50 = latest.get("MA50")
+        ma50_val = _D(ma50) if ma50 is not None and not pd.isna(ma50) else None
+
+        with self._lock:
+            for pos in self._positions:
+                if pos.ticker != ticker or pos.is_closed:
+                    continue
+                self._evaluate_stop(pos, close, ma20_val, ma50_val)
+
+    def _evaluate_stop(
+        self,
+        pos: ActivePosition,
+        close,
+        ma20: Optional[object],
+        ma50: Optional[object],
+    ):
+        exit_reason = None
+
+        if self._max_loss_pct is not None:
+            entry = pos.entry_stock_price
+            loss_pct = (
+                (entry - close) / entry
+                if pos.signal == "BULLISH"
+                else (close - entry) / entry
+            )
+            if loss_pct >= _D(str(self._max_loss_pct)):
+                self._close_position(pos, "max_loss")
+                return
+
+        if pos.signal == "BULLISH":
+            if not pos.hard_stop_armed and close > pos.hard_stop_price:
+                pos.hard_stop_armed = True
+            if pos.hard_stop_armed and self._armed_ma20_exit:
+                if ma20 is not None:
+                    if close < ma20:
+                        exit_reason = "trailing_stop_ma20"
+                elif close <= pos.hard_stop_price:
+                    exit_reason = "hard_stop"
+            elif pos.hard_stop_armed and close <= pos.hard_stop_price:
+                exit_reason = "hard_stop"
+            elif not pos.hard_stop_armed and close <= pos.fallback_price:
+                exit_reason = "fallback_20pct"
+            elif (
+                self._trailing_ma in ("ma20", "both")
+                and ma20 is not None
+                and ma20 > pos.hard_stop_price
+                and close < ma20
+            ):
+                exit_reason = "trailing_stop_ma20"
+            elif (
+                self._trailing_ma in ("ma50", "both")
+                and ma50 is not None
+                and ma50 > pos.hard_stop_price
+                and close < ma50
+            ):
+                exit_reason = "trailing_stop_ma50"
+        else:
+            if not pos.hard_stop_armed and close < pos.hard_stop_price:
+                pos.hard_stop_armed = True
+            if pos.hard_stop_armed and self._armed_ma20_exit:
+                if ma20 is not None:
+                    if close > ma20:
+                        exit_reason = "trailing_stop_ma20"
+                elif close >= pos.hard_stop_price:
+                    exit_reason = "hard_stop"
+            elif pos.hard_stop_armed and close >= pos.hard_stop_price:
+                exit_reason = "hard_stop"
+            elif not pos.hard_stop_armed and close >= pos.fallback_price:
+                exit_reason = "fallback_20pct"
+            elif (
+                self._trailing_ma in ("ma20", "both")
+                and ma20 is not None
+                and ma20 < pos.or_low
+                and close > ma20
+            ):
+                exit_reason = "trailing_stop_ma20"
+            elif (
+                self._trailing_ma in ("ma50", "both")
+                and ma50 is not None
+                and ma50 < pos.or_low
+                and close > ma50
+            ):
+                exit_reason = "trailing_stop_ma50"
+
+        if exit_reason:
+            self._close_position(pos, exit_reason)
+
+    def _close_position(self, pos: ActivePosition, reason: str):
+        pos.is_closed = True
+        pos.exit_reason = reason
+        pos.exit_time = datetime.now(ET)
+        logger.info(
+            "EXIT %s %s reason=%s opt=%s contracts=%d",
+            pos.ticker, pos.signal, reason, pos.option_symbol, pos.contracts,
+        )
+        mid = None
+        try:
+            quote_resp = self._client._option_data_client.get_option_latest_quote(
+                OptionLatestQuoteRequest(symbol_or_symbols=[pos.option_symbol])
+            )
+            quote = quote_resp[pos.option_symbol]
+            bid = _D(quote.bid_price)
+            ask = _D(quote.ask_price)
+            mid = (bid + ask) / _D("2")
+            logger.info(
+                "EXIT QUOTE %s: bid=%s ask=%s mid=%s",
+                pos.option_symbol, bid, ask,
+                mid.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
+            )
+            fallback = (ask * _D("0.98")).quantize(_D("0.01"), rounding=ROUND_HALF_UP)
+            bid.quantize(_D("0.01"), rounding=ROUND_HALF_UP) or fallback
+        except Exception:
+            logger.exception(
+                "Could not fetch exit quote for %s, using market order",
+                pos.option_symbol,
+            )
+
+        if self._simulate:
+            sim_mid = (
+                mid.quantize(_D("0.01"), rounding=ROUND_HALF_UP)
+                if mid is not None
+                else _D("0")
+            )
+            pos.simulated_exit_mid = sim_mid
+            _send_sms(
+                f"[SIMULATE] SELL {pos.option_symbol} x{pos.contracts} reason={reason} @ ~{sim_mid}"
+            )
+            logger.info(
+                "SIMULATE SELL_CLOSE %s contracts=%d simulated_fill=%.2f (no order placed)",
+                pos.option_symbol, pos.contracts, sim_mid,
+            )
+            return
+
+        try:
+            option_type = "CALL" if pos.signal == "BULLISH" else "PUT"
+            logger.info(
+                "Placing SELL_CLOSE with fill escalation: %s %d contracts",
+                pos.option_symbol, pos.contracts,
+            )
+            _send_sms(
+                f"SELL {pos.option_symbol} x{pos.contracts} reason={reason} closing {pos.ticker}"
+            )
+            order = _place_with_fill_escalation(
+                client=self._client,
+                ticker=pos.ticker,
+                option_symbol=pos.option_symbol,
+                option_type=option_type,
+                contracts=pos.contracts,
+                order_action="SELL_CLOSE",
+            )
+            pos.exit_order_id = order.get("order_id")
+            logger.info("Close order placed: %s", pos.exit_order_id)
+        except Exception:
+            logger.exception("Failed to place close order for %s", pos.option_symbol)
+
+    def close_all(self, reason: str = "end_of_day"):
+        with self._lock:
+            for pos in self._positions:
+                if not pos.is_closed:
+                    self._close_position(pos, reason)
+
+    def _fetch_option_mid(self, option_symbol: str) -> Optional[object]:
+        try:
+            resp = self._client._option_data_client.get_option_latest_quote(
+                OptionLatestQuoteRequest(symbol_or_symbols=[option_symbol])
+            )
+            q = resp[option_symbol]
+            return (_D(q.bid_price) + _D(q.ask_price)) / _D("2")
+        except Exception:
+            return None
+
+    def _refresh_fill_prices(self, positions: list):
+        for p in positions:
+            if p.entry_fill_price is None and p.entry_order_id:
+                try:
+                    s = self._client.order_status(p.entry_order_id)
+                    if s.get("filled_avg_price") is not None:
+                        p.entry_fill_price = _D(str(s["filled_avg_price"]))
+                except Exception:
+                    pass
+            if p.is_closed and p.exit_fill_price is None and p.exit_order_id:
+                try:
+                    s = self._client.order_status(p.exit_order_id)
+                    if s.get("filled_avg_price") is not None:
+                        p.exit_fill_price = _D(str(s["filled_avg_price"]))
+                except Exception:
+                    pass
+
+    def print_status(self):
+        now = datetime.now(ET)
+        with self._lock:
+            open_pos = [p for p in self._positions if not p.is_closed]
+            closed_pos = [p for p in self._positions if p.is_closed]
+
+        has_sim = any(p.simulated_entry_mid is not None for p in self._positions)
+
+        if not has_sim:
+            self._refresh_fill_prices(open_pos + closed_pos)
+
+        def _fmt(dt: Optional[datetime]) -> str:
+            return dt.strftime("%H:%M") if dt else "—"
+
+        def _pnl(entry, exit_, signal, contracts) -> Optional[object]:
+            if entry is None or exit_ is None:
+                return None
+            raw = exit_ - entry
+            return raw * _D(contracts) * _D("100")
+
+        def _pnl_str(pnl) -> str:
+            if pnl is None:
+                return ""
+            sign = "+" if pnl >= 0 else ""
+            return f"  {sign}${pnl:.2f}"
+
+        bar = "━" * 82
+        sep = "─" * 80
+        print(f"\n{bar}")
+        print(
+            f"  POSITION STATUS  {now.strftime('%H:%M ET')}  |  "
+            f"open={len(open_pos)}  closed={len(closed_pos)}"
+        )
+        print(bar)
+
+        if open_pos:
+            print("  OPEN POSITIONS")
+            print(f"  {sep}")
+            for p in open_pos:
+                if has_sim:
+                    entry_price = p.simulated_entry_mid
+                else:
+                    entry_price = p.entry_fill_price
+                    current_mid = self._fetch_option_mid(p.option_symbol)
+                unrealized = (
+                    _pnl(entry_price, p.simulated_entry_mid, p.signal, p.contracts)
+                    if has_sim
+                    else _pnl(entry_price, current_mid, p.signal, p.contracts)
+                )
+                entry_str = f"  entry=${entry_price:.2f}" if entry_price else ""
+                unreal_str = (
+                    f"  unreal={_pnl_str(unrealized).strip()}"
+                    if unrealized is not None
+                    else ""
+                )
+                print(
+                    f"  {p.ticker:<7} {p.signal:<9} {p.option_symbol:<26} "
+                    f"x{p.contracts}  in={_fmt(p.entry_time)}{entry_str}{unreal_str}"
+                )
+        else:
+            print("  No open positions")
+
+        if closed_pos:
+            print(f"\n  CLOSED POSITIONS")
+            print(f"  {sep}")
+            total_pnl = _D("0")
+            for p in closed_pos:
+                if has_sim:
+                    entry_price = p.simulated_entry_mid
+                    exit_price = p.simulated_exit_mid
+                else:
+                    entry_price = p.entry_fill_price
+                    exit_price = p.exit_fill_price
+                pnl = _pnl(entry_price, exit_price, p.signal, p.contracts)
+                if pnl is not None:
+                    total_pnl += pnl
+                print(
+                    f"  {p.ticker:<7} {p.signal:<9} {p.option_symbol:<26} "
+                    f"x{p.contracts}  {_fmt(p.entry_time)}→{_fmt(p.exit_time)}"
+                    f"  {p.exit_reason}{_pnl_str(pnl)}"
+                )
+            any_pnl = any(
+                _pnl(
+                    p.simulated_entry_mid if has_sim else p.entry_fill_price,
+                    p.simulated_exit_mid if has_sim else p.exit_fill_price,
+                    p.signal,
+                    p.contracts,
+                ) is not None
+                for p in closed_pos
+            )
+            if any_pnl:
+                sign = "+" if total_pnl >= 0 else ""
+                print(f"  {sep}")
+                print(f"  Running P&L: {sign}${total_pnl:.2f}")
+
+        print(f"{bar}\n")
+
+    def print_summary(self):
+        has_sim = any(pos.simulated_entry_mid is not None for pos in self._positions)
+
+        def _fmt_time(dt: Optional[datetime]) -> str:
+            return dt.strftime("%H:%M") if dt else "—"
+
+        if has_sim:
+            width = 114
+            print(f"\n{'=' * width}")
+            print("  DAILY TRADE SUMMARY  [SIMULATE MODE]")
+            print(f"{'=' * width}")
+            print(
+                f"  {'Ticker':<7} {'Signal':<9} {'Option':<26} {'Qty':>4}"
+                f"  {'Entry':>5} {'Exit':>5}  {'EntryMid':>9} {'ExitMid':>9} {'Opt P&L':>10}  Exit Reason"
+            )
+            print(f"  {'─' * 112}")
+            for pos in self._positions:
+                entry_mid = pos.simulated_entry_mid
+                exit_mid = pos.simulated_exit_mid
+                if entry_mid is not None and exit_mid is not None:
+                    raw_pnl = exit_mid - entry_mid
+                    pnl_total = raw_pnl * _D(pos.contracts) * _D("100")
+                    pnl_str = (
+                        f"+${pnl_total:.2f}"
+                        if pnl_total >= 0
+                        else f"-${abs(pnl_total):.2f}"
+                    )
+                    entry_str = f"${entry_mid:.2f}"
+                    exit_str = f"${exit_mid:.2f}"
+                else:
+                    pnl_str = entry_str = exit_str = "—"
+                print(
+                    f"  {pos.ticker:<7} {pos.signal:<9} {pos.option_symbol:<26} "
+                    f"{pos.contracts:>4}"
+                    f"  {_fmt_time(pos.entry_time):>5} {_fmt_time(pos.exit_time):>5}"
+                    f"  {entry_str:>9} {exit_str:>9} {pnl_str:>10}"
+                    f"  {pos.exit_reason or 'open'}"
+                )
+            print(f"{'=' * width}\n")
+        else:
+            width = 86
+            print(f"\n{'=' * width}")
+            print("  DAILY TRADE SUMMARY")
+            print(f"{'=' * width}")
+            print(
+                f"  {'Ticker':<7} {'Signal':<9} {'Option':<26} {'Qty':>4}"
+                f"  {'Entry':>5} {'Exit':>5}  Exit Reason"
+            )
+            print(f"  {'─' * 84}")
+            for pos in self._positions:
+                print(
+                    f"  {pos.ticker:<7} {pos.signal:<9} {pos.option_symbol:<26} "
+                    f"{pos.contracts:>4}"
+                    f"  {_fmt_time(pos.entry_time):>5} {_fmt_time(pos.exit_time):>5}"
+                    f"  {pos.exit_reason or 'open'}"
+                )
+            print(f"{'=' * width}\n")
