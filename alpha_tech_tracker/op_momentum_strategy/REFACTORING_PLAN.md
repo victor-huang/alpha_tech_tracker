@@ -1,5 +1,7 @@
 # Refactoring Plan: op_momentum_trade_engine.py → Multiple Modules
 
+> **Status: COMPLETE** — all 9 source modules created, 62 tests passing, old monolith replaced.
+
 ## Context
 
 `op_momentum_trade_engine.py` has grown to ~2100 lines with 6 classes, 15+ module-level

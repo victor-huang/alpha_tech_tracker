@@ -13,10 +13,31 @@ Alpaca's paper/live trading API.
 
 ---
 
-## File Location
+## Module Structure
 
 ```
-alpha_tech_tracker/op_momentum_strategy/op_momentum_trade_engine.py
+alpha_tech_tracker/op_momentum_strategy/
+  models.py              _D(), SignalEvent, _FiveMinBar, ActivePosition
+  config.py              All constants, _load_config(), _send_sms()
+  contract_selector.py   _next_friday(), _strike_increment(), OptionContractSelector
+  position_sizer.py      PositionSizer
+  order_executor.py      _place_with_fill_escalation(), AlpacaAPIClient monkey-patch
+  signal_engine.py       LiveSignalEngine
+  position_monitor.py    PositionMonitor
+  trade_engine.py        TickerSelector, OpMomentumTradeEngine
+  op_momentum_trade_engine.py   CLI/daemon entry point + backward-compat re-exports
+```
+
+Tests:
+
+```
+tests/op_momentum_trade_engine/
+  conftest.py              Shared helpers and fixtures
+  test_contract_selector.py
+  test_position_sizer.py
+  test_signal_engine.py
+  test_position_monitor.py
+  test_trade_engine.py
 ```
 
 ---
@@ -395,3 +416,7 @@ Reused modules:
 - `alpha_tech_tracker.trade_api.alpaca_client.client.AlpacaAPIClient`
 - `alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest` — `fetch_bars`, `build_bearish_regime_dates`
 - `alpha_tech_tracker.op_momentum_strategy.op_momentum_selector` — `score_ticker`, `select_top_n`
+
+Internal modules (see Module Structure above):
+- `models`, `config`, `contract_selector`, `position_sizer`, `order_executor`,
+  `signal_engine`, `position_monitor`, `trade_engine`

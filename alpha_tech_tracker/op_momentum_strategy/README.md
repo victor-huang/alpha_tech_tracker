@@ -101,11 +101,31 @@ Skip the 30-day ranking and trade specific symbols:
 ### All CLI options
 
 ```
-usage: op_momentum_trade_engine.py [-h] [--live] [--tickers TICKER [TICKER ...]] [--log-level {DEBUG,INFO,WARNING,ERROR}]
+usage: op_momentum_trade_engine.py [-h] [--live] [--simulate]
+                                   [--tickers TICKERS [TICKERS ...]]
+                                   [--stop-pct STOP_PCT]
+                                   [--trailing-ma {ma20,ma50,both}]
+                                   [--max-loss-pct MAX_LOSS_PCT]
+                                   [--armed-ma20-exit] [--regime-filter]
+                                   [--regime-ma REGIME_MA]
+                                   [--rank-weighted-sizing]
+                                   [--opening-start OPENING_START]
+                                   [--pid-file PID_FILE] [--log-file LOG_FILE]
+                                   [--log-level {DEBUG,INFO,WARNING,ERROR}]
+                                   {run,start,stop,status,restart}
 
 optional arguments:
   --live                Use live trading account (default: paper trading)
+  --simulate            Simulate order fills at mid bid/ask — no real orders placed
   --tickers             Override ticker universe, e.g. --tickers NVDA CRWD
+  --stop-pct            Hard stop as fraction of OR range (default: 0.15)
+  --trailing-ma         MA to use for trailing stop: ma20, ma50, or both (default: ma20)
+  --max-loss-pct        Per-trade max loss as fraction of entry price (e.g. 0.02 = 2%)
+  --armed-ma20-exit     Use MA20 as trailing exit once hard stop is armed
+  --regime-filter       Suppress BULLISH signals on QQQ bearish days
+  --regime-ma           N-day MA period for QQQ regime filter (default: 5)
+  --rank-weighted-sizing  Weight positions by rank: 50/30/20%
+  --opening-start       Opening window start time HH:MM ET (default: 09:30)
   --log-level           Log verbosity (default: INFO)
 ```
 
@@ -137,14 +157,14 @@ After close     Print daily trade summary, exit
 
 ## Ticker Universe
 
-The default candidates are defined in `op_momentum_trade_engine.py`:
+The default candidates are defined in `config.py`:
 
 ```python
 TICKERS = ["NVDA", "CRWD", "COIN", "JNJ", "XOM", "CAT"]
 ```
 
 The engine ranks these by 30-day return each morning and trades the top 2.
-To change the universe permanently, edit the `TICKERS` list in the source file.
+To change the universe permanently, edit the `TICKERS` list in `config.py`.
 To override for a single run, use `--tickers`.
 
 ---
@@ -194,5 +214,5 @@ See `op_momentum_backtest.py` for full backtest options (`--start`, `--end`, `--
 ```bash
 PYTHONPATH=. \
   ~/.pyenv/versions/alpha_tech_tracker/bin/python \
-  -m pytest tests/unit/test_op_momentum_trade_engine.py -v
+  -m pytest tests/op_momentum_trade_engine/ -v
 ```
