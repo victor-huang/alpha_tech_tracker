@@ -1,0 +1,961 @@
+
+op_momentum_guide backtest — 2025-12-22 → 2026-03-22  (90 calendar days) (alpaca)
+Tickers           : SNDK, APP, SHOP, CVNA, AMD, META, EXPE, FANG
+Opening period    : first 15 min (3 x 5-min bars)
+Exit rule         : MA50 trailing stop  |  hard stop at 15% from favorable end of OR
+  → Bull hard stop: OR_high - 15% × OR_range  |  Bear hard stop: OR_low + 15% × OR_range
+Bearish filter    : MA20 only  (use --bearish-ma200 to add MA200 requirement)
+
+Fetching 8 tickers from alpaca (2025-12-22 → 2026-03-22)...
+
+================================================================================================
+  SNDK  |  Successful signal days  |  Last 90 calendar days
+================================================================================================
+  Date         Signal        Mid   Entry    Exit      P&L  MinsHeld   MaxMove  Exit Reason
+  ----------------------------------------------------------------------------------------------
+  2026-01-02   BULLISH    251.22  258.14  275.94  +$17.80       380 $   24.72  end_of_day
+  2026-01-05   BEARISH    276.27  270.29  270.17   +$0.12         5 $    8.00  hard_stop
+  2026-01-06   BULLISH    303.89  318.83  351.61  +$32.78       380 $   47.72  end_of_day
+  2026-01-08   BEARISH    350.74  342.76  326.90  +$15.86       205 $   38.74  trailing_stop_ma50
+  2026-01-09   BULLISH    348.22  361.83  377.89  +$16.06       380 $   35.27  end_of_day
+  2026-01-12   BULLISH    384.57  390.07  390.92   +$0.85         0 $    0.00  fallback_20pct
+  2026-01-13   BEARISH    388.71  382.87  382.20   +$0.67        10 $    8.02  hard_stop
+  2026-01-21   BULLISH    459.26  464.28  466.78   +$2.50        20 $   11.05  hard_stop
+  2026-02-02   BULLISH    611.85  622.12  628.50   +$6.38         0 $    0.00  fallback_20pct
+  2026-02-11   BULLISH    591.09  597.67  600.74   +$3.07         5 $   10.32  fallback_20pct
+  2026-02-23   BULLISH    662.94  675.98  682.84   +$6.86       230 $   26.84  trailing_stop_ma50
+  2026-03-16   BULLISH    697.48  706.18  712.68   +$6.50       240 $   20.14  trailing_stop_ma50
+  2026-03-20   BULLISH    767.35  768.75  773.50   +$4.75         0 $    0.00  fallback_20pct
+
+  SNDK — Stats
+  ────────────────────────────────────────────────────
+  Signals fired      : 28  (bull=19, bear=9)
+  Success / Fail     : 13 / 15  →  46% success rate
+  Held all day       : 3 / 28
+  Avg mins held (W)  : 143 min
+  Avg max move (W)   : $17.76 from midpoint
+  Win P&L            : +$114.20
+  Loss P&L           : -$25.38
+  Net P&L            : +$88.82
+  Bullish success    : 10/19 = 53%
+  Bearish success    : 3/9 = 33%
+
+================================================================================================
+  APP  |  Successful signal days  |  Last 90 calendar days
+================================================================================================
+  Date         Signal        Mid   Entry    Exit      P&L  MinsHeld   MaxMove  Exit Reason
+  ----------------------------------------------------------------------------------------------
+  2025-12-22   BULLISH    730.02  730.53  734.81   +$4.28         5 $    4.94  fallback_20pct
+  2025-12-23   BEARISH    729.84  725.00  723.09   +$1.91       170 $   17.98  trailing_stop_ma50
+  2025-12-24   BULLISH    729.88  730.31  732.82   +$2.51         0 $    0.00  fallback_20pct
+  2025-12-31   BEARISH    692.23  687.91  687.64   +$0.27        75 $    8.14  hard_stop
+  2026-01-02   BEARISH    665.92  649.97  622.54  +$27.43       285 $   52.32  trailing_stop_ma50
+  2026-01-06   BEARISH    619.02  611.01  605.97   +$5.04       210 $   22.25  trailing_stop_ma50
+  2026-01-14   BEARISH    657.25  639.71  607.29  +$32.42       250 $   58.56  trailing_stop_ma50
+  2026-01-16   BEARISH    605.46  597.70  567.50  +$30.20       380 $   43.86  end_of_day
+  2026-01-21   BEARISH    549.50  543.08  542.15   +$0.93         5 $    9.88  hard_stop
+  2026-01-22   BEARISH    533.56  528.95  525.23   +$3.72       180 $   18.36  trailing_stop_ma50
+  2026-01-28   BULLISH    545.23  547.00  548.97   +$1.97       120 $   11.95  hard_stop
+  2026-02-09   BULLISH    431.46  440.48  464.42  +$23.94       315 $   39.79  trailing_stop_ma50
+  2026-02-11   BEARISH    464.73  459.48  448.88  +$10.60       210 $   25.82  trailing_stop_ma50
+  2026-02-18   BULLISH    378.47  383.73  402.90  +$19.17       290 $   27.90  trailing_stop_ma50
+  2026-02-25   BULLISH    397.74  403.31  423.31  +$20.00       295 $   27.81  trailing_stop_ma50
+  2026-02-26   BULLISH    425.50  428.07  431.06   +$2.99        30 $   14.54  hard_stop
+  2026-03-04   BULLISH    452.46  455.63  457.95   +$2.32         0 $    0.00  fallback_20pct
+  2026-03-05   BULLISH    494.87  499.90  501.95   +$2.05        55 $   14.58  hard_stop
+  2026-03-09   BULLISH    504.28  509.71  510.44   +$0.73         5 $    6.48  fallback_20pct
+  2026-03-17   BULLISH    457.67  460.70  463.64   +$2.94         0 $    0.00  fallback_20pct
+  2026-03-18   BULLISH    460.93  466.09  467.10   +$1.01        40 $    9.21  hard_stop
+
+  APP — Stats
+  ────────────────────────────────────────────────────
+  Signals fired      : 34  (bull=16, bear=18)
+  Success / Fail     : 21 / 13  →  62% success rate
+  Held all day       : 1 / 34
+  Avg mins held (W)  : 139 min
+  Avg max move (W)   : $19.73 from midpoint
+  Win P&L            : +$196.43
+  Loss P&L           : -$15.41
+  Net P&L            : +$181.02
+  Bullish success    : 12/16 = 75%
+  Bearish success    : 9/18 = 50%
+
+================================================================================================
+  SHOP  |  Successful signal days  |  Last 90 calendar days
+================================================================================================
+  Date         Signal        Mid   Entry    Exit      P&L  MinsHeld   MaxMove  Exit Reason
+  ----------------------------------------------------------------------------------------------
+  2026-01-13   BULLISH    169.20  169.56  170.22   +$0.66         0 $    0.00  fallback_20pct
+  2026-01-14   BEARISH    163.61  162.13  156.42   +$5.72       245 $    9.58  trailing_stop_ma50
+  2026-02-03   BEARISH    129.23  127.14  119.06   +$8.08       345 $   11.50  trailing_stop_ma50
+  2026-02-04   BEARISH    114.12  112.70  112.53   +$0.17        25 $    3.86  hard_stop
+  2026-02-06   BULLISH    113.27  114.14  114.33   +$0.19         0 $    0.00  fallback_20pct
+  2026-02-10   BULLISH    124.34  124.43  125.34   +$0.91         0 $    0.00  fallback_20pct
+  2026-02-11   BEARISH    130.72  123.55  114.24   +$9.31       235 $   20.91  trailing_stop_ma50
+  2026-02-12   BEARISH    117.38  113.85  108.94   +$4.92       220 $   12.19  trailing_stop_ma50
+  2026-02-17   BULLISH    114.26  114.84  115.68   +$0.84         0 $    0.00  fallback_20pct
+  2026-02-18   BULLISH    114.22  115.89  123.08   +$7.19       290 $   10.36  trailing_stop_ma50
+  2026-02-20   BULLISH    122.75  124.17  127.53   +$3.36       195 $    7.97  trailing_stop_ma50
+  2026-02-23   BEARISH    121.83  119.38  117.08   +$2.30       355 $    5.76  trailing_stop_ma50
+  2026-02-25   BULLISH    119.73  120.77  121.19   +$0.42        30 $    3.94  hard_stop
+  2026-03-04   BULLISH    123.50  124.76  128.99   +$4.23       330 $    6.70  trailing_stop_ma50
+  2026-03-12   BULLISH    129.63  130.15  130.86   +$0.71         0 $    0.00  fallback_20pct
+  2026-03-17   BULLISH    129.42  131.02  131.16   +$0.14        25 $    3.07  hard_stop
+
+  SHOP — Stats
+  ────────────────────────────────────────────────────
+  Signals fired      : 29  (bull=16, bear=13)
+  Success / Fail     : 16 / 13  →  55% success rate
+  Held all day       : 0 / 29
+  Avg mins held (W)  : 143 min
+  Avg max move (W)   : $5.99 from midpoint
+  Win P&L            : +$49.15
+  Loss P&L           : -$5.05
+  Net P&L            : +$44.10
+  Bullish success    : 10/16 = 62%
+  Bearish success    : 6/13 = 46%
+
+================================================================================================
+  CVNA  |  Successful signal days  |  Last 90 calendar days
+================================================================================================
+  Date         Signal        Mid   Entry    Exit      P&L  MinsHeld   MaxMove  Exit Reason
+  ----------------------------------------------------------------------------------------------
+  2025-12-26   BEARISH    443.40  441.08  440.78   +$0.31       115 $    6.51  trailing_stop_ma50
+  2026-01-07   BULLISH    443.48  444.86  445.58   +$0.72         0 $    0.00  fallback_20pct
+  2026-01-15   BULLISH    467.34  470.34  470.57   +$0.23         0 $    0.00  fallback_20pct
+  2026-01-22   BULLISH    464.04  466.45  467.83   +$1.38         0 $    0.00  fallback_20pct
+  2026-01-23   BULLISH    477.11  478.70  479.78   +$1.08        50 $    8.76  hard_stop
+  2026-02-04   BEARISH    400.90  396.34  378.14  +$18.19       290 $   33.91  trailing_stop_ma50
+  2026-02-06   BULLISH    394.64  396.75  397.26   +$0.51         0 $    0.00  fallback_20pct
+  2026-02-11   BEARISH    390.42  386.75  359.16  +$27.60       270 $   43.09  trailing_stop_ma50
+  2026-02-12   BEARISH    366.56  362.45  360.96   +$1.49         0 $    0.00  trailing_stop_ma50
+  2026-02-18   BULLISH    347.90  356.21  360.84   +$4.64       235 $   18.22  trailing_stop_ma50
+  2026-02-24   BULLISH    330.64  333.74  335.63   +$1.88         5 $    6.87  hard_stop
+  2026-02-26   BULLISH    338.50  340.09  341.20   +$1.11         0 $    0.00  fallback_20pct
+  2026-03-05   BULLISH    319.88  322.70  324.32   +$1.61        35 $    8.87  hard_stop
+  2026-03-11   BULLISH    323.68  325.46  325.89   +$0.43         0 $    0.00  fallback_20pct
+  2026-03-17   BULLISH    312.52  313.70  314.70   +$1.00        15 $    4.24  hard_stop
+
+  CVNA — Stats
+  ────────────────────────────────────────────────────
+  Signals fired      : 28  (bull=15, bear=13)
+  Success / Fail     : 15 / 13  →  54% success rate
+  Held all day       : 0 / 28
+  Avg mins held (W)  : 68 min
+  Avg max move (W)   : $8.70 from midpoint
+  Win P&L            : +$62.18
+  Loss P&L           : -$14.14
+  Net P&L            : +$48.04
+  Bullish success    : 11/15 = 73%
+  Bearish success    : 4/13 = 31%
+
+================================================================================================
+  AMD  |  Successful signal days  |  Last 90 calendar days
+================================================================================================
+  Date         Signal        Mid   Entry    Exit      P&L  MinsHeld   MaxMove  Exit Reason
+  ----------------------------------------------------------------------------------------------
+  2026-01-15   BULLISH    231.40  234.20  236.26   +$2.06       235 $    6.73  trailing_stop_ma50
+  2026-01-21   BULLISH    238.96  239.70  244.90   +$5.19       195 $   13.56  trailing_stop_ma50
+  2026-01-23   BULLISH    262.51  262.83  265.18   +$2.35         0 $    0.00  fallback_20pct
+  2026-02-04   BEARISH    214.18  211.50  202.54   +$8.96       295 $   14.13  trailing_stop_ma50
+  2026-02-09   BULLISH    207.62  210.20  215.96   +$5.76       320 $    9.82  trailing_stop_ma50
+  2026-02-11   BULLISH    216.36  217.62  217.72   +$0.10         5 $    1.79  hard_stop
+  2026-02-20   BULLISH    201.76  202.64  202.80   +$0.16         0 $    0.00  fallback_20pct
+  2026-03-11   BULLISH    206.96  207.84  208.31   +$0.48         0 $    0.00  fallback_20pct
+  2026-03-12   BEARISH    202.10  201.12  198.58   +$2.54       265 $    5.05  trailing_stop_ma50
+  2026-03-17   BULLISH    196.74  197.34  197.99   +$0.65        15 $    2.09  trailing_stop_ma50
+  2026-03-18   BULLISH    196.92  197.15  199.94   +$2.79       305 $    5.78  trailing_stop_ma50
+  2026-03-20   BULLISH    204.54  205.06  205.59   +$0.53         0 $    0.00  fallback_20pct
+
+  AMD — Stats
+  ────────────────────────────────────────────────────
+  Signals fired      : 24  (bull=15, bear=9)
+  Success / Fail     : 12 / 12  →  50% success rate
+  Held all day       : 0 / 24
+  Avg mins held (W)  : 136 min
+  Avg max move (W)   : $4.91 from midpoint
+  Win P&L            : +$31.57
+  Loss P&L           : -$5.66
+  Net P&L            : +$25.91
+  Bullish success    : 10/15 = 67%
+  Bearish success    : 2/9 = 22%
+
+================================================================================================
+  META  |  Successful signal days  |  Last 90 calendar days
+================================================================================================
+  Date         Signal        Mid   Entry    Exit      P&L  MinsHeld   MaxMove  Exit Reason
+  ----------------------------------------------------------------------------------------------
+  2025-12-26   BULLISH    667.34  667.94  668.31   +$0.37         0 $    0.00  fallback_20pct
+  2025-12-30   BULLISH    663.14  664.86  666.85   +$1.99        35 $    8.47  hard_stop
+  2026-01-07   BEARISH    656.89  654.79  654.29   +$0.50       155 $   11.70  trailing_stop_ma50
+  2026-01-13   BEARISH    638.86  636.49  629.38   +$7.11       220 $   14.14  trailing_stop_ma50
+  2026-01-23   BULLISH    649.04  649.35  662.30  +$12.95       315 $   16.88  trailing_stop_ma50
+  2026-01-26   BULLISH    665.56  666.38  668.13   +$1.75         0 $    0.00  fallback_20pct
+  2026-01-27   BEARISH    672.06  669.06  668.74   +$0.32         5 $    3.46  hard_stop
+  2026-02-03   BEARISH    711.50  707.70  691.75  +$15.95       370 $   24.82  trailing_stop_ma50
+  2026-02-12   BEARISH    670.33  665.45  654.24  +$11.21       270 $   24.90  trailing_stop_ma50
+  2026-02-20   BULLISH    644.29  648.48  655.26   +$6.78       220 $   18.15  trailing_stop_ma50
+  2026-02-23   BEARISH    652.98  648.46  637.75  +$10.72       380 $   16.55  end_of_day
+  2026-02-25   BULLISH    644.76  645.53  649.54   +$4.01       245 $    7.45  trailing_stop_ma50
+  2026-03-09   BEARISH    632.97  629.95  629.67   +$0.28        15 $    5.15  hard_stop
+  2026-03-11   BULLISH    656.42  657.20  657.63   +$0.44         0 $    0.00  fallback_20pct
+  2026-03-17   BULLISH    632.27  633.14  634.84   +$1.69         0 $    0.00  fallback_20pct
+  2026-03-20   BEARISH    601.38  599.38  593.72   +$5.66       370 $   13.21  trailing_stop_ma50
+
+  META — Stats
+  ────────────────────────────────────────────────────
+  Signals fired      : 29  (bull=14, bear=15)
+  Success / Fail     : 16 / 13  →  55% success rate
+  Held all day       : 1 / 29
+  Avg mins held (W)  : 162 min
+  Avg max move (W)   : $10.30 from midpoint
+  Win P&L            : +$81.73
+  Loss P&L           : -$15.07
+  Net P&L            : +$66.66
+  Bullish success    : 8/14 = 57%
+  Bearish success    : 8/15 = 53%
+
+================================================================================================
+  EXPE  |  Successful signal days  |  Last 90 calendar days
+================================================================================================
+  Date         Signal        Mid   Entry    Exit      P&L  MinsHeld   MaxMove  Exit Reason
+  ----------------------------------------------------------------------------------------------
+  2025-12-26   BULLISH    287.88  288.23  288.42   +$0.19         0 $    0.00  fallback_20pct
+  2026-01-05   BULLISH    281.23  284.57  287.56   +$2.99       295 $    8.00  trailing_stop_ma50
+  2026-01-06   BULLISH    289.41  290.76  291.14   +$0.38         5 $    2.18  hard_stop
+  2026-02-02   BULLISH    272.47  272.53  275.19   +$2.66         0 $    0.00  fallback_20pct
+  2026-02-03   BEARISH    277.65  275.16  234.46  +$40.70       380 $   46.12  end_of_day
+  2026-02-06   BULLISH    235.71  237.29  237.91   +$0.62         0 $    0.00  fallback_20pct
+  2026-02-10   BULLISH    237.44  239.30  239.45   +$0.14         0 $    0.00  fallback_20pct
+  2026-02-11   BULLISH    243.32  243.72  244.83   +$1.11         0 $    0.00  fallback_20pct
+  2026-02-23   BEARISH    195.18  190.74  187.71   +$3.03       240 $    9.71  trailing_stop_ma50
+  2026-02-26   BULLISH    207.43  209.46  217.93   +$8.47       380 $   10.82  end_of_day
+  2026-03-04   BULLISH    218.64  219.19  222.79   +$3.60       250 $    5.78  trailing_stop_ma50
+  2026-03-05   BULLISH    241.96  245.82  246.14   +$0.32         0 $    0.00  fallback_20pct
+  2026-03-17   BULLISH    241.76  244.91  246.03   +$1.12        10 $    4.87  hard_stop
+
+  EXPE — Stats
+  ────────────────────────────────────────────────────
+  Signals fired      : 29  (bull=19, bear=10)
+  Success / Fail     : 13 / 16  →  45% success rate
+  Held all day       : 2 / 29
+  Avg mins held (W)  : 120 min
+  Avg max move (W)   : $6.73 from midpoint
+  Win P&L            : +$65.33
+  Loss P&L           : -$8.51
+  Net P&L            : +$56.82
+  Bullish success    : 11/19 = 58%
+  Bearish success    : 2/10 = 20%
+
+================================================================================================
+  FANG  |  Successful signal days  |  Last 90 calendar days
+================================================================================================
+  Date         Signal        Mid   Entry    Exit      P&L  MinsHeld   MaxMove  Exit Reason
+  ----------------------------------------------------------------------------------------------
+  2025-12-22   BULLISH    151.14  151.76  152.37   +$0.61         0 $    0.00  fallback_20pct
+  2025-12-23   BEARISH    149.19  148.80  147.96   +$0.84       205 $    1.98  trailing_stop_ma50
+  2026-01-02   BEARISH    149.94  149.17  149.13   +$0.04         5 $    0.93  hard_stop
+  2026-01-05   BEARISH    151.64  148.71  146.49   +$2.22       215 $    8.04  trailing_stop_ma50
+  2026-01-07   BEARISH    143.77  142.99  141.07   +$1.92       285 $    4.35  trailing_stop_ma50
+  2026-01-21   BULLISH    153.71  154.27  155.29   +$1.02         0 $    0.00  fallback_20pct
+  2026-01-23   BULLISH    154.73  155.04  155.64   +$0.60         0 $    0.00  fallback_20pct
+  2026-02-04   BULLISH    164.81  165.44  165.95   +$0.51         0 $    0.00  fallback_20pct
+  2026-02-06   BULLISH    165.29  165.63  165.76   +$0.13         0 $    0.00  fallback_20pct
+  2026-02-09   BEARISH    166.21  165.36  165.33   +$0.03         5 $    1.15  hard_stop
+  2026-02-18   BULLISH    170.80  170.99  171.59   +$0.60         0 $    0.00  fallback_20pct
+  2026-02-23   BULLISH    176.21  176.64  176.83   +$0.20         0 $    0.00  fallback_20pct
+  2026-02-25   BEARISH    172.49  170.75  166.93   +$3.82       345 $    6.75  trailing_stop_ma50
+  2026-02-27   BULLISH    169.46  169.85  169.94   +$0.09         5 $    0.86  hard_stop
+  2026-03-09   BULLISH    182.38  183.26  183.52   +$0.26        10 $    1.95  hard_stop
+  2026-03-17   BULLISH    183.53  184.22  187.21   +$2.99       275 $    4.53  trailing_stop_ma50
+  2026-03-20   BULLISH    191.64  192.19  192.62   +$0.43         0 $    0.00  fallback_20pct
+
+  FANG — Stats
+  ────────────────────────────────────────────────────
+  Signals fired      : 27  (bull=16, bear=11)
+  Success / Fail     : 17 / 10  →  63% success rate
+  Held all day       : 0 / 27
+  Avg mins held (W)  : 79 min
+  Avg max move (W)   : $1.80 from midpoint
+  Win P&L            : +$16.31
+  Loss P&L           : -$4.50
+  Net P&L            : +$11.81
+  Bullish success    : 11/16 = 69%
+  Bearish success    : 6/11 = 55%
+
+==================================================================================
+  DAILY P&L REPORT  |  Last 90 calendar days  |  1 share per signal
+==================================================================================
+
+  2025-12-22  |  signals=3  wins=2  losses=1  day P&L: +$3.62
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  APP     BULLISH     730.53   734.81    +$4.28  WIN 
+  META    BULLISH     672.27   671.00    -$1.27  LOSS
+  FANG    BULLISH     151.76   152.37    +$0.61  WIN 
+
+  2025-12-23  |  signals=4  wins=2  losses=2  day P&L: +$1.03
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  APP     BEARISH     725.00   723.09    +$1.91  WIN 
+  CVNA    BEARISH     425.92   427.27    -$1.35  LOSS
+  EXPE    BULLISH     291.08   290.71    -$0.37  LOSS
+  FANG    BEARISH     148.80   147.96    +$0.84  WIN 
+
+  2025-12-24  |  signals=2  wins=1  losses=1  day P&L: +$0.03
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  SNDK    BULLISH     257.00   254.52    -$2.48  LOSS
+  APP     BULLISH     730.31   732.82    +$2.51  WIN 
+
+  2025-12-26  |  signals=4  wins=3  losses=1  day P&L: +$0.24
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  APP     BEARISH     722.17   722.80    -$0.63  LOSS
+  CVNA    BEARISH     441.08   440.78    +$0.31  WIN 
+  META    BULLISH     667.94   668.31    +$0.37  WIN 
+  EXPE    BULLISH     288.23   288.42    +$0.19  WIN 
+
+  2025-12-29  |  signals=1  wins=0  losses=1  day P&L: -$0.94
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  AMD     BULLISH     215.18   214.23    -$0.94  LOSS
+
+  2025-12-30  |  signals=5  wins=1  losses=4  day P&L: -$0.91
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  APP     BEARISH     685.23   687.58    -$2.35  LOSS
+  CVNA    BEARISH     431.69   431.69   +$-0.00  LOSS
+  AMD     BEARISH     214.90   215.06    -$0.16  LOSS
+  META    BULLISH     664.86   666.85    +$1.99  WIN 
+  EXPE    BEARISH     285.56   285.95    -$0.39  LOSS
+
+  2025-12-31  |  signals=3  wins=1  losses=2  day P&L: -$0.50
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  APP     BEARISH     687.91   687.64    +$0.27  WIN 
+  CVNA    BEARISH     423.48   423.76    -$0.28  LOSS
+  EXPE    BEARISH     284.00   284.49    -$0.49  LOSS
+
+  2026-01-02  |  signals=5  wins=3  losses=2  day P&L: +$43.46
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  SNDK    BULLISH     258.14   275.94   +$17.80  WIN 
+  APP     BEARISH     649.97   622.54   +$27.43  WIN 
+  AMD     BULLISH     224.98   224.48    -$0.50  LOSS
+  META    BEARISH     656.13   657.44    -$1.31  LOSS
+  FANG    BEARISH     149.17   149.13    +$0.04  WIN 
+
+  2026-01-05  |  signals=4  wins=3  losses=1  day P&L: +$4.56
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  SNDK    BEARISH     270.29   270.17    +$0.12  WIN 
+  SHOP    BULLISH     164.09   163.32    -$0.77  LOSS
+  EXPE    BULLISH     284.57   287.56    +$2.99  WIN 
+  FANG    BEARISH     148.71   146.49    +$2.22  WIN 
+
+  2026-01-06  |  signals=6  wins=3  losses=3  day P&L: +$36.60
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  SNDK    BULLISH     318.83   351.61   +$32.78  WIN 
+  APP     BEARISH     611.01   605.97    +$5.04  WIN 
+  CVNA    BULLISH     438.42   438.14    -$0.29  LOSS
+  AMD     BEARISH     216.85   217.44    -$0.59  LOSS
+  META    BEARISH     654.17   654.89    -$0.72  LOSS
+  EXPE    BULLISH     290.76   291.14    +$0.38  WIN 
+
+  2026-01-07  |  signals=5  wins=3  losses=2  day P&L: -$0.23
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  SNDK    BEARISH     337.83   339.56    -$1.73  LOSS
+  APP     BEARISH     611.33   612.96    -$1.64  LOSS
+  CVNA    BULLISH     444.86   445.58    +$0.72  WIN 
+  META    BEARISH     654.79   654.29    +$0.50  WIN 
+  FANG    BEARISH     142.99   141.07    +$1.92  WIN 
+
+  2026-01-08  |  signals=6  wins=1  losses=5  day P&L: +$12.43
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  SNDK    BEARISH     342.76   326.90   +$15.86  WIN 
+  APP     BEARISH     615.89   616.13    -$0.24  LOSS
+  SHOP    BEARISH     164.86   165.28    -$0.41  LOSS
+  CVNA    BEARISH     442.32   443.27    -$0.95  LOSS
+  AMD     BEARISH     206.87   207.46    -$0.59  LOSS
+  META    BEARISH     636.72   637.96    -$1.24  LOSS
+
+  2026-01-09  |  signals=6  wins=1  losses=5  day P&L: +$10.90
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  SNDK    BULLISH     361.83   377.89   +$16.06  WIN 
+  APP     BULLISH     624.99   624.06    -$0.93  LOSS
+  SHOP    BULLISH     168.54   168.35    -$0.20  LOSS
+  CVNA    BULLISH     463.85   461.24    -$2.61  LOSS
+  EXPE    BEARISH     296.46   297.56    -$1.10  LOSS
+  FANG    BEARISH     146.52   146.84    -$0.32  LOSS
+
+  2026-01-12  |  signals=1  wins=1  losses=0  day P&L: +$0.85
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  SNDK    BULLISH     390.07   390.92    +$0.85  WIN 
+
+  2026-01-13  |  signals=7  wins=3  losses=4  day P&L: +$6.96
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  SNDK    BEARISH     382.87   382.20    +$0.67  WIN 
+  SHOP    BULLISH     169.56   170.22    +$0.66  WIN 
+  CVNA    BEARISH     466.53   466.90    -$0.37  LOSS
+  AMD     BULLISH     221.34   220.90    -$0.44  LOSS
+  META    BEARISH     636.49   629.38    +$7.11  WIN 
+  EXPE    BULLISH     296.38   296.07    -$0.31  LOSS
+  FANG    BULLISH     151.10   150.74    -$0.36  LOSS
+
+  2026-01-14  |  signals=6  wins=2  losses=4  day P&L: +$35.87
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  APP     BEARISH     639.71   607.29   +$32.42  WIN 
+  SHOP    BEARISH     162.13   156.42    +$5.72  WIN 
+  AMD     BEARISH     215.46   215.85    -$0.39  LOSS
+  META    BEARISH     621.96   623.20    -$1.24  LOSS
+  EXPE    BEARISH     292.02   292.20    -$0.18  LOSS
+  FANG    BULLISH     155.00   154.54    -$0.46  LOSS
+
+  2026-01-15  |  signals=5  wins=2  losses=3  day P&L: -$0.26
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  SNDK    BULLISH     418.80   416.79    -$2.01  LOSS
+  CVNA    BULLISH     470.34   470.57    +$0.23  WIN 
+  AMD     BULLISH     234.20   236.26    +$2.06  WIN 
+  EXPE    BULLISH     294.91   294.60    -$0.31  LOSS
+  FANG    BEARISH     150.00   150.23    -$0.23  LOSS
+
+  2026-01-16  |  signals=4  wins=1  losses=3  day P&L: +$29.00
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  APP     BEARISH     597.70   567.50   +$30.20  WIN 
+  SHOP    BEARISH     156.82   157.28    -$0.46  LOSS
+  AMD     BEARISH     229.87   229.98    -$0.11  LOSS
+  META    BULLISH     626.73   626.10    -$0.63  LOSS
+
+  2026-01-20  |  signals=1  wins=0  losses=1  day P&L: -$3.29
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  SNDK    BULLISH     440.19   436.90    -$3.29  LOSS
+
+  2026-01-21  |  signals=4  wins=4  losses=0  day P&L: +$9.64
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  SNDK    BULLISH     464.28   466.78    +$2.50  WIN 
+  APP     BEARISH     543.08   542.15    +$0.93  WIN 
+  AMD     BULLISH     239.70   244.90    +$5.19  WIN 
+  FANG    BULLISH     154.27   155.29    +$1.02  WIN 
+
+  2026-01-22  |  signals=5  wins=2  losses=3  day P&L: +$1.69
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  SNDK    BEARISH     474.35   475.97    -$1.62  LOSS
+  APP     BEARISH     528.95   525.23    +$3.72  WIN 
+  CVNA    BULLISH     466.45   467.83    +$1.38  WIN 
+  META    BULLISH     636.00   634.33    -$1.67  LOSS
+  EXPE    BULLISH     276.98   276.86    -$0.12  LOSS
+
+  2026-01-23  |  signals=4  wins=4  losses=0  day P&L: +$16.98
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  CVNA    BULLISH     478.70   479.78    +$1.08  WIN 
+  AMD     BULLISH     262.83   265.18    +$2.35  WIN 
+  META    BULLISH     649.35   662.30   +$12.95  WIN 
+  FANG    BULLISH     155.04   155.64    +$0.60  WIN 
+
+  2026-01-26  |  signals=3  wins=1  losses=2  day P&L: -$1.15
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  APP     BULLISH     552.87   551.89    -$0.98  LOSS
+  CVNA    BULLISH     481.86   479.94    -$1.92  LOSS
+  META    BULLISH     666.38   668.13    +$1.75  WIN 
+
+  2026-01-27  |  signals=5  wins=1  losses=4  day P&L: -$1.94
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  SHOP    BEARISH     135.71   135.74    -$0.03  LOSS
+  CVNA    BEARISH     464.80   466.79    -$1.98  LOSS
+  META    BEARISH     669.06   668.74    +$0.32  WIN 
+  EXPE    BEARISH     268.03   268.26    -$0.23  LOSS
+  FANG    BULLISH     156.49   156.47    -$0.02  LOSS
+
+  2026-01-28  |  signals=4  wins=1  losses=3  day P&L: -$5.57
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  SNDK    BULLISH     528.00   523.81    -$4.19  LOSS
+  APP     BULLISH     547.00   548.97    +$1.97  WIN 
+  CVNA    BEARISH     452.48   455.42    -$2.94  LOSS
+  AMD     BULLISH     256.94   256.53    -$0.41  LOSS
+
+  2026-01-29  |  signals=1  wins=0  losses=1  day P&L: -$1.48
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  SNDK    BULLISH     539.50   538.02    -$1.48  LOSS
+
+  2026-01-30  |  signals=2  wins=0  losses=2  day P&L: -$0.50
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  SHOP    BEARISH     138.59   138.95    -$0.36  LOSS
+  META    BEARISH     722.69   722.83    -$0.14  LOSS
+
+  2026-02-02  |  signals=2  wins=2  losses=0  day P&L: +$9.04
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  SNDK    BULLISH     622.12   628.50    +$6.38  WIN 
+  EXPE    BULLISH     272.53   275.19    +$2.66  WIN 
+
+  2026-02-03  |  signals=5  wins=3  losses=2  day P&L: +$63.70
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  APP     BEARISH     463.50   463.67    -$0.17  LOSS
+  SHOP    BEARISH     127.14   119.06    +$8.08  WIN 
+  AMD     BEARISH     246.08   246.93    -$0.86  LOSS
+  META    BEARISH     707.70   691.75   +$15.95  WIN 
+  EXPE    BEARISH     275.16   234.46   +$40.70  WIN 
+
+  2026-02-04  |  signals=5  wins=4  losses=1  day P&L: +$27.69
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  APP     BEARISH     394.74   394.88    -$0.14  LOSS
+  SHOP    BEARISH     112.70   112.53    +$0.17  WIN 
+  CVNA    BEARISH     396.34   378.14   +$18.19  WIN 
+  AMD     BEARISH     211.50   202.54    +$8.96  WIN 
+  FANG    BULLISH     165.44   165.95    +$0.51  WIN 
+
+  2026-02-06  |  signals=5  wins=4  losses=1  day P&L: +$1.25
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  SHOP    BULLISH     114.14   114.33    +$0.19  WIN 
+  CVNA    BULLISH     396.75   397.26    +$0.51  WIN 
+  META    BEARISH     660.61   660.81    -$0.20  LOSS
+  EXPE    BULLISH     237.29   237.91    +$0.62  WIN 
+  FANG    BULLISH     165.63   165.76    +$0.13  WIN 
+
+  2026-02-09  |  signals=5  wins=3  losses=2  day P&L: +$29.08
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  APP     BULLISH     440.48   464.42   +$23.94  WIN 
+  SHOP    BULLISH     114.96   114.55    -$0.41  LOSS
+  AMD     BULLISH     210.20   215.96    +$5.76  WIN 
+  EXPE    BULLISH     240.68   240.44    -$0.24  LOSS
+  FANG    BEARISH     165.36   165.33    +$0.03  WIN 
+
+  2026-02-10  |  signals=4  wins=2  losses=2  day P&L: -$1.65
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  SNDK    BEARISH     551.67   553.79    -$2.12  LOSS
+  SHOP    BULLISH     124.43   125.34    +$0.91  WIN 
+  EXPE    BULLISH     239.30   239.45    +$0.14  WIN 
+  FANG    BEARISH     162.83   163.41    -$0.58  LOSS
+
+  2026-02-11  |  signals=7  wins=6  losses=1  day P&L: +$49.76
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  SNDK    BULLISH     597.67   600.74    +$3.07  WIN 
+  APP     BEARISH     459.48   448.88   +$10.60  WIN 
+  SHOP    BEARISH     123.55   114.24    +$9.31  WIN 
+  CVNA    BEARISH     386.75   359.16   +$27.60  WIN 
+  AMD     BULLISH     217.62   217.72    +$0.10  WIN 
+  META    BEARISH     668.23   670.26    -$2.03  LOSS
+  EXPE    BULLISH     243.72   244.83    +$1.11  WIN 
+
+  2026-02-12  |  signals=4  wins=3  losses=1  day P&L: +$17.24
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  SNDK    BULLISH     661.92   661.54    -$0.38  LOSS
+  SHOP    BEARISH     113.85   108.94    +$4.92  WIN 
+  CVNA    BEARISH     362.45   360.96    +$1.49  WIN 
+  META    BEARISH     665.45   654.24   +$11.21  WIN 
+
+  2026-02-13  |  signals=1  wins=0  losses=1  day P&L: -$0.08
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  SNDK    BEARISH     593.26   593.34    -$0.08  LOSS
+
+  2026-02-17  |  signals=3  wins=1  losses=2  day P&L: -$0.39
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  APP     BEARISH     377.08   377.82    -$0.74  LOSS
+  SHOP    BULLISH     114.84   115.68    +$0.84  WIN 
+  FANG    BEARISH     167.23   167.72    -$0.49  LOSS
+
+  2026-02-18  |  signals=4  wins=4  losses=0  day P&L: +$31.60
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  APP     BULLISH     383.73   402.90   +$19.17  WIN 
+  SHOP    BULLISH     115.89   123.08    +$7.19  WIN 
+  CVNA    BULLISH     356.21   360.84    +$4.64  WIN 
+  FANG    BULLISH     170.99   171.59    +$0.60  WIN 
+
+  2026-02-19  |  signals=3  wins=0  losses=3  day P&L: -$2.62
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  APP     BULLISH     410.64   409.18    -$1.47  LOSS
+  META    BULLISH     643.23   642.27    -$0.96  LOSS
+  FANG    BULLISH     176.86   176.67    -$0.19  LOSS
+
+  2026-02-20  |  signals=6  wins=3  losses=3  day P&L: +$8.33
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  SNDK    BULLISH     640.50   639.64    -$0.86  LOSS
+  APP     BULLISH     426.42   425.72    -$0.70  LOSS
+  SHOP    BULLISH     124.17   127.53    +$3.36  WIN 
+  AMD     BULLISH     202.64   202.80    +$0.16  WIN 
+  META    BULLISH     648.48   655.26    +$6.78  WIN 
+  FANG    BULLISH     174.46   174.06    -$0.41  LOSS
+
+  2026-02-23  |  signals=6  wins=5  losses=1  day P&L: +$18.89
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  SNDK    BULLISH     675.98   682.84    +$6.86  WIN 
+  APP     BEARISH     379.96   384.18    -$4.22  LOSS
+  SHOP    BEARISH     119.38   117.08    +$2.30  WIN 
+  META    BEARISH     648.46   637.75   +$10.72  WIN 
+  EXPE    BEARISH     190.74   187.71    +$3.03  WIN 
+  FANG    BULLISH     176.64   176.83    +$0.20  WIN 
+
+  2026-02-24  |  signals=2  wins=1  losses=1  day P&L: +$0.44
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  CVNA    BULLISH     333.74   335.63    +$1.88  WIN 
+  FANG    BEARISH     168.82   170.26    -$1.44  LOSS
+
+  2026-02-25  |  signals=4  wins=4  losses=0  day P&L: +$28.25
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  APP     BULLISH     403.31   423.31   +$20.00  WIN 
+  SHOP    BULLISH     120.77   121.19    +$0.42  WIN 
+  META    BULLISH     645.53   649.54    +$4.01  WIN 
+  FANG    BEARISH     170.75   166.93    +$3.82  WIN 
+
+  2026-02-26  |  signals=5  wins=3  losses=2  day P&L: +$10.19
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  APP     BULLISH     428.07   431.06    +$2.99  WIN 
+  SHOP    BULLISH     124.60   124.19    -$0.41  LOSS
+  CVNA    BULLISH     340.09   341.20    +$1.11  WIN 
+  META    BULLISH     660.83   658.85    -$1.97  LOSS
+  EXPE    BULLISH     209.46   217.93    +$8.47  WIN 
+
+  2026-02-27  |  signals=2  wins=1  losses=1  day P&L: -$0.35
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  SHOP    BEARISH     120.74   121.18    -$0.44  LOSS
+  FANG    BULLISH     169.85   169.94    +$0.09  WIN 
+
+  2026-03-02  |  signals=2  wins=0  losses=2  day P&L: -$2.26
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  SNDK    BEARISH     618.86   619.42    -$0.57  LOSS
+  META    BULLISH     649.72   648.03    -$1.69  LOSS
+
+  2026-03-03  |  signals=1  wins=0  losses=1  day P&L: -$0.01
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  AMD     BEARISH     190.65   190.66    -$0.01  LOSS
+
+  2026-03-04  |  signals=3  wins=3  losses=0  day P&L: +$10.15
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  APP     BULLISH     455.63   457.95    +$2.32  WIN 
+  SHOP    BULLISH     124.76   128.99    +$4.23  WIN 
+  EXPE    BULLISH     219.19   222.79    +$3.60  WIN 
+
+  2026-03-05  |  signals=5  wins=3  losses=2  day P&L: +$1.54
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  SNDK    BEARISH     589.65   591.91    -$2.26  LOSS
+  APP     BULLISH     499.90   501.95    +$2.05  WIN 
+  SHOP    BULLISH     133.02   132.84    -$0.18  LOSS
+  CVNA    BULLISH     322.70   324.32    +$1.61  WIN 
+  EXPE    BULLISH     245.82   246.14    +$0.32  WIN 
+
+  2026-03-06  |  signals=4  wins=0  losses=4  day P&L: -$2.39
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  APP     BEARISH     495.04   496.24    -$1.20  LOSS
+  SHOP    BEARISH     129.72   130.04    -$0.32  LOSS
+  CVNA    BEARISH     317.73   318.33    -$0.61  LOSS
+  EXPE    BEARISH     240.50   240.75    -$0.26  LOSS
+
+  2026-03-09  |  signals=5  wins=3  losses=2  day P&L: +$0.35
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  APP     BULLISH     509.71   510.44    +$0.73  WIN 
+  CVNA    BEARISH     312.40   312.41    -$0.01  LOSS
+  META    BEARISH     629.95   629.67    +$0.28  WIN 
+  EXPE    BEARISH     236.44   237.35    -$0.91  LOSS
+  FANG    BULLISH     183.26   183.52    +$0.26  WIN 
+
+  2026-03-10  |  signals=4  wins=0  losses=4  day P&L: -$4.46
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  SNDK    BULLISH     608.56   606.77    -$1.79  LOSS
+  SHOP    BEARISH     130.25   130.95    -$0.70  LOSS
+  AMD     BULLISH     206.43   205.77    -$0.66  LOSS
+  EXPE    BEARISH     232.25   233.56    -$1.31  LOSS
+
+  2026-03-11  |  signals=3  wins=3  losses=0  day P&L: +$1.35
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  CVNA    BULLISH     325.46   325.89    +$0.43  WIN 
+  AMD     BULLISH     207.84   208.31    +$0.48  WIN 
+  META    BULLISH     657.20   657.63    +$0.44  WIN 
+
+  2026-03-12  |  signals=2  wins=2  losses=0  day P&L: +$3.25
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  SHOP    BULLISH     130.15   130.86    +$0.71  WIN 
+  AMD     BEARISH     201.12   198.58    +$2.54  WIN 
+
+  2026-03-13  |  signals=3  wins=0  losses=3  day P&L: -$1.16
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  SNDK    BULLISH     640.94   640.42    -$0.52  LOSS
+  SHOP    BULLISH     128.54   128.18    -$0.36  LOSS
+  EXPE    BULLISH     232.10   231.82    -$0.28  LOSS
+
+  2026-03-16  |  signals=2  wins=1  losses=1  day P&L: +$5.67
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  SNDK    BULLISH     706.18   712.68    +$6.50  WIN 
+  CVNA    BULLISH     310.98   310.16    -$0.83  LOSS
+
+  2026-03-17  |  signals=7  wins=7  losses=0  day P&L: +$10.53
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  APP     BULLISH     460.70   463.64    +$2.94  WIN 
+  SHOP    BULLISH     131.02   131.16    +$0.14  WIN 
+  CVNA    BULLISH     313.70   314.70    +$1.00  WIN 
+  AMD     BULLISH     197.34   197.99    +$0.65  WIN 
+  META    BULLISH     633.14   634.84    +$1.69  WIN 
+  EXPE    BULLISH     244.91   246.03    +$1.12  WIN 
+  FANG    BULLISH     184.22   187.21    +$2.99  WIN 
+
+  2026-03-18  |  signals=3  wins=2  losses=1  day P&L: +$3.20
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  APP     BULLISH     466.09   467.10    +$1.01  WIN 
+  AMD     BULLISH     197.15   199.94    +$2.79  WIN 
+  EXPE    BULLISH     241.10   240.50    -$0.60  LOSS
+
+  2026-03-19  |  signals=1  wins=0  losses=1  day P&L: -$1.41
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  EXPE    BULLISH     243.59   242.18    -$1.41  LOSS
+
+  2026-03-20  |  signals=4  wins=4  losses=0  day P&L: +$11.37
+  ──────────────────────────────────────────────────────────────────────────────
+  Ticker  Signal       Entry     Exit       P&L  Result
+  ──────────────────────────────────────────────────────────────────────────────
+  SNDK    BULLISH     768.75   773.50    +$4.75  WIN 
+  AMD     BULLISH     205.06   205.59    +$0.53  WIN 
+  META    BEARISH     599.38   593.72    +$5.66  WIN 
+  FANG    BULLISH     192.19   192.62    +$0.43  WIN 
+
+==================================================================================
+  TOTAL P&L (90-day window, 1 share per signal): +$523.18
+==================================================================================
+
+==============================================================================================================================================================================
+  P&L DISTRIBUTION — Last 90 calendar days  |  MA50 trailing stop
+==============================================================================================================================================================================
+  Date                    SNDK             APP            SHOP            CVNA             AMD            META            EXPE            FANG        DayTotal  Tickers W/L
+  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  2025-12-22                 —        W +$4.28               —               —               —        L -$1.27               —        W +$0.61          +$3.62  2W / 1L
+  2025-12-23                 —        W +$1.91               —        L -$1.35               —               —        L -$0.37        W +$0.84          +$1.03  2W / 2L
+  2025-12-24          L -$2.48        W +$2.51               —               —               —               —               —               —          +$0.03  1W / 1L
+  2025-12-26                 —        L -$0.63               —        W +$0.31               —        W +$0.37        W +$0.19               —          +$0.24  3W / 1L
+  2025-12-29                 —               —               —               —        L -$0.94               —               —               —          -$0.94  0W / 1L
+  2025-12-30                 —        L -$2.35               —       L +$-0.00        L -$0.16        W +$1.99        L -$0.39               —          -$0.91  1W / 4L
+  2025-12-31                 —        W +$0.27               —        L -$0.28               —               —        L -$0.49               —          -$0.50  1W / 2L
+  2026-01-02         W +$17.80       W +$27.43               —               —        L -$0.50        L -$1.31               —        W +$0.04         +$43.46  3W / 2L
+  2026-01-05          W +$0.12               —        L -$0.77               —               —               —        W +$2.99        W +$2.22          +$4.56  3W / 1L
+  2026-01-06         W +$32.78        W +$5.04               —        L -$0.29        L -$0.59        L -$0.72        W +$0.38               —         +$36.60  3W / 3L
+  2026-01-07          L -$1.73        L -$1.64               —        W +$0.72               —        W +$0.50               —        W +$1.92          -$0.23  3W / 2L
+  2026-01-08         W +$15.86        L -$0.24        L -$0.41        L -$0.95        L -$0.59        L -$1.24               —               —         +$12.43  1W / 5L
+  2026-01-09         W +$16.06        L -$0.93        L -$0.20        L -$2.61               —               —        L -$1.10        L -$0.32         +$10.90  1W / 5L
+  2026-01-12          W +$0.85               —               —               —               —               —               —               —          +$0.85  1W / 0L
+  2026-01-13          W +$0.67               —        W +$0.66        L -$0.37        L -$0.44        W +$7.11        L -$0.31        L -$0.36          +$6.96  3W / 4L
+  2026-01-14                 —       W +$32.42        W +$5.72               —        L -$0.39        L -$1.24        L -$0.18        L -$0.46         +$35.87  2W / 4L
+  2026-01-15          L -$2.01               —               —        W +$0.23        W +$2.06               —        L -$0.31        L -$0.23          -$0.26  2W / 3L
+  2026-01-16                 —       W +$30.20        L -$0.46               —        L -$0.11        L -$0.63               —               —         +$29.00  1W / 3L
+  2026-01-20          L -$3.29               —               —               —               —               —               —               —          -$3.29  0W / 1L
+  2026-01-21          W +$2.50        W +$0.93               —               —        W +$5.19               —               —        W +$1.02          +$9.64  4W / 0L
+  2026-01-22          L -$1.62        W +$3.72               —        W +$1.38               —        L -$1.67        L -$0.12               —          +$1.69  2W / 3L
+  2026-01-23                 —               —               —        W +$1.08        W +$2.35       W +$12.95               —        W +$0.60         +$16.98  4W / 0L
+  2026-01-26                 —        L -$0.98               —        L -$1.92               —        W +$1.75               —               —          -$1.15  1W / 2L
+  2026-01-27                 —               —        L -$0.03        L -$1.98               —        W +$0.32        L -$0.23        L -$0.02          -$1.94  1W / 4L
+  2026-01-28          L -$4.19        W +$1.97               —        L -$2.94        L -$0.41               —               —               —          -$5.57  1W / 3L
+  2026-01-29          L -$1.48               —               —               —               —               —               —               —          -$1.48  0W / 1L
+  2026-01-30                 —               —        L -$0.36               —               —        L -$0.14               —               —          -$0.50  0W / 2L
+  2026-02-02          W +$6.38               —               —               —               —               —        W +$2.66               —          +$9.04  2W / 0L
+  2026-02-03                 —        L -$0.17        W +$8.08               —        L -$0.86       W +$15.95       W +$40.70               —         +$63.70  3W / 2L
+  2026-02-04                 —        L -$0.14        W +$0.17       W +$18.19        W +$8.96               —               —        W +$0.51         +$27.69  4W / 1L
+  2026-02-05                 —               —               —               —               —               —               —               —       no signal  —
+  2026-02-06                 —               —        W +$0.19        W +$0.51               —        L -$0.20        W +$0.62        W +$0.13          +$1.25  4W / 1L
+  2026-02-09                 —       W +$23.94        L -$0.41               —        W +$5.76               —        L -$0.24        W +$0.03         +$29.08  3W / 2L
+  2026-02-10          L -$2.12               —        W +$0.91               —               —               —        W +$0.14        L -$0.58          -$1.65  2W / 2L
+  2026-02-11          W +$3.07       W +$10.60        W +$9.31       W +$27.60        W +$0.10        L -$2.03        W +$1.11               —         +$49.76  6W / 1L
+  2026-02-12          L -$0.38               —        W +$4.92        W +$1.49               —       W +$11.21               —               —         +$17.24  3W / 1L
+  2026-02-13          L -$0.08               —               —               —               —               —               —               —          -$0.08  0W / 1L
+  2026-02-17                 —        L -$0.74        W +$0.84               —               —               —               —        L -$0.49          -$0.39  1W / 2L
+  2026-02-18                 —       W +$19.17        W +$7.19        W +$4.64               —               —               —        W +$0.60         +$31.60  4W / 0L
+  2026-02-19                 —        L -$1.47               —               —               —        L -$0.96               —        L -$0.19          -$2.62  0W / 3L
+  2026-02-20          L -$0.86        L -$0.70        W +$3.36               —        W +$0.16        W +$6.78               —        L -$0.41          +$8.33  3W / 3L
+  2026-02-23          W +$6.86        L -$4.22        W +$2.30               —               —       W +$10.72        W +$3.03        W +$0.20         +$18.89  5W / 1L
+  2026-02-24                 —               —               —        W +$1.88               —               —               —        L -$1.44          +$0.44  1W / 1L
+  2026-02-25                 —       W +$20.00        W +$0.42               —               —        W +$4.01               —        W +$3.82         +$28.25  4W / 0L
+  2026-02-26                 —        W +$2.99        L -$0.41        W +$1.11               —        L -$1.97        W +$8.47               —         +$10.19  3W / 2L
+  2026-02-27                 —               —        L -$0.44               —               —               —               —        W +$0.09          -$0.35  1W / 1L
+  2026-03-02          L -$0.57               —               —               —               —        L -$1.69               —               —          -$2.26  0W / 2L
+  2026-03-03                 —               —               —               —        L -$0.01               —               —               —          -$0.01  0W / 1L
+  2026-03-04                 —        W +$2.32        W +$4.23               —               —               —        W +$3.60               —         +$10.15  3W / 0L
+  2026-03-05          L -$2.26        W +$2.05        L -$0.18        W +$1.61               —               —        W +$0.32               —          +$1.54  3W / 2L
+  2026-03-06                 —        L -$1.20        L -$0.32        L -$0.61               —               —        L -$0.26               —          -$2.39  0W / 4L
+  2026-03-09                 —        W +$0.73               —        L -$0.01               —        W +$0.28        L -$0.91        W +$0.26          +$0.35  3W / 2L
+  2026-03-10          L -$1.79               —        L -$0.70               —        L -$0.66               —        L -$1.31               —          -$4.46  0W / 4L
+  2026-03-11                 —               —               —        W +$0.43        W +$0.48        W +$0.44               —               —          +$1.35  3W / 0L
+  2026-03-12                 —               —        W +$0.71               —        W +$2.54               —               —               —          +$3.25  2W / 0L
+  2026-03-13          L -$0.52               —        L -$0.36               —               —               —        L -$0.28               —          -$1.16  0W / 3L
+  2026-03-16          W +$6.50               —               —        L -$0.83               —               —               —               —          +$5.67  1W / 1L
+  2026-03-17                 —        W +$2.94        W +$0.14        W +$1.00        W +$0.65        W +$1.69        W +$1.12        W +$2.99         +$10.53  7W / 0L
+  2026-03-18                 —        W +$1.01               —               —        W +$2.79               —        L -$0.60               —          +$3.20  2W / 1L
+  2026-03-19                 —               —               —               —               —               —        L -$1.41               —          -$1.41  0W / 1L
+  2026-03-20          W +$4.75               —               —               —        W +$0.53        W +$5.66               —        W +$0.43         +$11.37  4W / 0L
+  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  TOTAL                +$88.82        +$181.02         +$44.10         +$48.04         +$25.91         +$66.66         +$56.82         +$11.81        +$523.18
+  WIN RATE         13/28 = 46%     21/34 = 62%     16/29 = 55%     15/28 = 54%     12/24 = 50%     16/29 = 55%     13/29 = 45%     17/27 = 63%                
+==============================================================================================================================================================================
+
+
+======================================================================
+  MONTHLY BREAKDOWN — op_momentum_guide  |  15-min opening
+======================================================================
+  Month      Ticker    Signals   Wins  Fails    Rate    NetP&L
+  ────────────────────────────────────────────────────────────────────
+  2025-12    SNDK            1      0      1      0%     -$2.48
+             APP             6      4      2     67%     +$5.99
+             CVNA            4      1      3     25%     -$1.32
+             AMD             2      0      2      0%     -$1.10
+             META            3      2      1     67%     +$1.09
+             EXPE            4      1      3     25%     -$1.06
+             FANG            2      2      0    100%     +$1.45
+             ──────────────────────────────────────────────────────────
+             Month total                                    +$2.57
+
+  2026-01    SNDK           14      8      6     57%    +$72.32
+             APP            11      7      4     64%    +$97.92
+             SHOP            8      2      6     25%     +$4.15
+             CVNA           11      4      7     36%     -$7.65
+             AMD            10      3      7     30%     +$6.57
+             META           12      5      7     42%    +$15.68
+             EXPE            8      2      6     25%     +$1.12
+             FANG           10      5      5     50%     +$4.41
+             ──────────────────────────────────────────────────────────
+             Month total                                  +$194.52
+
+  2026-02    SNDK            7      3      4     43%    +$12.87
+             APP            11      5      6     45%    +$69.26
+             SHOP           14     11      3     79%    +$36.43
+             CVNA            7      7      0    100%    +$55.42
+             AMD             5      4      1     80%    +$14.12
+             META            9      5      4     56%    +$43.51
+             EXPE            8      7      1     88%    +$56.49
+             FANG           12      7      5     58%     +$2.27
+             ──────────────────────────────────────────────────────────
+             Month total                                  +$290.37
+
+  2026-03    SNDK            6      2      4     33%     +$6.11
+             APP             6      5      1     83%     +$7.85
+             SHOP            7      3      4     43%     +$3.52
+             CVNA            6      3      3     50%     +$1.59
+             AMD             7      5      2     71%     +$6.32
+             META            5      4      1     80%     +$6.38
+             EXPE            9      3      6     33%     +$0.27
+             FANG            3      3      0    100%     +$3.68
+             ──────────────────────────────────────────────────────────
+             Month total                                   +$35.72
+
+  ────────────────────────────────────────────────────────────────────
+  TOTAL      all           228    123    105     54%   +$523.18
+======================================================================
+
+================================================================================================
+  SUMMARY — op_momentum_guide  |  Last 90 days  |  15-min opening
+================================================================================================
+  Ticker    Signals   Wins  Fails    Rate  AvgMins(W)  AvgWin%  AvgLoss%  EV/Trade    WinP&L   LossP&L    NetP&L
+  ──────────────────────────────────────────────────────────────────────────────────────────────
+  SNDK           28     13     15     46%        143m     2.41%      0.37%    +0.920%   +$114.20    -$25.38    +$88.82
+  APP            34     21     13     62%        139m     1.81%      0.25%    +1.022%   +$196.43    -$15.41   +$181.02
+  SHOP           29     16     13     55%        143m     2.45%      0.28%    +1.223%    +$49.15     -$5.05    +$44.10
+  CVNA           28     15     13     54%         68m     1.08%      0.25%    +0.463%    +$62.18    -$14.14    +$48.04
+  AMD            24     12     12     50%        136m     1.21%      0.21%    +0.499%    +$31.57     -$5.66    +$25.91
+  META           29     16     13     55%        162m     0.78%      0.18%    +0.349%    +$81.73    -$15.07    +$66.66
+  EXPE           29     13     16     45%        120m     1.97%      0.21%    +0.770%    +$65.33     -$8.51    +$56.82
+  FANG           27     17     10     63%         79m     0.59%      0.28%    +0.269%    +$16.31     -$4.50    +$11.81
+  ──────────────────────────────────────────────────────────────────────────────────────────────
+  TOTAL                                                   1.52%      0.25%    +0.705%                        +$523.18
+================================================================================================

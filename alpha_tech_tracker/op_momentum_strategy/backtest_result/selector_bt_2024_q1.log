@@ -1,0 +1,45 @@
+
+Selector Backtest
+  Eval window  : 2024-01-02 → 2024-03-28
+  Top-N        : 3
+  Tickers      : SNDK, APP, SHOP, CVNA, AMD, META, EXPE, FANG
+  Lookback     : 60d rolling
+  Stop pct     : 0.15
+  Source       : alpaca
+Fetching bars for 8 tickers (2024-01-02 → 2024-03-28)...
+Traceback (most recent call last):
+  File "/Users/victorhuang/.pyenv/versions/alpha_tech_tracker/lib/python3.8/site-packages/alpaca/common/rest.py", line 198, in _one_request
+    response.raise_for_status()
+  File "/Users/victorhuang/.pyenv/versions/alpha_tech_tracker/lib/python3.8/site-packages/requests/models.py", line 1021, in raise_for_status
+    raise HTTPError(http_error_msg, response=self)
+requests.exceptions.HTTPError: 401 Client Error: Unauthorized for url: https://data.alpaca.markets/v2/stocks/bars?start=2023-10-29T00%3A00%3A00%2B00%3A00&end=2024-03-28T00%3A00%3A00%2B00%3A00&timeframe=5Min&symbols=SNDK%2CAPP%2CSHOP%2CCVNA%2CAMD%2CMETA%2CEXPE%2CFANG&limit=10000
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "alpha_tech_tracker/op_momentum_strategy/op_momentum_selector_backtest.py", line 496, in <module>
+    trade_rows, full_results, trading_days = run_selector_backtest(
+  File "alpha_tech_tracker/op_momentum_strategy/op_momentum_selector_backtest.py", line 57, in run_selector_backtest
+    all_bars = fetch_bars(tickers, fetch_start, eval_end, source=source)
+  File "/Users/victorhuang/work/alpha_tech_tracker/alpha_tech_tracker/op_momentum_strategy/op_momentum_backtest.py", line 556, in fetch_bars
+    return fetch_alpaca_bars(tickers, start_date, end_date)
+  File "/Users/victorhuang/work/alpha_tech_tracker/alpha_tech_tracker/op_momentum_strategy/op_momentum_backtest.py", line 50, in fetch_alpaca_bars
+    bars = client.get_stock_bars(request)
+  File "/Users/victorhuang/.pyenv/versions/alpha_tech_tracker/lib/python3.8/site-packages/alpaca/data/historical/stock.py", line 87, in get_stock_bars
+    raw_bars = self._get_marketdata(
+  File "/Users/victorhuang/.pyenv/versions/alpha_tech_tracker/lib/python3.8/site-packages/alpaca/common/rest.py", line 393, in _get_marketdata
+    response = self.get(path=path, data=params)
+  File "/Users/victorhuang/.pyenv/versions/alpha_tech_tracker/lib/python3.8/site-packages/alpaca/common/rest.py", line 225, in get
+    return self._request("GET", path, data, **kwargs)
+  File "/Users/victorhuang/.pyenv/versions/alpha_tech_tracker/lib/python3.8/site-packages/alpaca/common/rest.py", line 131, in _request
+    return self._one_request(method, url, opts, retry)
+  File "/Users/victorhuang/.pyenv/versions/alpha_tech_tracker/lib/python3.8/site-packages/alpaca/common/rest.py", line 207, in _one_request
+    raise APIError(error, http_error)
+alpaca.common.exceptions.APIError: <html>
+<head><title>401 Authorization Required</title></head>
+<body>
+<center><h1>401 Authorization Required</h1></center>
+<hr><center>nginx</center>
+</body>
+</html>
+
