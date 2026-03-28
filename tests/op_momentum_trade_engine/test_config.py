@@ -1,0 +1,115 @@
+import json
+import os
+from unittest.mock import MagicMock, patch
+
+import pytest
+
+import alpha_tech_tracker.op_momentum_strategy.config as config_module
+from alpha_tech_tracker.op_momentum_strategy.config import (
+    _notify,
+    _send_telegram,
+    _load_config,
+)
+
+_REQUESTS_POST_PATH = "alpha_tech_tracker.op_momentum_strategy.config.requests"
+
+
+class TestSendTelegram:
+    def setup_method(self):
+        config_module._clicksend_cfg.clear()
+
+    def test_sends_message_with_correct_payload(self):
+        config_module._clicksend_cfg.update(
+            {"telegram_bot_token": "test-token", "telegram_chat_id": "12345"}
+        )
+        mock_requests = MagicMock()
+        with patch(_REQUESTS_POST_PATH, mock_requests):
+            _send_telegram("hello from test")
+
+        mock_requests.post.assert_called_once_with(
+            "https://api.telegram.org/bottest-token/sendMessage",
+            json={"chat_id": "12345", "text": "hello from test"},
+            timeout=10,
+        )
+
+    def test_skips_when_token_missing(self):
+        config_module._clicksend_cfg.update({"telegram_chat_id": "12345"})
+        mock_requests = MagicMock()
+        with patch(_REQUESTS_POST_PATH, mock_requests):
+            _send_telegram("hello")
+
+        mock_requests.post.assert_not_called()
+
+    def test_skips_when_chat_id_missing(self):
+        config_module._clicksend_cfg.update({"telegram_bot_token": "test-token"})
+        mock_requests = MagicMock()
+        with patch(_REQUESTS_POST_PATH, mock_requests):
+            _send_telegram("hello")
+
+        mock_requests.post.assert_not_called()
+
+    def test_skips_when_config_empty(self):
+        mock_requests = MagicMock()
+        with patch(_REQUESTS_POST_PATH, mock_requests):
+            _send_telegram("hello")
+
+        mock_requests.post.assert_not_called()
+
+    def test_swallows_request_exception(self):
+        config_module._clicksend_cfg.update(
+            {"telegram_bot_token": "test-token", "telegram_chat_id": "12345"}
+        )
+        mock_requests = MagicMock()
+        mock_requests.post.side_effect = Exception("network error")
+        with patch(_REQUESTS_POST_PATH, mock_requests):
+            _send_telegram("hello")  # must not raise
+
+
+class TestNotify:
+    def setup_method(self):
+        config_module._clicksend_cfg.clear()
+
+    def test_calls_both_sms_and_telegram(self):
+        with patch(
+            "alpha_tech_tracker.op_momentum_strategy.config._send_sms"
+        ) as mock_sms, patch(
+            "alpha_tech_tracker.op_momentum_strategy.config._send_telegram"
+        ) as mock_telegram:
+            _notify("trade alert")
+
+        mock_sms.assert_called_once_with("trade alert")
+        mock_telegram.assert_called_once_with("trade alert")
+
+
+class TestLoadConfigTelegram:
+    def setup_method(self):
+        config_module._clicksend_cfg.clear()
+
+    def test_loads_telegram_token_and_chat_id(self, tmp_path):
+        cfg = {"telegram": {"bot_token": "tok123", "chat_id": "999"}}
+        config_file = tmp_path / "config.json"
+        config_file.write_text(json.dumps(cfg))
+
+        _load_config(str(config_file))
+
+        assert config_module._clicksend_cfg["telegram_bot_token"] == "tok123"
+        assert config_module._clicksend_cfg["telegram_chat_id"] == "999"
+
+    def test_skips_telegram_when_section_absent(self, tmp_path):
+        cfg = {"alpaca": {"api_key": "k", "secret_key": "s"}}
+        config_file = tmp_path / "config.json"
+        config_file.write_text(json.dumps(cfg))
+
+        _load_config(str(config_file))
+
+        assert "telegram_bot_token" not in config_module._clicksend_cfg
+        assert "telegram_chat_id" not in config_module._clicksend_cfg
+
+    def test_skips_telegram_when_token_empty(self, tmp_path):
+        cfg = {"telegram": {"bot_token": "", "chat_id": "999"}}
+        config_file = tmp_path / "config.json"
+        config_file.write_text(json.dumps(cfg))
+
+        _load_config(str(config_file))
+
+        assert "telegram_bot_token" not in config_module._clicksend_cfg

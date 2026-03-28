@@ -2,6 +2,8 @@ import json
 import logging
 import os
 
+import requests
+
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector import DEFAULT_TICKERS
 
 from .models import _D
@@ -66,6 +68,26 @@ def _load_config(config_file: str = _CONFIG_FILE):
     _clicksend_cfg.clear()
     _clicksend_cfg.update(cfg.get("clicksend", {}))
 
+    telegram = cfg.get("telegram", {})
+    if telegram.get("bot_token"):
+        _clicksend_cfg["telegram_bot_token"] = telegram["bot_token"]
+    if telegram.get("chat_id"):
+        _clicksend_cfg["telegram_chat_id"] = telegram["chat_id"]
+
+
+def _send_telegram(message: str):
+    token = _clicksend_cfg.get("telegram_bot_token")
+    chat_id = _clicksend_cfg.get("telegram_chat_id")
+    if not token or not chat_id:
+        logger.debug("Telegram skipped — bot_token or chat_id missing")
+        return
+    try:
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
+        requests.post(url, json={"chat_id": chat_id, "text": message}, timeout=10)
+        logger.info("Telegram sent: %s", message)
+    except Exception:
+        logger.warning("Telegram failed", exc_info=True)
+
 
 def _send_sms(message: str):
     if not _clicksend_cfg.get("enabled"):
@@ -90,3 +112,8 @@ def _send_sms(message: str):
         logger.info("SMS sent: %s", message)
     except Exception:
         logger.warning("SMS failed", exc_info=True)
+
+
+def _notify(message: str):
+    _send_sms(message)
+    _send_telegram(message)

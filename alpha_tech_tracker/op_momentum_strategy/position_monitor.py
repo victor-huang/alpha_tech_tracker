@@ -15,7 +15,7 @@ from .config import (
     ARMED_MA20_EXIT,
     MAX_LOSS_PCT,
     TRAILING_MA,
-    _send_sms,
+    _notify,
 )
 from .models import ActivePosition, _D
 from .order_executor import _place_with_fill_escalation
@@ -158,7 +158,11 @@ class PositionMonitor:
         pos.exit_time = datetime.now(ET)
         logger.info(
             "EXIT %s %s reason=%s opt=%s contracts=%d",
-            pos.ticker, pos.signal, reason, pos.option_symbol, pos.contracts,
+            pos.ticker,
+            pos.signal,
+            reason,
+            pos.option_symbol,
+            pos.contracts,
         )
         mid = None
         try:
@@ -171,7 +175,9 @@ class PositionMonitor:
             mid = (bid + ask) / _D("2")
             logger.info(
                 "EXIT QUOTE %s: bid=%s ask=%s mid=%s",
-                pos.option_symbol, bid, ask,
+                pos.option_symbol,
+                bid,
+                ask,
                 mid.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
             )
             fallback = (ask * _D("0.98")).quantize(_D("0.01"), rounding=ROUND_HALF_UP)
@@ -189,12 +195,14 @@ class PositionMonitor:
                 else _D("0")
             )
             pos.simulated_exit_mid = sim_mid
-            _send_sms(
+            _notify(
                 f"[SIMULATE] SELL {pos.option_symbol} x{pos.contracts} reason={reason} @ ~{sim_mid}"
             )
             logger.info(
                 "SIMULATE SELL_CLOSE %s contracts=%d simulated_fill=%.2f (no order placed)",
-                pos.option_symbol, pos.contracts, sim_mid,
+                pos.option_symbol,
+                pos.contracts,
+                sim_mid,
             )
             return
 
@@ -202,9 +210,10 @@ class PositionMonitor:
             option_type = "CALL" if pos.signal == "BULLISH" else "PUT"
             logger.info(
                 "Placing SELL_CLOSE with fill escalation: %s %d contracts",
-                pos.option_symbol, pos.contracts,
+                pos.option_symbol,
+                pos.contracts,
             )
-            _send_sms(
+            _notify(
                 f"SELL {pos.option_symbol} x{pos.contracts} reason={reason} closing {pos.ticker}"
             )
             order = _place_with_fill_escalation(
@@ -340,7 +349,8 @@ class PositionMonitor:
                     p.simulated_exit_mid if has_sim else p.exit_fill_price,
                     p.signal,
                     p.contracts,
-                ) is not None
+                )
+                is not None
                 for p in closed_pos
             )
             if any_pnl:

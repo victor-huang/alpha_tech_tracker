@@ -32,7 +32,7 @@ from .config import (
     STOP_PCT,
     TICKERS,
     TRAILING_MA,
-    _send_sms,
+    _notify,
 )
 from .contract_selector import OptionContractSelector
 from .models import ActivePosition, SignalEvent, _D
@@ -332,7 +332,9 @@ class OpMomentumTradeEngine:
                     logger.info("Max positions reached, stopping selection")
                     break
                 self._open_position_count += 1
-            logger.info("Selecting %s from buffer (score=%.3f rank=%d)", ticker, score, rank)
+            logger.info(
+                "Selecting %s from buffer (score=%.3f rank=%d)", ticker, score, rank
+            )
             self._enter_position(event, rank=rank)
 
     def _place_entry(
@@ -371,7 +373,7 @@ class OpMomentumTradeEngine:
 
         if self._simulate:
             sim_mid = entry_mid.quantize(_D("0.01"), rounding=ROUND_HALF_UP)
-            _send_sms(
+            _notify(
                 f"[SIMULATE] BUY {option_type} {option_symbol} x{contracts} @ ~{sim_mid}"
             )
             logger.info(
@@ -393,7 +395,7 @@ class OpMomentumTradeEngine:
             option_type,
             contracts,
         )
-        _send_sms(f"BUY {option_type} {option_symbol} x{contracts} entering {ticker}")
+        _notify(f"BUY {option_type} {option_symbol} x{contracts} entering {ticker}")
         return _place_with_fill_escalation(
             client=self._client,
             ticker=ticker,
