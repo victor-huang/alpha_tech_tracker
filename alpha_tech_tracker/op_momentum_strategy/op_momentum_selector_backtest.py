@@ -18,6 +18,8 @@ from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector import (
     score_ticker,
 )
 
+MIN_WINDOW_CAPITAL = 100.0
+
 
 def _signal_dict_from_row(row) -> dict:
     or_range = row["or_high"] - row["or_low"]
@@ -30,6 +32,139 @@ def _signal_dict_from_row(row) -> dict:
         "entry_vs_mid_pct": entry_vs_mid_pct,
         "or_range_pct": or_range_pct,
     }
+
+
+def _normalize_windows(windows, opening_start_time, opening_bars):
+    """
+    Accept either a list of window dicts or fall back to the legacy single-window params.
+    Each window dict: {"label": str, "opening_start": str, "opening_bars": int}
+    """
+    if windows:
+        return windows
+    return [
+        {
+            "label": "W1",
+            "opening_start": opening_start_time,
+            "opening_bars": opening_bars,
+        }
+    ]
+
+
+def _apply_capital_flow(
+    trade_rows: list,
+    windows: list,
+    initial_capital: float,
+    weights: list,
+    n: int,
+    morning_count: int = 2,
+    morning_pct: float = 0.60,
+    min_capital: float = MIN_WINDOW_CAPITAL,
+) -> tuple:
+    """
+    Apply day-by-day capital flow across windows.
+
+    Capital allocation rules:
+      - Morning windows (first morning_count windows): share morning_pct of portfolio
+      - Afternoon windows (remaining): share (1 - morning_pct) of portfolio PLUS morning P&L
+      - If a window's allocated capital < min_capital, it is skipped for that day
+
+    Mutates each trade row in-place, adding:
+      - 'cap_pnl': actual dollar P&L for this trade given real capital allocation
+      - 'window_capital': capital allocated to this window on this day
+      - 'skipped': True if window was skipped due to insufficient capital
+
+    Returns skip_log: list of dicts describing each skipped or executed window per day.
+    """
+    window_labels = [w["label"] for w in windows]
+    morning_labels = set(window_labels[:morning_count])
+    afternoon_labels = set(window_labels[morning_count:])
+    n_morning = min(morning_count, len(windows))
+    n_afternoon = max(0, len(windows) - morning_count)
+
+    # Index trade_rows by (date, window) for fast lookup
+    by_day_window = {}
+    for row in trade_rows:
+        key = (row["date"], row["window"])
+        by_day_window.setdefault(key, []).append(row)
+
+    trading_days = sorted({row["date"] for row in trade_rows})
+    skip_log = []
+    portfolio = initial_capital
+
+    for d in trading_days:
+        morning_per_window = (
+            (portfolio * morning_pct / n_morning) if n_morning > 0 else 0.0
+        )
+        morning_total_pnl = 0.0
+
+        # --- Morning windows ---
+        for label in window_labels[:morning_count]:
+            rows = by_day_window.get((d, label), [])
+            skipped = morning_per_window < min_capital
+            status = (
+                "skipped_low_capital"
+                if skipped
+                else ("executed" if rows else "no_signal")
+            )
+            skip_log.append(
+                {
+                    "date": d,
+                    "window": label,
+                    "status": status,
+                    "available_capital": round(morning_per_window, 2),
+                    "picks": len(rows),
+                }
+            )
+            for row in rows:
+                row["window_capital"] = morning_per_window
+                if skipped:
+                    row["cap_pnl"] = 0.0
+                    row["skipped"] = True
+                else:
+                    slot_capital = morning_per_window * weights[row["rank"] - 1]
+                    row["cap_pnl"] = (slot_capital / row["entry_price"]) * row["pnl"]
+                    row["skipped"] = False
+                    morning_total_pnl += row["cap_pnl"]
+
+        # --- Afternoon windows ---
+        if n_afternoon > 0:
+            afternoon_pool = portfolio * (1.0 - morning_pct) + morning_total_pnl
+            afternoon_per_window = afternoon_pool / n_afternoon
+
+            for label in window_labels[morning_count:]:
+                rows = by_day_window.get((d, label), [])
+                skipped = afternoon_per_window < min_capital
+                status = (
+                    "skipped_low_capital"
+                    if skipped
+                    else ("executed" if rows else "no_signal")
+                )
+                skip_log.append(
+                    {
+                        "date": d,
+                        "window": label,
+                        "status": status,
+                        "available_capital": round(afternoon_per_window, 2),
+                        "picks": len(rows),
+                    }
+                )
+                for row in rows:
+                    row["window_capital"] = afternoon_per_window
+                    if skipped:
+                        row["cap_pnl"] = 0.0
+                        row["skipped"] = True
+                    else:
+                        slot_capital = afternoon_per_window * weights[row["rank"] - 1]
+                        row["cap_pnl"] = (slot_capital / row["entry_price"]) * row[
+                            "pnl"
+                        ]
+                        row["skipped"] = False
+
+        # Advance portfolio by today's total cap P&L (all windows)
+        day_cap_pnl = sum(row["cap_pnl"] for row in trade_rows if row["date"] == d)
+        portfolio += day_cap_pnl
+
+    return skip_log
 
 
 def run_selector_backtest(
@@ -48,18 +183,25 @@ def run_selector_backtest(
     armed_ma20_exit: bool = False,
     regime_filter: bool = False,
     regime_ma: int = 5,
+    windows: list = None,
+    dedup: bool = False,
 ) -> tuple:
     """
     Walk each trading day in [eval_start, eval_end], apply rolling selector
-    scoring to pick top-N tickers, and record actual trade outcomes.
+    scoring to pick top-N tickers per window, and record actual trade outcomes.
 
-    Returns (trade_rows, full_results, trading_days) where:
-      - trade_rows: list of dicts, one per selected trade
-      - full_results: {ticker: results_df} across the full fetch window
+    windows: list of {"label", "opening_start", "opening_bars"} dicts.
+             Falls back to single window from opening_start_time/opening_bars if omitted.
+    dedup:   if True, skip a ticker in later windows if already picked by an earlier window that day.
+
+    Returns (trade_rows, all_window_results, trading_days) where:
+      - trade_rows: list of dicts, one per selected trade (includes "window" key)
+      - all_window_results: {window_label: {ticker: results_df}}
       - trading_days: sorted list of date objects in the eval window
     """
-    # fetch_alpaca_bars already adds 30 days internally for MA warmup;
-    # we only need to go back lookback_days to cover the rolling stats window.
+    windows = _normalize_windows(windows, opening_start_time, opening_bars)
+    n_windows = len(windows)
+
     fetch_start = eval_start - timedelta(days=lookback_days)
     print(f"Fetching bars for {len(tickers)} tickers ({eval_start} → {eval_end})...")
     all_bars = fetch_bars(tickers, fetch_start, eval_end, source=source)
@@ -70,24 +212,29 @@ def run_selector_backtest(
         else None
     )
 
-    print("Pre-computing backtest signals and outcomes...")
-    full_results = {}
-    for ticker in tickers:
-        df = all_bars.get(ticker, pd.DataFrame())
-        if df.empty:
-            full_results[ticker] = pd.DataFrame()
-            continue
-        full_results[ticker] = compute_signals_with_backtest(
-            df,
-            opening_bars,
-            bearish_ma200,
-            stop_pct,
-            opening_start_time=opening_start_time,
-            trailing_ma=trailing_ma,
-            max_loss_pct=max_loss_pct,
-            armed_ma20_exit=armed_ma20_exit,
-            bearish_regime_dates=bearish_regime_dates,
-        )
+    print(f"Pre-computing signals for {n_windows} window(s)...")
+    all_window_results = {}
+    for win in windows:
+        label = win["label"]
+        results_for_window = {}
+        for ticker in tickers:
+            df = all_bars.get(ticker, pd.DataFrame())
+            if df.empty:
+                results_for_window[ticker] = pd.DataFrame()
+                continue
+            results_for_window[ticker] = compute_signals_with_backtest(
+                df,
+                win["opening_bars"],
+                bearish_ma200,
+                stop_pct,
+                opening_start_time=win["opening_start"],
+                trailing_ma=trailing_ma,
+                max_loss_pct=max_loss_pct,
+                armed_ma20_exit=armed_ma20_exit,
+                bearish_regime_dates=bearish_regime_dates,
+            )
+        all_window_results[label] = results_for_window
+        print(f"  [{label}] {win['opening_start']} / {win['opening_bars']} bars — done")
 
     trading_days = sorted(
         {
@@ -102,65 +249,84 @@ def run_selector_backtest(
     trade_rows = []
     for d in trading_days:
         lookback_start = d - timedelta(days=lookback_days)
+        picked_today = set()
 
-        rolling_stats = {}
-        for ticker in tickers:
-            results = full_results.get(ticker, pd.DataFrame())
-            if results.empty:
-                rolling_stats[ticker] = compute_ticker_stats(pd.DataFrame())
-                continue
-            window = results[
-                (results["date"] >= lookback_start) & (results["date"] < d)
-            ]
-            rolling_stats[ticker] = compute_ticker_stats(window)
+        for win in windows:
+            label = win["label"]
+            full_results = all_window_results[label]
 
-        scored = []
-        for ticker in tickers:
-            results = full_results.get(ticker, pd.DataFrame())
-            if results.empty:
-                continue
-            today_rows = results[results["date"] == d]
-            if today_rows.empty:
-                continue
-            row = today_rows.iloc[0]
-            sig = _signal_dict_from_row(row)
-            stats = rolling_stats[ticker]
-            s = score_ticker(sig, stats)
-            if s == 0.0:
-                continue
-            scored.append(
-                {
-                    "ticker": ticker,
-                    "score": round(s, 3),
-                    "signal": row["signal"],
-                    "entry_price": row["entry_price"],
-                    "exit_price": row["exit_price"],
-                    "midpoint": row["midpoint"],
-                    "pnl": row["pnl"],
-                    "success": bool(row["success"]),
-                    "exit_reason": row["exit_reason"],
-                    "entry_vs_mid_pct": round(sig["entry_vs_mid_pct"], 3),
-                    "or_range_pct": round(sig["or_range_pct"], 3),
-                    "rolling_ev": round(stats["ev_trade"], 3),
-                    "rolling_win_rate": round(stats["win_rate"], 3),
-                }
-            )
+            rolling_stats = {}
+            for ticker in tickers:
+                results = full_results.get(ticker, pd.DataFrame())
+                if results.empty:
+                    rolling_stats[ticker] = compute_ticker_stats(pd.DataFrame())
+                    continue
+                window_slice = results[
+                    (results["date"] >= lookback_start) & (results["date"] < d)
+                ]
+                rolling_stats[ticker] = compute_ticker_stats(window_slice)
 
-        scored.sort(key=lambda x: x["score"], reverse=True)
-        for rank, pick in enumerate(scored[:n], 1):
-            pnl_pct = pick["pnl"] / pick["entry_price"] * 100
-            trade_rows.append(
-                {"date": d, "rank": rank, "pnl_pct": round(pnl_pct, 3), **pick}
-            )
+            scored = []
+            for ticker in tickers:
+                if dedup and ticker in picked_today:
+                    continue
+                results = full_results.get(ticker, pd.DataFrame())
+                if results.empty:
+                    continue
+                today_rows = results[results["date"] == d]
+                if today_rows.empty:
+                    continue
+                row = today_rows.iloc[0]
+                sig = _signal_dict_from_row(row)
+                stats = rolling_stats[ticker]
+                s = score_ticker(sig, stats)
+                if s == 0.0:
+                    continue
+                scored.append(
+                    {
+                        "ticker": ticker,
+                        "score": round(s, 3),
+                        "signal": row["signal"],
+                        "entry_price": row["entry_price"],
+                        "exit_price": row["exit_price"],
+                        "midpoint": row["midpoint"],
+                        "pnl": row["pnl"],
+                        "success": bool(row["success"]),
+                        "exit_reason": row["exit_reason"],
+                        "entry_vs_mid_pct": round(sig["entry_vs_mid_pct"], 3),
+                        "or_range_pct": round(sig["or_range_pct"], 3),
+                        "rolling_ev": round(stats["ev_trade"], 3),
+                        "rolling_win_rate": round(stats["win_rate"], 3),
+                    }
+                )
 
-    return trade_rows, full_results, trading_days
+            scored.sort(key=lambda x: x["score"], reverse=True)
+            for rank, pick in enumerate(scored[:n], 1):
+                picked_today.add(pick["ticker"])
+                pnl_pct = pick["pnl"] / pick["entry_price"] * 100
+                trade_rows.append(
+                    {
+                        "date": d,
+                        "window": label,
+                        "rank": rank,
+                        "pnl_pct": round(pnl_pct, 3),
+                        # cap_pnl, window_capital, skipped filled in by _apply_capital_flow
+                        "cap_pnl": 0.0,
+                        "window_capital": 0.0,
+                        "skipped": False,
+                        **pick,
+                    }
+                )
+
+    return trade_rows, all_window_results, trading_days
 
 
 def _collect_baseline(
-    full_results: dict, eval_start: date, eval_end: date
+    all_window_results: dict, eval_start: date, eval_end: date
 ) -> pd.DataFrame:
+    first_window_results = next(iter(all_window_results.values()))
     frames = []
-    for ticker, df in full_results.items():
+    for ticker, df in first_window_results.items():
         if df.empty:
             continue
         window = df[(df["date"] >= eval_start) & (df["date"] <= eval_end)].copy()
@@ -177,8 +343,7 @@ INITIAL_CAPITAL = 10_000.0
 
 
 def _parse_weights(weights_input: list, n: int) -> list:
-    """Return per-rank capital fractions summing to 1.0.
-    weights_input is e.g. [50, 30, 20]; falls back to equal weights if None or wrong length."""
+    """Return per-rank capital fractions summing to 1.0."""
     if weights_input and len(weights_input) == n:
         total = sum(weights_input)
         return [w / total for w in weights_input]
@@ -192,22 +357,72 @@ def _weights_label(weights: list, initial_capital: float) -> str:
     return f"weighted {pcts} × {len(weights)} slots"
 
 
+def _print_skip_log(skip_log: list, windows: list):
+    if not skip_log:
+        return
+    sep = "\u2501" * 80
+    print(f"\n{sep}")
+    print(f"  WINDOW EXECUTION LOG")
+    print(sep)
+    print(f"  {'Date':<12} {'Window':<8} {'Status':<22} {'Capital':>10}  {'Picks':>5}")
+    print(f"  {'─' * 76}")
+
+    skipped_count = 0
+    executed_count = 0
+    no_signal_count = 0
+
+    prev_date = None
+    for entry in skip_log:
+        d = entry["date"]
+        if d != prev_date and prev_date is not None:
+            print(f"  {'─' * 76}")
+        prev_date = d
+
+        status = entry["status"]
+        cap = entry["available_capital"]
+        picks = entry["picks"]
+
+        if status == "skipped_low_capital":
+            skipped_count += 1
+            status_display = "SKIPPED (low capital)"
+        elif status == "no_signal":
+            no_signal_count += 1
+            status_display = "no signal"
+        else:
+            executed_count += 1
+            status_display = f"executed ({picks} picks)"
+
+        print(
+            f"  {str(d):<12} {entry['window']:<8} {status_display:<22} ${cap:>9,.2f}  {picks:>5}"
+        )
+
+    print(f"  {'─' * 76}")
+    print(
+        f"  Executed: {executed_count}  |  No signal: {no_signal_count}  |  Skipped (low capital): {skipped_count}"
+    )
+    print(sep)
+
+
 def _print_daily_table(
     trade_rows: list,
     n: int,
     initial_capital: float = INITIAL_CAPITAL,
     weights: list = None,
+    multi_window: bool = False,
 ):
     weights = weights or _parse_weights(None, n)
-    sep = "\u2501" * 90
+    active_rows = [r for r in trade_rows if not r.get("skipped")]
+    sep = "\u2501" * 98
+    win_col = f"{'Win':<5} " if multi_window else ""
     print(f"\n{sep}")
     print(
-        f"  {'Date':<12} {'Rank':<5} {'Ticker':<6} {'Signal':<9} {'Score':>5}  "
+        f"  {'Date':<12} {win_col}{'Rank':<5} {'Ticker':<6} {'Signal':<9} {'Score':>5}  "
         f"{'Entry':>7} {'Exit':>7} {'P&L$':>7} {'P&L%':>7}  {'Result':<6}  Exit Reason"
     )
     print(sep)
 
     current_date = None
+    current_window = None
     day_pnl = 0.0
     day_pnl_pcts = []
     day_wins = 0
@@ -216,8 +431,11 @@ def _print_daily_table(
     day_cap_pnl = 0.0
     portfolio = initial_capital
 
-    for row in trade_rows:
-        if row["date"] != current_date:
+    for row in active_rows:
+        row_date = row["date"]
+        row_window = row["window"]
+
+        if row_date != current_date:
             if current_date is not None:
                 portfolio += day_cap_pnl
                 _print_day_summary(
@@ -229,22 +447,30 @@ def _print_daily_table(
                     day_cap_pnl,
                     initial_capital,
                     portfolio,
+                    multi_window=multi_window,
                 )
-            current_date = row["date"]
+            current_date = row_date
+            current_window = None
             day_pnl = 0.0
             day_pnl_pcts = []
             day_wins = 0
             day_losses = 0
             day_cap_pnl = 0.0
 
+        if multi_window and row_window != current_window:
+            if current_window is not None:
+                print(f"  {'·' * 96}")
+            current_window = row_window
+
         pnl = row["pnl"]
         pnl_pct = row["pnl_pct"]
         result = "WIN" if row["success"] else "LOSS"
         pnl_str = f"+${abs(pnl):.2f}" if pnl >= 0 else f"-${abs(pnl):.2f}"
         pnl_pct_str = f"+{abs(pnl_pct):.2f}%" if pnl_pct >= 0 else f"{pnl_pct:.2f}%"
+        win_str = f"{row_window:<5} " if multi_window else ""
 
         print(
-            f"  {str(row['date']):<12} {row['rank']:<5} {row['ticker']:<6} "
+            f"  {str(row_date):<12} {win_str}{row['rank']:<5} {row['ticker']:<6} "
             f"{row['signal']:<9} {row['score']:>5.2f}  "
             f"{row['entry_price']:>7.2f} {row['exit_price']:>7.2f} "
             f"{pnl_str:>7} {pnl_pct_str:>7}  {result:<6}  {row['exit_reason']}"
@@ -253,8 +479,7 @@ def _print_daily_table(
         day_pnl += pnl
         day_pnl_pcts.append(pnl_pct)
         running_total += pnl
-        slot_capital = initial_capital * weights[row["rank"] - 1]
-        day_cap_pnl += (slot_capital / row["entry_price"]) * pnl
+        day_cap_pnl += row["cap_pnl"]
         if row["success"]:
             day_wins += 1
         else:
@@ -271,6 +496,7 @@ def _print_daily_table(
             day_cap_pnl,
             initial_capital,
             portfolio,
+            multi_window=multi_window,
         )
 
     print(sep)
@@ -285,6 +511,7 @@ def _print_day_summary(
     day_cap_pnl,
     initial_capital,
     portfolio,
+    multi_window: bool = False,
 ):
     total = wins + losses
     if total == 0:
@@ -299,27 +526,29 @@ def _print_day_summary(
     day_ret_str = (
         f"+{abs(day_ret_pct):.2f}%" if day_ret_pct >= 0 else f"{day_ret_pct:.2f}%"
     )
+    win_pad = "      " if multi_window else ""
     print(
-        f"  {'':12} {'':5} {'':6} {'':9} {'':5}  "
+        f"  {'':12} {win_pad}{'':5} {'':6} {'':9} {'':5}  "
         f"{'':>7} {'':>7} {pnl_str:>7} {avg_pct_str:>7}  "
         f"{wins}W/{losses}L  │  cap: {cap_pnl_str} ({day_ret_str})  portfolio: ${portfolio:.2f}"
     )
-    print(f"  {'─' * 88}")
+    print(f"  {'─' * 96}")
 
 
 def _stats_from_trades(trade_rows: list) -> dict:
-    total = len(trade_rows)
+    active = [r for r in trade_rows if not r.get("skipped")]
+    total = len(active)
     if total == 0:
         return None
-    wins = sum(1 for r in trade_rows if r["success"])
+    wins = sum(1 for r in active if r["success"])
     losses = total - wins
     win_rate = wins / total
-    win_pct_vals = [r["pnl_pct"] for r in trade_rows if r["success"]]
-    loss_pct_vals = [abs(r["pnl_pct"]) for r in trade_rows if not r["success"]]
+    win_pct_vals = [r["pnl_pct"] for r in active if r["success"]]
+    loss_pct_vals = [abs(r["pnl_pct"]) for r in active if not r["success"]]
     avg_win_pct = sum(win_pct_vals) / len(win_pct_vals) if win_pct_vals else 0.0
     avg_loss_pct = sum(loss_pct_vals) / len(loss_pct_vals) if loss_pct_vals else 0.0
     ev = win_rate * avg_win_pct - (1 - win_rate) * avg_loss_pct
-    net_pnl = sum(r["pnl"] for r in trade_rows)
+    net_pnl = sum(r["pnl"] for r in active)
     return {
         "total": total,
         "wins": wins,
@@ -354,27 +583,20 @@ def _print_stats_block(label: str, stats: dict):
     print(f"  Net P&L (1 sh)  : {net_str}")
 
 
-def _capital_stats_from_trades(
-    trade_rows: list, n: int, initial_capital: float, weights: list = None
-) -> dict:
-    weights = weights or _parse_weights(None, n)
-    total_cap_pnl = 0.0
-    days_with_picks = set()
+def _capital_stats_from_trades(trade_rows: list, initial_capital: float) -> dict:
+    active = [r for r in trade_rows if not r.get("skipped")]
+    total_cap_pnl = sum(r["cap_pnl"] for r in active)
+    days_with_picks = set(r["date"] for r in active)
+
     daily_cap_pnls = {}
-    for row in trade_rows:
-        slot_capital = initial_capital * weights[row["rank"] - 1]
-        cap_pnl = (slot_capital / row["entry_price"]) * row["pnl"]
-        total_cap_pnl += cap_pnl
+    for row in active:
         d = row["date"]
-        days_with_picks.add(d)
-        daily_cap_pnls[d] = daily_cap_pnls.get(d, 0.0) + cap_pnl
+        daily_cap_pnls[d] = daily_cap_pnls.get(d, 0.0) + row["cap_pnl"]
 
     daily_returns = list(daily_cap_pnls.values())
     avg_daily_ret = sum(daily_returns) / len(daily_returns) if daily_returns else 0.0
     return {
         "initial_capital": initial_capital,
-        "weights": weights,
-        "n": n,
         "total_cap_pnl": total_cap_pnl,
         "total_return_pct": total_cap_pnl / initial_capital * 100,
         "final_portfolio": initial_capital + total_cap_pnl,
@@ -384,7 +606,7 @@ def _capital_stats_from_trades(
     }
 
 
-def _print_capital_stats_block(stats: dict):
+def _print_capital_stats_block(stats: dict, weights_label: str = ""):
     cap_pnl_str = (
         f"+${stats['total_cap_pnl']:.2f}"
         if stats["total_cap_pnl"] >= 0
@@ -405,10 +627,10 @@ def _print_capital_stats_block(stats: dict):
         if stats["avg_daily_ret_pct"] >= 0
         else f"{stats['avg_daily_ret_pct']:.2f}%"
     )
-    print(
-        f"\n  CAPITAL SIMULATION  (${stats['initial_capital']:,.0f} initial | "
-        f"{_weights_label(stats['weights'], stats['initial_capital'])})"
-    )
+    label = f"${stats['initial_capital']:,.0f} initial"
+    if weights_label:
+        label += f" | {weights_label}"
+    print(f"\n  CAPITAL SIMULATION  ({label})")
     print(f"  {'─' * 48}")
     print(f"  Total return ($)    : {cap_pnl_str}")
     print(f"  Total return (%)    : {ret_pct_str}")
@@ -417,18 +639,67 @@ def _print_capital_stats_block(stats: dict):
     print(f"  Avg daily return    : {avg_str}  ({avg_pct_str})")
 
 
-def _period_capital_groups(
-    trade_rows: list, n: int, initial_capital: float, key_fn, weights: list = None
-) -> dict:
-    weights = weights or _parse_weights(None, n)
+def _print_per_window_stats(
+    trade_rows: list,
+    windows: list,
+    initial_capital: float,
+    morning_count: int,
+    morning_pct: float,
+):
+    sep = "\u2501" * 80
+    print(f"\n{sep}")
+    print(
+        f"  PER-WINDOW BREAKDOWN  (morning {morning_pct * 100:.0f}% / afternoon {(1 - morning_pct) * 100:.0f}% + morning P&L)"
+    )
+    print(sep)
+    print(
+        f"  {'Window':<8} {'Start':<7} {'Bars':<5} {'Group':<10} {'Trades':>7}  {'W/L':<10} "
+        f"{'WinRate':>8}  {'EV/trade':>9}  {'Cap P&L':>10}  {'Return%':>8}"
+    )
+    print(f"  {'─' * 76}")
+
+    for i, win in enumerate(windows):
+        label = win["label"]
+        group = "morning" if i < morning_count else "afternoon"
+        win_rows = [
+            r for r in trade_rows if r["window"] == label and not r.get("skipped")
+        ]
+        if not win_rows:
+            print(
+                f"  {label:<8} {win['opening_start']:<7} {win['opening_bars']:<5} {group:<10} {'—':>7}"
+            )
+            continue
+        stats = _stats_from_trades(win_rows)
+        cap_stats = _capital_stats_from_trades(win_rows, initial_capital)
+        ev_str = f"+{stats['ev']:.3f}%" if stats["ev"] >= 0 else f"{stats['ev']:.3f}%"
+        cap_pnl_str = (
+            f"+${cap_stats['total_cap_pnl']:.2f}"
+            if cap_stats["total_cap_pnl"] >= 0
+            else f"-${abs(cap_stats['total_cap_pnl']):.2f}"
+        )
+        ret_str = (
+            f"+{cap_stats['total_return_pct']:.2f}%"
+            if cap_stats["total_return_pct"] >= 0
+            else f"{cap_stats['total_return_pct']:.2f}%"
+        )
+        wl = f"{stats['wins']}W/{stats['losses']}L"
+        print(
+            f"  {label:<8} {win['opening_start']:<7} {win['opening_bars']:<5} {group:<10} "
+            f"{stats['total']:>7}  {wl:<10} {stats['win_rate'] * 100:>7.0f}%  "
+            f"{ev_str:>9}  {cap_pnl_str:>10}  {ret_str:>8}"
+        )
+    print(sep)
+
+
+def _period_capital_groups(trade_rows: list, initial_capital: float, key_fn) -> dict:
+    active = [r for r in trade_rows if not r.get("skipped")]
     groups = {}
-    for row in trade_rows:
+    for row in active:
         key = key_fn(row["date"])
         if key not in groups:
             groups[key] = {"picks": 0, "wins": 0, "losses": 0, "cap_pnl": 0.0}
         groups[key]["picks"] += 1
-        slot_capital = initial_capital * weights[row["rank"] - 1]
-        groups[key]["cap_pnl"] += (slot_capital / row["entry_price"]) * row["pnl"]
+        groups[key]["cap_pnl"] += row["cap_pnl"]
         if row["success"]:
             groups[key]["wins"] += 1
         else:
@@ -481,13 +752,13 @@ def _print_period_table(title: str, groups: dict, initial_capital: float):
     total_ret = total_cap_pnl / initial_capital * 100
     total_ret_s = f"+{total_ret:.2f}%" if total_ret >= 0 else f"{total_ret:.2f}%"
     print(
-        f"  {'TOTAL':<12} {total_picks:>6}  {total_wins}W/{total_losses}L{'':<7} {total_pnl_s:>10}  {total_ret_s:>8}  ${initial_capital + total_cap_pnl:,.2f}"
+        f"  {'TOTAL':<12} {total_picks:>6}  {total_wins}W/{total_losses}L{'':<7} "
+        f"{total_pnl_s:>10}  {total_ret_s:>8}  ${initial_capital + total_cap_pnl:,.2f}"
     )
     print(sep)
 
 
 def _bnh_period_groups(daily_closes: pd.Series, initial_capital: float, key_fn) -> dict:
-    """Compute buy-and-hold period groups from a Series of {date: close_price}."""
     if daily_closes.empty:
         return {}
     shares = initial_capital / daily_closes.iloc[0]
@@ -545,9 +816,12 @@ def _print_summary(
     eval_end: date,
     lookback_days: int,
     stop_pct: float,
+    windows: list,
     initial_capital: float = INITIAL_CAPITAL,
     qqq_closes: pd.Series = None,
     weights: list = None,
+    morning_count: int = 2,
+    morning_pct: float = 0.60,
 ):
     sep = "\u2501" * 70
     print(f"\n{sep}")
@@ -558,7 +832,7 @@ def _print_summary(
     print(sep)
 
     _print_stats_block(
-        f"SELECTED  (top-{n} per day, scoring + EV gate)",
+        f"SELECTED  (top-{n} per window per day, scoring + EV gate)",
         _stats_from_trades(trade_rows),
     )
 
@@ -568,18 +842,26 @@ def _print_summary(
                 "pnl": r["pnl"],
                 "pnl_pct": r["pnl"] / r["entry_price"] * 100,
                 "success": bool(r["success"]),
+                "skipped": False,
             }
             for r in baseline_df.to_dict("records")
         ]
         _print_stats_block(
-            "BASELINE  (all signals, no selection)", _stats_from_trades(baseline_rows)
+            "BASELINE  (all signals, no selection, first window only)",
+            _stats_from_trades(baseline_rows),
         )
 
     if trade_rows:
         weights = weights or _parse_weights(None, n)
+        wlabel = _weights_label(weights, initial_capital)
         _print_capital_stats_block(
-            _capital_stats_from_trades(trade_rows, n, initial_capital, weights)
+            _capital_stats_from_trades(trade_rows, initial_capital), wlabel
         )
+
+        if len(windows) > 1:
+            _print_per_window_stats(
+                trade_rows, windows, initial_capital, morning_count, morning_pct
+            )
 
         def _week_key(d):
             iso = d.isocalendar()
@@ -588,10 +870,9 @@ def _print_summary(
         def _month_key(d):
             return f"{d.year}-{d.month:02d}"
 
-        wlabel = _weights_label(weights, initial_capital)
         _print_period_table(
             f"WEEKLY BREAKDOWN  (${initial_capital:,.0f} initial | {wlabel})",
-            _period_capital_groups(trade_rows, n, initial_capital, _week_key, weights),
+            _period_capital_groups(trade_rows, initial_capital, _week_key),
             initial_capital,
         )
         if qqq_closes is not None and not qqq_closes.empty:
@@ -603,7 +884,7 @@ def _print_summary(
 
         _print_period_table(
             f"MONTHLY BREAKDOWN  (${initial_capital:,.0f} initial | {wlabel})",
-            _period_capital_groups(trade_rows, n, initial_capital, _month_key, weights),
+            _period_capital_groups(trade_rows, initial_capital, _month_key),
             initial_capital,
         )
         if qqq_closes is not None and not qqq_closes.empty:
@@ -663,35 +944,68 @@ def _parse_args():
         "--opening-bars",
         type=int,
         default=OPENING_BARS,
-        help=f"Number of 5-min bars in opening period (default: {OPENING_BARS})",
+        help=f"Number of 5-min bars in opening period (default: {OPENING_BARS}). "
+        "Used only when --window is not specified.",
     )
     parser.add_argument(
         "--opening-start",
         type=str,
         default=OPENING_START_TIME,
         help=f"Opening window start time HH:MM ET (default: {OPENING_START_TIME}). "
-        "e.g. 10:05 with --opening-bars 3 evaluates 10:05–10:20.",
+        "Used only when --window is not specified.",
+    )
+    parser.add_argument(
+        "--window",
+        action="append",
+        nargs=3,
+        metavar=("LABEL", "START", "BARS"),
+        default=None,
+        help="Define a trading window: LABEL START BARS (e.g. M1 09:30 3). "
+        "Repeat to add multiple windows. When specified, overrides --opening-start/--opening-bars.",
+    )
+    parser.add_argument(
+        "--morning-count",
+        type=int,
+        default=2,
+        help="Number of leading windows treated as 'morning' (default: 2). "
+        "Morning windows share morning-pct of capital; afternoon windows get the rest plus morning P&L.",
+    )
+    parser.add_argument(
+        "--morning-pct",
+        type=float,
+        default=0.60,
+        help="Fraction of capital allocated to morning windows combined (default: 0.60).",
+    )
+    parser.add_argument(
+        "--min-window-capital",
+        type=float,
+        default=MIN_WINDOW_CAPITAL,
+        help=f"Minimum capital required to execute a window (default: ${MIN_WINDOW_CAPITAL:.0f}). "
+        "Windows with less available capital are skipped.",
+    )
+    parser.add_argument(
+        "--dedup",
+        action="store_true",
+        default=False,
+        help="Skip a ticker in later windows if already picked by an earlier window that day.",
     )
     parser.add_argument(
         "--trailing-ma",
         choices=["ma20", "ma50", "both"],
         default="ma20",
-        help="Trailing MA stop to use once MA is above hard stop (default: ma20). "
-        "ma20: use MA20 only. ma50: use MA50 only. both: use MA20 then MA50.",
+        help="Trailing MA stop to use once MA is above hard stop (default: ma20).",
     )
     parser.add_argument(
         "--max-loss-pct",
         type=float,
         default=None,
-        help="Per-trade max loss as a fraction of entry price (e.g. 0.02 = 2%%). "
-        "Exit immediately if loss exceeds this threshold. Default: disabled.",
+        help="Per-trade max loss as a fraction of entry price (e.g. 0.02 = 2%%). Default: disabled.",
     )
     parser.add_argument(
         "--armed-ma20-exit",
         action="store_true",
         default=False,
-        help="Once hard stop is armed, use MA20 as the trailing exit instead of hard_stop_price. "
-        "Lets winners run further but increases loss size on reversals. Default: off.",
+        help="Once hard stop is armed, use MA20 as the trailing exit. Default: off.",
     )
     parser.add_argument(
         "--regime-filter",
@@ -710,8 +1024,7 @@ def _parse_args():
         nargs="+",
         type=int,
         default=None,
-        help="Position weights per rank (e.g. --weights 50 30 20). "
-        "Must match --top count. Default: equal weights.",
+        help="Position weights per rank (e.g. --weights 50 30 20). Must match --top count.",
     )
     return parser.parse_args()
 
@@ -724,14 +1037,49 @@ if __name__ == "__main__":
 
     weights = _parse_weights(args.weights, args.top)
 
+    if args.window:
+        windows = [
+            {"label": w[0], "opening_start": w[1], "opening_bars": int(w[2])}
+            for w in args.window
+        ]
+    else:
+        windows = None
+
+    resolved_windows = _normalize_windows(
+        windows, args.opening_start, args.opening_bars
+    )
+    n_windows = len(resolved_windows)
+    morning_count = min(args.morning_count, n_windows)
+    morning_pct = args.morning_pct
+    n_morning = morning_count
+    n_afternoon = n_windows - morning_count
+
     print(f"\nSelector Backtest")
     print(f"  Eval window  : {eval_start} → {eval_end}")
     print(f"  Top-N        : {args.top}")
     print(f"  Weights      : {_weights_label(weights, INITIAL_CAPITAL)}")
     print(f"  Tickers      : {', '.join(tickers)}")
     print(f"  Lookback     : {args.lookback}d rolling")
-    print(f"  Opening start: {args.opening_start} ET")
-    print(f"  Opening bars : {args.opening_bars} ({args.opening_bars * 5} min window)")
+    print(
+        f"  Windows      : {n_windows} total  |  morning {morning_pct * 100:.0f}% / afternoon {(1 - morning_pct) * 100:.0f}% + morning P&L"
+    )
+    for i, w in enumerate(resolved_windows):
+        group = "morning" if i < morning_count else "afternoon"
+        if group == "morning":
+            cap_slice = (
+                INITIAL_CAPITAL * morning_pct / n_morning if n_morning > 0 else 0
+            )
+        else:
+            cap_slice = (
+                INITIAL_CAPITAL * (1 - morning_pct) / n_afternoon
+                if n_afternoon > 0
+                else 0
+            )
+        print(
+            f"    [{w['label']}] {w['opening_start']} / {w['opening_bars']} bars  ({group}, ~${cap_slice:,.0f})"
+        )
+    print(f"  Min capital  : ${args.min_window_capital:.0f} per window (skip if below)")
+    print(f"  Dedup        : {'on' if args.dedup else 'off'}")
     print(f"  Stop pct     : {args.stop_pct}")
     print(f"  Trailing MA  : {args.trailing_ma}")
     print(
@@ -743,7 +1091,7 @@ if __name__ == "__main__":
     )
     print(f"  Source       : {args.source}")
 
-    trade_rows, full_results, trading_days = run_selector_backtest(
+    trade_rows, all_window_results, trading_days = run_selector_backtest(
         n=args.top,
         tickers=tickers,
         eval_start=eval_start,
@@ -759,9 +1107,22 @@ if __name__ == "__main__":
         armed_ma20_exit=args.armed_ma20_exit,
         regime_filter=args.regime_filter,
         regime_ma=args.regime_ma,
+        windows=windows,
+        dedup=args.dedup,
     )
 
-    baseline_df = _collect_baseline(full_results, eval_start, eval_end)
+    skip_log = _apply_capital_flow(
+        trade_rows,
+        resolved_windows,
+        INITIAL_CAPITAL,
+        weights,
+        args.top,
+        morning_count=morning_count,
+        morning_pct=morning_pct,
+        min_capital=args.min_window_capital,
+    )
+
+    baseline_df = _collect_baseline(all_window_results, eval_start, eval_end)
 
     print("Fetching QQQ daily bars for comparison...")
     qqq_df = fetch_daily_bars(["QQQ"], eval_start, eval_end, source=args.source).get(
@@ -769,7 +1130,10 @@ if __name__ == "__main__":
     )
     qqq_closes = qqq_df["Close"] if not qqq_df.empty else pd.Series(dtype=float)
 
-    _print_daily_table(trade_rows, n=args.top, weights=weights)
+    multi_window = n_windows > 1
+    _print_daily_table(
+        trade_rows, n=args.top, weights=weights, multi_window=multi_window
+    )
     _print_summary(
         trade_rows,
         baseline_df,
@@ -778,7 +1142,11 @@ if __name__ == "__main__":
         eval_end=eval_end,
         lookback_days=args.lookback,
         stop_pct=args.stop_pct,
+        windows=resolved_windows,
         initial_capital=INITIAL_CAPITAL,
         qqq_closes=qqq_closes,
         weights=weights,
+        morning_count=morning_count,
+        morning_pct=morning_pct,
     )
+    _print_skip_log(skip_log, resolved_windows)
