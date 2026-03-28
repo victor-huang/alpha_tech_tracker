@@ -4,6 +4,7 @@ import pandas as pd
 import pytz
 import yfinance as yf
 from datetime import date, datetime, timedelta
+from pathlib import Path
 
 from alpaca.data.enums import DataFeed
 from alpaca.data.historical import StockHistoricalDataClient
@@ -13,6 +14,48 @@ from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
 
 TICKERS = ["NVDA", "CRWD", "COIN", "JNJ", "XOM", "CAT"]
 SUCCESS_BARS = 3  # "long enough" = held correct side for >= 3 bars (15 min)
+
+_CACHE_DIR = Path(__file__).parent.parent.parent / "market_data" / "cache"
+
+
+def _cache_path(
+    ticker: str, start: date, end: date, source: str, timeframe: str
+) -> Path:
+    return _CACHE_DIR / f"{source}_{timeframe}_{ticker}_{start}_{end}.json"
+
+
+def _save_cache(df: pd.DataFrame, path: Path, timeframe: str):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_json(path, orient="split", date_format="iso")
+
+
+def _load_cache(path: Path, timeframe: str) -> pd.DataFrame:
+    df = pd.read_json(path, orient="split")
+    if timeframe == "5min":
+        df.index = pd.to_datetime(df.index, utc=True).tz_convert("America/New_York")
+    else:
+        df.index = pd.to_datetime(df.index).date
+    return df
+
+
+def _to_date(d) -> date:
+    return d.date() if isinstance(d, datetime) else d
+
+
+def _is_cacheable(end_date: date) -> bool:
+    """True when end_date's data is fully settled and safe to cache."""
+    et = pytz.timezone("America/New_York")
+    now_et = datetime.now(et)
+    today = now_et.date()
+    if end_date < today:
+        return True
+    if end_date == today:
+        # Weekend or after market close (4 PM ET) — data is final
+        market_closed = now_et.weekday() >= 5 or now_et.hour >= 16
+        return market_closed
+    return False
+
+
 YFINANCE_MAX_DAYS = 60  # yfinance hard limit for 5-minute data
 
 
@@ -787,20 +830,68 @@ def fetch_bars(
     source: str = "alpaca",
     allow_intraday: bool = False,
 ) -> dict:
-    if source == "yfinance":
-        return fetch_yfinance_bars(tickers, start_date, end_date)
-    return fetch_alpaca_bars(
-        tickers, start_date, end_date, allow_intraday=allow_intraday
-    )
+    end_date_only = _to_date(end_date)
+    cacheable = _is_cacheable(end_date_only)
+
+    result = {}
+    to_fetch = []
+    for ticker in tickers:
+        if cacheable:
+            cp = _cache_path(ticker, start_date, end_date_only, source, "5min")
+            if cp.exists():
+                result[ticker] = _load_cache(cp, "5min")
+                continue
+        to_fetch.append(ticker)
+
+    if to_fetch:
+        if cacheable:
+            print(
+                f"  [cache] fetching {len(to_fetch)} tickers from {source} (cache miss)"
+            )
+        if source == "yfinance":
+            fetched = fetch_yfinance_bars(to_fetch, start_date, end_date)
+        else:
+            fetched = fetch_alpaca_bars(
+                to_fetch, start_date, end_date, allow_intraday=allow_intraday
+            )
+        for ticker, df in fetched.items():
+            result[ticker] = df
+            if cacheable and not df.empty:
+                _save_cache(
+                    df,
+                    _cache_path(ticker, start_date, end_date_only, source, "5min"),
+                    "5min",
+                )
+
+    cached_count = len(tickers) - len(to_fetch)
+    if cached_count:
+        print(f"  [cache] loaded {cached_count} tickers from cache")
+
+    return result
 
 
 def fetch_daily_bars(
     tickers: list, start_date: date, end_date: date, source: str = "alpaca"
 ) -> dict:
     """Fetch 1-day bars for the given tickers. Returns {ticker: DataFrame} with date index."""
+    cacheable = _is_cacheable(end_date)
+
+    result = {}
+    to_fetch = []
+    for ticker in tickers:
+        if cacheable:
+            cp = _cache_path(ticker, start_date, end_date, source, "1day")
+            if cp.exists():
+                result[ticker] = _load_cache(cp, "1day")
+                continue
+        to_fetch.append(ticker)
+
+    if not to_fetch:
+        return result
+
+    fetched = {}
     if source == "yfinance":
-        result = {}
-        for ticker in tickers:
+        for ticker in to_fetch:
             df = yf.download(
                 ticker,
                 start=start_date,
@@ -812,29 +903,35 @@ def fetch_daily_bars(
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.droplevel(1)
             df.index = pd.to_datetime(df.index).date
-            result[ticker] = df
-        return result
+            fetched[ticker] = df
+    else:
+        key_id = os.environ.get("ALPACA_API_KEY")
+        secret_key = os.environ.get("ALPACA_SECRET_KEY")
+        client = StockHistoricalDataClient(key_id, secret_key)
+        request = StockBarsRequest(
+            symbol_or_symbols=to_fetch,
+            timeframe=TimeFrame(amount=1, unit=TimeFrameUnit.Day),
+            start=datetime.combine(start_date, datetime.min.time()),
+            end=datetime.combine(end_date + timedelta(days=1), datetime.min.time()),
+            feed=DataFeed.IEX,
+        )
+        bars = client.get_stock_bars(request)
+        for ticker in to_fetch:
+            if ticker in bars.df.index.get_level_values(0):
+                df = bars.df.xs(ticker, level=0).copy()
+                df.index = [pd.Timestamp(t).date() for t in df.index]
+                df.columns = [c.capitalize() for c in df.columns]
+                fetched[ticker] = df
+            else:
+                fetched[ticker] = pd.DataFrame()
 
-    key_id = os.environ.get("ALPACA_API_KEY")
-    secret_key = os.environ.get("ALPACA_SECRET_KEY")
-    client = StockHistoricalDataClient(key_id, secret_key)
-    request = StockBarsRequest(
-        symbol_or_symbols=tickers,
-        timeframe=TimeFrame(amount=1, unit=TimeFrameUnit.Day),
-        start=datetime.combine(start_date, datetime.min.time()),
-        end=datetime.combine(end_date + timedelta(days=1), datetime.min.time()),
-        feed=DataFeed.IEX,
-    )
-    bars = client.get_stock_bars(request)
-    result = {}
-    for ticker in tickers:
-        if ticker in bars.df.index.get_level_values(0):
-            df = bars.df.xs(ticker, level=0).copy()
-            df.index = [pd.Timestamp(t).date() for t in df.index]
-            df.columns = [c.capitalize() for c in df.columns]
-            result[ticker] = df
-        else:
-            result[ticker] = pd.DataFrame()
+    for ticker, df in fetched.items():
+        result[ticker] = df
+        if cacheable and not df.empty:
+            _save_cache(
+                df, _cache_path(ticker, start_date, end_date, source, "1day"), "1day"
+            )
+
     return result
 
 
