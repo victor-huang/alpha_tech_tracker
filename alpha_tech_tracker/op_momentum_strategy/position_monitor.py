@@ -32,14 +32,14 @@ class PositionMonitor:
         self,
         alpaca_client: AlpacaAPIClient,
         signal_engine,
-        simulate: bool = False,
+        mock_trade_execution: bool = False,
         trailing_ma: str = TRAILING_MA,
         max_loss_pct: Optional[float] = MAX_LOSS_PCT,
         armed_ma20_exit: bool = ARMED_MA20_EXIT,
     ):
         self._client = alpaca_client
         self._signal_engine = signal_engine
-        self._simulate = simulate
+        self._mock_trade_execution = mock_trade_execution
         self._trailing_ma = trailing_ma
         self._max_loss_pct = max_loss_pct
         self._armed_ma20_exit = armed_ma20_exit
@@ -188,7 +188,7 @@ class PositionMonitor:
                 pos.option_symbol,
             )
 
-        if self._simulate:
+        if self._mock_trade_execution:
             sim_mid = (
                 mid.quantize(_D("0.01"), rounding=ROUND_HALF_UP)
                 if mid is not None

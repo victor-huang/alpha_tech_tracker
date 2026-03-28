@@ -3,7 +3,10 @@ from unittest.mock import Mock, patch
 
 import pytz
 
-from alpha_tech_tracker.op_momentum_strategy.config import MAX_ACTIVE_SYMBOLS, RANK_WEIGHTS
+from alpha_tech_tracker.op_momentum_strategy.config import (
+    MAX_ACTIVE_SYMBOLS,
+    RANK_WEIGHTS,
+)
 from alpha_tech_tracker.op_momentum_strategy.trade_engine import (
     OpMomentumTradeEngine,
     TickerSelector,
@@ -13,21 +16,15 @@ from conftest import _D, _make_alpaca_client
 
 ET = pytz.timezone("America/New_York")
 
-_SELECT_TOP_N_PATH = (
-    "alpha_tech_tracker.op_momentum_strategy.trade_engine.select_top_n"
-)
-_FETCH_BARS_PATH = (
-    "alpha_tech_tracker.op_momentum_strategy.trade_engine.fetch_bars"
-)
+_SELECT_TOP_N_PATH = "alpha_tech_tracker.op_momentum_strategy.trade_engine.select_top_n"
+_FETCH_BARS_PATH = "alpha_tech_tracker.op_momentum_strategy.trade_engine.fetch_bars"
 _OPTION_CONTRACT_SELECTOR_PATH = (
     "alpha_tech_tracker.op_momentum_strategy.trade_engine.OptionContractSelector.select"
 )
 _POSITION_SIZER_PATH = (
     "alpha_tech_tracker.op_momentum_strategy.trade_engine.PositionSizer.compute"
 )
-_PLACE_ENTRY_PATH = (
-    "alpha_tech_tracker.op_momentum_strategy.trade_engine.OpMomentumTradeEngine._place_entry"
-)
+_PLACE_ENTRY_PATH = "alpha_tech_tracker.op_momentum_strategy.trade_engine.OpMomentumTradeEngine._place_entry"
 
 
 def _make_signal_event(
@@ -50,7 +47,7 @@ def _make_signal_event(
 
 def _make_engine_with_mock_client():
     client = _make_alpaca_client()
-    engine = OpMomentumTradeEngine(alpaca_client=client, simulate=True)
+    engine = OpMomentumTradeEngine(alpaca_client=client, mock_trade_execution=True)
     return engine
 
 
@@ -239,14 +236,19 @@ class TestRankWeightedSizing:
     def test_rank_weighted_sizing_off_passes_full_weight_to_sizer(self):
         client = _make_alpaca_client()
         engine = OpMomentumTradeEngine(
-            alpaca_client=client, simulate=True, rank_weighted_sizing=False
+            alpaca_client=client, mock_trade_execution=True, rank_weighted_sizing=False
         )
         engine._monitor = Mock()
         engine._open_position_count = 1
 
-        with patch(_OPTION_CONTRACT_SELECTOR_PATH, return_value="NVDA260328C00730000"), \
-             patch(_POSITION_SIZER_PATH, return_value=(3, _D("8.50"))) as compute_mock, \
-             patch(_PLACE_ENTRY_PATH, return_value={"order_id": "sim-1", "simulated_fill_mid": _D("8.50")}):
+        with (
+            patch(_OPTION_CONTRACT_SELECTOR_PATH, return_value="NVDA260328C00730000"),
+            patch(_POSITION_SIZER_PATH, return_value=(3, _D("8.50"))) as compute_mock,
+            patch(
+                _PLACE_ENTRY_PATH,
+                return_value={"order_id": "sim-1", "simulated_fill_mid": _D("8.50")},
+            ),
+        ):
             engine._enter_position(_make_signal_event("NVDA"), rank=0)
 
         call_args, _ = compute_mock.call_args
@@ -255,14 +257,19 @@ class TestRankWeightedSizing:
     def test_rank_weighted_sizing_on_passes_first_weight_for_rank_zero(self):
         client = _make_alpaca_client()
         engine = OpMomentumTradeEngine(
-            alpaca_client=client, simulate=True, rank_weighted_sizing=True
+            alpaca_client=client, mock_trade_execution=True, rank_weighted_sizing=True
         )
         engine._monitor = Mock()
         engine._open_position_count = 1
 
-        with patch(_OPTION_CONTRACT_SELECTOR_PATH, return_value="NVDA260328C00730000"), \
-             patch(_POSITION_SIZER_PATH, return_value=(3, _D("8.50"))) as compute_mock, \
-             patch(_PLACE_ENTRY_PATH, return_value={"order_id": "sim-1", "simulated_fill_mid": _D("8.50")}):
+        with (
+            patch(_OPTION_CONTRACT_SELECTOR_PATH, return_value="NVDA260328C00730000"),
+            patch(_POSITION_SIZER_PATH, return_value=(3, _D("8.50"))) as compute_mock,
+            patch(
+                _PLACE_ENTRY_PATH,
+                return_value={"order_id": "sim-1", "simulated_fill_mid": _D("8.50")},
+            ),
+        ):
             engine._enter_position(_make_signal_event("NVDA"), rank=0)
 
         call_args, _ = compute_mock.call_args
@@ -271,14 +278,19 @@ class TestRankWeightedSizing:
     def test_rank_weighted_sizing_on_passes_second_weight_for_rank_one(self):
         client = _make_alpaca_client()
         engine = OpMomentumTradeEngine(
-            alpaca_client=client, simulate=True, rank_weighted_sizing=True
+            alpaca_client=client, mock_trade_execution=True, rank_weighted_sizing=True
         )
         engine._monitor = Mock()
         engine._open_position_count = 1
 
-        with patch(_OPTION_CONTRACT_SELECTOR_PATH, return_value="NVDA260328C00730000"), \
-             patch(_POSITION_SIZER_PATH, return_value=(2, _D("8.50"))) as compute_mock, \
-             patch(_PLACE_ENTRY_PATH, return_value={"order_id": "sim-1", "simulated_fill_mid": _D("8.50")}):
+        with (
+            patch(_OPTION_CONTRACT_SELECTOR_PATH, return_value="NVDA260328C00730000"),
+            patch(_POSITION_SIZER_PATH, return_value=(2, _D("8.50"))) as compute_mock,
+            patch(
+                _PLACE_ENTRY_PATH,
+                return_value={"order_id": "sim-1", "simulated_fill_mid": _D("8.50")},
+            ),
+        ):
             engine._enter_position(_make_signal_event("NVDA"), rank=1)
 
         call_args, _ = compute_mock.call_args

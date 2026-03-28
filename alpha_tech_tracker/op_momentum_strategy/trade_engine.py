@@ -146,7 +146,7 @@ class OpMomentumTradeEngine:
         alpaca_client: AlpacaAPIClient,
         is_paper: bool = True,
         stop_pct: float = float(STOP_PCT),
-        simulate: bool = False,
+        mock_trade_execution: bool = False,
         opening_start_time: str = OPENING_START_TIME,
         trailing_ma: str = TRAILING_MA,
         max_loss_pct: Optional[float] = MAX_LOSS_PCT,
@@ -159,7 +159,7 @@ class OpMomentumTradeEngine:
         self._api_key = alpaca_client._api_key
         self._secret_key = alpaca_client._secret_key
         self._stop_pct = _D(str(stop_pct))
-        self._simulate = simulate
+        self._mock_trade_execution = mock_trade_execution
         self._opening_start_time = opening_start_time
         self._trailing_ma = trailing_ma
         self._max_loss_pct = max_loss_pct
@@ -226,7 +226,9 @@ class OpMomentumTradeEngine:
         bull_fallback = event.or_high - _D("0.20") * event.or_range
         bear_fallback = event.or_low + _D("0.20") * event.or_range
 
-        sim_entry_mid = order.get("simulated_fill_mid") if self._simulate else None
+        sim_entry_mid = (
+            order.get("simulated_fill_mid") if self._mock_trade_execution else None
+        )
 
         pos = ActivePosition(
             ticker=event.ticker,
@@ -371,7 +373,7 @@ class OpMomentumTradeEngine:
                 "Could not fetch entry quote for %s, using sizer mid", option_symbol
             )
 
-        if self._simulate:
+        if self._mock_trade_execution:
             sim_mid = entry_mid.quantize(_D("0.01"), rounding=ROUND_HALF_UP)
             _notify(
                 f"[SIMULATE] BUY {option_type} {option_symbol} x{contracts} @ ~{sim_mid}"
@@ -467,7 +469,7 @@ class OpMomentumTradeEngine:
         self._monitor = PositionMonitor(
             self._client,
             self._signal_engine,
-            simulate=self._simulate,
+            mock_trade_execution=self._mock_trade_execution,
             trailing_ma=self._trailing_ma,
             max_loss_pct=self._max_loss_pct,
             armed_ma20_exit=self._armed_ma20_exit,

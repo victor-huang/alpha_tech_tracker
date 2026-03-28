@@ -141,7 +141,7 @@ def parse_args():
         help="Use live trading account (default: paper trading)",
     )
     parser.add_argument(
-        "--simulate",
+        "--mock-trade-execution",
         action="store_true",
         default=False,
         help="Simulate order fills at mid bid/ask — no real orders placed",
@@ -231,13 +231,13 @@ if __name__ == "__main__":
             format="%(asctime)s %(levelname)s %(name)s — %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",
         )
-        is_paper = not (args.live or args.simulate)
+        is_paper = not (args.live or args.mock_trade_execution)
         client = AlpacaAPIClient(is_paper_trading=is_paper)
         engine = OpMomentumTradeEngine(
             alpaca_client=client,
             is_paper=is_paper,
             stop_pct=args.stop_pct,
-            simulate=args.simulate,
+            mock_trade_execution=args.mock_trade_execution,
             opening_start_time=args.opening_start,
             trailing_ma=args.trailing_ma,
             max_loss_pct=args.max_loss_pct,
@@ -291,13 +291,13 @@ if __name__ == "__main__":
     )
 
     try:
-        is_paper = not (args.live or args.simulate)
+        is_paper = not (args.live or args.mock_trade_execution)
         client = AlpacaAPIClient(is_paper_trading=is_paper)
         engine = OpMomentumTradeEngine(
             alpaca_client=client,
             is_paper=is_paper,
             stop_pct=args.stop_pct,
-            simulate=args.simulate,
+            mock_trade_execution=args.mock_trade_execution,
             opening_start_time=args.opening_start,
             trailing_ma=args.trailing_ma,
             max_loss_pct=args.max_loss_pct,

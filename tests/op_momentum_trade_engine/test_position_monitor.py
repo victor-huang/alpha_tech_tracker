@@ -436,8 +436,10 @@ class TestPrintSummaryPnl:
     def test_bullish_call_profit_when_exit_above_entry(self, capsys):
         client = _make_alpaca_client()
         engine = _make_signal_engine_with_history("NVDA", pd.DataFrame())
-        monitor = PositionMonitor(client, engine, simulate=True)
-        monitor.add_position(_make_closed_position("BULLISH", entry_mid=13.86, exit_mid=14.21))
+        monitor = PositionMonitor(client, engine, mock_trade_execution=True)
+        monitor.add_position(
+            _make_closed_position("BULLISH", entry_mid=13.86, exit_mid=14.21)
+        )
 
         monitor.print_summary()
 
@@ -447,8 +449,10 @@ class TestPrintSummaryPnl:
     def test_bullish_call_loss_when_exit_below_entry(self, capsys):
         client = _make_alpaca_client()
         engine = _make_signal_engine_with_history("NVDA", pd.DataFrame())
-        monitor = PositionMonitor(client, engine, simulate=True)
-        monitor.add_position(_make_closed_position("BULLISH", entry_mid=14.21, exit_mid=13.86))
+        monitor = PositionMonitor(client, engine, mock_trade_execution=True)
+        monitor.add_position(
+            _make_closed_position("BULLISH", entry_mid=14.21, exit_mid=13.86)
+        )
 
         monitor.print_summary()
 
@@ -458,8 +462,10 @@ class TestPrintSummaryPnl:
     def test_bearish_put_profit_when_exit_above_entry(self, capsys):
         client = _make_alpaca_client()
         engine = _make_signal_engine_with_history("NVDA", pd.DataFrame())
-        monitor = PositionMonitor(client, engine, simulate=True)
-        monitor.add_position(_make_closed_position("BEARISH", entry_mid=13.72, exit_mid=21.35))
+        monitor = PositionMonitor(client, engine, mock_trade_execution=True)
+        monitor.add_position(
+            _make_closed_position("BEARISH", entry_mid=13.72, exit_mid=21.35)
+        )
 
         monitor.print_summary()
 
@@ -469,8 +475,10 @@ class TestPrintSummaryPnl:
     def test_bearish_put_loss_when_exit_below_entry(self, capsys):
         client = _make_alpaca_client()
         engine = _make_signal_engine_with_history("NVDA", pd.DataFrame())
-        monitor = PositionMonitor(client, engine, simulate=True)
-        monitor.add_position(_make_closed_position("BEARISH", entry_mid=21.35, exit_mid=13.72))
+        monitor = PositionMonitor(client, engine, mock_trade_execution=True)
+        monitor.add_position(
+            _make_closed_position("BEARISH", entry_mid=21.35, exit_mid=13.72)
+        )
 
         monitor.print_summary()
 
