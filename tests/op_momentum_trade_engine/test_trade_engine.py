@@ -241,14 +241,9 @@ class TestRankWeightedSizing:
         engine._monitor = Mock()
         engine._open_position_count = 1
 
-        with (
-            patch(_OPTION_CONTRACT_SELECTOR_PATH, return_value="NVDA260328C00730000"),
-            patch(_POSITION_SIZER_PATH, return_value=(3, _D("8.50"))) as compute_mock,
-            patch(
-                _PLACE_ENTRY_PATH,
-                return_value={"order_id": "sim-1", "simulated_fill_mid": _D("8.50")},
-            ),
-        ):
+        with patch(_OPTION_CONTRACT_SELECTOR_PATH, return_value="NVDA260328C00730000"), \
+             patch(_POSITION_SIZER_PATH, return_value=(3, _D("8.50"))) as compute_mock, \
+             patch(_PLACE_ENTRY_PATH, return_value={"order_id": "sim-1", "simulated_fill_mid": _D("8.50")}):
             engine._enter_position(_make_signal_event("NVDA"), rank=0)
 
         call_args, _ = compute_mock.call_args
@@ -262,14 +257,9 @@ class TestRankWeightedSizing:
         engine._monitor = Mock()
         engine._open_position_count = 1
 
-        with (
-            patch(_OPTION_CONTRACT_SELECTOR_PATH, return_value="NVDA260328C00730000"),
-            patch(_POSITION_SIZER_PATH, return_value=(3, _D("8.50"))) as compute_mock,
-            patch(
-                _PLACE_ENTRY_PATH,
-                return_value={"order_id": "sim-1", "simulated_fill_mid": _D("8.50")},
-            ),
-        ):
+        with patch(_OPTION_CONTRACT_SELECTOR_PATH, return_value="NVDA260328C00730000"), \
+             patch(_POSITION_SIZER_PATH, return_value=(3, _D("8.50"))) as compute_mock, \
+             patch(_PLACE_ENTRY_PATH, return_value={"order_id": "sim-1", "simulated_fill_mid": _D("8.50")}):
             engine._enter_position(_make_signal_event("NVDA"), rank=0)
 
         call_args, _ = compute_mock.call_args
@@ -283,14 +273,9 @@ class TestRankWeightedSizing:
         engine._monitor = Mock()
         engine._open_position_count = 1
 
-        with (
-            patch(_OPTION_CONTRACT_SELECTOR_PATH, return_value="NVDA260328C00730000"),
-            patch(_POSITION_SIZER_PATH, return_value=(2, _D("8.50"))) as compute_mock,
-            patch(
-                _PLACE_ENTRY_PATH,
-                return_value={"order_id": "sim-1", "simulated_fill_mid": _D("8.50")},
-            ),
-        ):
+        with patch(_OPTION_CONTRACT_SELECTOR_PATH, return_value="NVDA260328C00730000"), \
+             patch(_POSITION_SIZER_PATH, return_value=(2, _D("8.50"))) as compute_mock, \
+             patch(_PLACE_ENTRY_PATH, return_value={"order_id": "sim-1", "simulated_fill_mid": _D("8.50")}):
             engine._enter_position(_make_signal_event("NVDA"), rank=1)
 
         call_args, _ = compute_mock.call_args
