@@ -1,0 +1,61 @@
+{
+  "description": "NVDA BULLISH day — close above OR midpoint, above MA20/MA200, trailing MA20 exit",
+  "ticker": "NVDA",
+  "session_date": "2026-03-23",
+
+  "history": {
+    "comment": "200 bars of uniform history to pre-warm MAs; MAs are pre-set to known values",
+    "num_bars": 200,
+    "close": 818.0,
+    "ma20": 818.0,
+    "ma50": 810.0,
+    "ma200": 780.0
+  },
+
+  "opening_bars": [
+    {"time": "09:30", "open": 810.0, "high": 815.0, "low": 808.0, "close": 812.0, "volume": 5000},
+    {"time": "09:35", "open": 812.0, "high": 820.0, "low": 810.0, "close": 818.0, "volume": 4500},
+    {"time": "09:40", "open": 818.0, "high": 822.0, "low": 815.0, "close": 820.0, "volume": 4000}
+  ],
+
+  "monitoring_bars": [
+    {
+      "comment": "Price rises above hard stop — arms hard stop; MA20 still below hard_stop_price so trailing stop not yet eligible",
+      "time": "09:45", "close": 825.0, "ma20": 819.5, "ma50": 812.0,
+      "expected_exit": null
+    },
+    {
+      "comment": "MA20 rises above hard_stop_price; close still above MA20 so trailing stop does not fire",
+      "time": "10:00", "close": 828.0, "ma20": 820.5, "ma50": 813.0,
+      "expected_exit": null
+    },
+    {
+      "comment": "Close drops below MA20 (which is above hard_stop_price) — trailing MA20 stop fires",
+      "time": "10:30", "close": 820.5, "ma20": 821.0, "ma50": 814.0,
+      "expected_exit": "trailing_stop_ma20"
+    }
+  ],
+
+  "mock_api": {
+    "option_contracts": [
+      {"symbol": "NVDA260327C00730000", "strike_price": 730.0}
+    ],
+    "account_buying_power": 25000.0,
+    "entry_quote": {"bid": 8.0, "ask": 9.0},
+    "exit_quote": {"bid": 11.5, "ask": 12.5}
+  },
+
+  "expected": {
+    "signal": "BULLISH",
+    "or_high": "822.0",
+    "or_low": "808.0",
+    "hard_stop_price": "819.9",
+    "fallback_price": "819.2",
+    "option_symbol": "NVDA260327C00730000",
+    "contracts": 13,
+    "entry_mid": "8.50",
+    "exit_reason": "trailing_stop_ma20",
+    "exit_mid": "12.0",
+    "pnl": "4550.00"
+  }
+}

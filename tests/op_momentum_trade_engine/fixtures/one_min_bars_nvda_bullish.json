@@ -1,0 +1,49 @@
+{
+  "description": "16 1-minute bars (9:30–9:45) for NVDA BULLISH session. Bars arrive in order; the 9:45 flush bar triggers aggregation of the final 5-min opening bar and fires the signal.",
+  "ticker": "NVDA",
+
+  "history": {
+    "num_bars": 200,
+    "close": 818.0,
+    "ma20": 818.0,
+    "ma50": 810.0,
+    "ma200": 780.0
+  },
+
+  "one_min_bars": [
+    {"minute_offset":  0, "open": 810.0, "high": 812.0, "low": 808.0, "close": 811.0, "volume": 1000},
+    {"minute_offset":  1, "open": 811.0, "high": 813.0, "low": 809.0, "close": 812.0, "volume": 1000},
+    {"minute_offset":  2, "open": 812.0, "high": 814.0, "low": 810.0, "close": 812.0, "volume": 1000},
+    {"minute_offset":  3, "open": 812.0, "high": 815.0, "low": 810.0, "close": 812.0, "volume": 1000},
+    {"minute_offset":  4, "open": 812.0, "high": 815.0, "low": 810.0, "close": 812.0, "volume": 1000},
+
+    {"minute_offset":  5, "open": 812.0, "high": 815.0, "low": 810.0, "close": 814.0, "volume": 1000},
+    {"minute_offset":  6, "open": 814.0, "high": 817.0, "low": 812.0, "close": 816.0, "volume": 1000},
+    {"minute_offset":  7, "open": 816.0, "high": 818.0, "low": 814.0, "close": 817.0, "volume": 1000},
+    {"minute_offset":  8, "open": 817.0, "high": 819.0, "low": 815.0, "close": 818.0, "volume": 1000},
+    {"minute_offset":  9, "open": 818.0, "high": 820.0, "low": 816.0, "close": 818.0, "volume": 1000},
+
+    {"minute_offset": 10, "open": 818.0, "high": 820.0, "low": 815.0, "close": 819.0, "volume": 1000},
+    {"minute_offset": 11, "open": 819.0, "high": 821.0, "low": 817.0, "close": 820.0, "volume": 1000},
+    {"minute_offset": 12, "open": 820.0, "high": 822.0, "low": 818.0, "close": 820.0, "volume": 1000},
+    {"minute_offset": 13, "open": 820.0, "high": 822.0, "low": 818.0, "close": 820.0, "volume": 1000},
+    {"minute_offset": 14, "open": 820.0, "high": 822.0, "low": 818.0, "close": 820.0, "volume": 1000},
+
+    {"minute_offset": 15, "open": 820.0, "high": 821.0, "low": 818.0, "close": 820.0, "volume": 500,
+     "comment": "Flush bar — period boundary triggers aggregation of the 9:40 5-min bar and fires signal"}
+  ],
+
+  "expected_five_min_bars": [
+    {"period": "09:30", "open": 810.0, "high": 815.0, "low": 808.0, "close": 812.0},
+    {"period": "09:35", "open": 812.0, "high": 820.0, "low": 810.0, "close": 818.0},
+    {"period": "09:40", "open": 818.0, "high": 822.0, "low": 815.0, "close": 820.0}
+  ],
+
+  "expected": {
+    "signal": "BULLISH",
+    "or_high": "822.0",
+    "or_low": "808.0",
+    "hard_stop_price": "819.9",
+    "fallback_price": "819.2"
+  }
+}
