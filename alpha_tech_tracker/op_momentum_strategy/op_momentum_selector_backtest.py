@@ -11,6 +11,7 @@ from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import (
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector import (
     DEFAULT_TICKERS,
     OPENING_BARS,
+    OPENING_START_TIME,
     ROLLING_LOOKBACK_DAYS,
     STOP_PCT,
     compute_ticker_stats,
@@ -38,6 +39,7 @@ def run_selector_backtest(
     eval_end: date,
     lookback_days: int = ROLLING_LOOKBACK_DAYS,
     opening_bars: int = OPENING_BARS,
+    opening_start_time: str = OPENING_START_TIME,
     bearish_ma200: bool = False,
     stop_pct: float = STOP_PCT,
     source: str = "alpaca",
@@ -80,6 +82,7 @@ def run_selector_backtest(
             opening_bars,
             bearish_ma200,
             stop_pct,
+            opening_start_time=opening_start_time,
             trailing_ma=trailing_ma,
             max_loss_pct=max_loss_pct,
             armed_ma20_exit=armed_ma20_exit,
@@ -663,6 +666,13 @@ def _parse_args():
         help=f"Number of 5-min bars in opening period (default: {OPENING_BARS})",
     )
     parser.add_argument(
+        "--opening-start",
+        type=str,
+        default=OPENING_START_TIME,
+        help=f"Opening window start time HH:MM ET (default: {OPENING_START_TIME}). "
+        "e.g. 10:05 with --opening-bars 3 evaluates 10:05–10:20.",
+    )
+    parser.add_argument(
         "--trailing-ma",
         choices=["ma20", "ma50", "both"],
         default="ma20",
@@ -720,6 +730,8 @@ if __name__ == "__main__":
     print(f"  Weights      : {_weights_label(weights, INITIAL_CAPITAL)}")
     print(f"  Tickers      : {', '.join(tickers)}")
     print(f"  Lookback     : {args.lookback}d rolling")
+    print(f"  Opening start: {args.opening_start} ET")
+    print(f"  Opening bars : {args.opening_bars} ({args.opening_bars * 5} min window)")
     print(f"  Stop pct     : {args.stop_pct}")
     print(f"  Trailing MA  : {args.trailing_ma}")
     print(
@@ -738,6 +750,7 @@ if __name__ == "__main__":
         eval_end=eval_end,
         lookback_days=args.lookback,
         opening_bars=args.opening_bars,
+        opening_start_time=args.opening_start,
         bearish_ma200=args.bearish_ma200,
         stop_pct=args.stop_pct,
         source=args.source,
