@@ -19,3 +19,26 @@ let's say we will have 25000 in the account, and we are going to keep two active
 we will pick the weekly expired options with strike price that's about 10% lower than the current stock price. e.g. stock at $100, we will pick 100 % 10 = $90 strike price call options call on the bullish signal and signal. for bearish signal, we will pick put options with the strike price to be 10% higher than the current stock price. e.g. stock at $100, we will pick 100 % 10 = $110 strike price put options.
 
 can you do some research and provide a detailed plan on how to implement this real trade engine?
+
+========Need help validating the backtest result===========
+Here is the back test script:
+alpha_tech_tracker/op_momentum_strategy/op_momentum_backtest.py
+
+I need help on double checking the P&L calculation for each days from the logs output:
+* daily P&L, look at the trade executed for the day, and look up the market data with Alpha's real API call, check the P&L for the trade for the particular time window and the aggregated P&L for the day
+* check for the capital carried over from each time window, and make sure the next time window can only use the remaining balance in the account, and the trade capitals from the eallier timew indow should be return to the account if the trade is ended before the next time window start 
+* check on the day to day capital carried over, if the first day has a gains or loss, the gain and loss need to be carried over and used as next day starting capital. and second's gain/loss should be carried over to the next day and so on.
+* reproduce the week to week P&L and month to month aggregated P&L from log, and validate the total P&L for the period can be reproduced from log and no-mistakes
+
+here is the commmand to start the backtest:
+python alpha_tech_tracker/op_momentum_strategy/op_momentum_selector_backtest.py --start 2026-01-01 --end 2026-03-27 --regime-filter --regime-ma 8 --weights 50 30 20 --window M1 09:30 3 --window M2 09:30 1 --window A1 13:15 1 --window A2 15:00 1 --morning-split 60 40 --compound
+
+all the multi-year window backtest result is in this folder: alpha_tech_tracker/op_momentum_strategy/backtest_result/multiple_trading_windows/
+
+
+----Add non-compound P&L auditing-----
+let's extend the file to validate the non-compond case, example log is here m1_m2_a1_a2_2026.txt, 
+you can remove the "--compound" flag to run the backtest for the result. the difference for non-compont backtest is that, 
+we reset the capital daily back to 10k. Let's validate the daily P&L make sense, the weekly P&L make sense (everyday's initial capital + P&L amount for each day of the week). the monthly P&L is similar: 1 - ((number of days traded in the month * 10K + all P&L dollar of the month)  / number of days traded in the month * 10K )
+let's me know if there is any questions on the P&L calculation logic here than the one in the backtest script.
+
