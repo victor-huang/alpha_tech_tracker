@@ -404,3 +404,141 @@ Full-year head-to-head (stop-pct 0.15, no trailing MA):
 | 2025 | +54.35% | **+68.95%** | 13 (+14.6pp) |
 
 Expanded 13 wins in 4 of 5 years. 2024 is the only exception — the 5 added tickers (higher-beta small/mid caps) underperformed in the low-volatility 2024 melt-up.
+
+---
+
+## Annual Rotation Framework
+
+### Why Backward-Looking Backtests Aren't Enough
+
+The screening process above is validated — but it's backward-looking. It tells you a ticker was good over the past 90–180 days. It doesn't answer: *what would you have screened for on Jan 1 to know a ticker would work for the whole year?*
+
+The answer is a set of observable, pre-backtest characteristics that strongly correlate with ORB strategy fit. These are the factors to evaluate before running a backtest on a new candidate.
+
+---
+
+### Pre-Backtest Quantitative Gates (Point-in-Time Screens)
+
+These are computable from historical data at the start of any period — no backtest needed.
+
+**1. Average Daily Range % (ADR%) — Most Important**
+
+The entire strategy's edge is bounded by how much the stock moves intraday. The OR hard stop is 15% of the OR range — if the stock's daily range is narrow, the OR range is tiny and options premium costs eat all the edge.
+
+- **Minimum: 60-day trailing ADR% > 3%**
+- **Target: 4–8%** — the confirmed pool (SNDK, CVNA, APP, COIN, PLTR) all sit here
+- **Rotation-out trigger: ADR% drops below 2.5% and holds there for 30+ trading days**
+
+Academic basis: intraday continuation is strongest in stocks with high first-half-hour trading volume (Gao et al., 2018, JFE). High-volume opens produce wider OR ranges, which produce more meaningful ORB signals.
+
+**2. Beta vs. QQQ > 1.5 (1-year trailing)**
+
+High-beta names amplify directional market days — which is exactly when ORB signals are cleanest. The regime filter (QQQ MA8) captures *when* the market is trending; high beta captures *how much* a stock moves when it does.
+
+- **Screen: 1-year trailing beta vs. QQQ > 1.5**
+- Stocks with beta < 1.0 rarely form clean ORB patterns — this is why XOM, GLD, GDX, and most commodity ETFs consistently failed in sector screening
+
+**3. Options Liquidity**
+
+Since the strategy trades weekly options, not shares, execution quality gates:
+
+- **Average daily options volume (6-month trailing) > 5,000 contracts/day**
+- **Weekly ATM bid-ask spread < 3% of mid-price**
+- Below 2,000 contracts/day: flag for watch; below 1,000: remove candidate
+
+Smaller names (ISSC, FN, ANAB) may pass signal-level backtests but have execution friction in live trading. Verify options ADV before adding to the live pool.
+
+**4. 52-Week High Proximity**
+
+George & Hwang (2004) showed stocks near their 52-week high at the start of a period have +0.65%/month forward return alpha — persistent with no long-term reversal (unlike classic 12-month momentum which reverses at 3–5 years). The mechanism: when stocks finally break through the high, moves are sustained because prior resistance becomes support.
+
+- **Prefer: current price within 15% of 52-week high**
+- **Watchlist: 20–35% below 52-week high** — may still generate good bearish ORB signals
+- **Rotation candidate: 35%+ below 52-week high with no fundamental catalyst**
+
+**5. Short Interest 5–20% of Float**
+
+The "squeeze potential" range. Enough trapped shorts to fuel follow-through on bullish OR breakouts (shorts stop out, amplifying the move), but not so high the stock is structurally broken.
+
+- Below 3%: fewer trapped shorts → less acceleration on breakouts
+- Above 30%: mean-reversion risk on failed signals is extreme
+
+Explains COIN's behavior: high short interest → bearish signals drive pile-ons; bullish signals force covers. Both sides produce outsized moves.
+
+**6. Prior Year Return in Top Quartile of Sector**
+
+Classic momentum (Jegadeesh-Titman): stocks with the strongest prior 12-month returns have 3–12 month forward momentum. Stocks that finished the prior year in the top quartile of their sector are structurally more likely to generate clean ORB signals in the new year.
+
+- **Screen: prior year return > +15% OR in top quartile of sector**
+- Note: classic 12-month momentum reverses at 3+ years — the rolling 60-day EV gate in the selector handles this deterioration automatically
+
+---
+
+### Qualitative Criteria
+
+**Sector Leadership**
+
+Sector momentum persists 6–12 months (Mamais et al., 2025, Journal of Forecasting). At the start of each period, rank S&P sectors by 6-month relative strength vs. QQQ. Concentrate the pool in the top 2–3 sectors.
+
+- 2021: Tech, Consumer Discretionary → APP, SHOP, CVNA
+- 2022: Tech still worked via bearish signals in the downtrend
+- 2024: Low-volatility melt-up → high-beta small caps (ISSC, ANAB) underperformed vs. larger tech
+- Q1 2026: Energy, Materials rotation → FANG, GEV identified in sector screen
+
+**"Trader Stock" Character**
+
+High day-trader participation creates the crowd dynamics that amplify ORB continuation. Stocks with active fintwit/Reddit/Discord following tend to have more consistent ORB follow-through because retail traders entering after the OR closes amplify the move. Hard to quantify but observable — TSLA, PLTR, COIN, NVDA, APP all have this; FANG and ISSC are more episodic.
+
+**Regular Catalyst Schedule**
+
+Stocks with quarterly earnings that regularly produce large moves (±5%+ gap) demonstrate they can trend strongly on catalyst days — this correlates with trending on non-earnings ORB days (volatility clustering). Check the prior 4 quarters for large post-earnings gaps.
+
+---
+
+### Rotation-Out Signals
+
+| Signal | Threshold | Action |
+|---|---|---|
+| ADR% contraction | 60-day ADR% drops >40% vs. prior-year average, holds 30+ days | Remove immediately |
+| Rolling EV/trade | 60-day EV/trade drops below 0 for 20+ consecutive days | Remove (selector EV gate already handles daily) |
+| Options liquidity | Options ADV below 2,000 contracts/day | Watch; remove below 1,000 |
+| MA200 breakdown | Price below MA200 for 30+ consecutive days, no catalyst | Bearish-signals-only or remove |
+| Sector RS decay | Stock's sector in bottom 2 by RS vs. QQQ for 8+ consecutive weeks | Flag for next quarterly review |
+| Narrative collapse | Delisting risk, regulatory investigation, 3+ consecutive fundamental misses | Remove immediately |
+| Beta decay | 60-day beta vs. QQQ drops below 1.0 | Watch; consider removing |
+
+---
+
+### Review Cadence: Quarterly Monitoring, Annual Structural Changes
+
+The strategy already has two filtering layers operating at different timescales:
+
+**Layer 1 — Daily (already automated):** The rolling 60-day EV gate in `op_momentum_selector.py` handles individual ticker performance decay automatically. If a ticker's EV/trade drops below 0, it gets gated out of the top-3 every day. No manual review needed for this layer.
+
+**Layer 2 — Pool membership (what needs a cadence):** Which tickers are even in the candidate universe. This requires periodic review because the EV gate can't see ADR collapse, options illiquidity, or sector rotation until it's already reflected in backtest results — which lags reality by 30–60 days.
+
+**Why not annual-only?** Evidence from this strategy's own data:
+- CRWD degraded from +0.500% EV (90d) → +0.244% (6m) — within one quarter
+- Q1 2026 energy/materials rotation was visible within 6–8 weeks of the year starting
+- ADR contraction can occur in 4–6 weeks on individual names
+
+**Quarterly Review (Jan, Apr, Jul, Oct):**
+1. Run ADR% check on all pool tickers — flag any >30% below prior-year average
+2. Check options ADV (6-month trailing) — flag below 5K contracts/day
+3. Check sector relative strength — confirm pool is in the top 2–3 sectors
+4. Screen 10–15 rotation candidates from gaining sectors through ADR/beta/options gates
+5. Run 90-day backtest on candidates that pass the gates → add survivors to **rotation bench**
+6. Remove immediately only on hard triggers: ADR collapse, options illiquidity, narrative event
+
+**Annual Review (January):**
+1. Make final add/remove decisions based on what quarterly flags surfaced
+2. Run 6-month validation on any rotation bench candidates before promoting to live pool
+3. Re-rank full pool by 1-year EV/trade to confirm ordering
+4. Review sector allocation vs. leading sectors for the new year
+5. Re-check ADR%, beta, and options ADV for all pool members against current-year thresholds
+6. Recheck 52-week proximity for all pool members — flag structural laggards
+
+**Immediate (event-driven, any time):**
+- Delisting risk, regulatory action, reverse split, M&A announcement (target) → remove same day
+
+**Key principle:** The quarterly review builds and maintains a **rotation bench** — candidates that have already passed the 90-day backtest screen and are ready to swap in. Without this bench, you're always 3–6 months behind sector rotations. When the annual review comes, you have validated candidates ready instead of names that still need testing.

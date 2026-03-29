@@ -42,3 +42,10 @@ you can remove the "--compound" flag to run the backtest for the result. the dif
 we reset the capital daily back to 10k. Let's validate the daily P&L make sense, the weekly P&L make sense (everyday's initial capital + P&L amount for each day of the week). the monthly P&L is similar: 1 - ((number of days traded in the month * 10K + all P&L dollar of the month)  / number of days traded in the month * 10K )
 let's me know if there is any questions on the P&L calculation logic here than the one in the backtest script.
 
+========future ticker list selection========
+now that we have a pretty good trade windows setup for our strategy, i like to measure how likely we can reproduce the similar result in the future, this will bring us back to exam the ticker selection logic: alpha_tech_tracker/op_momentum_strategy/TICKER_SELECTION.md
+the problem with back test is that we know the company/ticker is performing strong with our strategy after seeing it's performance for 6 month to a years.
+if we look back in time for the past years, what are the information we already known at the starting of the year for our current list of company, how about the second years and so on, we want to capture the point-in-time information about those company that make this ticker selection list standout from other.
+Please do some research on fining out what factor we should consider when adding company to the list and when we should rotate out ticker from the list. we should based on information only avaliable at the begining of that trading year.
+
+=======Implement multi-trading windows in live trading engine=========
