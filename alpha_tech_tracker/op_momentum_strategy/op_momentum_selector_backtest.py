@@ -56,30 +56,37 @@ def _apply_capital_flow(
     initial_capital: float,
     weights: list,
     n: int,
-    morning_count: int = 2,
-    morning_pct: float = 0.60,
+    morning_split: list = None,
     min_capital: float = MIN_WINDOW_CAPITAL,
-) -> tuple:
+    compound: bool = False,
+) -> list:
     """
     Apply day-by-day capital flow across windows.
 
     Capital allocation rules:
-      - Morning windows (first morning_count windows): share morning_pct of portfolio
-      - Afternoon windows (remaining): share (1 - morning_pct) of portfolio PLUS morning P&L
+      - First group (simultaneous): first len(morning_split) windows each get
+        portfolio * morning_split[i] of capital deployed at the same time.
+      - Sequential windows (remaining): each inherits all returned capital from
+        the previous window (first_group_pnl flows into the first sequential
+        window; each subsequent window gets the prior window's returned capital).
       - If a window's allocated capital < min_capital, it is skipped for that day
+        and the available capital passes unchanged to the next sequential window.
+      - compound=False (default): portfolio resets to initial_capital at the start
+        of each day — isolates per-day strategy edge, good for strategy comparison.
+      - compound=True: portfolio carries over day-to-day — reflects live account growth.
 
     Mutates each trade row in-place, adding:
       - 'cap_pnl': actual dollar P&L for this trade given real capital allocation
       - 'window_capital': capital allocated to this window on this day
       - 'skipped': True if window was skipped due to insufficient capital
 
-    Returns skip_log: list of dicts describing each skipped or executed window per day.
+    Returns skip_log: list of dicts describing each window execution per day.
     """
+    if morning_split is None:
+        morning_split = [1.0]
+
+    n_first = len(morning_split)
     window_labels = [w["label"] for w in windows]
-    morning_labels = set(window_labels[:morning_count])
-    afternoon_labels = set(window_labels[morning_count:])
-    n_morning = min(morning_count, len(windows))
-    n_afternoon = max(0, len(windows) - morning_count)
 
     # Index trade_rows by (date, window) for fast lookup
     by_day_window = {}
@@ -92,15 +99,14 @@ def _apply_capital_flow(
     portfolio = initial_capital
 
     for d in trading_days:
-        morning_per_window = (
-            (portfolio * morning_pct / n_morning) if n_morning > 0 else 0.0
-        )
-        morning_total_pnl = 0.0
-
-        # --- Morning windows ---
-        for label in window_labels[:morning_count]:
+        if not compound:
+            portfolio = initial_capital
+        # --- First group: simultaneous windows, each gets portfolio * split[i] ---
+        first_group_pnl = 0.0
+        for i, label in enumerate(window_labels[:n_first]):
+            win_capital = portfolio * morning_split[i]
             rows = by_day_window.get((d, label), [])
-            skipped = morning_per_window < min_capital
+            skipped = win_capital < min_capital
             status = (
                 "skipped_low_capital"
                 if skipped
@@ -111,58 +117,57 @@ def _apply_capital_flow(
                     "date": d,
                     "window": label,
                     "status": status,
-                    "available_capital": round(morning_per_window, 2),
+                    "available_capital": round(win_capital, 2),
                     "picks": len(rows),
                 }
             )
             for row in rows:
-                row["window_capital"] = morning_per_window
+                row["window_capital"] = win_capital
                 if skipped:
                     row["cap_pnl"] = 0.0
                     row["skipped"] = True
                 else:
-                    slot_capital = morning_per_window * weights[row["rank"] - 1]
+                    slot_capital = win_capital * weights[row["rank"] - 1]
                     row["cap_pnl"] = (slot_capital / row["entry_price"]) * row["pnl"]
                     row["skipped"] = False
-                    morning_total_pnl += row["cap_pnl"]
+                    first_group_pnl += row["cap_pnl"]
 
-        # --- Afternoon windows ---
-        if n_afternoon > 0:
-            afternoon_pool = portfolio * (1.0 - morning_pct) + morning_total_pnl
-            afternoon_per_window = afternoon_pool / n_afternoon
+        # --- Sequential windows: each inherits all returned capital ---
+        available = portfolio + first_group_pnl
+        seq_pnl = 0.0
+        for label in window_labels[n_first:]:
+            rows = by_day_window.get((d, label), [])
+            skipped = available < min_capital
+            status = (
+                "skipped_low_capital"
+                if skipped
+                else ("executed" if rows else "no_signal")
+            )
+            skip_log.append(
+                {
+                    "date": d,
+                    "window": label,
+                    "status": status,
+                    "available_capital": round(available, 2),
+                    "picks": len(rows),
+                }
+            )
+            win_pnl = 0.0
+            for row in rows:
+                row["window_capital"] = available
+                if skipped:
+                    row["cap_pnl"] = 0.0
+                    row["skipped"] = True
+                else:
+                    slot_capital = available * weights[row["rank"] - 1]
+                    row["cap_pnl"] = (slot_capital / row["entry_price"]) * row["pnl"]
+                    row["skipped"] = False
+                    win_pnl += row["cap_pnl"]
+            if not skipped:
+                available += win_pnl
+                seq_pnl += win_pnl
 
-            for label in window_labels[morning_count:]:
-                rows = by_day_window.get((d, label), [])
-                skipped = afternoon_per_window < min_capital
-                status = (
-                    "skipped_low_capital"
-                    if skipped
-                    else ("executed" if rows else "no_signal")
-                )
-                skip_log.append(
-                    {
-                        "date": d,
-                        "window": label,
-                        "status": status,
-                        "available_capital": round(afternoon_per_window, 2),
-                        "picks": len(rows),
-                    }
-                )
-                for row in rows:
-                    row["window_capital"] = afternoon_per_window
-                    if skipped:
-                        row["cap_pnl"] = 0.0
-                        row["skipped"] = True
-                    else:
-                        slot_capital = afternoon_per_window * weights[row["rank"] - 1]
-                        row["cap_pnl"] = (slot_capital / row["entry_price"]) * row[
-                            "pnl"
-                        ]
-                        row["skipped"] = False
-
-        # Advance portfolio by today's total cap P&L (all windows)
-        day_cap_pnl = sum(row["cap_pnl"] for row in trade_rows if row["date"] == d)
-        portfolio += day_cap_pnl
+        portfolio += first_group_pnl + seq_pnl
 
     return skip_log
 
@@ -643,24 +648,28 @@ def _print_per_window_stats(
     trade_rows: list,
     windows: list,
     initial_capital: float,
-    morning_count: int,
-    morning_pct: float,
+    morning_split: list,
 ):
+    n_first = len(morning_split)
+    split_pct = " / ".join(f"{s * 100:.0f}%" for s in morning_split)
     sep = "\u2501" * 80
     print(f"\n{sep}")
     print(
-        f"  PER-WINDOW BREAKDOWN  (morning {morning_pct * 100:.0f}% / afternoon {(1 - morning_pct) * 100:.0f}% + morning P&L)"
+        f"  PER-WINDOW BREAKDOWN  (first group: {split_pct} of portfolio | sequential: inherits all returned capital)"
     )
     print(sep)
     print(
-        f"  {'Window':<8} {'Start':<7} {'Bars':<5} {'Group':<10} {'Trades':>7}  {'W/L':<10} "
+        f"  {'Window':<8} {'Start':<7} {'Bars':<5} {'Group':<12} {'Trades':>7}  {'W/L':<10} "
         f"{'WinRate':>8}  {'EV/trade':>9}  {'Cap P&L':>10}  {'Return%':>8}"
     )
-    print(f"  {'─' * 76}")
+    print(f"  {'─' * 78}")
 
     for i, win in enumerate(windows):
         label = win["label"]
-        group = "morning" if i < morning_count else "afternoon"
+        if i < n_first:
+            group = f"first({morning_split[i] * 100:.0f}%)"
+        else:
+            group = "sequential"
         win_rows = [
             r for r in trade_rows if r["window"] == label and not r.get("skipped")
         ]
@@ -820,8 +829,7 @@ def _print_summary(
     initial_capital: float = INITIAL_CAPITAL,
     qqq_closes: pd.Series = None,
     weights: list = None,
-    morning_count: int = 2,
-    morning_pct: float = 0.60,
+    morning_split: list = None,
 ):
     sep = "\u2501" * 70
     print(f"\n{sep}")
@@ -860,7 +868,7 @@ def _print_summary(
 
         if len(windows) > 1:
             _print_per_window_stats(
-                trade_rows, windows, initial_capital, morning_count, morning_pct
+                trade_rows, windows, initial_capital, morning_split or [1.0]
             )
 
         def _week_key(d):
@@ -964,17 +972,14 @@ def _parse_args():
         "Repeat to add multiple windows. When specified, overrides --opening-start/--opening-bars.",
     )
     parser.add_argument(
-        "--morning-count",
-        type=int,
-        default=2,
-        help="Number of leading windows treated as 'morning' (default: 2). "
-        "Morning windows share morning-pct of capital; afternoon windows get the rest plus morning P&L.",
-    )
-    parser.add_argument(
-        "--morning-pct",
+        "--morning-split",
+        nargs="+",
         type=float,
-        default=0.60,
-        help="Fraction of capital allocated to morning windows combined (default: 0.60).",
+        default=None,
+        help="Per-window split for the first (simultaneous) group as percentages, e.g. --morning-split 60 40. "
+        "Must sum to ≤ 100. The number of values determines how many leading windows are simultaneous. "
+        "Remaining windows run sequentially, each inheriting all returned capital. "
+        "Default: single window gets 100%% of portfolio.",
     )
     parser.add_argument(
         "--min-window-capital",
@@ -982,6 +987,19 @@ def _parse_args():
         default=MIN_WINDOW_CAPITAL,
         help=f"Minimum capital required to execute a window (default: ${MIN_WINDOW_CAPITAL:.0f}). "
         "Windows with less available capital are skipped.",
+    )
+    parser.add_argument(
+        "--show-execution-log",
+        action="store_true",
+        default=False,
+        help="Print the window execution log showing which windows ran or were skipped each day. Default: off.",
+    )
+    parser.add_argument(
+        "--compound",
+        action="store_true",
+        default=False,
+        help="Compound capital across days (portfolio carries over). "
+        "Default: reset to initial capital each day for clean per-day strategy evaluation.",
     )
     parser.add_argument(
         "--dedup",
@@ -1049,10 +1067,24 @@ if __name__ == "__main__":
         windows, args.opening_start, args.opening_bars
     )
     n_windows = len(resolved_windows)
-    morning_count = min(args.morning_count, n_windows)
-    morning_pct = args.morning_pct
-    n_morning = morning_count
-    n_afternoon = n_windows - morning_count
+
+    # Parse --morning-split: convert percentages to fractions, validate
+    if args.morning_split:
+        raw_split = args.morning_split
+        total_pct = sum(raw_split)
+        if total_pct > 100.0 + 1e-6:
+            raise SystemExit(
+                f"--morning-split values sum to {total_pct:.1f}% which exceeds 100%."
+            )
+        if len(raw_split) > n_windows:
+            raise SystemExit(
+                f"--morning-split has {len(raw_split)} values but only {n_windows} window(s) defined."
+            )
+        morning_split = [v / 100.0 for v in raw_split]
+    else:
+        morning_split = [1.0] if n_windows == 1 else None
+
+    n_first = len(morning_split) if morning_split else 1
 
     print(f"\nSelector Backtest")
     print(f"  Eval window  : {eval_start} → {eval_end}")
@@ -1060,25 +1092,22 @@ if __name__ == "__main__":
     print(f"  Weights      : {_weights_label(weights, INITIAL_CAPITAL)}")
     print(f"  Tickers      : {', '.join(tickers)}")
     print(f"  Lookback     : {args.lookback}d rolling")
-    print(
-        f"  Windows      : {n_windows} total  |  morning {morning_pct * 100:.0f}% / afternoon {(1 - morning_pct) * 100:.0f}% + morning P&L"
-    )
+    print(f"  Windows      : {n_windows} total")
     for i, w in enumerate(resolved_windows):
-        group = "morning" if i < morning_count else "afternoon"
-        if group == "morning":
-            cap_slice = (
-                INITIAL_CAPITAL * morning_pct / n_morning if n_morning > 0 else 0
-            )
+        if morning_split and i < len(morning_split):
+            group_desc = f"simultaneous, {morning_split[i] * 100:.0f}% of portfolio"
+            cap_approx = INITIAL_CAPITAL * morning_split[i]
         else:
-            cap_slice = (
-                INITIAL_CAPITAL * (1 - morning_pct) / n_afternoon
-                if n_afternoon > 0
-                else 0
-            )
+            group_desc = "sequential, inherits all returned capital"
+            cap_approx = None
+        cap_str = f"  (~${cap_approx:,.0f})" if cap_approx is not None else ""
         print(
-            f"    [{w['label']}] {w['opening_start']} / {w['opening_bars']} bars  ({group}, ~${cap_slice:,.0f})"
+            f"    [{w['label']}] {w['opening_start']} / {w['opening_bars']} bars  ({group_desc}){cap_str}"
         )
     print(f"  Min capital  : ${args.min_window_capital:.0f} per window (skip if below)")
+    print(
+        f"  Compounding  : {'on (portfolio carries over)' if args.compound else 'off (reset $10k each day)'}"
+    )
     print(f"  Dedup        : {'on' if args.dedup else 'off'}")
     print(f"  Stop pct     : {args.stop_pct}")
     print(f"  Trailing MA  : {args.trailing_ma}")
@@ -1117,9 +1146,9 @@ if __name__ == "__main__":
         INITIAL_CAPITAL,
         weights,
         args.top,
-        morning_count=morning_count,
-        morning_pct=morning_pct,
+        morning_split=morning_split,
         min_capital=args.min_window_capital,
+        compound=args.compound,
     )
 
     baseline_df = _collect_baseline(all_window_results, eval_start, eval_end)
@@ -1146,7 +1175,7 @@ if __name__ == "__main__":
         initial_capital=INITIAL_CAPITAL,
         qqq_closes=qqq_closes,
         weights=weights,
-        morning_count=morning_count,
-        morning_pct=morning_pct,
+        morning_split=morning_split,
     )
-    _print_skip_log(skip_log, resolved_windows)
+    if args.show_execution_log:
+        _print_skip_log(skip_log, resolved_windows)

@@ -227,7 +227,7 @@ def compute_signals_with_backtest(
     armed_ma20_exit: bool = False,
     bearish_regime_dates: set = None,
 ) -> pd.DataFrame:
-    from datetime import time as dtime
+    pass
 
     opening_start_t = datetime.strptime(opening_start_time, "%H:%M").time()
 
@@ -823,6 +823,49 @@ def print_summary(all_results: dict, backtest_days: int, opening_bars: int):
     print(f"{'=' * 96}")
 
 
+def _stitch_cache(
+    ticker: str, start_date: date, end_date: date, source: str
+) -> "pd.DataFrame | None":
+    """Try to build a full-range DataFrame by stitching existing per-period cache files."""
+    import re
+
+    pattern = re.compile(
+        rf"^{re.escape(source)}_5min_{re.escape(ticker)}_(\d{{4}}-\d{{2}}-\d{{2}})_(\d{{4}}-\d{{2}}-\d{{2}})\.json$"
+    )
+    pieces = []
+    for f in _CACHE_DIR.iterdir():
+        m = pattern.match(f.name)
+        if not m:
+            continue
+        c_start = date.fromisoformat(m.group(1))
+        c_end = date.fromisoformat(m.group(2))
+        if c_start <= start_date and c_end >= end_date:
+            return _load_cache(f, "5min")
+        if c_end >= start_date and c_start <= end_date:
+            pieces.append((c_start, c_end, f))
+
+    if not pieces:
+        return None
+
+    pieces.sort(key=lambda x: x[0])
+    covered_end = pieces[0][0] - timedelta(days=1)
+    dfs = []
+    for c_start, c_end, f in pieces:
+        if c_start > covered_end + timedelta(days=7):
+            return None
+        dfs.append(_load_cache(f, "5min"))
+        if c_end > covered_end:
+            covered_end = c_end
+
+    if covered_end < end_date:
+        return None
+
+    combined = pd.concat(dfs)
+    combined = combined[~combined.index.duplicated(keep="last")]
+    combined.sort_index(inplace=True)
+    return combined
+
+
 def fetch_bars(
     tickers: list,
     start_date: date,
@@ -840,6 +883,11 @@ def fetch_bars(
             cp = _cache_path(ticker, start_date, end_date_only, source, "5min")
             if cp.exists():
                 result[ticker] = _load_cache(cp, "5min")
+                continue
+            stitched = _stitch_cache(ticker, start_date, end_date_only, source)
+            if stitched is not None:
+                result[ticker] = stitched
+                _save_cache(stitched, cp, "5min")
                 continue
         to_fetch.append(ticker)
 
