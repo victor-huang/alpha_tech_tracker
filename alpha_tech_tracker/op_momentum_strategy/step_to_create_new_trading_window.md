@@ -190,7 +190,7 @@ Compare year-end portfolio values to the current best config (`M2+A1+A2`). This 
 
 ## Step 8 — Document the Finding
 
-Add results to `back_test_result/FINDINGS.md`:
+Add results to `FINDINGS.md` (same directory as this doc):
 
 - **Finding N** — title the finding with the window config and date range
 - Include the sweep table (Axis 1 and Axis 2 results)
