@@ -257,7 +257,7 @@ class OpMomentumTradeEngine:
         except Exception:
             logger.exception("Failed to place entry order for %s", option_symbol)
             with self._signal_lock:
-                self._open_position_count -= 1
+                self._window_state[window_label]["open_position_count"] -= 1
             return
 
         bull_hard_stop = event.or_high - self._stop_pct * event.or_range
