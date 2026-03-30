@@ -435,3 +435,62 @@ class TestMultiWindowEngine:
         assert "AMD" not in engine._window_state["M1"]["pending_signals"]
         assert "AMD" in engine._window_state["A1"]["pending_signals"]
         assert "NVDA" not in engine._window_state["A1"]["pending_signals"]
+
+
+_NOTIFY_PATH = "alpha_tech_tracker.op_momentum_strategy.trade_engine._notify"
+
+
+class TestEntryAlert:
+    def _make_engine(self):
+        client = _make_alpaca_client()
+        engine = OpMomentumTradeEngine(alpaca_client=client, mock_trade_execution=True)
+        engine._monitor = Mock()
+        return engine
+
+    def test_entry_alert_includes_readable_option_symbol(self):
+        engine = self._make_engine()
+        with patch(_OPTION_CONTRACT_SELECTOR_PATH, return_value="NVDA260404C00170000"), \
+             patch(_POSITION_SIZER_PATH, return_value=(3, _D("8.50"))), \
+             patch(_PLACE_ENTRY_PATH, return_value={"order_id": "sim-1", "simulated_fill_mid": _D("8.50")}), \
+             patch(_NOTIFY_PATH) as mock_notify:
+            engine._enter_position(_make_signal_event("NVDA"), rank=0)
+
+        msg = mock_notify.call_args[0][0]
+        assert "NVDA" in msg
+        assert "Call" in msg
+        assert "170" in msg
+
+    def test_entry_alert_includes_entry_mid(self):
+        engine = self._make_engine()
+        with patch(_OPTION_CONTRACT_SELECTOR_PATH, return_value="NVDA260404C00170000"), \
+             patch(_POSITION_SIZER_PATH, return_value=(3, _D("8.50"))), \
+             patch(_PLACE_ENTRY_PATH, return_value={"order_id": "sim-1", "simulated_fill_mid": _D("8.50")}), \
+             patch(_NOTIFY_PATH) as mock_notify:
+            engine._enter_position(_make_signal_event("NVDA"), rank=0)
+
+        msg = mock_notify.call_args[0][0]
+        assert "8.50" in msg
+
+    def test_entry_alert_includes_hard_stop_price(self):
+        engine = self._make_engine()
+        with patch(_OPTION_CONTRACT_SELECTOR_PATH, return_value="NVDA260404C00170000"), \
+             patch(_POSITION_SIZER_PATH, return_value=(3, _D("8.50"))), \
+             patch(_PLACE_ENTRY_PATH, return_value={"order_id": "sim-1", "simulated_fill_mid": _D("8.50")}), \
+             patch(_NOTIFY_PATH) as mock_notify:
+            engine._enter_position(_make_signal_event("NVDA", or_high=107.0, or_low=97.0), rank=0)
+
+        # hard_stop = or_high - stop_pct(0.15) * or_range(10) = 107 - 1.5 = 105.50
+        msg = mock_notify.call_args[0][0]
+        assert "stop" in msg
+        assert "105.50" in msg
+
+    def test_entry_alert_prefixed_with_simulate_in_mock_mode(self):
+        engine = self._make_engine()
+        with patch(_OPTION_CONTRACT_SELECTOR_PATH, return_value="NVDA260404C00170000"), \
+             patch(_POSITION_SIZER_PATH, return_value=(3, _D("8.50"))), \
+             patch(_PLACE_ENTRY_PATH, return_value={"order_id": "sim-1", "simulated_fill_mid": _D("8.50")}), \
+             patch(_NOTIFY_PATH) as mock_notify:
+            engine._enter_position(_make_signal_event("NVDA"), rank=0)
+
+        msg = mock_notify.call_args[0][0]
+        assert msg.startswith("[SIMULATE]")
