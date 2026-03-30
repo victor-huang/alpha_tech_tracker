@@ -7,7 +7,11 @@ import pytz
 from alpha_tech_tracker.op_momentum_strategy.models import _FiveMinBar
 from alpha_tech_tracker.op_momentum_strategy.signal_engine import LiveSignalEngine
 
-from conftest import _build_history_df, _make_mock_bars, _make_signal_engine_with_history
+from conftest import (
+    _build_history_df,
+    _make_mock_bars,
+    _make_signal_engine_with_history,
+)
 
 ET = pytz.timezone("America/New_York")
 
@@ -55,9 +59,9 @@ class TestLiveSignalEngine:
         opening_bars = _make_mock_bars(
             "NVDA", highs=[103.0, 104.0, 107.0], lows=[101.0, 102.0, 105.0]
         )
-        engine._opening_buf["NVDA"] = opening_bars
+        engine._opening_buf["W1"]["NVDA"] = opening_bars
 
-        engine._try_fire_signal("NVDA", df.iloc[-1])
+        engine._try_fire_signal("NVDA", df.iloc[-1], engine._windows[0])
 
         assert len(fired_events) == 1
         assert fired_events[0].signal == "BULLISH"
@@ -81,9 +85,9 @@ class TestLiveSignalEngine:
         opening_bars = _make_mock_bars(
             "NVDA", highs=[101.0, 99.0, 97.0], lows=[99.0, 97.0, 95.0]
         )
-        engine._opening_buf["NVDA"] = opening_bars
+        engine._opening_buf["W1"]["NVDA"] = opening_bars
 
-        engine._try_fire_signal("NVDA", df.iloc[-1])
+        engine._try_fire_signal("NVDA", df.iloc[-1], engine._windows[0])
 
         assert len(fired_events) == 1
         assert fired_events[0].signal == "BEARISH"
@@ -106,9 +110,9 @@ class TestLiveSignalEngine:
         opening_bars = _make_mock_bars(
             "NVDA", highs=[101.0, 101.0, 101.0], lows=[99.0, 99.0, 99.0]
         )
-        engine._opening_buf["NVDA"] = opening_bars
+        engine._opening_buf["W1"]["NVDA"] = opening_bars
 
-        engine._try_fire_signal("NVDA", df.iloc[-1])
+        engine._try_fire_signal("NVDA", df.iloc[-1], engine._windows[0])
 
         assert len(fired_events) == 0
 
@@ -131,9 +135,9 @@ class TestLiveSignalEngine:
         opening_bars = _make_mock_bars(
             "NVDA", highs=[107.0, 108.0, 109.0], lows=[105.0, 106.0, 107.0]
         )
-        engine._opening_buf["NVDA"] = opening_bars
+        engine._opening_buf["W1"]["NVDA"] = opening_bars
 
-        engine._try_fire_signal("NVDA", df.iloc[-1])
+        engine._try_fire_signal("NVDA", df.iloc[-1], engine._windows[0])
 
         assert len(fired_events) == 0
 
@@ -215,11 +219,11 @@ class TestLiveSignalEngine:
         )
 
         engine._process_five_min_bar(bar1)
-        assert len(engine._opening_buf["AMD"]) == 1
+        assert len(engine._opening_buf["W1"]["AMD"]) == 1
         assert len(fired_events) == 0
 
         engine._process_five_min_bar(bar2)
-        assert len(engine._opening_buf["AMD"]) == 2
+        assert len(engine._opening_buf["W1"]["AMD"]) == 2
         assert len(fired_events) == 0
 
     def test_process_five_min_bar_calls_try_fire_signal_on_third_bar(self):
@@ -268,7 +272,7 @@ class TestLiveSignalEngine:
 
         mock_fire.assert_called_once()
         assert mock_fire.call_args[0][0] == "AMD"
-        assert engine._signal_fired["AMD"] is True
+        assert engine._signal_fired["W1"]["AMD"] is True
 
     def test_regime_filter_suppresses_bullish_signal_on_bearish_day(self):
         fired_events = []
@@ -290,9 +294,9 @@ class TestLiveSignalEngine:
         opening_bars = _make_mock_bars(
             "NVDA", highs=[103.0, 104.0, 107.0], lows=[101.0, 102.0, 105.0]
         )
-        engine._opening_buf["NVDA"] = opening_bars
+        engine._opening_buf["W1"]["NVDA"] = opening_bars
 
-        engine._try_fire_signal("NVDA", df.iloc[-1])
+        engine._try_fire_signal("NVDA", df.iloc[-1], engine._windows[0])
 
         assert len(fired_events) == 0
 
@@ -315,9 +319,9 @@ class TestLiveSignalEngine:
         opening_bars = _make_mock_bars(
             "NVDA", highs=[103.0, 104.0, 107.0], lows=[101.0, 102.0, 105.0]
         )
-        engine._opening_buf["NVDA"] = opening_bars
+        engine._opening_buf["W1"]["NVDA"] = opening_bars
 
-        engine._try_fire_signal("NVDA", df.iloc[-1])
+        engine._try_fire_signal("NVDA", df.iloc[-1], engine._windows[0])
 
         assert len(fired_events) == 1
         assert fired_events[0].signal == "BULLISH"
@@ -343,9 +347,112 @@ class TestLiveSignalEngine:
         opening_bars = _make_mock_bars(
             "NVDA", highs=[101.0, 99.0, 97.0], lows=[99.0, 97.0, 95.0]
         )
-        engine._opening_buf["NVDA"] = opening_bars
+        engine._opening_buf["W1"]["NVDA"] = opening_bars
 
-        engine._try_fire_signal("NVDA", df.iloc[-1])
+        engine._try_fire_signal("NVDA", df.iloc[-1], engine._windows[0])
 
         assert len(fired_events) == 1
         assert fired_events[0].signal == "BEARISH"
+
+
+class TestMultiWindowSignalEngine:
+    def _make_history_df(self, closes, ma20=None, ma200=None):
+        import pandas as pd
+        from datetime import timedelta
+
+        n = len(closes)
+        today = datetime.now(ET).date()
+        timestamps = [
+            ET.localize(
+                datetime.combine(today, datetime.min.time())
+                + timedelta(hours=9, minutes=30 + i * 5)
+            )
+            for i in range(n)
+        ]
+        df = pd.DataFrame(
+            {
+                "Open": closes,
+                "High": [c + 1.0 for c in closes],
+                "Low": [c - 1.0 for c in closes],
+                "Close": closes,
+                "Volume": [1000.0] * n,
+            },
+            index=timestamps,
+        )
+        df["MA20"] = ma20 if ma20 is not None else closes[-1] - 5.0
+        df["MA50"] = closes[-1] - 3.0
+        df["MA200"] = ma200 if ma200 is not None else closes[-1] - 10.0
+        return df
+
+    def _make_multi_window_engine(self, m1_callback=None, a1_callback=None):
+        return LiveSignalEngine(
+            tickers=["NVDA"],
+            api_key="k",
+            secret_key="s",
+            windows=[
+                {
+                    "label": "M1",
+                    "opening_start": "09:30",
+                    "opening_bars": 3,
+                    "on_signal": m1_callback,
+                },
+                {
+                    "label": "A1",
+                    "opening_start": "13:15",
+                    "opening_bars": 1,
+                    "on_signal": a1_callback,
+                },
+            ],
+        )
+
+    def test_two_windows_have_independent_opening_buffers(self):
+        engine = self._make_multi_window_engine()
+
+        assert "M1" in engine._opening_buf
+        assert "A1" in engine._opening_buf
+        assert "NVDA" in engine._opening_buf["M1"]
+        assert "NVDA" in engine._opening_buf["A1"]
+
+    def test_two_windows_have_independent_signal_fired_flags(self):
+        engine = self._make_multi_window_engine()
+
+        engine._signal_fired["M1"]["NVDA"] = True
+
+        assert engine._signal_fired["M1"]["NVDA"] is True
+        assert engine._signal_fired["A1"]["NVDA"] is False
+
+    def test_each_window_fires_its_own_callback(self):
+        m1_events = []
+        a1_events = []
+        engine = self._make_multi_window_engine(
+            m1_callback=m1_events.append,
+            a1_callback=a1_events.append,
+        )
+
+        closes = [102.0, 103.0, 106.0]
+        df = self._make_history_df(closes, ma20=100.0, ma200=90.0)
+        engine._history["NVDA"] = df
+        engine._opening_buf["M1"]["NVDA"] = _make_mock_bars(
+            "NVDA", highs=[103.0, 104.0, 107.0], lows=[101.0, 102.0, 105.0]
+        )
+
+        engine._try_fire_signal("NVDA", df.iloc[-1], engine._windows[0])
+
+        assert len(m1_events) == 1
+        assert len(a1_events) == 0
+
+    def test_m1_fired_flag_does_not_affect_a1_fired_flag(self):
+        engine = self._make_multi_window_engine(
+            m1_callback=lambda e: None,
+            a1_callback=lambda e: None,
+        )
+
+        engine._signal_fired["M1"]["NVDA"] = True
+
+        assert engine._signal_fired["A1"]["NVDA"] is False
+
+    def test_two_windows_each_have_independent_catchup_done_flags(self):
+        engine = self._make_multi_window_engine()
+
+        assert engine._opening_catchup_done["M1"] is False
+        assert engine._opening_catchup_done["A1"] is False

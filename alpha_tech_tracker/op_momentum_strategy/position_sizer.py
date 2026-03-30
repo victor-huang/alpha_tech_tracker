@@ -1,5 +1,6 @@
 import logging
 from decimal import ROUND_HALF_UP, Decimal
+from typing import Optional
 
 from alpaca.data.requests import OptionLatestQuoteRequest
 
@@ -17,10 +18,18 @@ class PositionSizer:
     def __init__(self, alpaca_client: AlpacaAPIClient):
         self._client = alpaca_client
 
-    def compute(self, option_symbol: str, capital_weight: Decimal = _D("1")) -> tuple:
-        account = self._client.get_accounts()
-        buying_power = _D(account.get("buying_power", ACCOUNT_BUDGET))
-        budget = buying_power * CAPITAL_PER_SYMBOL * capital_weight
+    def compute(
+        self,
+        option_symbol: str,
+        capital_weight: Decimal = _D("1"),
+        window_budget: Optional[Decimal] = None,
+    ) -> tuple:
+        if window_budget is not None:
+            budget = window_budget * CAPITAL_PER_SYMBOL * capital_weight
+        else:
+            account = self._client.get_accounts()
+            buying_power = _D(account.get("buying_power", ACCOUNT_BUDGET))
+            budget = buying_power * CAPITAL_PER_SYMBOL * capital_weight
 
         quote_resp = self._client._option_data_client.get_option_latest_quote(
             OptionLatestQuoteRequest(symbol_or_symbols=[option_symbol])
@@ -38,11 +47,13 @@ class PositionSizer:
 
         contracts = max(1, int(budget / (mid * _D("100"))))
         limit_price = mid.quantize(_D("0.01"), rounding=ROUND_HALF_UP)
+        budget_source = "window_budget" if window_budget is not None else "account"
         logger.info(
-            "%s: budget=%s (weight=%.2f) mid=%s → %d contracts (cost=%s)",
+            "%s: budget=%s (weight=%.2f, source=%s) mid=%s → %d contracts (cost=%s)",
             option_symbol,
             budget,
             float(capital_weight),
+            budget_source,
             mid,
             contracts,
             contracts * mid * _D("100"),

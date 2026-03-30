@@ -21,6 +21,7 @@ Data flow under test:
 Assertions cover: signal direction, OR levels, stop prices, contract selection,
 position sizing (contracts), entry/exit simulated fills, exit reason, and P&L.
 """
+
 import asyncio
 import json
 import threading
@@ -50,9 +51,13 @@ ET = pytz.timezone("America/New_York")
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 _TODAY_PATH = "alpha_tech_tracker.op_momentum_strategy.contract_selector._today"
-_HIST_CLIENT_PATH = "alpha_tech_tracker.op_momentum_strategy.signal_engine.StockHistoricalDataClient"
+_HIST_CLIENT_PATH = (
+    "alpha_tech_tracker.op_momentum_strategy.signal_engine.StockHistoricalDataClient"
+)
 _NOTIFY_TRADE_PATH = "alpha_tech_tracker.op_momentum_strategy.trade_engine._notify"
-_NOTIFY_MONITOR_PATH = "alpha_tech_tracker.op_momentum_strategy.position_monitor._notify"
+_NOTIFY_MONITOR_PATH = (
+    "alpha_tech_tracker.op_momentum_strategy.position_monitor._notify"
+)
 
 
 def _load_fixture(name: str) -> dict:
@@ -62,6 +67,7 @@ def _load_fixture(name: str) -> dict:
 
 def _make_five_min_bar(ticker: str, bar_dict: dict, session_date: date) -> _FiveMinBar:
     import pytz
+
     ET = pytz.timezone("America/New_York")
     h, m = bar_dict["time"].split(":")
     ts = ET.localize(
@@ -121,7 +127,7 @@ class TestFullDaySimulationNvdaBullish:
         signal_engine = _make_signal_engine_with_history(ticker, history_df)
 
         captured: list = []
-        signal_engine._on_signal = captured.append
+        signal_engine._windows[0]["on_signal"] = captured.append
 
         # --- Feed opening bars directly (bypass WebSocket) ---
         for bar_dict in fx["opening_bars"]:
@@ -134,7 +140,9 @@ class TestFullDaySimulationNvdaBullish:
         # --- Mock Alpaca client responses ---
         client = _make_alpaca_client()
         client.get_options_contracts.return_value = mock_api["option_contracts"]
-        client.get_accounts.return_value = {"buying_power": mock_api["account_buying_power"]}
+        client.get_accounts.return_value = {
+            "buying_power": mock_api["account_buying_power"]
+        }
 
         entry_q = _make_option_quote(
             mock_api["entry_quote"]["bid"], mock_api["entry_quote"]["ask"]
@@ -145,7 +153,7 @@ class TestFullDaySimulationNvdaBullish:
         client._option_data_client.get_option_latest_quote.side_effect = [
             {option_symbol: entry_q},  # PositionSizer.compute()
             {option_symbol: entry_q},  # _place_entry() re-fetches for exact mid
-            {option_symbol: exit_q},   # _close_position() exit mid
+            {option_symbol: exit_q},  # _close_position() exit mid
         ]
 
         engine, monitor = _wire_engine_and_monitor(client, signal_engine)
@@ -160,7 +168,8 @@ class TestFullDaySimulationNvdaBullish:
         # --- Feed monitoring bars, stop after expected exit fires ---
         for mon_bar in fx["monitoring_bars"]:
             _set_latest_bar(
-                signal_engine, ticker,
+                signal_engine,
+                ticker,
                 close=mon_bar["close"],
                 ma50=mon_bar["ma50"],
                 ma20=mon_bar["ma20"],
@@ -238,7 +247,7 @@ class TestLivePipingSimulation:
             captured.append(event)
             signal_received.set()
 
-        signal_engine._on_signal = on_signal
+        signal_engine._windows[0]["on_signal"] = on_signal
 
         today = datetime.now(ET).date()
         market_open = ET.localize(
@@ -262,7 +271,9 @@ class TestLivePipingSimulation:
         loop_thread.start()
 
         with patch(_HIST_CLIENT_PATH) as mock_hdc:
-            mock_hdc.return_value.get_stock_bars.side_effect = Exception("no catchup data")
+            mock_hdc.return_value.get_stock_bars.side_effect = Exception(
+                "no catchup data"
+            )
 
             for bar in one_min_bars:
                 asyncio.run_coroutine_threadsafe(
@@ -312,7 +323,7 @@ class TestLivePipingFullDay:
             captured.append(event)
             signal_received.set()
 
-        signal_engine._on_signal = on_signal
+        signal_engine._windows[0]["on_signal"] = on_signal
 
         today = datetime.now(ET).date()
         market_open = ET.localize(
@@ -336,7 +347,9 @@ class TestLivePipingFullDay:
         loop_thread.start()
 
         with patch(_HIST_CLIENT_PATH) as mock_hdc:
-            mock_hdc.return_value.get_stock_bars.side_effect = Exception("no catchup data")
+            mock_hdc.return_value.get_stock_bars.side_effect = Exception(
+                "no catchup data"
+            )
             for bar in one_min_bars:
                 asyncio.run_coroutine_threadsafe(
                     signal_engine._handle_bar(bar), loop
@@ -351,7 +364,9 @@ class TestLivePipingFullDay:
 
         client = _make_alpaca_client()
         client.get_options_contracts.return_value = mock_api["option_contracts"]
-        client.get_accounts.return_value = {"buying_power": mock_api["account_buying_power"]}
+        client.get_accounts.return_value = {
+            "buying_power": mock_api["account_buying_power"]
+        }
 
         entry_q = _make_option_quote(
             mock_api["entry_quote"]["bid"], mock_api["entry_quote"]["ask"]
@@ -373,7 +388,8 @@ class TestLivePipingFullDay:
 
         for mon_bar in fx["monitoring_bars"]:
             _set_latest_bar(
-                signal_engine, ticker,
+                signal_engine,
+                ticker,
                 close=mon_bar["close"],
                 ma50=mon_bar["ma50"],
                 ma20=mon_bar["ma20"],

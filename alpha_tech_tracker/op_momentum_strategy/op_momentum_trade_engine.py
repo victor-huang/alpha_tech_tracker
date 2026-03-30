@@ -10,6 +10,7 @@ from alpha_tech_tracker.trade_api.alpaca_client.client import AlpacaAPIClient
 from .config import (
     ARMED_MA20_EXIT,
     MAX_LOSS_PCT,
+    OPENING_BARS,
     OPENING_START_TIME,
     RANK_WEIGHTED_SIZING,
     RANK_WEIGHTS,
@@ -20,6 +21,7 @@ from .config import (
     _CONFIG_FILE,
     _load_config,
 )
+from .models import WindowConfig
 from .trade_engine import OpMomentumTradeEngine
 
 # re-export remaining config constants for backward compatibility
@@ -199,7 +201,25 @@ def parse_args():
         "--opening-start",
         type=str,
         default=OPENING_START_TIME,
-        help=f"Opening window start time HH:MM ET (default: {OPENING_START_TIME})",
+        help=f"Opening window start time HH:MM ET, single-window mode only (default: {OPENING_START_TIME})",
+    )
+    parser.add_argument(
+        "--window",
+        action="append",
+        nargs=3,
+        metavar=("LABEL", "START", "BARS"),
+        default=None,
+        help="Define a named trading window: LABEL START BARS (e.g. --window M1 09:30 3). "
+        "Repeat to add multiple windows. Overrides --opening-start when specified.",
+    )
+    parser.add_argument(
+        "--morning-split",
+        nargs="+",
+        type=float,
+        default=None,
+        help="Capital split %% for the first (simultaneous) group of windows, e.g. --morning-split 100. "
+        "Number of values determines first-group size; remaining windows are sequential "
+        "(each reads live account balance at signal time). Default: 100%% for first window.",
     )
     parser.add_argument(
         "--pid-file",
@@ -221,9 +241,64 @@ def parse_args():
     return parser.parse_args()
 
 
+def _parse_windows(args) -> list:
+    """Parse --window and --morning-split into a list of WindowConfig objects."""
+    if not args.window:
+        return None
+
+    raw_windows = [
+        {"label": w[0], "opening_start": w[1], "opening_bars": int(w[2])}
+        for w in args.window
+    ]
+    n_windows = len(raw_windows)
+
+    if args.morning_split:
+        raw_split = args.morning_split
+        total_pct = sum(raw_split)
+        if total_pct > 100.0 + 1e-6:
+            raise SystemExit(
+                f"--morning-split values sum to {total_pct:.1f}%% which exceeds 100%%."
+            )
+        if len(raw_split) > n_windows:
+            raise SystemExit(
+                f"--morning-split has {len(raw_split)} values but only {n_windows} window(s) defined."
+            )
+        fractions = [v / 100.0 for v in raw_split]
+        n_first = len(fractions)
+    else:
+        fractions = [1.0]
+        n_first = 1
+
+    windows = []
+    for i, w in enumerate(raw_windows):
+        if i < n_first:
+            windows.append(
+                WindowConfig(
+                    label=w["label"],
+                    opening_start=w["opening_start"],
+                    opening_bars=w["opening_bars"],
+                    capital_fraction=fractions[i],
+                    is_sequential=False,
+                )
+            )
+        else:
+            windows.append(
+                WindowConfig(
+                    label=w["label"],
+                    opening_start=w["opening_start"],
+                    opening_bars=w["opening_bars"],
+                    capital_fraction=1.0,
+                    is_sequential=True,
+                )
+            )
+    return windows
+
+
 if __name__ == "__main__":
     args = parse_args()
     _load_config()
+
+    windows = _parse_windows(args)
 
     if args.action == "run":
         logging.basicConfig(
@@ -245,6 +320,7 @@ if __name__ == "__main__":
             regime_filter=args.regime_filter,
             regime_ma=args.regime_ma,
             rank_weighted_sizing=args.rank_weighted_sizing,
+            windows=windows,
         )
         engine.run(tickers_override=args.tickers)
         sys.exit(0)
@@ -305,6 +381,7 @@ if __name__ == "__main__":
             regime_filter=args.regime_filter,
             regime_ma=args.regime_ma,
             rank_weighted_sizing=args.rank_weighted_sizing,
+            windows=windows,
         )
         engine.run(tickers_override=args.tickers)
     finally:

@@ -9,6 +9,17 @@ def _D(x) -> Decimal:
 
 
 @dataclass
+class WindowConfig:
+    """Configuration for one intraday trading window."""
+
+    label: str  # "M1", "A1", "A2"
+    opening_start: str  # "09:30", "13:15", "15:00" ET
+    opening_bars: int  # number of 5-min bars in the opening range
+    capital_fraction: float = 1.0  # fraction of account buying power (first-group only)
+    is_sequential: bool = False  # True for windows after the first group
+
+
+@dataclass
 class SignalEvent:
     ticker: str
     signal: str

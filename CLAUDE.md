@@ -152,6 +152,31 @@ strategy = SimpleStrategy(symbol="TSLA", trade_api_client=client)
 - Backtests replay historical data chronologically to simulate real-time trading
 - Real-time mode uses `stream_data=True` to process live market data
 
+## Python Version
+
+This project currently runs **Python 3.8.18** (pyenv virtualenv `alpha_tech_tracker`).
+
+> **Planned upgrade to Python 3.10+** — once completed, the constraint below can be removed.
+
+**Python 3.8 syntax constraint — parenthesized `with` statements:**
+Python 3.10 introduced `with (ctx1, ctx2):` syntax. **Do not use it here** — it is a
+`SyntaxError` on 3.8. Linters (black/ruff) may silently reformat multi-context `with`
+blocks into this style; revert any such changes manually. Use backslash continuation instead:
+
+```python
+# correct for 3.8
+with patch(A) as a, \
+     patch(B) as b:
+    ...
+
+# NOT valid on 3.8 — do not use
+with (
+    patch(A) as a,
+    patch(B) as b,
+):
+    ...
+```
+
 ## Common Pitfalls
 
 - Missing PYTHONPATH causes import errors - always set to project root

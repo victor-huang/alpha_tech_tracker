@@ -48,13 +48,13 @@ tests/op_momentum_trade_engine/
 |---|---|---|
 | `TICKERS` | `DEFAULT_TICKERS` | Candidate universe (from selector module) |
 | `ACCOUNT_BUDGET` | `25_000` | USD fallback if API returns no buying power |
-| `MAX_ACTIVE_SYMBOLS` | `2` | Max concurrent positions per day |
+| `MAX_ACTIVE_SYMBOLS` | `2` | Max concurrent positions **per window** per day |
 | `OPENING_BARS` | `3` | 5-min bars = 15-min opening range |
 | `OPENING_START_TIME` | `"09:30"` | Opening window start (ET) |
 | `STOP_PCT` | `0.15` | Hard stop as fraction of OR range |
 | `STRIKE_CALL_OFFSET` | `0.90` | Bull call strike = price × 0.90 |
 | `STRIKE_PUT_OFFSET` | `1.10` | Bear put strike = price × 1.10 |
-| `CAPITAL_PER_SYMBOL` | `0.45` | 45% of buying power per symbol |
+| `CAPITAL_PER_SYMBOL` | `0.45` | 45% of window budget per symbol |
 | `EOD_EXIT_TIME` | `"15:55"` | Force-close all positions (ET) |
 | `MA_WARMUP_DAYS` | `7` | Calendar days of 5-min bars to pre-warm MAs |
 | `ROLLING_LOOKBACK_DAYS` | `30` | Days for ticker selection rolling stats |
@@ -67,6 +67,62 @@ tests/op_momentum_trade_engine/
 | `REGIME_MA` | `5` | N-day MA period for QQQ regime filter |
 | `RANK_WEIGHTED_SIZING` | `False` | Weight position size by ticker rank |
 | `RANK_WEIGHTS` | `[0.50, 0.30, 0.20]` | Capital weights for rank-0, rank-1, rank-2 tickers |
+
+---
+
+## Multi-Window Trading
+
+The engine supports running multiple intraday opening-range windows per day, mirroring the
+multi-window backtest in `op_momentum_selector_backtest.py`. Windows are non-overlapping
+and each fires independently based on its own OR start time and bar count.
+
+### Window Configuration (`WindowConfig`)
+
+```python
+@dataclass
+class WindowConfig:
+    label: str            # "M1", "A1", "A2"
+    opening_start: str    # "09:30", "13:15", "15:00"
+    opening_bars: int     # 3, 1, 1
+    capital_fraction: float = 1.0   # fraction of account buying power (first-group only)
+    is_sequential: bool = False     # True for all windows after the first group
+```
+
+### Capital Allocation Rules
+
+**First-group windows** (simultaneous, specified via `--morning-split`):
+- Each gets `buying_power × capital_fraction` as an explicit budget at signal time
+- `capital_fraction` comes from `--morning-split` percentages (e.g. `100%` → `1.0`)
+- The `PositionSizer` receives this explicit `window_budget` and skips the live account call
+
+**Sequential windows** (all windows after the first group):
+- `window_budget = None` → `PositionSizer` calls `get_accounts()` at signal time
+- The live account balance naturally reflects any returned capital from earlier windows
+  (closed positions restore buying power) and any capital still tied up in open positions
+- No special capital recycling logic needed — the account is the source of truth
+
+**Capital allocation example** ($10k account, M1 + A1 + A2, weights 50/30/20):
+
+| Window | Type | Budget source | Rank-1 slot | Rank-2 slot | Rank-3 slot |
+|---|---|---|---|---|---|
+| M1 9:45 AM | first-group (100%) | `$10,000 × 100%` = $10,000 | $10k × 45% × 50% = $2,250 | × 30% = $1,350 | × 20% = $900 |
+| A1 1:20 PM | sequential | live account at 1:20 PM | same formula on live balance | | |
+| A2 3:05 PM | sequential | live account at 3:05 PM | same formula on live balance | | |
+
+If M1 positions are still open when A1 fires, the live buying power is lower — A1 naturally
+gets a smaller budget. No explicit force-close is needed.
+
+### Per-Window Signal Lifecycle
+
+Each window runs independently:
+1. `LiveSignalEngine` tracks OR bars for each window simultaneously on a single stream
+2. When a window's OR closes, signals are collected into a per-window buffer
+3. After `SIGNAL_BUFFER_MINUTES`, the per-window selection loop ranks buffered signals
+4. Up to `MAX_ACTIVE_SYMBOLS` positions are entered for that window
+5. Positions exit naturally (hard stop, trailing MA, or EOD at 3:55 PM)
+
+Positions from multiple windows are all monitored by a single `PositionMonitor`. The EOD
+force-close applies globally at 3:55 PM regardless of which window opened the position.
 
 ---
 
@@ -107,18 +163,26 @@ tests/op_momentum_trade_engine/
 
 **Signature:**
 ```python
-def compute(self, option_symbol: str, capital_weight: Decimal = Decimal("1")) -> tuple:
+def compute(
+    self,
+    option_symbol: str,
+    capital_weight: Decimal = Decimal("1"),
+    window_budget: Optional[Decimal] = None,
+) -> tuple:
     # returns (num_contracts, limit_price)
 ```
 
 **What it does:**
 1. Fetches live bid/ask for the option.
-2. Computes budget = `buying_power × CAPITAL_PER_SYMBOL × capital_weight`.
+2. Computes budget:
+   - If `window_budget` is provided (first-group window): `window_budget × CAPITAL_PER_SYMBOL × capital_weight`
+   - Otherwise (sequential window or default): `buying_power × CAPITAL_PER_SYMBOL × capital_weight` (reads live account)
 3. Computes `contracts = max(1, floor(budget / (mid_price × 100)))`.
 4. Returns `(contracts, mid_price)`.
 
 The `capital_weight` parameter is set by `_enter_position` based on ticker rank when
-`--rank-weighted-sizing` is enabled (see below).
+`--rank-weighted-sizing` is enabled (see below). The `window_budget` parameter is set
+by the engine based on the window's `capital_fraction` for first-group windows.
 
 ---
 
@@ -126,23 +190,26 @@ The `capital_weight` parameter is set by `_enter_position` based on ticker rank 
 
 **When:** Runs from startup until 3:55 PM ET.
 
+**Multi-window support:** Accepts a `windows` list at construction time. Each entry is a
+dict `{"label", "opening_start", "opening_bars", "on_signal"}`. A single WebSocket stream
+serves all windows — bars are evaluated against each window's OR independently.
+
 **What it does:**
 1. Pre-warms a rolling 5-min DataFrame (last `MA_WARMUP_DAYS` calendar days) for each
    ticker to seed MA20, MA50, MA200 calculations.
 2. If `--regime-filter` is on, builds the set of QQQ bearish dates from historical data
    after warmup.
 3. Subscribes to a live 1-min `StockDataStream`, aggregates bars into 5-min periods.
-4. After the opening range closes (`OPENING_BARS` × 5 min bars), evaluates signal
-   conditions:
+4. For each window, after that window's OR closes (`opening_bars` × 5 min), evaluates
+   signal conditions per ticker:
    - **BULLISH:** `close > midpoint AND close > MA20 AND close > MA200`
    - **BEARISH:** `close ≤ OR_low + 0.20 × OR_range AND close < MA20`
    - **NEUTRAL:** no trade
 5. If `regime_filter` is enabled, suppresses BULLISH signals on days when QQQ is below
    its `regime_ma`-day MA.
-6. Fires the `on_signal` callback with a `SignalEvent`.
+6. Fires the window's `on_signal` callback with a `SignalEvent`.
 7. Continues appending bars and updating MAs for `PositionMonitor` use.
-8. Includes a historical catch-up path for tickers that missed opening bars due to stream
-   gaps.
+8. Includes a per-window historical catch-up path for tickers that missed opening bars.
 
 ---
 
@@ -242,7 +309,7 @@ order placement.
 
 ### 10. `OpMomentumTradeEngine` — Orchestrator
 
-**Daily flow:**
+**Single-window daily flow (default, backward-compatible):**
 
 ```
 Startup     _load_config() — load alpaca + clicksend credentials
@@ -255,7 +322,7 @@ Startup     _load_config() — load alpaca + clicksend credentials
 Collection  Buffered signals ranked by composite score
 window      Top MAX_ACTIVE_SYMBOLS entered via _enter_position(event, rank=i)
 closes      → OptionContractSelector.select(...)
-            → PositionSizer.compute(symbol, capital_weight)
+            → PositionSizer.compute(symbol, capital_weight, window_budget)
             → _place_entry(...) with fill escalation
             → PositionMonitor.add_position(...)
 
@@ -265,6 +332,37 @@ closes      → OptionContractSelector.select(...)
 
 3:55 PM     close_all(reason="end_of_day")
 4:00 PM     print_summary() — daily P&L table
+            signal_engine.stop()
+```
+
+**Multi-window daily flow (M1 + A1 + A2 example):**
+
+```
+Startup     TickerSelector.select() using first window's opening_start
+            LiveSignalEngine.start() — registers ALL windows on one stream
+            Per-window signal_selection_loop threads started (one per window)
+            Single _monitor_loop thread started (monitors all positions)
+
+9:30 AM     M1 OR begins
+9:45 AM     M1 OR closes; M1 signal collection window opens
+9:47 AM     M1 collection deadline — rank signals, enter top-N
+            window_budget = account_buying_power × capital_fraction (first-group)
+            PositionSizer uses window_budget instead of live account read
+            M1 positions entered, monitored until natural exit
+
+1:15 PM     A1 OR begins (one 5-min bar from 1:15 to 1:20)
+1:20 PM     A1 OR closes; A1 signal collection window opens
+1:22 PM     A1 collection deadline — rank signals, enter top-N
+            window_budget = None → PositionSizer reads live account balance
+            Account reflects M1 outcome (closed positions restored buying power;
+            any still-open M1 positions reduce available buying power naturally)
+
+3:00 PM     A2 OR begins (one 5-min bar from 3:00 to 3:05)
+3:05 PM     A2 OR closes; A2 signal collection window opens
+3:07 PM     A2 collection deadline — rank signals, enter top-N (same as A1)
+
+3:55 PM     close_all(reason="end_of_day") for ALL windows' positions
+4:00 PM     print_summary()
             signal_engine.stop()
 ```
 
@@ -301,44 +399,59 @@ python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine \
 | `--regime-filter` | off | Suppress BULLISH signals on QQQ bearish days |
 | `--regime-ma INT` | `5` | N-day MA for QQQ regime filter |
 | `--rank-weighted-sizing` | off | Weight positions by rank (50/30/20%) |
-| `--opening-start HH:MM` | `09:30` | Opening window start time (ET) |
+| `--opening-start HH:MM` | `09:30` | Opening window start time (single-window mode) |
+| `--window LABEL START BARS` | — | Define a named trading window (repeatable) |
+| `--morning-split PCT …` | — | Capital split % for simultaneous first-group windows |
 | `--log-level {DEBUG,INFO,…}` | `INFO` | Log verbosity |
 | `--log-file PATH` | `logs/op_momentum.log` | Log file path (daemon mode) |
 | `--pid-file PATH` | `~/.op_momentum_daemon.pid` | PID file path |
 
+`--window` and `--morning-split` mirror the selector backtest CLI exactly. When `--window`
+is not specified, the engine falls back to single-window mode using `--opening-start` and
+the `OPENING_BARS` config constant (backward-compatible).
+
+`--morning-split` determines which windows are "first-group" (simultaneous) and which are
+sequential. The number of values given determines the first-group size; remaining windows
+are sequential. Each sequential window reads the live account balance at its signal time.
+
 ### Examples
 
 ```bash
-# Simulate in foreground with live market data
+# Single-window (default, backward-compatible)
 PYTHONPATH=/path/to/repo \
   python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine \
-  run --simulate
+  run --mock-trade-execution --regime-filter --regime-ma 8 --rank-weighted-sizing
 
-# Simulate with rank-weighted sizing and regime filter
+# Conservative multi-window: M1 + A1 + A2 (recommended live config)
 python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine \
-  run --simulate --rank-weighted-sizing --regime-filter
+  run --mock-trade-execution --regime-filter --regime-ma 8 --rank-weighted-sizing \
+  --window M1 09:30 3 --window A1 13:15 1 --window A2 15:00 1 \
+  --morning-split 100
 
-# Live paper trading with MA20 trailing stop and 2% max loss guard
+# Aggressive multi-window: M2 + A1 + A2
 python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine \
-  run --trailing-ma ma20 --max-loss-pct 0.02
+  run --mock-trade-execution --regime-filter --regime-ma 8 --rank-weighted-sizing \
+  --window M2 09:30 1 --window A1 13:15 1 --window A2 15:00 1 \
+  --morning-split 100
 
-# Live paper trading with armed MA20 exit (switch to MA20 trail after arming)
+# Two parallel morning windows (60/40 split) + afternoon
 python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine \
-  run --armed-ma20-exit
+  run --mock-trade-execution \
+  --window M1 09:30 3 --window M2 09:30 1 --window A1 13:15 1 \
+  --morning-split 60 40
 
-# Start as daemon (background), live paper trading
+# Start as daemon
 python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine \
-  start --simulate
+  start --regime-filter --regime-ma 8 --rank-weighted-sizing \
+  --window M1 09:30 3 --window A1 13:15 1 --window A2 15:00 1 \
+  --morning-split 100
 
 # Stop daemon
 python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine stop
 
-# Check daemon status
-python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine status
-
 # Watch specific tickers (override universe)
 python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine \
-  run --simulate --tickers NVDA TSLA AAPL
+  run --mock-trade-execution --tickers NVDA COIN PLTR
 ```
 
 ---

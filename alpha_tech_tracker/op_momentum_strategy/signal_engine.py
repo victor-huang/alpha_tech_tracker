@@ -34,7 +34,13 @@ ET = pytz.timezone("America/New_York")
 class LiveSignalEngine:
     """
     Watches live 5-min bars for a set of tickers.
-    Fires SignalEvent callbacks after the opening range closes.
+    Fires SignalEvent callbacks after each window's opening range closes.
+
+    Supports multiple intraday windows via the `windows` parameter. Each window is a dict:
+        {"label": str, "opening_start": str, "opening_bars": int, "on_signal": callable}
+
+    When `windows` is omitted, falls back to single-window mode using the legacy
+    `opening_bars`, `opening_start_time`, and `on_signal` parameters.
     """
 
     def __init__(
@@ -48,26 +54,50 @@ class LiveSignalEngine:
         opening_start_time: str = OPENING_START_TIME,
         regime_filter: bool = REGIME_FILTER,
         regime_ma: int = REGIME_MA,
+        windows: list = None,
     ):
         self._tickers = tickers
-        self._opening_bars = opening_bars
         self._bearish_ma200 = bearish_ma200
-        self._opening_start_time = opening_start_time
-        self._opening_start = datetime.strptime(opening_start_time, "%H:%M").time()
-        self._on_signal = on_signal
         self._regime_filter = regime_filter
         self._regime_ma = regime_ma
         self._bearish_regime_dates: set = set()
         self._api_key = api_key
         self._secret_key = secret_key
 
+        if windows:
+            self._windows = [
+                {
+                    **w,
+                    "_opening_start_t": datetime.strptime(
+                        w["opening_start"], "%H:%M"
+                    ).time(),
+                }
+                for w in windows
+            ]
+        else:
+            self._windows = [
+                {
+                    "label": "W1",
+                    "opening_start": opening_start_time,
+                    "opening_bars": opening_bars,
+                    "on_signal": on_signal,
+                    "_opening_start_t": datetime.strptime(
+                        opening_start_time, "%H:%M"
+                    ).time(),
+                }
+            ]
+
         self._history: dict = {}
-        self._opening_buf: dict = {t: [] for t in tickers}
-        self._signal_fired: dict = {t: False for t in tickers}
+        self._opening_buf: dict = {
+            w["label"]: {t: [] for t in tickers} for w in self._windows
+        }
+        self._signal_fired: dict = {
+            w["label"]: {t: False for t in tickers} for w in self._windows
+        }
+        self._opening_catchup_done: dict = {w["label"]: False for w in self._windows}
         self._minute_buf: dict = {
             t: {"period_start": None, "bars": []} for t in tickers
         }
-        self._opening_catchup_done: bool = False
         self._session_date = datetime.now(ET).date()
         self._stream: StockDataStream = None
         self._lock = threading.Lock()
@@ -123,7 +153,16 @@ class LiveSignalEngine:
                 )
             except KeyError:
                 self._history[ticker] = pd.DataFrame(
-                    columns=["Open", "High", "Low", "Close", "Volume", "MA20", "MA50", "MA200"]
+                    columns=[
+                        "Open",
+                        "High",
+                        "Low",
+                        "Close",
+                        "Volume",
+                        "MA20",
+                        "MA50",
+                        "MA200",
+                    ]
                 )
                 logger.warning("No warmup data for %s", ticker)
 
@@ -148,8 +187,8 @@ class LiveSignalEngine:
         self._history[ticker] = df
         return df.iloc[-1]
 
-    def _try_fire_signal(self, ticker: str, latest: pd.Series):
-        buf = self._opening_buf[ticker]
+    def _try_fire_signal(self, ticker: str, latest: pd.Series, win: dict):
+        buf = self._opening_buf[win["label"]][ticker]
         or_high = _D(max(b.high for b in buf))
         or_low = _D(min(b.low for b in buf))
         or_range = or_high - or_low
@@ -162,7 +201,7 @@ class LiveSignalEngine:
         ma200 = latest["MA200"]
 
         if pd.isna(ma20) or pd.isna(ma200):
-            logger.info("%s: MA not ready, skipping signal", ticker)
+            logger.info("%s [%s]: MA not ready, skipping signal", ticker, win["label"])
             return
 
         ma20_d = _D(ma20)
@@ -178,8 +217,13 @@ class LiveSignalEngine:
             signal = "BEARISH"
         else:
             logger.info(
-                "%s: NEUTRAL — close=%s midpoint=%s or_low=%s bottom_30=%s",
-                ticker, close, midpoint, or_low, bottom_30,
+                "%s [%s]: NEUTRAL — close=%s midpoint=%s or_low=%s bottom_30=%s",
+                ticker,
+                win["label"],
+                close,
+                midpoint,
+                or_low,
+                bottom_30,
             )
             return
 
@@ -188,7 +232,9 @@ class LiveSignalEngine:
             and datetime.now(ET).date() in self._bearish_regime_dates
         ):
             logger.info(
-                "%s: BULLISH signal suppressed by regime filter (QQQ bearish)", ticker
+                "%s [%s]: BULLISH signal suppressed by regime filter (QQQ bearish)",
+                ticker,
+                win["label"],
             )
             return
 
@@ -205,13 +251,21 @@ class LiveSignalEngine:
             ma50_at_signal=ma50_val,
         )
         logger.info(
-            "SIGNAL %s %s close=%s or_high=%s or_low=%s",
-            ticker, signal, close, or_high, or_low,
+            "SIGNAL [%s] %s %s close=%s or_high=%s or_low=%s",
+            win["label"],
+            ticker,
+            signal,
+            close,
+            or_high,
+            or_low,
         )
-        if self._on_signal:
-            self._on_signal(event)
+        on_signal = win.get("on_signal")
+        if on_signal:
+            on_signal(event)
 
-    def _aggregate_bars(self, ticker: str, period_start: datetime, bars: list) -> _FiveMinBar:
+    def _aggregate_bars(
+        self, ticker: str, period_start: datetime, bars: list
+    ) -> _FiveMinBar:
         return _FiveMinBar(
             symbol=ticker,
             timestamp=period_start,
@@ -224,31 +278,39 @@ class LiveSignalEngine:
 
     def _process_five_min_bar(self, bar: _FiveMinBar):
         ticker = bar.symbol
-        if self._signal_fired.get(ticker):
-            self._append_bar(ticker, bar)
-            return
-
         latest = self._append_bar(ticker, bar)
 
         bar_time = bar.timestamp.astimezone(ET).time()
-        if bar_time < self._opening_start:
-            return
 
-        buf = self._opening_buf[ticker]
+        for win in self._windows:
+            label = win["label"]
+            if self._signal_fired[label].get(ticker):
+                continue
+            if bar_time < win["_opening_start_t"]:
+                continue
 
-        if len(buf) < self._opening_bars:
-            buf.append(bar)
-            logger.debug("%s: opening bar %d/%d", ticker, len(buf), self._opening_bars)
+            buf = self._opening_buf[label][ticker]
+            if len(buf) < win["opening_bars"]:
+                buf.append(bar)
+                logger.debug(
+                    "%s [%s]: opening bar %d/%d",
+                    ticker,
+                    label,
+                    len(buf),
+                    win["opening_bars"],
+                )
 
-        if len(buf) == self._opening_bars and not self._signal_fired[ticker]:
-            self._signal_fired[ticker] = True
-            self._try_fire_signal(ticker, latest)
+            if len(buf) == win["opening_bars"]:
+                self._signal_fired[label][ticker] = True
+                self._try_fire_signal(ticker, latest, win)
 
-    def _catch_up_all_opening_bars(self, today):
-        or_start = ET.localize(datetime.combine(today, self._opening_start))
-        or_end = or_start + timedelta(minutes=self._opening_bars * 5)
+    def _catch_up_opening_bars_for_window(self, today, win: dict):
+        label = win["label"]
+        or_start = ET.localize(datetime.combine(today, win["_opening_start_t"]))
+        or_end = or_start + timedelta(minutes=win["opening_bars"] * 5)
         logger.info(
-            "Catching up opening bars for all tickers (%s–%s ET)",
+            "Catching up [%s] opening bars for all tickers (%s–%s ET)",
+            label,
             or_start.strftime("%H:%M"),
             or_end.strftime("%H:%M"),
         )
@@ -264,16 +326,16 @@ class LiveSignalEngine:
             bars = hist_client.get_stock_bars(request)
             all_df = bars.df
         except Exception:
-            logger.exception("Failed to fetch opening bar catchup data")
+            logger.exception("Failed to fetch opening bar catchup data for [%s]", label)
             return
 
         for ticker in self._tickers:
-            if self._signal_fired.get(ticker):
+            if self._signal_fired[label].get(ticker):
                 continue
             try:
                 tick_df = all_df.xs(ticker, level=0).copy()
             except KeyError:
-                logger.warning("No catchup data for %s", ticker)
+                logger.warning("No catchup data for %s [%s]", ticker, label)
                 continue
             tick_df.index = tick_df.index.tz_convert(ET)
             tick_df.columns = [c.capitalize() for c in tick_df.columns]
@@ -295,10 +357,11 @@ class LiveSignalEngine:
                     self._process_five_min_bar(synthetic)
 
             logger.info(
-                "Catchup: %s has %d/%d opening bars",
+                "Catchup [%s]: %s has %d/%d opening bars",
+                label,
                 ticker,
-                len(self._opening_buf.get(ticker, [])),
-                self._opening_bars,
+                len(self._opening_buf[label].get(ticker, [])),
+                win["opening_bars"],
             )
 
     async def _handle_bar(self, bar):
@@ -319,24 +382,28 @@ class LiveSignalEngine:
             if ts < actual_market_open:
                 return
 
-            or_open = ET.localize(datetime.combine(today, self._opening_start))
-            or_close = or_open + timedelta(minutes=self._opening_bars * 5)
-            if ts >= or_close and not self._opening_catchup_done:
-                any_incomplete = any(
-                    not self._signal_fired.get(t)
-                    and len(self._opening_buf.get(t, [])) < self._opening_bars
-                    for t in self._tickers
-                )
-                if any_incomplete:
-                    self._opening_catchup_done = True
-                    logger.info(
-                        "Opening range closed but buffers incomplete — starting historical catchup"
+            for win in self._windows:
+                label = win["label"]
+                or_open = ET.localize(datetime.combine(today, win["_opening_start_t"]))
+                or_close = or_open + timedelta(minutes=win["opening_bars"] * 5)
+                if ts >= or_close and not self._opening_catchup_done[label]:
+                    any_incomplete = any(
+                        not self._signal_fired[label].get(t)
+                        and len(self._opening_buf[label].get(t, []))
+                        < win["opening_bars"]
+                        for t in self._tickers
                     )
-                    threading.Thread(
-                        target=self._catch_up_all_opening_bars,
-                        args=(today,),
-                        daemon=True,
-                    ).start()
+                    if any_incomplete:
+                        self._opening_catchup_done[label] = True
+                        logger.info(
+                            "[%s] OR closed but buffers incomplete — starting historical catchup",
+                            label,
+                        )
+                        threading.Thread(
+                            target=self._catch_up_opening_bars_for_window,
+                            args=(today, win),
+                            daemon=True,
+                        ).start()
 
             logger.debug(
                 "1-min bar  %-6s  %s  O=%.2f H=%.2f L=%.2f C=%.2f  vol=%d",
@@ -412,4 +479,7 @@ class LiveSignalEngine:
 
     def stop(self):
         if self._stream:
-            self._stream.stop()
+            try:
+                self._stream.stop()
+            except AttributeError:
+                pass

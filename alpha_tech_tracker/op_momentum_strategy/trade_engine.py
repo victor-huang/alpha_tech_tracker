@@ -8,7 +8,6 @@ import pytz
 
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import fetch_bars
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector import (
-    DEFAULT_TICKERS,
     _safe_bars_end,
     score_ticker,
     select_top_n,
@@ -33,9 +32,10 @@ from .config import (
     TICKERS,
     TRAILING_MA,
     _notify,
+    ACCOUNT_BUDGET,
 )
 from .contract_selector import OptionContractSelector
-from .models import ActivePosition, SignalEvent, _D
+from .models import ActivePosition, SignalEvent, WindowConfig, _D
 from .order_executor import _place_with_fill_escalation
 from .position_monitor import PositionMonitor
 from .position_sizer import PositionSizer
@@ -133,12 +133,16 @@ class OpMomentumTradeEngine:
     """
     Main orchestrator for the opening-range momentum options strategy.
 
-    Daily flow:
-      1. Select top-2 tickers by composite score.
-      2. Pre-warm historical bars for MA computation.
-      3. Stream live 5-min bars; fire signal after opening range.
-      4. On signal: select option contract, size position, place BUY order.
-      5. Monitor stops intraday; close on hard stop, MA trailing stop, or EOD.
+    Supports one or more intraday trading windows via the `windows` parameter.
+    When omitted, runs in single-window mode using `opening_start_time` (backward-compatible).
+
+    Daily flow (multi-window):
+      1. Select top tickers by composite score (using first window's OR params).
+      2. Start a single LiveSignalEngine watching all windows on one stream.
+      3. Per-window: after OR closes, rank buffered signals, enter up to MAX_ACTIVE_SYMBOLS.
+         - First-group windows: budget = account_buying_power × capital_fraction
+         - Sequential windows: PositionSizer reads live account balance at signal time
+      4. Single PositionMonitor tracks all positions; exits on stop or EOD.
     """
 
     def __init__(
@@ -154,13 +158,13 @@ class OpMomentumTradeEngine:
         regime_filter: bool = REGIME_FILTER,
         regime_ma: int = REGIME_MA,
         rank_weighted_sizing: bool = RANK_WEIGHTED_SIZING,
+        windows: Optional[list] = None,
     ):
         self._client = alpaca_client
         self._api_key = alpaca_client._api_key
         self._secret_key = alpaca_client._secret_key
         self._stop_pct = _D(str(stop_pct))
         self._mock_trade_execution = mock_trade_execution
-        self._opening_start_time = opening_start_time
         self._trailing_ma = trailing_ma
         self._max_loss_pct = max_loss_pct
         self._armed_ma20_exit = armed_ma20_exit
@@ -169,15 +173,48 @@ class OpMomentumTradeEngine:
         self._rank_weighted_sizing = rank_weighted_sizing
         self._monitor: PositionMonitor = None
         self._signal_engine: LiveSignalEngine = None
-        self._pending_signals: dict = {}
         self._signal_lock = threading.Lock()
         self._rolling_stats: dict = {}
-        self._signal_collection_deadline: Optional[datetime] = None
-        self._open_position_count: int = 0
+        # Per-window state: {label: {pending_signals, collection_deadline, open_position_count, capital_fraction}}
+        self._window_state: dict = {}
 
-    def _enter_position(self, event: SignalEvent, rank: int = 0):
+        if windows:
+            self._windows = windows
+        else:
+            self._windows = [
+                WindowConfig(
+                    label="W1",
+                    opening_start=opening_start_time,
+                    opening_bars=OPENING_BARS,
+                    capital_fraction=1.0,
+                    is_sequential=False,
+                )
+            ]
+
+        # Pre-initialize window state so per-window methods are callable before run()
+        today = datetime.now(ET).date()
+        for win in self._windows:
+            opening_start_t = datetime.strptime(win.opening_start, "%H:%M").time()
+            or_open = ET.localize(datetime.combine(today, opening_start_t))
+            or_close = or_open + timedelta(minutes=win.opening_bars * 5)
+            deadline = or_close + timedelta(minutes=SIGNAL_BUFFER_MINUTES)
+            self._window_state[win.label] = {
+                "pending_signals": {},
+                "collection_deadline": deadline,
+                "open_position_count": 0,
+                "capital_fraction": win.capital_fraction,
+            }
+
+    def _enter_position(
+        self,
+        event: SignalEvent,
+        rank: int = 0,
+        window_label: str = "W1",
+        window_budget: Optional[_D] = None,
+    ):
         logger.info(
-            "Entering position: %s %s @ %.2f (rank=%d)",
+            "Entering position [%s]: %s %s @ %.2f (rank=%d)",
+            window_label,
             event.ticker,
             event.signal,
             float(event.stock_price),
@@ -191,7 +228,7 @@ class OpMomentumTradeEngine:
         except Exception:
             logger.exception("Could not select option contract for %s", event.ticker)
             with self._signal_lock:
-                self._open_position_count -= 1
+                self._window_state[window_label]["open_position_count"] -= 1
             return
 
         try:
@@ -200,11 +237,13 @@ class OpMomentumTradeEngine:
                 capital_weight = _D(str(RANK_WEIGHTS[rank]))
             else:
                 capital_weight = _D("1")
-            contracts, limit_price = sizer.compute(option_symbol, capital_weight)
+            contracts, limit_price = sizer.compute(
+                option_symbol, capital_weight, window_budget
+            )
         except Exception:
             logger.exception("Could not size position for %s", option_symbol)
             with self._signal_lock:
-                self._open_position_count -= 1
+                self._window_state[window_label]["open_position_count"] -= 1
             return
 
         try:
@@ -251,46 +290,74 @@ class OpMomentumTradeEngine:
         )
         self._monitor.add_position(pos)
 
-    def _on_signal(self, event: SignalEvent):
+    def _get_window_budget(self, win: WindowConfig) -> Optional[_D]:
+        """Return explicit window_budget for first-group windows; None for sequential."""
+        if win.is_sequential:
+            return None
+        try:
+            account = self._client.get_accounts()
+            buying_power = _D(account.get("buying_power", ACCOUNT_BUDGET))
+            return buying_power * _D(str(win.capital_fraction))
+        except Exception:
+            logger.exception(
+                "Could not fetch account balance for window budget [%s]", win.label
+            )
+            return None
+
+    def _on_signal_for_window(self, window_label: str, event: SignalEvent):
         now = datetime.now(ET)
+        state = self._window_state[window_label]
         with self._signal_lock:
-            if (
-                self._signal_collection_deadline
-                and now < self._signal_collection_deadline
-            ):
-                self._pending_signals[event.ticker] = event
-                logger.info("Buffered signal: %s %s", event.ticker, event.signal)
-                return
-            if self._open_position_count >= MAX_ACTIVE_SYMBOLS:
+            if now < state["collection_deadline"]:
+                state["pending_signals"][event.ticker] = event
                 logger.info(
-                    "Max positions reached (%d), skipping %s",
+                    "Buffered signal [%s]: %s %s",
+                    window_label,
+                    event.ticker,
+                    event.signal,
+                )
+                return
+            if state["open_position_count"] >= MAX_ACTIVE_SYMBOLS:
+                logger.info(
+                    "Max positions reached [%s] (%d), skipping %s",
+                    window_label,
                     MAX_ACTIVE_SYMBOLS,
                     event.ticker,
                 )
                 return
-            self._open_position_count += 1
+            state["open_position_count"] += 1
 
-        self._enter_position(event, rank=0)
+        win = next(w for w in self._windows if w.label == window_label)
+        window_budget = self._get_window_budget(win)
+        self._enter_position(
+            event, rank=0, window_label=window_label, window_budget=window_budget
+        )
 
-    def _signal_selection_loop(self):
-        deadline = self._signal_collection_deadline
+    def _signal_selection_loop_for_window(self, win: WindowConfig):
+        label = win.label
+        state = self._window_state[label]
+        deadline = state["collection_deadline"]
         logger.info(
-            "Signal collection window open until %s ET",
+            "Signal collection window [%s] open until %s ET",
+            label,
             deadline.strftime("%H:%M:%S"),
         )
         while datetime.now(ET) < deadline:
             time.sleep(0.5)
 
         with self._signal_lock:
-            pending = dict(self._pending_signals)
-            self._pending_signals.clear()
+            pending = dict(state["pending_signals"])
+            state["pending_signals"].clear()
 
         if not pending:
-            logger.info("Signal collection window closed: no signals buffered")
+            logger.info(
+                "Signal collection window [%s] closed: no signals buffered", label
+            )
             return
 
         logger.info(
-            "Signal collection window closed: ranking %d buffered signal(s)",
+            "Signal collection window [%s] closed: ranking %d buffered signal(s)",
+            label,
             len(pending),
         )
 
@@ -299,7 +366,10 @@ class OpMomentumTradeEngine:
             stats = self._rolling_stats.get(ticker, {})
             if stats.get("ev_trade", 0) <= 0:
                 logger.info(
-                    "Skipping %s: ev_trade=%.3f <= 0", ticker, stats.get("ev_trade", 0)
+                    "Skipping %s [%s]: ev_trade=%.3f <= 0",
+                    ticker,
+                    label,
+                    stats.get("ev_trade", 0),
                 )
                 continue
             midpoint = (event.or_high + event.or_low) / _D("2")
@@ -320,24 +390,32 @@ class OpMomentumTradeEngine:
             score = score_ticker(sig_dict, stats)
             scored.append((score, ticker, event))
             logger.info(
-                "Ranked %s: score=%.3f ev_trade=%.3f",
+                "Ranked %s [%s]: score=%.3f ev_trade=%.3f",
                 ticker,
+                label,
                 score,
                 stats.get("ev_trade", 0),
             )
 
         scored.sort(key=lambda x: x[0], reverse=True)
 
+        window_budget = self._get_window_budget(win)
         for rank, (score, ticker, event) in enumerate(scored):
             with self._signal_lock:
-                if self._open_position_count >= MAX_ACTIVE_SYMBOLS:
-                    logger.info("Max positions reached, stopping selection")
+                if state["open_position_count"] >= MAX_ACTIVE_SYMBOLS:
+                    logger.info("Max positions reached [%s], stopping selection", label)
                     break
-                self._open_position_count += 1
+                state["open_position_count"] += 1
             logger.info(
-                "Selecting %s from buffer (score=%.3f rank=%d)", ticker, score, rank
+                "Selecting %s from buffer [%s] (score=%.3f rank=%d)",
+                ticker,
+                label,
+                score,
+                rank,
             )
-            self._enter_position(event, rank=rank)
+            self._enter_position(
+                event, rank=rank, window_label=label, window_budget=window_budget
+            )
 
     def _place_entry(
         self,
@@ -431,40 +509,69 @@ class OpMomentumTradeEngine:
         secret_key = self._secret_key
 
         all_tickers = tickers_override or TICKERS
+        first_window = self._windows[0]
 
         ticker_selector = TickerSelector(
             tickers=all_tickers,
             top_n=MAX_ACTIVE_SYMBOLS,
             stop_pct=float(self._stop_pct),
-            opening_start_time=self._opening_start_time,
+            opening_start_time=first_window.opening_start,
         )
         pre_market_picks = ticker_selector.select()
         self._rolling_stats = ticker_selector.rolling_stats
         print(f"\nPre-market top picks: {pre_market_picks}")
         print(f"Subscribing all {len(all_tickers)} tickers to live stream...")
+        if len(self._windows) > 1:
+            labels = [
+                f"[{w.label}] {w.opening_start}/{w.opening_bars}bar"
+                for w in self._windows
+            ]
+            print(f"Windows: {', '.join(labels)}")
 
         today = datetime.now(ET).date()
-        opening_start = datetime.strptime(self._opening_start_time, "%H:%M").time()
-        or_open_et = ET.localize(datetime.combine(today, opening_start))
-        or_close_et = or_open_et + timedelta(minutes=OPENING_BARS * 5)
-        self._signal_collection_deadline = or_close_et + timedelta(
-            minutes=SIGNAL_BUFFER_MINUTES
-        )
-        logger.info(
-            "Signal collection deadline: %s ET",
-            self._signal_collection_deadline.strftime("%H:%M:%S"),
-        )
+
+        # Build per-window state and signal engine window configs
+        engine_windows = []
+        for win in self._windows:
+            opening_start_t = datetime.strptime(win.opening_start, "%H:%M").time()
+            or_open_et = ET.localize(datetime.combine(today, opening_start_t))
+            or_close_et = or_open_et + timedelta(minutes=win.opening_bars * 5)
+            deadline = or_close_et + timedelta(minutes=SIGNAL_BUFFER_MINUTES)
+
+            label = win.label
+            self._window_state[label] = {
+                "pending_signals": {},
+                "collection_deadline": deadline,
+                "open_position_count": 0,
+                "capital_fraction": win.capital_fraction,
+            }
+            logger.info(
+                "Window [%s] %s/%dbar — collection deadline %s ET",
+                label,
+                win.opening_start,
+                win.opening_bars,
+                deadline.strftime("%H:%M:%S"),
+            )
+
+            engine_windows.append(
+                {
+                    "label": label,
+                    "opening_start": win.opening_start,
+                    "opening_bars": win.opening_bars,
+                    "on_signal": lambda event, lbl=label: self._on_signal_for_window(
+                        lbl, event
+                    ),
+                }
+            )
 
         self._signal_engine = LiveSignalEngine(
             tickers=all_tickers,
             api_key=api_key,
             secret_key=secret_key,
-            opening_bars=OPENING_BARS,
             bearish_ma200=BEARISH_MA200,
-            on_signal=self._on_signal,
-            opening_start_time=self._opening_start_time,
             regime_filter=self._regime_filter,
             regime_ma=self._regime_ma,
+            windows=engine_windows,
         )
         self._monitor = PositionMonitor(
             self._client,
@@ -477,10 +584,13 @@ class OpMomentumTradeEngine:
 
         self._signal_engine.start()
 
-        selection_thread = threading.Thread(
-            target=self._signal_selection_loop, daemon=True
-        )
-        selection_thread.start()
+        for win in self._windows:
+            t = threading.Thread(
+                target=self._signal_selection_loop_for_window,
+                args=(win,),
+                daemon=True,
+            )
+            t.start()
 
         monitor_thread = threading.Thread(
             target=self._monitor_loop, args=(all_tickers,), daemon=True
