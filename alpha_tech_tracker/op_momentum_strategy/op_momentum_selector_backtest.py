@@ -75,6 +75,15 @@ def _apply_capital_flow(
         of each day — isolates per-day strategy edge, good for strategy comparison.
       - compound=True: portfolio carries over day-to-day — reflects live account growth.
 
+    Modelling assumption — capital recycling between windows:
+      Each window's backtest runs independently with natural exits (hard stop,
+      trailing MA, or EOD). The capital flow model assumes the prior window's
+      capital is fully returned before the next sequential window deploys.
+      In practice, if a morning trade holds to EOD it won't be available for an
+      afternoon window. Most trades exit intraday, so the gap is small, but this
+      model slightly overstates available capital for afternoon windows on days
+      where the morning trade holds to close.
+
     Mutates each trade row in-place, adding:
       - 'cap_pnl': actual dollar P&L for this trade given real capital allocation
       - 'window_capital': capital allocated to this window on this day

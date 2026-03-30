@@ -286,6 +286,8 @@ def compute_signals_with_backtest(
         bear_fallback = or_low + 0.20 * or_range
         fallback_price = bull_fallback if signal == "BULLISH" else bear_fallback
 
+        # All bars from entry through EOD — no forced close at any window boundary.
+        # Trades exit naturally (hard stop, trailing MA, or EOD).
         post_open = day_from_start.iloc[opening_bars:]
         bars_held = 0
         max_favorable_move = 0.0
