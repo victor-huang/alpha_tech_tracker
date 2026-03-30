@@ -295,7 +295,7 @@ class OpMomentumTradeEngine:
         entry_mid_str = f" @ ~{pos.simulated_entry_mid}" if pos.simulated_entry_mid else ""
         _notify(
             f"{prefix}BUY {_fmt_option(option_symbol)} x{contracts}{entry_mid_str}"
-            f" | stop ${pos.hard_stop_price:.2f}"
+            f" | R{rank + 1} | stop ${pos.hard_stop_price:.2f}"
         )
 
     def _get_window_budget(self, win: WindowConfig) -> Optional[_D]:

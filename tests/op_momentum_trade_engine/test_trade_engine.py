@@ -310,7 +310,7 @@ class TestRankWeightedSizing:
 
 class TestMultiWindowEngine:
     def _make_engine_with_windows(self, windows):
-        from alpha_tech_tracker.op_momentum_strategy.models import WindowConfig
+        pass
 
         client = _make_alpaca_client()
         engine = OpMomentumTradeEngine(
@@ -407,7 +407,6 @@ class TestMultiWindowEngine:
     def test_signals_buffered_in_correct_window_state(self):
         from alpha_tech_tracker.op_momentum_strategy.models import (
             WindowConfig,
-            SignalEvent,
         )
 
         windows = [
@@ -494,3 +493,19 @@ class TestEntryAlert:
 
         msg = mock_notify.call_args[0][0]
         assert msg.startswith("[SIMULATE]")
+
+    def test_entry_alert_includes_rank(self):
+        engine = self._make_engine()
+        with patch(_OPTION_CONTRACT_SELECTOR_PATH, return_value="NVDA260404C00170000"), \
+             patch(_POSITION_SIZER_PATH, return_value=(3, _D("8.50"))), \
+             patch(_PLACE_ENTRY_PATH, return_value={"order_id": "sim-1", "simulated_fill_mid": _D("8.50")}), \
+             patch(_NOTIFY_PATH) as mock_notify:
+            engine._enter_position(_make_signal_event("NVDA"), rank=0)
+        assert "R1" in mock_notify.call_args[0][0]
+
+        with patch(_OPTION_CONTRACT_SELECTOR_PATH, return_value="NVDA260404C00170000"), \
+             patch(_POSITION_SIZER_PATH, return_value=(3, _D("8.50"))), \
+             patch(_PLACE_ENTRY_PATH, return_value={"order_id": "sim-2", "simulated_fill_mid": _D("8.50")}), \
+             patch(_NOTIFY_PATH) as mock_notify:
+            engine._enter_position(_make_signal_event("NVDA"), rank=2)
+        assert "R3" in mock_notify.call_args[0][0]
