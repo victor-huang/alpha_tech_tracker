@@ -16,6 +16,7 @@ from .config import (
     MAX_LOSS_PCT,
     TRAILING_MA,
     _notify,
+    _fmt_option,
 )
 from .models import ActivePosition, _D
 from .order_executor import _place_with_fill_escalation
@@ -196,7 +197,7 @@ class PositionMonitor:
             )
             pos.simulated_exit_mid = sim_mid
             _notify(
-                f"[SIMULATE] SELL {pos.option_symbol} x{pos.contracts} reason={reason} @ ~{sim_mid}"
+                f"[SIMULATE] SELL {_fmt_option(pos.option_symbol)} x{pos.contracts} reason={reason} @ ~{sim_mid}"
             )
             logger.info(
                 "SIMULATE SELL_CLOSE %s contracts=%d simulated_fill=%.2f (no order placed)",
@@ -214,7 +215,7 @@ class PositionMonitor:
                 pos.contracts,
             )
             _notify(
-                f"SELL {pos.option_symbol} x{pos.contracts} reason={reason} closing {pos.ticker}"
+                f"SELL {_fmt_option(pos.option_symbol)} x{pos.contracts} reason={reason} closing {pos.ticker}"
             )
             order = _place_with_fill_escalation(
                 client=self._client,

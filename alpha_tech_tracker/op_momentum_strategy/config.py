@@ -1,6 +1,8 @@
 import json
 import logging
 import os
+import re
+from datetime import datetime
 
 import requests
 
@@ -112,6 +114,22 @@ def _send_sms(message: str):
         logger.info("SMS sent: %s", message)
     except Exception:
         logger.warning("SMS failed", exc_info=True)
+
+
+def _fmt_option(symbol: str) -> str:
+    """Format an OSI option symbol into a human-readable string.
+
+    e.g. 'NVDA260404C00170000' → 'NVDA Apr 04 Call @ $170'
+    """
+    m = re.match(r"^([A-Z]+)(\d{2})(\d{2})(\d{2})([CP])(\d{8})$", symbol)
+    if not m:
+        return symbol
+    ticker, yy, mm, dd, cp, strike_raw = m.groups()
+    expiry = datetime.strptime(f"20{yy}-{mm}-{dd}", "%Y-%m-%d")
+    option_type = "Call" if cp == "C" else "Put"
+    strike = int(strike_raw) / 1000
+    strike_str = f"${strike:.0f}" if strike == int(strike) else f"${strike:.2f}"
+    return f"{ticker} {expiry.strftime('%b %d')} {option_type} @ {strike_str}"
 
 
 def _notify(message: str):

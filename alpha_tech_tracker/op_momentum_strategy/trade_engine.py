@@ -32,6 +32,7 @@ from .config import (
     TICKERS,
     TRAILING_MA,
     _notify,
+    _fmt_option,
     ACCOUNT_BUDGET,
 )
 from .contract_selector import OptionContractSelector
@@ -454,7 +455,7 @@ class OpMomentumTradeEngine:
         if self._mock_trade_execution:
             sim_mid = entry_mid.quantize(_D("0.01"), rounding=ROUND_HALF_UP)
             _notify(
-                f"[SIMULATE] BUY {option_type} {option_symbol} x{contracts} @ ~{sim_mid}"
+                f"[SIMULATE] BUY {_fmt_option(option_symbol)} x{contracts} @ ~{sim_mid}"
             )
             logger.info(
                 "SIMULATE BUY_OPEN %s %s contracts=%d simulated_fill=%.2f (no order placed)",
@@ -475,7 +476,7 @@ class OpMomentumTradeEngine:
             option_type,
             contracts,
         )
-        _notify(f"BUY {option_type} {option_symbol} x{contracts} entering {ticker}")
+        _notify(f"BUY {_fmt_option(option_symbol)} x{contracts} entering {ticker}")
         return _place_with_fill_escalation(
             client=self._client,
             ticker=ticker,
