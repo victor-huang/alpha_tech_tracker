@@ -55,9 +55,17 @@ def _next_friday(ref_date: date) -> date:
     return ref_date + timedelta(days=days_ahead)
 
 
-def _strike_increment(price) -> object:
-    from decimal import Decimal
+def _end_of_next_month(ref_date: date) -> date:
+    """Return the last calendar day of the month after ref_date's month."""
+    month = ref_date.month + 2
+    year = ref_date.year
+    if month > 12:
+        month -= 12
+        year += 1
+    return date(year, month, 1) - timedelta(days=1)
 
+
+def _strike_increment(price) -> object:
     price = _D(price)
     if price < _D("50"):
         return _D("1")
@@ -110,6 +118,30 @@ class OptionContractSelector:
             strike_price_lte=str(search_high),
             limit=50,
         )
+
+        if not contracts:
+            end_date = _end_of_next_month(today)
+            logger.info(
+                "%s: no weekly contracts for %s — querying Alpaca for earliest "
+                "available expiry up to %s",
+                ticker,
+                expiry,
+                end_date,
+            )
+            all_contracts = self._client.get_options_contracts(
+                underlying_symbol=ticker,
+                expiration_date_gte=today,
+                expiration_date_lte=end_date,
+                option_type=option_type,
+                strike_price_gte=str(search_low),
+                strike_price_lte=str(search_high),
+                limit=50,
+            )
+            if all_contracts:
+                earliest = min(c["expiration_date"] for c in all_contracts)
+                contracts = [c for c in all_contracts if c["expiration_date"] == earliest]
+                expiry = date.fromisoformat(earliest)
+                logger.info("%s: monthly fallback using expiry %s", ticker, expiry)
 
         if not contracts:
             raise RuntimeError(

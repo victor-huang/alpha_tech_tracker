@@ -179,6 +179,8 @@ class AlpacaAPIClient:
         self,
         underlying_symbol,
         expiration_date=None,
+        expiration_date_gte=None,
+        expiration_date_lte=None,
         option_type=None,
         strike_price_gte=None,
         strike_price_lte=None,
@@ -187,6 +189,8 @@ class AlpacaAPIClient:
         request = GetOptionContractsRequest(
             underlying_symbols=[underlying_symbol],
             expiration_date=expiration_date,
+            expiration_date_gte=expiration_date_gte,
+            expiration_date_lte=expiration_date_lte,
             type=option_type,
             strike_price_gte=strike_price_gte,
             strike_price_lte=strike_price_lte,

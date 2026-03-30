@@ -5,6 +5,7 @@ import pytest
 
 from alpha_tech_tracker.op_momentum_strategy.contract_selector import (
     OptionContractSelector,
+    _end_of_next_month,
     _is_nyse_holiday,
     _next_friday,
     _strike_increment,
@@ -37,6 +38,20 @@ class TestNextFriday:
     def test_thursday_returns_next_day_friday(self):
         thursday = date(2026, 3, 26)
         assert _next_friday(thursday) == date(2026, 3, 27)
+
+
+class TestEndOfNextMonth:
+    def test_march_returns_end_of_april(self):
+        assert _end_of_next_month(date(2026, 3, 23)) == date(2026, 4, 30)
+
+    def test_november_returns_end_of_december(self):
+        assert _end_of_next_month(date(2026, 11, 1)) == date(2026, 12, 31)
+
+    def test_december_returns_end_of_january_next_year(self):
+        assert _end_of_next_month(date(2026, 12, 1)) == date(2027, 1, 31)
+
+    def test_january_returns_end_of_february(self):
+        assert _end_of_next_month(date(2026, 1, 15)) == date(2026, 2, 28)
 
 
 class TestStrikeIncrement:
@@ -72,8 +87,8 @@ class TestOptionContractSelector:
     def test_bullish_signal_selects_call_with_lower_strike(self, _, __):
         client = _make_alpaca_client()
         client.get_options_contracts.return_value = [
-            {"symbol": "NVDA260328C00730000", "strike_price": 730.0},
-            {"symbol": "NVDA260328C00740000", "strike_price": 740.0},
+            {"symbol": "NVDA260328C00730000", "strike_price": 730.0, "expiration_date": "2026-03-27"},
+            {"symbol": "NVDA260328C00740000", "strike_price": 740.0, "expiration_date": "2026-03-27"},
         ]
 
         selector = OptionContractSelector(client)
@@ -94,8 +109,8 @@ class TestOptionContractSelector:
     def test_bearish_signal_selects_put_with_higher_strike(self, _, __):
         client = _make_alpaca_client()
         client.get_options_contracts.return_value = [
-            {"symbol": "NVDA260328P00910000", "strike_price": 910.0},
-            {"symbol": "NVDA260328P00900000", "strike_price": 900.0},
+            {"symbol": "NVDA260328P00910000", "strike_price": 910.0, "expiration_date": "2026-03-27"},
+            {"symbol": "NVDA260328P00900000", "strike_price": 900.0, "expiration_date": "2026-03-27"},
         ]
 
         selector = OptionContractSelector(client)
@@ -108,9 +123,9 @@ class TestOptionContractSelector:
     def test_picks_contract_closest_to_target_strike(self, _, __):
         client = _make_alpaca_client()
         client.get_options_contracts.return_value = [
-            {"symbol": "CRWD260328C00085000", "strike_price": 85.0},
-            {"symbol": "CRWD260328C00090000", "strike_price": 90.0},
-            {"symbol": "CRWD260328C00095000", "strike_price": 95.0},
+            {"symbol": "CRWD260328C00085000", "strike_price": 85.0, "expiration_date": "2026-03-27"},
+            {"symbol": "CRWD260328C00090000", "strike_price": 90.0, "expiration_date": "2026-03-27"},
+            {"symbol": "CRWD260328C00095000", "strike_price": 95.0, "expiration_date": "2026-03-27"},
         ]
 
         selector = OptionContractSelector(client)
@@ -123,7 +138,7 @@ class TestOptionContractSelector:
     def test_friday_uses_todays_expiry_without_calling_next_friday(self, _):
         client = _make_alpaca_client()
         client.get_options_contracts.return_value = [
-            {"symbol": "NVDA260327C00730000", "strike_price": 730.0},
+            {"symbol": "NVDA260327C00730000", "strike_price": 730.0, "expiration_date": "2026-03-27"},
         ]
 
         selector = OptionContractSelector(client)
@@ -145,7 +160,7 @@ class TestOptionContractSelector:
     def test_good_friday_shifts_expiry_to_thursday(self, _, __, ___):
         client = _make_alpaca_client()
         client.get_options_contracts.return_value = [
-            {"symbol": "NVDA260402C00730000", "strike_price": 730.0},
+            {"symbol": "NVDA260402C00730000", "strike_price": 730.0, "expiration_date": "2026-04-02"},
         ]
 
         selector = OptionContractSelector(client)
@@ -156,7 +171,7 @@ class TestOptionContractSelector:
 
     @patch(_TODAY_PATH, return_value=date(2026, 3, 23))  # Monday
     @patch(_NEXT_FRIDAY_PATH, return_value=date(2026, 3, 27))
-    def test_raises_when_no_contracts_found(self, _, __):
+    def test_raises_when_no_contracts_found_for_weekly_or_monthly(self, _, __):
         client = _make_alpaca_client()
         client.get_options_contracts.return_value = []
 
@@ -164,6 +179,58 @@ class TestOptionContractSelector:
 
         with pytest.raises(RuntimeError, match="No call contracts found"):
             selector.select("NVDA", "BULLISH", 820.0)
+
+        assert client.get_options_contracts.call_count == 2
+
+    @patch(_TODAY_PATH, return_value=date(2026, 3, 23))  # Monday
+    @patch(_NEXT_FRIDAY_PATH, return_value=date(2026, 3, 27))
+    def test_falls_back_to_alpaca_date_range_when_weekly_has_no_contracts(self, _, __):
+        client = _make_alpaca_client()
+        monthly_contract = {
+            "symbol": "ISSC260417C00020000",
+            "strike_price": 20.0,
+            "expiration_date": "2026-04-17",  # 3rd Friday of April
+        }
+        client.get_options_contracts.side_effect = [[], [monthly_contract]]
+
+        selector = OptionContractSelector(client)
+        symbol = selector.select("ISSC", "BULLISH", 21.5)
+
+        assert symbol == "ISSC260417C00020000"
+        assert client.get_options_contracts.call_count == 2
+        second_call = client.get_options_contracts.call_args_list[1]
+        # second call uses date range, not a fixed expiration_date
+        assert second_call.kwargs.get("expiration_date") is None
+        assert second_call.kwargs["expiration_date_gte"] == date(2026, 3, 23)
+        assert second_call.kwargs["expiration_date_lte"] == date(2026, 4, 30)
+
+    @patch(_TODAY_PATH, return_value=date(2026, 3, 23))  # Monday
+    @patch(_NEXT_FRIDAY_PATH, return_value=date(2026, 3, 27))
+    def test_fallback_picks_earliest_expiry_when_multiple_available(self, _, __):
+        client = _make_alpaca_client()
+        client.get_options_contracts.side_effect = [
+            [],
+            [
+                {"symbol": "FN260417C00550000", "strike_price": 550.0, "expiration_date": "2026-04-17"},
+                {"symbol": "FN260515C00550000", "strike_price": 550.0, "expiration_date": "2026-05-15"},
+            ],
+        ]
+
+        selector = OptionContractSelector(client)
+        symbol = selector.select("FN", "BULLISH", 552.0)
+
+        assert symbol == "FN260417C00550000"
+
+    @patch(_TODAY_PATH, return_value=date(2026, 3, 23))  # Monday
+    @patch(_NEXT_FRIDAY_PATH, return_value=date(2026, 3, 27))
+    def test_weekly_contracts_found_does_not_call_monthly_fallback(self, _, __):
+        client = _make_alpaca_client()
+        client.get_options_contracts.return_value = [
+            {"symbol": "FN260327C00550000", "strike_price": 550.0, "expiration_date": "2026-03-27"}
+        ]
+
+        selector = OptionContractSelector(client)
+        selector.select("FN", "BULLISH", 552.0)
 
         client.get_options_contracts.assert_called_once()
 
@@ -173,7 +240,7 @@ class TestOptionContractSelector:
         """100 * 1.10 = 110.000...01 must not round up to 115."""
         client = _make_alpaca_client()
         client.get_options_contracts.return_value = [
-            {"symbol": "COIN260328P00110000", "strike_price": 110.0},
+            {"symbol": "COIN260328P00110000", "strike_price": 110.0, "expiration_date": "2026-03-27"},
         ]
 
         selector = OptionContractSelector(client)
