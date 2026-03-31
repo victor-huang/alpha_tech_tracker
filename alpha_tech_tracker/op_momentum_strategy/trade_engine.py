@@ -35,6 +35,7 @@ from .config import (
     _fmt_option,
     ACCOUNT_BUDGET,
 )
+from .bar_recorder import BarRecorder
 from .contract_selector import OptionContractSelector
 from .models import ActivePosition, SignalEvent, WindowConfig, _D
 from .order_executor import _place_with_fill_escalation
@@ -568,6 +569,7 @@ class OpMomentumTradeEngine:
                 }
             )
 
+        bar_recorder = BarRecorder()
         self._signal_engine = LiveSignalEngine(
             tickers=all_tickers,
             api_key=api_key,
@@ -576,6 +578,7 @@ class OpMomentumTradeEngine:
             regime_filter=self._regime_filter,
             regime_ma=self._regime_ma,
             windows=engine_windows,
+            bar_recorder=bar_recorder,
         )
         self._monitor = PositionMonitor(
             self._client,
@@ -603,4 +606,5 @@ class OpMomentumTradeEngine:
         monitor_thread.join()
 
         self._signal_engine.stop()
+        bar_recorder.close()
         self._monitor.print_summary()

@@ -16,6 +16,7 @@ from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import (
     build_bearish_regime_dates,
 )
 
+from .bar_recorder import BarRecorder
 from .config import (
     BEARISH_MA200,
     MA_WARMUP_DAYS,
@@ -55,6 +56,7 @@ class LiveSignalEngine:
         regime_filter: bool = REGIME_FILTER,
         regime_ma: int = REGIME_MA,
         windows: list = None,
+        bar_recorder: BarRecorder = None,
     ):
         self._tickers = tickers
         self._bearish_ma200 = bearish_ma200
@@ -101,6 +103,7 @@ class LiveSignalEngine:
         self._session_date = datetime.now(ET).date()
         self._stream: StockDataStream = None
         self._lock = threading.Lock()
+        self._bar_recorder = bar_recorder
 
     def _warmup(self):
         hist_client = StockHistoricalDataClient(self._api_key, self._secret_key)
@@ -415,6 +418,8 @@ class LiveSignalEngine:
                 float(bar.close),
                 int(bar.volume),
             )
+            if self._bar_recorder:
+                self._bar_recorder.record_1min(ticker, bar, today)
 
             period_start = ts.replace(second=0, microsecond=0) - timedelta(
                 minutes=ts.minute % 5
@@ -443,6 +448,8 @@ class LiveSignalEngine:
                         five_min_bar.close,
                         len(mbuf["bars"]),
                     )
+                    if self._bar_recorder:
+                        self._bar_recorder.record_5min(ticker, five_min_bar, today)
                     self._process_five_min_bar(five_min_bar)
                 mbuf["period_start"] = period_start
                 mbuf["bars"] = [bar]
