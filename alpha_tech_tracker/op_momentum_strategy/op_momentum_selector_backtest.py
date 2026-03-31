@@ -19,6 +19,7 @@ from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector import (
 )
 
 MIN_WINDOW_CAPITAL = 100.0
+INITIAL_CAPITAL = 10_000.0
 
 
 def _signal_dict_from_row(row) -> dict:
@@ -351,9 +352,6 @@ def _collect_baseline(
     if not frames:
         return pd.DataFrame()
     return pd.concat(frames, ignore_index=True)
-
-
-INITIAL_CAPITAL = 10_000.0
 
 
 def _parse_weights(weights_input: list, n: int) -> list:
@@ -1053,6 +1051,12 @@ def _parse_args():
         default=None,
         help="Position weights per rank (e.g. --weights 50 30 20). Must match --top count.",
     )
+    parser.add_argument(
+        "--capital",
+        type=float,
+        default=INITIAL_CAPITAL,
+        help=f"Initial portfolio capital in dollars (default: {INITIAL_CAPITAL:,.0f}).",
+    )
     return parser.parse_args()
 
 
@@ -1098,14 +1102,14 @@ if __name__ == "__main__":
     print(f"\nSelector Backtest")
     print(f"  Eval window  : {eval_start} → {eval_end}")
     print(f"  Top-N        : {args.top}")
-    print(f"  Weights      : {_weights_label(weights, INITIAL_CAPITAL)}")
+    print(f"  Weights      : {_weights_label(weights, args.capital)}")
     print(f"  Tickers      : {', '.join(tickers)}")
     print(f"  Lookback     : {args.lookback}d rolling")
     print(f"  Windows      : {n_windows} total")
     for i, w in enumerate(resolved_windows):
         if morning_split and i < len(morning_split):
             group_desc = f"simultaneous, {morning_split[i] * 100:.0f}% of portfolio"
-            cap_approx = INITIAL_CAPITAL * morning_split[i]
+            cap_approx = args.capital * morning_split[i]
         else:
             group_desc = "sequential, inherits all returned capital"
             cap_approx = None
@@ -1115,7 +1119,7 @@ if __name__ == "__main__":
         )
     print(f"  Min capital  : ${args.min_window_capital:.0f} per window (skip if below)")
     print(
-        f"  Compounding  : {'on (portfolio carries over)' if args.compound else 'off (reset $10k each day)'}"
+        f"  Compounding  : {'on (portfolio carries over)' if args.compound else f'off (reset ${args.capital:,.0f} each day)'}"
     )
     print(f"  Dedup        : {'on' if args.dedup else 'off'}")
     print(f"  Stop pct     : {args.stop_pct}")
@@ -1152,7 +1156,7 @@ if __name__ == "__main__":
     skip_log = _apply_capital_flow(
         trade_rows,
         resolved_windows,
-        INITIAL_CAPITAL,
+        args.capital,
         weights,
         args.top,
         morning_split=morning_split,
@@ -1181,7 +1185,7 @@ if __name__ == "__main__":
         lookback_days=args.lookback,
         stop_pct=args.stop_pct,
         windows=resolved_windows,
-        initial_capital=INITIAL_CAPITAL,
+        initial_capital=args.capital,
         qqq_closes=qqq_closes,
         weights=weights,
         morning_split=morning_split,

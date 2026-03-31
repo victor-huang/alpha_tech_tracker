@@ -49,3 +49,18 @@ if we look back in time for the past years, what are the information we already 
 Please do some research on fining out what factor we should consider when adding company to the list and when we should rotate out ticker from the list. we should based on information only avaliable at the begining of that trading year.
 
 =======Implement multi-trading windows in live trading engine=========
+backtest script: alpha_tech_tracker/op_momentum_strategy/op_momentum_backtest.py
+live trade engine: alpha_tech_tracker/op_momentum_strategy/op_momentum_trade_engine.py
+
+review new trading window logic in the backtest script and the capital deployment rules within the trading windows of the day, we like to implement the same logic in the live trading engine. can you draft a plan on how to implement that? 
+
+
+Example commands:
+python alpha_tech_tracker/op_momentum_strategy/op_momentum_selector_backtest.py --start 2025-01-01 --end 2026-03-27 --regime-filter --regime-ma 8 --weights 50 30 20 --window M1 09:30 3 --window M2 09:30 1 --window A1 13:15 1 --window A2 15:00 1 --morning-split 60 40 --compound
+	
+
+python alpha_tech_tracker/op_momentum_strategy/op_momentum_selector_backtest.py --start 2025-01-01 --end 2026-03-27 --regime-filter --regime-ma 8 --weights 50 30 20 --window M1 09:30 3 --compound
+
+python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine run --mock-trade-execution --log-level DEBUG --opening-start 9:30 --regime-filter --regime-ma 8 --rank-weighted-sizing --window M1 09:30 3 --window A1 13:15 1 --window A2 15:00 1
+
+python audit_pnl.py --log backtest_result/multiple_trading_windows/m1_m2_a1_a2_2026.txt 
