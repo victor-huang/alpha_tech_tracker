@@ -63,6 +63,7 @@ class PositionMonitor:
         if latest is None:
             return
 
+        bar_time = latest.name
         close = _D(latest["Close"])
         ma20 = latest.get("MA20")
         ma20_val = _D(ma20) if ma20 is not None and not pd.isna(ma20) else None
@@ -72,6 +73,8 @@ class PositionMonitor:
         with self._lock:
             for pos in self._positions:
                 if pos.ticker != ticker or pos.is_closed:
+                    continue
+                if pos.entry_bar_time is not None and bar_time == pos.entry_bar_time:
                     continue
                 self._evaluate_stop(pos, close, ma20_val, ma50_val)
 

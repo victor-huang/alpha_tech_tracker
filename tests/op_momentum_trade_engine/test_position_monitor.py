@@ -431,6 +431,81 @@ class TestPositionMonitor:
         client.place_option_order.assert_not_called()
         assert pos.exit_reason == "hard_stop"
 
+    def test_no_exit_on_entry_bar_even_when_fallback_condition_is_met(self):
+        """
+        Regression: a position whose close is above midpoint but below fallback_price
+        must not exit on the same bar that triggered entry.
+
+        Scenario (mirrors the SHOP 2026-03-31 bug):
+          OR high=120, low=100, range=20
+          midpoint=110, fallback=116, hard_stop=117
+          entry close=112 (above midpoint → BULLISH, but also ≤ fallback)
+        """
+        client = _make_alpaca_client()
+        client._option_data_client.get_option_latest_quote.return_value = {
+            "NVDA260328C00900000": _make_option_quote(bid=5.0, ask=5.5)
+        }
+
+        pos = _make_active_position(
+            signal="BULLISH",
+            or_high=_D("120"),
+            or_low=_D("100"),
+            hard_stop_price=_D("117"),   # 120 - 0.15*20
+            fallback_price=_D("116"),    # 120 - 0.20*20
+        )
+
+        from datetime import datetime
+        import pytz
+        ET = pytz.timezone("America/New_York")
+        entry_bar_ts = ET.localize(datetime(2026, 3, 31, 13, 15))
+        pos.entry_bar_time = entry_bar_ts
+
+        closes = [112.0]
+        df = _build_history_df(closes, ma20=108.0, ma50=105.0, ma200=100.0)
+        # Set the last bar's index to match entry_bar_ts
+        df.index = [entry_bar_ts]
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine)
+        monitor.add_position(pos)
+
+        # on_bar with the entry bar itself — must NOT exit
+        monitor.on_bar("NVDA")
+        assert pos.is_closed is False
+
+    def test_exits_on_bar_after_entry_when_fallback_condition_met(self):
+        """After the entry bar, fallback_20pct should fire normally."""
+        client = _make_alpaca_client()
+        client._option_data_client.get_option_latest_quote.return_value = {
+            "NVDA260328C00900000": _make_option_quote(bid=5.0, ask=5.5)
+        }
+
+        pos = _make_active_position(
+            signal="BULLISH",
+            or_high=_D("120"),
+            or_low=_D("100"),
+            hard_stop_price=_D("117"),
+            fallback_price=_D("116"),
+        )
+
+        from datetime import datetime
+        import pytz
+        ET = pytz.timezone("America/New_York")
+        entry_bar_ts = ET.localize(datetime(2026, 3, 31, 13, 15))
+        pos.entry_bar_time = entry_bar_ts
+
+        closes = [112.0]
+        df = _build_history_df(closes, ma20=108.0, ma50=105.0, ma200=100.0)
+        df.index = [entry_bar_ts]
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine, mock_trade_execution=True)
+        monitor.add_position(pos)
+
+        # Next bar (different timestamp, same fallback condition) → should exit
+        _set_latest_bar(engine, "NVDA", close=112.0, ma50=105.0, ma20=108.0)
+        monitor.on_bar("NVDA")
+        assert pos.is_closed is True
+        assert pos.exit_reason == "fallback_20pct"
+
 
 class TestPrintSummaryPnl:
     def test_bullish_call_profit_when_exit_above_entry(self, capsys):

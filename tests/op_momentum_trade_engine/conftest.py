@@ -101,12 +101,16 @@ def _build_history_df(closes, ma20, ma50, ma200):
 
 
 def _set_latest_bar(engine, ticker, close, ma50, ma20=None):
-    df = engine._history[ticker].copy()
-    df.iloc[-1, df.columns.get_loc("Close")] = float(close)
-    df.iloc[-1, df.columns.get_loc("MA50")] = float(ma50)
+    df = engine._history[ticker]
+    new_ts = df.index[-1] + timedelta(minutes=5)
+    new_row = df.iloc[-1].copy()
+    new_row["Close"] = float(close)
+    new_row["MA50"] = float(ma50)
     if ma20 is not None:
-        df.iloc[-1, df.columns.get_loc("MA20")] = float(ma20)
-    engine._history[ticker] = df
+        new_row["MA20"] = float(ma20)
+    engine._history[ticker] = pd.concat(
+        [df, pd.DataFrame([new_row], index=[new_ts])]
+    )
 
 
 def _make_option_quote(bid, ask):

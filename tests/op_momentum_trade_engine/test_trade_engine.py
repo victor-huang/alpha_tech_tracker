@@ -262,12 +262,16 @@ class TestSignalSelectionLoop:
 
 
 class TestRankWeightedSizing:
-    def test_rank_weighted_sizing_off_passes_full_weight_to_sizer(self):
+    def _make_engine(self, **kwargs):
         client = _make_alpaca_client()
-        engine = OpMomentumTradeEngine(
-            alpaca_client=client, mock_trade_execution=True, rank_weighted_sizing=False
-        )
+        engine = OpMomentumTradeEngine(alpaca_client=client, mock_trade_execution=True, **kwargs)
         engine._monitor = Mock()
+        engine._signal_engine = Mock()
+        engine._signal_engine.get_latest_bar.return_value = None
+        return engine
+
+    def test_rank_weighted_sizing_off_passes_full_weight_to_sizer(self):
+        engine = self._make_engine(rank_weighted_sizing=False)
 
         with patch(_OPTION_CONTRACT_SELECTOR_PATH, return_value="NVDA260328C00730000"), \
              patch(_POSITION_SIZER_PATH, return_value=(3, _D("8.50"))) as compute_mock, \
@@ -278,11 +282,7 @@ class TestRankWeightedSizing:
         assert call_args[1] == _D("1")
 
     def test_rank_weighted_sizing_on_passes_first_weight_for_rank_zero(self):
-        client = _make_alpaca_client()
-        engine = OpMomentumTradeEngine(
-            alpaca_client=client, mock_trade_execution=True, rank_weighted_sizing=True
-        )
-        engine._monitor = Mock()
+        engine = self._make_engine(rank_weighted_sizing=True)
 
         with patch(_OPTION_CONTRACT_SELECTOR_PATH, return_value="NVDA260328C00730000"), \
              patch(_POSITION_SIZER_PATH, return_value=(3, _D("8.50"))) as compute_mock, \
@@ -293,11 +293,7 @@ class TestRankWeightedSizing:
         assert call_args[1] == _D(str(RANK_WEIGHTS[0]))
 
     def test_rank_weighted_sizing_on_passes_second_weight_for_rank_one(self):
-        client = _make_alpaca_client()
-        engine = OpMomentumTradeEngine(
-            alpaca_client=client, mock_trade_execution=True, rank_weighted_sizing=True
-        )
-        engine._monitor = Mock()
+        engine = self._make_engine(rank_weighted_sizing=True)
 
         with patch(_OPTION_CONTRACT_SELECTOR_PATH, return_value="NVDA260328C00730000"), \
              patch(_POSITION_SIZER_PATH, return_value=(2, _D("8.50"))) as compute_mock, \
@@ -444,6 +440,8 @@ class TestEntryAlert:
         client = _make_alpaca_client()
         engine = OpMomentumTradeEngine(alpaca_client=client, mock_trade_execution=True)
         engine._monitor = Mock()
+        engine._signal_engine = Mock()
+        engine._signal_engine.get_latest_bar.return_value = None
         return engine
 
     def test_entry_alert_includes_readable_option_symbol(self):

@@ -271,6 +271,9 @@ class OpMomentumTradeEngine:
             order.get("simulated_fill_mid") if self._mock_trade_execution else None
         )
 
+        latest_bar = self._signal_engine.get_latest_bar(event.ticker)
+        entry_bar_time = latest_bar.name if latest_bar is not None else None
+
         pos = ActivePosition(
             ticker=event.ticker,
             signal=event.signal,
@@ -287,6 +290,7 @@ class OpMomentumTradeEngine:
             fallback_price=(
                 bull_fallback if event.signal == "BULLISH" else bear_fallback
             ),
+            entry_bar_time=entry_bar_time,
             entry_time=datetime.now(ET),
             simulated_entry_mid=sim_entry_mid,
         )

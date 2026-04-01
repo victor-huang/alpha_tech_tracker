@@ -58,6 +58,7 @@ class ActivePosition:
     hard_stop_armed: bool = False
     is_closed: bool = False
     exit_reason: str = ""
+    entry_bar_time: Optional[datetime] = None
     entry_time: Optional[datetime] = None
     exit_time: Optional[datetime] = None
     simulated_entry_mid: Optional[Decimal] = None
