@@ -38,6 +38,7 @@ def _safe_bars_end(target_date: date):
 # v2 pool: added PLTR, COIN, NVDA — 5yr backtest 2021-2025: +330% vs +319% original
 # GS and REGN: $2.50/signal over 90 days from 3/26/2026, during down trend
 # removed UI 2026-03-31: Alpaca returns only sparse extended-hours bars, no reliable morning session data
+# removed ISSC, added RH 2026-04-01: swap gains +19pp over 5 years; RH has cleaner OR breakouts
 DEFAULT_TICKERS = [
     "SNDK",
     "APP",
@@ -47,13 +48,14 @@ DEFAULT_TICKERS = [
     "META",
     "EXPE",
     "FANG",
-    "ISSC",
+    "RH",
     "FN",
     "MU",
     "ANAB",
     "PLTR",
     "COIN",
     "NVDA",
+    "TSLA",
 ]
 ROLLING_LOOKBACK_DAYS = 60
 OPENING_BARS = 3

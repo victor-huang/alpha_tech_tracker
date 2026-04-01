@@ -542,3 +542,22 @@ The strategy already has two filtering layers operating at different timescales:
 - Delisting risk, regulatory action, reverse split, M&A announcement (target) → remove same day
 
 **Key principle:** The quarterly review builds and maintains a **rotation bench** — candidates that have already passed the 90-day backtest screen and are ready to swap in. Without this bench, you're always 3–6 months behind sector rotations. When the annual review comes, you have validated candidates ready instead of names that still need testing.
+
+---
+
+## Pool Change Log
+
+Tracks all additions and removals from `DEFAULT_TICKERS` with rationale and supporting backtest data.
+
+| Date | Action | Ticker | Reason | 5-Year Δ |
+|---|---|---|---|---|
+| 2026-03-31 | **Removed** | UI | Alpaca returns only sparse extended-hours bars for UI (5 bars/day, all low-volume); no reliable morning session data. Backtest entry was firing at 3 PM instead of 9:45 AM, producing meaningless results. Data quality issue, not signal quality. | — |
+| 2026-04-01 | **Added** | TSLA | 5-year backtest (2021–2026-03-31) with TSLA vs without: +10.9pp gain (+$1,090 on $10k). M1 window gained +8.3pp, A2 +4.3pp. High-beta, high-volatility ticker with clean OR breakout profile consistent with COIN and PLTR. | **+10.9pp** |
+| 2026-04-01 | **Removed** | ISSC | Replaced by RH. ISSC is a thinly traded small-cap producing frequent `fallback_20pct` exits (no intraday momentum follow-through). Options ADV well below 5K threshold — execution friction in live trading. | — |
+| 2026-04-01 | **Added** | RH | Swap test (-ISSC +RH) vs current pool: +19pp over 5 years (+$1,904 on $10k). M1 gained +20.5pp — largest single-window improvement of any ticker change tested. RH (Restoration Hardware) is a high-beta luxury retailer with strong OR breakout follow-through. All three windows improved. Baseline EV/trade improved from +0.276% → +0.288%. | **+19.0pp** |
+
+### Current Pool (as of 2026-04-01) — 16 tickers
+
+`SNDK, APP, SHOP, CVNA, AMD, META, EXPE, FANG, RH, FN, MU, ANAB, PLTR, COIN, NVDA, TSLA`
+
+5-year return with this pool: **+789.62%** (+$78,962 on $10k initial, no-compound, M1+A1+A2, top-3, 50/30/20 weights, regime MA8).
