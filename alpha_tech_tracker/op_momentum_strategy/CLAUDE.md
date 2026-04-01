@@ -80,7 +80,7 @@ The same signal logic drives both **live trading** (`op_momentum_trade_engine.py
 ```python
 DEFAULT_TICKERS = [
     "SNDK", "APP", "SHOP", "CVNA", "AMD", "META",
-    "EXPE", "FANG", "ISSC", "FN", "UI", "MU",
+    "EXPE", "FANG", "ISSC", "FN", "MU",
     "ANAB", "PLTR", "COIN", "NVDA",
 ]
 ```

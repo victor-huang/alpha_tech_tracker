@@ -37,6 +37,7 @@ def _safe_bars_end(target_date: date):
 # DEFAULT_TICKERS = ["SNDK", "APP", "SHOP", "CVNA", "AMD", "META", "EXPE", "FANG"]
 # v2 pool: added PLTR, COIN, NVDA — 5yr backtest 2021-2025: +330% vs +319% original
 # GS and REGN: $2.50/signal over 90 days from 3/26/2026, during down trend
+# removed UI 2026-03-31: Alpaca returns only sparse extended-hours bars, no reliable morning session data
 DEFAULT_TICKERS = [
     "SNDK",
     "APP",
@@ -48,7 +49,6 @@ DEFAULT_TICKERS = [
     "FANG",
     "ISSC",
     "FN",
-    "UI",
     "MU",
     "ANAB",
     "PLTR",
