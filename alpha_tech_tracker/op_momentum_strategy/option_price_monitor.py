@@ -18,7 +18,7 @@ from alpaca.data.requests import OptionLatestQuoteRequest
 from alpha_tech_tracker.trade_api.alpaca_client.client import AlpacaAPIClient
 
 from .config import TICKERS
-from .contract_selector import OptionContractSelector
+from .contract_selector import TimePremiumContractSelector
 from .models import _D, _stock_bid_ask
 
 logger = logging.getLogger(__name__)
@@ -62,7 +62,7 @@ def _parse_occ_symbol(symbol: str) -> dict:
 class TradeEngineStrikeSelector:
     """
     Selects the same CALL and PUT contracts the live trade engine would pick,
-    using OptionContractSelector with BULLISH (call) and BEARISH (put) signals.
+    using TimePremiumContractSelector with BULLISH (call) and BEARISH (put) signals.
 
     Extend or replace this class to monitor additional strikes in the future.
     Any object with a select_contracts(ticker, stock_price) -> list[ContractSpec]
@@ -70,7 +70,7 @@ class TradeEngineStrikeSelector:
     """
 
     def __init__(self, client: AlpacaAPIClient):
-        self._selector = OptionContractSelector(client)
+        self._selector = TimePremiumContractSelector(client)
 
     def select_contracts(self, ticker: str, stock_price: Decimal) -> list:
         specs = []

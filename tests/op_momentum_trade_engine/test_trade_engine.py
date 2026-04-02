@@ -19,7 +19,7 @@ ET = pytz.timezone("America/New_York")
 _SELECT_TOP_N_PATH = "alpha_tech_tracker.op_momentum_strategy.trade_engine.select_top_n"
 _FETCH_BARS_PATH = "alpha_tech_tracker.op_momentum_strategy.trade_engine.fetch_bars"
 _OPTION_CONTRACT_SELECTOR_PATH = (
-    "alpha_tech_tracker.op_momentum_strategy.trade_engine.OptionContractSelector.select"
+    "alpha_tech_tracker.op_momentum_strategy.trade_engine.TimePremiumContractSelector.select"
 )
 _POSITION_SIZER_PATH = (
     "alpha_tech_tracker.op_momentum_strategy.trade_engine.PositionSizer.compute"

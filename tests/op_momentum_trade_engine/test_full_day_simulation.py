@@ -30,7 +30,6 @@ from decimal import Decimal
 from pathlib import Path
 from unittest.mock import Mock, patch
 
-import pandas as pd
 import pytest
 import pytz
 
@@ -151,9 +150,10 @@ class TestFullDaySimulationNvdaBullish:
             mock_api["exit_quote"]["bid"], mock_api["exit_quote"]["ask"]
         )
         client._option_data_client.get_option_latest_quote.side_effect = [
+            {option_symbol: entry_q},  # TimePremiumContractSelector batch fetch
             {option_symbol: entry_q},  # PositionSizer.compute()
             {option_symbol: entry_q},  # _place_entry() re-fetches for exact mid
-            {option_symbol: exit_q},  # _close_position() exit mid
+            {option_symbol: exit_q},   # _close_position() exit mid
         ]
 
         engine, monitor = _wire_engine_and_monitor(client, signal_engine)
@@ -375,6 +375,7 @@ class TestLivePipingFullDay:
             mock_api["exit_quote"]["bid"], mock_api["exit_quote"]["ask"]
         )
         client._option_data_client.get_option_latest_quote.side_effect = [
+            {option_symbol: entry_q},  # TimePremiumContractSelector batch fetch
             {option_symbol: entry_q},
             {option_symbol: entry_q},
             {option_symbol: exit_q},

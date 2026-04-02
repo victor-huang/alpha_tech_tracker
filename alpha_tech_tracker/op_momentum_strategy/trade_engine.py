@@ -36,7 +36,7 @@ from .config import (
     ACCOUNT_BUDGET,
 )
 from .bar_recorder import BarRecorder
-from .contract_selector import OptionContractSelector
+from .contract_selector import TimePremiumContractSelector
 from .models import ActivePosition, SignalEvent, WindowConfig, _D
 from .option_price_monitor import OptionPriceMonitor
 from .order_executor import _place_with_fill_escalation, place_stock_order
@@ -371,7 +371,7 @@ class OpMomentumTradeEngine:
         entry_bar_time,
     ):
         try:
-            selector = OptionContractSelector(self._client)
+            selector = TimePremiumContractSelector(self._client)
             option_symbol = selector.select(
                 event.ticker, event.signal, event.stock_price
             )
