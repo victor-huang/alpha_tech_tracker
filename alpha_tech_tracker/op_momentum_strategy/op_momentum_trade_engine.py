@@ -1,9 +1,11 @@
 import argparse
 import logging
+import logging.handlers
 import os
 import signal
 import sys
 import time
+from datetime import date
 
 from alpha_tech_tracker.trade_api.alpaca_client.client import AlpacaAPIClient
 
@@ -44,9 +46,24 @@ from .config import (  # noqa: F401
 logger = logging.getLogger(__name__)
 
 _PID_FILE = os.path.expanduser("~/.op_momentum_daemon.pid")
-_LOG_FILE = os.path.join(
-    os.path.dirname(__file__), "..", "..", "logs", "op_momentum.log"
-)
+_LOG_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "logs")
+
+
+def _dated_log_file() -> str:
+    """Return a log file path stamped with today's date, e.g. logs/op_momentum_2026-04-01.log."""
+    return os.path.join(_LOG_DIR, f"op_momentum_{date.today()}.log")
+
+
+def _make_log_handler(log_file: str) -> logging.handlers.TimedRotatingFileHandler:
+    """Return a handler that rotates the log file at midnight and keeps 30 days."""
+    handler = logging.handlers.TimedRotatingFileHandler(
+        log_file, when="midnight", backupCount=30, encoding="utf-8"
+    )
+    # Rename rotated files: op_momentum_2026-04-01.log.2026-04-02 → op_momentum_2026-04-02.log
+    import re
+    handler.namer = lambda name: re.sub(r'(op_momentum)_[\d-]+(\.log)\.(\d{4}-\d{2}-\d{2})$',
+                                        r'\1_\3\2', name)
+    return handler
 
 
 def _write_pid(pid_file: str):
@@ -231,8 +248,8 @@ def parse_args():
     parser.add_argument(
         "--log-file",
         type=str,
-        default=_LOG_FILE,
-        help=f"Log file path (default: {_LOG_FILE})",
+        default=None,
+        help="Log file path (default: logs/op_momentum_YYYY-MM-DD.log)",
     )
     parser.add_argument(
         "--log-level",
@@ -330,6 +347,9 @@ if __name__ == "__main__":
     args = parse_args()
     _load_config()
 
+    log_file = args.log_file or _dated_log_file()
+    os.makedirs(os.path.dirname(os.path.abspath(log_file)), exist_ok=True)
+
     windows = _parse_windows(args)
 
     if args.action == "run":
@@ -337,6 +357,7 @@ if __name__ == "__main__":
             level=getattr(logging, args.log_level),
             format="%(asctime)s %(levelname)s %(name)s — %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",
+            handlers=[_make_log_handler(log_file)],
         )
         is_paper = not (args.live or args.mock_trade_execution)
         client = AlpacaAPIClient(is_paper_trading=is_paper)
@@ -362,17 +383,17 @@ if __name__ == "__main__":
     if args.action == "status":
         pid = _read_pid(args.pid_file)
         if pid and _is_running(pid):
-            print(f"Daemon running (PID {pid}) — log: {args.log_file}")
+            print(f"Daemon running (PID {pid}) — log: {log_file}")
         else:
             print("Daemon is not running.")
         sys.exit(0)
 
     if args.action == "stop":
-        _daemon_stop(args.pid_file, args.log_file)
+        _daemon_stop(args.pid_file, log_file)
         sys.exit(0)
 
     if args.action == "restart":
-        _daemon_stop(args.pid_file, args.log_file)
+        _daemon_stop(args.pid_file, log_file)
 
     # start / restart — check not already running
     existing_pid = _read_pid(args.pid_file)
@@ -382,8 +403,8 @@ if __name__ == "__main__":
         )
         sys.exit(1)
 
-    print(f"Starting daemon — logs: {args.log_file}")
-    _daemonize(args.log_file)
+    print(f"Starting daemon — logs: {log_file}")
+    _daemonize(log_file)
 
     # --- daemon process only beyond this point ---
     _write_pid(args.pid_file)
@@ -392,7 +413,7 @@ if __name__ == "__main__":
         level=getattr(logging, args.log_level),
         format="%(asctime)s %(levelname)s %(name)s — %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
-        handlers=[logging.FileHandler(args.log_file)],
+        handlers=[_make_log_handler(log_file)],
     )
     logger.info(
         "Daemon started — api_key_set=%s config_file=%s",
