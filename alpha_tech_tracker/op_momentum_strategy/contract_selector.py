@@ -4,6 +4,7 @@ from decimal import ROUND_HALF_UP
 
 import pandas as pd
 import pytz
+from alpaca.data.requests import OptionLatestQuoteRequest
 from pandas.tseries.holiday import (
     AbstractHolidayCalendar,
     GoodFriday,
@@ -74,6 +75,57 @@ def _strike_increment(price) -> object:
     return _D("10")
 
 
+def _fetch_contracts_with_expiry_fallback(
+    client: AlpacaAPIClient,
+    ticker: str,
+    option_type: str,
+    search_low,
+    search_high,
+) -> tuple:
+    """Fetch contracts for the nearest weekly expiry, falling back to monthly.
+
+    Returns (contracts: list, expiry: date).
+    """
+    today = _today()
+    friday = today if today.weekday() == 4 else _next_friday(today)
+    expiry = friday - timedelta(days=1) if _is_nyse_holiday(friday) else friday
+
+    contracts = client.get_options_contracts(
+        underlying_symbol=ticker,
+        expiration_date=expiry,
+        option_type=option_type,
+        strike_price_gte=str(search_low),
+        strike_price_lte=str(search_high),
+        limit=50,
+    )
+
+    if not contracts:
+        end_date = _end_of_next_month(today)
+        logger.info(
+            "%s: no weekly contracts for %s — querying Alpaca for earliest "
+            "available expiry up to %s",
+            ticker,
+            expiry,
+            end_date,
+        )
+        all_contracts = client.get_options_contracts(
+            underlying_symbol=ticker,
+            expiration_date_gte=today,
+            expiration_date_lte=end_date,
+            option_type=option_type,
+            strike_price_gte=str(search_low),
+            strike_price_lte=str(search_high),
+            limit=50,
+        )
+        if all_contracts:
+            earliest = min(c["expiration_date"] for c in all_contracts)
+            contracts = [c for c in all_contracts if c["expiration_date"] == earliest]
+            expiry = date.fromisoformat(earliest)
+            logger.info("%s: monthly fallback using expiry %s", ticker, expiry)
+
+    return contracts, expiry
+
+
 class OptionContractSelector:
     """Finds the nearest weekly option contract matching the signal."""
 
@@ -96,9 +148,11 @@ class OptionContractSelector:
             target_strike = -(-raw // incr) * incr
             option_type = "put"
 
-        today = _today()
-        friday = today if today.weekday() == 4 else _next_friday(today)
-        expiry = friday - timedelta(days=1) if _is_nyse_holiday(friday) else friday
+        search_low = (stock_price * _D("0.80")).quantize(incr, rounding=ROUND_HALF_UP)
+        search_high = (stock_price * _D("1.20")).quantize(incr, rounding=ROUND_HALF_UP)
+        contracts, expiry = _fetch_contracts_with_expiry_fallback(
+            self._client, ticker, option_type, search_low, search_high
+        )
         logger.info(
             "%s %s signal: stock=%s target_strike=%s expiry=%s",
             ticker,
@@ -107,41 +161,6 @@ class OptionContractSelector:
             target_strike,
             expiry,
         )
-
-        search_low = (stock_price * _D("0.80")).quantize(incr, rounding=ROUND_HALF_UP)
-        search_high = (stock_price * _D("1.20")).quantize(incr, rounding=ROUND_HALF_UP)
-        contracts = self._client.get_options_contracts(
-            underlying_symbol=ticker,
-            expiration_date=expiry,
-            option_type=option_type,
-            strike_price_gte=str(search_low),
-            strike_price_lte=str(search_high),
-            limit=50,
-        )
-
-        if not contracts:
-            end_date = _end_of_next_month(today)
-            logger.info(
-                "%s: no weekly contracts for %s — querying Alpaca for earliest "
-                "available expiry up to %s",
-                ticker,
-                expiry,
-                end_date,
-            )
-            all_contracts = self._client.get_options_contracts(
-                underlying_symbol=ticker,
-                expiration_date_gte=today,
-                expiration_date_lte=end_date,
-                option_type=option_type,
-                strike_price_gte=str(search_low),
-                strike_price_lte=str(search_high),
-                limit=50,
-            )
-            if all_contracts:
-                earliest = min(c["expiration_date"] for c in all_contracts)
-                contracts = [c for c in all_contracts if c["expiration_date"] == earliest]
-                expiry = date.fromisoformat(earliest)
-                logger.info("%s: monthly fallback using expiry %s", ticker, expiry)
 
         if not contracts:
             raise RuntimeError(
@@ -158,3 +177,117 @@ class OptionContractSelector:
             target_strike,
         )
         return best["symbol"]
+
+
+class TimePremiumContractSelector:
+    """Selects the deepest ITM strike where time premium just falls to or below
+    target_pct * stock_price.
+
+    Algorithm (BULLISH/call example with stock=$300, target_pct=0.01):
+      target_premium = $300 * 0.01 = $3
+      1. Fetch all ITM call contracts (strikes from 70% to 100% of stock price).
+      2. Sort near-ATM first (descending strike for calls, ascending for puts).
+      3. Walk deeper ITM: compute time_premium = mid - intrinsic at each strike.
+      4. Select the first strike where time_premium <= target_premium.
+      5. Fallback to deepest ITM contract if all time premiums stay above target.
+
+    Mirrors OptionContractSelector expiry logic: weekly → monthly fallback.
+    """
+
+    def __init__(self, client: AlpacaAPIClient, target_pct: float = 0.01):
+        self._client = client
+        self._target_pct = _D(str(target_pct))
+
+    def select(self, ticker: str, signal: str, stock_price: float) -> str:
+        stock_price = _D(str(stock_price))
+        target_premium = stock_price * self._target_pct
+        incr = _strike_increment(stock_price)
+
+        if signal == "BULLISH":
+            option_type = "call"
+            # ITM calls have strike < stock_price
+            search_low = (stock_price * _D("0.70")).quantize(incr, rounding=ROUND_HALF_UP)
+            search_high = stock_price.quantize(incr, rounding=ROUND_HALF_UP)
+        else:
+            option_type = "put"
+            # ITM puts have strike > stock_price
+            search_low = stock_price.quantize(incr, rounding=ROUND_HALF_UP)
+            search_high = (stock_price * _D("1.30")).quantize(incr, rounding=ROUND_HALF_UP)
+
+        contracts, expiry = _fetch_contracts_with_expiry_fallback(
+            self._client, ticker, option_type, search_low, search_high
+        )
+        logger.info(
+            "%s %s signal: stock=%s target_premium=%s expiry=%s contracts=%d",
+            ticker,
+            signal,
+            stock_price,
+            target_premium,
+            expiry,
+            len(contracts),
+        )
+
+        if not contracts:
+            raise RuntimeError(
+                f"No {option_type} contracts found for {ticker} "
+                f"expiry={expiry} strike range {search_low}–{search_high}"
+            )
+
+        # Sort near-ATM first so we walk from high time premium towards low
+        if signal == "BULLISH":
+            contracts.sort(key=lambda c: _D(str(c["strike_price"])), reverse=True)
+        else:
+            contracts.sort(key=lambda c: _D(str(c["strike_price"])))
+
+        symbols = [c["symbol"] for c in contracts]
+        quotes = self._fetch_quotes_batch(symbols)
+
+        # Fallback: deepest ITM (last in sorted order)
+        selected = contracts[-1]
+        for contract in contracts:
+            sym = contract["symbol"]
+            quote = quotes.get(sym)
+            if quote is None:
+                continue
+            bid = _D(str(quote.bid_price))
+            ask = _D(str(quote.ask_price))
+            mid = (bid + ask) / _D("2")
+            if mid <= _D("0"):
+                continue
+            strike = _D(str(contract["strike_price"]))
+            if signal == "BULLISH":
+                intrinsic = max(_D("0"), stock_price - strike)
+            else:
+                intrinsic = max(_D("0"), strike - stock_price)
+            time_premium = mid - intrinsic
+            logger.debug(
+                "%s strike=%s mid=%s intrinsic=%s time_premium=%s target=%s",
+                sym,
+                strike,
+                mid,
+                intrinsic,
+                time_premium,
+                target_premium,
+            )
+            if time_premium <= target_premium:
+                selected = contract
+                break
+
+        logger.info(
+            "TimePremium selected %s strike=%s (target_premium=%s)",
+            selected["symbol"],
+            selected["strike_price"],
+            target_premium,
+        )
+        return selected["symbol"]
+
+    def _fetch_quotes_batch(self, symbols: list) -> dict:
+        try:
+            return self._client._option_data_client.get_option_latest_quote(
+                OptionLatestQuoteRequest(symbol_or_symbols=symbols)
+            )
+        except Exception:
+            logger.warning(
+                "Failed to batch-fetch option quotes for %d symbols", len(symbols)
+            )
+            return {}

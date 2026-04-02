@@ -5,13 +5,14 @@ import pytest
 
 from alpha_tech_tracker.op_momentum_strategy.contract_selector import (
     OptionContractSelector,
+    TimePremiumContractSelector,
     _end_of_next_month,
     _is_nyse_holiday,
     _next_friday,
     _strike_increment,
 )
 
-from conftest import _D, _make_alpaca_client
+from conftest import _D, _make_alpaca_client, _make_option_quote
 
 _TODAY_PATH = "alpha_tech_tracker.op_momentum_strategy.contract_selector._today"
 _NEXT_FRIDAY_PATH = (
@@ -251,3 +252,182 @@ class TestOptionContractSelector:
         assert call_args.kwargs["strike_price_gte"] == "80"
         assert call_args.kwargs["limit"] == 50
         assert symbol == "COIN260328P00110000"
+
+
+def _make_contracts(strike_prices, option_type="call", expiry="2026-03-27"):
+    return [
+        {
+            "symbol": f"TSLA260327{'C' if option_type == 'call' else 'P'}{int(s * 1000):08d}",
+            "strike_price": float(s),
+            "expiration_date": expiry,
+        }
+        for s in strike_prices
+    ]
+
+
+@patch(_TODAY_PATH, return_value=date(2026, 3, 23))
+@patch(_NEXT_FRIDAY_PATH, return_value=date(2026, 3, 27))
+class TestTimePremiumContractSelector:
+    # TSLA at $300, target_pct=1% → target_premium=$3
+    # call intrinsic = stock - strike; put intrinsic = strike - stock
+
+    def test_bullish_selects_first_strike_where_time_premium_at_or_below_target(
+        self, _, __
+    ):
+        client = _make_alpaca_client()
+        # strike $290 (intrinsic $10): mid=$14 → time_premium=$4 > $3 → skip
+        # strike $280 (intrinsic $20): mid=$22 → time_premium=$2 <= $3 → select
+        client.get_options_contracts.return_value = _make_contracts([280, 290])
+        client._option_data_client.get_option_latest_quote.return_value = {
+            "TSLA260327C00290000": _make_option_quote(bid=13.0, ask=15.0),  # mid=14, tp=4
+            "TSLA260327C00280000": _make_option_quote(bid=21.0, ask=23.0),  # mid=22, tp=2
+        }
+
+        selector = TimePremiumContractSelector(client, target_pct=0.01)
+        symbol = selector.select("TSLA", "BULLISH", 300.0)
+
+        assert symbol == "TSLA260327C00280000"
+
+    def test_bearish_selects_first_put_strike_where_time_premium_at_or_below_target(
+        self, _, __
+    ):
+        client = _make_alpaca_client()
+        # strike $310 (intrinsic $10): mid=$14 → time_premium=$4 > $3 → skip
+        # strike $320 (intrinsic $20): mid=$22 → time_premium=$2 <= $3 → select
+        client.get_options_contracts.return_value = _make_contracts(
+            [310, 320], option_type="put"
+        )
+        client._option_data_client.get_option_latest_quote.return_value = {
+            "TSLA260327P00310000": _make_option_quote(bid=13.0, ask=15.0),  # mid=14, tp=4
+            "TSLA260327P00320000": _make_option_quote(bid=21.0, ask=23.0),  # mid=22, tp=2
+        }
+
+        selector = TimePremiumContractSelector(client, target_pct=0.01)
+        symbol = selector.select("TSLA", "BEARISH", 300.0)
+
+        assert symbol == "TSLA260327P00320000"
+
+    def test_falls_back_to_deepest_itm_when_all_time_premiums_exceed_target(
+        self, _, __
+    ):
+        client = _make_alpaca_client()
+        # All strikes still have time_premium > target → use deepest ITM (lowest call strike)
+        client.get_options_contracts.return_value = _make_contracts([290, 295])
+        client._option_data_client.get_option_latest_quote.return_value = {
+            "TSLA260327C00295000": _make_option_quote(bid=9.0, ask=11.0),   # mid=10, tp=5 > 3
+            "TSLA260327C00290000": _make_option_quote(bid=13.5, ask=14.5),  # mid=14, tp=4 > 3
+        }
+
+        selector = TimePremiumContractSelector(client, target_pct=0.01)
+        symbol = selector.select("TSLA", "BULLISH", 300.0)
+
+        assert symbol == "TSLA260327C00290000"
+
+    def test_skips_strikes_with_zero_mid_and_continues_scanning(self, _, __):
+        client = _make_alpaca_client()
+        # strike $295: mid=0 → skip; strike $285: tp=$2 ≤ $3 → select
+        client.get_options_contracts.return_value = _make_contracts([285, 295])
+        client._option_data_client.get_option_latest_quote.return_value = {
+            "TSLA260327C00295000": _make_option_quote(bid=0.0, ask=0.0),    # mid=0, skip
+            "TSLA260327C00285000": _make_option_quote(bid=16.0, ask=18.0),  # mid=17, tp=2
+        }
+
+        selector = TimePremiumContractSelector(client, target_pct=0.01)
+        symbol = selector.select("TSLA", "BULLISH", 300.0)
+
+        assert symbol == "TSLA260327C00285000"
+
+    def test_skips_strikes_missing_from_quote_response(self, _, __):
+        client = _make_alpaca_client()
+        # $295 not in quote response → skip; $285 has tp=$2 ≤ $3 → select
+        client.get_options_contracts.return_value = _make_contracts([285, 295])
+        client._option_data_client.get_option_latest_quote.return_value = {
+            "TSLA260327C00285000": _make_option_quote(bid=16.0, ask=18.0),  # mid=17, tp=2
+        }
+
+        selector = TimePremiumContractSelector(client, target_pct=0.01)
+        symbol = selector.select("TSLA", "BULLISH", 300.0)
+
+        assert symbol == "TSLA260327C00285000"
+
+    def test_quote_fetch_failure_falls_back_to_deepest_itm(self, _, __):
+        client = _make_alpaca_client()
+        client.get_options_contracts.return_value = _make_contracts([280, 290, 295])
+        client._option_data_client.get_option_latest_quote.side_effect = Exception(
+            "network error"
+        )
+
+        selector = TimePremiumContractSelector(client, target_pct=0.01)
+        symbol = selector.select("TSLA", "BULLISH", 300.0)
+
+        assert symbol == "TSLA260327C00280000"
+
+    def test_raises_when_no_contracts_found(self, _, __):
+        client = _make_alpaca_client()
+        client.get_options_contracts.return_value = []
+
+        selector = TimePremiumContractSelector(client, target_pct=0.01)
+
+        with pytest.raises(RuntimeError, match="No call contracts found"):
+            selector.select("TSLA", "BULLISH", 300.0)
+
+    def test_uses_weekly_expiry_and_falls_back_to_monthly(self, _, __):
+        client = _make_alpaca_client()
+        monthly = _make_contracts([280], option_type="call", expiry="2026-04-17")
+        client.get_options_contracts.side_effect = [[], monthly]
+
+        selector = TimePremiumContractSelector(client, target_pct=0.01)
+        client._option_data_client.get_option_latest_quote.return_value = {
+            monthly[0]["symbol"]: _make_option_quote(bid=21.0, ask=23.0),
+        }
+
+        symbol = selector.select("TSLA", "BULLISH", 300.0)
+
+        assert symbol == monthly[0]["symbol"]
+        assert client.get_options_contracts.call_count == 2
+
+    def test_configurable_target_pct_changes_selected_strike(self, _, __):
+        client = _make_alpaca_client()
+        # With target_pct=0.02 ($6 target), strike $280 has tp=$2 which is ≤ $6 → selected
+        # With target_pct=0.005 ($1.50 target), strike $280 tp=$2 > $1.50 → fallback deepest
+        client.get_options_contracts.return_value = _make_contracts([280, 290])
+        client._option_data_client.get_option_latest_quote.return_value = {
+            "TSLA260327C00290000": _make_option_quote(bid=13.0, ask=15.0),  # mid=14, tp=4
+            "TSLA260327C00280000": _make_option_quote(bid=21.0, ask=23.0),  # mid=22, tp=2
+        }
+
+        selector_wide = TimePremiumContractSelector(client, target_pct=0.02)
+        symbol = selector_wide.select("TSLA", "BULLISH", 300.0)
+        assert symbol == "TSLA260327C00290000"  # tp=4 ≤ 6 → picked first
+
+    def test_bullish_fetches_itm_call_strike_range(self, _, __):
+        client = _make_alpaca_client()
+        client.get_options_contracts.return_value = _make_contracts([280])
+        client._option_data_client.get_option_latest_quote.return_value = {
+            "TSLA260327C00280000": _make_option_quote(bid=21.0, ask=23.0),
+        }
+
+        TimePremiumContractSelector(client).select("TSLA", "BULLISH", 300.0)
+
+        call_args = client.get_options_contracts.call_args
+        # search_low = 300 * 0.70 = 210; search_high = 300 (ATM)
+        assert call_args.kwargs["option_type"] == "call"
+        assert call_args.kwargs["strike_price_gte"] == "210"
+        assert call_args.kwargs["strike_price_lte"] == "300"
+
+    def test_bearish_fetches_itm_put_strike_range(self, _, __):
+        client = _make_alpaca_client()
+        client.get_options_contracts.return_value = _make_contracts(
+            [310], option_type="put"
+        )
+        client._option_data_client.get_option_latest_quote.return_value = {
+            "TSLA260327P00310000": _make_option_quote(bid=8.0, ask=12.0),  # mid=10, tp=0 ≤ 3
+        }
+
+        TimePremiumContractSelector(client).select("TSLA", "BEARISH", 300.0)
+
+        call_args = client.get_options_contracts.call_args
+        # search_low = 300 (ATM); search_high = 300 * 1.30 = 390
+        assert call_args.kwargs["option_type"] == "put"
+        assert call_args.kwargs["strike_price_gte"] == "300"
+        assert call_args.kwargs["strike_price_lte"] == "390"
