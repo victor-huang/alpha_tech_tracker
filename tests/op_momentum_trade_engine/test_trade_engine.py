@@ -507,3 +507,114 @@ class TestEntryAlert:
              patch(_NOTIFY_PATH) as mock_notify:
             engine._enter_position(_make_signal_event("NVDA"), rank=2)
         assert "R3" in mock_notify.call_args[0][0]
+
+
+_COMPUTE_STOCK_PATH = (
+    "alpha_tech_tracker.op_momentum_strategy.trade_engine.PositionSizer.compute_stock"
+)
+_PLACE_STOCK_ORDER_PATH = (
+    "alpha_tech_tracker.op_momentum_strategy.trade_engine.place_stock_order"
+)
+
+
+class TestStockTradeEntry:
+    def _make_stock_engine(self):
+        client = _make_alpaca_client()
+        engine = OpMomentumTradeEngine(
+            alpaca_client=client,
+            mock_trade_execution=True,
+            trade_type="stock",
+        )
+        from unittest.mock import Mock
+        engine._monitor = Mock()
+        engine._signal_engine = Mock()
+        engine._signal_engine.get_latest_bar.return_value = None
+        engine._window_state["W1"] = {
+            "pending_signals": {},
+            "collection_deadline": datetime.now(ET) - timedelta(minutes=1),
+            "open_position_count": 0,
+            "capital_fraction": 1.0,
+        }
+        return engine
+
+    def test_stock_entry_skips_option_contract_selector(self):
+        engine = self._make_stock_engine()
+        with patch(_COMPUTE_STOCK_PATH, return_value=(20, _D("100.00"))) as compute_mock, \
+             patch(_OPTION_CONTRACT_SELECTOR_PATH) as selector_mock, \
+             patch(_NOTIFY_PATH):
+            engine._enter_position(_make_signal_event("NVDA"))
+
+        selector_mock.assert_not_called()
+        compute_mock.assert_called_once()
+
+    def test_stock_entry_creates_position_with_trade_type_stock(self):
+        engine = self._make_stock_engine()
+        captured_positions = []
+        engine._monitor.add_position.side_effect = captured_positions.append
+
+        with patch(_COMPUTE_STOCK_PATH, return_value=(20, _D("100.00"))), \
+             patch(_NOTIFY_PATH):
+            engine._enter_position(_make_signal_event("NVDA"))
+
+        assert len(captured_positions) == 1
+        pos = captured_positions[0]
+        assert pos.trade_type == "stock"
+        assert pos.shares == 20
+        assert pos.contracts == 0
+        assert pos.option_symbol == ""
+
+    def test_stock_entry_sets_simulated_entry_mid_in_mock_mode(self):
+        engine = self._make_stock_engine()
+        captured_positions = []
+        engine._monitor.add_position.side_effect = captured_positions.append
+
+        with patch(_COMPUTE_STOCK_PATH, return_value=(20, _D("99.50"))), \
+             patch(_NOTIFY_PATH):
+            engine._enter_position(_make_signal_event("NVDA"))
+
+        pos = captured_positions[0]
+        assert pos.simulated_entry_mid == _D("99.50")
+
+    def test_stock_entry_notify_message_shows_shares_not_contracts(self):
+        engine = self._make_stock_engine()
+        with patch(_COMPUTE_STOCK_PATH, return_value=(15, _D("100.00"))), \
+             patch(_NOTIFY_PATH) as mock_notify:
+            engine._enter_position(_make_signal_event("NVDA"), rank=0)
+
+        msg = mock_notify.call_args[0][0]
+        assert "15 shares" in msg
+        assert "[SIMULATE]" in msg
+        assert "R1" in msg
+
+    def test_options_entry_unchanged_when_trade_type_is_options(self):
+        client = _make_alpaca_client()
+        engine = OpMomentumTradeEngine(
+            alpaca_client=client,
+            mock_trade_execution=True,
+            trade_type="options",
+        )
+        from unittest.mock import Mock
+        engine._monitor = Mock()
+        engine._signal_engine = Mock()
+        engine._signal_engine.get_latest_bar.return_value = None
+        engine._window_state["W1"] = {
+            "pending_signals": {},
+            "collection_deadline": datetime.now(ET) - timedelta(minutes=1),
+            "open_position_count": 0,
+            "capital_fraction": 1.0,
+        }
+
+        captured_positions = []
+        engine._monitor.add_position.side_effect = captured_positions.append
+
+        with patch(_OPTION_CONTRACT_SELECTOR_PATH, return_value="NVDA260404C00170000"), \
+             patch(_POSITION_SIZER_PATH, return_value=(3, _D("8.50"))), \
+             patch(_PLACE_ENTRY_PATH, return_value={"order_id": "sim-opt-1", "simulated_fill_mid": _D("8.50")}), \
+             patch(_NOTIFY_PATH):
+            engine._enter_position(_make_signal_event("NVDA"))
+
+        assert len(captured_positions) == 1
+        pos = captured_positions[0]
+        assert pos.trade_type == "options"
+        assert pos.contracts == 3
+        assert pos.option_symbol == "NVDA260404C00170000"

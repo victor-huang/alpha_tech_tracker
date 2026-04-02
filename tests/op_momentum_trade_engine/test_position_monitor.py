@@ -8,8 +8,10 @@ from conftest import (
     _make_active_position,
     _make_alpaca_client,
     _make_closed_position,
+    _make_closed_stock_position,
     _make_option_quote,
     _make_signal_engine_with_history,
+    _make_stock_position,
     _set_latest_bar,
 )
 
@@ -559,3 +561,118 @@ class TestPrintSummaryPnl:
 
         captured = capsys.readouterr().out
         assert "-$763.00" in captured
+
+
+class TestStockClosePosition:
+    @pytest.fixture(autouse=True)
+    def patch_sleep(self, monkeypatch):
+        monkeypatch.setattr(
+            "alpha_tech_tracker.op_momentum_strategy.order_executor.time.sleep",
+            lambda _: None,
+        )
+
+    def test_stock_close_calls_place_stock_order_not_option_order(self):
+        client = _make_alpaca_client()
+        client.get_stock_quote.return_value = {"bid_price": 99.0, "ask_price": 101.0}
+        client.place_stock_order.return_value = {"order_id": "stk-close-1"}
+        client.order_status.return_value = {"status": "filled", "filled_avg_price": 100.0}
+
+        pos = _make_stock_position(signal="BULLISH", shares=30)
+        closes = [104.0]
+        df = _build_history_df(closes, ma20=90.0, ma50=90.0, ma200=85.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine)
+        monitor.add_position(pos)
+
+        monitor.close_all(reason="end_of_day")
+
+        client.place_stock_order.assert_called_once()
+        client.place_option_order.assert_not_called()
+        assert pos.is_closed is True
+        assert pos.exit_reason == "end_of_day"
+
+    def test_stock_simulate_sets_exit_mid_from_stock_quote(self):
+        client = _make_alpaca_client()
+        client.get_stock_quote.return_value = {"bid_price": 98.0, "ask_price": 102.0}
+
+        pos = _make_stock_position(signal="BULLISH", shares=20)
+        closes = [104.0]
+        df = _build_history_df(closes, ma20=90.0, ma50=90.0, ma200=85.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine, mock_trade_execution=True)
+        monitor.add_position(pos)
+
+        monitor.close_all(reason="end_of_day")
+
+        assert pos.simulated_exit_mid == _D("100.00")
+        client.place_stock_order.assert_not_called()
+
+    def test_stock_stop_triggers_via_evaluate_stop(self):
+        client = _make_alpaca_client()
+        client.get_stock_quote.return_value = {"bid_price": 99.0, "ask_price": 101.0}
+        client.place_stock_order.return_value = {"order_id": "stk-stop-1"}
+        client.order_status.return_value = {"status": "filled", "filled_avg_price": 100.0}
+
+        pos = _make_stock_position(
+            signal="BULLISH",
+            hard_stop_price=_D("103.5"),
+            fallback_price=_D("103.0"),
+            shares=10,
+        )
+        pos.hard_stop_armed = True
+
+        closes = [103.0]
+        df = _build_history_df(closes, ma20=90.0, ma50=90.0, ma200=85.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine)
+        monitor.add_position(pos)
+
+        _set_latest_bar(engine, "NVDA", close=103.0, ma50=90.0)
+        monitor.on_bar("NVDA")
+
+        assert pos.is_closed is True
+        assert pos.exit_reason == "hard_stop"
+        client.place_stock_order.assert_called_once()
+
+
+class TestStockPrintSummaryPnl:
+    def test_stock_profit_uses_shares_not_contracts_multiplier(self, capsys):
+        client = _make_alpaca_client()
+        engine = _make_signal_engine_with_history("NVDA", pd.DataFrame())
+        monitor = PositionMonitor(client, engine, mock_trade_execution=True)
+        monitor.add_position(
+            _make_closed_stock_position("BULLISH", entry_mid=100.0, exit_mid=102.0, shares=10)
+        )
+
+        monitor.print_summary()
+
+        captured = capsys.readouterr().out
+        # P&L = (102 - 100) * 10 shares = +$20 (not * 100)
+        assert "+$20.00" in captured
+
+    def test_stock_loss_uses_shares_not_contracts_multiplier(self, capsys):
+        client = _make_alpaca_client()
+        engine = _make_signal_engine_with_history("NVDA", pd.DataFrame())
+        monitor = PositionMonitor(client, engine, mock_trade_execution=True)
+        monitor.add_position(
+            _make_closed_stock_position("BULLISH", entry_mid=102.0, exit_mid=100.0, shares=10)
+        )
+
+        monitor.print_summary()
+
+        captured = capsys.readouterr().out
+        assert "-$20.00" in captured
+
+    def test_stock_summary_shows_shares_label_not_option_symbol(self, capsys):
+        client = _make_alpaca_client()
+        engine = _make_signal_engine_with_history("NVDA", pd.DataFrame())
+        monitor = PositionMonitor(client, engine, mock_trade_execution=True)
+        monitor.add_position(
+            _make_closed_stock_position("BULLISH", entry_mid=100.0, exit_mid=101.0, shares=5)
+        )
+
+        monitor.print_summary()
+
+        captured = capsys.readouterr().out
+        assert "[stock]" in captured
+        assert "5sh" in captured

@@ -120,6 +120,43 @@ def _make_option_quote(bid, ask):
     return q
 
 
+def _make_stock_position(
+    signal="BULLISH",
+    or_high=_D("105"),
+    or_low=_D("95"),
+    hard_stop_price=_D("103.5"),
+    fallback_price=_D("103.0"),
+    shares=50,
+):
+    or_range = or_high - or_low
+    return ActivePosition(
+        ticker="NVDA",
+        signal=signal,
+        option_symbol="",
+        entry_order_id="order-stk-1",
+        contracts=0,
+        entry_stock_price=_D("104"),
+        or_high=or_high,
+        or_low=or_low,
+        or_range=or_range,
+        hard_stop_price=hard_stop_price,
+        fallback_price=fallback_price,
+        trade_type="stock",
+        shares=shares,
+    )
+
+
+def _make_closed_stock_position(signal, entry_mid, exit_mid, shares=10):
+    pos = _make_stock_position(signal=signal, shares=shares)
+    pos.is_closed = True
+    pos.exit_reason = "trailing_stop_ma20"
+    pos.entry_time = datetime.now(ET).replace(hour=9, minute=47)
+    pos.exit_time = datetime.now(ET).replace(hour=10, minute=56)
+    pos.simulated_entry_mid = _D(str(entry_mid))
+    pos.simulated_exit_mid = _D(str(exit_mid))
+    return pos
+
+
 def _make_closed_position(signal, entry_mid, exit_mid, contracts=1):
     pos = _make_active_position(signal=signal)
     pos.is_closed = True
