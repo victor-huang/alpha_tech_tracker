@@ -357,7 +357,7 @@ if __name__ == "__main__":
             level=getattr(logging, args.log_level),
             format="%(asctime)s %(levelname)s %(name)s — %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",
-            handlers=[_make_log_handler(log_file)],
+            handlers=[logging.StreamHandler(), _make_log_handler(log_file)],
         )
         is_paper = not (args.live or args.mock_trade_execution)
         client = AlpacaAPIClient(is_paper_trading=is_paper)
