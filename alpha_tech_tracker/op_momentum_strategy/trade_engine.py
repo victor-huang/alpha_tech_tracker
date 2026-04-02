@@ -38,6 +38,7 @@ from .config import (
 from .bar_recorder import BarRecorder
 from .contract_selector import OptionContractSelector
 from .models import ActivePosition, SignalEvent, WindowConfig, _D
+from .option_price_monitor import OptionPriceMonitor
 from .order_executor import _place_with_fill_escalation, place_stock_order
 from .position_monitor import PositionMonitor
 from .position_sizer import PositionSizer
@@ -162,6 +163,7 @@ class OpMomentumTradeEngine:
         rank_weighted_sizing: bool = RANK_WEIGHTED_SIZING,
         windows: Optional[list] = None,
         trade_type: str = "options",
+        option_price_monitor: Optional[OptionPriceMonitor] = None,
     ):
         self._client = alpaca_client
         self._api_key = alpaca_client._api_key
@@ -175,6 +177,7 @@ class OpMomentumTradeEngine:
         self._regime_ma = regime_ma
         self._rank_weighted_sizing = rank_weighted_sizing
         self._trade_type = trade_type
+        self._option_price_monitor = option_price_monitor
         self._monitor: PositionMonitor = None
         self._signal_engine: LiveSignalEngine = None
         self._signal_lock = threading.Lock()
@@ -576,27 +579,44 @@ class OpMomentumTradeEngine:
         from alpaca.data.requests import OptionLatestQuoteRequest
 
         option_type = "CALL" if signal == "BULLISH" else "PUT"
+        option_type_lower = option_type.lower()
 
         entry_mid = limit_price
-        try:
-            quote_resp = self._client._option_data_client.get_option_latest_quote(
-                OptionLatestQuoteRequest(symbol_or_symbols=[option_symbol])
-            )
-            quote = quote_resp[option_symbol]
-            bid = _D(quote.bid_price)
-            ask = _D(quote.ask_price)
-            entry_mid = (bid + ask) / _D("2")
-            logger.info(
-                "ENTRY QUOTE %s: bid=%s ask=%s mid=%s",
-                option_symbol,
-                bid,
-                ask,
-                entry_mid.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
-            )
-        except Exception:
-            logger.warning(
-                "Could not fetch entry quote for %s, using sizer mid", option_symbol
-            )
+        if self._option_price_monitor:
+            try:
+                latest_bar = self._signal_engine.get_latest_bar(ticker)
+                stock_price = _D(str(latest_bar["Close"])) if latest_bar is not None else limit_price
+                entry_mid = self._option_price_monitor.get_fair_price(
+                    ticker, option_symbol, option_type_lower, stock_price
+                )
+                logger.info(
+                    "ENTRY FAIR PRICE %s: %s (from OptionPriceMonitor)", option_symbol, entry_mid
+                )
+            except Exception:
+                logger.warning(
+                    "get_fair_price failed for %s, falling back to quote mid", option_symbol
+                )
+
+        if entry_mid == limit_price:
+            try:
+                quote_resp = self._client._option_data_client.get_option_latest_quote(
+                    OptionLatestQuoteRequest(symbol_or_symbols=[option_symbol])
+                )
+                quote = quote_resp[option_symbol]
+                bid = _D(quote.bid_price)
+                ask = _D(quote.ask_price)
+                entry_mid = (bid + ask) / _D("2")
+                logger.info(
+                    "ENTRY QUOTE %s: bid=%s ask=%s mid=%s",
+                    option_symbol,
+                    bid,
+                    ask,
+                    entry_mid.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
+                )
+            except Exception:
+                logger.warning(
+                    "Could not fetch entry quote for %s, using sizer mid", option_symbol
+                )
 
         if self._mock_trade_execution:
             sim_mid = entry_mid.quantize(_D("0.01"), rounding=ROUND_HALF_UP)
@@ -725,7 +745,11 @@ class OpMomentumTradeEngine:
             trailing_ma=self._trailing_ma,
             max_loss_pct=self._max_loss_pct,
             armed_ma20_exit=self._armed_ma20_exit,
+            option_price_monitor=self._option_price_monitor,
         )
+
+        if self._option_price_monitor:
+            self._option_price_monitor.start()
 
         self._signal_engine.start()
 
@@ -744,5 +768,7 @@ class OpMomentumTradeEngine:
         monitor_thread.join()
 
         self._signal_engine.stop()
+        if self._option_price_monitor:
+            self._option_price_monitor.stop()
         bar_recorder.close()
         self._monitor.print_summary()

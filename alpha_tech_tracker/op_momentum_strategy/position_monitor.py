@@ -18,8 +18,20 @@ from .config import (
     _notify,
     _fmt_option,
 )
-from .models import ActivePosition, _D
+from .models import ActivePosition, _D, _stock_bid_ask
 from .order_executor import _place_with_fill_escalation, place_stock_order
+
+# Imported lazily to avoid circular imports — OptionPriceMonitor imports from contract_selector
+# which imports from config which imports from op_momentum_selector.
+_OptionPriceMonitor = None
+
+
+def _get_option_price_monitor_type():
+    global _OptionPriceMonitor
+    if _OptionPriceMonitor is None:
+        from .option_price_monitor import OptionPriceMonitor
+        _OptionPriceMonitor = OptionPriceMonitor
+    return _OptionPriceMonitor
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +49,7 @@ class PositionMonitor:
         trailing_ma: str = TRAILING_MA,
         max_loss_pct: Optional[float] = MAX_LOSS_PCT,
         armed_ma20_exit: bool = ARMED_MA20_EXIT,
+        option_price_monitor=None,
     ):
         self._client = alpaca_client
         self._signal_engine = signal_engine
@@ -44,6 +57,7 @@ class PositionMonitor:
         self._trailing_ma = trailing_ma
         self._max_loss_pct = max_loss_pct
         self._armed_ma20_exit = armed_ma20_exit
+        self._option_price_monitor = option_price_monitor
         self._positions: list = []
         self._lock = threading.Lock()
 
@@ -176,9 +190,10 @@ class PositionMonitor:
         )
         mid = None
         try:
-            quote = self._client.get_stock_quote(pos.ticker)
-            bid = _D(str(quote.get("bid_price") or quote.get("last_price", 0)))
-            ask = _D(str(quote.get("ask_price") or quote.get("last_price", 0)))
+            raw_quote = self._client.get_stock_quote(pos.ticker)
+            bid_f, ask_f = _stock_bid_ask(raw_quote)
+            bid = _D(str(bid_f))
+            ask = _D(str(ask_f))
             mid = (bid + ask) / _D("2")
             logger.info(
                 "EXIT STOCK QUOTE %s: bid=%s ask=%s mid=%s",
@@ -236,28 +251,40 @@ class PositionMonitor:
             pos.contracts,
         )
         mid = None
-        try:
-            quote_resp = self._client._option_data_client.get_option_latest_quote(
-                OptionLatestQuoteRequest(symbol_or_symbols=[pos.option_symbol])
-            )
-            quote = quote_resp[pos.option_symbol]
-            bid = _D(quote.bid_price)
-            ask = _D(quote.ask_price)
-            mid = (bid + ask) / _D("2")
-            logger.info(
-                "EXIT QUOTE %s: bid=%s ask=%s mid=%s",
-                pos.option_symbol,
-                bid,
-                ask,
-                mid.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
-            )
-            fallback = (ask * _D("0.98")).quantize(_D("0.01"), rounding=ROUND_HALF_UP)
-            bid.quantize(_D("0.01"), rounding=ROUND_HALF_UP) or fallback
-        except Exception:
-            logger.exception(
-                "Could not fetch exit quote for %s, using market order",
-                pos.option_symbol,
-            )
+        option_type_lower = "call" if pos.signal == "BULLISH" else "put"
+        if self._option_price_monitor:
+            try:
+                current_bar = self._signal_engine.get_latest_bar(pos.ticker)
+                stock_price = _D(str(current_bar["Close"])) if current_bar is not None else pos.entry_stock_price
+                mid = self._option_price_monitor.get_fair_price(
+                    pos.ticker, pos.option_symbol, option_type_lower, stock_price
+                )
+                logger.info("EXIT FAIR PRICE %s: %s (from OptionPriceMonitor)", pos.option_symbol, mid)
+            except Exception:
+                logger.warning("get_fair_price failed for %s at exit, falling back to quote mid", pos.option_symbol)
+                mid = None
+
+        if mid is None:
+            try:
+                quote_resp = self._client._option_data_client.get_option_latest_quote(
+                    OptionLatestQuoteRequest(symbol_or_symbols=[pos.option_symbol])
+                )
+                quote = quote_resp[pos.option_symbol]
+                bid = _D(quote.bid_price)
+                ask = _D(quote.ask_price)
+                mid = (bid + ask) / _D("2")
+                logger.info(
+                    "EXIT QUOTE %s: bid=%s ask=%s mid=%s",
+                    pos.option_symbol,
+                    bid,
+                    ask,
+                    mid.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
+                )
+            except Exception:
+                logger.exception(
+                    "Could not fetch exit quote for %s, using market order",
+                    pos.option_symbol,
+                )
 
         if self._mock_trade_execution:
             sim_mid = (
@@ -381,9 +408,9 @@ class PositionMonitor:
                     entry_price = p.entry_fill_price
                     if p.trade_type == "stock":
                         try:
-                            quote = self._client.get_stock_quote(p.ticker)
-                            last = quote.get("last_price") or quote.get("ask_price", 0)
-                            current_mid = _D(str(last))
+                            raw_quote = self._client.get_stock_quote(p.ticker)
+                            bid_f, ask_f = _stock_bid_ask(raw_quote)
+                            current_mid = _D(str((bid_f + ask_f) / 2))
                         except Exception:
                             current_mid = None
                     else:

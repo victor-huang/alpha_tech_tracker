@@ -7,7 +7,7 @@ from alpaca.data.requests import OptionLatestQuoteRequest
 from alpha_tech_tracker.trade_api.alpaca_client.client import AlpacaAPIClient
 
 from .config import ACCOUNT_BUDGET, CAPITAL_PER_SYMBOL
-from .models import _D
+from .models import _D, _stock_bid_ask
 
 logger = logging.getLogger(__name__)
 
@@ -74,9 +74,10 @@ class PositionSizer:
             buying_power = _D(account.get("buying_power", ACCOUNT_BUDGET))
             budget = buying_power * CAPITAL_PER_SYMBOL * capital_weight
 
-        quote = self._client.get_stock_quote(ticker)
-        ask = _D(str(quote.get("ask_price") or stock_price))
-        bid = _D(str(quote.get("bid_price") or stock_price))
+        raw_quote = self._client.get_stock_quote(ticker)
+        bid_f, ask_f = _stock_bid_ask(raw_quote)
+        bid = _D(str(bid_f)) if bid_f else _D(str(stock_price))
+        ask = _D(str(ask_f)) if ask_f else _D(str(stock_price))
         mid = (bid + ask) / _D("2")
         limit_price = mid.quantize(_D("0.01"), rounding=ROUND_HALF_UP)
 

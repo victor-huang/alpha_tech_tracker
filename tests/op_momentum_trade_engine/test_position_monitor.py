@@ -573,7 +573,11 @@ class TestStockClosePosition:
 
     def test_stock_close_calls_place_stock_order_not_option_order(self):
         client = _make_alpaca_client()
-        client.get_stock_quote.return_value = {"bid_price": 99.0, "ask_price": 101.0}
+        client.get_stock_quote.return_value = {
+            "QuoteResponse": {
+                "QuoteData": [{"All": {"bid": 99.0, "ask": 101.0, "bid_size": 1, "ask_size": 1, "last": None}}]
+            }
+        }
         client.place_stock_order.return_value = {"order_id": "stk-close-1"}
         client.order_status.return_value = {"status": "filled", "filled_avg_price": 100.0}
 
@@ -593,7 +597,11 @@ class TestStockClosePosition:
 
     def test_stock_simulate_sets_exit_mid_from_stock_quote(self):
         client = _make_alpaca_client()
-        client.get_stock_quote.return_value = {"bid_price": 98.0, "ask_price": 102.0}
+        client.get_stock_quote.return_value = {
+            "QuoteResponse": {
+                "QuoteData": [{"All": {"bid": 98.0, "ask": 102.0, "bid_size": 1, "ask_size": 1, "last": None}}]
+            }
+        }
 
         pos = _make_stock_position(signal="BULLISH", shares=20)
         closes = [104.0]
@@ -609,7 +617,11 @@ class TestStockClosePosition:
 
     def test_stock_stop_triggers_via_evaluate_stop(self):
         client = _make_alpaca_client()
-        client.get_stock_quote.return_value = {"bid_price": 99.0, "ask_price": 101.0}
+        client.get_stock_quote.return_value = {
+            "QuoteResponse": {
+                "QuoteData": [{"All": {"bid": 99.0, "ask": 101.0, "bid_size": 1, "ask_size": 1, "last": None}}]
+            }
+        }
         client.place_stock_order.return_value = {"order_id": "stk-stop-1"}
         client.order_status.return_value = {"status": "filled", "filled_avg_price": 100.0}
 

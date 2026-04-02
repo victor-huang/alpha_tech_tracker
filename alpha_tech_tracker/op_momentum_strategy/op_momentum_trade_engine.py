@@ -22,6 +22,7 @@ from .config import (
     _load_config,
 )
 from .models import WindowConfig
+from .option_price_monitor import OptionPriceMonitor
 from .trade_engine import OpMomentumTradeEngine
 
 # re-export remaining config constants for backward compatibility
@@ -245,6 +246,20 @@ def parse_args():
         choices=["options", "stock"],
         help="Trade type: options (default) or stock",
     )
+    parser.add_argument(
+        "--collect-option-prices",
+        action="store_true",
+        default=False,
+        help="Enable background option price collection and fair-price advisor. "
+        "Writes 5-min snapshots to market_data/options_price_data/ and uses "
+        "intrinsic value + cached time premium to compute entry/exit limit prices.",
+    )
+    parser.add_argument(
+        "--option-price-interval",
+        type=int,
+        default=300,
+        help="Snapshot interval in seconds for option price collection (default: 300)",
+    )
     return parser.parse_args()
 
 
@@ -301,6 +316,16 @@ def _parse_windows(args) -> list:
     return windows
 
 
+def _build_option_price_monitor(args, client, tickers):
+    if not args.collect_option_prices:
+        return None
+    return OptionPriceMonitor(
+        client=client,
+        tickers=tickers or TICKERS,
+        interval_seconds=args.option_price_interval,
+    )
+
+
 if __name__ == "__main__":
     args = parse_args()
     _load_config()
@@ -329,6 +354,7 @@ if __name__ == "__main__":
             rank_weighted_sizing=args.rank_weighted_sizing,
             windows=windows,
             trade_type=args.trade_type,
+            option_price_monitor=_build_option_price_monitor(args, client, args.tickers),
         )
         engine.run(tickers_override=args.tickers)
         sys.exit(0)
@@ -391,6 +417,7 @@ if __name__ == "__main__":
             rank_weighted_sizing=args.rank_weighted_sizing,
             windows=windows,
             trade_type=args.trade_type,
+            option_price_monitor=_build_option_price_monitor(args, client, args.tickers),
         )
         engine.run(tickers_override=args.tickers)
     finally:

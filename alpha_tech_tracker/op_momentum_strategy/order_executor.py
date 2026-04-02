@@ -11,7 +11,7 @@ from alpha_tech_tracker.trade_api.alpaca_client.client import (
     APIInvalidArgumentError,
 )
 
-from .models import _D
+from .models import _D, _stock_bid_ask
 
 logger = logging.getLogger(__name__)
 
@@ -246,29 +246,32 @@ def place_stock_order(
     """
     is_buy = order_action == "BUY_OPEN"
 
+    side = "BUY" if is_buy else "SELL"
+
     def _fetch_mid_bid_ask():
-        quote = client.get_stock_quote(ticker)
-        bid = _D(str(quote.get("bid_price") or quote.get("last_price", 0)))
-        ask = _D(str(quote.get("ask_price") or quote.get("last_price", 0)))
+        raw_quote = client.get_stock_quote(ticker)
+        bid_f, ask_f = _stock_bid_ask(raw_quote)
+        bid = _D(str(bid_f))
+        ask = _D(str(ask_f))
         mid = (bid + ask) / _D("2")
         return bid, ask, mid
 
     def _place_limit(price) -> dict:
-        rounded = price.quantize(_D("0.01"), rounding=ROUND_HALF_UP)
+        rounded = float(price.quantize(_D("0.01"), rounding=ROUND_HALF_UP))
         return client.place_stock_order(
             symbol=ticker,
-            price=float(rounded),
-            price_type="LIMIT",
-            order_action=order_action,
             quantity=shares,
+            side=side,
+            order_type="LIMIT",
+            limit_price=rounded,
         )
 
     def _place_market() -> dict:
         return client.place_stock_order(
             symbol=ticker,
-            price_type="MARKET",
-            order_action=order_action,
             quantity=shares,
+            side=side,
+            order_type="MARKET",
         )
 
     def _is_filled(order_id: str) -> bool:

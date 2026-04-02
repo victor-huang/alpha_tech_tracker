@@ -8,6 +8,12 @@ def _D(x) -> Decimal:
     return Decimal(str(x))
 
 
+def _stock_bid_ask(quote: dict) -> tuple:
+    """Extract (bid, ask) floats from AlpacaAPIClient.get_stock_quote() response."""
+    all_data = quote["QuoteResponse"]["QuoteData"][0]["All"]
+    return float(all_data["bid"]), float(all_data["ask"])
+
+
 @dataclass
 class WindowConfig:
     """Configuration for one intraday trading window."""

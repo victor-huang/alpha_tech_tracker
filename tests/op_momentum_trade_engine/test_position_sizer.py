@@ -8,7 +8,11 @@ from conftest import _D, _make_alpaca_client, _make_option_quote
 
 
 def _make_stock_quote(bid, ask):
-    return {"bid_price": bid, "ask_price": ask}
+    return {
+        "QuoteResponse": {
+            "QuoteData": [{"All": {"bid": bid, "ask": ask, "bid_size": 1, "ask_size": 1, "last": None}}]
+        }
+    }
 
 
 class TestPositionSizer:
