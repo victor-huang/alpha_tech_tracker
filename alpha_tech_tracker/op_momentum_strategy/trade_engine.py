@@ -38,7 +38,7 @@ from .config import (
 from .bar_recorder import BarRecorder
 from .contract_selector import OptionContractSelector
 from .models import ActivePosition, SignalEvent, WindowConfig, _D
-from .order_executor import _place_with_fill_escalation
+from .order_executor import _place_with_fill_escalation, place_stock_order
 from .position_monitor import PositionMonitor
 from .position_sizer import PositionSizer
 from .signal_engine import LiveSignalEngine
@@ -161,6 +161,7 @@ class OpMomentumTradeEngine:
         regime_ma: int = REGIME_MA,
         rank_weighted_sizing: bool = RANK_WEIGHTED_SIZING,
         windows: Optional[list] = None,
+        trade_type: str = "options",
     ):
         self._client = alpaca_client
         self._api_key = alpaca_client._api_key
@@ -173,6 +174,7 @@ class OpMomentumTradeEngine:
         self._regime_filter = regime_filter
         self._regime_ma = regime_ma
         self._rank_weighted_sizing = rank_weighted_sizing
+        self._trade_type = trade_type
         self._monitor: PositionMonitor = None
         self._signal_engine: LiveSignalEngine = None
         self._signal_lock = threading.Lock()
@@ -222,6 +224,149 @@ class OpMomentumTradeEngine:
             float(event.stock_price),
             rank,
         )
+        if self._rank_weighted_sizing and rank < len(RANK_WEIGHTS):
+            capital_weight = _D(str(RANK_WEIGHTS[rank]))
+        else:
+            capital_weight = _D("1")
+
+        bull_hard_stop = event.or_high - self._stop_pct * event.or_range
+        bear_hard_stop = event.or_low + self._stop_pct * event.or_range
+        bull_fallback = event.or_high - _D("0.20") * event.or_range
+        bear_fallback = event.or_low + _D("0.20") * event.or_range
+
+        latest_bar = self._signal_engine.get_latest_bar(event.ticker)
+        entry_bar_time = latest_bar.name if latest_bar is not None else None
+
+        if self._trade_type == "stock":
+            self._enter_stock_position(
+                event=event,
+                rank=rank,
+                window_label=window_label,
+                window_budget=window_budget,
+                capital_weight=capital_weight,
+                bull_hard_stop=bull_hard_stop,
+                bear_hard_stop=bear_hard_stop,
+                bull_fallback=bull_fallback,
+                bear_fallback=bear_fallback,
+                entry_bar_time=entry_bar_time,
+            )
+        else:
+            self._enter_option_position(
+                event=event,
+                rank=rank,
+                window_label=window_label,
+                window_budget=window_budget,
+                capital_weight=capital_weight,
+                bull_hard_stop=bull_hard_stop,
+                bear_hard_stop=bear_hard_stop,
+                bull_fallback=bull_fallback,
+                bear_fallback=bear_fallback,
+                entry_bar_time=entry_bar_time,
+            )
+
+    def _enter_stock_position(
+        self,
+        event: SignalEvent,
+        rank: int,
+        window_label: str,
+        window_budget,
+        capital_weight,
+        bull_hard_stop,
+        bear_hard_stop,
+        bull_fallback,
+        bear_fallback,
+        entry_bar_time,
+    ):
+        try:
+            sizer = PositionSizer(self._client)
+            shares, limit_price = sizer.compute_stock(
+                event.ticker, event.stock_price, capital_weight, window_budget
+            )
+        except Exception:
+            logger.exception("Could not size stock position for %s", event.ticker)
+            with self._signal_lock:
+                self._window_state[window_label]["open_position_count"] -= 1
+            return
+
+        try:
+            if self._mock_trade_execution:
+                sim_mid = limit_price
+                logger.info(
+                    "SIMULATE BUY_OPEN stock %s shares=%d simulated_fill=%.2f (no order placed)",
+                    event.ticker,
+                    shares,
+                    sim_mid,
+                )
+                order = {
+                    "order_id": f"sim-stock-{event.ticker}",
+                    "status": "simulated",
+                    "simulated_fill_mid": sim_mid,
+                }
+            else:
+                logger.info(
+                    "Placing BUY_OPEN stock with fill escalation: %s %d shares",
+                    event.ticker,
+                    shares,
+                )
+                order = place_stock_order(
+                    client=self._client,
+                    ticker=event.ticker,
+                    shares=shares,
+                    order_action="BUY_OPEN",
+                )
+        except Exception:
+            logger.exception("Failed to place stock entry order for %s", event.ticker)
+            with self._signal_lock:
+                self._window_state[window_label]["open_position_count"] -= 1
+            return
+
+        sim_entry_mid = (
+            order.get("simulated_fill_mid") if self._mock_trade_execution else None
+        )
+        pos = ActivePosition(
+            ticker=event.ticker,
+            signal=event.signal,
+            option_symbol="",
+            entry_order_id=order.get("order_id", ""),
+            contracts=0,
+            entry_stock_price=event.entry_price,
+            or_high=event.or_high,
+            or_low=event.or_low,
+            or_range=event.or_range,
+            hard_stop_price=(
+                bull_hard_stop if event.signal == "BULLISH" else bear_hard_stop
+            ),
+            fallback_price=(
+                bull_fallback if event.signal == "BULLISH" else bear_fallback
+            ),
+            trade_type="stock",
+            shares=shares,
+            entry_bar_time=entry_bar_time,
+            entry_time=datetime.now(ET),
+            simulated_entry_mid=sim_entry_mid,
+        )
+        self._monitor.add_position(pos)
+
+        prefix = "[SIMULATE] " if self._mock_trade_execution else ""
+        entry_mid_str = f" @ ~{pos.simulated_entry_mid}" if pos.simulated_entry_mid else ""
+        _notify(
+            f"{prefix}BUY {event.ticker} x{shares} shares{entry_mid_str}"
+            f" | R{rank + 1} | stop ${pos.hard_stop_price:.2f}"
+        )
+
+    def _enter_option_position(
+        self,
+        event: SignalEvent,
+        rank: int,
+        window_label: str,
+        window_budget,
+        capital_weight,
+        bull_hard_stop,
+        bear_hard_stop,
+        bull_fallback,
+        bear_fallback,
+        entry_bar_time,
+    ):
         try:
             selector = OptionContractSelector(self._client)
             option_symbol = selector.select(
@@ -235,10 +380,6 @@ class OpMomentumTradeEngine:
 
         try:
             sizer = PositionSizer(self._client)
-            if self._rank_weighted_sizing and rank < len(RANK_WEIGHTS):
-                capital_weight = _D(str(RANK_WEIGHTS[rank]))
-            else:
-                capital_weight = _D("1")
             contracts, limit_price = sizer.compute(
                 option_symbol, capital_weight, window_budget
             )
@@ -262,17 +403,9 @@ class OpMomentumTradeEngine:
                 self._window_state[window_label]["open_position_count"] -= 1
             return
 
-        bull_hard_stop = event.or_high - self._stop_pct * event.or_range
-        bear_hard_stop = event.or_low + self._stop_pct * event.or_range
-        bull_fallback = event.or_high - _D("0.20") * event.or_range
-        bear_fallback = event.or_low + _D("0.20") * event.or_range
-
         sim_entry_mid = (
             order.get("simulated_fill_mid") if self._mock_trade_execution else None
         )
-
-        latest_bar = self._signal_engine.get_latest_bar(event.ticker)
-        entry_bar_time = latest_bar.name if latest_bar is not None else None
 
         pos = ActivePosition(
             ticker=event.ticker,
@@ -290,6 +423,7 @@ class OpMomentumTradeEngine:
             fallback_price=(
                 bull_fallback if event.signal == "BULLISH" else bear_fallback
             ),
+            trade_type="options",
             entry_bar_time=entry_bar_time,
             entry_time=datetime.now(ET),
             simulated_entry_mid=sim_entry_mid,

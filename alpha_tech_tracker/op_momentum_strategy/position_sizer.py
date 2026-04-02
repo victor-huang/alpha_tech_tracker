@@ -59,3 +59,41 @@ class PositionSizer:
             contracts * mid * _D("100"),
         )
         return contracts, limit_price
+
+    def compute_stock(
+        self,
+        ticker: str,
+        stock_price: Decimal,
+        capital_weight: Decimal = _D("1"),
+        window_budget: Optional[Decimal] = None,
+    ) -> tuple:
+        if window_budget is not None:
+            budget = window_budget * CAPITAL_PER_SYMBOL * capital_weight
+        else:
+            account = self._client.get_accounts()
+            buying_power = _D(account.get("buying_power", ACCOUNT_BUDGET))
+            budget = buying_power * CAPITAL_PER_SYMBOL * capital_weight
+
+        quote = self._client.get_stock_quote(ticker)
+        ask = _D(str(quote.get("ask_price") or stock_price))
+        bid = _D(str(quote.get("bid_price") or stock_price))
+        mid = (bid + ask) / _D("2")
+        limit_price = mid.quantize(_D("0.01"), rounding=ROUND_HALF_UP)
+
+        if mid <= _D("0"):
+            logger.warning("Mid price is zero for %s, defaulting to 1 share", ticker)
+            return 1, ask
+
+        shares = max(1, int(budget / mid))
+        budget_source = "window_budget" if window_budget is not None else "account"
+        logger.info(
+            "%s stock: budget=%s (weight=%.2f, source=%s) mid=%s → %d shares (cost=%s)",
+            ticker,
+            budget,
+            float(capital_weight),
+            budget_source,
+            mid,
+            shares,
+            shares * mid,
+        )
+        return shares, limit_price

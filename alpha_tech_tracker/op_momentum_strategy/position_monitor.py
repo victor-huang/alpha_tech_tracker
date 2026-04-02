@@ -19,7 +19,7 @@ from .config import (
     _fmt_option,
 )
 from .models import ActivePosition, _D
-from .order_executor import _place_with_fill_escalation
+from .order_executor import _place_with_fill_escalation, place_stock_order
 
 logger = logging.getLogger(__name__)
 
@@ -160,6 +160,73 @@ class PositionMonitor:
         pos.is_closed = True
         pos.exit_reason = reason
         pos.exit_time = datetime.now(ET)
+
+        if pos.trade_type == "stock":
+            self._close_stock_position(pos, reason)
+        else:
+            self._close_option_position(pos, reason)
+
+    def _close_stock_position(self, pos: ActivePosition, reason: str):
+        logger.info(
+            "EXIT %s %s reason=%s shares=%d",
+            pos.ticker,
+            pos.signal,
+            reason,
+            pos.shares,
+        )
+        mid = None
+        try:
+            quote = self._client.get_stock_quote(pos.ticker)
+            bid = _D(str(quote.get("bid_price") or quote.get("last_price", 0)))
+            ask = _D(str(quote.get("ask_price") or quote.get("last_price", 0)))
+            mid = (bid + ask) / _D("2")
+            logger.info(
+                "EXIT STOCK QUOTE %s: bid=%s ask=%s mid=%s",
+                pos.ticker,
+                bid,
+                ask,
+                mid.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
+            )
+        except Exception:
+            logger.exception("Could not fetch exit stock quote for %s", pos.ticker)
+
+        if self._mock_trade_execution:
+            sim_mid = (
+                mid.quantize(_D("0.01"), rounding=ROUND_HALF_UP)
+                if mid is not None
+                else _D("0")
+            )
+            pos.simulated_exit_mid = sim_mid
+            _notify(
+                f"[SIMULATE] SELL {pos.ticker} x{pos.shares} shares reason={reason} @ ~{sim_mid}"
+            )
+            logger.info(
+                "SIMULATE SELL_CLOSE %s shares=%d simulated_fill=%.2f (no order placed)",
+                pos.ticker,
+                pos.shares,
+                sim_mid,
+            )
+            return
+
+        try:
+            logger.info(
+                "Placing SELL_CLOSE stock with fill escalation: %s %d shares",
+                pos.ticker,
+                pos.shares,
+            )
+            _notify(f"SELL {pos.ticker} x{pos.shares} shares reason={reason}")
+            order = place_stock_order(
+                client=self._client,
+                ticker=pos.ticker,
+                shares=pos.shares,
+                order_action="SELL_CLOSE",
+            )
+            pos.exit_order_id = order.get("order_id")
+            logger.info("Stock close order placed: %s", pos.exit_order_id)
+        except Exception:
+            logger.exception("Failed to place stock close order for %s", pos.ticker)
+
+    def _close_option_position(self, pos: ActivePosition, reason: str):
         logger.info(
             "EXIT %s %s reason=%s opt=%s contracts=%d",
             pos.ticker,
@@ -280,11 +347,13 @@ class PositionMonitor:
         def _fmt(dt: Optional[datetime]) -> str:
             return dt.strftime("%H:%M") if dt else "—"
 
-        def _pnl(entry, exit_, signal, contracts) -> Optional[object]:
+        def _pnl(entry, exit_, signal, pos) -> Optional[object]:
             if entry is None or exit_ is None:
                 return None
             raw = exit_ - entry
-            return raw * _D(contracts) * _D("100")
+            if pos.trade_type == "stock":
+                return raw * _D(pos.shares)
+            return raw * _D(pos.contracts) * _D("100")
 
         def _pnl_str(pnl) -> str:
             if pnl is None:
@@ -307,23 +376,34 @@ class PositionMonitor:
             for p in open_pos:
                 if has_sim:
                     entry_price = p.simulated_entry_mid
+                    current_mid = p.simulated_entry_mid
                 else:
                     entry_price = p.entry_fill_price
-                    current_mid = self._fetch_option_mid(p.option_symbol)
-                unrealized = (
-                    _pnl(entry_price, p.simulated_entry_mid, p.signal, p.contracts)
-                    if has_sim
-                    else _pnl(entry_price, current_mid, p.signal, p.contracts)
-                )
+                    if p.trade_type == "stock":
+                        try:
+                            quote = self._client.get_stock_quote(p.ticker)
+                            last = quote.get("last_price") or quote.get("ask_price", 0)
+                            current_mid = _D(str(last))
+                        except Exception:
+                            current_mid = None
+                    else:
+                        current_mid = self._fetch_option_mid(p.option_symbol)
+                unrealized = _pnl(entry_price, current_mid, p.signal, p)
                 entry_str = f"  entry=${entry_price:.2f}" if entry_price else ""
                 unreal_str = (
                     f"  unreal={_pnl_str(unrealized).strip()}"
                     if unrealized is not None
                     else ""
                 )
+                if p.trade_type == "stock":
+                    qty_str = f"x{p.shares}sh"
+                    sym_str = f"{p.ticker} [stock]"
+                else:
+                    qty_str = f"x{p.contracts}"
+                    sym_str = p.option_symbol
                 print(
-                    f"  {p.ticker:<7} {p.signal:<9} {p.option_symbol:<26} "
-                    f"x{p.contracts}  in={_fmt(p.entry_time)}{entry_str}{unreal_str}"
+                    f"  {p.ticker:<7} {p.signal:<9} {sym_str:<26} "
+                    f"{qty_str}  in={_fmt(p.entry_time)}{entry_str}{unreal_str}"
                 )
         else:
             print("  No open positions")
@@ -339,12 +419,18 @@ class PositionMonitor:
                 else:
                     entry_price = p.entry_fill_price
                     exit_price = p.exit_fill_price
-                pnl = _pnl(entry_price, exit_price, p.signal, p.contracts)
+                pnl = _pnl(entry_price, exit_price, p.signal, p)
                 if pnl is not None:
                     total_pnl += pnl
+                if p.trade_type == "stock":
+                    qty_str = f"x{p.shares}sh"
+                    sym_str = f"{p.ticker} [stock]"
+                else:
+                    qty_str = f"x{p.contracts}"
+                    sym_str = p.option_symbol
                 print(
-                    f"  {p.ticker:<7} {p.signal:<9} {p.option_symbol:<26} "
-                    f"x{p.contracts}  {_fmt(p.entry_time)}→{_fmt(p.exit_time)}"
+                    f"  {p.ticker:<7} {p.signal:<9} {sym_str:<26} "
+                    f"{qty_str}  {_fmt(p.entry_time)}→{_fmt(p.exit_time)}"
                     f"  {p.exit_reason}{_pnl_str(pnl)}"
                 )
             any_pnl = any(
@@ -352,7 +438,7 @@ class PositionMonitor:
                     p.simulated_entry_mid if has_sim else p.entry_fill_price,
                     p.simulated_exit_mid if has_sim else p.exit_fill_price,
                     p.signal,
-                    p.contracts,
+                    p,
                 )
                 is not None
                 for p in closed_pos
@@ -376,8 +462,8 @@ class PositionMonitor:
             print("  DAILY TRADE SUMMARY  [SIMULATE MODE]")
             print(f"{'=' * width}")
             print(
-                f"  {'Ticker':<7} {'Signal':<9} {'Option':<26} {'Qty':>4}"
-                f"  {'Entry':>5} {'Exit':>5}  {'EntryMid':>9} {'ExitMid':>9} {'Opt P&L':>10}  Exit Reason"
+                f"  {'Ticker':<7} {'Signal':<9} {'Instrument':<26} {'Qty':>6}"
+                f"  {'Entry':>5} {'Exit':>5}  {'EntryMid':>9} {'ExitMid':>9} {'P&L':>10}  Exit Reason"
             )
             print(f"  {'─' * 112}")
             for pos in self._positions:
@@ -385,7 +471,10 @@ class PositionMonitor:
                 exit_mid = pos.simulated_exit_mid
                 if entry_mid is not None and exit_mid is not None:
                     raw_pnl = exit_mid - entry_mid
-                    pnl_total = raw_pnl * _D(pos.contracts) * _D("100")
+                    if pos.trade_type == "stock":
+                        pnl_total = raw_pnl * _D(pos.shares)
+                    else:
+                        pnl_total = raw_pnl * _D(pos.contracts) * _D("100")
                     pnl_str = (
                         f"+${pnl_total:.2f}"
                         if pnl_total >= 0
@@ -395,9 +484,15 @@ class PositionMonitor:
                     exit_str = f"${exit_mid:.2f}"
                 else:
                     pnl_str = entry_str = exit_str = "—"
+                if pos.trade_type == "stock":
+                    sym_str = f"{pos.ticker} [stock]"
+                    qty_str = f"{pos.shares}sh"
+                else:
+                    sym_str = pos.option_symbol
+                    qty_str = str(pos.contracts)
                 print(
-                    f"  {pos.ticker:<7} {pos.signal:<9} {pos.option_symbol:<26} "
-                    f"{pos.contracts:>4}"
+                    f"  {pos.ticker:<7} {pos.signal:<9} {sym_str:<26} "
+                    f"{qty_str:>6}"
                     f"  {_fmt_time(pos.entry_time):>5} {_fmt_time(pos.exit_time):>5}"
                     f"  {entry_str:>9} {exit_str:>9} {pnl_str:>10}"
                     f"  {pos.exit_reason or 'open'}"
@@ -409,14 +504,20 @@ class PositionMonitor:
             print("  DAILY TRADE SUMMARY")
             print(f"{'=' * width}")
             print(
-                f"  {'Ticker':<7} {'Signal':<9} {'Option':<26} {'Qty':>4}"
+                f"  {'Ticker':<7} {'Signal':<9} {'Instrument':<26} {'Qty':>6}"
                 f"  {'Entry':>5} {'Exit':>5}  Exit Reason"
             )
             print(f"  {'─' * 84}")
             for pos in self._positions:
+                if pos.trade_type == "stock":
+                    sym_str = f"{pos.ticker} [stock]"
+                    qty_str = f"{pos.shares}sh"
+                else:
+                    sym_str = pos.option_symbol
+                    qty_str = str(pos.contracts)
                 print(
-                    f"  {pos.ticker:<7} {pos.signal:<9} {pos.option_symbol:<26} "
-                    f"{pos.contracts:>4}"
+                    f"  {pos.ticker:<7} {pos.signal:<9} {sym_str:<26} "
+                    f"{qty_str:>6}"
                     f"  {_fmt_time(pos.entry_time):>5} {_fmt_time(pos.exit_time):>5}"
                     f"  {pos.exit_reason or 'open'}"
                 )

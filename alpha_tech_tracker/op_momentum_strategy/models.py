@@ -55,6 +55,8 @@ class ActivePosition:
     or_range: Decimal
     hard_stop_price: Decimal
     fallback_price: Decimal
+    trade_type: str = "options"
+    shares: int = 0
     hard_stop_armed: bool = False
     is_closed: bool = False
     exit_reason: str = ""

@@ -227,3 +227,113 @@ def _patched_place_option_order(
 
 
 AlpacaAPIClient.place_option_order = _patched_place_option_order
+
+
+def place_stock_order(
+    client: AlpacaAPIClient,
+    ticker: str,
+    shares: int,
+    order_action: str,
+    mock: bool = False,
+) -> dict:
+    """
+    Place a stock buy or sell order with the same 3-step fill escalation as options:
+      Step 1 (0-60s):   limit order at mid price
+      Step 2 (60-120s): cancel unfilled -> re-place at ask (buy) or bid (sell)
+      Step 3 (120s+):   cancel unfilled -> market order
+    order_action: "BUY_OPEN" or "SELL_CLOSE"
+    Returns: {order_id, status, filled_qty, filled_avg_price}
+    """
+    is_buy = order_action == "BUY_OPEN"
+
+    def _fetch_mid_bid_ask():
+        quote = client.get_stock_quote(ticker)
+        bid = _D(str(quote.get("bid_price") or quote.get("last_price", 0)))
+        ask = _D(str(quote.get("ask_price") or quote.get("last_price", 0)))
+        mid = (bid + ask) / _D("2")
+        return bid, ask, mid
+
+    def _place_limit(price) -> dict:
+        rounded = price.quantize(_D("0.01"), rounding=ROUND_HALF_UP)
+        return client.place_stock_order(
+            symbol=ticker,
+            price=float(rounded),
+            price_type="LIMIT",
+            order_action=order_action,
+            quantity=shares,
+        )
+
+    def _place_market() -> dict:
+        return client.place_stock_order(
+            symbol=ticker,
+            price_type="MARKET",
+            order_action=order_action,
+            quantity=shares,
+        )
+
+    def _is_filled(order_id: str) -> bool:
+        try:
+            status = client.order_status(order_id)
+            return status.get("status") == "filled"
+        except Exception:
+            return False
+
+    def _cancel_safely(order_id: str):
+        try:
+            client.cancel_order(order_id)
+        except Exception:
+            logger.warning(
+                "Could not cancel order %s (may already be filled)", order_id
+            )
+
+    try:
+        bid, ask, mid = _fetch_mid_bid_ask()
+        logger.info(
+            "STOCK FILL_ESC step1 %s %s: bid=%s ask=%s mid=%s",
+            order_action,
+            ticker,
+            bid,
+            ask,
+            mid.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
+        )
+    except Exception:
+        logger.warning("Could not fetch stock quote for %s, falling back to market", ticker)
+        return _place_market()
+
+    order = _place_limit(mid)
+    order_id = order.get("order_id")
+    logger.info("STOCK FILL_ESC step1 order placed: id=%s", order_id)
+
+    time.sleep(60)
+    if _is_filled(order_id):
+        logger.info("STOCK FILL_ESC step1 filled: %s", order_id)
+        return order
+
+    _cancel_safely(order_id)
+    try:
+        bid, ask, mid = _fetch_mid_bid_ask()
+        aggressive_price = ask if is_buy else bid
+        logger.info(
+            "STOCK FILL_ESC step2 %s %s: aggressive_price=%s",
+            order_action,
+            ticker,
+            aggressive_price.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
+        )
+    except Exception:
+        logger.warning("Could not fetch stock quote for step2 %s, using market", ticker)
+        return _place_market()
+
+    order = _place_limit(aggressive_price)
+    order_id = order.get("order_id")
+    logger.info("STOCK FILL_ESC step2 order placed: id=%s", order_id)
+
+    time.sleep(60)
+    if _is_filled(order_id):
+        logger.info("STOCK FILL_ESC step2 filled: %s", order_id)
+        return order
+
+    _cancel_safely(order_id)
+    logger.info("STOCK FILL_ESC step3 %s %s: placing market order", order_action, ticker)
+    order = _place_market()
+    logger.info("STOCK FILL_ESC step3 market order placed: id=%s", order.get("order_id"))
+    return order

@@ -238,6 +238,13 @@ def parse_args():
         default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
     )
+    parser.add_argument(
+        "--trade-type",
+        type=str,
+        default="options",
+        choices=["options", "stock"],
+        help="Trade type: options (default) or stock",
+    )
     return parser.parse_args()
 
 
@@ -321,6 +328,7 @@ if __name__ == "__main__":
             regime_ma=args.regime_ma,
             rank_weighted_sizing=args.rank_weighted_sizing,
             windows=windows,
+            trade_type=args.trade_type,
         )
         engine.run(tickers_override=args.tickers)
         sys.exit(0)
@@ -382,6 +390,7 @@ if __name__ == "__main__":
             regime_ma=args.regime_ma,
             rank_weighted_sizing=args.rank_weighted_sizing,
             windows=windows,
+            trade_type=args.trade_type,
         )
         engine.run(tickers_override=args.tickers)
     finally:
