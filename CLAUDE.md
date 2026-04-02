@@ -8,6 +8,16 @@ Alpha Tech Tracker is an algorithmic trading system that tracks stock chart reve
 
 ## Development Setup
 
+### Python Virtual Environment
+
+This project uses a pyenv virtualenv named `alpha_tech_tracker`. **Always activate it before running any Python command:**
+
+```bash
+source ~/.pyenv/versions/alpha_tech_tracker/bin/activate
+```
+
+> **Important:** The system default `python` is Python 2.7. Without activating the virtualenv, scripts will fail with syntax errors. Always verify with `python --version` (should show 3.8.x).
+
 ### Environment Variables
 
 Required for ETrade API:
