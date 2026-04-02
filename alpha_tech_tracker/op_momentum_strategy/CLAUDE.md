@@ -25,12 +25,13 @@ The same signal logic drives both **live trading** (`op_momentum_trade_engine.py
 | `op_momentum_selector_backtest.py` | Multi-day selector simulation: `run_selector_backtest()`, `_apply_capital_flow()`, CLI |
 | `op_momentum_trade_engine.py` | Live trading daemon: WebSocket streaming, order placement, exit monitoring |
 | `config.py` | Constants, Alpaca credentials loader, Telegram/SMS notification helpers |
-| `contract_selector.py` | Option contract selection (strike, expiry) |
-| `position_sizer.py` | Capital allocation per symbol |
-| `order_executor.py` | Alpaca order placement wrapper |
+| `contract_selector.py` | Option contract selection: `OptionContractSelector` (fixed offset), `TimePremiumContractSelector` (time premium target) |
+| `option_price_monitor.py` | Background bid/ask/intrinsic/time-value snapshots + `get_fair_price()` advisor |
+| `position_sizer.py` | Capital allocation per symbol (options and stock) |
+| `order_executor.py` | Alpaca order placement wrapper (options and stock) |
 | `position_monitor.py` | Intraday stop/exit monitoring loop |
 | `signal_engine.py` | Signal evaluation logic |
-| `models.py` | Shared data models |
+| `models.py` | Shared data models (`ActivePosition`, `_stock_bid_ask`, etc.) |
 
 ### Docs in this directory
 
@@ -81,11 +82,11 @@ The same signal logic drives both **live trading** (`op_momentum_trade_engine.py
 DEFAULT_TICKERS = [
     "SNDK", "APP", "SHOP", "CVNA", "AMD", "META",
     "EXPE", "FANG", "RH", "FN", "MU",
-    "ANAB", "PLTR", "COIN", "NVDA",
+    "ANAB", "PLTR", "COIN", "NVDA", "TSLA",
 ]
 ```
 
-Added PLTR, COIN, NVDA in March 2026 after 30-day + 90-day screening. Pool v2 outperforms the original 13-ticker pool by +11pp over 5 years.
+Added PLTR, COIN, NVDA in March 2026 after 30-day + 90-day screening. Added TSLA April 2026 (+10.9pp over 5 years). Pool v2 outperforms the original 13-ticker pool by +11pp over 5 years.
 
 ---
 
@@ -216,6 +217,48 @@ python alpha_tech_tracker/op_momentum_strategy/op_momentum_selector.py \
 PYTHONPATH=/Users/victorhuang/work/alpha_tech_tracker \
   python -m pytest tests/unit/test_op_momentum_selector_backtest.py -v
 ```
+
+---
+
+## New Features (2026-04-01)
+
+### TimePremiumContractSelector
+
+Replaces the fixed-offset `OptionContractSelector` in the live engine and option price monitor.
+
+- Scans ITM strikes near-to-deep, selecting the first where `time_premium = mid − intrinsic ≤ target_pct × stock_price` (default 1%)
+- Batch-fetches all candidate quotes in one API call
+- Falls back to deepest ITM when no strike meets the target or quote fetch fails
+- Shares weekly → monthly expiry fallback with `OptionContractSelector` via `_fetch_contracts_with_expiry_fallback()`
+- Same `.select(ticker, signal, stock_price) → str` interface — drop-in replacement
+
+### OptionPriceMonitor
+
+Two-role module at `option_price_monitor.py`:
+
+**Role 1 — Background collector** (`--collect-option-prices`):
+- Snapshots bid/ask/intrinsic/time value every N seconds for all tickers
+- Writes `market_data/options_price_data/YYYY-MM-DD/{ticker}_{call|put}.csv`
+- Uses `TradeEngineStrikeSelector` (wraps `TimePremiumContractSelector`) to pick the same contracts the engine would trade
+
+**Role 2 — Pricing advisor**:
+- `get_fair_price(ticker, symbol, option_type, stock_price)` returns a limit price within bid/ask
+- Algorithm: liquid spread (≤15%) + bid ≥ intrinsic → use mid; stale bid or wide spread → `intrinsic + median_time_value_from_cache`; no cache → 20% of spread; always clamp to [bid, ask]
+- Used by `trade_engine._place_entry()` and `position_monitor._close_option_position()`
+
+### Stock trading (`--trade-type stock`)
+
+- `PositionSizer.compute_stock()` — sizes share count from buying power
+- `order_executor.place_stock_order()` — limit/market/mock fill with fill escalation
+- `PositionMonitor` — monitors and closes stock positions using `_stock_bid_ask()` for mid price
+- All stock quote extraction uses `_stock_bid_ask()` from `models.py` to handle the nested Alpaca response format
+
+### Daily log rotation
+
+- Default log file: `logs/op_momentum_YYYY-MM-DD.log` (stamped at engine startup)
+- `TimedRotatingFileHandler` rotates at midnight, keeps 30 days
+- Rotated files stay in `op_momentum_YYYY-MM-DD.log` format
+- Foreground `run` logs to both terminal and file; daemon `start` logs to file only
 
 ---
 

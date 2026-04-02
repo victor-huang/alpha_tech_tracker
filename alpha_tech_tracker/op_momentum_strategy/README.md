@@ -1,9 +1,9 @@
 # Op Momentum Trade Engine
 
-Live options trading engine based on the opening-range momentum strategy.
-Runs intraday each market day: selects the top 2 tickers by 30-day return,
-fires a signal after the 15-minute opening range, buys a weekly option, and
-manages the position until an exit condition fires or market close.
+Live options (and stock) trading engine based on the opening-range momentum strategy.
+Runs intraday each market day: selects the top 3 tickers by composite score,
+fires a signal after the opening range closes, buys a weekly option (or stock),
+and manages the position until an exit condition fires or market close.
 
 ---
 
@@ -12,12 +12,12 @@ manages the position until an exit condition fires or market close.
 | Parameter | Value |
 |---|---|
 | Account size | $25,000 |
-| Active symbols per day | 2 (top by 30-day return) |
+| Active symbols per day | 3 (top by composite score) |
 | Opening range | First 3 × 5-min bars (9:30–9:45 AM ET) |
-| Option expiry | Weekly (next Friday) |
-| BULLISH entry | CALL, strike ≈ 10% below current price |
-| BEARISH entry | PUT, strike ≈ 10% above current price |
+| Option expiry | Weekly (next Friday), monthly fallback |
+| Strike selection | ITM strike where time premium ≈ 1% of stock price |
 | Capital per symbol | 45% of options buying power |
+| Position weights | 50% / 30% / 20% by rank (when `--rank-weighted-sizing`) |
 
 **Signal conditions (evaluated after opening range closes):**
 
@@ -28,7 +28,7 @@ manages the position until an exit condition fires or market close.
 **Exit conditions (checked every 30 seconds):**
 
 - Hard stop: price reverses past `OR_high − 15% × OR_range` (bull) or `OR_low + 15% × OR_range` (bear)
-- Trailing stop: price crosses MA50
+- Trailing stop: price crosses MA20 (default) or MA50
 - Fallback: price retreats to 20th/80th percentile of OR range before stop arms
 - End of day: force-close at 3:55 PM ET
 
@@ -53,6 +53,12 @@ export ALPACA_SECRET_KEY="your_secret_key_here"
 Add these to your shell profile (`~/.zshrc` or `~/.bash_profile`) to avoid setting
 them each session.
 
+### 3. Python virtualenv
+
+```bash
+source ~/.pyenv/versions/alpha_tech_tracker/bin/activate
+```
+
 ---
 
 ## Running the Engine
@@ -61,72 +67,107 @@ All commands must be run from the project root:
 
 ```bash
 cd /Users/victorhuang/work/alpha_tech_tracker
+export PYTHONPATH=.
 ```
 
-### Paper trading (default — uses simulated money)
+### Recommended daily run (paper, mock fills, regime filter)
 
 ```bash
-PYTHONPATH=. \
-  ALPACA_API_KEY="..." \
-  ALPACA_SECRET_KEY="..." \
-  ~/.pyenv/versions/alpha_tech_tracker/bin/python \
-  -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine
+python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine run \
+  --mock-trade-execution \
+  --regime-filter --regime-ma 8 \
+  --window M1 09:30 3 --morning-split 100 \
+  --log-level INFO
 ```
 
 ### Live trading (real money)
 
 ```bash
-PYTHONPATH=. \
-  ALPACA_API_KEY="..." \
-  ALPACA_SECRET_KEY="..." \
-  ~/.pyenv/versions/alpha_tech_tracker/bin/python \
-  -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine \
-  --live
+python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine run \
+  --live \
+  --regime-filter --regime-ma 8 \
+  --window M1 09:30 3 --morning-split 100
 ```
 
-### Override the ticker universe
-
-Skip the 30-day ranking and trade specific symbols:
+### With option price monitor (smart limit prices + CSV snapshots)
 
 ```bash
-... --tickers NVDA CRWD
+python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine run \
+  --mock-trade-execution \
+  --regime-filter --regime-ma 8 \
+  --window M1 09:30 3 --morning-split 100 \
+  --collect-option-prices \
+  --option-price-interval 300
 ```
 
-### Verbose logging
+`--collect-option-prices` enables a background thread that:
+- Snapshots bid/ask/intrinsic/time value every N seconds for all tickers
+- Writes CSVs to `market_data/options_price_data/YYYY-MM-DD/{ticker}_{call|put}.csv`
+- Feeds the cached time premium back to the engine to compute smarter entry/exit limit prices
+
+### Stock trading
 
 ```bash
-... --log-level DEBUG
+python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine run \
+  --mock-trade-execution \
+  --trade-type stock
 ```
 
-### All CLI options
+### Run as background daemon
+
+```bash
+python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine start \
+  --regime-filter --regime-ma 8 \
+  --window M1 09:30 3 --morning-split 100
+
+# Check status
+python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine status
+
+# Stop
+python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine stop
+```
+
+---
+
+## Log Files
+
+Logs are written to `logs/op_momentum_YYYY-MM-DD.log` (date stamped at startup) and
+rotated automatically at midnight, keeping 30 days of history. In foreground `run`
+mode, logs also print to the terminal.
+
+```bash
+tail -f logs/op_momentum_$(date +%Y-%m-%d).log
+```
+
+---
+
+## All CLI Options
 
 ```
-usage: op_momentum_trade_engine.py [-h] [--live] [--simulate]
-                                   [--tickers TICKERS [TICKERS ...]]
-                                   [--stop-pct STOP_PCT]
-                                   [--trailing-ma {ma20,ma50,both}]
-                                   [--max-loss-pct MAX_LOSS_PCT]
-                                   [--armed-ma20-exit] [--regime-filter]
-                                   [--regime-ma REGIME_MA]
-                                   [--rank-weighted-sizing]
-                                   [--opening-start OPENING_START]
-                                   [--pid-file PID_FILE] [--log-file LOG_FILE]
-                                   [--log-level {DEBUG,INFO,WARNING,ERROR}]
-                                   {run,start,stop,status,restart}
+positional arguments:
+  {run,start,stop,status,restart}
+      run: foreground | start: daemon | stop | status | restart
 
 optional arguments:
-  --live                Use live trading account (default: paper trading)
-  --simulate            Simulate order fills at mid bid/ask — no real orders placed
-  --tickers             Override ticker universe, e.g. --tickers NVDA CRWD
-  --stop-pct            Hard stop as fraction of OR range (default: 0.15)
-  --trailing-ma         MA to use for trailing stop: ma20, ma50, or both (default: ma20)
-  --max-loss-pct        Per-trade max loss as fraction of entry price (e.g. 0.02 = 2%)
-  --armed-ma20-exit     Use MA20 as trailing exit once hard stop is armed
-  --regime-filter       Suppress BULLISH signals on QQQ bearish days
-  --regime-ma           N-day MA period for QQQ regime filter (default: 5)
-  --rank-weighted-sizing  Weight positions by rank: 50/30/20%
-  --opening-start       Opening window start time HH:MM ET (default: 09:30)
-  --log-level           Log verbosity (default: INFO)
+  --live                    Use live trading account (default: paper trading)
+  --mock-trade-execution    Simulate order fills at mid bid/ask — no real orders placed
+  --tickers                 Override ticker universe, e.g. --tickers NVDA TSLA
+  --stop-pct                Hard stop as fraction of OR range (default: 0.15)
+  --trailing-ma             MA for trailing stop: ma20, ma50, or both (default: ma20)
+  --max-loss-pct            Per-trade max loss as fraction of entry price (e.g. 0.02)
+  --armed-ma20-exit         Use MA20 as trailing exit once hard stop is armed
+  --regime-filter           Suppress BULLISH signals on QQQ bearish days
+  --regime-ma               N-day MA for QQQ regime filter (default: 5)
+  --rank-weighted-sizing    Weight positions 50/30/20% by rank
+  --opening-start           Single-window start time HH:MM ET (default: 09:30)
+  --window LABEL START BARS Define a named trading window (repeatable)
+  --morning-split PCT       Capital split % for simultaneous morning windows
+  --trade-type              Trade type: options (default) or stock
+  --collect-option-prices   Enable background option price collection and fair-price advisor
+  --option-price-interval   Snapshot interval in seconds (default: 300)
+  --log-file                Override log file path (default: logs/op_momentum_YYYY-MM-DD.log)
+  --log-level               Log verbosity: DEBUG, INFO, WARNING, ERROR (default: INFO)
+  --pid-file                PID file for daemon mode
 ```
 
 ---
@@ -134,17 +175,17 @@ optional arguments:
 ## Daily Timeline
 
 ```
-Before 9:30 AM  Fetch 30-day returns for all tickers → pick top 2
-                Download 30 days of 5-min bars to warm MA20 / MA50 / MA200
+Before 9:30 AM  Score all tickers via 60-day rolling backtest → pick top 3
+                Download 5 days of 5-min bars to warm MA20 / MA50 / MA200
 
-9:30 AM         WebSocket stream opens for the 2 active tickers
+9:30 AM         WebSocket stream opens; option price monitor starts (if enabled)
 
 9:30–9:45 AM    Collect 3 opening bars (opening range)
 
 9:45 AM         Evaluate signal (BULLISH / BEARISH / NEUTRAL)
-                  → On signal: select weekly option contract
+                  → On signal: select ITM weekly option (time premium ≈ 1% of stock)
                                size position from buying power
-                               place BUY limit order at mid-price
+                               place BUY limit order at fair price
 
 9:45 AM–3:55 PM Monitor stops every 30 seconds
 
@@ -155,64 +196,41 @@ After close     Print daily trade summary, exit
 
 ---
 
+## Strike Selection
+
+The engine uses **`TimePremiumContractSelector`** which finds the ITM strike where the
+option's time premium (mid − intrinsic) just falls to or below 1% of the current stock
+price. This targets a consistent cost-of-carry regardless of IV.
+
+For example, with TSLA at $300 (1% target = $3):
+- Scans ITM call strikes from near-ATM downward
+- Selects the first strike where `mid − intrinsic ≤ $3`
+- Falls back to deepest ITM if all strikes have higher time premium
+
+The legacy fixed-offset selector (`OptionContractSelector`) is still available in
+`contract_selector.py` for backtesting or custom use.
+
+---
+
 ## Ticker Universe
 
-The default candidates are defined in `config.py`:
+Defined in `config.py` (16 tickers, pool v2):
 
 ```python
-TICKERS = ["NVDA", "CRWD", "COIN", "JNJ", "XOM", "CAT"]
+TICKERS = [
+    "SNDK", "APP", "SHOP", "CVNA", "AMD", "META",
+    "EXPE", "FANG", "RH", "FN", "MU",
+    "ANAB", "PLTR", "COIN", "NVDA", "TSLA",
+]
 ```
 
-The engine ranks these by 30-day return each morning and trades the top 2.
-To change the universe permanently, edit the `TICKERS` list in `config.py`.
+The engine scores all 16 each morning and trades the top 3.
 To override for a single run, use `--tickers`.
-
----
-
-## Running Daily with cron
-
-To start the engine automatically each trading day before market open:
-
-```bash
-crontab -e
-```
-
-Add this line (runs at 9:15 AM ET, Mon–Fri):
-
-```
-15 9 * * 1-5 cd /Users/victorhuang/work/alpha_tech_tracker && \
-  ALPACA_API_KEY="..." ALPACA_SECRET_KEY="..." \
-  ~/.pyenv/versions/alpha_tech_tracker/bin/python \
-  -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine \
-  >> ~/logs/op_momentum.log 2>&1
-```
-
-The engine exits automatically after the 3:55 PM EOD close, so no teardown cron is needed.
-
----
-
-## Backtest
-
-To evaluate the strategy on historical data before running live:
-
-```bash
-PYTHONPATH=. \
-  ALPACA_API_KEY="..." \
-  ALPACA_SECRET_KEY="..." \
-  ~/.pyenv/versions/alpha_tech_tracker/bin/python \
-  alpha_tech_tracker/op_momentum_strategy/op_momentum_backtest.py \
-  --days 30 \
-  --tickers NVDA CRWD COIN
-```
-
-See `op_momentum_backtest.py` for full backtest options (`--start`, `--end`, `--stop-pct`, etc.).
 
 ---
 
 ## Running Tests
 
 ```bash
-PYTHONPATH=. \
-  ~/.pyenv/versions/alpha_tech_tracker/bin/python \
-  -m pytest tests/op_momentum_trade_engine/ -v
+PYTHONPATH=. python -m pytest tests/op_momentum_trade_engine/ -v
 ```
