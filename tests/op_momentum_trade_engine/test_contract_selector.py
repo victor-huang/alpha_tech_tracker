@@ -283,7 +283,7 @@ class TestTimePremiumContractSelector:
             "TSLA260327C00280000": _make_option_quote(bid=21.0, ask=23.0),  # mid=22, tp=2
         }
 
-        selector = TimePremiumContractSelector(client, target_pct=0.01)
+        selector = TimePremiumContractSelector(client, time_premium_pct_cap=0.01)
         symbol = selector.select("TSLA", "BULLISH", 300.0)
 
         assert symbol == "TSLA260327C00280000"
@@ -292,8 +292,9 @@ class TestTimePremiumContractSelector:
         self, _, __
     ):
         client = _make_alpaca_client()
-        # strike $310 (intrinsic $10): mid=$14 → time_premium=$4 > $3 → skip
-        # strike $320 (intrinsic $20): mid=$22 → time_premium=$2 <= $3 → select
+        # DTE=4, target = 0.01/5 * 4 * $300 = $2.40
+        # strike $310 (intrinsic $10): mid=$14 → time_premium=$4 > $2.40 → skip
+        # strike $320 (intrinsic $20): mid=$22 → time_premium=$2 <= $2.40 → select
         client.get_options_contracts.return_value = _make_contracts(
             [310, 320], option_type="put"
         )
@@ -302,7 +303,7 @@ class TestTimePremiumContractSelector:
             "TSLA260327P00320000": _make_option_quote(bid=21.0, ask=23.0),  # mid=22, tp=2
         }
 
-        selector = TimePremiumContractSelector(client, target_pct=0.01)
+        selector = TimePremiumContractSelector(client, time_premium_pct_cap=0.01)
         symbol = selector.select("TSLA", "BEARISH", 300.0)
 
         assert symbol == "TSLA260327P00320000"
@@ -311,14 +312,14 @@ class TestTimePremiumContractSelector:
         self, _, __
     ):
         client = _make_alpaca_client()
-        # All strikes still have time_premium > target → use deepest ITM (lowest call strike)
+        # DTE=4, target = $2.40; all strikes tp > $2.40 → deepest ITM (lowest call strike)
         client.get_options_contracts.return_value = _make_contracts([290, 295])
         client._option_data_client.get_option_latest_quote.return_value = {
-            "TSLA260327C00295000": _make_option_quote(bid=9.0, ask=11.0),   # mid=10, tp=5 > 3
-            "TSLA260327C00290000": _make_option_quote(bid=13.5, ask=14.5),  # mid=14, tp=4 > 3
+            "TSLA260327C00295000": _make_option_quote(bid=9.0, ask=11.0),   # mid=10, tp=5 > 2.40
+            "TSLA260327C00290000": _make_option_quote(bid=13.5, ask=14.5),  # mid=14, tp=4 > 2.40
         }
 
-        selector = TimePremiumContractSelector(client, target_pct=0.01)
+        selector = TimePremiumContractSelector(client, time_premium_pct_cap=0.01)
         symbol = selector.select("TSLA", "BULLISH", 300.0)
 
         assert symbol == "TSLA260327C00290000"
@@ -332,7 +333,7 @@ class TestTimePremiumContractSelector:
             "TSLA260327C00285000": _make_option_quote(bid=16.0, ask=18.0),  # mid=17, tp=2
         }
 
-        selector = TimePremiumContractSelector(client, target_pct=0.01)
+        selector = TimePremiumContractSelector(client, time_premium_pct_cap=0.01)
         symbol = selector.select("TSLA", "BULLISH", 300.0)
 
         assert symbol == "TSLA260327C00285000"
@@ -345,7 +346,7 @@ class TestTimePremiumContractSelector:
             "TSLA260327C00285000": _make_option_quote(bid=16.0, ask=18.0),  # mid=17, tp=2
         }
 
-        selector = TimePremiumContractSelector(client, target_pct=0.01)
+        selector = TimePremiumContractSelector(client, time_premium_pct_cap=0.01)
         symbol = selector.select("TSLA", "BULLISH", 300.0)
 
         assert symbol == "TSLA260327C00285000"
@@ -357,7 +358,7 @@ class TestTimePremiumContractSelector:
             "network error"
         )
 
-        selector = TimePremiumContractSelector(client, target_pct=0.01)
+        selector = TimePremiumContractSelector(client, time_premium_pct_cap=0.01)
         symbol = selector.select("TSLA", "BULLISH", 300.0)
 
         assert symbol == "TSLA260327C00280000"
@@ -366,7 +367,7 @@ class TestTimePremiumContractSelector:
         client = _make_alpaca_client()
         client.get_options_contracts.return_value = []
 
-        selector = TimePremiumContractSelector(client, target_pct=0.01)
+        selector = TimePremiumContractSelector(client, time_premium_pct_cap=0.01)
 
         with pytest.raises(RuntimeError, match="No call contracts found"):
             selector.select("TSLA", "BULLISH", 300.0)
@@ -376,7 +377,7 @@ class TestTimePremiumContractSelector:
         monthly = _make_contracts([280], option_type="call", expiry="2026-04-17")
         client.get_options_contracts.side_effect = [[], monthly]
 
-        selector = TimePremiumContractSelector(client, target_pct=0.01)
+        selector = TimePremiumContractSelector(client, time_premium_pct_cap=0.01)
         client._option_data_client.get_option_latest_quote.return_value = {
             monthly[0]["symbol"]: _make_option_quote(bid=21.0, ask=23.0),
         }
@@ -386,19 +387,37 @@ class TestTimePremiumContractSelector:
         assert symbol == monthly[0]["symbol"]
         assert client.get_options_contracts.call_count == 2
 
-    def test_configurable_target_pct_changes_selected_strike(self, _, __):
+    def test_configurable_time_premium_pct_cap_changes_selected_strike(self, _, __):
         client = _make_alpaca_client()
-        # With target_pct=0.02 ($6 target), strike $280 has tp=$2 which is ≤ $6 → selected
-        # With target_pct=0.005 ($1.50 target), strike $280 tp=$2 > $1.50 → fallback deepest
+        # DTE=4, reference_dte=5
+        # time_premium_pct_cap=0.02 → target = 0.02/5 * 4 * $300 = $4.80
+        #   strike $290 tp=$4 ≤ $4.80 → picked first
         client.get_options_contracts.return_value = _make_contracts([280, 290])
         client._option_data_client.get_option_latest_quote.return_value = {
             "TSLA260327C00290000": _make_option_quote(bid=13.0, ask=15.0),  # mid=14, tp=4
             "TSLA260327C00280000": _make_option_quote(bid=21.0, ask=23.0),  # mid=22, tp=2
         }
 
-        selector_wide = TimePremiumContractSelector(client, target_pct=0.02)
+        selector_wide = TimePremiumContractSelector(client, time_premium_pct_cap=0.02)
         symbol = selector_wide.select("TSLA", "BULLISH", 300.0)
-        assert symbol == "TSLA260327C00290000"  # tp=4 ≤ 6 → picked first
+        assert symbol == "TSLA260327C00290000"  # tp=4 ≤ 4.80 → picked first
+
+    def test_monthly_fallback_uses_dte_adjusted_threshold(self, _, __):
+        # today=2026-03-23, monthly expiry=2026-04-17 → DTE=25
+        # target = 0.01/5 * 25 * $300 = $15.00
+        # A time premium of $10 would be rejected on weekly (DTE=4, target=$2.40)
+        # but accepted on monthly (target=$15.00)
+        client = _make_alpaca_client()
+        monthly = _make_contracts([280], option_type="call", expiry="2026-04-17")
+        client.get_options_contracts.side_effect = [[], monthly]
+        client._option_data_client.get_option_latest_quote.return_value = {
+            monthly[0]["symbol"]: _make_option_quote(bid=29.0, ask=31.0),  # mid=30, tp=10
+        }
+
+        selector = TimePremiumContractSelector(client, time_premium_pct_cap=0.01)
+        symbol = selector.select("TSLA", "BULLISH", 300.0)
+
+        assert symbol == monthly[0]["symbol"]  # tp=10 ≤ 15.00 → accepted
 
     def test_bullish_fetches_itm_call_strike_range(self, _, __):
         client = _make_alpaca_client()

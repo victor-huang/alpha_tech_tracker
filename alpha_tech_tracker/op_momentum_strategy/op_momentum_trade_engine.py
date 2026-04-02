@@ -264,6 +264,13 @@ def parse_args():
         help="Trade type: options (default) or stock",
     )
     parser.add_argument(
+        "--time-premium-pct-cap",
+        type=float,
+        default=0.01,
+        help="Max acceptable time premium as a fraction of stock price per reference DTE "
+        "(default: 0.01 = 1%%). Threshold scales with DTE: 1%% / 5-day ref * actual DTE.",
+    )
+    parser.add_argument(
         "--collect-option-prices",
         action="store_true",
         default=False,
@@ -376,6 +383,7 @@ if __name__ == "__main__":
             windows=windows,
             trade_type=args.trade_type,
             option_price_monitor=_build_option_price_monitor(args, client, args.tickers),
+            time_premium_pct_cap=args.time_premium_pct_cap,
         )
         engine.run(tickers_override=args.tickers)
         sys.exit(0)
@@ -439,6 +447,7 @@ if __name__ == "__main__":
             windows=windows,
             trade_type=args.trade_type,
             option_price_monitor=_build_option_price_monitor(args, client, args.tickers),
+            time_premium_pct_cap=args.time_premium_pct_cap,
         )
         engine.run(tickers_override=args.tickers)
     finally:

@@ -180,27 +180,37 @@ class OptionContractSelector:
 
 
 class TimePremiumContractSelector:
-    """Selects the deepest ITM strike where time premium just falls to or below
-    target_pct * stock_price.
+    """Selects the deepest ITM strike where the per-day time premium rate falls
+    at or below the DTE-adjusted threshold.
 
-    Algorithm (BULLISH/call example with stock=$300, target_pct=0.01):
-      target_premium = $300 * 0.01 = $3
+    Threshold = (time_premium_pct_cap / reference_dte) * dte * stock_price
+
+    Example — stock=$300, time_premium_pct_cap=0.01, reference_dte=5:
+      weekly (DTE=5): target = 0.01/5 * 5 * $300 = $3.00
+      monthly (DTE=25): target = 0.01/5 * 25 * $300 = $15.00
+
+    Algorithm (BULLISH/call example):
       1. Fetch all ITM call contracts (strikes from 70% to 100% of stock price).
       2. Sort near-ATM first (descending strike for calls, ascending for puts).
       3. Walk deeper ITM: compute time_premium = mid - intrinsic at each strike.
-      4. Select the first strike where time_premium <= target_premium.
+      4. Select the first strike where time_premium <= DTE-adjusted target.
       5. Fallback to deepest ITM contract if all time premiums stay above target.
 
     Mirrors OptionContractSelector expiry logic: weekly → monthly fallback.
     """
 
-    def __init__(self, client: AlpacaAPIClient, target_pct: float = 0.01):
+    def __init__(
+        self,
+        client: AlpacaAPIClient,
+        time_premium_pct_cap: float = 0.01,
+        reference_dte: int = 5,
+    ):
         self._client = client
-        self._target_pct = _D(str(target_pct))
+        self._time_premium_pct_cap = _D(str(time_premium_pct_cap))
+        self._reference_dte = _D(str(reference_dte))
 
     def select(self, ticker: str, signal: str, stock_price: float) -> str:
         stock_price = _D(str(stock_price))
-        target_premium = stock_price * self._target_pct
         incr = _strike_increment(stock_price)
 
         if signal == "BULLISH":
@@ -217,13 +227,17 @@ class TimePremiumContractSelector:
         contracts, expiry = _fetch_contracts_with_expiry_fallback(
             self._client, ticker, option_type, search_low, search_high
         )
+        dte = _D(str((expiry - _today()).days))
+        daily_rate = self._time_premium_pct_cap / self._reference_dte
+        target_premium = daily_rate * dte * stock_price
         logger.info(
-            "%s %s signal: stock=%s target_premium=%s expiry=%s contracts=%d",
+            "%s %s signal: stock=%s expiry=%s dte=%s target_premium=%s contracts=%d",
             ticker,
             signal,
             stock_price,
-            target_premium,
             expiry,
+            dte,
+            target_premium,
             len(contracts),
         )
 
@@ -274,9 +288,10 @@ class TimePremiumContractSelector:
                 break
 
         logger.info(
-            "TimePremium selected %s strike=%s (target_premium=%s)",
+            "TimePremium selected %s strike=%s (dte=%s target_premium=%s)",
             selected["symbol"],
             selected["strike_price"],
+            dte,
             target_premium,
         )
         return selected["symbol"]

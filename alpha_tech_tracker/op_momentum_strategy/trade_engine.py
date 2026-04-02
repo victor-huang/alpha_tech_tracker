@@ -164,6 +164,7 @@ class OpMomentumTradeEngine:
         windows: Optional[list] = None,
         trade_type: str = "options",
         option_price_monitor: Optional[OptionPriceMonitor] = None,
+        time_premium_pct_cap: float = 0.01,
     ):
         self._client = alpaca_client
         self._api_key = alpaca_client._api_key
@@ -178,6 +179,7 @@ class OpMomentumTradeEngine:
         self._rank_weighted_sizing = rank_weighted_sizing
         self._trade_type = trade_type
         self._option_price_monitor = option_price_monitor
+        self._time_premium_pct_cap = time_premium_pct_cap
         self._monitor: PositionMonitor = None
         self._signal_engine: LiveSignalEngine = None
         self._signal_lock = threading.Lock()
@@ -371,7 +373,9 @@ class OpMomentumTradeEngine:
         entry_bar_time,
     ):
         try:
-            selector = TimePremiumContractSelector(self._client)
+            selector = TimePremiumContractSelector(
+                self._client, time_premium_pct_cap=self._time_premium_pct_cap
+            )
             option_symbol = selector.select(
                 event.ticker, event.signal, event.stock_price
             )
