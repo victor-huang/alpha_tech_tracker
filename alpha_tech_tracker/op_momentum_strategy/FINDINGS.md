@@ -515,3 +515,58 @@ For M1 filtering in live options: the 2026 analysis (reduce_small_trade_noise.md
 **Recommended configs**:
 - Live options trading: `--min-or-range 1.5 --min-or-range-windows M1` (or M2)
 - Pure strategy research / backtest comparison: no filter
+
+---
+
+## Finding 10 — Per-Year Backtest Sweep (2021–2026 YTD) with V2 Pool + Current Best Config
+
+**Date**: 2026-04-03
+
+**Params**: `--top 3 --weights 50 30 20 --regime-filter --regime-ma 8 --window M1 09:30 3 --window A1 13:15 1 --window A2 15:00 1 --morning-split 100 --reversal --min-or-range 0.5 --min-or-range-windows M1`
+
+**Pool**: V2 (16 tickers: SNDK, APP, SHOP, CVNA, AMD, META, EXPE, FANG, RH, FN, MU, ANAB, PLTR, COIN, NVDA, TSLA)
+
+**Capital model**: $10,000/day no-compound (daily reset — strategy edge comparison)
+
+### Summary
+
+| Year | Trades | Wins | Win% | Return% |
+|---|---|---|---|---|
+| 2021 | 1995 | 514 | 26% | **+129.95%** |
+| 2022 | 1838 | 507 | 28% | **+182.42%** |
+| 2023 | 1967 | 539 | 27% | **+211.76%** |
+| 2024 | 1949 | 483 | 25% | **+98.69%** |
+| 2025 | 1943 | 556 | 29% | **+215.70%** |
+| 2026 YTD (Jan–Apr 3) | 475 | 134 | 28% | **+88.72%** |
+
+### Per-Window Breakdown
+
+| Year | Window | Trades | Wins | Win% | Avg P&L% | Return% |
+|---|---|---|---|---|---|---|
+| 2021 | M1 | 666 | 205 | 31% | +0.022% | +61.13% |
+| 2021 | A1 | 680 | 146 | 21% | -0.008% | +36.60% |
+| 2021 | A2 | 649 | 163 | 25% | +0.035% | +32.22% |
+| 2022 | M1 | 603 | 216 | 36% | +0.213% | +87.31% |
+| 2022 | A1 | 645 | 149 | 23% | -0.098% | +58.02% |
+| 2022 | A2 | 590 | 142 | 24% | -0.001% | +37.08% |
+| 2023 | M1 | 661 | 211 | 32% | +0.082% | +118.20% |
+| 2023 | A1 | 667 | 151 | 23% | -0.010% | +61.44% |
+| 2023 | A2 | 639 | 177 | 28% | +0.031% | +32.12% |
+| 2024 | M1 | 628 | 199 | 32% | +0.052% | +43.90% |
+| 2024 | A1 | 658 | 141 | 21% | -0.054% | +21.96% |
+| 2024 | A2 | 663 | 143 | 22% | -0.014% | +32.83% |
+| 2025 | M1 | 629 | 226 | 36% | +0.146% | +122.84% |
+| 2025 | A1 | 657 | 164 | 25% | +0.032% | +57.68% |
+| 2025 | A2 | 657 | 166 | 25% | -0.017% | +35.18% |
+| 2026 YTD | M1 | 147 | 65 | 44% | +0.655% | +54.15% |
+| 2026 YTD | A1 | 165 | 36 | 22% | -0.110% | +20.23% |
+| 2026 YTD | A2 | 163 | 33 | 20% | -0.026% | +14.33% |
+
+### Observations
+
+- **Win rate is stable at 25–29% across all full years** — confirms consistent positive-EV structure
+- **2024 is the weakest year (+98.69%)** — all three windows underperformed; consistent with the choppy/low-volatility regime that year
+- **2026 YTD is the strongest pace** — +88.72% in ~3 months (Jan–Apr 3), driven by exceptionally strong M1 (44% WR, +0.655% avg, +54.15%)
+- **M1 is the primary return driver every year** — contributes 43–59% of total return depending on year
+- **A1 and A2 add incremental return in all years** — even in weak years (2024), A1 +21.96% and A2 +32.83% still contribute meaningfully on top of M1
+- **A1/A2 win rates are structurally lower (20–25%)** — consistent with the afternoon noise analysis; positive EV comes from asymmetric win size, not frequency
