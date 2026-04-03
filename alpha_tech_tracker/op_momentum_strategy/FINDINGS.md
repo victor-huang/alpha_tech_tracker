@@ -384,3 +384,78 @@ python op_momentum_selector_backtest.py \
 
 - [ ] Monthly breakdown comparison across all combos
 - [ ] Evaluate deduplication rule for windows that pick the same ticker on the same day
+
+---
+
+## Finding 7 — Reversal Trade Signal (2021-01-01 → 2026-04-03)
+
+**Question**: Does adding a reversal trade after a quick BEARISH stop-out improve overall P&L?
+
+**Params**: `--regime-filter --regime-ma 8 --weights 50 30 20 --top 3`, pool = V2 (16 tickers), capital = $10,000 (no-compound)
+
+### Signal Logic
+
+When a BEARISH primary trade stops out within `bars_held ≤ 3` (i.e. ≤ 4 bars exposure) via `hard_stop` or `fallback_20pct`, scan subsequent bars for the first close above `or_high`. If found, enter a BULLISH reversal trade with:
+
+- **Entry**: first bar closing above `or_high`
+- **Hard stop**: OR range midpoint `(or_high + or_low) / 2` — armed immediately (entry > or_high > midpoint)
+- **Trailing stop**: MA20 (or MA50/both per `--trailing-ma`), but **only armed once price has moved up ≥ 1 OR range** from entry (prevents premature exits before the trade has room to breathe)
+- **EOD exit**: 3:55 PM ET if no stop hit
+
+Enabled via `--reversal` flag. Threshold configurable via `--reversal-max-bars` (default 3).
+
+Reversal rows are excluded from the 60-day rolling stats used for ticker scoring, keeping the selection algo pure. Each row (primary and reversal) reports its own P&L independently in the daily table with a `[REV]` sub-row.
+
+### Year-by-Year Results — Single Window (M1: `09:30 / 3 bars`)
+
+| Year | No Reversal | With Reversal | Delta |
+|---|---|---|---|
+| 2025 | +91.96% | +121.41% | **+29.45pp** |
+| 2026 YTD | +51.45% | +53.82% | **+2.37pp** |
+
+### Year-by-Year Results — Multi-Window (`M1 09:30/3 + A1 13:15/1 + A2 15:00/1`)
+
+Reversal applies to **all windows** (not just M1).
+
+| Year | No Reversal | With Reversal | Delta |
+|---|---|---|---|
+| 2021 | +114.82% | +130.65% | **+15.83pp** |
+| 2022 | +185.60% | +182.26% | -3.34pp |
+| 2023 | +166.15% | +213.44% | **+47.29pp** |
+| 2024 | +89.11% | +99.38% | **+10.27pp** |
+| 2025 | +166.65% | +214.24% | **+47.59pp** |
+| 2026 YTD | +70.33% | +88.39% | **+18.06pp** |
+
+### Trade Count & Win Rate Breakdown — Multi-Window (`M1 + A1 + A2`)
+
+Primary and reversal trades are independently accounted. Primary win rate is unaffected by reversal outcomes.
+
+**2025**
+
+| | Trades | W/L | Win rate |
+|---|---|---|---|
+| Primary | 1,952 | 557W / 1395L | 29% |
+| Reversals | +672 (+34%) | 287W / 385L | **43%** |
+
+**2026 YTD**
+
+| | Trades | W/L | Win rate |
+|---|---|---|---|
+| Primary | 476 | 134W / 342L | 28% |
+| Reversals | +175 (+37%) | 77W / 98L | **44%** |
+
+### Observations
+
+- Reversal wins **5 out of 6 years** in the multi-window config
+- **2022 is the exception** (-3.34pp): sustained bear market with persistent downtrends; BEARISH stops did not resolve into V-bounces through OR_high — slow grinds rather than sharp reversals
+- **2023 and 2025 are the biggest beneficiaries** (+47pp each): high-volatility, mean-reverting regimes produce sharp V-bounces through OR_high after quick BEARISH fakeouts
+- **Reversal win rate (43–44%) is consistently higher than primary win rate (28–29%)** — reversals are higher-quality trades: they only trigger when price has already proven direction by crossing OR_high
+- **Reversals add 34–37% more trades** with no dilution to primary stats — the layers are fully independent
+- **Primary win rate is unchanged** with or without reversal enabled — each row accounts for its own P&L only
+- **Trailing stop arming threshold** (≥1 OR range gain) is critical: without it, MA20 exits prematurely on normal post-entry noise, cutting winners short. COIN Apr 2 example: +$0.41 → +$1.49 after arming fix
+- **Midpoint hard stop** gives enough room vs the prior `or_high - 15% × OR_range` — allows the reversal to survive early volatility while still protecting against a full reversal back into the OR
+- Log files: `backtest_result/with_reversal_trade/`
+
+### Conclusion
+
+`--reversal` is additive in volatile/mean-reverting markets and roughly neutral in trend-following markets. Recommended to enable for live trading. Default `--reversal-max-bars 3` (≤4 bars exposure) is the right threshold — wider (≤6 bars) yields nearly identical results with marginally lower quality trades.

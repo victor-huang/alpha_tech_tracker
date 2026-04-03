@@ -348,14 +348,13 @@ def run_selector_backtest(
                     else 0.0
                 )
                 combined_pnl_pct = primary_pnl_pct + rev_pnl_pct
-                combined_success = (pick["pnl"] + pick["rev_pnl"]) > 0
                 trade_rows.append(
                     {
                         "date": d,
                         "window": label,
                         "rank": rank,
                         "pnl_pct": round(combined_pnl_pct, 3),
-                        "success": combined_success,
+                        "success": pick["pnl"] > 0,
                         # cap_pnl, window_capital, skipped filled in by _apply_capital_flow
                         "cap_pnl": 0.0,
                         "window_capital": 0.0,
@@ -614,6 +613,12 @@ def _stats_from_trades(trade_rows: list) -> dict:
     avg_loss_pct = sum(loss_pct_vals) / len(loss_pct_vals) if loss_pct_vals else 0.0
     ev = win_rate * avg_win_pct - (1 - win_rate) * avg_loss_pct
     net_pnl = sum(r["pnl"] for r in active)
+
+    rev_rows = [r for r in active if r.get("rev_entry_price", 0)]
+    rev_total = len(rev_rows)
+    rev_wins = sum(1 for r in rev_rows if r.get("rev_pnl", 0) > 0)
+    rev_losses = rev_total - rev_wins
+
     return {
         "total": total,
         "wins": wins,
@@ -623,6 +628,9 @@ def _stats_from_trades(trade_rows: list) -> dict:
         "avg_loss_pct": avg_loss_pct,
         "ev": ev,
         "net_pnl": net_pnl,
+        "rev_total": rev_total,
+        "rev_wins": rev_wins,
+        "rev_losses": rev_losses,
     }
 
 
@@ -641,6 +649,10 @@ def _print_stats_block(label: str, stats: dict):
     print(
         f"  Trades          : {stats['total']}  ({stats['wins']}W / {stats['losses']}L)"
     )
+    if stats.get("rev_total", 0):
+        print(
+            f"  Reversals       : {stats['rev_total']}  ({stats['rev_wins']}W / {stats['rev_losses']}L)"
+        )
     print(f"  Win rate        : {stats['win_rate'] * 100:.0f}%")
     print(f"  Avg win  %      : +{stats['avg_win_pct']:.2f}%  per trade")
     print(f"  Avg loss %      : -{stats['avg_loss_pct']:.2f}%  per trade")

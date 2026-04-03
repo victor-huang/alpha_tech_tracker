@@ -460,7 +460,7 @@ def compute_signals_with_backtest(
             and exit_bar_idx >= 0
         )
         if reversal_eligible:
-            reversal_hard_stop = or_high - 0.15 * or_range
+            reversal_hard_stop = midpoint
             reversal_scan = post_open.iloc[exit_bar_idx + 1:]
             rev_entry_price = None
             rev_entry_idx = None
@@ -479,22 +479,28 @@ def compute_signals_with_backtest(
                 # Entry is already above OR high > reversal_hard_stop, so armed at start.
                 remaining_rev_bars = reversal_scan.iloc[rev_entry_idx + 1:]
 
+                rev_trailing_armed = False
                 for _, rev_bar in remaining_rev_bars.iterrows():
                     rev_bar_ma20 = rev_bar["MA20"]
                     rev_bar_ma50 = rev_bar["MA50"]
                     rev_bar_close = rev_bar["Close"]
                     rev_move = rev_bar_close - rev_entry_price
 
+                    if rev_bar_close >= rev_entry_price + or_range:
+                        rev_trailing_armed = True
+
                     rev_hard_stop_hit = rev_bar_close <= reversal_hard_stop
                     rev_ma20_trailing = (
-                        not rev_hard_stop_hit
+                        rev_trailing_armed
+                        and not rev_hard_stop_hit
                         and trailing_ma in ("ma20", "both")
                         and not pd.isna(rev_bar_ma20)
                         and rev_bar_ma20 > reversal_hard_stop
                         and rev_bar_close < rev_bar_ma20
                     )
                     rev_ma50_trailing = (
-                        trailing_ma in ("ma50", "both")
+                        rev_trailing_armed
+                        and trailing_ma in ("ma50", "both")
                         and not pd.isna(rev_bar_ma50)
                         and rev_bar_ma50 > reversal_hard_stop
                         and rev_bar_close < rev_bar_ma50
