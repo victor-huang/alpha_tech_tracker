@@ -459,3 +459,59 @@ Primary and reversal trades are independently accounted. Primary win rate is una
 ### Conclusion
 
 `--reversal` is additive in volatile/mean-reverting markets and roughly neutral in trend-following markets. Recommended to enable for live trading. Default `--reversal-max-bars 3` (≤4 bars exposure) is the right threshold — wider (≤6 bars) yields nearly identical results with marginally lower quality trades.
+
+---
+
+## Finding 8 — OR Range Filter Window Scope (2025-01-01 → 2025-12-31)
+
+**Question**: Does applying `--min-or-range 1.5` to afternoon windows (A1, A2) reduce noise or destroy value? And which scope (M1 only, A1+A2 only, all windows) performs best?
+
+**Params**: `--top 2 --weights 50 30 --regime-filter --regime-ma 8 --window M1 09:30 3 --window A1 13:15 1 --window A2 15:00 1 --morning-split 100 --reversal`
+
+Full sweep details and 2026 axis results: `reduce_small_trade_noise.md`
+
+### 4-Way Comparison — 2025 Full Year
+
+| Config | Primary | Reversals | WR | EV/trade | Return |
+|---|---|---|---|---|---|
+| No filter | 1360 (381W/979L) | 485 (207W/278L) | 28% | +0.049% | **+234.86%** |
+| M1 only (`--min-or-range-windows M1`) | 1304 (375W/929L) | 454 (196W/258L) | 29% | +0.053% | **+221.09%** |
+| A1+A2 only (`--min-or-range-windows A1 A2`) | 451 (155W/296L) | 93 (47W/46L) | 34% | +0.214% | **+151.73%** |
+| All windows | 395 (149W/246L) | 62 (36W/26L) | 38% | +0.251% | **+138.01%** |
+
+### Per-Window Breakdown — A1+A2 Filter Run
+
+| Window | Trades | W/L | WR | EV/trade | Cap Return |
+|---|---|---|---|---|---|
+| M1 | 446 | 152W/294L | 34% | +0.155% | +136.23% |
+| A1 | 2 | 2W/0L | 100% | +13.25% | +15.30% |
+| A2 | 3 | 1W/2L | 33% | +0.206% | +0.20% |
+
+### Key Finding: 1.5% OR Threshold Eliminates Afternoon Trading
+
+Applying `--min-or-range 1.5` to A1 or A2 reduces those windows to **essentially zero trades** (only 2 A1 + 3 A2 pass all year). This is structural, not coincidental:
+
+- Afternoon windows reuse the **morning OR**, which closes at 9:45 AM (M1) or 9:35 AM (M2)
+- By 1:20 PM (A1) or 3:05 PM (A2), the OR range cannot expand — it is fixed from the morning
+- Morning ORs with range < 1.5% are the majority of afternoon setups, since tight ORs are common
+- The 2 A1 trades that survive are outliers (both happened to be taken on days with wide ORs), not a signal
+
+The drop in return when filtering afternoons (-83pp vs no filter) is almost entirely due to **removing the A1/A2 contribution**, not improving signal quality.
+
+### Observations
+
+- **No filter is the best raw backtest config (+234.86%)** — all four afternoon trades add cumulative value despite noise; removing them costs return
+- **M1-only filter (-13.77pp)** removes some low-OR morning setups but costs more than it gains in 2025 — the 56 filtered M1 trades were not uniformly losers
+- **A1+A2 filter and All-windows filter are both dominated** — they effectively disable afternoon windows, not just filter noise
+- **The `--min-or-range-windows` flag exists to prevent accidental afternoon filtering** — always specify `--min-or-range-windows M1` (or `M2`) if using `--min-or-range`, never apply to A1/A2
+- **The 2026 noise analysis** (reduce_small_trade_noise.md) motivated this filter based on 115 zero/small trades; but in 2025 the filter nets negative in all configurations
+
+### Conclusion
+
+`--min-or-range` should **not be applied to afternoon windows** under any threshold. The morning OR is too narrow by afternoon to use as a quality gate.
+
+For M1 filtering in live options: the 2026 analysis (reduce_small_trade_noise.md) shows `--min-or-range 1.5` converts a 29% WR into 50% WR and doubles EV/trade by removing unexecutable option setups. The 2025 result shows raw backtest return drops (-13.77pp). The trade-off is justified for live options (execution costs dominate) but not for pure backtest comparison.
+
+**Recommended configs**:
+- Live options trading: `--min-or-range 1.5 --min-or-range-windows M1` (or M2)
+- Pure strategy research / backtest comparison: no filter

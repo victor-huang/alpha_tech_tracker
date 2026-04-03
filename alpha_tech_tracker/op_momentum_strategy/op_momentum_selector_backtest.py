@@ -208,6 +208,10 @@ def run_selector_backtest(
     dedup: bool = False,
     enable_reversal: bool = False,
     reversal_max_bars_held: int = 3,
+    min_or_range: float = 0.0,
+    min_or_range_windows: list = None,
+    min_score: float = 0.0,
+    min_ev: float = 0.0,
 ) -> tuple:
     """
     Walk each trading day in [eval_start, eval_end], apply rolling selector
@@ -312,9 +316,16 @@ def run_selector_backtest(
                 rev_today = today_rows[today_rows["is_reversal"] == True]
                 rev_row = rev_today.iloc[0] if not rev_today.empty else None
                 sig = _signal_dict_from_row(row)
+                if (min_or_range_windows is None or label in min_or_range_windows) \
+                        and sig["or_range_pct"] < min_or_range:
+                    continue
                 stats = rolling_stats[ticker]
+                if stats["ev_trade"] < min_ev:
+                    continue
                 s = score_ticker(sig, stats)
                 if s == 0.0:
+                    continue
+                if s < min_score:
                     continue
                 scored.append(
                     {
@@ -1137,6 +1148,35 @@ def _parse_args():
         dest="reversal_max_bars",
         help="Max bars_held threshold for reversal eligibility (default: 3 = within 4 bars).",
     )
+    parser.add_argument(
+        "--min-or-range",
+        type=float,
+        default=0.0,
+        dest="min_or_range",
+        help="Skip ticker if OR range %% < threshold. Filters low-range tickers with tight stops. Default: 0.0 (disabled).",
+    )
+    parser.add_argument(
+        "--min-or-range-windows",
+        nargs="+",
+        default=None,
+        dest="min_or_range_windows",
+        metavar="LABEL",
+        help="Only apply --min-or-range to these window labels (e.g. --min-or-range-windows M1 M2). Default: apply to all windows.",
+    )
+    parser.add_argument(
+        "--min-score",
+        type=float,
+        default=0.0,
+        dest="min_score",
+        help="Skip ticker if score < threshold. Filters low-conviction picks. Default: 0.0 (disabled).",
+    )
+    parser.add_argument(
+        "--min-ev",
+        type=float,
+        default=0.0,
+        dest="min_ev",
+        help="Skip ticker if rolling EV %% < threshold. Raises the EV gate above 0. Default: 0.0 (disabled).",
+    )
     return parser.parse_args()
 
 
@@ -1212,6 +1252,14 @@ if __name__ == "__main__":
         f"  Regime filter: {'QQQ MA' + str(args.regime_ma) if args.regime_filter else 'off'}"
     )
     print(f"  Reversal     : {'on (max bars_held=' + str(args.reversal_max_bars) + ')' if args.reversal else 'off'}")
+    if args.min_or_range > 0:
+        wins_str = ",".join(args.min_or_range_windows) if args.min_or_range_windows else "all windows"
+        min_or_range_desc = f"{args.min_or_range:.2f}% (windows: {wins_str})"
+    else:
+        min_or_range_desc = "disabled"
+    print(f"  Min OR range : {min_or_range_desc}")
+    print(f"  Min score    : {f'{args.min_score:.3f}' if args.min_score > 0 else 'disabled'}")
+    print(f"  Min EV       : {f'{args.min_ev:.3f}%' if args.min_ev > 0 else 'disabled'}")
     print(f"  Source       : {args.source}")
 
     trade_rows, all_window_results, trading_days = run_selector_backtest(
@@ -1234,6 +1282,10 @@ if __name__ == "__main__":
         dedup=args.dedup,
         enable_reversal=args.reversal,
         reversal_max_bars_held=args.reversal_max_bars,
+        min_or_range=args.min_or_range,
+        min_or_range_windows=args.min_or_range_windows,
+        min_score=args.min_score,
+        min_ev=args.min_ev,
     )
 
     skip_log = _apply_capital_flow(
