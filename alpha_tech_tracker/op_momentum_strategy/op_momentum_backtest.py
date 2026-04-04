@@ -228,6 +228,7 @@ def compute_signals_with_backtest(
     bearish_regime_dates: set = None,
     enable_reversal: bool = False,
     reversal_max_bars_held: int = 3,
+    or_bar_lookback: int = 0,
 ) -> pd.DataFrame:
     opening_start_t = datetime.strptime(opening_start_time, "%H:%M").time()
 
@@ -253,6 +254,14 @@ def compute_signals_with_backtest(
         or_range = or_high - or_low
         midpoint = (or_high + or_low) / 2
         bottom_30_threshold = or_low + 0.20 * or_range
+
+        effective_or_range = or_range
+        if or_bar_lookback > 0:
+            pre_opening = day_df[day_df.index.time < opening_start_t].tail(or_bar_lookback)
+            if len(pre_opening) > 0:
+                avg_recent_bar_range = (pre_opening["High"] - pre_opening["Low"]).mean()
+                if or_range < avg_recent_bar_range / 4:
+                    effective_or_range = avg_recent_bar_range
 
         last_bar = opening.iloc[-1]
         close = last_bar["Close"]
@@ -282,11 +291,11 @@ def compute_signals_with_backtest(
         # Bear exits if price rises back above the stop level after first crossing below it.
         # If price never crosses the stop level (no breakout confirmation), fall back to 20% from favorable end of OR range.
         # Bull fallback: OR_high - 20% × OR_range (80th percentile). Bear fallback: OR_low + 20% × OR_range (20th percentile).
-        bull_hard_stop = or_high - stop_pct * or_range
-        bear_hard_stop = or_low + stop_pct * or_range
+        bull_hard_stop = or_high - stop_pct * effective_or_range
+        bear_hard_stop = or_low + stop_pct * effective_or_range
         hard_stop_price = bull_hard_stop if signal == "BULLISH" else bear_hard_stop
-        bull_fallback = or_high - 0.20 * or_range
-        bear_fallback = or_low + 0.20 * or_range
+        bull_fallback = or_high - 0.20 * effective_or_range
+        bear_fallback = or_low + 0.20 * effective_or_range
         fallback_price = bull_fallback if signal == "BULLISH" else bear_fallback
 
         # All bars from entry through EOD — no forced close at any window boundary.
@@ -1127,6 +1136,7 @@ def run_backtest(
     armed_ma20_exit: bool = False,
     regime_filter: bool = False,
     regime_ma: int = 5,
+    or_bar_lookback: int = 0,
 ) -> dict:
     if ticker_dfs is None:
         ticker_dfs = fetch_bars(tickers, start_date, end_date, source=source)
@@ -1151,6 +1161,7 @@ def run_backtest(
             max_loss_pct=max_loss_pct,
             armed_ma20_exit=armed_ma20_exit,
             bearish_regime_dates=bearish_regime_dates,
+            or_bar_lookback=or_bar_lookback,
         )
         if not results.empty:
             results = results[results["date"] >= start_date].reset_index(drop=True)

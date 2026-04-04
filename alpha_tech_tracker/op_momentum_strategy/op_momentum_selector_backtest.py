@@ -272,6 +272,7 @@ def run_selector_backtest(
                 bearish_regime_dates=bearish_regime_dates,
                 enable_reversal=enable_reversal,
                 reversal_max_bars_held=reversal_max_bars_held,
+                or_bar_lookback=or_bar_lookback,
             )
         all_window_results[label] = results_for_window
         print(f"  [{label}] {win['opening_start']} / {win['opening_bars']} bars — done")
