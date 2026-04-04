@@ -8,32 +8,46 @@ Context guide for Claude when working in this directory.
 
 Intraday opening-range momentum strategy for options trading. Each morning it:
 1. Scores all tickers in a 16-ticker pool using a rolling 60-day backtest
-2. Picks the top 3 by score
+2. Picks the top 3 by composite score
 3. Fires a BULLISH or BEARISH signal after the opening range closes
-4. Buys a weekly option (CALL or PUT) and manages exits until EOD
+4. Buys a weekly ITM option (CALL or PUT) and manages exits until EOD
 
-The same signal logic drives both **live trading** (`op_momentum_trade_engine.py`) and **backtesting** (`op_momentum_selector_backtest.py`).
+The same signal logic drives both **live trading** (`trade_engine.py`) and **backtesting** (`op_momentum_selector_backtest.py`). Multiple non-overlapping intraday windows (morning + afternoon) are supported with sequential capital recycling.
 
 ---
 
 ## File Map
 
+### Core Strategy
+
 | File | Purpose |
 |---|---|
 | `op_momentum_backtest.py` | Core backtest engine: `run_backtest()`, `fetch_bars()`, `build_bearish_regime_dates()`, `_stitch_cache()` |
-| `op_momentum_selector.py` | Live top-N picker: `select_top_n()`, `score_ticker()`, `compute_ticker_stats()` |
+| `op_momentum_selector.py` | Live top-N picker: `select_top_n()`, `score_ticker()`, `compute_ticker_stats()`, CLI |
 | `op_momentum_selector_backtest.py` | Multi-day selector simulation: `run_selector_backtest()`, `_apply_capital_flow()`, CLI |
-| `op_momentum_trade_engine.py` | Live trading daemon: WebSocket streaming, order placement, exit monitoring |
-| `config.py` | Constants, Alpaca credentials loader, Telegram/SMS notification helpers |
-| `contract_selector.py` | Option contract selection: `OptionContractSelector` (fixed offset), `TimePremiumContractSelector` (time premium target) |
-| `option_price_monitor.py` | Background bid/ask/intrinsic/time-value snapshots + `get_fair_price()` advisor |
-| `position_sizer.py` | Capital allocation per symbol (options and stock) |
-| `order_executor.py` | Alpaca order placement wrapper (options and stock) |
-| `position_monitor.py` | Intraday stop/exit monitoring loop |
-| `signal_engine.py` | Signal evaluation logic |
-| `models.py` | Shared data models (`ActivePosition`, `_stock_bid_ask`, etc.) |
 
-### Docs in this directory
+### Live Trading
+
+| File | Purpose |
+|---|---|
+| `op_momentum_trade_engine.py` | CLI entrypoint + daemon (run/start/stop/status/restart), log rotation |
+| `trade_engine.py` | `OpMomentumTradeEngine` orchestrator + `TickerSelector` (top-N ranking) |
+| `signal_engine.py` | `LiveSignalEngine`: WebSocket bar aggregation, opening-range signal detection |
+| `position_monitor.py` | `PositionMonitor`: intraday stop/exit loop (hard stop, trailing MA, EOD) |
+| `order_executor.py` | Alpaca order placement with limit→ask/bid escalation and market fallback |
+
+### Support Modules
+
+| File | Purpose |
+|---|---|
+| `config.py` | Constants, Alpaca credentials loader, Telegram/SMS `_notify()` helper |
+| `models.py` | Shared dataclasses: `ActivePosition`, `SignalEvent`, `_FiveMinBar`, `WindowConfig`; `_D()`, `_stock_bid_ask()` |
+| `contract_selector.py` | `TimePremiumContractSelector` (live default), `OptionContractSelector` (legacy), `_fetch_contracts_with_expiry_fallback()` |
+| `option_price_monitor.py` | Background bid/ask/intrinsic/time-value snapshots + `get_fair_price()` pricing advisor |
+| `position_sizer.py` | `PositionSizer`: `compute()` for options, `compute_stock()` for stock sizing |
+| `bar_recorder.py` | `BarRecorder`: records live 1-min and 5-min bars to CSV during trading sessions |
+
+### Docs in This Directory
 
 | File | Purpose |
 |---|---|
@@ -43,7 +57,7 @@ The same signal logic drives both **live trading** (`op_momentum_trade_engine.py
 | `OP_MOMENTUM_GUIDE.md` | Strategy methodology, signal rules, exit rules |
 | `README.md` | Live trade engine setup and daily timeline |
 
-### Backtest results
+### Backtest Results
 
 | Path | Contents |
 |---|---|
@@ -70,7 +84,7 @@ The same signal logic drives both **live trading** (`op_momentum_trade_engine.py
 - Close < MA200 (optional, `--bearish-ma200` flag)
 
 **Exit rules**:
-- Hard stop: `--stop-pct` (default 0.15) as fraction of OR range from the breakout side
+- Hard stop: `--stop-pct` (default 0.15) as fraction of OR range from the breakout side; arms after one bar confirms
 - Trailing stop: price crosses MA20 (default) or MA50 (`--trailing-ma`)
 - EOD: force-close at 3:55 PM ET
 
@@ -107,6 +121,47 @@ These are validated across 5+ years and should not be changed without re-running
 Parameters that are **opt-in only** (off by default, situational):
 - `--armed-ma20-exit` — hurts in choppy markets
 - `--max-loss-pct` — cap per-trade losses at a % of entry
+- `--time-premium-pct-cap` — override default 1% time premium cap (see contract selection below)
+
+---
+
+## Contract Selection: TimePremiumContractSelector
+
+The live engine uses `TimePremiumContractSelector` (in `contract_selector.py`), which selects the shallowest ITM strike where the option's time premium falls at or below a DTE-adjusted threshold:
+
+```
+target_premium = (time_premium_pct_cap / reference_dte) * dte * stock_price
+```
+
+Defaults: `time_premium_pct_cap=0.01` (1%), `reference_dte=5`.
+
+| DTE | Target premium (stock=$300, cap=1%) |
+|---|---|
+| 5 (weekly) | $3.00 |
+| 4 (Mon entry) | $2.40 |
+| 25 (monthly fallback) | $15.00 |
+
+- Scans ITM strikes near-ATM → deeper, batch-fetching all quotes in one API call
+- Falls back to deepest ITM when no strike meets the target or quote fetch fails
+- Shared weekly → monthly expiry fallback via `_fetch_contracts_with_expiry_fallback()`
+- Exposed via `--time-premium-pct-cap` CLI flag
+
+The legacy `OptionContractSelector` (fixed offset) is still available for backtesting or custom use.
+
+---
+
+## OptionPriceMonitor
+
+Two-role module at `option_price_monitor.py`:
+
+**Role 1 — Background collector** (`--collect-option-prices`):
+- Snapshots bid/ask/intrinsic/time value every N seconds for all tickers
+- Writes `market_data/options_price_data/YYYY-MM-DD/{ticker}_{call|put}.csv`
+- Uses `TradeEngineStrikeSelector` (wraps `TimePremiumContractSelector`) to pick the same contracts the engine would trade
+
+**Role 2 — Pricing advisor**:
+- `get_fair_price(ticker, symbol, option_type, stock_price)` returns a limit price within bid/ask
+- Algorithm: liquid spread (≤15%) + bid ≥ intrinsic → use mid; stale bid or wide spread → `intrinsic + median_time_value_from_cache`; no cache → 20% of spread; always clamp to [bid, ask]
 
 ---
 
@@ -114,7 +169,7 @@ Parameters that are **opt-in only** (off by default, situational):
 
 The selector backtest supports running multiple non-overlapping intraday windows per day, with capital recycled sequentially between them.
 
-### Current window labels
+### Current Window Labels
 
 | Label | Config | Entry | EV/trade | Win rate |
 |---|---|---|---|---|
@@ -123,20 +178,20 @@ The selector backtest supports running multiple non-overlapping intraday windows
 | A1 | 13:15 / 1 bar | 1:20 PM | +0.194% | 24% |
 | A2 | 15:00 / 1 bar | 3:05 PM | +0.135% | 26% |
 
-### Capital flow model
+### Capital Flow Model
 
 - **First group** (`--morning-split`): simultaneous windows that each deploy `portfolio × split[i]` at the same time
 - **Sequential windows**: each inherits all returned capital (principal + P&L) from the prior window
 - **Non-overlapping additivity**: M1's cap P&L is identical whether M1 runs alone or combined with afternoon windows — adding windows only adds P&L, never dilutes morning performance
 
-### Recommended live configs
+### Recommended Live Configs
 
 | Use case | Config | CLI |
 |---|---|---|
 | Conservative | M1 + A1 + A2 | `--window M1 09:30 3 --window A1 13:15 1 --window A2 15:00 1 --morning-split 100` |
 | Aggressive | M2 + A1 + A2 | `--window M2 09:30 1 --window A1 13:15 1 --window A2 15:00 1 --morning-split 100` |
 
-### Key backtest modes
+### Key Backtest Modes
 
 - `--compound` off (default): resets portfolio to $10k each day — use for **strategy edge comparison**
 - `--compound` on: carries portfolio over — use for **growth projection**
@@ -161,6 +216,55 @@ market_data/cache/{source}_5min_{ticker}_{start}_{end}.json
 ```
 
 `_stitch_cache()` automatically assembles long date ranges from existing per-year cache files, avoiding redundant Alpaca API calls. Run any single-year backtest first to warm the cache; subsequent multi-year runs stitch automatically.
+
+---
+
+## Log Rotation
+
+Live trade engine logs are written to `logs/op_momentum_YYYY-MM-DD.log` (date stamped at engine startup). A `TimedRotatingFileHandler` rotates at midnight and keeps 30 days. In foreground `run` mode, logs also print to the terminal.
+
+```bash
+tail -f logs/op_momentum_$(date +%Y-%m-%d).log
+```
+
+---
+
+## Tests
+
+All tests are in `tests/op_momentum_trade_engine/`. Run with:
+
+```bash
+PYTHONPATH=/Users/victorhuang/work/alpha_tech_tracker \
+  python -m pytest tests/op_momentum_trade_engine/ -v
+```
+
+### Test File Map
+
+| File | What it covers |
+|---|---|
+| `conftest.py` | Shared helpers: `_make_alpaca_client()`, `_make_active_position()`, `_make_signal_engine_with_history()`, `_build_history_df()` |
+| `test_config.py` | `_notify()`, `_send_telegram()`, `_load_config()` — credential loading, exception swallowing |
+| `test_signal_engine.py` | `LiveSignalEngine` — BULLISH/BEARISH conditions, OR computation, regime filter |
+| `test_contract_selector.py` | `TimePremiumContractSelector` (DTE-adjusted threshold, fallback), `OptionContractSelector`, helper functions (`_next_friday`, `_strike_increment`, etc.) |
+| `test_position_sizer.py` | `PositionSizer.compute()` and `compute_stock()` — sizing from buying power, window budget override |
+| `test_position_monitor.py` | `PositionMonitor` — hard stop arming/exit, trailing MA exit, EOD exit, stock positions |
+| `test_bar_recorder.py` | `BarRecorder` — CSV creation, header, ET timestamp, per-ticker file separation |
+| `test_option_price_monitor.py` | `OptionPriceMonitor`, `TradeEngineStrikeSelector`, `_parse_occ_symbol()`, `get_fair_price()` algorithm |
+| `test_trade_engine.py` | `TickerSelector`, `OpMomentumTradeEngine._enter_position()`, signal buffer, rank-weighted sizing, multi-window state |
+| `test_parse_windows.py` | `_parse_windows()` — CLI window args → `WindowConfig` objects, morning-split fractions |
+| `test_full_day_simulation.py` | End-to-end fixture-driven simulation: 5-min bar → signal → entry → monitoring bars → exit → P&L |
+
+### Key Test Patterns
+
+- **Mock Alpaca client**: `_make_alpaca_client()` returns a `MagicMock` with `._option_data_client` attached — set `.get_option_latest_quote.return_value` or `.side_effect` for quote sequences
+- **Stock quote format**: `_stock_bid_ask()` expects nested Alpaca format — mock as:
+  ```python
+  client.get_stock_quote.return_value = {
+      "QuoteResponse": {"QuoteData": [{"All": {"bid": 99.0, "ask": 101.0, ...}}]}
+  }
+  ```
+- **Date patching**: patch `alpha_tech_tracker.op_momentum_strategy.contract_selector._today` for expiry-sensitive tests
+- **Full-day fixtures**: JSON files in `tests/op_momentum_trade_engine/fixtures/` — each fixture has `opening_bars`, `monitoring_bars`, `mock_api`, and `expected` keys
 
 ---
 
@@ -209,56 +313,35 @@ python alpha_tech_tracker/op_momentum_strategy/op_momentum_selector_backtest.py 
   --window M2 09:30 1 --window A1 13:15 1 --window A2 15:00 1 \
   --morning-split 100 --compound
 
+# Live engine — foreground, paper, mock fills
+python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine run \
+  --mock-trade-execution \
+  --regime-filter --regime-ma 8 \
+  --window M1 09:30 3 --morning-split 100
+
+# Live engine — with option price monitor
+python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine run \
+  --mock-trade-execution \
+  --regime-filter --regime-ma 8 \
+  --window M1 09:30 3 --morning-split 100 \
+  --collect-option-prices --option-price-interval 120
+
+# Live engine — daemon
+python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine start \
+  --regime-filter --regime-ma 8 \
+  --window M1 09:30 3 --morning-split 100
+
+python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine status
+python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine stop
+
 # Historical date replay (live selector for a past date)
 python alpha_tech_tracker/op_momentum_strategy/op_momentum_selector.py \
   --date 2026-03-17 --regime-filter --regime-ma 8
 
 # Run tests
 PYTHONPATH=/Users/victorhuang/work/alpha_tech_tracker \
-  python -m pytest tests/unit/test_op_momentum_selector_backtest.py -v
+  python -m pytest tests/op_momentum_trade_engine/ -v
 ```
-
----
-
-## New Features (2026-04-01)
-
-### TimePremiumContractSelector
-
-Replaces the fixed-offset `OptionContractSelector` in the live engine and option price monitor.
-
-- Scans ITM strikes near-to-deep, selecting the first where `time_premium = mid − intrinsic ≤ target_pct × stock_price` (default 1%)
-- Batch-fetches all candidate quotes in one API call
-- Falls back to deepest ITM when no strike meets the target or quote fetch fails
-- Shares weekly → monthly expiry fallback with `OptionContractSelector` via `_fetch_contracts_with_expiry_fallback()`
-- Same `.select(ticker, signal, stock_price) → str` interface — drop-in replacement
-
-### OptionPriceMonitor
-
-Two-role module at `option_price_monitor.py`:
-
-**Role 1 — Background collector** (`--collect-option-prices`):
-- Snapshots bid/ask/intrinsic/time value every N seconds for all tickers
-- Writes `market_data/options_price_data/YYYY-MM-DD/{ticker}_{call|put}.csv`
-- Uses `TradeEngineStrikeSelector` (wraps `TimePremiumContractSelector`) to pick the same contracts the engine would trade
-
-**Role 2 — Pricing advisor**:
-- `get_fair_price(ticker, symbol, option_type, stock_price)` returns a limit price within bid/ask
-- Algorithm: liquid spread (≤15%) + bid ≥ intrinsic → use mid; stale bid or wide spread → `intrinsic + median_time_value_from_cache`; no cache → 20% of spread; always clamp to [bid, ask]
-- Used by `trade_engine._place_entry()` and `position_monitor._close_option_position()`
-
-### Stock trading (`--trade-type stock`)
-
-- `PositionSizer.compute_stock()` — sizes share count from buying power
-- `order_executor.place_stock_order()` — limit/market/mock fill with fill escalation
-- `PositionMonitor` — monitors and closes stock positions using `_stock_bid_ask()` for mid price
-- All stock quote extraction uses `_stock_bid_ask()` from `models.py` to handle the nested Alpaca response format
-
-### Daily log rotation
-
-- Default log file: `logs/op_momentum_YYYY-MM-DD.log` (stamped at engine startup)
-- `TimedRotatingFileHandler` rotates at midnight, keeps 30 days
-- Rotated files stay in `op_momentum_YYYY-MM-DD.log` format
-- Foreground `run` logs to both terminal and file; daemon `start` logs to file only
 
 ---
 
@@ -269,3 +352,5 @@ Two-role module at `option_price_monitor.py`:
 3. **`python` uses Python 2.7** in this project — always use `pyenv activate alpha_tech_tracker` or the full pyenv path before running scripts.
 4. **Long date range cache misses** — if running a multi-year range for the first time, `_stitch_cache()` will assemble from per-year files automatically. If those don't exist, run per-year first to warm the cache.
 5. **`--morning-split` expects percentages** (e.g., `100` not `1.0`), summing ≤ 100.
+6. **Stock quote mock format** — `_stock_bid_ask()` reads the nested Alpaca structure `QuoteResponse.QuoteData[0].All`; flat dicts like `{"bid_price": ...}` will raise `KeyError`.
+7. **TimePremiumContractSelector threshold scales with DTE** — the 1% cap applies to a 5-day weekly; monthly fallback contracts will have a proportionally larger absolute target, which is intentional.
