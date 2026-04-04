@@ -570,3 +570,76 @@ For M1 filtering in live options: the 2026 analysis (reduce_small_trade_noise.md
 - **M1 is the primary return driver every year** — contributes 43–59% of total return depending on year
 - **A1 and A2 add incremental return in all years** — even in weak years (2024), A1 +21.96% and A2 +32.83% still contribute meaningfully on top of M1
 - **A1/A2 win rates are structurally lower (20–25%)** — consistent with the afternoon noise analysis; positive EV comes from asymmetric win size, not frequency
+
+---
+
+## Finding 11 — A1/A2 Window Time & Bar Width Sweep
+
+**Date**: 2026-04-03
+
+**Base config**: `--top 3 --weights 50 30 20 --regime-filter --regime-ma 8 --window M1 09:30 3 --window A1 13:15 1 --window A2 15:00 1 --morning-split 100 --reversal --min-or-range 0.5 --min-or-range-windows M1`
+
+**Base case 2025 return**: +215.70%
+
+### A1 Start Time Sweep (2025, A2 fixed at 15:00/1-bar)
+
+| A1 time | Total Return | A1 trades | A1 WR | A1 avg P&L% | A1 Return |
+|---|---|---|---|---|---|
+| **11:30** | **+218.36%** | 626 | 23% | -0.083% | +60.40% |
+| 12:30 | +215.08% | 640 | 26% | +0.091% | +57.15% |
+| **13:15 (base)** | **+215.70%** | 657 | 25% | +0.032% | +57.68% |
+| 13:00 | +196.92% | 626 | 19% | -0.067% | +38.95% |
+| 14:30 | +188.28% | 618 | 24% | -0.006% | +30.24% |
+| 12:00 | +186.68% | 628 | 19% | -0.088% | +28.75% |
+| 13:30 | +183.23% | 630 | 21% | -0.083% | +25.20% |
+| 14:00 | +178.78% | 607 | 24% | -0.042% | +20.79% |
+
+### A2 Start Time Sweep (2025, A1 fixed at 13:15/1-bar)
+
+| A2 time | Total Return | A2 WR | A2 avg P&L% | A2 Return |
+|---|---|---|---|---|
+| **15:00 (base)** | **+215.70%** | 25% | -0.017% | +35.18% |
+| 15:30 | +215.28% | 29% | +0.070% | +34.75% |
+| 14:30 | +210.85% | 24% | -0.006% | +30.32% |
+| 14:00 | +201.10% | 24% | -0.042% | +20.57% |
+
+### Bar Width Sweep (2025)
+
+| Config | Total Return | Trades | WR | Avg P&L% |
+|---|---|---|---|---|
+| A1 1-bar (base) | +215.70% | 657 | 25% | +0.032% |
+| A1 2-bar | +200.78% | 605 | 23% | +0.009% |
+| A1 3-bar | +187.52% | 595 | 28% | -0.025% |
+| A2 1-bar (base) | +215.70% | 657 | 25% | -0.017% |
+| A2 2-bar | +213.59% | 608 | 29% | +0.068% |
+| A2 3-bar | +207.93% | 605 | 30% | +0.055% |
+
+### Window Combo (2025)
+
+| Config | Return | Notes |
+|---|---|---|
+| M1 + A1 + A2 (base) | +215.70% | |
+| M1 + A1 only | +180.53% | A2 contributes +35pp |
+| M1 + A2 only | +157.93% | A1 contributes +58pp |
+
+### A1 11:30 — 5-Year Validation
+
+Candidate from 2025 sweep: A1 shifted to 11:30 (mid-morning after M1 exits). Validated across all years:
+
+| Year | Base (A1 13:15) | A1 11:30 | Δ |
+|---|---|---|---|
+| 2021 | +129.95% | +133.96% | **+4.01pp** |
+| 2022 | +182.42% | +180.10% | -2.32pp |
+| 2023 | +211.76% | +212.48% | **+0.72pp** |
+| 2024 | +98.69% | +144.30% | **+45.61pp** |
+| 2025 | +215.70% | +218.36% | **+2.66pp** |
+| 2026 YTD | +88.72% | +76.95% | -11.77pp |
+| **Score** | 2 wins | **4 wins** | |
+
+### Conclusions
+
+- **A2 at 15:00 is confirmed optimal** — 15:30 is essentially tied; everything earlier degrades meaningfully. No change needed.
+- **1-bar is best for both A1 and A2** — wider bars improve WR slightly but reduce trade volume and total return every time.
+- **Both A1 and A2 are necessary** — removing A1 costs ~-35pp, removing A2 costs ~-58pp in 2025.
+- **A1 at 11:30 wins 4/6 years** and has a large +45.61pp advantage in 2024, but loses badly in 2026 YTD (-11.77pp). The 11:30 window captures a mid-morning continuation move that works well in trending/volatile years but underperforms in the current 2026 choppy regime where the post-lunch 13:15 signal is stronger.
+- **Decision**: Keep A1 at 13:15 for now given 2026 market conditions. Revisit 11:30 if regime shifts back to sustained trending.
