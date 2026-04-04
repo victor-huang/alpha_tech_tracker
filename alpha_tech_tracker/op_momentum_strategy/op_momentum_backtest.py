@@ -229,14 +229,15 @@ def compute_signals_with_backtest(
     enable_reversal: bool = False,
     reversal_max_bars_held: int = 3,
 ) -> pd.DataFrame:
-    pass
-
     opening_start_t = datetime.strptime(opening_start_time, "%H:%M").time()
 
     df = df.copy()
-    df["MA20"] = df["Close"].rolling(20).mean()
-    df["MA50"] = df["Close"].rolling(50).mean()
-    df["MA200"] = df["Close"].rolling(200).mean()
+    if "MA20" not in df.columns:
+        df["MA20"] = df["Close"].rolling(20).mean()
+    if "MA50" not in df.columns:
+        df["MA50"] = df["Close"].rolling(50).mean()
+    if "MA200" not in df.columns:
+        df["MA200"] = df["Close"].rolling(200).mean()
 
     rows = []
     for date_, day_df in df.groupby(df.index.date):

@@ -113,9 +113,13 @@ def compute_today_signals(
     bearish_ma200: bool,
     stop_pct: float,
     target_date: date = None,
+    opening_start_time: str = OPENING_START_TIME,
+    or_bar_lookback: int = 3,
 ) -> dict:
     if target_date is None:
         target_date = datetime.now(_ET).date()
+
+    opening_start_t = datetime.strptime(opening_start_time, "%H:%M").time()
 
     signals = {}
     for ticker, df in ticker_dfs.items():
@@ -139,6 +143,15 @@ def compute_today_signals(
         or_low = row["or_low"]
         or_range = or_high - or_low
         entry_vs_mid_pct = abs(entry - mid) / mid * 100 if mid != 0 else 0.0
+
+        if or_bar_lookback > 0:
+            day_df_full = df[df.index.date == target_date]
+            pre_opening = day_df_full[day_df_full.index.time < opening_start_t].tail(or_bar_lookback)
+            if len(pre_opening) > 0:
+                avg_recent_bar_range = (pre_opening["High"] - pre_opening["Low"]).mean()
+                if or_range < avg_recent_bar_range / 4:
+                    or_range = avg_recent_bar_range
+
         or_range_pct = or_range / entry * 100 if entry != 0 else 0.0
 
         # Pull MA50 from the bar data at the opening period close on target_date
@@ -202,6 +215,7 @@ def select_top_n(
     target_date: date = None,
     ticker_dfs: dict = None,
     opening_start_time: str = OPENING_START_TIME,
+    or_bar_lookback: int = 3,
 ) -> list:
     if target_date is None:
         target_date = datetime.now(_ET).date()
@@ -237,7 +251,9 @@ def select_top_n(
     }
 
     today_signals = compute_today_signals(
-        ticker_dfs, opening_bars, bearish_ma200, stop_pct, target_date
+        ticker_dfs, opening_bars, bearish_ma200, stop_pct, target_date,
+        opening_start_time=opening_start_time,
+        or_bar_lookback=or_bar_lookback,
     )
 
     scored = []
@@ -333,6 +349,13 @@ def _parse_args():
         default=OPENING_START_TIME,
         help=f"Opening window start time HH:MM ET (default: {OPENING_START_TIME})",
     )
+    parser.add_argument(
+        "--or-bar-lookback",
+        type=int,
+        default=3,
+        dest="or_bar_lookback",
+        help="If OR range < 1/4 of avg High-Low of last N bars before the window, use that avg as the effective OR range for scoring. Default: 3.",
+    )
     return parser.parse_args()
 
 
@@ -391,6 +414,7 @@ if __name__ == "__main__":
         source=args.source,
         target_date=target_date,
         opening_start_time=args.opening_start,
+        or_bar_lookback=args.or_bar_lookback,
     )
 
     picks = result["picks"]

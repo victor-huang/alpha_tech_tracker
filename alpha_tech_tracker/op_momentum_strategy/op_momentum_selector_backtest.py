@@ -1,6 +1,6 @@
 import argparse
 import pandas as pd
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import (
     build_bearish_regime_dates,
@@ -212,6 +212,7 @@ def run_selector_backtest(
     min_or_range_windows: list = None,
     min_score: float = 0.0,
     min_ev: float = 0.0,
+    or_bar_lookback: int = 3,
 ) -> tuple:
     """
     Walk each trading day in [eval_start, eval_end], apply rolling selector
@@ -238,6 +239,16 @@ def run_selector_backtest(
         if regime_filter
         else None
     )
+
+    print(f"Pre-computing MA columns for {len(tickers)} tickers...")
+    for ticker in tickers:
+        df = all_bars.get(ticker, pd.DataFrame())
+        if df.empty:
+            continue
+        df["MA20"] = df["Close"].rolling(20).mean()
+        df["MA50"] = df["Close"].rolling(50).mean()
+        df["MA200"] = df["Close"].rolling(200).mean()
+        all_bars[ticker] = df
 
     print(f"Pre-computing signals for {n_windows} window(s)...")
     all_window_results = {}
@@ -298,6 +309,7 @@ def run_selector_backtest(
                 rolling_stats[ticker] = compute_ticker_stats(window_slice)
 
             scored = []
+            opening_start_t = datetime.strptime(win["opening_start"], "%H:%M").time()
             for ticker in tickers:
                 if dedup and ticker in picked_today:
                     continue
@@ -319,6 +331,17 @@ def run_selector_backtest(
                 if (min_or_range_windows is None or label in min_or_range_windows) \
                         and sig["or_range_pct"] < min_or_range:
                     continue
+                if or_bar_lookback > 0:
+                    ticker_df = all_bars.get(ticker, pd.DataFrame())
+                    if not ticker_df.empty:
+                        day_df = ticker_df[ticker_df.index.date == d]
+                        pre_opening = day_df[day_df.index.time < opening_start_t].tail(or_bar_lookback)
+                        if len(pre_opening) > 0:
+                            avg_recent_bar_range = (pre_opening["High"] - pre_opening["Low"]).mean()
+                            or_range = row["or_high"] - row["or_low"]
+                            if or_range < avg_recent_bar_range / 4:
+                                entry = row["entry_price"]
+                                sig["or_range_pct"] = avg_recent_bar_range / entry * 100 if entry != 0 else 0.0
                 stats = rolling_stats[ticker]
                 if stats["ev_trade"] < min_ev:
                     continue
@@ -1177,6 +1200,13 @@ def _parse_args():
         dest="min_ev",
         help="Skip ticker if rolling EV %% < threshold. Raises the EV gate above 0. Default: 0.0 (disabled).",
     )
+    parser.add_argument(
+        "--or-bar-lookback",
+        type=int,
+        default=3,
+        dest="or_bar_lookback",
+        help="If OR range < 1/4 of avg High-Low of last N bars before the window, use that avg as the effective OR range for scoring. Default: 3.",
+    )
     return parser.parse_args()
 
 
@@ -1260,6 +1290,7 @@ if __name__ == "__main__":
     print(f"  Min OR range : {min_or_range_desc}")
     print(f"  Min score    : {f'{args.min_score:.3f}' if args.min_score > 0 else 'disabled'}")
     print(f"  Min EV       : {f'{args.min_ev:.3f}%' if args.min_ev > 0 else 'disabled'}")
+    print(f"  OR bar lookback: {f'last {args.or_bar_lookback} bars' if args.or_bar_lookback > 0 else 'disabled'}")
     print(f"  Source       : {args.source}")
 
     trade_rows, all_window_results, trading_days = run_selector_backtest(
@@ -1286,6 +1317,7 @@ if __name__ == "__main__":
         min_or_range_windows=args.min_or_range_windows,
         min_score=args.min_score,
         min_ev=args.min_ev,
+        or_bar_lookback=args.or_bar_lookback,
     )
 
     skip_log = _apply_capital_flow(
