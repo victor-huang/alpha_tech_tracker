@@ -51,6 +51,19 @@ def _normalize_windows(windows, opening_start_time, opening_bars):
     ]
 
 
+def _compute_cap_pnl(row: dict, slot_capital: float) -> float:
+    cap_pnl = (slot_capital / row["entry_price"]) * row["pnl"]
+    for ep_key, pnl_key in (
+        ("rev_entry_price", "rev_pnl"),
+        ("br_entry_price", "br_pnl"),
+        ("bru_entry_price", "bru_pnl"),
+    ):
+        ep = row.get(ep_key, 0)
+        if ep:
+            cap_pnl += (slot_capital / ep) * row.get(pnl_key, 0)
+    return cap_pnl
+
+
 def _apply_capital_flow(
     trade_rows: list,
     windows: list,
@@ -138,16 +151,7 @@ def _apply_capital_flow(
                     row["skipped"] = True
                 else:
                     slot_capital = win_capital * weights[row["rank"] - 1]
-                    row["cap_pnl"] = (slot_capital / row["entry_price"]) * row["pnl"]
-                    rev_ep = row.get("rev_entry_price", 0)
-                    if rev_ep:
-                        row["cap_pnl"] += (slot_capital / rev_ep) * row.get("rev_pnl", 0)
-                    br_ep = row.get("br_entry_price", 0)
-                    if br_ep:
-                        row["cap_pnl"] += (slot_capital / br_ep) * row.get("br_pnl", 0)
-                    bru_ep = row.get("bru_entry_price", 0)
-                    if bru_ep:
-                        row["cap_pnl"] += (slot_capital / bru_ep) * row.get("bru_pnl", 0)
+                    row["cap_pnl"] = _compute_cap_pnl(row, slot_capital)
                     row["skipped"] = False
                     first_group_pnl += row["cap_pnl"]
 
@@ -179,16 +183,7 @@ def _apply_capital_flow(
                     row["skipped"] = True
                 else:
                     slot_capital = available * weights[row["rank"] - 1]
-                    row["cap_pnl"] = (slot_capital / row["entry_price"]) * row["pnl"]
-                    rev_ep = row.get("rev_entry_price", 0)
-                    if rev_ep:
-                        row["cap_pnl"] += (slot_capital / rev_ep) * row.get("rev_pnl", 0)
-                    br_ep = row.get("br_entry_price", 0)
-                    if br_ep:
-                        row["cap_pnl"] += (slot_capital / br_ep) * row.get("br_pnl", 0)
-                    bru_ep = row.get("bru_entry_price", 0)
-                    if bru_ep:
-                        row["cap_pnl"] += (slot_capital / bru_ep) * row.get("bru_pnl", 0)
+                    row["cap_pnl"] = _compute_cap_pnl(row, slot_capital)
                     row["skipped"] = False
                     win_pnl += row["cap_pnl"]
             if not skipped:
@@ -325,9 +320,9 @@ def run_selector_backtest(
                 window_slice = results[
                     (results["date"] >= lookback_start)
                     & (results["date"] < d)
-                    & (results["is_reversal"] != True)          # noqa: E712
-                    & (results["is_bearish_reentry"] != True)   # noqa: E712
-                    & (results["is_bullish_reentry"] != True)   # noqa: E712
+                    & (results["is_reversal"] != True)  # noqa: E712
+                    & (results["is_bearish_reentry"] != True)  # noqa: E712
+                    & (results["is_bullish_reentry"] != True)  # noqa: E712
                 ]
                 rolling_stats[ticker] = compute_ticker_stats(window_slice)
 
@@ -345,9 +340,9 @@ def run_selector_backtest(
                 # Use primary (non-reversal) row for scoring; reversal row carries
                 # the extra leg P&L that gets added to the capital sim below.
                 primary_today = today_rows[
-                    (today_rows["is_reversal"] != True)            # noqa: E712
-                    & (today_rows["is_bearish_reentry"] != True)   # noqa: E712
-                    & (today_rows["is_bullish_reentry"] != True)   # noqa: E712
+                    (today_rows["is_reversal"] != True)  # noqa: E712
+                    & (today_rows["is_bearish_reentry"] != True)  # noqa: E712
+                    & (today_rows["is_bullish_reentry"] != True)  # noqa: E712
                 ]
                 if primary_today.empty:
                     continue
@@ -359,20 +354,29 @@ def run_selector_backtest(
                 bru_today = today_rows[today_rows["is_bullish_reentry"] == True]
                 bru_row = bru_today.iloc[0] if not bru_today.empty else None
                 sig = _signal_dict_from_row(row)
-                if (min_or_range_windows is None or label in min_or_range_windows) \
-                        and sig["or_range_pct"] < min_or_range:
+                if (
+                    min_or_range_windows is None or label in min_or_range_windows
+                ) and sig["or_range_pct"] < min_or_range:
                     continue
                 if or_bar_lookback > 0:
                     ticker_df = all_bars.get(ticker, pd.DataFrame())
                     if not ticker_df.empty:
                         day_df = ticker_df[ticker_df.index.date == d]
-                        pre_opening = day_df[day_df.index.time < opening_start_t].tail(or_bar_lookback)
+                        pre_opening = day_df[day_df.index.time < opening_start_t].tail(
+                            or_bar_lookback
+                        )
                         if len(pre_opening) > 0:
-                            avg_recent_bar_range = (pre_opening["High"] - pre_opening["Low"]).mean()
+                            avg_recent_bar_range = (
+                                pre_opening["High"] - pre_opening["Low"]
+                            ).mean()
                             or_range = row["or_high"] - row["or_low"]
                             if or_range < avg_recent_bar_range / 4:
                                 entry = row["entry_price"]
-                                sig["or_range_pct"] = avg_recent_bar_range / entry * 100 if entry != 0 else 0.0
+                                sig["or_range_pct"] = (
+                                    avg_recent_bar_range / entry * 100
+                                    if entry != 0
+                                    else 0.0
+                                )
                 stats = rolling_stats[ticker]
                 if stats["ev_trade"] < min_ev:
                     continue
@@ -396,18 +400,40 @@ def run_selector_backtest(
                         "or_range_pct": round(sig["or_range_pct"], 3),
                         "rolling_ev": round(stats["ev_trade"], 3),
                         "rolling_win_rate": round(stats["win_rate"], 3),
-                        "rev_pnl": float(rev_row["pnl"]) if rev_row is not None else 0.0,
-                        "rev_entry_price": float(rev_row["entry_price"]) if rev_row is not None else 0.0,
-                        "rev_exit_price": float(rev_row["exit_price"]) if rev_row is not None else 0.0,
-                        "rev_exit_reason": str(rev_row["exit_reason"]) if rev_row is not None else "",
+                        "rev_pnl": float(rev_row["pnl"])
+                        if rev_row is not None
+                        else 0.0,
+                        "rev_entry_price": float(rev_row["entry_price"])
+                        if rev_row is not None
+                        else 0.0,
+                        "rev_exit_price": float(rev_row["exit_price"])
+                        if rev_row is not None
+                        else 0.0,
+                        "rev_exit_reason": str(rev_row["exit_reason"])
+                        if rev_row is not None
+                        else "",
                         "br_pnl": float(br_row["pnl"]) if br_row is not None else 0.0,
-                        "br_entry_price": float(br_row["entry_price"]) if br_row is not None else 0.0,
-                        "br_exit_price": float(br_row["exit_price"]) if br_row is not None else 0.0,
-                        "br_exit_reason": str(br_row["exit_reason"]) if br_row is not None else "",
-                        "bru_pnl": float(bru_row["pnl"]) if bru_row is not None else 0.0,
-                        "bru_entry_price": float(bru_row["entry_price"]) if bru_row is not None else 0.0,
-                        "bru_exit_price": float(bru_row["exit_price"]) if bru_row is not None else 0.0,
-                        "bru_exit_reason": str(bru_row["exit_reason"]) if bru_row is not None else "",
+                        "br_entry_price": float(br_row["entry_price"])
+                        if br_row is not None
+                        else 0.0,
+                        "br_exit_price": float(br_row["exit_price"])
+                        if br_row is not None
+                        else 0.0,
+                        "br_exit_reason": str(br_row["exit_reason"])
+                        if br_row is not None
+                        else "",
+                        "bru_pnl": float(bru_row["pnl"])
+                        if bru_row is not None
+                        else 0.0,
+                        "bru_entry_price": float(bru_row["entry_price"])
+                        if bru_row is not None
+                        else 0.0,
+                        "bru_exit_price": float(bru_row["exit_price"])
+                        if bru_row is not None
+                        else 0.0,
+                        "bru_exit_reason": str(bru_row["exit_reason"])
+                        if bru_row is not None
+                        else "",
                     }
                 )
 
@@ -430,7 +456,9 @@ def run_selector_backtest(
                     if pick["bru_entry_price"] != 0
                     else 0.0
                 )
-                combined_pnl_pct = primary_pnl_pct + rev_pnl_pct + br_pnl_pct + bru_pnl_pct
+                combined_pnl_pct = (
+                    primary_pnl_pct + rev_pnl_pct + br_pnl_pct + bru_pnl_pct
+                )
                 trade_rows.append(
                     {
                         "date": d,
@@ -442,7 +470,22 @@ def run_selector_backtest(
                         "cap_pnl": 0.0,
                         "window_capital": 0.0,
                         "skipped": False,
-                        **{k: v for k, v in pick.items() if k not in ("success", "br_pnl", "br_entry_price", "br_exit_price", "br_exit_reason", "bru_pnl", "bru_entry_price", "bru_exit_price", "bru_exit_reason")},
+                        **{
+                            k: v
+                            for k, v in pick.items()
+                            if k
+                            not in (
+                                "success",
+                                "br_pnl",
+                                "br_entry_price",
+                                "br_exit_price",
+                                "br_exit_reason",
+                                "bru_pnl",
+                                "bru_entry_price",
+                                "bru_exit_price",
+                                "bru_exit_reason",
+                            )
+                        },
                         "br_pnl": pick["br_pnl"],
                         "br_entry_price": pick["br_entry_price"],
                         "br_exit_price": pick["br_exit_price"],
@@ -536,6 +579,40 @@ def _print_skip_log(skip_log: list, windows: list):
     print(sep)
 
 
+_REENTRY_TYPES = [
+    ("[REV]", "rev_entry_price", "rev_pnl", "rev_exit_price", "rev_exit_reason"),
+    ("[BRE]", "br_entry_price", "br_pnl", "br_exit_price", "br_exit_reason"),
+    ("[BRU]", "bru_entry_price", "bru_pnl", "bru_exit_price", "bru_exit_reason"),
+]
+
+
+def _print_reentry_subrow(
+    row: dict,
+    label: str,
+    ep_key: str,
+    pnl_key: str,
+    exit_price_key: str,
+    exit_reason_key: str,
+    multi_window: bool,
+):
+    ep = row.get(ep_key, 0)
+    if not ep:
+        return None
+    p = row[pnl_key]
+    pct = p / ep * 100
+    pnl_str = f"+${abs(p):.2f}" if p >= 0 else f"-${abs(p):.2f}"
+    pct_str = f"+{abs(pct):.2f}%" if pct >= 0 else f"{pct:.2f}%"
+    result = "WIN" if p > 0 else "LOSS"
+    blank_win = f"{'':5} " if multi_window else ""
+    print(
+        f"  {'':12} {blank_win}{'':5} {'':6} "
+        f"{label:<9} {'':>5}  "
+        f"{ep:>7.2f} {row[exit_price_key]:>7.2f} "
+        f"{pnl_str:>7} {pct_str:>7}  {result:<6}  {row[exit_reason_key]}"
+    )
+    return p, pct
+
+
 def _print_daily_table(
     trade_rows: list,
     n: int,
@@ -618,71 +695,31 @@ def _print_daily_table(
         else:
             day_losses += 1
 
-        rev_ep = row.get("rev_entry_price", 0)
-        if rev_ep:
-            rev_p = row["rev_pnl"]
-            rev_pct = rev_p / rev_ep * 100
-            rev_pnl_str = f"+${abs(rev_p):.2f}" if rev_p >= 0 else f"-${abs(rev_p):.2f}"
-            rev_pct_str = f"+{abs(rev_pct):.2f}%" if rev_pct >= 0 else f"{rev_pct:.2f}%"
-            rev_result = "WIN" if rev_p > 0 else "LOSS"
-            blank_win = f"{'':5} " if multi_window else ""
-            print(
-                f"  {'':12} {blank_win}{'':5} {'':6} "
-                f"{'[REV]':<9} {'':>5}  "
-                f"{rev_ep:>7.2f} {row['rev_exit_price']:>7.2f} "
-                f"{rev_pnl_str:>7} {rev_pct_str:>7}  {rev_result:<6}  {row['rev_exit_reason']}"
+        for (
+            _label,
+            _ep_key,
+            _pnl_key,
+            _exit_price_key,
+            _exit_reason_key,
+        ) in _REENTRY_TYPES:
+            sub = _print_reentry_subrow(
+                row,
+                _label,
+                _ep_key,
+                _pnl_key,
+                _exit_price_key,
+                _exit_reason_key,
+                multi_window,
             )
-            day_pnl += rev_p
-            day_pnl_pcts.append(rev_pct)
-            running_total += rev_p
-            if rev_p > 0:
-                day_wins += 1
-            else:
-                day_losses += 1
-
-        br_ep = row.get("br_entry_price", 0)
-        if br_ep:
-            br_p = row["br_pnl"]
-            br_pct = br_p / br_ep * 100
-            br_pnl_str = f"+${abs(br_p):.2f}" if br_p >= 0 else f"-${abs(br_p):.2f}"
-            br_pct_str = f"+{abs(br_pct):.2f}%" if br_pct >= 0 else f"{br_pct:.2f}%"
-            br_result = "WIN" if br_p > 0 else "LOSS"
-            blank_win = f"{'':5} " if multi_window else ""
-            print(
-                f"  {'':12} {blank_win}{'':5} {'':6} "
-                f"{'[BRE]':<9} {'':>5}  "
-                f"{br_ep:>7.2f} {row['br_exit_price']:>7.2f} "
-                f"{br_pnl_str:>7} {br_pct_str:>7}  {br_result:<6}  {row['br_exit_reason']}"
-            )
-            day_pnl += br_p
-            day_pnl_pcts.append(br_pct)
-            running_total += br_p
-            if br_p > 0:
-                day_wins += 1
-            else:
-                day_losses += 1
-
-        bru_ep = row.get("bru_entry_price", 0)
-        if bru_ep:
-            bru_p = row["bru_pnl"]
-            bru_pct = bru_p / bru_ep * 100
-            bru_pnl_str = f"+${abs(bru_p):.2f}" if bru_p >= 0 else f"-${abs(bru_p):.2f}"
-            bru_pct_str = f"+{abs(bru_pct):.2f}%" if bru_pct >= 0 else f"{bru_pct:.2f}%"
-            bru_result = "WIN" if bru_p > 0 else "LOSS"
-            blank_win = f"{'':5} " if multi_window else ""
-            print(
-                f"  {'':12} {blank_win}{'':5} {'':6} "
-                f"{'[BRU]':<9} {'':>5}  "
-                f"{bru_ep:>7.2f} {row['bru_exit_price']:>7.2f} "
-                f"{bru_pnl_str:>7} {bru_pct_str:>7}  {bru_result:<6}  {row['bru_exit_reason']}"
-            )
-            day_pnl += bru_p
-            day_pnl_pcts.append(bru_pct)
-            running_total += bru_p
-            if bru_p > 0:
-                day_wins += 1
-            else:
-                day_losses += 1
+            if sub is not None:
+                p, pct = sub
+                day_pnl += p
+                day_pnl_pcts.append(pct)
+                running_total += p
+                if p > 0:
+                    day_wins += 1
+                else:
+                    day_losses += 1
 
     if current_date is not None:
         portfolio += day_cap_pnl
@@ -1437,18 +1474,34 @@ if __name__ == "__main__":
     print(
         f"  Regime filter: {'QQQ MA' + str(args.regime_ma) if args.regime_filter else 'off'}"
     )
-    print(f"  Reversal     : {'on (max bars_held=' + str(args.reversal_max_bars) + ')' if args.reversal else 'off'}")
-    print(f"  Bearish RE   : {'on (max bars_held=' + str(args.bearish_reentry_max_bars) + ')' if args.bearish_reentry else 'off'}")
-    print(f"  Bullish RE   : {'on (max bars_held=' + str(args.bullish_reentry_max_bars) + ')' if args.bullish_reentry else 'off'}")
+    print(
+        f"  Reversal     : {'on (max bars_held=' + str(args.reversal_max_bars) + ')' if args.reversal else 'off'}"
+    )
+    print(
+        f"  Bearish RE   : {'on (max bars_held=' + str(args.bearish_reentry_max_bars) + ')' if args.bearish_reentry else 'off'}"
+    )
+    print(
+        f"  Bullish RE   : {'on (max bars_held=' + str(args.bullish_reentry_max_bars) + ')' if args.bullish_reentry else 'off'}"
+    )
     if args.min_or_range > 0:
-        wins_str = ",".join(args.min_or_range_windows) if args.min_or_range_windows else "all windows"
+        wins_str = (
+            ",".join(args.min_or_range_windows)
+            if args.min_or_range_windows
+            else "all windows"
+        )
         min_or_range_desc = f"{args.min_or_range:.2f}% (windows: {wins_str})"
     else:
         min_or_range_desc = "disabled"
     print(f"  Min OR range : {min_or_range_desc}")
-    print(f"  Min score    : {f'{args.min_score:.3f}' if args.min_score > 0 else 'disabled'}")
-    print(f"  Min EV       : {f'{args.min_ev:.3f}%' if args.min_ev > 0 else 'disabled'}")
-    print(f"  OR bar lookback: {f'last {args.or_bar_lookback} bars' if args.or_bar_lookback > 0 else 'disabled'}")
+    print(
+        f"  Min score    : {f'{args.min_score:.3f}' if args.min_score > 0 else 'disabled'}"
+    )
+    print(
+        f"  Min EV       : {f'{args.min_ev:.3f}%' if args.min_ev > 0 else 'disabled'}"
+    )
+    print(
+        f"  OR bar lookback: {f'last {args.or_bar_lookback} bars' if args.or_bar_lookback > 0 else 'disabled'}"
+    )
     print(f"  Source       : {args.source}")
 
     trade_rows, all_window_results, trading_days = run_selector_backtest(
