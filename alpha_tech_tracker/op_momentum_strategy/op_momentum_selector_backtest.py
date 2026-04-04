@@ -302,6 +302,48 @@ def run_selector_backtest(
         }
     )
 
+    # Pre-group bars by date: replaces O(total_bars) index.date scan with O(1) dict lookup
+    # in the or_bar_lookback scoring path, called 16 tickers × N windows × N days.
+    bars_by_date = {
+        ticker: {d_: g for d_, g in df.groupby(df.index.date)}
+        for ticker, df in all_bars.items()
+        if not df.empty
+    }
+
+    # Pre-filter primary-only signal rows per window per ticker: eliminates re-applying
+    # the three is_reversal/is_bearish_reentry/is_bullish_reentry conditions every day.
+    primary_window_results = {
+        label: {
+            ticker: (
+                df[
+                    (df["is_reversal"] != True)           # noqa: E712
+                    & (df["is_bearish_reentry"] != True)  # noqa: E712
+                    & (df["is_bullish_reentry"] != True)  # noqa: E712
+                ]
+                if not df.empty
+                else df
+            )
+            for ticker, df in results_for_window.items()
+        }
+        for label, results_for_window in all_window_results.items()
+    }
+
+    # Pre-group all signal rows by (window, ticker, date): replaces linear date scan
+    # in today_rows lookup with O(1) dict lookup.
+    results_by_date = {
+        label: {
+            ticker: ({d_: g for d_, g in df.groupby("date")} if not df.empty else {})
+            for ticker, df in results_for_window.items()
+        }
+        for label, results_for_window in all_window_results.items()
+    }
+
+    # Pre-parse window opening times (avoids strptime on every trading day).
+    window_opening_times = {
+        win["label"]: datetime.strptime(win["opening_start"], "%H:%M").time()
+        for win in windows
+    }
+
     trade_rows = []
     for d in trading_days:
         lookback_start = d - timedelta(days=lookback_days)
@@ -313,29 +355,23 @@ def run_selector_backtest(
 
             rolling_stats = {}
             for ticker in tickers:
-                results = full_results.get(ticker, pd.DataFrame())
-                if results.empty:
+                primary_results = primary_window_results[label].get(ticker, pd.DataFrame())
+                if primary_results.empty:
                     rolling_stats[ticker] = compute_ticker_stats(pd.DataFrame())
                     continue
-                window_slice = results[
-                    (results["date"] >= lookback_start)
-                    & (results["date"] < d)
-                    & (results["is_reversal"] != True)  # noqa: E712
-                    & (results["is_bearish_reentry"] != True)  # noqa: E712
-                    & (results["is_bullish_reentry"] != True)  # noqa: E712
+                window_slice = primary_results[
+                    (primary_results["date"] >= lookback_start)
+                    & (primary_results["date"] < d)
                 ]
                 rolling_stats[ticker] = compute_ticker_stats(window_slice)
 
             scored = []
-            opening_start_t = datetime.strptime(win["opening_start"], "%H:%M").time()
+            opening_start_t = window_opening_times[label]
             for ticker in tickers:
                 if dedup and ticker in picked_today:
                     continue
-                results = full_results.get(ticker, pd.DataFrame())
-                if results.empty:
-                    continue
-                today_rows = results[results["date"] == d]
-                if today_rows.empty:
+                today_rows = results_by_date[label].get(ticker, {}).get(d)
+                if today_rows is None or today_rows.empty:
                     continue
                 # Use primary (non-reversal) row for scoring; reversal row carries
                 # the extra leg P&L that gets added to the capital sim below.
@@ -359,9 +395,8 @@ def run_selector_backtest(
                 ) and sig["or_range_pct"] < min_or_range:
                     continue
                 if or_bar_lookback > 0:
-                    ticker_df = all_bars.get(ticker, pd.DataFrame())
-                    if not ticker_df.empty:
-                        day_df = ticker_df[ticker_df.index.date == d]
+                    day_df = bars_by_date.get(ticker, {}).get(d)
+                    if day_df is not None:
                         pre_opening = day_df[day_df.index.time < opening_start_t].tail(
                             or_bar_lookback
                         )
