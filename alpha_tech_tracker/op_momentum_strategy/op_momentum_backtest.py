@@ -229,6 +229,8 @@ def compute_signals_with_backtest(
     enable_reversal: bool = False,
     reversal_max_bars_held: int = 3,
     or_bar_lookback: int = 0,
+    enable_bearish_reentry: bool = False,
+    bearish_reentry_max_bars: int = 3,
 ) -> pd.DataFrame:
     opening_start_t = datetime.strptime(opening_start_time, "%H:%M").time()
 
@@ -454,6 +456,7 @@ def compute_signals_with_backtest(
                 "total_post_bars": len(post_open),
                 "success": pnl > 0,
                 "is_reversal": False,
+                "is_bearish_reentry": False,
             }
         )
 
@@ -463,6 +466,8 @@ def compute_signals_with_backtest(
         # Trailing MA stop follows price upward.
         # Reversal P&L is added to the primary trade row so selector_backtest picks it
         # up automatically; reversal details stored in extra fields for diagnostics.
+        rev_entry_price = None  # set below if reversal fires; checked by bearish re-entry guard
+
         reversal_eligible = enable_reversal and (
             signal == "BEARISH"
             and bars_held <= reversal_max_bars_held
@@ -472,7 +477,6 @@ def compute_signals_with_backtest(
         if reversal_eligible:
             reversal_hard_stop = midpoint
             reversal_scan = post_open.iloc[exit_bar_idx + 1:]
-            rev_entry_price = None
             rev_entry_idx = None
 
             for scan_idx, (_, scan_bar) in enumerate(reversal_scan.iterrows()):
@@ -558,6 +562,96 @@ def compute_signals_with_backtest(
                         "total_post_bars": len(post_open),
                         "success": rev_pnl > 0,
                         "is_reversal": True,
+                        "is_bearish_reentry": False,
+                    }
+                )
+
+        # Bearish re-entry: BEARISH primary stopped out within N bars AND reversal did
+        # NOT fire AND price later closes below OR_low — re-enter short.
+        # Hard stop: midpoint (recovering above midpoint = bearish thesis dead).
+        # Trailing MA: arm when price drops effective_or_range below re-entry;
+        # exit when MA20 < midpoint AND close > MA20.
+        bearish_reentry_eligible = (
+            enable_bearish_reentry
+            and signal == "BEARISH"
+            and bars_held <= bearish_reentry_max_bars
+            and exit_reason in ("hard_stop", "fallback_20pct")
+            and exit_bar_idx >= 0
+            and rev_entry_price is None
+        )
+        if bearish_reentry_eligible:
+            br_hard_stop = midpoint
+            br_scan = post_open.iloc[exit_bar_idx + 1:]
+            br_entry_price = None
+            br_entry_idx = None
+
+            for scan_idx, (_, scan_bar) in enumerate(br_scan.iterrows()):
+                if scan_bar["Close"] < or_low:
+                    br_entry_price = scan_bar["Close"]
+                    br_entry_idx = scan_idx
+                    break
+
+            if br_entry_price is not None:
+                br_bars_held = 0
+                br_max_favorable_move = 0.0
+                br_exit_price = br_entry_price
+                br_exit_reason = "end_of_day"
+                br_trailing_armed = False
+                remaining_br_bars = br_scan.iloc[br_entry_idx + 1:]
+
+                for _, br_bar in remaining_br_bars.iterrows():
+                    br_bar_ma20 = br_bar["MA20"]
+                    br_bar_close = br_bar["Close"]
+                    br_move = br_entry_price - br_bar_close
+
+                    if br_bar_close <= br_entry_price - effective_or_range:
+                        br_trailing_armed = True
+
+                    br_hard_stop_hit = br_bar_close >= br_hard_stop
+                    br_ma20_trailing = (
+                        br_trailing_armed
+                        and not br_hard_stop_hit
+                        and trailing_ma in ("ma20", "both")
+                        and not pd.isna(br_bar_ma20)
+                        and br_bar_ma20 < midpoint
+                        and br_bar_close > br_bar_ma20
+                    )
+                    br_exit_price_candidate = br_hard_stop if br_hard_stop_hit else br_bar_close
+                    br_exit_reason_candidate = "hard_stop" if br_hard_stop_hit else "trailing_stop_ma20"
+                    br_stop_hit = br_hard_stop_hit or br_ma20_trailing
+
+                    if br_stop_hit:
+                        br_exit_price = br_exit_price_candidate
+                        br_exit_reason = br_exit_reason_candidate
+                        break
+                    else:
+                        br_bars_held += 1
+                        br_max_favorable_move = max(br_max_favorable_move, br_move)
+                        br_exit_price = br_bar_close
+                        br_exit_reason = "end_of_day"
+
+                br_pnl = br_entry_price - br_exit_price
+                rows.append(
+                    {
+                        "date": date_,
+                        "signal": "BEARISH",
+                        "or_high": round(or_high, 2),
+                        "or_low": round(or_low, 2),
+                        "midpoint": round(midpoint, 2),
+                        "entry_price": round(br_entry_price, 2),
+                        "exit_price": round(br_exit_price, 2),
+                        "pnl": round(br_pnl, 2),
+                        "exit_reason": br_exit_reason,
+                        "ma20": round(ma20, 2),
+                        "ma200": round(ma200, 2),
+                        "bars_held": br_bars_held,
+                        "mins_held": br_bars_held * 5,
+                        "max_favorable_move": round(br_max_favorable_move, 2),
+                        "held_to_close": br_exit_reason == "end_of_day",
+                        "total_post_bars": len(post_open),
+                        "success": br_pnl > 0,
+                        "is_reversal": False,
+                        "is_bearish_reentry": True,
                     }
                 )
 
@@ -1137,6 +1231,8 @@ def run_backtest(
     regime_filter: bool = False,
     regime_ma: int = 5,
     or_bar_lookback: int = 0,
+    enable_bearish_reentry: bool = False,
+    bearish_reentry_max_bars: int = 3,
 ) -> dict:
     if ticker_dfs is None:
         ticker_dfs = fetch_bars(tickers, start_date, end_date, source=source)
@@ -1162,6 +1258,8 @@ def run_backtest(
             armed_ma20_exit=armed_ma20_exit,
             bearish_regime_dates=bearish_regime_dates,
             or_bar_lookback=or_bar_lookback,
+            enable_bearish_reentry=enable_bearish_reentry,
+            bearish_reentry_max_bars=bearish_reentry_max_bars,
         )
         if not results.empty:
             results = results[results["date"] >= start_date].reset_index(drop=True)
