@@ -231,6 +231,8 @@ def compute_signals_with_backtest(
     or_bar_lookback: int = 0,
     enable_bearish_reentry: bool = False,
     bearish_reentry_max_bars: int = 3,
+    enable_bullish_reentry: bool = False,
+    bullish_reentry_max_bars: int = 5,
 ) -> pd.DataFrame:
     opening_start_t = datetime.strptime(opening_start_time, "%H:%M").time()
 
@@ -457,6 +459,7 @@ def compute_signals_with_backtest(
                 "success": pnl > 0,
                 "is_reversal": False,
                 "is_bearish_reentry": False,
+                "is_bullish_reentry": False,
             }
         )
 
@@ -563,6 +566,7 @@ def compute_signals_with_backtest(
                         "success": rev_pnl > 0,
                         "is_reversal": True,
                         "is_bearish_reentry": False,
+                        "is_bullish_reentry": False,
                     }
                 )
 
@@ -652,6 +656,96 @@ def compute_signals_with_backtest(
                         "success": br_pnl > 0,
                         "is_reversal": False,
                         "is_bearish_reentry": True,
+                        "is_bullish_reentry": False,
+                    }
+                )
+
+        # Bullish re-entry: BULLISH primary stopped out within N bars AND price later
+        # closes above OR_high — re-enter BULLISH.
+        # Hard stop: midpoint (falling back to midpoint = bullish thesis dead).
+        # Trailing arm: price rises effective_or_range above entry;
+        # exit when MA20 > midpoint AND close < MA20.
+        bullish_reentry_eligible = (
+            enable_bullish_reentry
+            and signal == "BULLISH"
+            and bars_held <= bullish_reentry_max_bars
+            and exit_reason in ("hard_stop", "fallback_20pct")
+            and exit_bar_idx >= 0
+        )
+        if bullish_reentry_eligible:
+            bru_hard_stop = midpoint
+            bru_scan = post_open.iloc[exit_bar_idx + 1:]
+            bru_entry_price = None
+            bru_entry_idx = None
+
+            for scan_idx, (_, scan_bar) in enumerate(bru_scan.iterrows()):
+                if scan_bar["Close"] > or_high:
+                    bru_entry_price = scan_bar["Close"]
+                    bru_entry_idx = scan_idx
+                    break
+
+            if bru_entry_price is not None:
+                bru_bars_held = 0
+                bru_max_favorable_move = 0.0
+                bru_exit_price = bru_entry_price
+                bru_exit_reason = "end_of_day"
+                bru_trailing_armed = False
+                remaining_bru_bars = bru_scan.iloc[bru_entry_idx + 1:]
+
+                for _, bru_bar in remaining_bru_bars.iterrows():
+                    bru_bar_ma20 = bru_bar["MA20"]
+                    bru_bar_close = bru_bar["Close"]
+                    bru_move = bru_bar_close - bru_entry_price
+
+                    if bru_bar_close >= bru_entry_price + effective_or_range:
+                        bru_trailing_armed = True
+
+                    bru_hard_stop_hit = bru_bar_close <= bru_hard_stop
+                    bru_ma20_trailing = (
+                        bru_trailing_armed
+                        and not bru_hard_stop_hit
+                        and trailing_ma in ("ma20", "both")
+                        and not pd.isna(bru_bar_ma20)
+                        and bru_bar_ma20 > bru_hard_stop
+                        and bru_bar_close < bru_bar_ma20
+                    )
+                    bru_exit_price_candidate = bru_hard_stop if bru_hard_stop_hit else bru_bar_close
+                    bru_exit_reason_candidate = "hard_stop" if bru_hard_stop_hit else "trailing_stop_ma20"
+                    bru_stop_hit = bru_hard_stop_hit or bru_ma20_trailing
+
+                    if bru_stop_hit:
+                        bru_exit_price = bru_exit_price_candidate
+                        bru_exit_reason = bru_exit_reason_candidate
+                        break
+                    else:
+                        bru_bars_held += 1
+                        bru_max_favorable_move = max(bru_max_favorable_move, bru_move)
+                        bru_exit_price = bru_bar_close
+                        bru_exit_reason = "end_of_day"
+
+                bru_pnl = bru_exit_price - bru_entry_price
+                rows.append(
+                    {
+                        "date": date_,
+                        "signal": "BULLISH",
+                        "or_high": round(or_high, 2),
+                        "or_low": round(or_low, 2),
+                        "midpoint": round(midpoint, 2),
+                        "entry_price": round(bru_entry_price, 2),
+                        "exit_price": round(bru_exit_price, 2),
+                        "pnl": round(bru_pnl, 2),
+                        "exit_reason": bru_exit_reason,
+                        "ma20": round(ma20, 2),
+                        "ma200": round(ma200, 2),
+                        "bars_held": bru_bars_held,
+                        "mins_held": bru_bars_held * 5,
+                        "max_favorable_move": round(bru_max_favorable_move, 2),
+                        "held_to_close": bru_exit_reason == "end_of_day",
+                        "total_post_bars": len(post_open),
+                        "success": bru_pnl > 0,
+                        "is_reversal": False,
+                        "is_bearish_reentry": False,
+                        "is_bullish_reentry": True,
                     }
                 )
 
@@ -1233,6 +1327,8 @@ def run_backtest(
     or_bar_lookback: int = 0,
     enable_bearish_reentry: bool = False,
     bearish_reentry_max_bars: int = 3,
+    enable_bullish_reentry: bool = False,
+    bullish_reentry_max_bars: int = 5,
 ) -> dict:
     if ticker_dfs is None:
         ticker_dfs = fetch_bars(tickers, start_date, end_date, source=source)
@@ -1260,6 +1356,8 @@ def run_backtest(
             or_bar_lookback=or_bar_lookback,
             enable_bearish_reentry=enable_bearish_reentry,
             bearish_reentry_max_bars=bearish_reentry_max_bars,
+            enable_bullish_reentry=enable_bullish_reentry,
+            bullish_reentry_max_bars=bullish_reentry_max_bars,
         )
         if not results.empty:
             results = results[results["date"] >= start_date].reset_index(drop=True)
