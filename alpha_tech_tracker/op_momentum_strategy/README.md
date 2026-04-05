@@ -168,7 +168,82 @@ optional arguments:
   --log-file                Override log file path (default: logs/op_momentum_YYYY-MM-DD.log)
   --log-level               Log verbosity: DEBUG, INFO, WARNING, ERROR (default: INFO)
   --pid-file                PID file for daemon mode
+
+Re-entry & Reversal (all off by default):
+  --reversal                If a BEARISH primary stops out within N bars and price later
+                            crosses above OR high, enter BULLISH with midpoint as hard stop
+  --reversal-max-bars INT   Max bars_held for BEARISH primary to qualify (default: 3)
+  --bearish-reentry         If a BEARISH primary stops out within N bars and price later
+                            crosses below OR low, re-enter BEARISH with midpoint as hard stop
+                            (suppressed when --reversal is enabled and both would fire)
+  --bearish-reentry-max-bars INT  Max bars_held for BEARISH primary to qualify (default: 3)
+  --bullish-reentry         If a BULLISH primary stops out within N bars and price later
+                            crosses above OR high, re-enter BULLISH with midpoint as hard stop
+  --bullish-reentry-max-bars INT  Max bars_held for BULLISH primary to qualify (default: 5)
 ```
+
+---
+
+## Re-entry & Reversal Trades
+
+Three optional second-leg patterns can be enabled. Each watches for a specific price
+level after the primary position closes, then opens a new position in the same window.
+
+| Pattern | Primary | Trigger | New direction | Hard stop | Trailing arm gate |
+|---|---|---|---|---|---|
+| Reversal | BEARISH | price crosses above OR high | BULLISH | midpoint (armed immediately) | entry + OR range |
+| Bearish re-entry | BEARISH | price crosses below OR low | BEARISH | midpoint | entry − OR range |
+| Bullish re-entry | BULLISH | price crosses above OR high | BULLISH | midpoint (armed immediately) | entry + OR range |
+
+**Eligibility**: the primary must have stopped out via hard stop or fallback (not trailing MA),
+and the number of bars held must not exceed the configured max (`--reversal-max-bars`, etc.).
+
+**Priority**: reversal and bearish re-entry cannot both fire from the same BEARISH primary.
+When `--reversal` is enabled, it takes priority and the bearish re-entry watcher is suppressed.
+
+**Trailing arm**: re-entry positions delay the MA trailing stop until price moves favorably
+by one full OR range from the entry price, preventing premature exits on shallow fills.
+
+**EOD**: all pending watchers are cleared when `close_all()` runs at 3:55 PM — no re-entry
+trades can fire after EOD wind-down begins.
+
+### Example commands
+
+Reversal only (BEARISH primary flips BULLISH on OR-high cross within 3 bars):
+
+```bash
+python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine run \
+  --mock-trade-execution \
+  --regime-filter --regime-ma 8 \
+  --window M1 09:30 3 --morning-split 100 \
+  --reversal --reversal-max-bars 3
+```
+
+Reversal + bullish re-entry (cover both BEARISH and BULLISH primary stopouts):
+
+```bash
+python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine run \
+  --mock-trade-execution \
+  --regime-filter --regime-ma 8 \
+  --window M1 09:30 3 --morning-split 100 \
+  --reversal --reversal-max-bars 3 \
+  --bullish-reentry --bullish-reentry-max-bars 5
+```
+
+All three patterns (adds bearish re-entry for cases where reversal is not eligible):
+
+```bash
+python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine run \
+  --mock-trade-execution \
+  --regime-filter --regime-ma 8 \
+  --window M1 09:30 3 --morning-split 100 \
+  --reversal --reversal-max-bars 3 \
+  --bearish-reentry --bearish-reentry-max-bars 3 \
+  --bullish-reentry --bullish-reentry-max-bars 5
+```
+
+> Note: these patterns have not yet been backtest-validated for the current ticker pool.
+> Run `op_momentum_selector_backtest.py` with the equivalent flags before enabling in live trading.
 
 ---
 

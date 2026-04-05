@@ -284,6 +284,50 @@ def parse_args():
         default=300,
         help="Snapshot interval in seconds for option price collection (default: 300)",
     )
+    parser.add_argument(
+        "--reversal",
+        action="store_true",
+        default=False,
+        help="Enable reversal trade: if BEARISH primary stops out within N bars and "
+        "price later crosses above OR high, enter BULLISH with midpoint as hard stop. Default: off.",
+    )
+    parser.add_argument(
+        "--reversal-max-bars",
+        type=int,
+        default=3,
+        dest="reversal_max_bars",
+        help="Max bars_held for primary BEARISH trade to be eligible for reversal (default: 3).",
+    )
+    parser.add_argument(
+        "--bearish-reentry",
+        action="store_true",
+        default=False,
+        dest="bearish_reentry",
+        help="Enable bearish re-entry: if BEARISH primary stops out within N bars and "
+        "price later closes below OR low, re-enter short with midpoint as hard stop. Default: off.",
+    )
+    parser.add_argument(
+        "--bearish-reentry-max-bars",
+        type=int,
+        default=3,
+        dest="bearish_reentry_max_bars",
+        help="Max bars_held for primary BEARISH trade to be eligible for bearish re-entry (default: 3).",
+    )
+    parser.add_argument(
+        "--bullish-reentry",
+        action="store_true",
+        default=False,
+        dest="bullish_reentry",
+        help="Enable bullish re-entry: if BULLISH primary stops out within N bars and "
+        "price later closes above OR high, re-enter long with midpoint as hard stop. Default: off.",
+    )
+    parser.add_argument(
+        "--bullish-reentry-max-bars",
+        type=int,
+        default=5,
+        dest="bullish_reentry_max_bars",
+        help="Max bars_held for primary BULLISH trade to be eligible for bullish re-entry (default: 5).",
+    )
     return parser.parse_args()
 
 
@@ -384,6 +428,12 @@ if __name__ == "__main__":
             trade_type=args.trade_type,
             option_price_monitor=_build_option_price_monitor(args, client, args.tickers),
             time_premium_pct_cap=args.time_premium_pct_cap,
+            enable_reversal=args.reversal,
+            reversal_max_bars=args.reversal_max_bars,
+            enable_bearish_reentry=args.bearish_reentry,
+            bearish_reentry_max_bars=args.bearish_reentry_max_bars,
+            enable_bullish_reentry=args.bullish_reentry,
+            bullish_reentry_max_bars=args.bullish_reentry_max_bars,
         )
         engine.run(tickers_override=args.tickers)
         sys.exit(0)
@@ -448,6 +498,12 @@ if __name__ == "__main__":
             trade_type=args.trade_type,
             option_price_monitor=_build_option_price_monitor(args, client, args.tickers),
             time_premium_pct_cap=args.time_premium_pct_cap,
+            enable_reversal=args.reversal,
+            reversal_max_bars=args.reversal_max_bars,
+            enable_bearish_reentry=args.bearish_reentry,
+            bearish_reentry_max_bars=args.bearish_reentry_max_bars,
+            enable_bullish_reentry=args.bullish_reentry,
+            bullish_reentry_max_bars=args.bullish_reentry_max_bars,
         )
         engine.run(tickers_override=args.tickers)
     finally:

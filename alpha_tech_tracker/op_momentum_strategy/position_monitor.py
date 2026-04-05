@@ -18,7 +18,7 @@ from .config import (
     _notify,
     _fmt_option,
 )
-from .models import ActivePosition, _D, _stock_bid_ask
+from .models import ActivePosition, ReentryWatcher, _D, _stock_bid_ask
 from .order_executor import _place_with_fill_escalation, place_stock_order
 
 # Imported lazily to avoid circular imports — OptionPriceMonitor imports from contract_selector
@@ -50,6 +50,13 @@ class PositionMonitor:
         max_loss_pct: Optional[float] = MAX_LOSS_PCT,
         armed_ma20_exit: bool = ARMED_MA20_EXIT,
         option_price_monitor=None,
+        enable_reversal: bool = False,
+        reversal_max_bars: int = 3,
+        enable_bearish_reentry: bool = False,
+        bearish_reentry_max_bars: int = 3,
+        enable_bullish_reentry: bool = False,
+        bullish_reentry_max_bars: int = 5,
+        re_entry_callback=None,
     ):
         self._client = alpaca_client
         self._signal_engine = signal_engine
@@ -58,7 +65,15 @@ class PositionMonitor:
         self._max_loss_pct = max_loss_pct
         self._armed_ma20_exit = armed_ma20_exit
         self._option_price_monitor = option_price_monitor
+        self._enable_reversal = enable_reversal
+        self._reversal_max_bars = reversal_max_bars
+        self._enable_bearish_reentry = enable_bearish_reentry
+        self._bearish_reentry_max_bars = bearish_reentry_max_bars
+        self._enable_bullish_reentry = enable_bullish_reentry
+        self._bullish_reentry_max_bars = bullish_reentry_max_bars
+        self._re_entry_callback = re_entry_callback
         self._positions: list = []
+        self._reentry_watchers: list = []
         self._lock = threading.Lock()
 
     def add_position(self, position: ActivePosition):
@@ -92,6 +107,23 @@ class PositionMonitor:
                     continue
                 self._evaluate_stop(pos, close, ma20_val, ma50_val)
 
+            self._check_reentry_watchers(ticker, close, bar_time)
+
+    def _trailing_armed(self, pos: ActivePosition, close) -> bool:
+        """
+        Returns True when the trailing MA stop is allowed to fire.
+
+        Primary positions (trailing_arm_price=None) use the existing behaviour:
+        the MA trailing stop is always eligible once armed via hard_stop_armed.
+        Re-entry positions gate the trailing stop behind a price threshold
+        (entry ± or_range) to match the backtest arming condition.
+        """
+        if pos.trailing_arm_price is None:
+            return True
+        if pos.signal == "BULLISH":
+            return close >= pos.trailing_arm_price
+        return close <= pos.trailing_arm_price
+
     def _evaluate_stop(
         self,
         pos: ActivePosition,
@@ -112,6 +144,8 @@ class PositionMonitor:
                 self._close_position(pos, "max_loss")
                 return
 
+        trailing_armed = self._trailing_armed(pos, close)
+
         if pos.signal == "BULLISH":
             if not pos.hard_stop_armed and close > pos.hard_stop_price:
                 pos.hard_stop_armed = True
@@ -126,14 +160,16 @@ class PositionMonitor:
             elif not pos.hard_stop_armed and close <= pos.fallback_price:
                 exit_reason = "fallback_20pct"
             elif (
-                self._trailing_ma in ("ma20", "both")
+                trailing_armed
+                and self._trailing_ma in ("ma20", "both")
                 and ma20 is not None
                 and ma20 > pos.hard_stop_price
                 and close < ma20
             ):
                 exit_reason = "trailing_stop_ma20"
             elif (
-                self._trailing_ma in ("ma50", "both")
+                trailing_armed
+                and self._trailing_ma in ("ma50", "both")
                 and ma50 is not None
                 and ma50 > pos.hard_stop_price
                 and close < ma50
@@ -153,14 +189,16 @@ class PositionMonitor:
             elif not pos.hard_stop_armed and close >= pos.fallback_price:
                 exit_reason = "fallback_20pct"
             elif (
-                self._trailing_ma in ("ma20", "both")
+                trailing_armed
+                and self._trailing_ma in ("ma20", "both")
                 and ma20 is not None
                 and ma20 < pos.or_low
                 and close > ma20
             ):
                 exit_reason = "trailing_stop_ma20"
             elif (
-                self._trailing_ma in ("ma50", "both")
+                trailing_armed
+                and self._trailing_ma in ("ma50", "both")
                 and ma50 is not None
                 and ma50 < pos.or_low
                 and close > ma50
@@ -169,11 +207,130 @@ class PositionMonitor:
 
         if exit_reason:
             self._close_position(pos, exit_reason)
+        else:
+            pos.bars_held += 1
+
+    def _maybe_create_reentry_watcher(self, pos: ActivePosition, reason: str):
+        if reason not in ("hard_stop", "fallback_20pct"):
+            return
+
+        midpoint = (_D(str(pos.or_high)) + _D(str(pos.or_low))) / _D("2")
+
+        # Reversal takes priority over bearish re-entry for the same closed position.
+        if (
+            self._enable_reversal
+            and pos.signal == "BEARISH"
+            and pos.bars_held <= self._reversal_max_bars
+        ):
+            self._reentry_watchers.append(
+                ReentryWatcher(
+                    ticker=pos.ticker,
+                    reentry_type="reversal",
+                    primary_signal="BEARISH",
+                    or_high=pos.or_high,
+                    or_low=pos.or_low,
+                    or_range=pos.or_range,
+                    midpoint=midpoint,
+                    window_label=pos.window_label,
+                    rank=pos.rank,
+                    window_budget=pos.window_budget,
+                    primary_exit_bar_time=pos.entry_bar_time,
+                )
+            )
+            logger.info(
+                "Reversal watcher created for %s (bars_held=%d)", pos.ticker, pos.bars_held
+            )
+            return  # reversal and bearish re-entry are mutually exclusive
+
+        if (
+            self._enable_bearish_reentry
+            and pos.signal == "BEARISH"
+            and pos.bars_held <= self._bearish_reentry_max_bars
+        ):
+            self._reentry_watchers.append(
+                ReentryWatcher(
+                    ticker=pos.ticker,
+                    reentry_type="bearish_reentry",
+                    primary_signal="BEARISH",
+                    or_high=pos.or_high,
+                    or_low=pos.or_low,
+                    or_range=pos.or_range,
+                    midpoint=midpoint,
+                    window_label=pos.window_label,
+                    rank=pos.rank,
+                    window_budget=pos.window_budget,
+                    primary_exit_bar_time=pos.entry_bar_time,
+                )
+            )
+            logger.info(
+                "Bearish re-entry watcher created for %s (bars_held=%d)",
+                pos.ticker,
+                pos.bars_held,
+            )
+
+        if (
+            self._enable_bullish_reentry
+            and pos.signal == "BULLISH"
+            and pos.bars_held <= self._bullish_reentry_max_bars
+        ):
+            self._reentry_watchers.append(
+                ReentryWatcher(
+                    ticker=pos.ticker,
+                    reentry_type="bullish_reentry",
+                    primary_signal="BULLISH",
+                    or_high=pos.or_high,
+                    or_low=pos.or_low,
+                    or_range=pos.or_range,
+                    midpoint=midpoint,
+                    window_label=pos.window_label,
+                    rank=pos.rank,
+                    window_budget=pos.window_budget,
+                    primary_exit_bar_time=pos.entry_bar_time,
+                )
+            )
+            logger.info(
+                "Bullish re-entry watcher created for %s (bars_held=%d)",
+                pos.ticker,
+                pos.bars_held,
+            )
+
+    def _check_reentry_watchers(self, ticker: str, close, bar_time):
+        if not self._reentry_watchers:
+            return
+
+        fired = []
+        for w in self._reentry_watchers:
+            if w.ticker != ticker:
+                continue
+            if w.primary_exit_bar_time is not None and bar_time == w.primary_exit_bar_time:
+                continue
+            if w.reentry_type in ("reversal", "bullish_reentry"):
+                triggered = close > w.or_high
+            else:
+                triggered = close < w.or_low
+            if triggered:
+                fired.append(w)
+
+        for w in fired:
+            self._reentry_watchers.remove(w)
+            logger.info(
+                "Re-entry trigger fired [%s] %s close=%.2f",
+                w.reentry_type,
+                w.ticker,
+                float(close),
+            )
+            if self._re_entry_callback:
+                threading.Thread(
+                    target=self._re_entry_callback,
+                    args=(w, close),
+                    daemon=True,
+                ).start()
 
     def _close_position(self, pos: ActivePosition, reason: str):
         pos.is_closed = True
         pos.exit_reason = reason
         pos.exit_time = datetime.now(ET)
+        self._maybe_create_reentry_watcher(pos, reason)
 
         if pos.trade_type == "stock":
             self._close_stock_position(pos, reason)
@@ -332,6 +489,7 @@ class PositionMonitor:
             for pos in self._positions:
                 if not pos.is_closed:
                     self._close_position(pos, reason)
+            self._reentry_watchers.clear()
 
     def _fetch_option_mid(self, option_symbol: str) -> Optional[object]:
         try:

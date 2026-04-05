@@ -74,3 +74,29 @@ class ActivePosition:
     exit_order_id: Optional[str] = None
     entry_fill_price: Optional[Decimal] = None
     exit_fill_price: Optional[Decimal] = None
+    bars_held: int = 0
+    trailing_arm_price: Optional[Decimal] = None
+    window_label: str = "W1"
+    rank: int = 0
+    window_budget: Optional[Decimal] = None
+
+
+@dataclass
+class ReentryWatcher:
+    """
+    Watches a closed primary position for a second-leg re-entry or reversal trigger.
+
+    Created by PositionMonitor when a primary trade stops out within max_bars.
+    Fires when the trigger price level is crossed on a subsequent bar.
+    """
+    ticker: str
+    reentry_type: str        # "reversal" | "bearish_reentry" | "bullish_reentry"
+    primary_signal: str      # "BEARISH" or "BULLISH"
+    or_high: Decimal
+    or_low: Decimal
+    or_range: Decimal
+    midpoint: Decimal
+    window_label: str
+    rank: int
+    window_budget: Optional[Decimal]
+    primary_exit_bar_time: Optional[datetime] = None

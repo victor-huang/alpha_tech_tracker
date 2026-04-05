@@ -247,10 +247,10 @@ PYTHONPATH=/Users/victorhuang/work/alpha_tech_tracker \
 | `test_signal_engine.py` | `LiveSignalEngine` — BULLISH/BEARISH conditions, OR computation, regime filter |
 | `test_contract_selector.py` | `TimePremiumContractSelector` (DTE-adjusted threshold, fallback), `OptionContractSelector`, helper functions (`_next_friday`, `_strike_increment`, etc.) |
 | `test_position_sizer.py` | `PositionSizer.compute()` and `compute_stock()` — sizing from buying power, window budget override |
-| `test_position_monitor.py` | `PositionMonitor` — hard stop arming/exit, trailing MA exit, EOD exit, stock positions |
+| `test_position_monitor.py` | `PositionMonitor` — hard stop arming/exit, trailing MA exit, EOD exit, stock positions; `TestReentryWatcher` — `bars_held` tracking, watcher creation/suppression, reversal priority, trigger firing, EOD cleanup, `trailing_arm_price` gate |
 | `test_bar_recorder.py` | `BarRecorder` — CSV creation, header, ET timestamp, per-ticker file separation |
 | `test_option_price_monitor.py` | `OptionPriceMonitor`, `TradeEngineStrikeSelector`, `_parse_occ_symbol()`, `get_fair_price()` algorithm |
-| `test_trade_engine.py` | `TickerSelector`, `OpMomentumTradeEngine._enter_position()`, signal buffer, rank-weighted sizing, multi-window state |
+| `test_trade_engine.py` | `TickerSelector`, `OpMomentumTradeEngine._enter_position()`, signal buffer, rank-weighted sizing, multi-window state; `TestEnterReentry` — `_enter_reentry()` signal direction, hard stop override, trailing arm, rank/window passthrough |
 | `test_parse_windows.py` | `_parse_windows()` — CLI window args → `WindowConfig` objects, morning-split fractions |
 | `test_full_day_simulation.py` | End-to-end fixture-driven simulation: 5-min bar → signal → entry → monitoring bars → exit → P&L |
 

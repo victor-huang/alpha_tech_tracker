@@ -37,7 +37,7 @@ from .config import (
 )
 from .bar_recorder import BarRecorder
 from .contract_selector import TimePremiumContractSelector
-from .models import ActivePosition, SignalEvent, WindowConfig, _D
+from .models import ActivePosition, ReentryWatcher, SignalEvent, WindowConfig, _D
 from .option_price_monitor import OptionPriceMonitor
 from .order_executor import _place_with_fill_escalation, place_stock_order
 from .position_monitor import PositionMonitor
@@ -165,6 +165,12 @@ class OpMomentumTradeEngine:
         trade_type: str = "options",
         option_price_monitor: Optional[OptionPriceMonitor] = None,
         time_premium_pct_cap: float = 0.01,
+        enable_reversal: bool = False,
+        reversal_max_bars: int = 3,
+        enable_bearish_reentry: bool = False,
+        bearish_reentry_max_bars: int = 3,
+        enable_bullish_reentry: bool = False,
+        bullish_reentry_max_bars: int = 5,
     ):
         self._client = alpaca_client
         self._api_key = alpaca_client._api_key
@@ -180,6 +186,12 @@ class OpMomentumTradeEngine:
         self._trade_type = trade_type
         self._option_price_monitor = option_price_monitor
         self._time_premium_pct_cap = time_premium_pct_cap
+        self._enable_reversal = enable_reversal
+        self._reversal_max_bars = reversal_max_bars
+        self._enable_bearish_reentry = enable_bearish_reentry
+        self._bearish_reentry_max_bars = bearish_reentry_max_bars
+        self._enable_bullish_reentry = enable_bullish_reentry
+        self._bullish_reentry_max_bars = bullish_reentry_max_bars
         self._monitor: PositionMonitor = None
         self._signal_engine: LiveSignalEngine = None
         self._signal_lock = threading.Lock()
@@ -220,6 +232,8 @@ class OpMomentumTradeEngine:
         rank: int = 0,
         window_label: str = "W1",
         window_budget: Optional[_D] = None,
+        hard_stop_override: Optional[_D] = None,
+        trailing_arm_price: Optional[_D] = None,
     ):
         logger.info(
             "Entering position [%s]: %s %s @ %.2f (rank=%d)",
@@ -234,8 +248,12 @@ class OpMomentumTradeEngine:
         else:
             capital_weight = _D("1")
 
-        bull_hard_stop = event.or_high - self._stop_pct * event.or_range
-        bear_hard_stop = event.or_low + self._stop_pct * event.or_range
+        if hard_stop_override is not None:
+            bull_hard_stop = hard_stop_override
+            bear_hard_stop = hard_stop_override
+        else:
+            bull_hard_stop = event.or_high - self._stop_pct * event.or_range
+            bear_hard_stop = event.or_low + self._stop_pct * event.or_range
         bull_fallback = event.or_high - _D("0.20") * event.or_range
         bear_fallback = event.or_low + _D("0.20") * event.or_range
 
@@ -254,6 +272,7 @@ class OpMomentumTradeEngine:
                 bull_fallback=bull_fallback,
                 bear_fallback=bear_fallback,
                 entry_bar_time=entry_bar_time,
+                trailing_arm_price=trailing_arm_price,
             )
         else:
             self._enter_option_position(
@@ -267,6 +286,7 @@ class OpMomentumTradeEngine:
                 bull_fallback=bull_fallback,
                 bear_fallback=bear_fallback,
                 entry_bar_time=entry_bar_time,
+                trailing_arm_price=trailing_arm_price,
             )
 
     def _enter_stock_position(
@@ -281,6 +301,7 @@ class OpMomentumTradeEngine:
         bull_fallback,
         bear_fallback,
         entry_bar_time,
+        trailing_arm_price=None,
     ):
         try:
             sizer = PositionSizer(self._client)
@@ -349,6 +370,10 @@ class OpMomentumTradeEngine:
             entry_bar_time=entry_bar_time,
             entry_time=datetime.now(ET),
             simulated_entry_mid=sim_entry_mid,
+            trailing_arm_price=trailing_arm_price,
+            window_label=window_label,
+            rank=rank,
+            window_budget=window_budget,
         )
         self._monitor.add_position(pos)
 
@@ -371,6 +396,7 @@ class OpMomentumTradeEngine:
         bull_fallback,
         bear_fallback,
         entry_bar_time,
+        trailing_arm_price=None,
     ):
         try:
             selector = TimePremiumContractSelector(
@@ -434,6 +460,10 @@ class OpMomentumTradeEngine:
             entry_bar_time=entry_bar_time,
             entry_time=datetime.now(ET),
             simulated_entry_mid=sim_entry_mid,
+            trailing_arm_price=trailing_arm_price,
+            window_label=window_label,
+            rank=rank,
+            window_budget=window_budget,
         )
         self._monitor.add_position(pos)
 
@@ -442,6 +472,41 @@ class OpMomentumTradeEngine:
         _notify(
             f"{prefix}BUY {_fmt_option(option_symbol)} x{contracts}{entry_mid_str}"
             f" | R{rank + 1} | stop ${pos.hard_stop_price:.2f}"
+        )
+
+    def _enter_reentry(self, watcher: ReentryWatcher, trigger_price: _D):
+        reentry_signal = "BEARISH" if watcher.reentry_type == "bearish_reentry" else "BULLISH"
+        trailing_arm = (
+            trigger_price + watcher.or_range
+            if reentry_signal == "BULLISH"
+            else trigger_price - watcher.or_range
+        )
+        event = SignalEvent(
+            ticker=watcher.ticker,
+            signal=reentry_signal,
+            entry_price=trigger_price,
+            stock_price=trigger_price,
+            or_high=watcher.or_high,
+            or_low=watcher.or_low,
+            or_range=watcher.or_range,
+            ma50_at_signal=trigger_price,
+        )
+        logger.info(
+            "Re-entry [%s] %s %s trigger=%.2f hard_stop=%.2f trailing_arm=%.2f",
+            watcher.reentry_type,
+            watcher.ticker,
+            reentry_signal,
+            float(trigger_price),
+            float(watcher.midpoint),
+            float(trailing_arm),
+        )
+        self._enter_position(
+            event,
+            rank=watcher.rank,
+            window_label=watcher.window_label,
+            window_budget=watcher.window_budget,
+            hard_stop_override=watcher.midpoint,
+            trailing_arm_price=trailing_arm,
         )
 
     def _get_window_budget(self, win: WindowConfig) -> Optional[_D]:
@@ -750,6 +815,13 @@ class OpMomentumTradeEngine:
             max_loss_pct=self._max_loss_pct,
             armed_ma20_exit=self._armed_ma20_exit,
             option_price_monitor=self._option_price_monitor,
+            enable_reversal=self._enable_reversal,
+            reversal_max_bars=self._reversal_max_bars,
+            enable_bearish_reentry=self._enable_bearish_reentry,
+            bearish_reentry_max_bars=self._bearish_reentry_max_bars,
+            enable_bullish_reentry=self._enable_bullish_reentry,
+            bullish_reentry_max_bars=self._bullish_reentry_max_bars,
+            re_entry_callback=self._enter_reentry,
         )
 
         if self._option_price_monitor:

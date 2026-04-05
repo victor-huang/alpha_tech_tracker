@@ -688,3 +688,248 @@ class TestStockPrintSummaryPnl:
         captured = capsys.readouterr().out
         assert "[stock]" in captured
         assert "5sh" in captured
+
+
+class TestReentryWatcher:
+    @pytest.fixture(autouse=True)
+    def patch_sleep(self, monkeypatch):
+        monkeypatch.setattr(
+            "alpha_tech_tracker.op_momentum_strategy.order_executor.time.sleep",
+            lambda _: None,
+        )
+
+    def _make_bearish_pos(self, bars_held=0):
+        pos = _make_active_position(
+            signal="BEARISH",
+            or_high=_D("105"),
+            or_low=_D("95"),
+            hard_stop_price=_D("96.5"),
+            fallback_price=_D("97.0"),
+        )
+        pos.bars_held = bars_held
+        return pos
+
+    def _make_bullish_pos(self, bars_held=0):
+        pos = _make_active_position(
+            signal="BULLISH",
+            or_high=_D("105"),
+            or_low=_D("95"),
+            hard_stop_price=_D("103.5"),
+            fallback_price=_D("103.0"),
+        )
+        pos.bars_held = bars_held
+        return pos
+
+    def _make_monitor(self, client=None, **kwargs):
+        if client is None:
+            client = _make_alpaca_client()
+            client.place_option_order.return_value = {"order_id": "close-x"}
+            client.order_status.return_value = {"status": "filled", "filled_avg_price": 5.0}
+            client._option_data_client.get_option_latest_quote.return_value = {
+                "NVDA260328C00900000": _make_option_quote(bid=4.0, ask=5.0)
+            }
+        df = _build_history_df([100.0], ma20=98.0, ma50=97.0, ma200=90.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        return PositionMonitor(client, engine, mock_trade_execution=True, **kwargs), client, engine
+
+    def test_bars_held_increments_while_position_is_open(self):
+        monitor, client, engine = self._make_monitor()
+        pos = self._make_bullish_pos()
+        monitor.add_position(pos)
+
+        _set_latest_bar(engine, "NVDA", close=106.0, ma50=97.0)
+        monitor.on_bar("NVDA")
+        _set_latest_bar(engine, "NVDA", close=106.5, ma50=97.0)
+        monitor.on_bar("NVDA")
+
+        assert pos.bars_held == 2
+        assert pos.is_closed is False
+
+    def test_reversal_watcher_created_on_bearish_hard_stop_within_max_bars(self):
+        monitor, _, engine = self._make_monitor(enable_reversal=True, reversal_max_bars=3)
+        pos = self._make_bearish_pos(bars_held=2)
+        pos.hard_stop_armed = True
+        monitor.add_position(pos)
+
+        _set_latest_bar(engine, "NVDA", close=96.5, ma50=110.0)
+        monitor.on_bar("NVDA")
+
+        assert pos.is_closed is True
+        assert pos.exit_reason == "hard_stop"
+        assert len(monitor._reentry_watchers) == 1
+        assert monitor._reentry_watchers[0].reentry_type == "reversal"
+        assert monitor._reentry_watchers[0].ticker == "NVDA"
+
+    def test_reversal_watcher_not_created_when_bars_held_exceeds_max(self):
+        monitor, _, engine = self._make_monitor(enable_reversal=True, reversal_max_bars=3)
+        pos = self._make_bearish_pos(bars_held=4)
+        pos.hard_stop_armed = True
+        monitor.add_position(pos)
+
+        _set_latest_bar(engine, "NVDA", close=96.5, ma50=110.0)
+        monitor.on_bar("NVDA")
+
+        assert pos.is_closed is True
+        assert len(monitor._reentry_watchers) == 0
+
+    def test_reversal_watcher_not_created_on_trailing_ma_exit(self):
+        monitor, _, engine = self._make_monitor(enable_reversal=True, reversal_max_bars=3)
+        pos = self._make_bearish_pos(bars_held=1)
+        pos.hard_stop_armed = True
+        monitor.add_position(pos)
+
+        # MA20=88 < or_low=95, close=90 > MA20 but below hard_stop=96.5 → trailing_stop_ma20
+        _set_latest_bar(engine, "NVDA", close=90.0, ma50=110.0, ma20=88.0)
+        monitor.on_bar("NVDA")
+
+        assert pos.is_closed is True
+        assert pos.exit_reason == "trailing_stop_ma20"
+        assert len(monitor._reentry_watchers) == 0
+
+    def test_reversal_fires_when_price_crosses_or_high(self):
+        fired = []
+        monitor, _, engine = self._make_monitor(
+            enable_reversal=True, reversal_max_bars=3,
+            re_entry_callback=lambda w, price: fired.append((w, price)),
+        )
+        pos = self._make_bearish_pos(bars_held=2)
+        pos.hard_stop_armed = True
+        monitor.add_position(pos)
+
+        _set_latest_bar(engine, "NVDA", close=96.5, ma50=110.0)
+        monitor.on_bar("NVDA")
+        assert len(monitor._reentry_watchers) == 1
+
+        # Price crosses above OR high (105)
+        _set_latest_bar(engine, "NVDA", close=106.0, ma50=110.0)
+        monitor.on_bar("NVDA")
+
+        # Allow the callback thread to complete
+        import time
+        time.sleep(0.05)
+
+        assert len(monitor._reentry_watchers) == 0
+        assert len(fired) == 1
+        w, trigger = fired[0]
+        assert w.reentry_type == "reversal"
+        assert trigger == _D("106.0")
+
+    def test_reversal_suppresses_bearish_reentry_for_same_position(self):
+        monitor, _, engine = self._make_monitor(
+            enable_reversal=True, reversal_max_bars=3,
+            enable_bearish_reentry=True, bearish_reentry_max_bars=3,
+        )
+        pos = self._make_bearish_pos(bars_held=2)
+        pos.hard_stop_armed = True
+        monitor.add_position(pos)
+
+        _set_latest_bar(engine, "NVDA", close=96.5, ma50=110.0)
+        monitor.on_bar("NVDA")
+
+        assert len(monitor._reentry_watchers) == 1
+        assert monitor._reentry_watchers[0].reentry_type == "reversal"
+
+    def test_bearish_reentry_watcher_created_when_reversal_disabled(self):
+        monitor, _, engine = self._make_monitor(
+            enable_reversal=False,
+            enable_bearish_reentry=True, bearish_reentry_max_bars=3,
+        )
+        pos = self._make_bearish_pos(bars_held=2)
+        pos.hard_stop_armed = True
+        monitor.add_position(pos)
+
+        _set_latest_bar(engine, "NVDA", close=96.5, ma50=110.0)
+        monitor.on_bar("NVDA")
+
+        assert len(monitor._reentry_watchers) == 1
+        assert monitor._reentry_watchers[0].reentry_type == "bearish_reentry"
+
+    def test_bearish_reentry_fires_when_price_crosses_or_low(self):
+        fired = []
+        monitor, _, engine = self._make_monitor(
+            enable_bearish_reentry=True, bearish_reentry_max_bars=3,
+            re_entry_callback=lambda w, price: fired.append((w, price)),
+        )
+        pos = self._make_bearish_pos(bars_held=2)
+        pos.hard_stop_armed = True
+        monitor.add_position(pos)
+
+        _set_latest_bar(engine, "NVDA", close=96.5, ma50=110.0)
+        monitor.on_bar("NVDA")
+
+        # Price crosses below OR low (95)
+        _set_latest_bar(engine, "NVDA", close=94.5, ma50=110.0)
+        monitor.on_bar("NVDA")
+
+        import time
+        time.sleep(0.05)
+
+        assert len(monitor._reentry_watchers) == 0
+        assert len(fired) == 1
+        w, trigger = fired[0]
+        assert w.reentry_type == "bearish_reentry"
+        assert trigger == _D("94.5")
+
+    def test_bullish_reentry_watcher_created_on_bullish_hard_stop(self):
+        monitor, _, engine = self._make_monitor(
+            enable_bullish_reentry=True, bullish_reentry_max_bars=5,
+        )
+        pos = self._make_bullish_pos(bars_held=3)
+        pos.hard_stop_armed = True
+        monitor.add_position(pos)
+
+        # close ≤ hard_stop (103.5) while armed → hard_stop exit
+        _set_latest_bar(engine, "NVDA", close=103.0, ma50=97.0)
+        monitor.on_bar("NVDA")
+
+        assert pos.is_closed is True
+        assert pos.exit_reason == "hard_stop"
+        assert len(monitor._reentry_watchers) == 1
+        assert monitor._reentry_watchers[0].reentry_type == "bullish_reentry"
+
+    def test_watchers_cleared_on_close_all(self):
+        monitor, _, engine = self._make_monitor(
+            enable_reversal=True, reversal_max_bars=3,
+        )
+        pos = self._make_bearish_pos(bars_held=2)
+        pos.hard_stop_armed = True
+        monitor.add_position(pos)
+
+        _set_latest_bar(engine, "NVDA", close=96.5, ma50=110.0)
+        monitor.on_bar("NVDA")
+        assert len(monitor._reentry_watchers) == 1
+
+        monitor.close_all(reason="end_of_day")
+
+        assert len(monitor._reentry_watchers) == 0
+
+    def test_trailing_arm_price_gates_ma_trailing_stop_for_reentry(self):
+        """
+        A re-entry position with trailing_arm_price set should NOT exit via trailing MA
+        until price reaches the arm threshold.
+        """
+        monitor, _, engine = self._make_monitor()
+        pos = self._make_bullish_pos()
+        pos.hard_stop_price = _D("98")   # midpoint as hard stop
+        pos.fallback_price = _D("98")
+        pos.hard_stop_armed = True
+        # Arm threshold: entry + or_range = 105 + 10 = 115
+        pos.trailing_arm_price = _D("115")
+        monitor.add_position(pos)
+
+        # close=106, MA20=108 > close → would trigger trailing stop if unguarded
+        # but trailing_arm_price=115 not yet reached → no exit
+        _set_latest_bar(engine, "NVDA", close=106.0, ma50=97.0, ma20=108.0)
+        monitor.on_bar("NVDA")
+
+        assert pos.is_closed is False
+
+        # close reaches arm threshold → now MA trailing stop can fire
+        _set_latest_bar(engine, "NVDA", close=115.5, ma50=100.0, ma20=116.0)
+        monitor.on_bar("NVDA")
+        # close=115.5 < MA20=116 with arm price reached → trailing exit
+        _set_latest_bar(engine, "NVDA", close=115.0, ma50=100.0, ma20=116.5)
+        monitor.on_bar("NVDA")
+
+        assert pos.is_closed is True
+        assert pos.exit_reason == "trailing_stop_ma20"

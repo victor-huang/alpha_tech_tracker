@@ -7,6 +7,7 @@ from alpha_tech_tracker.op_momentum_strategy.config import (
     MAX_ACTIVE_SYMBOLS,
     RANK_WEIGHTS,
 )
+from alpha_tech_tracker.op_momentum_strategy.models import ReentryWatcher
 from alpha_tech_tracker.op_momentum_strategy.trade_engine import (
     OpMomentumTradeEngine,
     TickerSelector,
@@ -618,3 +619,94 @@ class TestStockTradeEntry:
         assert pos.trade_type == "options"
         assert pos.contracts == 3
         assert pos.option_symbol == "NVDA260404C00170000"
+
+
+class TestEnterReentry:
+    def _make_watcher(self, reentry_type="reversal"):
+        return ReentryWatcher(
+            ticker="NVDA",
+            reentry_type=reentry_type,
+            primary_signal="BEARISH",
+            or_high=_D("107"),
+            or_low=_D("97"),
+            or_range=_D("10"),
+            midpoint=_D("102"),
+            window_label="W1",
+            rank=1,
+            window_budget=_D("3000"),
+        )
+
+    def _make_engine(self):
+        client = _make_alpaca_client()
+        engine = OpMomentumTradeEngine(
+            alpaca_client=client,
+            mock_trade_execution=True,
+        )
+        engine._enter_position = Mock()
+        return engine
+
+    def test_reversal_calls_enter_position_with_bullish_signal(self):
+        engine = self._make_engine()
+        watcher = self._make_watcher(reentry_type="reversal")
+        trigger = _D("108")
+
+        engine._enter_reentry(watcher, trigger)
+
+        call_kwargs = engine._enter_position.call_args
+        event = call_kwargs[0][0]
+        assert event.signal == "BULLISH"
+        assert event.ticker == "NVDA"
+        assert event.entry_price == trigger
+
+    def test_reversal_passes_midpoint_as_hard_stop_override(self):
+        engine = self._make_engine()
+        watcher = self._make_watcher(reentry_type="reversal")
+        trigger = _D("108")
+
+        engine._enter_reentry(watcher, trigger)
+
+        call_kwargs = engine._enter_position.call_args
+        assert call_kwargs[1]["hard_stop_override"] == _D("102")
+
+    def test_reversal_trailing_arm_is_trigger_plus_or_range(self):
+        engine = self._make_engine()
+        watcher = self._make_watcher(reentry_type="reversal")
+        trigger = _D("108")
+
+        engine._enter_reentry(watcher, trigger)
+
+        call_kwargs = engine._enter_position.call_args
+        assert call_kwargs[1]["trailing_arm_price"] == trigger + _D("10")
+
+    def test_bearish_reentry_calls_enter_position_with_bearish_signal(self):
+        engine = self._make_engine()
+        watcher = self._make_watcher(reentry_type="bearish_reentry")
+        trigger = _D("96")
+
+        engine._enter_reentry(watcher, trigger)
+
+        call_kwargs = engine._enter_position.call_args
+        event = call_kwargs[0][0]
+        assert event.signal == "BEARISH"
+        assert event.entry_price == trigger
+
+    def test_bearish_reentry_trailing_arm_is_trigger_minus_or_range(self):
+        engine = self._make_engine()
+        watcher = self._make_watcher(reentry_type="bearish_reentry")
+        trigger = _D("96")
+
+        engine._enter_reentry(watcher, trigger)
+
+        call_kwargs = engine._enter_position.call_args
+        assert call_kwargs[1]["trailing_arm_price"] == trigger - _D("10")
+
+    def test_enter_reentry_passes_watcher_rank_and_window_label(self):
+        engine = self._make_engine()
+        watcher = self._make_watcher(reentry_type="reversal")
+
+        engine._enter_reentry(watcher, _D("108"))
+
+        call_kwargs = engine._enter_position.call_args
+        assert call_kwargs[1]["rank"] == 1
+        assert call_kwargs[1]["window_label"] == "W1"
+        assert call_kwargs[1]["window_budget"] == _D("3000")
