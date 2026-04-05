@@ -68,6 +68,8 @@ class TickerSelector:
         opening_start_time: str = OPENING_START_TIME,
         opening_bars: int = OPENING_BARS,
         lookback_days: int = ROLLING_LOOKBACK_DAYS,
+        regime_filter: bool = False,
+        regime_ma: int = 8,
     ):
         self._tickers = tickers
         self._top_n = top_n
@@ -75,6 +77,8 @@ class TickerSelector:
         self._opening_start_time = opening_start_time
         self._opening_bars = opening_bars
         self._lookback_days = lookback_days
+        self._regime_filter = regime_filter
+        self._regime_ma = regime_ma
         self.rolling_stats: dict = {}
 
     def select(self) -> list:
@@ -100,6 +104,8 @@ class TickerSelector:
             target_date=today,
             ticker_dfs=ticker_dfs,
             opening_start_time=self._opening_start_time,
+            regime_filter=self._regime_filter,
+            regime_ma=self._regime_ma,
         )
         self.rolling_stats = result.get("rolling_stats", {})
 
@@ -125,6 +131,8 @@ class TickerSelector:
                 target_date=prev_day,
                 ticker_dfs=ticker_dfs,
                 opening_start_time=self._opening_start_time,
+                regime_filter=self._regime_filter,
+                regime_ma=self._regime_ma,
             )
             self.rolling_stats = result.get("rolling_stats", {})
             picks = result["picks"]
@@ -248,6 +256,7 @@ class OpMomentumTradeEngine:
         window_budget: Optional[_D] = None,
         hard_stop_override: Optional[_D] = None,
         trailing_arm_price: Optional[_D] = None,
+        initial_hard_stop_armed: bool = False,
     ):
         logger.info(
             "Entering position [%s]: %s %s @ %.2f (rank=%d)",
@@ -271,8 +280,11 @@ class OpMomentumTradeEngine:
         bull_fallback = event.or_high - _D("0.20") * event.or_range
         bear_fallback = event.or_low + _D("0.20") * event.or_range
 
-        latest_bar = self._signal_engine.get_latest_bar(event.ticker)
-        entry_bar_time = latest_bar.name if latest_bar is not None else None
+        if event.signal_bar_time is not None:
+            entry_bar_time = event.signal_bar_time
+        else:
+            latest_bar = self._signal_engine.get_latest_bar(event.ticker)
+            entry_bar_time = latest_bar.name if latest_bar is not None else None
 
         if self._trade_type == "stock":
             self._enter_stock_position(
@@ -287,6 +299,7 @@ class OpMomentumTradeEngine:
                 bear_fallback=bear_fallback,
                 entry_bar_time=entry_bar_time,
                 trailing_arm_price=trailing_arm_price,
+                initial_hard_stop_armed=initial_hard_stop_armed,
             )
         else:
             self._enter_option_position(
@@ -301,6 +314,7 @@ class OpMomentumTradeEngine:
                 bear_fallback=bear_fallback,
                 entry_bar_time=entry_bar_time,
                 trailing_arm_price=trailing_arm_price,
+                initial_hard_stop_armed=initial_hard_stop_armed,
             )
 
     def _enter_stock_position(
@@ -316,6 +330,7 @@ class OpMomentumTradeEngine:
         bear_fallback,
         entry_bar_time,
         trailing_arm_price=None,
+        initial_hard_stop_armed: bool = False,
     ):
         try:
             sizer = PositionSizer(self._client)
@@ -381,6 +396,7 @@ class OpMomentumTradeEngine:
             ),
             trade_type="stock",
             shares=shares,
+            hard_stop_armed=initial_hard_stop_armed,
             entry_bar_time=entry_bar_time,
             entry_time=_now_et(),
             simulated_entry_mid=sim_entry_mid,
@@ -411,6 +427,7 @@ class OpMomentumTradeEngine:
         bear_fallback,
         entry_bar_time,
         trailing_arm_price=None,
+        initial_hard_stop_armed: bool = False,
     ):
         try:
             selector = TimePremiumContractSelector(
@@ -471,6 +488,7 @@ class OpMomentumTradeEngine:
                 bull_fallback if event.signal == "BULLISH" else bear_fallback
             ),
             trade_type="options",
+            hard_stop_armed=initial_hard_stop_armed,
             entry_bar_time=entry_bar_time,
             entry_time=_now_et(),
             simulated_entry_mid=sim_entry_mid,
@@ -521,6 +539,7 @@ class OpMomentumTradeEngine:
             window_budget=watcher.window_budget,
             hard_stop_override=watcher.midpoint,
             trailing_arm_price=trailing_arm,
+            initial_hard_stop_armed=True,
         )
 
     def _get_window_budget(self, win: WindowConfig) -> Optional[_D]:
@@ -542,6 +561,9 @@ class OpMomentumTradeEngine:
         state = self._window_state[window_label]
         with self._signal_lock:
             if now < state["collection_deadline"]:
+                if self._signal_engine is not None:
+                    latest_bar = self._signal_engine.get_latest_bar(event.ticker)
+                    event.signal_bar_time = latest_bar.name if latest_bar is not None else None
                 state["pending_signals"][event.ticker] = event
                 logger.info(
                     "Buffered signal [%s]: %s %s",
@@ -779,6 +801,8 @@ class OpMomentumTradeEngine:
                 opening_start_time=win.opening_start,
                 opening_bars=win.opening_bars,
                 lookback_days=self._lookback_days,
+                regime_filter=self._regime_filter,
+                regime_ma=self._regime_ma,
             )
             win_picks = win_selector.select()
             if i == 0:
@@ -919,6 +943,8 @@ class OpMomentumTradeEngine:
                 opening_start_time=win.opening_start,
                 opening_bars=win.opening_bars,
                 lookback_days=self._lookback_days,
+                regime_filter=self._regime_filter,
+                regime_ma=self._regime_ma,
             )
             win_picks = win_selector.select()
             if i == 0:
@@ -928,13 +954,15 @@ class OpMomentumTradeEngine:
         self._rolling_stats = self._rolling_stats_by_window.get(first_window.label, {})
         print(f"\nReplay {replay_date} — pre-market picks: {pre_market_picks}")
 
-        # Build per-window states with replay_date deadlines
+        # Build per-window states with replay_date deadlines.
+        # Use or_close as the deadline (no buffer) so that the drain fires at the
+        # very first post-OR bar, matching the backtest's bar-by-bar evaluation order.
         engine_windows = []
         for win in self._windows:
             opening_start_t = datetime.strptime(win.opening_start, "%H:%M").time()
             or_open_et = ET.localize(datetime.combine(replay_date, opening_start_t))
             or_close_et = or_open_et + timedelta(minutes=win.opening_bars * 5)
-            deadline = or_close_et + timedelta(minutes=SIGNAL_BUFFER_MINUTES)
+            deadline = or_close_et
             label = win.label
             self._window_state[label] = {
                 "pending_signals": {},
@@ -985,7 +1013,8 @@ class OpMomentumTradeEngine:
         _drained_windows = set()
 
         def _on_bar(ticker):
-            self._monitor.on_bar(ticker)
+            # Drain before monitor so newly-entered positions are evaluated
+            # at the same bar that triggers the drain (matching backtest order).
             for win in self._windows:
                 lbl = win.label
                 if lbl not in _drained_windows:
@@ -993,6 +1022,7 @@ class OpMomentumTradeEngine:
                     if _now_et() >= deadline:
                         _drained_windows.add(lbl)
                         self._drain_pending_signals_for_window(win)
+            self._monitor.on_bar(ticker)
 
         driver = BarReplayDriver(
             tickers=all_tickers,

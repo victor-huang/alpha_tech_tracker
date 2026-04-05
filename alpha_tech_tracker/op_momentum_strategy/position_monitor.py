@@ -95,6 +95,7 @@ class PositionMonitor:
 
         bar_time = latest.name
         close = _D(latest["Close"])
+        high = _D(latest["High"])
         ma20 = latest.get("MA20")
         ma20_val = _D(ma20) if ma20 is not None and not pd.isna(ma20) else None
         ma50 = latest.get("MA50")
@@ -106,9 +107,28 @@ class PositionMonitor:
                     continue
                 if pos.entry_bar_time is not None and bar_time == pos.entry_bar_time:
                     continue
-                self._evaluate_stop(pos, close, ma20_val, ma50_val)
+                self._evaluate_stop(pos, close, high, ma20_val, ma50_val)
 
-            self._check_reentry_watchers(ticker, close, bar_time)
+            fired_watchers = self._collect_fired_watchers(ticker, close, bar_time)
+
+        # Invoke re-entry callbacks outside the lock to avoid deadlock with add_position.
+        # In replay mode call synchronously so the position exists for the next bar.
+        for w in fired_watchers:
+            logger.info(
+                "Re-entry trigger fired [%s] %s close=%.2f",
+                w.reentry_type,
+                w.ticker,
+                float(close),
+            )
+            if self._re_entry_callback:
+                if is_replay_mode():
+                    self._re_entry_callback(w, close)
+                else:
+                    threading.Thread(
+                        target=self._re_entry_callback,
+                        args=(w, close),
+                        daemon=True,
+                    ).start()
 
     def _trailing_armed(self, pos: ActivePosition, close) -> bool:
         """
@@ -129,6 +149,7 @@ class PositionMonitor:
         self,
         pos: ActivePosition,
         close,
+        high,
         ma20: Optional[object],
         ma50: Optional[object],
     ):
@@ -207,12 +228,26 @@ class PositionMonitor:
                 exit_reason = "trailing_stop_ma50"
 
         if exit_reason:
-            self._close_position(pos, exit_reason)
+            override = None
+            if exit_reason == "hard_stop":
+                override = pos.hard_stop_price
+            elif exit_reason == "fallback_20pct":
+                if pos.signal == "BEARISH":
+                    override = pos.fallback_price
+                elif high >= pos.fallback_price:
+                    # Bar traded at/above fallback level before closing below it;
+                    # exit at fallback_price to match backtest stop-order simulation.
+                    override = pos.fallback_price
+            self._close_position(pos, exit_reason, exit_stock_price_override=override)
         else:
             pos.bars_held += 1
 
     def _maybe_create_reentry_watcher(self, pos: ActivePosition, reason: str):
         if reason not in ("hard_stop", "fallback_20pct"):
+            return
+        # Don't cascade: re-entry positions (trailing_arm_price set) don't spawn further watchers.
+        # Backtest only allows one level of re-entry per primary trade.
+        if pos.trailing_arm_price is not None:
             return
 
         midpoint = (_D(str(pos.or_high)) + _D(str(pos.or_low))) / _D("2")
@@ -295,9 +330,10 @@ class PositionMonitor:
                 pos.bars_held,
             )
 
-    def _check_reentry_watchers(self, ticker: str, close, bar_time):
+    def _collect_fired_watchers(self, ticker: str, close, bar_time) -> list:
+        """Collect and remove watchers that trigger on this bar. Called under self._lock."""
         if not self._reentry_watchers:
-            return
+            return []
 
         fired = []
         for w in self._reentry_watchers:
@@ -314,31 +350,21 @@ class PositionMonitor:
 
         for w in fired:
             self._reentry_watchers.remove(w)
-            logger.info(
-                "Re-entry trigger fired [%s] %s close=%.2f",
-                w.reentry_type,
-                w.ticker,
-                float(close),
-            )
-            if self._re_entry_callback:
-                threading.Thread(
-                    target=self._re_entry_callback,
-                    args=(w, close),
-                    daemon=True,
-                ).start()
 
-    def _close_position(self, pos: ActivePosition, reason: str):
+        return fired
+
+    def _close_position(self, pos: ActivePosition, reason: str, exit_stock_price_override=None):
         pos.is_closed = True
         pos.exit_reason = reason
         pos.exit_time = _now_et()
         self._maybe_create_reentry_watcher(pos, reason)
 
         if pos.trade_type == "stock":
-            self._close_stock_position(pos, reason)
+            self._close_stock_position(pos, reason, exit_stock_price_override=exit_stock_price_override)
         else:
             self._close_option_position(pos, reason)
 
-    def _close_stock_position(self, pos: ActivePosition, reason: str):
+    def _close_stock_position(self, pos: ActivePosition, reason: str, exit_stock_price_override=None):
         logger.info(
             "EXIT %s %s reason=%s shares=%d",
             pos.ticker,
@@ -349,7 +375,9 @@ class PositionMonitor:
 
         if self._mock_trade_execution:
             mid = None
-            if is_replay_mode():
+            if exit_stock_price_override is not None:
+                mid = exit_stock_price_override
+            elif is_replay_mode():
                 # Use the bar close that triggered the exit so replay shows
                 # the historical price rather than a live API quote.
                 latest_bar = self._signal_engine.get_latest_bar(pos.ticker)
@@ -543,7 +571,10 @@ class PositionMonitor:
         def _pnl(entry, exit_, signal, pos) -> Optional[object]:
             if entry is None or exit_ is None:
                 return None
-            raw = exit_ - entry
+            if pos.trade_type == "stock" and pos.signal == "BEARISH":
+                raw = entry - exit_
+            else:
+                raw = exit_ - entry
             if pos.trade_type == "stock":
                 return raw * _D(pos.shares)
             return raw * _D(pos.contracts) * _D("100")
@@ -652,7 +683,10 @@ class PositionMonitor:
         def _position_pnl(pos, entry_price, exit_price):
             if entry_price is None or exit_price is None:
                 return None
-            raw = exit_price - entry_price
+            if pos.trade_type == "stock" and pos.signal == "BEARISH":
+                raw = entry_price - exit_price
+            else:
+                raw = exit_price - entry_price
             if pos.trade_type == "stock":
                 return raw * _D(pos.shares)
             return raw * _D(pos.contracts) * _D("100")

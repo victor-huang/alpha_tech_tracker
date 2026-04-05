@@ -216,6 +216,8 @@ def select_top_n(
     ticker_dfs: dict = None,
     opening_start_time: str = OPENING_START_TIME,
     or_bar_lookback: int = 3,
+    regime_filter: bool = False,
+    regime_ma: int = 8,
 ) -> list:
     if target_date is None:
         target_date = datetime.now(_ET).date()
@@ -244,10 +246,16 @@ def select_top_n(
         source=source,
         ticker_dfs=ticker_dfs,
         opening_start_time=opening_start_time,
+        or_bar_lookback=or_bar_lookback,
+        regime_filter=regime_filter,
+        regime_ma=regime_ma,
     )
 
     rolling_stats = {
-        ticker: compute_ticker_stats(df) for ticker, df in all_results.items()
+        ticker: compute_ticker_stats(
+            df[df["date"] < target_date] if not df.empty else df
+        )
+        for ticker, df in all_results.items()
     }
 
     today_signals = compute_today_signals(

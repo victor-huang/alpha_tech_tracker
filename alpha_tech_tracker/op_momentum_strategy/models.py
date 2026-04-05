@@ -35,6 +35,7 @@ class SignalEvent:
     or_low: Decimal
     or_range: Decimal
     ma50_at_signal: Decimal
+    signal_bar_time: Optional[object] = None  # bar timestamp at signal fire time
 
 
 @dataclass

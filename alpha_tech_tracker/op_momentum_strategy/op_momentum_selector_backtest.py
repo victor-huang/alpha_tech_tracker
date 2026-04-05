@@ -245,8 +245,10 @@ def run_selector_backtest(
     print(f"Fetching bars for {len(tickers)} tickers ({eval_start} → {eval_end})...")
     all_bars = fetch_bars(tickers, fetch_start, eval_end, source=source)
 
+    # Regime dates must cover the full fetch window (lookback + eval) so that rolling
+    # stats for each day are computed on regime-filtered signals, matching the selector.
     bearish_regime_dates = (
-        build_bearish_regime_dates(eval_start, eval_end, source, regime_ma)
+        build_bearish_regime_dates(fetch_start, eval_end, source, regime_ma)
         if regime_filter
         else None
     )
