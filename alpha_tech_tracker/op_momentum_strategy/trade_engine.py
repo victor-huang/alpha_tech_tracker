@@ -36,6 +36,7 @@ from .config import (
     disable_notifications,
     enable_notifications,
     ACCOUNT_BUDGET,
+    CAPITAL_PER_SYMBOL,
 )
 from .bar_recorder import BarRecorder
 from .contract_selector import TimePremiumContractSelector
@@ -188,6 +189,7 @@ class OpMomentumTradeEngine:
         bearish_reentry_max_bars: int = 3,
         enable_bullish_reentry: bool = False,
         bullish_reentry_max_bars: int = 5,
+        replay_capital: Optional[float] = None,
     ):
         self._client = alpaca_client
         self._api_key = alpaca_client._api_key
@@ -211,6 +213,7 @@ class OpMomentumTradeEngine:
         self._bearish_reentry_max_bars = bearish_reentry_max_bars
         self._enable_bullish_reentry = enable_bullish_reentry
         self._bullish_reentry_max_bars = bullish_reentry_max_bars
+        self._replay_capital = replay_capital
         self._monitor: PositionMonitor = None
         self._signal_engine: LiveSignalEngine = None
         self._signal_lock = threading.Lock()
@@ -378,6 +381,11 @@ class OpMomentumTradeEngine:
         sim_entry_mid = (
             order.get("simulated_fill_mid") if self._mock_trade_execution else None
         )
+        slot_capital = (
+            window_budget * CAPITAL_PER_SYMBOL * capital_weight
+            if window_budget is not None
+            else None
+        )
         pos = ActivePosition(
             ticker=event.ticker,
             signal=event.signal,
@@ -404,6 +412,7 @@ class OpMomentumTradeEngine:
             window_label=window_label,
             rank=rank,
             window_budget=window_budget,
+            slot_capital=slot_capital,
         )
         self._monitor.add_position(pos)
 
@@ -543,7 +552,14 @@ class OpMomentumTradeEngine:
         )
 
     def _get_window_budget(self, win: WindowConfig) -> Optional[_D]:
-        """Return explicit window_budget for first-group windows; None for sequential."""
+        """Return explicit window_budget for first-group windows; None for sequential.
+
+        In replay mode (self._replay_capital set), uses the configured capital for all
+        windows — including sequential ones — so that cap_pnl is computed for every trade.
+        """
+        if self._replay_capital is not None:
+            capital = _D(str(self._replay_capital))
+            return capital * _D(str(win.capital_fraction)) if not win.is_sequential else capital
         if win.is_sequential:
             return None
         try:
@@ -866,6 +882,12 @@ class OpMomentumTradeEngine:
             windows=engine_windows,
             bar_recorder=bar_recorder,
         )
+        try:
+            account = self._client.get_accounts()
+            initial_capital = float(account.get("buying_power", ACCOUNT_BUDGET))
+        except Exception:
+            initial_capital = float(ACCOUNT_BUDGET)
+
         self._monitor = PositionMonitor(
             self._client,
             self._signal_engine,
@@ -881,6 +903,7 @@ class OpMomentumTradeEngine:
             enable_bullish_reentry=self._enable_bullish_reentry,
             bullish_reentry_max_bars=self._bullish_reentry_max_bars,
             re_entry_callback=self._enter_reentry,
+            initial_capital=initial_capital,
         )
 
         if self._option_price_monitor:
@@ -992,6 +1015,8 @@ class OpMomentumTradeEngine:
         )
         self._signal_engine.start_replay(replay_date)
 
+        initial_capital = self._replay_capital or float(ACCOUNT_BUDGET)
+
         self._monitor = PositionMonitor(
             self._client,
             self._signal_engine,
@@ -1006,6 +1031,7 @@ class OpMomentumTradeEngine:
             enable_bullish_reentry=self._enable_bullish_reentry,
             bullish_reentry_max_bars=self._bullish_reentry_max_bars,
             re_entry_callback=self._enter_reentry,
+            initial_capital=initial_capital,
         )
 
         # In replay mode signals are drained synchronously in _on_bar (no background threads)

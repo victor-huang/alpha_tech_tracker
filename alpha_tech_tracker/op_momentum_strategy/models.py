@@ -80,6 +80,7 @@ class ActivePosition:
     window_label: str = "W1"
     rank: int = 0
     window_budget: Optional[Decimal] = None
+    slot_capital: Optional[Decimal] = None
 
 
 @dataclass

@@ -58,6 +58,7 @@ class PositionMonitor:
         enable_bullish_reentry: bool = False,
         bullish_reentry_max_bars: int = 5,
         re_entry_callback=None,
+        initial_capital: Optional[float] = None,
     ):
         self._client = alpaca_client
         self._signal_engine = signal_engine
@@ -73,6 +74,7 @@ class PositionMonitor:
         self._enable_bullish_reentry = enable_bullish_reentry
         self._bullish_reentry_max_bars = bullish_reentry_max_bars
         self._re_entry_callback = re_entry_callback
+        self._initial_capital = initial_capital
         self._positions: list = []
         self._reentry_watchers: list = []
         self._lock = threading.Lock()
@@ -701,34 +703,52 @@ class PositionMonitor:
         def _print_totals(positions, get_entry, get_exit, width):
             total_pnl = _D("0")
             total_cost = _D("0")
+            total_cap_pnl = _D("0")
             has_any = False
+            has_cap = False
             for pos in positions:
-                pnl = _position_pnl(pos, get_entry(pos), get_exit(pos))
-                cost = _position_cost(pos, get_entry(pos))
+                entry = get_entry(pos)
+                exit_ = get_exit(pos)
+                pnl = _position_pnl(pos, entry, exit_)
+                cost = _position_cost(pos, entry)
                 if pnl is not None and cost is not None and cost > 0:
                     total_pnl += pnl
                     total_cost += cost
                     has_any = True
+                    if pos.slot_capital is not None and entry is not None and entry > 0:
+                        if pos.trade_type == "stock" and pos.signal == "BEARISH":
+                            raw = entry - exit_
+                        else:
+                            raw = exit_ - entry
+                        total_cap_pnl += pos.slot_capital / entry * raw
+                        has_cap = True
             if not has_any:
                 return
             pct = float(total_pnl / total_cost * 100) if total_cost > 0 else 0.0
             sign = "+" if total_pnl >= 0 else ""
             pct_sign = "+" if pct >= 0 else ""
+            summary = f"  Daily P&L: {sign}${total_pnl:.2f}  ({pct_sign}{pct:.2f}%  on  ${total_cost:.0f} deployed)"
+            if has_cap and self._initial_capital:
+                cap_pct = float(total_cap_pnl / _D(str(self._initial_capital)) * 100)
+                cap_sign = "+" if total_cap_pnl >= 0 else ""
+                cap_pct_sign = "+" if cap_pct >= 0 else ""
+                summary += (
+                    f"  │  cap: {cap_sign}${abs(float(total_cap_pnl)):.2f}"
+                    f" ({cap_pct_sign}{cap_pct:.2f}%)"
+                )
             print(f"  {'─' * (width - 2)}")
-            print(
-                f"  Daily P&L: {sign}${total_pnl:.2f}  ({pct_sign}{pct:.2f}%  on  ${total_cost:.0f} deployed)"
-            )
+            print(summary)
 
         if has_sim:
-            width = 114
+            width = 125
             print(f"\n{'=' * width}")
             print("  DAILY TRADE SUMMARY  [SIMULATE MODE]")
             print(f"{'=' * width}")
             print(
                 f"  {'Ticker':<7} {'Signal':<9} {'Instrument':<26} {'Qty':>6}"
-                f"  {'Entry':>5} {'Exit':>5}  {'EntryMid':>9} {'ExitMid':>9} {'P&L':>10}  Exit Reason"
+                f"  {'Entry':>5} {'Exit':>5}  {'EntryMid':>9} {'ExitMid':>9} {'P&L':>10}  {'%P&L':>7}  Exit Reason"
             )
-            print(f"  {'─' * 112}")
+            print(f"  {'─' * 123}")
             for pos in self._positions:
                 entry_mid = pos.simulated_entry_mid
                 exit_mid = pos.simulated_exit_mid
@@ -737,8 +757,17 @@ class PositionMonitor:
                     pnl_str = f"+${pnl:.2f}" if pnl >= 0 else f"-${abs(pnl):.2f}"
                     entry_str = f"${entry_mid:.2f}"
                     exit_str = f"${exit_mid:.2f}"
+                    if pos.trade_type == "stock" and pos.signal == "BEARISH":
+                        pnl_per_share = entry_mid - exit_mid
+                    else:
+                        pnl_per_share = exit_mid - entry_mid
+                    if entry_mid and entry_mid > 0:
+                        pnl_pct = float(pnl_per_share / entry_mid * 100)
+                        pnl_pct_str = f"+{pnl_pct:.2f}%" if pnl_pct >= 0 else f"{pnl_pct:.2f}%"
+                    else:
+                        pnl_pct_str = "—"
                 else:
-                    pnl_str = entry_str = exit_str = "—"
+                    pnl_str = entry_str = exit_str = pnl_pct_str = "—"
                 if pos.trade_type == "stock":
                     sym_str = f"{pos.ticker} [stock]"
                     qty_str = f"{pos.shares}sh"
@@ -749,7 +778,7 @@ class PositionMonitor:
                     f"  {pos.ticker:<7} {pos.signal:<9} {sym_str:<26} "
                     f"{qty_str:>6}"
                     f"  {_fmt_time(pos.entry_time):>5} {_fmt_time(pos.exit_time):>5}"
-                    f"  {entry_str:>9} {exit_str:>9} {pnl_str:>10}"
+                    f"  {entry_str:>9} {exit_str:>9} {pnl_str:>10}  {pnl_pct_str:>7}"
                     f"  {pos.exit_reason or 'open'}"
                 )
             _print_totals(

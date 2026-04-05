@@ -330,6 +330,17 @@ def parse_args():
         help="Max bars_held for primary BULLISH trade to be eligible for bullish re-entry (default: 5).",
     )
     parser.add_argument(
+        "--capital",
+        type=float,
+        default=None,
+        dest="capital",
+        help=(
+            "Starting capital for cap P&L simulation in replay mode (e.g. 10000). "
+            "Used as window budget for all windows so per-trade cap P&L matches the "
+            "selector backtest. Has no effect in live mode."
+        ),
+    )
+    parser.add_argument(
         "--replay-date",
         type=str,
         default=None,
@@ -459,6 +470,7 @@ if __name__ == "__main__":
             bullish_reentry_max_bars=args.bullish_reentry_max_bars,
             top_n=args.top,
             lookback_days=args.lookback,
+            replay_capital=args.capital,
         )
         if args.replay_date:
             from datetime import date as _date
@@ -536,6 +548,7 @@ if __name__ == "__main__":
             bullish_reentry_max_bars=args.bullish_reentry_max_bars,
             top_n=args.top,
             lookback_days=args.lookback,
+            replay_capital=args.capital,
         )
         engine.run(tickers_override=args.tickers)
     finally:
