@@ -77,6 +77,7 @@ class ActivePosition:
     exit_fill_price: Optional[Decimal] = None
     bars_held: int = 0
     trailing_arm_price: Optional[Decimal] = None
+    reentry_type: Optional[str] = None
     window_label: str = "W1"
     rank: int = 0
     window_budget: Optional[Decimal] = None

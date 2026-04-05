@@ -266,6 +266,7 @@ class OpMomentumTradeEngine:
         hard_stop_override: Optional[_D] = None,
         trailing_arm_price: Optional[_D] = None,
         initial_hard_stop_armed: bool = False,
+        reentry_type: Optional[str] = None,
     ):
         logger.info(
             "Entering position [%s]: %s %s @ %.2f (rank=%d)",
@@ -309,6 +310,7 @@ class OpMomentumTradeEngine:
                 entry_bar_time=entry_bar_time,
                 trailing_arm_price=trailing_arm_price,
                 initial_hard_stop_armed=initial_hard_stop_armed,
+                reentry_type=reentry_type,
             )
         else:
             self._enter_option_position(
@@ -324,6 +326,7 @@ class OpMomentumTradeEngine:
                 entry_bar_time=entry_bar_time,
                 trailing_arm_price=trailing_arm_price,
                 initial_hard_stop_armed=initial_hard_stop_armed,
+                reentry_type=reentry_type,
             )
 
     def _enter_stock_position(
@@ -340,6 +343,7 @@ class OpMomentumTradeEngine:
         entry_bar_time,
         trailing_arm_price=None,
         initial_hard_stop_armed: bool = False,
+        reentry_type: Optional[str] = None,
     ):
         try:
             sizer = PositionSizer(self._client)
@@ -428,6 +432,7 @@ class OpMomentumTradeEngine:
             entry_time=_now_et(),
             simulated_entry_mid=sim_entry_mid,
             trailing_arm_price=trailing_arm_price,
+            reentry_type=reentry_type,
             window_label=window_label,
             rank=rank,
             window_budget=window_budget,
@@ -456,6 +461,7 @@ class OpMomentumTradeEngine:
         entry_bar_time,
         trailing_arm_price=None,
         initial_hard_stop_armed: bool = False,
+        reentry_type: Optional[str] = None,
     ):
         try:
             selector = TimePremiumContractSelector(
@@ -521,6 +527,7 @@ class OpMomentumTradeEngine:
             entry_time=_now_et(),
             simulated_entry_mid=sim_entry_mid,
             trailing_arm_price=trailing_arm_price,
+            reentry_type=reentry_type,
             window_label=window_label,
             rank=rank,
             window_budget=window_budget,
@@ -568,6 +575,7 @@ class OpMomentumTradeEngine:
             hard_stop_override=watcher.midpoint,
             trailing_arm_price=trailing_arm,
             initial_hard_stop_armed=True,
+            reentry_type=watcher.reentry_type,
         )
 
     def _prior_window_label(self, win: WindowConfig) -> Optional[str]:

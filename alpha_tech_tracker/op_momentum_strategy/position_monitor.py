@@ -751,16 +751,27 @@ class PositionMonitor:
             print(f"  {'─' * (width - 2)}")
             print(summary)
 
+        def _trade_label(pos) -> str:
+            if pos.reentry_type is None:
+                return f"[{pos.signal.capitalize()}]"
+            if pos.reentry_type == "reversal":
+                return "[Reversal Trade]"
+            if pos.reentry_type == "bearish_reentry":
+                return "[Bearish Cont.]"
+            if pos.reentry_type == "bullish_reentry":
+                return "[Bullish Cont.]"
+            return f"[{pos.signal.capitalize()}]"
+
         if has_sim:
-            width = 125
+            width = 132
             print(f"\n{'=' * width}")
             print("  DAILY TRADE SUMMARY  [SIMULATE MODE]")
             print(f"{'=' * width}")
             print(
-                f"  {'Ticker':<7} {'Signal':<9} {'Instrument':<26} {'Qty':>6}"
+                f"  {'Ticker':<7} {'Signal':<16} {'Instrument':<26} {'Qty':>6}"
                 f"  {'Entry':>5} {'Exit':>5}  {'EntryMid':>9} {'ExitMid':>9} {'P&L':>10}  {'%P&L':>7}  Exit Reason"
             )
-            print(f"  {'─' * 123}")
+            print(f"  {'─' * 130}")
             for pos in self._positions:
                 entry_mid = pos.simulated_entry_mid
                 exit_mid = pos.simulated_exit_mid
@@ -787,7 +798,7 @@ class PositionMonitor:
                     sym_str = pos.option_symbol
                     qty_str = str(pos.contracts)
                 print(
-                    f"  {pos.ticker:<7} {pos.signal:<9} {sym_str:<26} "
+                    f"  {pos.ticker:<7} {_trade_label(pos):<16} {sym_str:<26} "
                     f"{qty_str:>6}"
                     f"  {_fmt_time(pos.entry_time):>5} {_fmt_time(pos.exit_time):>5}"
                     f"  {entry_str:>9} {exit_str:>9} {pnl_str:>10}  {pnl_pct_str:>7}"
@@ -801,15 +812,15 @@ class PositionMonitor:
             )
             print(f"{'=' * width}\n")
         else:
-            width = 86
+            width = 93
             print(f"\n{'=' * width}")
             print("  DAILY TRADE SUMMARY")
             print(f"{'=' * width}")
             print(
-                f"  {'Ticker':<7} {'Signal':<9} {'Instrument':<26} {'Qty':>6}"
+                f"  {'Ticker':<7} {'Signal':<16} {'Instrument':<26} {'Qty':>6}"
                 f"  {'Entry':>5} {'Exit':>5}  Exit Reason"
             )
-            print(f"  {'─' * 84}")
+            print(f"  {'─' * 91}")
             for pos in self._positions:
                 if pos.trade_type == "stock":
                     sym_str = f"{pos.ticker} [stock]"
@@ -818,7 +829,7 @@ class PositionMonitor:
                     sym_str = pos.option_symbol
                     qty_str = str(pos.contracts)
                 print(
-                    f"  {pos.ticker:<7} {pos.signal:<9} {sym_str:<26} "
+                    f"  {pos.ticker:<7} {_trade_label(pos):<16} {sym_str:<26} "
                     f"{qty_str:>6}"
                     f"  {_fmt_time(pos.entry_time):>5} {_fmt_time(pos.exit_time):>5}"
                     f"  {pos.exit_reason or 'open'}"
