@@ -42,6 +42,7 @@ from .option_price_monitor import OptionPriceMonitor
 from .order_executor import _place_with_fill_escalation, place_stock_order
 from .position_monitor import PositionMonitor
 from .position_sizer import PositionSizer
+from .replay import BarReplayDriver, _now_et
 from .signal_engine import LiveSignalEngine
 
 logger = logging.getLogger(__name__)
@@ -71,7 +72,7 @@ class TickerSelector:
         self.rolling_stats: dict = {}
 
     def select(self) -> list:
-        today = datetime.now(ET).date()
+        today = _now_et().date()
 
         fetch_start = today - timedelta(days=max(ROLLING_LOOKBACK_DAYS, 30) + 5)
         ticker_dfs = fetch_bars(
@@ -213,7 +214,7 @@ class OpMomentumTradeEngine:
             ]
 
         # Pre-initialize window state so per-window methods are callable before run()
-        today = datetime.now(ET).date()
+        today = _now_et().date()
         for win in self._windows:
             opening_start_t = datetime.strptime(win.opening_start, "%H:%M").time()
             or_open = ET.localize(datetime.combine(today, opening_start_t))
@@ -524,7 +525,7 @@ class OpMomentumTradeEngine:
             return None
 
     def _on_signal_for_window(self, window_label: str, event: SignalEvent):
-        now = datetime.now(ET)
+        now = _now_et()
         state = self._window_state[window_label]
         with self._signal_lock:
             if now < state["collection_deadline"]:
@@ -561,7 +562,7 @@ class OpMomentumTradeEngine:
             label,
             deadline.strftime("%H:%M:%S"),
         )
-        while datetime.now(ET) < deadline:
+        while _now_et() < deadline:
             time.sleep(0.5)
 
         with self._signal_lock:
@@ -719,9 +720,9 @@ class OpMomentumTradeEngine:
 
     def _monitor_loop(self, active_tickers: list):
         eod_h, eod_m = [int(x) for x in EOD_EXIT_TIME.split(":")]
-        last_status_print = datetime.now(ET)
+        last_status_print = _now_et()
         while True:
-            now = datetime.now(ET)
+            now = _now_et()
             if now.hour > eod_h or (now.hour == eod_h and now.minute >= eod_m):
                 logger.info("EOD: force-closing all positions")
                 self._monitor.close_all(reason="end_of_day")
@@ -760,7 +761,7 @@ class OpMomentumTradeEngine:
             ]
             print(f"Windows: {', '.join(labels)}")
 
-        today = datetime.now(ET).date()
+        today = _now_et().date()
 
         # Build per-window state and signal engine window configs
         engine_windows = []
@@ -847,4 +848,108 @@ class OpMomentumTradeEngine:
         if self._option_price_monitor:
             self._option_price_monitor.stop()
         bar_recorder.close()
+        self._monitor.print_summary()
+
+    def run_replay(self, replay_date, tickers_override: list = None):
+        """
+        Run a full trading session against historical bar data for `replay_date`.
+
+        Feeds cached 5-min bars through the identical signal → entry → monitor →
+        exit pipeline used in live mode.  Always uses mock_trade_execution=True
+        regardless of how the engine was constructed.
+        """
+        from datetime import time as _time
+        from .replay import set_replay_clock
+
+        # Pin the clock to replay_date 9:30 so TickerSelector and window-state
+        # initialisation both use the correct date.
+        replay_open = ET.localize(datetime.combine(replay_date, _time(9, 30)))
+        set_replay_clock(lambda: replay_open)
+
+        all_tickers = tickers_override or TICKERS
+        first_window = self._windows[0]
+
+        ticker_selector = TickerSelector(
+            tickers=all_tickers,
+            top_n=MAX_ACTIVE_SYMBOLS,
+            stop_pct=float(self._stop_pct),
+            opening_start_time=first_window.opening_start,
+        )
+        pre_market_picks = ticker_selector.select()
+        self._rolling_stats = ticker_selector.rolling_stats
+        print(f"\nReplay {replay_date} — pre-market picks: {pre_market_picks}")
+
+        # Build per-window states with replay_date deadlines
+        engine_windows = []
+        for win in self._windows:
+            opening_start_t = datetime.strptime(win.opening_start, "%H:%M").time()
+            or_open_et = ET.localize(datetime.combine(replay_date, opening_start_t))
+            or_close_et = or_open_et + timedelta(minutes=win.opening_bars * 5)
+            deadline = or_close_et + timedelta(minutes=SIGNAL_BUFFER_MINUTES)
+            label = win.label
+            self._window_state[label] = {
+                "pending_signals": {},
+                "collection_deadline": deadline,
+                "open_position_count": 0,
+                "capital_fraction": win.capital_fraction,
+            }
+            engine_windows.append(
+                {
+                    "label": label,
+                    "opening_start": win.opening_start,
+                    "opening_bars": win.opening_bars,
+                    "on_signal": lambda event, lbl=label: self._on_signal_for_window(
+                        lbl, event
+                    ),
+                }
+            )
+
+        self._signal_engine = LiveSignalEngine(
+            tickers=all_tickers,
+            api_key=self._api_key,
+            secret_key=self._secret_key,
+            bearish_ma200=BEARISH_MA200,
+            regime_filter=self._regime_filter,
+            regime_ma=self._regime_ma,
+            windows=engine_windows,
+        )
+        self._signal_engine.start_replay(replay_date)
+
+        self._monitor = PositionMonitor(
+            self._client,
+            self._signal_engine,
+            mock_trade_execution=True,
+            trailing_ma=self._trailing_ma,
+            max_loss_pct=self._max_loss_pct,
+            armed_ma20_exit=self._armed_ma20_exit,
+            enable_reversal=self._enable_reversal,
+            reversal_max_bars=self._reversal_max_bars,
+            enable_bearish_reentry=self._enable_bearish_reentry,
+            bearish_reentry_max_bars=self._bearish_reentry_max_bars,
+            enable_bullish_reentry=self._enable_bullish_reentry,
+            bullish_reentry_max_bars=self._bullish_reentry_max_bars,
+            re_entry_callback=self._enter_reentry,
+        )
+
+        for win in self._windows:
+            t = threading.Thread(
+                target=self._signal_selection_loop_for_window,
+                args=(win,),
+                daemon=True,
+            )
+            t.start()
+
+        def _on_bar(ticker):
+            self._monitor.on_bar(ticker)
+
+        driver = BarReplayDriver(
+            tickers=all_tickers,
+            replay_date=replay_date,
+            signal_engine=self._signal_engine,
+            on_bar_injected=_on_bar,
+        )
+        driver.run()
+
+        # Force-close any positions still open after the last bar
+        self._monitor.close_all(reason="end_of_day")
         self._monitor.print_summary()

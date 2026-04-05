@@ -328,6 +328,14 @@ def parse_args():
         dest="bullish_reentry_max_bars",
         help="Max bars_held for primary BULLISH trade to be eligible for bullish re-entry (default: 5).",
     )
+    parser.add_argument(
+        "--replay-date",
+        type=str,
+        default=None,
+        dest="replay_date",
+        help="Replay a historical session (YYYY-MM-DD). Feeds cached 5-min bars through "
+        "the live engine instead of a live WebSocket stream. Implies mock-trade-execution.",
+    )
     return parser.parse_args()
 
 
@@ -435,7 +443,12 @@ if __name__ == "__main__":
             enable_bullish_reentry=args.bullish_reentry,
             bullish_reentry_max_bars=args.bullish_reentry_max_bars,
         )
-        engine.run(tickers_override=args.tickers)
+        if args.replay_date:
+            from datetime import date as _date
+            replay_date = _date.fromisoformat(args.replay_date)
+            engine.run_replay(replay_date, tickers_override=args.tickers)
+        else:
+            engine.run(tickers_override=args.tickers)
         sys.exit(0)
 
     if args.action == "status":

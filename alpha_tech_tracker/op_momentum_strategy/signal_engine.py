@@ -26,6 +26,7 @@ from .config import (
     REGIME_MA,
 )
 from .models import SignalEvent, _D, _FiveMinBar
+from .replay import _now_et
 
 logger = logging.getLogger(__name__)
 
@@ -100,7 +101,7 @@ class LiveSignalEngine:
         self._minute_buf: dict = {
             t: {"period_start": None, "bars": []} for t in tickers
         }
-        self._session_date = datetime.now(ET).date()
+        self._session_date = _now_et().date()
         self._stream: StockDataStream = None
         self._lock = threading.Lock()
         self._bar_recorder = bar_recorder
@@ -232,7 +233,7 @@ class LiveSignalEngine:
 
         if (
             signal == "BULLISH"
-            and datetime.now(ET).date() in self._bearish_regime_dates
+            and _now_et().date() in self._bearish_regime_dates
         ):
             logger.info(
                 "%s [%s]: BULLISH signal suppressed by regime filter (QQQ bearish)",
@@ -373,7 +374,7 @@ class LiveSignalEngine:
             return
 
         ts = bar.timestamp.astimezone(ET)
-        today = datetime.now(ET).date()
+        today = _now_et().date()
 
         with self._lock:
             if ts.date() != today:
@@ -460,11 +461,57 @@ class LiveSignalEngine:
             return None
         return df.iloc[-1]
 
+    def _warmup_from_cache(self, replay_date):
+        """Populate _history with bars up to (but not including) `replay_date`."""
+        from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import fetch_bars
+
+        start = replay_date - timedelta(days=220)
+        end = replay_date - timedelta(days=1)
+        logger.info(
+            "Replay warmup: loading bars %s to %s for %d tickers",
+            start,
+            end,
+            len(self._tickers),
+        )
+        bars_dict = fetch_bars(self._tickers, start, end, source="alpaca")
+        empty_cols = ["Open", "High", "Low", "Close", "Volume", "MA20", "MA50", "MA200"]
+        for ticker, df in bars_dict.items():
+            if df.empty:
+                self._history[ticker] = pd.DataFrame(columns=empty_cols)
+                logger.warning("No warmup data for %s", ticker)
+                continue
+            df = df.copy()
+            df["MA20"] = df["Close"].rolling(20).mean()
+            df["MA50"] = df["Close"].rolling(50).mean()
+            df["MA200"] = df["Close"].rolling(200).mean()
+            self._history[ticker] = df
+            logger.info(
+                "Replay warmup %-6s — %d bars, last close=%.2f",
+                ticker,
+                len(df),
+                df["Close"].iloc[-1],
+            )
+
+    def start_replay(self, replay_date):
+        """Initialise for replay mode: warmup from cache + regime filter. No WebSocket."""
+        self._session_date = replay_date
+        self._warmup_from_cache(replay_date)
+        if self._regime_filter:
+            lookback_start = replay_date - timedelta(days=self._regime_ma * 3 + 10)
+            self._bearish_regime_dates = build_bearish_regime_dates(
+                lookback_start, replay_date, regime_ma=self._regime_ma
+            )
+            logger.info(
+                "Replay regime filter ON (QQQ MA%d): %d bearish dates in lookback",
+                self._regime_ma,
+                len(self._bearish_regime_dates),
+            )
+
     def start(self):
         logger.info("Warming up historical bars for %s", self._tickers)
         self._warmup()
         if self._regime_filter:
-            today = datetime.now(ET).date()
+            today = _now_et().date()
             lookback_start = today - timedelta(days=self._regime_ma * 3 + 10)
             self._bearish_regime_dates = build_bearish_regime_dates(
                 lookback_start, today, regime_ma=self._regime_ma
