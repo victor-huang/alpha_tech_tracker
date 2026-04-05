@@ -2,7 +2,7 @@ import logging
 import threading
 from datetime import datetime
 from decimal import ROUND_HALF_UP
-from typing import Optional
+from typing import Callable, Optional
 
 import pandas as pd
 import pytz
@@ -59,6 +59,7 @@ class PositionMonitor:
         bullish_reentry_max_bars: int = 5,
         re_entry_callback=None,
         initial_capital: Optional[float] = None,
+        close_callback: Optional[Callable] = None,
     ):
         self._client = alpaca_client
         self._signal_engine = signal_engine
@@ -75,6 +76,7 @@ class PositionMonitor:
         self._bullish_reentry_max_bars = bullish_reentry_max_bars
         self._re_entry_callback = re_entry_callback
         self._initial_capital = initial_capital
+        self._close_callback = close_callback
         self._positions: list = []
         self._reentry_watchers: list = []
         self._lock = threading.Lock()
@@ -254,7 +256,14 @@ class PositionMonitor:
 
         midpoint = (_D(str(pos.or_high)) + _D(str(pos.or_low))) / _D("2")
 
-        # Reversal takes priority over bearish re-entry for the same closed position.
+        # Reversal takes priority over bearish re-entry when both are eligible for
+        # the same position.  The backtest scans for a reversal first (exhaustively)
+        # and only falls through to BRE if no reversal trigger is ever found.  In
+        # the live engine we cannot know at watcher-creation time whether a reversal
+        # trigger will appear before a BRE trigger, so we follow the same priority
+        # rule: create a reversal watcher and skip BRE when the position is
+        # reversal-eligible.  BRE is created only when reversal is not eligible
+        # (bars_held > reversal_max_bars, or reversal not enabled).
         if (
             self._enable_reversal
             and pos.signal == "BEARISH"
@@ -272,7 +281,7 @@ class PositionMonitor:
                     window_label=pos.window_label,
                     rank=pos.rank,
                     window_budget=pos.window_budget,
-                    primary_exit_bar_time=pos.entry_bar_time,
+                    primary_exit_bar_time=pos.exit_time,
                 )
             )
             logger.info(
@@ -297,7 +306,7 @@ class PositionMonitor:
                     window_label=pos.window_label,
                     rank=pos.rank,
                     window_budget=pos.window_budget,
-                    primary_exit_bar_time=pos.entry_bar_time,
+                    primary_exit_bar_time=pos.exit_time,
                 )
             )
             logger.info(
@@ -323,7 +332,7 @@ class PositionMonitor:
                     window_label=pos.window_label,
                     rank=pos.rank,
                     window_budget=pos.window_budget,
-                    primary_exit_bar_time=pos.entry_bar_time,
+                    primary_exit_bar_time=pos.exit_time,
                 )
             )
             logger.info(
@@ -365,6 +374,9 @@ class PositionMonitor:
             self._close_stock_position(pos, reason, exit_stock_price_override=exit_stock_price_override)
         else:
             self._close_option_position(pos, reason)
+
+        if self._close_callback:
+            self._close_callback(pos)
 
     def _close_stock_position(self, pos: ActivePosition, reason: str, exit_stock_price_override=None):
         logger.info(

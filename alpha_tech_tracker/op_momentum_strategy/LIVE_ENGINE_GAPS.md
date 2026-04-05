@@ -276,6 +276,90 @@ since `_enter_position` calls `monitor.add_position()` which also acquires the l
 
 ---
 
+### ~~G17 — No cap P&L reporting in replay summary~~ ✓ Fixed
+
+**Files:** `trade_engine.py`, `position_monitor.py`, `op_momentum_trade_engine.py`
+**Severity:** Medium — no way to compare replay session returns to backtest percentages
+
+The backtest prints `cap: +$X (+Y%)  portfolio: $Z` per day using fractional-share
+P&L: `cap_pnl = (slot_capital / entry_price) × pnl_per_share`, where
+`slot_capital = window_budget × (1/top_n)`.  The trade engine's `print_summary` only
+showed raw dollar P&L and `% on $ deployed`.
+
+**Fix:**
+- Added `--capital` CLI flag (`replay_capital` on the engine) that sets the session
+  starting capital used for both `window_budget` and the cap-% denominator.
+- `_get_window_budget` returns `replay_capital × capital_fraction` in replay mode,
+  so all windows (including sequential) receive a deterministic budget.
+- `_enter_stock_position` computes `slot_capital = window_budget × (1/top_n)` (equal
+  weight) or `window_budget × RANK_WEIGHTS[rank]` (rank-weighted), stored on each
+  `ActivePosition`.
+- `PositionMonitor.print_summary` gained a `%P&L` column per trade and a
+  `cap: +$X (+Y%)` footer line matching the backtest's format.
+- `PositionMonitor.__init__` gained `initial_capital` (used as the cap-% denominator).
+
+---
+
+### ~~G18 — Sequential windows use flat initial capital instead of prior window's return~~ ✓ Fixed
+
+**Files:** `trade_engine.py`, `position_monitor.py`
+**Severity:** Medium — A1/A2 `slot_capital` wrong; cap P&L diverges from backtest
+
+The backtest's `_apply_capital_flow()` gives sequential windows all returned capital
+from the prior window:
+```
+available_for_A1 = initial_capital + M1_cap_pnl
+available_for_A2 = available_for_A1 + A1_cap_pnl
+```
+The trade engine assigned `replay_capital` (flat) as the budget for every window,
+ignoring actual M1/A1 P&L.  In live mode, sequential windows queried the account
+balance at drain time rather than constraining to prior-window proceeds.
+
+**Fix:**
+- Added `close_callback: Callable` to `PositionMonitor.__init__`; fires after each
+  position closes (after the exit price is set).
+- `OpMomentumTradeEngine` accumulates returned capital per window in
+  `_window_returned: dict` via `_on_position_closed(pos)`:
+  `returned = slot_capital + cap_pnl` for primary positions.
+- `_get_window_budget` for sequential windows reads `_window_returned[prior_label]`
+  plus the `slot_capital` of still-open primary positions in the prior window
+  (estimated at cost basis), giving the full prior-window budget at drain time.
+- Fallback (no prior-window positions at all): uses `replay_capital` (replay) or
+  live account balance (live mode) — unchanged from previous behaviour.
+- `_window_returned` resets at the start of each `run()` / `run_replay()` call.
+
+---
+
+### ~~G19 — Re-entry positions double-count capital in sequential window budget~~ ✓ Fixed
+
+**File:** `trade_engine.py` `_on_position_closed()`
+**Severity:** High — A1/A2 window budgets inflated when M1/A1 had re-entry trades
+
+`_on_position_closed` added `slot_capital + cap_pnl` to `_window_returned` for
+*every* closed position, including re-entries.  But re-entries share a capital slot
+with their primary trade; they do not deploy new capital.
+
+**Example** — top_n=2, one primary stops out and triggers a reversal:
+
+| Position | Returned (buggy) | Returned (correct) |
+|---|---|---|
+| Primary 1 (slot=$5000, loss=-$250) | $4750 | $4750 |
+| Reversal 1 (slot=$5000, gain=+$294) | $5294 | $294 (cap_pnl only) |
+| Primary 2 (slot=$5000, gain=+$375) | $5375 | $5375 |
+| **Total `_window_returned["M1"]`** | **$15419** | **$10419** |
+| Backtest `available` | $10419 | $10419 ✓ |
+
+The inflated budget caused A1/A2 positions to receive oversized `slot_capital`,
+inflating their cap P&L in the summary.
+
+**Fix:**
+- In `_on_position_closed`, re-entry positions (`trailing_arm_price is not None`)
+  add only `cap_pnl` (no principal) to `_window_returned`.
+- In `_get_window_budget`'s still-open estimate, re-entry positions are excluded
+  from the slot_capital sum for the same reason.
+
+---
+
 ### ~~G16 — Re-entry positions spawn further re-entry watchers (cascade)~~ ✓ Fixed
 
 **File:** `position_monitor.py` `_maybe_create_reentry_watcher()`

@@ -189,6 +189,7 @@ class OpMomentumTradeEngine:
         enable_bullish_reentry: bool = False,
         bullish_reentry_max_bars: int = 5,
         replay_capital: Optional[float] = None,
+        or_bar_lookback: int = 3,
     ):
         self._client = alpaca_client
         self._api_key = alpaca_client._api_key
@@ -213,9 +214,15 @@ class OpMomentumTradeEngine:
         self._enable_bullish_reentry = enable_bullish_reentry
         self._bullish_reentry_max_bars = bullish_reentry_max_bars
         self._replay_capital = replay_capital
+        self._or_bar_lookback = or_bar_lookback
         self._monitor: PositionMonitor = None
         self._signal_engine: LiveSignalEngine = None
         self._signal_lock = threading.Lock()
+        # Accumulated capital returned per window label as positions close.
+        self._window_returned: dict = {}
+        self._returned_lock = threading.Lock()
+        # Total primary slot_capital deployed per window (tracks undeployed capital).
+        self._window_primary_deployed: dict = {}
         self._rolling_stats: dict = {}
         # Per-window rolling stats: {label: {ticker: stats_dict}}
         # Falls back to _rolling_stats when label not present (e.g. single-window or tests).
@@ -388,6 +395,16 @@ class OpMomentumTradeEngine:
             slot_capital = window_budget * slot_weight
         else:
             slot_capital = None
+
+        # Track primary slot capital deployed per window so undeployed capital
+        # can be forwarded to the next sequential window.
+        is_reentry = trailing_arm_price is not None
+        if not is_reentry and slot_capital is not None:
+            with self._returned_lock:
+                if window_label not in self._window_primary_deployed:
+                    self._window_primary_deployed[window_label] = _D("0")
+                self._window_primary_deployed[window_label] += slot_capital
+
         pos = ActivePosition(
             ticker=event.ticker,
             signal=event.signal,
@@ -553,24 +570,147 @@ class OpMomentumTradeEngine:
             initial_hard_stop_armed=True,
         )
 
-    def _get_window_budget(self, win: WindowConfig) -> Optional[_D]:
-        """Return explicit window_budget for first-group windows; None for sequential.
+    def _prior_window_label(self, win: WindowConfig) -> Optional[str]:
+        for i, w in enumerate(self._windows):
+            if w.label == win.label and i > 0:
+                return self._windows[i - 1].label
+        return None
 
-        In replay mode (self._replay_capital set), uses the configured capital for all
-        windows — including sequential ones — so that cap_pnl is computed for every trade.
+    def _on_position_closed(self, pos: ActivePosition):
+        """Accumulate capital returned by a closed position into _window_returned.
+
+        Re-entry positions (trailing_arm_price set) share a capital slot with their
+        primary trade — they don't deploy fresh capital. Only their net P&L is added
+        to _window_returned so the sequential window budget matches the backtest's
+        capital flow model (available = initial_capital + prior_window_cap_pnl).
         """
-        if self._replay_capital is not None:
-            capital = _D(str(self._replay_capital))
-            return capital * _D(str(win.capital_fraction)) if not win.is_sequential else capital
-        if win.is_sequential:
+        if pos.slot_capital is None:
+            return
+        entry = pos.simulated_entry_mid if pos.simulated_entry_mid is not None else pos.entry_stock_price
+        exit_ = pos.simulated_exit_mid if pos.simulated_exit_mid is not None else pos.exit_fill_price
+        if entry and entry > 0 and exit_:
+            if pos.trade_type == "stock" and pos.signal == "BEARISH":
+                raw = entry - exit_
+            else:
+                raw = exit_ - entry
+            cap_pnl = pos.slot_capital / entry * raw
+        else:
+            cap_pnl = _D("0")
+
+        is_reentry = pos.trailing_arm_price is not None
+        if is_reentry:
+            # Re-entry reuses the primary slot's capital; add only the net P&L.
+            returned = cap_pnl
+        else:
+            returned = pos.slot_capital + cap_pnl
+
+        with self._returned_lock:
+            if pos.window_label not in self._window_returned:
+                self._window_returned[pos.window_label] = _D("0")
+            self._window_returned[pos.window_label] += returned
+            total = self._window_returned[pos.window_label]
+        logger.info(
+            "Capital returned [%s] %s (reentry=%s): slot=%.2f cap_pnl=%.2f returned=%.2f window_total=%.2f",
+            pos.window_label,
+            pos.ticker,
+            is_reentry,
+            float(pos.slot_capital),
+            float(cap_pnl),
+            float(returned),
+            float(total),
+        )
+
+    def _get_window_budget(self, win: WindowConfig) -> Optional[_D]:
+        """Return window budget based on available capital.
+
+        First-group windows: buying_power × capital_fraction (or replay_capital in replay mode).
+        Sequential windows: capital returned from prior window's closed positions, plus
+        slot_capital of still-open prior window positions (estimated at cost). Falls back
+        to replay_capital or account balance if the prior window had no positions.
+        """
+        if not win.is_sequential:
+            if self._replay_capital is not None:
+                capital = _D(str(self._replay_capital))
+                return capital * _D(str(win.capital_fraction))
+            try:
+                account = self._client.get_accounts()
+                buying_power = _D(account.get("buying_power", ACCOUNT_BUDGET))
+                return buying_power * _D(str(win.capital_fraction))
+            except Exception:
+                logger.exception(
+                    "Could not fetch account balance for window [%s]", win.label
+                )
+                return None
+
+        # Sequential window: sum returned capital from prior window
+        prior_label = self._prior_window_label(win)
+        if prior_label is None:
+            logger.warning("No prior window found for sequential [%s]", win.label)
+            if self._replay_capital is not None:
+                return _D(str(self._replay_capital))
             return None
+
+        # Capital already returned from closed prior-window positions
+        with self._returned_lock:
+            prior_returned = self._window_returned.get(prior_label, _D("0"))
+            prior_deployed = self._window_primary_deployed.get(prior_label, _D("0"))
+
+        # Add slot_capital for still-open primary positions in the prior window.
+        # Re-entries (trailing_arm_price set) share the primary's capital slot; exclude them.
+        open_primary_capital = _D("0")
+        if self._monitor is not None:
+            with self._monitor._lock:
+                for pos in self._monitor._positions:
+                    if (
+                        pos.window_label == prior_label
+                        and not pos.is_closed
+                        and pos.trailing_arm_price is None
+                        and pos.slot_capital is not None
+                    ):
+                        open_primary_capital += pos.slot_capital
+        prior_returned += open_primary_capital
+
+        # Add undeployed capital: slots in the prior window that had no signal.
+        # prior_deployed tracks the sum of slot_capital for all primary positions
+        # (open + closed). Any budget not deployed flows forward to this window.
+        prior_budget = self._window_state.get(prior_label, {}).get("budget")
+        if prior_budget is not None and prior_deployed < prior_budget:
+            undeployed = prior_budget - prior_deployed
+            prior_returned += undeployed
+            logger.debug(
+                "Sequential window [%s]: adding undeployed %.2f from [%s]"
+                " (budget=%.2f deployed=%.2f)",
+                win.label,
+                float(undeployed),
+                prior_label,
+                float(prior_budget),
+                float(prior_deployed),
+            )
+
+        if prior_returned > 0:
+            logger.info(
+                "Sequential window [%s] budget from prior [%s]: %.2f",
+                win.label,
+                prior_label,
+                float(prior_returned),
+            )
+            return prior_returned
+
+        # Fallback: prior window had no positions
+        logger.info(
+            "Sequential window [%s]: no prior [%s] capital, using fallback",
+            win.label,
+            prior_label,
+        )
+        if self._replay_capital is not None:
+            return _D(str(self._replay_capital))
         try:
             account = self._client.get_accounts()
             buying_power = _D(account.get("buying_power", ACCOUNT_BUDGET))
-            return buying_power * _D(str(win.capital_fraction))
+            return buying_power
         except Exception:
             logger.exception(
-                "Could not fetch account balance for window budget [%s]", win.label
+                "Could not fetch account balance for sequential window [%s]", win.label
             )
             return None
 
@@ -578,7 +718,13 @@ class OpMomentumTradeEngine:
         now = _now_et()
         state = self._window_state[window_label]
         with self._signal_lock:
-            if now < state["collection_deadline"]:
+            if now <= state["collection_deadline"]:
+                # In replay mode the clock is pinned to bar timestamps and the
+                # collection deadline equals the OR-close bar timestamp exactly.
+                # Buffering signals at now == deadline (<=) ensures they are
+                # ranked by the drain rather than jumping the queue at rank=0.
+                # In live mode now == deadline is essentially impossible
+                # (millisecond clock vs 5-min bar grid), so this is safe.
                 if self._signal_engine is not None:
                     latest_bar = self._signal_engine.get_latest_bar(event.ticker)
                     event.signal_bar_time = latest_bar.name if latest_bar is not None else None
@@ -667,6 +813,9 @@ class OpMomentumTradeEngine:
         scored.sort(key=lambda x: x[0], reverse=True)
 
         window_budget = self._get_window_budget(win)
+        # Store budget so sequential windows can compute undeployed capital.
+        if window_budget is not None:
+            self._window_state[label]["budget"] = window_budget
         for rank, (score, ticker, event) in enumerate(scored):
             with self._signal_lock:
                 if state["open_position_count"] >= self._top_n:
@@ -804,6 +953,8 @@ class OpMomentumTradeEngine:
         all_tickers = tickers_override or TICKERS
         first_window = self._windows[0]
 
+        self._window_returned = {}
+        self._window_primary_deployed = {}
         self._rolling_stats_by_window = {}
         seen_configs: dict = {}
         pre_market_picks: list = []
@@ -883,6 +1034,7 @@ class OpMomentumTradeEngine:
             regime_ma=self._regime_ma,
             windows=engine_windows,
             bar_recorder=bar_recorder,
+            or_bar_lookback=self._or_bar_lookback,
         )
         try:
             account = self._client.get_accounts()
@@ -906,6 +1058,7 @@ class OpMomentumTradeEngine:
             bullish_reentry_max_bars=self._bullish_reentry_max_bars,
             re_entry_callback=self._enter_reentry,
             initial_capital=initial_capital,
+            close_callback=self._on_position_closed,
         )
 
         if self._option_price_monitor:
@@ -953,6 +1106,8 @@ class OpMomentumTradeEngine:
         all_tickers = tickers_override or TICKERS
         first_window = self._windows[0]
 
+        self._window_returned = {}
+        self._window_primary_deployed = {}
         self._rolling_stats_by_window = {}
         seen_configs: dict = {}
         pre_market_picks: list = []
@@ -1014,6 +1169,7 @@ class OpMomentumTradeEngine:
             regime_filter=self._regime_filter,
             regime_ma=self._regime_ma,
             windows=engine_windows,
+            or_bar_lookback=self._or_bar_lookback,
         )
         self._signal_engine.start_replay(replay_date)
 
@@ -1034,6 +1190,7 @@ class OpMomentumTradeEngine:
             bullish_reentry_max_bars=self._bullish_reentry_max_bars,
             re_entry_callback=self._enter_reentry,
             initial_capital=initial_capital,
+            close_callback=self._on_position_closed,
         )
 
         # In replay mode signals are drained synchronously in _on_bar (no background threads)

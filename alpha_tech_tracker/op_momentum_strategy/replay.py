@@ -2,6 +2,7 @@ import logging
 import threading
 from dataclasses import dataclass
 from datetime import date, datetime
+from itertools import groupby
 from typing import Callable, Optional
 
 import pytz
@@ -83,12 +84,19 @@ class BarReplayDriver:
             len([t for t, b in bars_by_ticker.items() if b]),
         )
 
-        for bar in timeline:
-            set_replay_clock(lambda ts=bar.timestamp: ts)
-            self.last_bar_time = bar.timestamp
-            self.signal_engine._process_five_min_bar(bar)
+        # Group bars by timestamp so all tickers' bars at the same time are fully
+        # processed by the signal engine before any drain/monitor callbacks fire.
+        # This ensures that tickers with a missing bar at the OR open time (whose
+        # signal fires on the OR-close bar) are still buffered before the drain.
+        for ts, ts_group in groupby(timeline, key=lambda b: b.timestamp):
+            group_bars = list(ts_group)
+            set_replay_clock(lambda t=ts: t)
+            self.last_bar_time = ts
+            for bar in group_bars:
+                self.signal_engine._process_five_min_bar(bar)
             if self.on_bar_injected:
-                self.on_bar_injected(bar.symbol)
+                for bar in group_bars:
+                    self.on_bar_injected(bar.symbol)
 
         clear_replay_clock()
         logger.info("Replay %s complete", self.replay_date)

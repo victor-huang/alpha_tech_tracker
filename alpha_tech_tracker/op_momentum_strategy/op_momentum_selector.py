@@ -4,6 +4,7 @@ import pytz
 from datetime import date, datetime, timedelta
 
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import (
+    build_bearish_regime_dates,
     fetch_bars,
     run_backtest,
     compute_signals_with_backtest,
@@ -51,7 +52,7 @@ DEFAULT_TICKERS = [
     "RH",
     "FN",
     "MU",
-    "ANAB",
+    "ANAB", # maybe replace by BE
     "PLTR",
     "COIN",
     "NVDA",
@@ -115,6 +116,7 @@ def compute_today_signals(
     target_date: date = None,
     opening_start_time: str = OPENING_START_TIME,
     or_bar_lookback: int = 3,
+    bearish_regime_dates: set = None,
 ) -> dict:
     if target_date is None:
         target_date = datetime.now(_ET).date()
@@ -127,7 +129,9 @@ def compute_today_signals(
             continue
 
         results = compute_signals_with_backtest(
-            df, opening_bars, bearish_ma200, stop_pct
+            df, opening_bars, bearish_ma200, stop_pct,
+            opening_start_time=opening_start_time,
+            bearish_regime_dates=bearish_regime_dates,
         )
         if results.empty:
             continue
@@ -136,7 +140,14 @@ def compute_today_signals(
         if today_rows.empty:
             continue
 
-        row = today_rows.iloc[0]
+        primary_rows = today_rows[
+            (today_rows.get("is_reversal", False) != True)  # noqa: E712
+            & (today_rows.get("is_bearish_reentry", False) != True)  # noqa: E712
+            & (today_rows.get("is_bullish_reentry", False) != True)  # noqa: E712
+        ]
+        if primary_rows.empty:
+            continue
+        row = primary_rows.iloc[0]
         entry = row["entry_price"]
         mid = row["midpoint"]
         or_high = row["or_high"]
@@ -258,10 +269,16 @@ def select_top_n(
         for ticker, df in all_results.items()
     }
 
+    _bearish_regime_dates = (
+        build_bearish_regime_dates(lookback_start, target_date, source, regime_ma)
+        if regime_filter
+        else None
+    )
     today_signals = compute_today_signals(
         ticker_dfs, opening_bars, bearish_ma200, stop_pct, target_date,
         opening_start_time=opening_start_time,
         or_bar_lookback=or_bar_lookback,
+        bearish_regime_dates=_bearish_regime_dates,
     )
 
     scored = []

@@ -13,7 +13,7 @@ from alpha_tech_tracker.op_momentum_strategy.trade_engine import (
     TickerSelector,
 )
 
-from conftest import _D, _make_alpaca_client
+from conftest import _D, _make_active_position, _make_alpaca_client
 
 ET = pytz.timezone("America/New_York")
 
@@ -349,7 +349,7 @@ class TestMultiWindowEngine:
 
         assert "W1" in engine._window_state
 
-    def test_get_window_budget_returns_none_for_sequential_window(self):
+    def test_get_window_budget_sequential_fallback_to_account_when_no_prior_capital(self):
         from alpha_tech_tracker.op_momentum_strategy.models import WindowConfig
 
         windows = [
@@ -359,11 +359,47 @@ class TestMultiWindowEngine:
             ),
         ]
         engine = self._make_engine_with_windows(windows)
+        engine._client.get_accounts.return_value = {"buying_power": 15000.0}
+        a1_win = next(w for w in engine._windows if w.label == "A1")
+
+        result = engine._get_window_budget(a1_win)
+
+        assert result == _D("15000")
+        engine._client.get_accounts.assert_called_once()
+
+    def test_get_window_budget_sequential_returns_none_when_account_query_fails(self):
+        from alpha_tech_tracker.op_momentum_strategy.models import WindowConfig
+
+        windows = [
+            WindowConfig(label="M1", opening_start="09:30", opening_bars=3),
+            WindowConfig(
+                label="A1", opening_start="13:15", opening_bars=1, is_sequential=True
+            ),
+        ]
+        engine = self._make_engine_with_windows(windows)
+        engine._client.get_accounts.side_effect = Exception("network error")
         a1_win = next(w for w in engine._windows if w.label == "A1")
 
         result = engine._get_window_budget(a1_win)
 
         assert result is None
+
+    def test_get_window_budget_sequential_uses_prior_window_returned_capital(self):
+        from alpha_tech_tracker.op_momentum_strategy.models import WindowConfig
+
+        windows = [
+            WindowConfig(label="M1", opening_start="09:30", opening_bars=3),
+            WindowConfig(
+                label="A1", opening_start="13:15", opening_bars=1, is_sequential=True
+            ),
+        ]
+        engine = self._make_engine_with_windows(windows)
+        engine._window_returned["M1"] = _D("11500")
+        a1_win = next(w for w in engine._windows if w.label == "A1")
+
+        result = engine._get_window_budget(a1_win)
+
+        assert result == _D("11500")
         engine._client.get_accounts.assert_not_called()
 
     def test_get_window_budget_returns_explicit_budget_for_first_group_window(self):
@@ -431,6 +467,95 @@ class TestMultiWindowEngine:
         assert "AMD" not in engine._window_state["M1"]["pending_signals"]
         assert "AMD" in engine._window_state["A1"]["pending_signals"]
         assert "NVDA" not in engine._window_state["A1"]["pending_signals"]
+
+
+class TestOnPositionClosed:
+    def _make_engine(self):
+        client = _make_alpaca_client()
+        return OpMomentumTradeEngine(alpaca_client=client, mock_trade_execution=True)
+
+    def _make_closed_stock_pos(self, signal, entry, exit_, slot_capital, trailing_arm=None):
+        pos = _make_active_position(signal=signal)
+        pos.trade_type = "stock"
+        pos.simulated_entry_mid = _D(str(entry))
+        pos.simulated_exit_mid = _D(str(exit_))
+        pos.slot_capital = _D(str(slot_capital))
+        pos.trailing_arm_price = _D(str(trailing_arm)) if trailing_arm else None
+        pos.window_label = "M1"
+        return pos
+
+    def test_primary_bullish_adds_slot_capital_plus_pnl(self):
+        engine = self._make_engine()
+        pos = self._make_closed_stock_pos("BULLISH", entry=100, exit_=110, slot_capital=5000)
+
+        engine._on_position_closed(pos)
+
+        # returned = 5000 + 5000/100 * 10 = 5000 + 500 = 5500
+        assert engine._window_returned["M1"] == _D("5500")
+
+    def test_primary_bearish_adds_slot_capital_plus_pnl(self):
+        engine = self._make_engine()
+        pos = self._make_closed_stock_pos("BEARISH", entry=200, exit_=185, slot_capital=5000)
+
+        engine._on_position_closed(pos)
+
+        # returned = 5000 + 5000/200 * 15 = 5000 + 375 = 5375
+        assert engine._window_returned["M1"] == _D("5375")
+
+    def test_primary_losing_trade_returns_less_than_slot_capital(self):
+        engine = self._make_engine()
+        pos = self._make_closed_stock_pos("BULLISH", entry=100, exit_=95, slot_capital=5000)
+
+        engine._on_position_closed(pos)
+
+        # returned = 5000 + 5000/100 * (-5) = 5000 - 250 = 4750
+        assert engine._window_returned["M1"] == _D("4750")
+
+    def test_reentry_adds_only_cap_pnl_not_slot_capital(self):
+        engine = self._make_engine()
+        pos = self._make_closed_stock_pos(
+            "BULLISH", entry=102, exit_=108, slot_capital=5000, trailing_arm=115
+        )
+
+        engine._on_position_closed(pos)
+
+        # Re-entry: returned = cap_pnl only = 5000/102 * 6 ≈ 294.12
+        expected = _D(str(5000)) / _D("102") * _D("6")
+        assert engine._window_returned["M1"] == expected
+
+    def test_primary_then_reentry_matches_backtest_available(self):
+        """Combined primary + re-entry window_returned = slot_capital + all cap_pnls.
+
+        With top_n=1 and slot_capital=5000, the backtest available for the next
+        sequential window = 5000 (initial) + cap_pnl_primary + cap_pnl_reentry.
+        The re-entry's principal (5000) must NOT be double-counted.
+        """
+        engine = self._make_engine()
+
+        # Primary stops out: slot=5000, entry=100, exit=95 → cap_pnl=-250 → returned=4750
+        primary = self._make_closed_stock_pos("BULLISH", entry=100, exit_=95, slot_capital=5000)
+        engine._on_position_closed(primary)
+
+        # Reversal re-entry wins: slot=5000, entry=102, exit=108 → cap_pnl=+294.12 → returned=294.12
+        reentry = self._make_closed_stock_pos(
+            "BULLISH", entry=102, exit_=108, slot_capital=5000, trailing_arm=115
+        )
+        engine._on_position_closed(reentry)
+
+        # Expected = slot_capital + cap_pnl_primary + cap_pnl_reentry (re-entry principal not added again)
+        cap_pnl_primary = _D("5000") / _D("100") * _D("-5")
+        cap_pnl_reentry = _D("5000") / _D("102") * _D("6")
+        expected = _D("5000") + cap_pnl_primary + cap_pnl_reentry
+        assert engine._window_returned["M1"] == expected
+
+    def test_skips_position_with_no_slot_capital(self):
+        engine = self._make_engine()
+        pos = _make_active_position()
+        pos.slot_capital = None
+
+        engine._on_position_closed(pos)
+
+        assert engine._window_returned == {}
 
 
 _NOTIFY_PATH = "alpha_tech_tracker.op_momentum_strategy.trade_engine._notify"

@@ -58,6 +58,7 @@ class LiveSignalEngine:
         regime_ma: int = REGIME_MA,
         windows: list = None,
         bar_recorder: BarRecorder = None,
+        or_bar_lookback: int = 3,
     ):
         self._tickers = tickers
         self._bearish_ma200 = bearish_ma200
@@ -101,6 +102,7 @@ class LiveSignalEngine:
         self._minute_buf: dict = {
             t: {"period_start": None, "bars": []} for t in tickers
         }
+        self._or_bar_lookback = or_bar_lookback
         self._session_date = _now_et().date()
         self._stream: StockDataStream = None
         self._lock = threading.Lock()
@@ -196,6 +198,25 @@ class LiveSignalEngine:
         or_high = _D(max(b.high for b in buf))
         or_low = _D(min(b.low for b in buf))
         or_range = or_high - or_low
+        # Apply or_bar_lookback adjustment: if the OR is unusually tight relative
+        # to the N bars immediately before the window, expand effective_or_range to
+        # match the backtest's stop/fallback price computation.
+        effective_or_range = or_range
+        if self._or_bar_lookback > 0:
+            opening_start_t = win["_opening_start_t"]
+            hist = self._history.get(ticker)
+            if hist is not None and not hist.empty:
+                today = _now_et().date()
+                day_bars = hist[hist.index.date == today]
+                pre_opening = day_bars[day_bars.index.time < opening_start_t].tail(
+                    self._or_bar_lookback
+                )
+                if not pre_opening.empty:
+                    avg_recent = float(
+                        (pre_opening["High"] - pre_opening["Low"]).mean()
+                    )
+                    if float(or_range) < avg_recent / 4:
+                        effective_or_range = _D(str(avg_recent))
         midpoint = (or_high + or_low) / _D("2")
         bottom_30 = or_low + _D("0.20") * or_range
 
@@ -251,7 +272,7 @@ class LiveSignalEngine:
             stock_price=close,
             or_high=or_high,
             or_low=or_low,
-            or_range=or_range,
+            or_range=effective_or_range,
             ma50_at_signal=ma50_val,
         )
         logger.info(
@@ -474,6 +495,10 @@ class LiveSignalEngine:
             len(self._tickers),
         )
         bars_dict = fetch_bars(self._tickers, start, end, source="alpaca")
+        # _stitch_cache may return a wider file (e.g. 2020–2026) that covers the
+        # requested range.  Clip to strictly before replay_date so MA calculations
+        # are not influenced by future bars.
+        cutoff = pd.Timestamp(replay_date, tz="America/New_York")
         empty_cols = ["Open", "High", "Low", "Close", "Volume", "MA20", "MA50", "MA200"]
         for ticker, df in bars_dict.items():
             if df.empty:
@@ -481,6 +506,11 @@ class LiveSignalEngine:
                 logger.warning("No warmup data for %s", ticker)
                 continue
             df = df.copy()
+            df = df[df.index < cutoff]
+            if df.empty:
+                self._history[ticker] = pd.DataFrame(columns=empty_cols)
+                logger.warning("No warmup data for %s after date clip", ticker)
+                continue
             df["MA20"] = df["Close"].rolling(20).mean()
             df["MA50"] = df["Close"].rolling(50).mean()
             df["MA200"] = df["Close"].rolling(200).mean()

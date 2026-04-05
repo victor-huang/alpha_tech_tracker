@@ -556,10 +556,20 @@ def _collect_baseline(
 
 
 def _parse_weights(weights_input: list, n: int) -> list:
-    """Return per-rank capital fractions summing to 1.0."""
-    if weights_input and len(weights_input) == n:
-        total = sum(weights_input)
-        return [w / total for w in weights_input]
+    """Return per-rank capital fractions for the top-n positions.
+
+    When more weights than n are provided (e.g. --weights 50 30 20 with --top 2),
+    the first n weights are used and the remainder is undeployed capital — matching
+    the live engine's rank-indexed weight assignment.  The fractions are normalised
+    relative to the *total* of all provided weights so the caller's intent (e.g.
+    50%/30%/20%) is preserved; only n of them are returned.
+    """
+    if not weights_input:
+        return [1.0 / n] * n
+    total = sum(weights_input)
+    fracs = [w / total for w in weights_input]
+    if len(fracs) >= n:
+        return fracs[:n]
     return [1.0 / n] * n
 
 
