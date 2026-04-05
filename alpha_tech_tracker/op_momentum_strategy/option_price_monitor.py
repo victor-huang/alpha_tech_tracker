@@ -301,7 +301,7 @@ class OptionPriceMonitor:
 
         parsed = _parse_occ_symbol(option_symbol)
         if not parsed:
-            return mid
+            return _quantize_option_price(mid)
 
         strike = parsed["strike"]
         if option_type == "call":
@@ -323,7 +323,7 @@ class OptionPriceMonitor:
             reason = "stale_bid" if bid < intrinsic else "wide_spread"
 
         fair = max(bid, min(ask, fair))
-        fair = fair.quantize(_D("0.01"), rounding=ROUND_HALF_UP)
+        fair = _quantize_option_price(fair)
         logger.info(
             "get_fair_price %s: bid=%s ask=%s intrinsic=%s spread_pct=%s → fair=%s (%s)",
             option_symbol,
@@ -386,6 +386,16 @@ class OptionPriceMonitor:
 # ------------------------------------------------------------------
 # Helpers
 # ------------------------------------------------------------------
+
+def _quantize_option_price(price: Decimal) -> Decimal:
+    """
+    Round an option limit price to the exchange-standard tick increment:
+      < $3.00  → nearest $0.05
+      ≥ $3.00  → nearest $0.10
+    """
+    tick = _D("0.05") if price < _D("3") else _D("0.10")
+    return (price / tick).to_integral_value(rounding=ROUND_HALF_UP) * tick
+
 
 def _is_third_friday(d: date) -> bool:
     """Return True if d is the 3rd Friday of its month (standard monthly expiry)."""

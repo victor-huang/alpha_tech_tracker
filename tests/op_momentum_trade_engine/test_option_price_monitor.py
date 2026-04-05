@@ -11,6 +11,7 @@ from alpha_tech_tracker.op_momentum_strategy.option_price_monitor import (
     TradeEngineStrikeSelector,
     _is_third_friday,
     _parse_occ_symbol,
+    _quantize_option_price,
 )
 
 from conftest import _D, _make_alpaca_client, _make_option_quote
@@ -335,6 +336,67 @@ class TestGetFairPrice:
         monitor = self._monitor_with_quote(bid=0.0, ask=0.0)
         fair = monitor.get_fair_price("TSLA", self._SYM, "call", _D("300"))
         assert fair == _D("0")
+
+
+class TestQuantizeOptionPrice:
+    def test_price_above_3_rounds_to_10_cent_tick(self):
+        assert _quantize_option_price(_D("21.73")) == _D("21.70")
+
+    def test_price_above_3_rounds_up_on_half(self):
+        assert _quantize_option_price(_D("21.75")) == _D("21.80")
+
+    def test_price_below_3_rounds_to_5_cent_tick(self):
+        assert _quantize_option_price(_D("2.63")) == _D("2.65")
+
+    def test_price_below_3_rounds_down(self):
+        assert _quantize_option_price(_D("2.61")) == _D("2.60")
+
+    def test_price_exactly_3_uses_10_cent_tick(self):
+        assert _quantize_option_price(_D("3.00")) == _D("3.00")
+
+    def test_price_already_on_tick_is_unchanged(self):
+        assert _quantize_option_price(_D("15.50")) == _D("15.50")
+
+
+class TestGetFairPriceQuantization:
+    """Verify get_fair_price returns a properly tick-quantized price."""
+
+    _SYM = _WEEKLY_CALL  # strike=$280, call
+
+    def _monitor_with_quote(self, bid, ask, cache_tv=None):
+        client = _make_alpaca_client()
+        client._option_data_client.get_option_latest_quote.return_value = {
+            self._SYM: _make_option_quote(bid=bid, ask=ask)
+        }
+        monitor = _make_monitor(client=client)
+        if cache_tv is not None:
+            monitor._cache[self._SYM] = deque(
+                [{"mid_time_value": float(cache_tv)}]
+            )
+        return monitor
+
+    def test_liquid_mid_is_rounded_to_10_cent_tick(self):
+        # bid=$21.05 ask=$21.75 → mid=$21.40, spread=3.3% liquid
+        # intrinsic=stock$300 - strike$280=$20; bid > intrinsic → use mid
+        # mid $21.40 → nearest $0.10 = $21.40
+        monitor = self._monitor_with_quote(bid=21.05, ask=21.75)
+        fair = monitor.get_fair_price("TSLA", self._SYM, "call", _D("300"))
+        assert fair == _D("21.40")
+
+    def test_cache_path_result_rounded_to_10_cent_tick(self):
+        # Wide spread; intrinsic=$20 + cached_tv=$1.83 = $21.83 → rounds to $21.80
+        monitor = self._monitor_with_quote(bid=21.0, ask=35.0, cache_tv=_D("1.83"))
+        fair = monitor.get_fair_price("TSLA", self._SYM, "call", _D("300"))
+        assert fair == _D("21.80")
+
+    def test_price_below_3_rounded_to_5_cent_tick(self):
+        # OTM call: stock=$278, strike=$280 → intrinsic=$0; bid=$0.80, ask=$0.94
+        # mid=$0.87, spread=16.1% wide → use 20% of spread fallback
+        # median_tv = (0.94-0.80)*0.20 = $0.028 → fair = 0 + 0.028 = $0.028
+        # clamped to bid=$0.80; $0.80 < $3 → tick $0.05 → $0.80
+        monitor = self._monitor_with_quote(bid=0.80, ask=0.94)
+        fair = monitor.get_fair_price("TSLA", self._SYM, "call", _D("278"))
+        assert fair == _D("0.80")
 
 
 class TestIsMarketHours:
