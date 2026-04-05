@@ -132,6 +132,22 @@ def _fmt_option(symbol: str) -> str:
     return f"{ticker} {expiry.strftime('%b %d')} {option_type} @ {strike_str}"
 
 
+_notifications_enabled = True
+
+
+def disable_notifications():
+    global _notifications_enabled
+    _notifications_enabled = False
+
+
+def enable_notifications():
+    global _notifications_enabled
+    _notifications_enabled = True
+
+
 def _notify(message: str):
+    if not _notifications_enabled:
+        logger.debug("Notifications disabled — skipping: %s", message)
+        return
     _send_sms(message)
     _send_telegram(message)

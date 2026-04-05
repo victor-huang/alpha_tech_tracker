@@ -1,4 +1,5 @@
 import pytest
+from unittest.mock import patch
 
 from alpha_tech_tracker.op_momentum_strategy.position_monitor import PositionMonitor
 
@@ -595,7 +596,25 @@ class TestStockClosePosition:
         assert pos.is_closed is True
         assert pos.exit_reason == "end_of_day"
 
-    def test_stock_simulate_sets_exit_mid_from_stock_quote(self):
+    def test_stock_simulate_sets_exit_mid_from_bar_close_in_replay_mode(self):
+        client = _make_alpaca_client()
+
+        pos = _make_stock_position(signal="BULLISH", shares=20)
+        closes = [104.0]
+        df = _build_history_df(closes, ma20=90.0, ma50=90.0, ma200=85.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine, mock_trade_execution=True)
+        monitor.add_position(pos)
+
+        with patch("alpha_tech_tracker.op_momentum_strategy.position_monitor.is_replay_mode", return_value=True):
+            monitor.close_all(reason="end_of_day")
+
+        # replay: exit mid uses the signal engine's latest bar close, not a live API quote
+        assert pos.simulated_exit_mid == _D("104.00")
+        client.get_stock_quote.assert_not_called()
+        client.place_stock_order.assert_not_called()
+
+    def test_stock_simulate_sets_exit_mid_from_live_quote_in_mock_live_mode(self):
         client = _make_alpaca_client()
         client.get_stock_quote.return_value = {
             "QuoteResponse": {
@@ -610,9 +629,12 @@ class TestStockClosePosition:
         monitor = PositionMonitor(client, engine, mock_trade_execution=True)
         monitor.add_position(pos)
 
-        monitor.close_all(reason="end_of_day")
+        with patch("alpha_tech_tracker.op_momentum_strategy.position_monitor.is_replay_mode", return_value=False):
+            monitor.close_all(reason="end_of_day")
 
+        # live mock: exit mid uses the live quote mid
         assert pos.simulated_exit_mid == _D("100.00")
+        client.get_stock_quote.assert_called_once()
         client.place_stock_order.assert_not_called()
 
     def test_stock_stop_triggers_via_evaluate_stop(self):

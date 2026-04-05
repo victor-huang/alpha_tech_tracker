@@ -336,6 +336,13 @@ def parse_args():
         help="Replay a historical session (YYYY-MM-DD). Feeds cached 5-min bars through "
         "the live engine instead of a live WebSocket stream. Implies mock-trade-execution.",
     )
+    parser.add_argument(
+        "--top",
+        type=int,
+        default=MAX_ACTIVE_SYMBOLS,
+        dest="top",
+        help=f"Number of top-ranked tickers to trade per window (default: {MAX_ACTIVE_SYMBOLS}).",
+    )
     return parser.parse_args()
 
 
@@ -442,6 +449,7 @@ if __name__ == "__main__":
             bearish_reentry_max_bars=args.bearish_reentry_max_bars,
             enable_bullish_reentry=args.bullish_reentry,
             bullish_reentry_max_bars=args.bullish_reentry_max_bars,
+            top_n=args.top,
         )
         if args.replay_date:
             from datetime import date as _date
@@ -517,6 +525,7 @@ if __name__ == "__main__":
             bearish_reentry_max_bars=args.bearish_reentry_max_bars,
             enable_bullish_reentry=args.bullish_reentry,
             bullish_reentry_max_bars=args.bullish_reentry_max_bars,
+            top_n=args.top,
         )
         engine.run(tickers_override=args.tickers)
     finally:

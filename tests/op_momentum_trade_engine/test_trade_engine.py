@@ -564,13 +564,27 @@ class TestStockTradeEntry:
         assert pos.contracts == 0
         assert pos.option_symbol == ""
 
-    def test_stock_entry_sets_simulated_entry_mid_in_mock_mode(self):
+    def test_stock_entry_simulated_mid_uses_bar_price_in_replay_mode(self):
         engine = self._make_stock_engine()
         captured_positions = []
         engine._monitor.add_position.side_effect = captured_positions.append
 
         with patch(_COMPUTE_STOCK_PATH, return_value=(20, _D("99.50"))), \
-             patch(_NOTIFY_PATH):
+             patch(_NOTIFY_PATH), \
+             patch("alpha_tech_tracker.op_momentum_strategy.trade_engine.is_replay_mode", return_value=True):
+            engine._enter_position(_make_signal_event("NVDA"))
+
+        pos = captured_positions[0]
+        assert pos.simulated_entry_mid == _D("105")
+
+    def test_stock_entry_simulated_mid_uses_live_quote_in_mock_live_mode(self):
+        engine = self._make_stock_engine()
+        captured_positions = []
+        engine._monitor.add_position.side_effect = captured_positions.append
+
+        with patch(_COMPUTE_STOCK_PATH, return_value=(20, _D("99.50"))), \
+             patch(_NOTIFY_PATH), \
+             patch("alpha_tech_tracker.op_momentum_strategy.trade_engine.is_replay_mode", return_value=False):
             engine._enter_position(_make_signal_event("NVDA"))
 
         pos = captured_positions[0]

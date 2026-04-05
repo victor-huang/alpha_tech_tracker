@@ -1,14 +1,14 @@
 import json
-import os
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 import alpha_tech_tracker.op_momentum_strategy.config as config_module
 from alpha_tech_tracker.op_momentum_strategy.config import (
     _notify,
     _send_telegram,
     _load_config,
+    disable_notifications,
+    enable_notifications,
 )
 
 _REQUESTS_POST_PATH = "alpha_tech_tracker.op_momentum_strategy.config.requests"
@@ -68,6 +68,10 @@ class TestSendTelegram:
 class TestNotify:
     def setup_method(self):
         config_module._clicksend_cfg.clear()
+        enable_notifications()
+
+    def teardown_method(self, _):
+        enable_notifications()
 
     def test_calls_both_sms_and_telegram(self):
         with patch(
@@ -79,6 +83,31 @@ class TestNotify:
 
         mock_sms.assert_called_once_with("trade alert")
         mock_telegram.assert_called_once_with("trade alert")
+
+    def test_skips_both_when_notifications_disabled(self):
+        disable_notifications()
+        with patch(
+            "alpha_tech_tracker.op_momentum_strategy.config._send_sms"
+        ) as mock_sms, patch(
+            "alpha_tech_tracker.op_momentum_strategy.config._send_telegram"
+        ) as mock_telegram:
+            _notify("should not send")
+
+        mock_sms.assert_not_called()
+        mock_telegram.assert_not_called()
+
+    def test_resumes_after_enable_notifications(self):
+        disable_notifications()
+        enable_notifications()
+        with patch(
+            "alpha_tech_tracker.op_momentum_strategy.config._send_sms"
+        ) as mock_sms, patch(
+            "alpha_tech_tracker.op_momentum_strategy.config._send_telegram"
+        ) as mock_telegram:
+            _notify("should send again")
+
+        mock_sms.assert_called_once_with("should send again")
+        mock_telegram.assert_called_once_with("should send again")
 
 
 class TestLoadConfigTelegram:

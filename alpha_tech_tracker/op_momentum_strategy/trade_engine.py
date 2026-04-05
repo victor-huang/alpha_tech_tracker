@@ -33,6 +33,8 @@ from .config import (
     TRAILING_MA,
     _notify,
     _fmt_option,
+    disable_notifications,
+    enable_notifications,
     ACCOUNT_BUDGET,
 )
 from .bar_recorder import BarRecorder
@@ -42,7 +44,7 @@ from .option_price_monitor import OptionPriceMonitor
 from .order_executor import _place_with_fill_escalation, place_stock_order
 from .position_monitor import PositionMonitor
 from .position_sizer import PositionSizer
-from .replay import BarReplayDriver, _now_et
+from .replay import BarReplayDriver, _now_et, is_replay_mode
 from .signal_engine import LiveSignalEngine
 
 logger = logging.getLogger(__name__)
@@ -162,6 +164,7 @@ class OpMomentumTradeEngine:
         regime_filter: bool = REGIME_FILTER,
         regime_ma: int = REGIME_MA,
         rank_weighted_sizing: bool = RANK_WEIGHTED_SIZING,
+        top_n: int = MAX_ACTIVE_SYMBOLS,
         windows: Optional[list] = None,
         trade_type: str = "options",
         option_price_monitor: Optional[OptionPriceMonitor] = None,
@@ -184,6 +187,7 @@ class OpMomentumTradeEngine:
         self._regime_filter = regime_filter
         self._regime_ma = regime_ma
         self._rank_weighted_sizing = rank_weighted_sizing
+        self._top_n = top_n
         self._trade_type = trade_type
         self._option_price_monitor = option_price_monitor
         self._time_premium_pct_cap = time_premium_pct_cap
@@ -317,7 +321,7 @@ class OpMomentumTradeEngine:
 
         try:
             if self._mock_trade_execution:
-                sim_mid = limit_price
+                sim_mid = event.stock_price if is_replay_mode() else limit_price
                 logger.info(
                     "SIMULATE BUY_OPEN stock %s shares=%d simulated_fill=%.2f (no order placed)",
                     event.ticker,
@@ -369,7 +373,7 @@ class OpMomentumTradeEngine:
             trade_type="stock",
             shares=shares,
             entry_bar_time=entry_bar_time,
-            entry_time=datetime.now(ET),
+            entry_time=_now_et(),
             simulated_entry_mid=sim_entry_mid,
             trailing_arm_price=trailing_arm_price,
             window_label=window_label,
@@ -459,7 +463,7 @@ class OpMomentumTradeEngine:
             ),
             trade_type="options",
             entry_bar_time=entry_bar_time,
-            entry_time=datetime.now(ET),
+            entry_time=_now_et(),
             simulated_entry_mid=sim_entry_mid,
             trailing_arm_price=trailing_arm_price,
             window_label=window_label,
@@ -537,11 +541,11 @@ class OpMomentumTradeEngine:
                     event.signal,
                 )
                 return
-            if state["open_position_count"] >= MAX_ACTIVE_SYMBOLS:
+            if state["open_position_count"] >= self._top_n:
                 logger.info(
                     "Max positions reached [%s] (%d), skipping %s",
                     window_label,
-                    MAX_ACTIVE_SYMBOLS,
+                    self._top_n,
                     event.ticker,
                 )
                 return
@@ -553,17 +557,10 @@ class OpMomentumTradeEngine:
             event, rank=0, window_label=window_label, window_budget=window_budget
         )
 
-    def _signal_selection_loop_for_window(self, win: WindowConfig):
+    def _drain_pending_signals_for_window(self, win: WindowConfig):
+        """Rank and enter all buffered signals for the given window. Safe to call from any thread."""
         label = win.label
         state = self._window_state[label]
-        deadline = state["collection_deadline"]
-        logger.info(
-            "Signal collection window [%s] open until %s ET",
-            label,
-            deadline.strftime("%H:%M:%S"),
-        )
-        while _now_et() < deadline:
-            time.sleep(0.5)
 
         with self._signal_lock:
             pending = dict(state["pending_signals"])
@@ -622,7 +619,7 @@ class OpMomentumTradeEngine:
         window_budget = self._get_window_budget(win)
         for rank, (score, ticker, event) in enumerate(scored):
             with self._signal_lock:
-                if state["open_position_count"] >= MAX_ACTIVE_SYMBOLS:
+                if state["open_position_count"] >= self._top_n:
                     logger.info("Max positions reached [%s], stopping selection", label)
                     break
                 state["open_position_count"] += 1
@@ -636,6 +633,19 @@ class OpMomentumTradeEngine:
             self._enter_position(
                 event, rank=rank, window_label=label, window_budget=window_budget
             )
+
+    def _signal_selection_loop_for_window(self, win: WindowConfig):
+        label = win.label
+        state = self._window_state[label]
+        deadline = state["collection_deadline"]
+        logger.info(
+            "Signal collection window [%s] open until %s ET",
+            label,
+            deadline.strftime("%H:%M:%S"),
+        )
+        while _now_et() < deadline:
+            time.sleep(0.5)
+        self._drain_pending_signals_for_window(win)
 
     def _place_entry(
         self,
@@ -746,7 +756,7 @@ class OpMomentumTradeEngine:
 
         ticker_selector = TickerSelector(
             tickers=all_tickers,
-            top_n=MAX_ACTIVE_SYMBOLS,
+            top_n=self._top_n,
             stop_pct=float(self._stop_pct),
             opening_start_time=first_window.opening_start,
         )
@@ -861,6 +871,8 @@ class OpMomentumTradeEngine:
         from datetime import time as _time
         from .replay import set_replay_clock
 
+        disable_notifications()
+
         # Pin the clock to replay_date 9:30 so TickerSelector and window-state
         # initialisation both use the correct date.
         replay_open = ET.localize(datetime.combine(replay_date, _time(9, 30)))
@@ -871,7 +883,7 @@ class OpMomentumTradeEngine:
 
         ticker_selector = TickerSelector(
             tickers=all_tickers,
-            top_n=MAX_ACTIVE_SYMBOLS,
+            top_n=self._top_n,
             stop_pct=float(self._stop_pct),
             opening_start_time=first_window.opening_start,
         )
@@ -931,16 +943,19 @@ class OpMomentumTradeEngine:
             re_entry_callback=self._enter_reentry,
         )
 
-        for win in self._windows:
-            t = threading.Thread(
-                target=self._signal_selection_loop_for_window,
-                args=(win,),
-                daemon=True,
-            )
-            t.start()
+        # In replay mode signals are drained synchronously in _on_bar (no background threads)
+        # so that _drain_pending_signals_for_window runs while the replay clock is active.
+        _drained_windows = set()
 
         def _on_bar(ticker):
             self._monitor.on_bar(ticker)
+            for win in self._windows:
+                lbl = win.label
+                if lbl not in _drained_windows:
+                    deadline = self._window_state[lbl]["collection_deadline"]
+                    if _now_et() >= deadline:
+                        _drained_windows.add(lbl)
+                        self._drain_pending_signals_for_window(win)
 
         driver = BarReplayDriver(
             tickers=all_tickers,
@@ -952,4 +967,5 @@ class OpMomentumTradeEngine:
 
         # Force-close any positions still open after the last bar
         self._monitor.close_all(reason="end_of_day")
+        enable_notifications()
         self._monitor.print_summary()

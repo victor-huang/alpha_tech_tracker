@@ -30,6 +30,12 @@ def _now_et() -> datetime:
     return datetime.now(ET)
 
 
+def is_replay_mode() -> bool:
+    """Return True when a replay clock is active (i.e. run_replay() is in progress)."""
+    with _clock_lock:
+        return _clock is not None
+
+
 def set_replay_clock(fn: Callable[[], datetime]):
     global _clock
     with _clock_lock:

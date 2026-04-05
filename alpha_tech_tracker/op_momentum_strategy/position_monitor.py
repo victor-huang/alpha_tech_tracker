@@ -20,6 +20,7 @@ from .config import (
 )
 from .models import ActivePosition, ReentryWatcher, _D, _stock_bid_ask
 from .order_executor import _place_with_fill_escalation, place_stock_order
+from .replay import _now_et, is_replay_mode
 
 # Imported lazily to avoid circular imports — OptionPriceMonitor imports from contract_selector
 # which imports from config which imports from op_momentum_selector.
@@ -329,7 +330,7 @@ class PositionMonitor:
     def _close_position(self, pos: ActivePosition, reason: str):
         pos.is_closed = True
         pos.exit_reason = reason
-        pos.exit_time = datetime.now(ET)
+        pos.exit_time = _now_et()
         self._maybe_create_reentry_watcher(pos, reason)
 
         if pos.trade_type == "stock":
@@ -345,24 +346,31 @@ class PositionMonitor:
             reason,
             pos.shares,
         )
-        mid = None
-        try:
-            raw_quote = self._client.get_stock_quote(pos.ticker)
-            bid_f, ask_f = _stock_bid_ask(raw_quote)
-            bid = _D(str(bid_f))
-            ask = _D(str(ask_f))
-            mid = (bid + ask) / _D("2")
-            logger.info(
-                "EXIT STOCK QUOTE %s: bid=%s ask=%s mid=%s",
-                pos.ticker,
-                bid,
-                ask,
-                mid.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
-            )
-        except Exception:
-            logger.exception("Could not fetch exit stock quote for %s", pos.ticker)
 
         if self._mock_trade_execution:
+            mid = None
+            if is_replay_mode():
+                # Use the bar close that triggered the exit so replay shows
+                # the historical price rather than a live API quote.
+                latest_bar = self._signal_engine.get_latest_bar(pos.ticker)
+                if latest_bar is not None:
+                    mid = _D(str(latest_bar["Close"]))
+            else:
+                try:
+                    raw_quote = self._client.get_stock_quote(pos.ticker)
+                    bid_f, ask_f = _stock_bid_ask(raw_quote)
+                    bid = _D(str(bid_f))
+                    ask = _D(str(ask_f))
+                    mid = (bid + ask) / _D("2")
+                    logger.info(
+                        "EXIT STOCK QUOTE %s: bid=%s ask=%s mid=%s",
+                        pos.ticker,
+                        bid,
+                        ask,
+                        mid.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
+                    )
+                except Exception:
+                    logger.exception("Could not fetch exit stock quote for %s", pos.ticker)
             sim_mid = (
                 mid.quantize(_D("0.01"), rounding=ROUND_HALF_UP)
                 if mid is not None
@@ -641,6 +649,42 @@ class PositionMonitor:
         def _fmt_time(dt: Optional[datetime]) -> str:
             return dt.strftime("%H:%M") if dt else "—"
 
+        def _position_pnl(pos, entry_price, exit_price):
+            if entry_price is None or exit_price is None:
+                return None
+            raw = exit_price - entry_price
+            if pos.trade_type == "stock":
+                return raw * _D(pos.shares)
+            return raw * _D(pos.contracts) * _D("100")
+
+        def _position_cost(pos, entry_price):
+            if entry_price is None:
+                return None
+            if pos.trade_type == "stock":
+                return entry_price * _D(pos.shares)
+            return entry_price * _D(pos.contracts) * _D("100")
+
+        def _print_totals(positions, get_entry, get_exit, width):
+            total_pnl = _D("0")
+            total_cost = _D("0")
+            has_any = False
+            for pos in positions:
+                pnl = _position_pnl(pos, get_entry(pos), get_exit(pos))
+                cost = _position_cost(pos, get_entry(pos))
+                if pnl is not None and cost is not None and cost > 0:
+                    total_pnl += pnl
+                    total_cost += cost
+                    has_any = True
+            if not has_any:
+                return
+            pct = float(total_pnl / total_cost * 100) if total_cost > 0 else 0.0
+            sign = "+" if total_pnl >= 0 else ""
+            pct_sign = "+" if pct >= 0 else ""
+            print(f"  {'─' * (width - 2)}")
+            print(
+                f"  Daily P&L: {sign}${total_pnl:.2f}  ({pct_sign}{pct:.2f}%  on  ${total_cost:.0f} deployed)"
+            )
+
         if has_sim:
             width = 114
             print(f"\n{'=' * width}")
@@ -654,17 +698,9 @@ class PositionMonitor:
             for pos in self._positions:
                 entry_mid = pos.simulated_entry_mid
                 exit_mid = pos.simulated_exit_mid
-                if entry_mid is not None and exit_mid is not None:
-                    raw_pnl = exit_mid - entry_mid
-                    if pos.trade_type == "stock":
-                        pnl_total = raw_pnl * _D(pos.shares)
-                    else:
-                        pnl_total = raw_pnl * _D(pos.contracts) * _D("100")
-                    pnl_str = (
-                        f"+${pnl_total:.2f}"
-                        if pnl_total >= 0
-                        else f"-${abs(pnl_total):.2f}"
-                    )
+                pnl = _position_pnl(pos, entry_mid, exit_mid)
+                if pnl is not None:
+                    pnl_str = f"+${pnl:.2f}" if pnl >= 0 else f"-${abs(pnl):.2f}"
                     entry_str = f"${entry_mid:.2f}"
                     exit_str = f"${exit_mid:.2f}"
                 else:
@@ -682,6 +718,12 @@ class PositionMonitor:
                     f"  {entry_str:>9} {exit_str:>9} {pnl_str:>10}"
                     f"  {pos.exit_reason or 'open'}"
                 )
+            _print_totals(
+                self._positions,
+                lambda p: p.simulated_entry_mid,
+                lambda p: p.simulated_exit_mid,
+                width,
+            )
             print(f"{'=' * width}\n")
         else:
             width = 86
@@ -706,4 +748,10 @@ class PositionMonitor:
                     f"  {_fmt_time(pos.entry_time):>5} {_fmt_time(pos.exit_time):>5}"
                     f"  {pos.exit_reason or 'open'}"
                 )
+            _print_totals(
+                self._positions,
+                lambda p: p.entry_fill_price,
+                lambda p: p.exit_fill_price,
+                width,
+            )
             print(f"{'=' * width}\n")
