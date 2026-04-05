@@ -36,7 +36,6 @@ from .config import (
     disable_notifications,
     enable_notifications,
     ACCOUNT_BUDGET,
-    CAPITAL_PER_SYMBOL,
 )
 from .bar_recorder import BarRecorder
 from .contract_selector import TimePremiumContractSelector
@@ -381,11 +380,14 @@ class OpMomentumTradeEngine:
         sim_entry_mid = (
             order.get("simulated_fill_mid") if self._mock_trade_execution else None
         )
-        slot_capital = (
-            window_budget * CAPITAL_PER_SYMBOL * capital_weight
-            if window_budget is not None
-            else None
-        )
+        if window_budget is not None:
+            if self._rank_weighted_sizing and rank < len(RANK_WEIGHTS):
+                slot_weight = _D(str(RANK_WEIGHTS[rank]))
+            else:
+                slot_weight = _D("1") / _D(str(self._top_n))
+            slot_capital = window_budget * slot_weight
+        else:
+            slot_capital = None
         pos = ActivePosition(
             ticker=event.ticker,
             signal=event.signal,
