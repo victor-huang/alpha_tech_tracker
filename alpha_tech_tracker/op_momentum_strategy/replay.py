@@ -60,12 +60,17 @@ class BarReplayDriver:
 
     `on_bar_injected(ticker)` is called after each injection so the caller can
     immediately run the position monitor for that ticker.
+
+    After `run()` returns, `last_bar_time` holds the timestamp of the final bar
+    so the caller can re-pin the replay clock before running any post-session
+    logic (e.g. EOD close_all).
     """
 
     tickers: list
     replay_date: date
     signal_engine: object  # LiveSignalEngine
     on_bar_injected: Optional[Callable[[str], None]] = None
+    last_bar_time: Optional[datetime] = None
 
     def run(self):
         bars_by_ticker = self._fetch_session_bars()
@@ -80,6 +85,7 @@ class BarReplayDriver:
 
         for bar in timeline:
             set_replay_clock(lambda ts=bar.timestamp: ts)
+            self.last_bar_time = bar.timestamp
             self.signal_engine._process_five_min_bar(bar)
             if self.on_bar_injected:
                 self.on_bar_injected(bar.symbol)

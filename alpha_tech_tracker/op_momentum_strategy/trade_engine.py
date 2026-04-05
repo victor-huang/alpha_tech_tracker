@@ -8,6 +8,7 @@ import pytz
 
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import fetch_bars
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector import (
+    ROLLING_LOOKBACK_DAYS,
     _safe_bars_end,
     score_ticker,
     select_top_n,
@@ -26,7 +27,6 @@ from .config import (
     RANK_WEIGHTS,
     REGIME_FILTER,
     REGIME_MA,
-    ROLLING_LOOKBACK_DAYS,
     SIGNAL_BUFFER_MINUTES,
     STOP_PCT,
     TICKERS,
@@ -44,7 +44,7 @@ from .option_price_monitor import OptionPriceMonitor
 from .order_executor import _place_with_fill_escalation, place_stock_order
 from .position_monitor import PositionMonitor
 from .position_sizer import PositionSizer
-from .replay import BarReplayDriver, _now_et, is_replay_mode
+from .replay import BarReplayDriver, _now_et, is_replay_mode, set_replay_clock, clear_replay_clock
 from .signal_engine import LiveSignalEngine
 
 logger = logging.getLogger(__name__)
@@ -66,17 +66,21 @@ class TickerSelector:
         top_n: int,
         stop_pct: float = float(STOP_PCT),
         opening_start_time: str = OPENING_START_TIME,
+        opening_bars: int = OPENING_BARS,
+        lookback_days: int = ROLLING_LOOKBACK_DAYS,
     ):
         self._tickers = tickers
         self._top_n = top_n
         self._stop_pct = stop_pct
         self._opening_start_time = opening_start_time
+        self._opening_bars = opening_bars
+        self._lookback_days = lookback_days
         self.rolling_stats: dict = {}
 
     def select(self) -> list:
         today = _now_et().date()
 
-        fetch_start = today - timedelta(days=max(ROLLING_LOOKBACK_DAYS, 30) + 5)
+        fetch_start = today - timedelta(days=max(self._lookback_days, 30) + 5)
         ticker_dfs = fetch_bars(
             self._tickers,
             fetch_start,
@@ -88,8 +92,8 @@ class TickerSelector:
         result = select_top_n(
             n=self._top_n,
             tickers=self._tickers,
-            lookback_days=ROLLING_LOOKBACK_DAYS,
-            opening_bars=OPENING_BARS,
+            lookback_days=self._lookback_days,
+            opening_bars=self._opening_bars,
             bearish_ma200=BEARISH_MA200,
             stop_pct=self._stop_pct,
             source="alpaca",
@@ -113,8 +117,8 @@ class TickerSelector:
             result = select_top_n(
                 n=self._top_n,
                 tickers=self._tickers,
-                lookback_days=ROLLING_LOOKBACK_DAYS,
-                opening_bars=OPENING_BARS,
+                lookback_days=self._lookback_days,
+                opening_bars=self._opening_bars,
                 bearish_ma200=BEARISH_MA200,
                 stop_pct=self._stop_pct,
                 source="alpaca",
@@ -165,6 +169,7 @@ class OpMomentumTradeEngine:
         regime_ma: int = REGIME_MA,
         rank_weighted_sizing: bool = RANK_WEIGHTED_SIZING,
         top_n: int = MAX_ACTIVE_SYMBOLS,
+        lookback_days: int = ROLLING_LOOKBACK_DAYS,
         windows: Optional[list] = None,
         trade_type: str = "options",
         option_price_monitor: Optional[OptionPriceMonitor] = None,
@@ -188,6 +193,7 @@ class OpMomentumTradeEngine:
         self._regime_ma = regime_ma
         self._rank_weighted_sizing = rank_weighted_sizing
         self._top_n = top_n
+        self._lookback_days = lookback_days
         self._trade_type = trade_type
         self._option_price_monitor = option_price_monitor
         self._time_premium_pct_cap = time_premium_pct_cap
@@ -201,6 +207,9 @@ class OpMomentumTradeEngine:
         self._signal_engine: LiveSignalEngine = None
         self._signal_lock = threading.Lock()
         self._rolling_stats: dict = {}
+        # Per-window rolling stats: {label: {ticker: stats_dict}}
+        # Falls back to _rolling_stats when label not present (e.g. single-window or tests).
+        self._rolling_stats_by_window: dict = {}
         # Per-window state: {label: {pending_signals, collection_deadline, open_position_count, capital_fraction}}
         self._window_state: dict = {}
 
@@ -578,9 +587,10 @@ class OpMomentumTradeEngine:
             len(pending),
         )
 
+        window_rolling_stats = self._rolling_stats_by_window.get(label, self._rolling_stats)
         scored = []
         for ticker, event in pending.items():
-            stats = self._rolling_stats.get(ticker, {})
+            stats = window_rolling_stats.get(ticker, {})
             if stats.get("ev_trade", 0) <= 0:
                 logger.info(
                     "Skipping %s [%s]: ev_trade=%.3f <= 0",
@@ -754,14 +764,28 @@ class OpMomentumTradeEngine:
         all_tickers = tickers_override or TICKERS
         first_window = self._windows[0]
 
-        ticker_selector = TickerSelector(
-            tickers=all_tickers,
-            top_n=self._top_n,
-            stop_pct=float(self._stop_pct),
-            opening_start_time=first_window.opening_start,
-        )
-        pre_market_picks = ticker_selector.select()
-        self._rolling_stats = ticker_selector.rolling_stats
+        self._rolling_stats_by_window = {}
+        seen_configs: dict = {}
+        pre_market_picks: list = []
+        for i, win in enumerate(self._windows):
+            config_key = (win.opening_start, win.opening_bars)
+            if config_key in seen_configs:
+                self._rolling_stats_by_window[win.label] = seen_configs[config_key]
+                continue
+            win_selector = TickerSelector(
+                tickers=all_tickers,
+                top_n=self._top_n,
+                stop_pct=float(self._stop_pct),
+                opening_start_time=win.opening_start,
+                opening_bars=win.opening_bars,
+                lookback_days=self._lookback_days,
+            )
+            win_picks = win_selector.select()
+            if i == 0:
+                pre_market_picks = win_picks
+            self._rolling_stats_by_window[win.label] = win_selector.rolling_stats
+            seen_configs[config_key] = win_selector.rolling_stats
+        self._rolling_stats = self._rolling_stats_by_window.get(first_window.label, {})
         print(f"\nPre-market top picks: {pre_market_picks}")
         print(f"Subscribing all {len(all_tickers)} tickers to live stream...")
         if len(self._windows) > 1:
@@ -869,7 +893,6 @@ class OpMomentumTradeEngine:
         regardless of how the engine was constructed.
         """
         from datetime import time as _time
-        from .replay import set_replay_clock
 
         disable_notifications()
 
@@ -881,14 +904,28 @@ class OpMomentumTradeEngine:
         all_tickers = tickers_override or TICKERS
         first_window = self._windows[0]
 
-        ticker_selector = TickerSelector(
-            tickers=all_tickers,
-            top_n=self._top_n,
-            stop_pct=float(self._stop_pct),
-            opening_start_time=first_window.opening_start,
-        )
-        pre_market_picks = ticker_selector.select()
-        self._rolling_stats = ticker_selector.rolling_stats
+        self._rolling_stats_by_window = {}
+        seen_configs: dict = {}
+        pre_market_picks: list = []
+        for i, win in enumerate(self._windows):
+            config_key = (win.opening_start, win.opening_bars)
+            if config_key in seen_configs:
+                self._rolling_stats_by_window[win.label] = seen_configs[config_key]
+                continue
+            win_selector = TickerSelector(
+                tickers=all_tickers,
+                top_n=self._top_n,
+                stop_pct=float(self._stop_pct),
+                opening_start_time=win.opening_start,
+                opening_bars=win.opening_bars,
+                lookback_days=self._lookback_days,
+            )
+            win_picks = win_selector.select()
+            if i == 0:
+                pre_market_picks = win_picks
+            self._rolling_stats_by_window[win.label] = win_selector.rolling_stats
+            seen_configs[config_key] = win_selector.rolling_stats
+        self._rolling_stats = self._rolling_stats_by_window.get(first_window.label, {})
         print(f"\nReplay {replay_date} — pre-market picks: {pre_market_picks}")
 
         # Build per-window states with replay_date deadlines
@@ -965,7 +1002,12 @@ class OpMomentumTradeEngine:
         )
         driver.run()
 
-        # Force-close any positions still open after the last bar
+        # BarReplayDriver.run() clears the replay clock internally.  Re-pin it to the
+        # last bar's timestamp so close_all() records the correct exit time and uses
+        # bar prices (not wall-clock time / live API quotes) for EOD-closed positions.
+        if driver.last_bar_time is not None:
+            set_replay_clock(lambda ts=driver.last_bar_time: ts)
         self._monitor.close_all(reason="end_of_day")
+        clear_replay_clock()
         enable_notifications()
         self._monitor.print_summary()

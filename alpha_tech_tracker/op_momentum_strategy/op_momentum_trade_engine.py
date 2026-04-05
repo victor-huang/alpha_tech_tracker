@@ -24,6 +24,7 @@ from .config import (
     _load_config,
 )
 from .models import WindowConfig
+from .op_momentum_selector import ROLLING_LOOKBACK_DAYS as _DEFAULT_LOOKBACK_DAYS
 from .option_price_monitor import OptionPriceMonitor
 from .trade_engine import OpMomentumTradeEngine
 
@@ -343,6 +344,13 @@ def parse_args():
         dest="top",
         help=f"Number of top-ranked tickers to trade per window (default: {MAX_ACTIVE_SYMBOLS}).",
     )
+    parser.add_argument(
+        "--lookback",
+        type=int,
+        default=_DEFAULT_LOOKBACK_DAYS,
+        dest="lookback",
+        help=f"Rolling lookback window in days for pre-market ticker scoring (default: {_DEFAULT_LOOKBACK_DAYS}).",
+    )
     return parser.parse_args()
 
 
@@ -450,6 +458,7 @@ if __name__ == "__main__":
             enable_bullish_reentry=args.bullish_reentry,
             bullish_reentry_max_bars=args.bullish_reentry_max_bars,
             top_n=args.top,
+            lookback_days=args.lookback,
         )
         if args.replay_date:
             from datetime import date as _date
@@ -526,6 +535,7 @@ if __name__ == "__main__":
             enable_bullish_reentry=args.bullish_reentry,
             bullish_reentry_max_bars=args.bullish_reentry_max_bars,
             top_n=args.top,
+            lookback_days=args.lookback,
         )
         engine.run(tickers_override=args.tickers)
     finally:
