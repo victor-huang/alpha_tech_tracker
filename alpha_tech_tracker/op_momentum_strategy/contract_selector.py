@@ -1,6 +1,6 @@
 import logging
 from datetime import date, timedelta
-from decimal import ROUND_HALF_UP
+from decimal import ROUND_CEILING, ROUND_HALF_UP
 
 import pandas as pd
 import pytz
@@ -306,3 +306,45 @@ class TimePremiumContractSelector:
                 "Failed to batch-fetch option quotes for %d symbols", len(symbols)
             )
             return {}
+
+
+class MockContractSelector:
+    """Builds an OCC option symbol for replay mode — no API calls.
+
+    BULLISH (call): strike = floor(stock_price × 0.90 / increment) × increment
+    BEARISH (put):  strike = ceil(stock_price × 1.10 / increment) × increment
+    Expiry: next Friday on or after ref_date.
+    """
+
+    _CALL_RATIO = _D("0.90")
+    _PUT_RATIO = _D("1.10")
+
+    def __init__(self, ref_date: date):
+        self._ref_date = ref_date
+
+    def select(self, ticker: str, signal: str, stock_price: float) -> str:
+        stock_price = _D(str(stock_price))
+        incr = _strike_increment(stock_price)
+
+        if signal == "BULLISH":
+            raw = stock_price * self._CALL_RATIO
+            strike = (raw // incr) * incr
+            cp = "C"
+        else:
+            raw = stock_price * self._PUT_RATIO
+            strike = (raw / incr).to_integral_value(rounding=ROUND_CEILING) * incr
+            cp = "P"
+
+        expiry = _next_friday(self._ref_date)
+        strike_int = int(strike * _D("1000"))
+        symbol = f"{ticker}{expiry.strftime('%y%m%d')}{cp}{strike_int:08d}"
+        logger.info(
+            "MockContractSelector: %s %s stock=%s → %s (strike=%s expiry=%s)",
+            ticker,
+            signal,
+            stock_price,
+            symbol,
+            strike,
+            expiry,
+        )
+        return symbol

@@ -59,7 +59,7 @@
 
   "mock_api": {
     "option_contracts": [
-      {"symbol": "NVDA260327C00730000", "strike_price": 730.0}
+      {"symbol": "NVDA260327C00810000", "strike_price": 810.0}
     ],
     "account_buying_power": 25000.0,
     "entry_quote": {"bid": 8.0, "ask": 9.0},
@@ -72,11 +72,11 @@
     "or_low": "808.0",
     "hard_stop_price": "819.9",
     "fallback_price": "819.2",
-    "option_symbol": "NVDA260327C00730000",
-    "contracts": 13,
-    "entry_mid": "8.50",
+    "option_symbol": "NVDA260327C00810000",
+    "contracts": 9,
+    "entry_mid": "12.00",
     "exit_reason": "trailing_stop_ma20",
-    "exit_mid": "12.0",
-    "pnl": "4550.00"
+    "exit_mid": "12.50",
+    "pnl": "450.00"
   }
 }

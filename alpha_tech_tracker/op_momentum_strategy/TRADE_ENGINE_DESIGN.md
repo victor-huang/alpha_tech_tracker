@@ -519,6 +519,67 @@ Priority order (first match wins): `max_loss` → `armed_ma20` or `hard_stop` �
 
 ---
 
+## Mock Trade Execution (`--mock-trade-execution`)
+
+When `--mock-trade-execution` is set, no real orders are placed. Fills are simulated in
+place using formulas that approximate real option pricing without live market data.
+
+### Mock Option Pricer (`mock_option_pricer.py`)
+
+Used in replay and paper-trading mode to produce meaningful P&L from option trades
+without calling the historical option quote API (which returns stale/same-day prices in
+replay).
+
+#### Entry price — `mock_entry_price(stock_price, option_symbol, option_type)`
+
+```
+intrinsic = max(0, stock - strike)      # call
+          = max(0, strike - stock)      # put
+price     = intrinsic × (1 + 0.20)     # 20% time premium on top of intrinsic
+```
+
+OTM options (intrinsic = 0) floor to `$0.01` before the multiplier so position sizing
+still works (avoids division by zero in contract count).
+
+Result is quantized to exchange tick size: `$0.05` below `$3.00`, `$0.10` at or above.
+
+**Example:** stock=$100, strike=$90 call → intrinsic=$10, price=$10×1.20=**$12.00**
+
+#### Exit price — `mock_exit_price(exit_stock_price, option_symbol, option_type, entry_price, entry_stock_price)`
+
+```
+entry_intrinsic = max(0, entry_stock - strike)
+entry_time_prem = max(0, entry_price  - entry_intrinsic)
+
+exit_intrinsic  = max(0, exit_stock  - strike)
+exit_time_prem  = entry_time_prem × 0.95        # 5% time decay
+
+exit_price      = exit_intrinsic + exit_time_prem
+```
+
+Reconstructs the time premium actually paid at entry, applies a 5% decay, then adds
+the new intrinsic at exit. This means:
+- Stock gain/loss flows through the intrinsic dollar-for-dollar
+- The option price does not fully capture every dollar of stock move (delta < 1 for
+  near-ATM), and it reflects slight extrinsic erosion over the holding period
+
+**Example:** entry stock=$100, strike=$90, entry_price=$12
+- entry_intrinsic=$10, entry_tp=$2.00
+- exit stock=$102 → exit_intrinsic=$12, exit_tp=$2×0.95=$1.90
+- exit_price=**$13.90** (between the $2 stock gain and full $14 theoretical max)
+
+#### Integration points
+
+| Stage | File | Behaviour |
+|---|---|---|
+| Position sizing | `position_sizer.py` `compute()` | When `mock_stock_price` is provided, calls `mock_entry_price()` instead of fetching a live option quote |
+| Entry fill | `trade_engine.py` `_place_entry()` | Uses `mock_entry_price()` at the signal-bar close; sets `pos.simulated_entry_mid` |
+| Exit fill | `position_monitor.py` `_close_option_position()` | Uses `mock_exit_price()` with the triggering bar's close; sets `pos.simulated_exit_mid` |
+
+The option type (`call`/`put`) is inferred automatically from the OCC symbol (`C` or `P`).
+
+---
+
 ## Dependencies
 
 - `alpaca-py` — `TradingClient`, `StockHistoricalDataClient`, `StockDataStream`

@@ -4,6 +4,7 @@ from unittest.mock import patch
 import pytest
 
 from alpha_tech_tracker.op_momentum_strategy.contract_selector import (
+    MockContractSelector,
     OptionContractSelector,
     TimePremiumContractSelector,
     _end_of_next_month,
@@ -450,3 +451,47 @@ class TestTimePremiumContractSelector:
         assert call_args.kwargs["option_type"] == "put"
         assert call_args.kwargs["strike_price_gte"] == "300"
         assert call_args.kwargs["strike_price_lte"] == "390"
+
+
+class TestMockContractSelector:
+    # ref_date Monday 2026-03-23 → next Friday 2026-03-27 → "260327"
+    _REF_DATE = date(2026, 3, 23)
+    _EXPIRY_SUFFIX = "260327"
+
+    def test_bullish_call_floors_strike_to_increment(self):
+        # stock=$100, increment=$5, 100×0.90=90 → floor(90/5)*5=$90
+        symbol = MockContractSelector(self._REF_DATE).select("NVDA", "BULLISH", 100.0)
+        assert symbol == f"NVDA{self._EXPIRY_SUFFIX}C00090000"
+
+    def test_bearish_put_ceils_strike_to_increment(self):
+        # stock=$100, increment=$5, 100×1.10=110 → ceil(110/5)*5=$110
+        symbol = MockContractSelector(self._REF_DATE).select("NVDA", "BEARISH", 100.0)
+        assert symbol == f"NVDA{self._EXPIRY_SUFFIX}P00110000"
+
+    def test_high_price_uses_ten_dollar_increment(self):
+        # stock=$250, increment=$10, 250×0.90=225 → floor(225/10)*10=$220
+        symbol = MockContractSelector(self._REF_DATE).select("TSLA", "BULLISH", 250.0)
+        assert symbol == f"TSLA{self._EXPIRY_SUFFIX}C00220000"
+
+    def test_low_price_uses_one_dollar_increment(self):
+        # stock=$30, increment=$1, 30×0.90=27 → floor(27/1)*1=$27
+        symbol = MockContractSelector(self._REF_DATE).select("APP", "BULLISH", 30.0)
+        assert symbol == f"APP{self._EXPIRY_SUFFIX}C00027000"
+
+    def test_bearish_put_ceils_non_round_target(self):
+        # stock=$250, increment=$10, 250×1.10=275 → ceil(275/10)*10=$280
+        symbol = MockContractSelector(self._REF_DATE).select("TSLA", "BEARISH", 250.0)
+        assert symbol == f"TSLA{self._EXPIRY_SUFFIX}P00280000"
+
+    def test_expiry_is_next_friday_from_ref_date(self):
+        # ref_date=Wednesday 2026-04-01 → next Friday 2026-04-03 → "260403"
+        ref = date(2026, 4, 1)
+        symbol = MockContractSelector(ref).select("COIN", "BULLISH", 100.0)
+        assert "260403" in symbol
+
+    def test_no_api_calls_made(self):
+        selector = MockContractSelector(self._REF_DATE)
+        # just verifying select() returns without touching any client
+        symbol = selector.select("PLTR", "BEARISH", 80.0)
+        assert symbol.startswith("PLTR")
+        assert "P" in symbol

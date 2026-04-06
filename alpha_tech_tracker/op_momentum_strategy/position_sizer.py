@@ -23,6 +23,7 @@ class PositionSizer:
         option_symbol: str,
         capital_weight: Decimal = _D("1"),
         window_budget: Optional[Decimal] = None,
+        mock_stock_price: Optional[Decimal] = None,
     ) -> tuple:
         if window_budget is not None:
             budget = window_budget * CAPITAL_PER_SYMBOL * capital_weight
@@ -31,13 +32,18 @@ class PositionSizer:
             buying_power = _D(account.get("buying_power", ACCOUNT_BUDGET))
             budget = buying_power * CAPITAL_PER_SYMBOL * capital_weight
 
-        quote_resp = self._client._option_data_client.get_option_latest_quote(
-            OptionLatestQuoteRequest(symbol_or_symbols=[option_symbol])
-        )
-        quote = quote_resp[option_symbol]
-        bid = _D(quote.bid_price)
-        ask = _D(quote.ask_price)
-        mid = (bid + ask) / _D("2")
+        ask = _D("0")
+        if mock_stock_price is not None:
+            from .mock_option_pricer import mock_entry_price
+            mid = mock_entry_price(mock_stock_price, option_symbol)
+        else:
+            quote_resp = self._client._option_data_client.get_option_latest_quote(
+                OptionLatestQuoteRequest(symbol_or_symbols=[option_symbol])
+            )
+            quote = quote_resp[option_symbol]
+            bid = _D(quote.bid_price)
+            ask = _D(quote.ask_price)
+            mid = (bid + ask) / _D("2")
 
         if mid <= _D("0"):
             logger.warning(

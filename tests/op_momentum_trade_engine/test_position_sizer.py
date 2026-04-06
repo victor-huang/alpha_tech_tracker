@@ -244,3 +244,65 @@ class TestComputeStock:
 
         assert shares_stock == shares_expected
         assert shares_stock != shares_would_be_with_multiplier
+
+
+class TestMockStockPriceCompute:
+    # strike $90 call — ITM when stock=$100 (intrinsic=$10)
+    _CALL_SYM = "NVDA260328C00090000"
+    # strike $110 put — ITM when stock=$100 (intrinsic=$10)
+    _PUT_SYM = "NVDA260328P00110000"
+
+    def test_skips_api_quote_when_mock_stock_price_provided(self):
+        client = _make_alpaca_client()
+
+        sizer = PositionSizer(client)
+        sizer.compute(self._CALL_SYM, window_budget=_D("25000"), mock_stock_price=_D("100"))
+
+        client._option_data_client.get_option_latest_quote.assert_not_called()
+
+    def test_call_intrinsic_pricing_from_stock_price(self):
+        # stock=$100, strike=$90 call → intrinsic=$10, ×1.20=$12.00
+        # budget=$25000×0.45=$11250; contracts=floor(11250/1200)=9
+        client = _make_alpaca_client()
+
+        sizer = PositionSizer(client)
+        contracts, limit_price = sizer.compute(
+            self._CALL_SYM, window_budget=_D("25000"), mock_stock_price=_D("100")
+        )
+
+        assert limit_price == _D("12.00")
+        assert contracts == 9
+
+    def test_put_intrinsic_pricing_from_stock_price(self):
+        # stock=$100, strike=$110 put → intrinsic=$10, ×1.20=$12.00
+        client = _make_alpaca_client()
+
+        sizer = PositionSizer(client)
+        contracts, limit_price = sizer.compute(
+            self._PUT_SYM, window_budget=_D("25000"), mock_stock_price=_D("100")
+        )
+
+        assert limit_price == _D("12.00")
+        assert contracts == 9
+
+    def test_infers_call_type_from_c_in_symbol(self):
+        # stock=$95, strike=$90: call intrinsic=$5 → $6.00; if wrongly put: intrinsic=0
+        client = _make_alpaca_client()
+
+        sizer = PositionSizer(client)
+        _, limit_price = sizer.compute(
+            self._CALL_SYM, window_budget=_D("25000"), mock_stock_price=_D("95")
+        )
+
+        assert limit_price == _D("6.00")
+
+    def test_infers_put_type_from_p_in_symbol(self):
+        # stock=$105, strike=$110: put intrinsic=$5 → $6.00; if wrongly call: intrinsic=0
+        client = _make_alpaca_client()
+
+        sizer = PositionSizer(client)
+        _, limit_price = sizer.compute(
+            self._PUT_SYM, window_budget=_D("25000"), mock_stock_price=_D("105")
+        )
+
+        assert limit_price == _D("6.00")
