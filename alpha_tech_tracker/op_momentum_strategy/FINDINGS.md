@@ -643,3 +643,57 @@ Candidate from 2025 sweep: A1 shifted to 11:30 (mid-morning after M1 exits). Val
 - **Both A1 and A2 are necessary** — removing A1 costs ~-35pp, removing A2 costs ~-58pp in 2025.
 - **A1 at 11:30 wins 4/6 years** and has a large +45.61pp advantage in 2024, but loses badly in 2026 YTD (-11.77pp). The 11:30 window captures a mid-morning continuation move that works well in trending/volatile years but underperforms in the current 2026 choppy regime where the post-lunch 13:15 signal is stronger.
 - **Decision**: Keep A1 at 13:15 for now given 2026 market conditions. Revisit 11:30 if regime shifts back to sustained trending.
+
+## Finding 12 — Options Replay Example: 2-Week Live Trade Simulation (2026-03-23 → 2026-04-02)
+
+**Purpose**: Demonstrate options replay mode using MockContractSelector + mock_option_pricer.
+Validates that the live trade engine produces meaningful P&L when run against real historical bars
+with simulated fills (no live API calls).
+
+**Params**: `--regime-filter --regime-ma 8 --window M1 09:30 3 --window A1 13:15 1 --window A2 15:00 1 --morning-split 100 --trade-type options --bearish-reentry --bullish-reentry --reversal --mock-trade-execution --top 2 --capital 10000`
+
+**Note**: Apr 3 (Good Friday) excluded — market closed.
+
+### Daily Results
+
+| Date | Pre-market Picks | Cap P&L | Cap % | Best Trade | Exit Reason |
+|---|---|---:|---:|---|---|
+| Mon 2026-03-23 | SHOP, PLTR | +$1,680 | +16.80% | SNDK reversal +$910 | end_of_day |
+| Tue 2026-03-24 | COIN, PLTR | +$2,340 | +23.40% | COIN bearish +$1,760 (+60.9% on option) | trailing_stop_ma20 |
+| Wed 2026-03-25 | COIN, PLTR | −$250 | −2.50% | Choppy — reversals failed | — |
+| Thu 2026-03-26 | EXPE, AMD | +$1,140 | +11.40% | AMD bearish +$860 | trailing_stop_ma20 |
+| Fri 2026-03-27 | COIN, SHOP | +$460 | +4.60% | COIN/SHOP morning, afternoon flat | — |
+| Mon 2026-03-30 | FN, CVNA | +$3,020 | +30.20% | CVNA bearish +$1,690 (+39.95%) | trailing_stop_ma20 |
+| Tue 2026-03-31 | SHOP, FANG | +$550 | +5.50% | FN reversal +$1,380 end-of-day | end_of_day |
+| Wed 2026-04-01 | CVNA, COIN | −$800 | −8.00% | Broad sell-off — all stops hit | — |
+| Thu 2026-04-02 | COIN, SHOP | +$2,000 | +20.00% | SHOP reversal +$760, AMD hold +$900 | end_of_day |
+
+### Weekly & Total Summary
+
+| Period | P&L | Cap % | Running Portfolio |
+|---|---:|---:|---:|
+| Week 1 (3/23–3/27) | +$5,370 | +53.7% | $15,370 |
+| Week 2 (3/30–4/2) | +$4,770 | +47.7% | $20,140 |
+| **2-Week Total** | **+$10,140** | **+101.4%** | **$20,140** |
+
+Starting $10,000 → **$20,140** in 9 trading days.
+Note: daily cap % figures use a fixed $10,000 base (no daily compounding).
+
+### Replay Command
+
+```bash
+PYTHONPATH=/Users/victorhuang/work/alpha_tech_tracker \
+  python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine run \
+  --regime-filter --regime-ma 8 \
+  --window M1 09:30 3 --window A1 13:15 1 --window A2 15:00 1 --morning-split 100 \
+  --trade-type options --bearish-reentry --bullish-reentry --reversal \
+  --mock-trade-execution --top 2 --capital 10000 \
+  --replay-date 2026-03-24   # replace date for each day
+```
+
+### Observations
+
+- Morning window (M1) was responsible for the largest single-day gains (3/24 COIN, 3/30 FN+CVNA).
+- Reversal trades added meaningful P&L on 3/23 (SNDK +$910), 3/31 (FN +$1,380), 4/2 (SHOP +$760).
+- The two losing days (3/25, 4/1) were choppy/sell-off sessions where reversals and continuations both failed — consistent with the regime filter's purpose.
+- Options amplify gains vs stocks on big moves (COIN 3/24: 60.9% on the option vs ~10% stock move) but quantization ($0.10 tick) absorbs small moves as $0 P&L.
