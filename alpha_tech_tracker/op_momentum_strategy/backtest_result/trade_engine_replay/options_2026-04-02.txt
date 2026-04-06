@@ -1,0 +1,272 @@
+2026-04-06 00:00:48 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Selector picks: [{'COIN': 'score=2.581 ev=1.086%'}, {'SHOP': 'score=1.639 ev=1.883%'}] | no_signal: ['SNDK', 'APP', 'CVNA', 'RH', 'FN', 'MU', 'ANAB', 'NVDA', 'TSLA'] | negative_ev: []
+2026-04-06 00:01:12 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Selector picks: [{'ANAB': 'score=0.858 ev=0.193%'}, {'AMD': 'score=0.279 ev=0.144%'}] | no_signal: ['SNDK', 'SHOP', 'CVNA', 'META', 'EXPE', 'FANG', 'RH', 'FN', 'MU', 'COIN', 'NVDA', 'TSLA'] | negative_ev: []
+2026-04-06 00:01:31 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Selector picks: [{'FN': 'score=0.949 ev=0.295%'}, {'SNDK': 'score=0.668 ev=0.226%'}] | no_signal: ['SHOP', 'META', 'EXPE', 'RH', 'MU', 'ANAB', 'PLTR', 'COIN', 'NVDA', 'TSLA'] | negative_ev: ['FANG']
+2026-04-06 00:01:31 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — Replay warmup: loading bars 2025-08-25 to 2026-04-01 for 16 tickers
+2026-04-06 00:01:34 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — Replay warmup SNDK   — 20903 bars, last close=692.79
+2026-04-06 00:01:34 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — Replay warmup APP    — 90839 bars, last close=387.75
+2026-04-06 00:01:34 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — Replay warmup SHOP   — 100036 bars, last close=118.50
+2026-04-06 00:01:34 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — Replay warmup CVNA   — 100816 bars, last close=312.09
+2026-04-06 00:01:34 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — Replay warmup AMD    — 105714 bars, last close=210.01
+2026-04-06 00:01:34 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — Replay warmup META   — 105447 bars, last close=578.97
+2026-04-06 00:01:34 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — Replay warmup EXPE   — 99586 bars, last close=227.60
+2026-04-06 00:01:34 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — Replay warmup FANG   — 98050 bars, last close=190.56
+2026-04-06 00:01:34 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — Replay warmup RH     — 72050 bars, last close=112.90
+2026-04-06 00:01:34 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — Replay warmup FN     — 52247 bars, last close=535.70
+2026-04-06 00:01:34 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — Replay warmup MU     — 105624 bars, last close=367.89
+2026-04-06 00:01:34 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — Replay warmup ANAB   — 42818 bars, last close=56.70
+2026-04-06 00:01:34 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — Replay warmup PLTR   — 105321 bars, last close=146.48
+2026-04-06 00:01:34 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — Replay warmup COIN   — 94818 bars, last close=172.93
+2026-04-06 00:01:34 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — Replay warmup NVDA   — 105701 bars, last close=175.81
+2026-04-06 00:01:34 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — Replay warmup TSLA   — 105778 bars, last close=381.32
+2026-04-06 00:01:34 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — Replay regime filter ON (QQQ MA8): 26 bearish dates in lookback
+2026-04-06 00:01:35 INFO alpha_tech_tracker.op_momentum_strategy.replay — Replay 2026-04-02 — 1195 5-min bars across 16 tickers
+2026-04-06 00:01:35 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — SNDK [M1]: NEUTRAL — close=655.66 midpoint=653.485 or_low=643.19 bottom_30=647.3080
+2026-04-06 00:01:35 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — APP [M1]: NEUTRAL — close=370.195 midpoint=372.205 or_low=367.185 bottom_30=369.19300
+2026-04-06 00:01:35 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — SIGNAL [M1] SHOP BEARISH close=112.48 or_high=114.475 or_low=112.15
+2026-04-06 00:01:35 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Buffered signal [M1]: SHOP BEARISH
+2026-04-06 00:01:35 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — CVNA [M1]: NEUTRAL — close=299.27 midpoint=299.5925 or_low=297.27 bottom_30=298.19900
+2026-04-06 00:01:35 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — SIGNAL [M1] AMD BEARISH close=201.16 or_high=206.12 or_low=200.69
+2026-04-06 00:01:35 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Buffered signal [M1]: AMD BEARISH
+2026-04-06 00:01:35 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — SIGNAL [M1] META BEARISH close=561.1 or_high=566.685 or_low=559.98
+2026-04-06 00:01:35 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Buffered signal [M1]: META BEARISH
+2026-04-06 00:01:35 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — SIGNAL [M1] EXPE BEARISH close=219.795 or_high=220.97 or_low=219.53
+2026-04-06 00:01:35 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Buffered signal [M1]: EXPE BEARISH
+2026-04-06 00:01:35 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — SIGNAL [M1] FANG BULLISH close=200.995 or_high=201.31 or_low=197.195
+2026-04-06 00:01:35 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Buffered signal [M1]: FANG BULLISH
+2026-04-06 00:01:35 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — RH [M1]: NEUTRAL — close=109.04 midpoint=108.885 or_low=108.51 bottom_30=108.6600
+2026-04-06 00:01:35 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — FN [M1]: NEUTRAL — close=514.33 midpoint=512.375 or_low=504.48 bottom_30=507.6380
+2026-04-06 00:01:35 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — MU [M1]: NEUTRAL — close=344.25 midpoint=344.610 or_low=341.085 bottom_30=342.49500
+2026-04-06 00:01:35 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — SIGNAL [M1] PLTR BEARISH close=141.01 or_high=143.39 or_low=140.61
+2026-04-06 00:01:35 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Buffered signal [M1]: PLTR BEARISH
+2026-04-06 00:01:35 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — SIGNAL [M1] COIN BEARISH close=164.09 or_high=167.82 or_low=163.66
+2026-04-06 00:01:35 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Buffered signal [M1]: COIN BEARISH
+2026-04-06 00:01:36 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — NVDA [M1]: NEUTRAL — close=172.04 midpoint=172.575 or_low=171.41 bottom_30=171.8760
+2026-04-06 00:01:36 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — TSLA [M1]: NEUTRAL — close=367.43 midpoint=365.85 or_low=363.67 bottom_30=364.5420
+2026-04-06 00:01:36 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Signal collection window [M1] closed: ranking 7 buffered signal(s)
+2026-04-06 00:01:36 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Ranked SHOP [M1]: score=1.639 ev_trade=1.883
+2026-04-06 00:01:36 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Ranked AMD [M1]: score=1.464 ev_trade=0.378
+2026-04-06 00:01:36 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Ranked META [M1]: score=0.628 ev_trade=0.313
+2026-04-06 00:01:36 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Ranked EXPE [M1]: score=1.072 ev_trade=1.430
+2026-04-06 00:01:36 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Ranked FANG [M1]: score=1.268 ev_trade=0.234
+2026-04-06 00:01:36 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Ranked PLTR [M1]: score=1.307 ev_trade=0.780
+2026-04-06 00:01:36 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Ranked COIN [M1]: score=2.581 ev_trade=1.086
+2026-04-06 00:01:36 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Selecting COIN from buffer [M1] (score=2.581 rank=0)
+2026-04-06 00:01:36 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Entering position [M1]: COIN BEARISH @ 164.09 (rank=0)
+2026-04-06 00:01:36 INFO alpha_tech_tracker.op_momentum_strategy.contract_selector — MockContractSelector: COIN BEARISH stock=164.09 → COIN260403P00185000 (strike=185 expiry=2026-04-03)
+2026-04-06 00:01:36 INFO alpha_tech_tracker.op_momentum_strategy.position_sizer — COIN260403P00185000: budget=4500.0000 (weight=1.00, source=window_budget) mid=25.10 → 1 contracts (cost=2510.00)
+2026-04-06 00:01:36 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — MOCK ENTRY PRICE COIN260403P00185000: 25.20
+2026-04-06 00:01:36 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — SIMULATE BUY_OPEN COIN260403P00185000 PUT contracts=1 simulated_fill=25.20 (no order placed)
+2026-04-06 00:01:36 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — Tracking position: COIN BEARISH opt=COIN260403P00185000 contracts=1
+2026-04-06 00:01:36 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Selecting SHOP from buffer [M1] (score=1.639 rank=1)
+2026-04-06 00:01:36 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Entering position [M1]: SHOP BEARISH @ 112.48 (rank=1)
+2026-04-06 00:01:36 INFO alpha_tech_tracker.op_momentum_strategy.contract_selector — MockContractSelector: SHOP BEARISH stock=112.48 → SHOP260403P00125000 (strike=125 expiry=2026-04-03)
+2026-04-06 00:01:36 INFO alpha_tech_tracker.op_momentum_strategy.position_sizer — SHOP260403P00125000: budget=4500.0000 (weight=1.00, source=window_budget) mid=15.00 → 3 contracts (cost=4500.00)
+2026-04-06 00:01:36 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — MOCK ENTRY PRICE SHOP260403P00125000: 13.80
+2026-04-06 00:01:36 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — SIMULATE BUY_OPEN SHOP260403P00125000 PUT contracts=3 simulated_fill=13.80 (no order placed)
+2026-04-06 00:01:36 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — Tracking position: SHOP BEARISH opt=SHOP260403P00125000 contracts=3
+2026-04-06 00:01:36 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Max positions reached [M1], stopping selection
+2026-04-06 00:01:36 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — Reversal watcher created for SHOP (bars_held=0)
+2026-04-06 00:01:36 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — EXIT SHOP BEARISH reason=fallback_20pct opt=SHOP260403P00125000 contracts=3
+2026-04-06 00:01:36 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — MOCK EXIT PRICE SHOP260403P00125000: 13.70
+2026-04-06 00:01:36 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — SIMULATE SELL_CLOSE SHOP260403P00125000 contracts=3 simulated_fill=13.70 (no order placed)
+2026-04-06 00:01:36 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Capital returned [M1] SHOP (reentry=False): slot=4500.00 cap_pnl=-30.00 returned=4470.00 window_total=4470.00
+2026-04-06 00:01:36 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — ANAB [M1]: NEUTRAL — close=57.515 midpoint=57.6075 or_low=57.5 bottom_30=57.54300
+2026-04-06 00:01:36 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — Re-entry trigger fired [reversal] SHOP close=114.69
+2026-04-06 00:01:36 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Re-entry [reversal] SHOP BULLISH trigger=114.69 hard_stop=113.31 trailing_arm=117.02
+2026-04-06 00:01:36 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Entering position [M1]: SHOP BULLISH @ 114.69 (rank=1)
+2026-04-06 00:01:36 INFO alpha_tech_tracker.op_momentum_strategy.contract_selector — MockContractSelector: SHOP BULLISH stock=114.69 → SHOP260403C00100000 (strike=100 expiry=2026-04-03)
+2026-04-06 00:01:36 INFO alpha_tech_tracker.op_momentum_strategy.position_sizer — SHOP260403C00100000: budget=4500.0000 (weight=1.00, source=window_budget) mid=17.60 → 2 contracts (cost=3520.00)
+2026-04-06 00:01:36 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — MOCK ENTRY PRICE SHOP260403C00100000: 17.60
+2026-04-06 00:01:36 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — SIMULATE BUY_OPEN SHOP260403C00100000 CALL contracts=2 simulated_fill=17.60 (no order placed)
+2026-04-06 00:01:36 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — Tracking position: SHOP BULLISH opt=SHOP260403C00100000 contracts=2
+2026-04-06 00:01:36 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — Reversal watcher created for COIN (bars_held=1)
+2026-04-06 00:01:36 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — EXIT COIN BEARISH reason=hard_stop opt=COIN260403P00185000 contracts=1
+2026-04-06 00:01:36 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — MOCK EXIT PRICE COIN260403P00185000: 25.00
+2026-04-06 00:01:36 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — SIMULATE SELL_CLOSE COIN260403P00185000 contracts=1 simulated_fill=25.00 (no order placed)
+2026-04-06 00:01:36 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Capital returned [M1] COIN (reentry=False): slot=4500.00 cap_pnl=-20.00 returned=4480.00 window_total=8950.00
+2026-04-06 00:01:37 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — Re-entry trigger fired [reversal] COIN close=169.90
+2026-04-06 00:01:37 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Re-entry [reversal] COIN BULLISH trigger=169.90 hard_stop=165.74 trailing_arm=174.06
+2026-04-06 00:01:37 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Entering position [M1]: COIN BULLISH @ 169.90 (rank=0)
+2026-04-06 00:01:37 INFO alpha_tech_tracker.op_momentum_strategy.contract_selector — MockContractSelector: COIN BULLISH stock=169.9 → COIN260403C00150000 (strike=150 expiry=2026-04-03)
+2026-04-06 00:01:37 INFO alpha_tech_tracker.op_momentum_strategy.position_sizer — COIN260403C00150000: budget=4500.0000 (weight=1.00, source=window_budget) mid=23.90 → 1 contracts (cost=2390.00)
+2026-04-06 00:01:37 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — MOCK ENTRY PRICE COIN260403C00150000: 23.90
+2026-04-06 00:01:37 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — SIMULATE BUY_OPEN COIN260403C00150000 CALL contracts=1 simulated_fill=23.90 (no order placed)
+2026-04-06 00:01:37 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — Tracking position: COIN BULLISH opt=COIN260403C00150000 contracts=1
+2026-04-06 00:01:39 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — EXIT SHOP BULLISH reason=trailing_stop_ma20 opt=SHOP260403C00100000 contracts=2
+2026-04-06 00:01:39 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — MOCK EXIT PRICE SHOP260403C00100000: 21.40
+2026-04-06 00:01:39 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — SIMULATE SELL_CLOSE SHOP260403C00100000 contracts=2 simulated_fill=21.40 (no order placed)
+2026-04-06 00:01:39 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Capital returned [M1] SHOP (reentry=True): slot=4500.00 cap_pnl=760.00 returned=760.00 window_total=9710.00
+2026-04-06 00:01:40 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — SNDK [A1]: NEUTRAL — close=697.29 midpoint=697.6925 or_low=696.28 bottom_30=696.84500
+2026-04-06 00:01:40 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — SIGNAL [A1] APP BULLISH close=392.49 or_high=392.49 or_low=392.28
+2026-04-06 00:01:40 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Buffered signal [A1]: APP BULLISH
+2026-04-06 00:01:40 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — SHOP [A1]: NEUTRAL — close=119.085 midpoint=119.085 or_low=119.07 bottom_30=119.0760
+2026-04-06 00:01:40 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — CVNA [A1]: NEUTRAL — close=317.83 midpoint=317.715 or_low=317.57 bottom_30=317.6280
+2026-04-06 00:01:40 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — SIGNAL [A1] AMD BULLISH close=214.55 or_high=214.55 or_low=214.27
+2026-04-06 00:01:40 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Buffered signal [A1]: AMD BULLISH
+2026-04-06 00:01:40 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — META [A1]: NEUTRAL — close=572.495 midpoint=571.8625 or_low=571.23 bottom_30=571.48300
+2026-04-06 00:01:40 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — EXPE [A1]: NEUTRAL — close=226.92 midpoint=226.92 or_low=226.92 bottom_30=226.9200
+2026-04-06 00:01:40 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — FANG [A1]: NEUTRAL — close=193.915 midpoint=193.8625 or_low=193.81 bottom_30=193.83100
+2026-04-06 00:01:40 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — RH [A1]: NEUTRAL — close=114.68 midpoint=114.7075 or_low=114.63 bottom_30=114.66100
+2026-04-06 00:01:40 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — MU [A1]: NEUTRAL — close=363.565 midpoint=364.0575 or_low=363.565 bottom_30=363.76200
+2026-04-06 00:01:40 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — SIGNAL [A1] PLTR BULLISH close=147.59 or_high=147.635 or_low=147.48
+2026-04-06 00:01:40 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Buffered signal [A1]: PLTR BULLISH
+2026-04-06 00:01:40 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — COIN [A1]: NEUTRAL — close=171.78 midpoint=171.995 or_low=171.78 bottom_30=171.8660
+2026-04-06 00:01:40 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — NVDA [A1]: NEUTRAL — close=176.735 midpoint=176.7725 or_low=176.635 bottom_30=176.69000
+2026-04-06 00:01:40 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — TSLA [A1]: NEUTRAL — close=365.92 midpoint=365.5725 or_low=365.135 bottom_30=365.31000
+2026-04-06 00:01:40 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — SIGNAL [A1] ANAB BEARISH close=59.01 or_high=59.01 or_low=59.01
+2026-04-06 00:01:40 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Buffered signal [A1]: ANAB BEARISH
+2026-04-06 00:01:40 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Signal collection window [A1] closed: ranking 4 buffered signal(s)
+2026-04-06 00:01:40 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Ranked APP [A1]: score=0.269 ev_trade=0.064
+2026-04-06 00:01:40 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Ranked AMD [A1]: score=0.279 ev_trade=0.144
+2026-04-06 00:01:40 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Ranked PLTR [A1]: score=0.116 ev_trade=0.016
+2026-04-06 00:01:40 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Ranked ANAB [A1]: score=0.858 ev_trade=0.193
+2026-04-06 00:01:40 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Sequential window [A1] budget from prior [M1]: 19710.00
+2026-04-06 00:01:40 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Selecting ANAB from buffer [A1] (score=0.858 rank=0)
+2026-04-06 00:01:40 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Entering position [A1]: ANAB BEARISH @ 59.01 (rank=0)
+2026-04-06 00:01:40 INFO alpha_tech_tracker.op_momentum_strategy.contract_selector — MockContractSelector: ANAB BEARISH stock=59.01 → ANAB260403P00065000 (strike=65 expiry=2026-04-03)
+2026-04-06 00:01:40 INFO alpha_tech_tracker.op_momentum_strategy.position_sizer — ANAB260403P00065000: budget=8869.500000 (weight=1.00, source=window_budget) mid=7.20 → 12 contracts (cost=8640.00)
+2026-04-06 00:01:40 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — MOCK ENTRY PRICE ANAB260403P00065000: 7.20
+2026-04-06 00:01:40 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — SIMULATE BUY_OPEN ANAB260403P00065000 PUT contracts=12 simulated_fill=7.20 (no order placed)
+2026-04-06 00:01:40 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — Tracking position: ANAB BEARISH opt=ANAB260403P00065000 contracts=12
+2026-04-06 00:01:40 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Selecting AMD from buffer [A1] (score=0.279 rank=1)
+2026-04-06 00:01:40 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Entering position [A1]: AMD BULLISH @ 214.55 (rank=1)
+2026-04-06 00:01:40 INFO alpha_tech_tracker.op_momentum_strategy.contract_selector — MockContractSelector: AMD BULLISH stock=214.55 → AMD260403C00190000 (strike=190 expiry=2026-04-03)
+2026-04-06 00:01:40 INFO alpha_tech_tracker.op_momentum_strategy.position_sizer — AMD260403C00190000: budget=8869.500000 (weight=1.00, source=window_budget) mid=29.50 → 3 contracts (cost=8850.00)
+2026-04-06 00:01:40 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — MOCK ENTRY PRICE AMD260403C00190000: 29.90
+2026-04-06 00:01:40 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — SIMULATE BUY_OPEN AMD260403C00190000 CALL contracts=3 simulated_fill=29.90 (no order placed)
+2026-04-06 00:01:40 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — Tracking position: AMD BULLISH opt=AMD260403C00190000 contracts=3
+2026-04-06 00:01:40 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Max positions reached [A1], stopping selection
+2026-04-06 00:01:40 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — FN [A1]: NEUTRAL — close=552.89 midpoint=552.89 or_low=552.89 bottom_30=552.8900
+2026-04-06 00:01:40 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — Reversal watcher created for ANAB (bars_held=2)
+2026-04-06 00:01:40 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — EXIT ANAB BEARISH reason=hard_stop opt=ANAB260403P00065000 contracts=12
+2026-04-06 00:01:40 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — MOCK EXIT PRICE ANAB260403P00065000: 7.20
+2026-04-06 00:01:40 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — SIMULATE SELL_CLOSE ANAB260403P00065000 contracts=12 simulated_fill=7.20 (no order placed)
+2026-04-06 00:01:40 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Capital returned [A1] ANAB (reentry=False): slot=8869.50 cap_pnl=0.00 returned=8869.50 window_total=8869.50
+2026-04-06 00:01:41 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — Re-entry trigger fired [reversal] ANAB close=59.34
+2026-04-06 00:01:41 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Re-entry [reversal] ANAB BULLISH trigger=59.34 hard_stop=59.01 trailing_arm=59.53
+2026-04-06 00:01:41 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Entering position [A1]: ANAB BULLISH @ 59.34 (rank=0)
+2026-04-06 00:01:41 INFO alpha_tech_tracker.op_momentum_strategy.contract_selector — MockContractSelector: ANAB BULLISH stock=59.34 → ANAB260403C00050000 (strike=50 expiry=2026-04-03)
+2026-04-06 00:01:41 INFO alpha_tech_tracker.op_momentum_strategy.position_sizer — ANAB260403C00050000: budget=8869.500000 (weight=1.00, source=window_budget) mid=11.20 → 7 contracts (cost=7840.00)
+2026-04-06 00:01:41 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — MOCK ENTRY PRICE ANAB260403C00050000: 11.20
+2026-04-06 00:01:41 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — SIMULATE BUY_OPEN ANAB260403C00050000 CALL contracts=7 simulated_fill=11.20 (no order placed)
+2026-04-06 00:01:41 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — Tracking position: ANAB BULLISH opt=ANAB260403C00050000 contracts=7
+2026-04-06 00:01:42 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — SIGNAL [A2] SNDK BULLISH close=695.65 or_high=695.82 or_low=694.42
+2026-04-06 00:01:42 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Buffered signal [A2]: SNDK BULLISH
+2026-04-06 00:01:42 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — SIGNAL [A2] APP BEARISH close=387.93 or_high=388.38 or_low=387.92
+2026-04-06 00:01:42 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Buffered signal [A2]: APP BEARISH
+2026-04-06 00:01:42 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — SHOP [A2]: NEUTRAL — close=118.39 midpoint=118.4075 or_low=118.39 bottom_30=118.39700
+2026-04-06 00:01:42 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — SIGNAL [A2] CVNA BEARISH close=315.26 or_high=315.72 or_low=315.26
+2026-04-06 00:01:42 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Buffered signal [A2]: CVNA BEARISH
+2026-04-06 00:01:42 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — SIGNAL [A2] AMD BULLISH close=216.16 or_high=216.285 or_low=215.85
+2026-04-06 00:01:42 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Buffered signal [A2]: AMD BULLISH
+2026-04-06 00:01:42 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — META [A2]: NEUTRAL — close=572.8 midpoint=572.9775 or_low=572.725 bottom_30=572.82600
+2026-04-06 00:01:42 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — EXPE [A2]: NEUTRAL — close=224.8 midpoint=224.7525 or_low=224.705 bottom_30=224.72400
+2026-04-06 00:01:42 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — SIGNAL [A2] FANG BEARISH close=193.93 or_high=193.99 or_low=193.93
+2026-04-06 00:01:42 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Buffered signal [A2]: FANG BEARISH
+2026-04-06 00:01:42 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — RH [A2]: NEUTRAL — close=114.06 midpoint=114.14 or_low=114.06 bottom_30=114.0920
+2026-04-06 00:01:42 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — MU [A2]: NEUTRAL — close=365.96 midpoint=365.9825 or_low=365.285 bottom_30=365.56400
+2026-04-06 00:01:42 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — PLTR [A2]: NEUTRAL — close=147.42 midpoint=147.45 or_low=147.39 bottom_30=147.4140
+2026-04-06 00:01:42 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — COIN [A2]: NEUTRAL — close=171.48 midpoint=171.4925 or_low=171.225 bottom_30=171.33200
+2026-04-06 00:01:42 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — NVDA [A2]: NEUTRAL — close=176.905 midpoint=176.950 or_low=176.865 bottom_30=176.89900
+2026-04-06 00:01:42 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — TSLA [A2]: NEUTRAL — close=359.88 midpoint=359.8225 or_low=359.62 bottom_30=359.70100
+2026-04-06 00:01:42 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — SIGNAL [A2] FN BULLISH close=557.94 or_high=558.1 or_low=556.145
+2026-04-06 00:01:42 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Buffered signal [A2]: FN BULLISH
+2026-04-06 00:01:42 INFO alpha_tech_tracker.op_momentum_strategy.signal_engine — ANAB [A2]: NEUTRAL — close=59.855 midpoint=59.855 or_low=59.855 bottom_30=59.85500
+2026-04-06 00:01:42 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Signal collection window [A2] closed: ranking 6 buffered signal(s)
+2026-04-06 00:01:42 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Ranked SNDK [A2]: score=0.668 ev_trade=0.226
+2026-04-06 00:01:42 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Ranked APP [A2]: score=0.423 ev_trade=0.067
+2026-04-06 00:01:42 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Ranked CVNA [A2]: score=0.177 ev_trade=0.214
+2026-04-06 00:01:42 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Ranked AMD [A2]: score=0.137 ev_trade=0.087
+2026-04-06 00:01:42 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Skipping FANG [A2]: ev_trade=-0.001 <= 0
+2026-04-06 00:01:42 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Ranked FN [A2]: score=0.949 ev_trade=0.295
+2026-04-06 00:01:42 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Sequential window [A2] budget from prior [A1]: 37449.00
+2026-04-06 00:01:42 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Selecting FN from buffer [A2] (score=0.949 rank=0)
+2026-04-06 00:01:42 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Entering position [A2]: FN BULLISH @ 557.94 (rank=0)
+2026-04-06 00:01:42 INFO alpha_tech_tracker.op_momentum_strategy.contract_selector — MockContractSelector: FN BULLISH stock=557.94 → FN260403C00500000 (strike=500 expiry=2026-04-03)
+2026-04-06 00:01:42 INFO alpha_tech_tracker.op_momentum_strategy.position_sizer — FN260403C00500000: budget=16852.05000000 (weight=1.00, source=window_budget) mid=69.50 → 2 contracts (cost=13900.00)
+2026-04-06 00:01:42 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — MOCK ENTRY PRICE FN260403C00500000: 69.50
+2026-04-06 00:01:42 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — SIMULATE BUY_OPEN FN260403C00500000 CALL contracts=2 simulated_fill=69.50 (no order placed)
+2026-04-06 00:01:42 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — Tracking position: FN BULLISH opt=FN260403C00500000 contracts=2
+2026-04-06 00:01:42 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Selecting SNDK from buffer [A2] (score=0.668 rank=1)
+2026-04-06 00:01:42 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Entering position [A2]: SNDK BULLISH @ 695.65 (rank=1)
+2026-04-06 00:01:42 INFO alpha_tech_tracker.op_momentum_strategy.contract_selector — MockContractSelector: SNDK BULLISH stock=695.65 → SNDK260403C00620000 (strike=620 expiry=2026-04-03)
+2026-04-06 00:01:42 INFO alpha_tech_tracker.op_momentum_strategy.position_sizer — SNDK260403C00620000: budget=16852.05000000 (weight=1.00, source=window_budget) mid=90.80 → 1 contracts (cost=9080.00)
+2026-04-06 00:01:42 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — MOCK ENTRY PRICE SNDK260403C00620000: 92.60
+2026-04-06 00:01:42 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — SIMULATE BUY_OPEN SNDK260403C00620000 CALL contracts=1 simulated_fill=92.60 (no order placed)
+2026-04-06 00:01:42 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — Tracking position: SNDK BULLISH opt=SNDK260403C00620000 contracts=1
+2026-04-06 00:01:42 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Max positions reached [A2], stopping selection
+2026-04-06 00:01:42 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — Bullish re-entry watcher created for FN (bars_held=0)
+2026-04-06 00:01:42 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — EXIT FN BULLISH reason=fallback_20pct opt=FN260403C00500000 contracts=2
+2026-04-06 00:01:42 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — MOCK EXIT PRICE FN260403C00500000: 69.30
+2026-04-06 00:01:42 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — SIMULATE SELL_CLOSE FN260403C00500000 contracts=2 simulated_fill=69.30 (no order placed)
+2026-04-06 00:01:42 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Capital returned [A2] FN (reentry=False): slot=16852.05 cap_pnl=-40.00 returned=16812.05 window_total=16812.05
+2026-04-06 00:01:43 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — Bullish re-entry watcher created for SNDK (bars_held=4)
+2026-04-06 00:01:43 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — EXIT SNDK BULLISH reason=hard_stop opt=SNDK260403C00620000 contracts=1
+2026-04-06 00:01:43 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — MOCK EXIT PRICE SNDK260403C00620000: 92.60
+2026-04-06 00:01:43 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — SIMULATE SELL_CLOSE SNDK260403C00620000 contracts=1 simulated_fill=92.60 (no order placed)
+2026-04-06 00:01:43 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Capital returned [A2] SNDK (reentry=False): slot=16852.05 cap_pnl=0.00 returned=16852.05 window_total=33664.10
+2026-04-06 00:01:43 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — EXIT ANAB BULLISH reason=hard_stop opt=ANAB260403C00050000 contracts=7
+2026-04-06 00:01:43 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — MOCK EXIT PRICE ANAB260403C00050000: 10.90
+2026-04-06 00:01:43 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — SIMULATE SELL_CLOSE ANAB260403C00050000 contracts=7 simulated_fill=10.90 (no order placed)
+2026-04-06 00:01:43 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Capital returned [A1] ANAB (reentry=True): slot=8869.50 cap_pnl=-210.00 returned=-210.00 window_total=8659.50
+2026-04-06 00:01:43 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — Re-entry trigger fired [bullish_reentry] SNDK close=696.93
+2026-04-06 00:01:43 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Re-entry [bullish_reentry] SNDK BULLISH trigger=696.93 hard_stop=695.12 trailing_arm=698.33
+2026-04-06 00:01:43 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Entering position [A2]: SNDK BULLISH @ 696.93 (rank=1)
+2026-04-06 00:01:43 INFO alpha_tech_tracker.op_momentum_strategy.contract_selector — MockContractSelector: SNDK BULLISH stock=696.93 → SNDK260403C00620000 (strike=620 expiry=2026-04-03)
+2026-04-06 00:01:43 INFO alpha_tech_tracker.op_momentum_strategy.position_sizer — SNDK260403C00620000: budget=16852.05000000 (weight=1.00, source=window_budget) mid=92.30 → 1 contracts (cost=9230.00)
+2026-04-06 00:01:43 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — MOCK ENTRY PRICE SNDK260403C00620000: 92.30
+2026-04-06 00:01:43 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — SIMULATE BUY_OPEN SNDK260403C00620000 CALL contracts=1 simulated_fill=92.30 (no order placed)
+2026-04-06 00:01:43 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — Tracking position: SNDK BULLISH opt=SNDK260403C00620000 contracts=1
+2026-04-06 00:01:43 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — Re-entry trigger fired [bullish_reentry] FN close=558.42
+2026-04-06 00:01:43 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Re-entry [bullish_reentry] FN BULLISH trigger=558.42 hard_stop=557.12 trailing_arm=560.38
+2026-04-06 00:01:43 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Entering position [A2]: FN BULLISH @ 558.42 (rank=0)
+2026-04-06 00:01:43 INFO alpha_tech_tracker.op_momentum_strategy.contract_selector — MockContractSelector: FN BULLISH stock=558.42 → FN260403C00500000 (strike=500 expiry=2026-04-03)
+2026-04-06 00:01:43 INFO alpha_tech_tracker.op_momentum_strategy.position_sizer — FN260403C00500000: budget=16852.05000000 (weight=1.00, source=window_budget) mid=70.10 → 2 contracts (cost=14020.00)
+2026-04-06 00:01:43 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — MOCK ENTRY PRICE FN260403C00500000: 70.10
+2026-04-06 00:01:43 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — SIMULATE BUY_OPEN FN260403C00500000 CALL contracts=2 simulated_fill=70.10 (no order placed)
+2026-04-06 00:01:43 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — Tracking position: FN BULLISH opt=FN260403C00500000 contracts=2
+2026-04-06 00:01:43 INFO alpha_tech_tracker.op_momentum_strategy.replay — Replay 2026-04-02 complete
+2026-04-06 00:01:43 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — EXIT COIN BULLISH reason=end_of_day opt=COIN260403C00150000 contracts=1
+2026-04-06 00:01:43 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — MOCK EXIT PRICE COIN260403C00150000: 25.40
+2026-04-06 00:01:43 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — SIMULATE SELL_CLOSE COIN260403C00150000 contracts=1 simulated_fill=25.40 (no order placed)
+2026-04-06 00:01:43 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Capital returned [M1] COIN (reentry=True): slot=4500.00 cap_pnl=150.00 returned=150.00 window_total=9860.00
+2026-04-06 00:01:43 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — EXIT AMD BULLISH reason=end_of_day opt=AMD260403C00190000 contracts=3
+2026-04-06 00:01:43 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — MOCK EXIT PRICE AMD260403C00190000: 32.90
+2026-04-06 00:01:43 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — SIMULATE SELL_CLOSE AMD260403C00190000 contracts=3 simulated_fill=32.90 (no order placed)
+2026-04-06 00:01:43 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Capital returned [A1] AMD (reentry=False): slot=8869.50 cap_pnl=900.00 returned=9769.50 window_total=18429.00
+2026-04-06 00:01:43 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — EXIT SNDK BULLISH reason=end_of_day opt=SNDK260403C00620000 contracts=1
+2026-04-06 00:01:43 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — MOCK EXIT PRICE SNDK260403C00620000: 97.20
+2026-04-06 00:01:43 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — SIMULATE SELL_CLOSE SNDK260403C00620000 contracts=1 simulated_fill=97.20 (no order placed)
+2026-04-06 00:01:43 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Capital returned [A2] SNDK (reentry=True): slot=16852.05 cap_pnl=490.00 returned=490.00 window_total=34154.10
+2026-04-06 00:01:43 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — EXIT FN BULLISH reason=end_of_day opt=FN260403C00500000 contracts=2
+2026-04-06 00:01:43 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — MOCK EXIT PRICE FN260403C00500000: 70.10
+2026-04-06 00:01:43 INFO alpha_tech_tracker.op_momentum_strategy.position_monitor — SIMULATE SELL_CLOSE FN260403C00500000 contracts=2 simulated_fill=70.10 (no order placed)
+2026-04-06 00:01:43 INFO alpha_tech_tracker.op_momentum_strategy.trade_engine — Capital returned [A2] FN (reentry=True): slot=16852.05 cap_pnl=0.00 returned=0.00 window_total=34154.10
+  [cache] loaded 16 tickers from cache
+  [cache] loaded 16 tickers from cache
+  [cache] loaded 16 tickers from cache
+
+Replay 2026-04-02 — pre-market picks: ['COIN', 'SHOP']
+  [cache] loaded 16 tickers from cache
+  [cache] loaded 16 tickers from cache
+
+====================================================================================================================================
+  DAILY TRADE SUMMARY  [SIMULATE MODE]
+====================================================================================================================================
+  Ticker  Signal           Instrument                    Qty  Entry  Exit   EntryMid   ExitMid        P&L     %P&L  Exit Reason
+  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  COIN    [Bearish]        COIN260403P00185000             1  09:45 09:50     $25.20    $25.00    -$20.00   -0.79%  hard_stop
+  SHOP    [Bearish]        SHOP260403P00125000             3  09:45 09:45     $13.80    $13.70    -$30.00   -0.72%  fallback_20pct
+  SHOP    [Reversal Trade] SHOP260403C00100000             2  09:50 12:15     $17.60    $21.40   +$760.00  +21.59%  trailing_stop_ma20
+  COIN    [Reversal Trade] COIN260403C00150000             1  10:35 15:55     $23.90    $25.40   +$150.00   +6.28%  end_of_day
+  ANAB    [Bearish]        ANAB260403P00065000            12  13:20 13:45      $7.20     $7.20     +$0.00   +0.00%  hard_stop
+  AMD     [Bullish]        AMD260403C00190000              3  13:20 15:55     $29.90    $32.90   +$900.00  +10.03%  end_of_day
+  ANAB    [Reversal Trade] ANAB260403C00050000             7  13:55 15:30     $11.20    $10.90   -$210.00   -2.68%  hard_stop
+  FN      [Bullish]        FN260403C00500000               2  15:05 15:10     $69.50    $69.30    -$40.00   -0.29%  fallback_20pct
+  SNDK    [Bullish]        SNDK260403C00620000             1  15:05 15:25     $92.60    $92.60     +$0.00   +0.00%  hard_stop
+  SNDK    [Bullish Cont.]  SNDK260403C00620000             1  15:35 15:55     $92.30    $97.20   +$490.00   +5.31%  end_of_day
+  FN      [Bullish Cont.]  FN260403C00500000               2  15:55 15:55     $70.10    $70.10     +$0.00   +0.00%  end_of_day
+  ──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────
+  Daily P&L: +$2000.00  (+2.37%  on  $84430 deployed)  │  cap: +$2000.00 (+20.00%)
+====================================================================================================================================
+

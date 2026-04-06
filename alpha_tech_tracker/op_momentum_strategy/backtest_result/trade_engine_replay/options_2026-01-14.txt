@@ -1,0 +1,26 @@
+Traceback (most recent call last):
+  File "/Users/victorhuang/.pyenv/versions/3.8.18/lib/python3.8/runpy.py", line 194, in _run_module_as_main
+    return _run_code(code, main_globals, None,
+  File "/Users/victorhuang/.pyenv/versions/3.8.18/lib/python3.8/runpy.py", line 87, in _run_code
+    exec(code, run_globals)
+  File "/Users/victorhuang/work/alpha_tech_tracker/alpha_tech_tracker/op_momentum_strategy/op_momentum_trade_engine.py", line 478, in <module>
+    engine.run_replay(replay_date, tickers_override=args.tickers)
+  File "/Users/victorhuang/work/alpha_tech_tracker/alpha_tech_tracker/op_momentum_strategy/trade_engine.py", line 1161, in run_replay
+    win_picks = win_selector.select()
+  File "/Users/victorhuang/work/alpha_tech_tracker/alpha_tech_tracker/op_momentum_strategy/trade_engine.py", line 89, in select
+    ticker_dfs = fetch_bars(
+  File "/Users/victorhuang/work/alpha_tech_tracker/alpha_tech_tracker/op_momentum_strategy/op_momentum_backtest.py", line 1195, in fetch_bars
+    result[ticker] = _load_cache(cp, "5min")
+  File "/Users/victorhuang/work/alpha_tech_tracker/alpha_tech_tracker/op_momentum_strategy/op_momentum_backtest.py", line 33, in _load_cache
+    df = pd.read_json(path, orient="split")
+  File "/Users/victorhuang/.pyenv/versions/3.8.18/envs/alpha_tech_tracker/lib/python3.8/site-packages/pandas/io/json/_json.py", line 784, in read_json
+    return json_reader.read()
+  File "/Users/victorhuang/.pyenv/versions/3.8.18/envs/alpha_tech_tracker/lib/python3.8/site-packages/pandas/io/json/_json.py", line 975, in read
+    obj = self._get_object_parser(self.data)
+  File "/Users/victorhuang/.pyenv/versions/3.8.18/envs/alpha_tech_tracker/lib/python3.8/site-packages/pandas/io/json/_json.py", line 1001, in _get_object_parser
+    obj = FrameParser(json, **kwargs).parse()
+  File "/Users/victorhuang/.pyenv/versions/3.8.18/envs/alpha_tech_tracker/lib/python3.8/site-packages/pandas/io/json/_json.py", line 1134, in parse
+    self._parse()
+  File "/Users/victorhuang/.pyenv/versions/3.8.18/envs/alpha_tech_tracker/lib/python3.8/site-packages/pandas/io/json/_json.py", line 1325, in _parse
+    for k, v in loads(json, precise_float=self.precise_float).items()
+ValueError: Expected object or value
