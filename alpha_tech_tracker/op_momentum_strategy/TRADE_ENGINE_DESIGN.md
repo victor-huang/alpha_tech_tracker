@@ -552,21 +552,20 @@ entry_intrinsic = max(0, entry_stock - strike)
 entry_time_prem = max(0, entry_price  - entry_intrinsic)
 
 exit_intrinsic  = max(0, exit_stock  - strike)
-exit_time_prem  = entry_time_prem × 0.95        # 5% time decay
+exit_time_prem  = entry_time_prem × 1.0         # no time decay (_TIME_DECAY = 1)
 
 exit_price      = exit_intrinsic + exit_time_prem
 ```
 
-Reconstructs the time premium actually paid at entry, applies a 5% decay, then adds
+Reconstructs the time premium actually paid at entry (fully retained at exit), then adds
 the new intrinsic at exit. This means:
 - Stock gain/loss flows through the intrinsic dollar-for-dollar
-- The option price does not fully capture every dollar of stock move (delta < 1 for
-  near-ATM), and it reflects slight extrinsic erosion over the holding period
+- Time premium is preserved in full — exit P&L reflects only the stock price move
 
 **Example:** entry stock=$100, strike=$90, entry_price=$12
 - entry_intrinsic=$10, entry_tp=$2.00
-- exit stock=$102 → exit_intrinsic=$12, exit_tp=$2×0.95=$1.90
-- exit_price=**$13.90** (between the $2 stock gain and full $14 theoretical max)
+- exit stock=$102 → exit_intrinsic=$12, exit_tp=$2×1.0=$2.00
+- exit_price=**$14.00**
 
 #### Integration points
 
@@ -577,6 +576,24 @@ the new intrinsic at exit. This means:
 | Exit fill | `position_monitor.py` `_close_option_position()` | Uses `mock_exit_price()` with the triggering bar's close; sets `pos.simulated_exit_mid` |
 
 The option type (`call`/`put`) is inferred automatically from the OCC symbol (`C` or `P`).
+
+#### Replay result differences: stock vs options
+
+Option P&L in replay mode will often differ from the stock P&L for the same trade.
+This is expected and correct — the main cause is **option tick-size quantization**:
+
+- Stock fills are priced to the cent (e.g. $695.61 vs $695.65 = $0.04/share).
+- Option prices are quantized: `$0.05` ticks below $3, `$0.10` ticks at $3 and above.
+- A stock move smaller than the option tick size rounds to `$0.00` per contract.
+
+**Example:** SNDK stock loses $0.04/share (6 shares × $0.04 = −$0.24). The same move
+raises the call's intrinsic by $0.04, but $0.04 < $0.10 minimum tick → option exit
+price rounds to the same value as entry → **$0.00 option P&L** (1 contract × 100 × $0).
+
+Other contributing factors:
+- Options price intrinsic on a fixed strike; delta is always < 1 for near-ATM strikes.
+- Contracts are integer-valued, so capital is never fully deployed (fractional contracts
+  are dropped), leading to small systematic underuse of the position budget.
 
 ---
 
