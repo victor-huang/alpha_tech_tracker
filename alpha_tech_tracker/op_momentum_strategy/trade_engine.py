@@ -39,7 +39,7 @@ from .config import (
     enable_notifications,
 )
 from .bar_recorder import BarRecorder
-from .contract_selector import MockContractSelector, TimePremiumContractSelector
+from .contract_selector import MockContractSelector, OptionContractSelector
 from .models import ActivePosition, ReentryWatcher, SignalEvent, WindowConfig, _D
 from .option_price_monitor import OptionPriceMonitor
 from .order_executor import _place_with_fill_escalation, place_stock_order
@@ -182,7 +182,7 @@ class OpMomentumTradeEngine:
         windows: Optional[list] = None,
         trade_type: str = "options",
         option_price_monitor: Optional[OptionPriceMonitor] = None,
-        time_premium_pct_cap: float = 0.01,
+        contract_selector=None,
         enable_reversal: bool = False,
         reversal_max_bars: int = 3,
         enable_bearish_reentry: bool = False,
@@ -207,7 +207,7 @@ class OpMomentumTradeEngine:
         self._lookback_days = lookback_days
         self._trade_type = trade_type
         self._option_price_monitor = option_price_monitor
-        self._time_premium_pct_cap = time_premium_pct_cap
+        self._contract_selector = contract_selector if contract_selector is not None else OptionContractSelector(alpaca_client)
         self._enable_reversal = enable_reversal
         self._reversal_max_bars = reversal_max_bars
         self._enable_bearish_reentry = enable_bearish_reentry
@@ -469,9 +469,7 @@ class OpMomentumTradeEngine:
                 ref_date = getattr(self._signal_engine, "_session_date", None)
                 selector = MockContractSelector(ref_date or date.today())
             else:
-                selector = TimePremiumContractSelector(
-                    self._client, time_premium_pct_cap=self._time_premium_pct_cap
-                )
+                selector = self._contract_selector
             option_symbol = selector.select(
                 event.ticker, event.signal, event.stock_price
             )

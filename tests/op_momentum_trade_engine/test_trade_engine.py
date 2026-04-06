@@ -7,7 +7,14 @@ from alpha_tech_tracker.op_momentum_strategy.config import (
     MAX_ACTIVE_SYMBOLS,
     RANK_WEIGHTS,
 )
+from alpha_tech_tracker.op_momentum_strategy.contract_selector import (
+    OptionContractSelector,
+    TimePremiumContractSelector,
+)
 from alpha_tech_tracker.op_momentum_strategy.models import ReentryWatcher
+from alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine import (
+    _build_contract_selector,
+)
 from alpha_tech_tracker.op_momentum_strategy.trade_engine import (
     OpMomentumTradeEngine,
     TickerSelector,
@@ -20,7 +27,7 @@ ET = pytz.timezone("America/New_York")
 _SELECT_TOP_N_PATH = "alpha_tech_tracker.op_momentum_strategy.trade_engine.select_top_n"
 _FETCH_BARS_PATH = "alpha_tech_tracker.op_momentum_strategy.trade_engine.fetch_bars"
 _OPTION_CONTRACT_SELECTOR_PATH = (
-    "alpha_tech_tracker.op_momentum_strategy.trade_engine.TimePremiumContractSelector.select"
+    "alpha_tech_tracker.op_momentum_strategy.trade_engine.OptionContractSelector.select"
 )
 _POSITION_SIZER_PATH = (
     "alpha_tech_tracker.op_momentum_strategy.trade_engine.PositionSizer.compute"
@@ -849,3 +856,91 @@ class TestEnterReentry:
         assert call_kwargs[1]["rank"] == 1
         assert call_kwargs[1]["window_label"] == "W1"
         assert call_kwargs[1]["window_budget"] == _D("3000")
+
+
+class TestBuildContractSelector:
+    def _make_args(self, option_selector="standard", time_premium_pct_cap=0.01):
+        args = Mock()
+        args.option_selector = option_selector
+        args.time_premium_pct_cap = time_premium_pct_cap
+        return args
+
+    def test_default_returns_option_contract_selector(self):
+        client = _make_alpaca_client()
+        selector = _build_contract_selector(self._make_args(), client)
+
+        assert isinstance(selector, OptionContractSelector)
+
+    def test_time_premium_returns_time_premium_contract_selector(self):
+        client = _make_alpaca_client()
+        selector = _build_contract_selector(self._make_args(option_selector="time-premium"), client)
+
+        assert isinstance(selector, TimePremiumContractSelector)
+
+    def test_time_premium_forwards_pct_cap(self):
+        client = _make_alpaca_client()
+        selector = _build_contract_selector(
+            self._make_args(option_selector="time-premium", time_premium_pct_cap=0.02),
+            client,
+        )
+
+        assert selector._time_premium_pct_cap == _D("0.02")
+
+
+class TestContractSelectorInjection:
+    def _make_engine(self, contract_selector=None, **kwargs):
+        client = _make_alpaca_client()
+        engine = OpMomentumTradeEngine(
+            alpaca_client=client,
+            mock_trade_execution=True,
+            contract_selector=contract_selector,
+            **kwargs,
+        )
+        engine._monitor = Mock()
+        engine._signal_engine = Mock()
+        engine._signal_engine.get_latest_bar.return_value = None
+        engine._window_state["W1"] = {
+            "pending_signals": {},
+            "collection_deadline": datetime.now(ET) - timedelta(minutes=1),
+            "open_position_count": 0,
+            "capital_fraction": 1.0,
+        }
+        return engine
+
+    def test_defaults_to_option_contract_selector_when_none_provided(self):
+        engine = self._make_engine()
+
+        assert isinstance(engine._contract_selector, OptionContractSelector)
+
+    def test_uses_injected_selector_instance(self):
+        custom_selector = Mock()
+        engine = self._make_engine(contract_selector=custom_selector)
+
+        assert engine._contract_selector is custom_selector
+
+    def test_injected_selector_is_called_on_options_entry(self):
+        custom_selector = Mock()
+        custom_selector.select.return_value = "NVDA260411C00170000"
+        engine = self._make_engine(contract_selector=custom_selector)
+
+        with patch(_POSITION_SIZER_PATH, return_value=(3, _D("8.50"))), \
+             patch(_PLACE_ENTRY_PATH, return_value={"order_id": "sim-1", "simulated_fill_mid": _D("8.50")}), \
+             patch("alpha_tech_tracker.op_momentum_strategy.trade_engine.is_replay_mode", return_value=False):
+            engine._enter_position(_make_signal_event("NVDA"))
+
+        custom_selector.select.assert_called_once_with("NVDA", "BULLISH", _D("105"))
+
+    def test_replay_mode_uses_mock_selector_regardless_of_injected_selector(self):
+        custom_selector = Mock()
+        custom_selector.select.return_value = "NVDA260411C00170000"
+        engine = self._make_engine(contract_selector=custom_selector)
+
+        with patch(_POSITION_SIZER_PATH, return_value=(3, _D("8.50"))), \
+             patch(_PLACE_ENTRY_PATH, return_value={"order_id": "sim-1", "simulated_fill_mid": _D("8.50")}), \
+             patch("alpha_tech_tracker.op_momentum_strategy.trade_engine.is_replay_mode", return_value=True), \
+             patch("alpha_tech_tracker.op_momentum_strategy.trade_engine.MockContractSelector.select",
+                   return_value="NVDA260411C00170000") as mock_select:
+            engine._enter_position(_make_signal_event("NVDA"))
+
+        custom_selector.select.assert_not_called()
+        mock_select.assert_called_once()

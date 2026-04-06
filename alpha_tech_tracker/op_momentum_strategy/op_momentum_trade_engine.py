@@ -25,6 +25,7 @@ from .config import (
 )
 from .models import WindowConfig
 from .op_momentum_selector import ROLLING_LOOKBACK_DAYS as _DEFAULT_LOOKBACK_DAYS
+from .contract_selector import OptionContractSelector, TimePremiumContractSelector
 from .option_price_monitor import OptionPriceMonitor
 from .trade_engine import OpMomentumTradeEngine
 
@@ -265,11 +266,21 @@ def parse_args():
         help="Trade type: options (default) or stock",
     )
     parser.add_argument(
+        "--option-selector",
+        type=str,
+        default="standard",
+        choices=["standard", "time-premium"],
+        help="Option contract selector for live trading: "
+        "'standard' uses OptionContractSelector (fixed ±20%% ITM strike offset, default); "
+        "'time-premium' uses TimePremiumContractSelector (shallowest ITM within DTE-adjusted time premium cap).",
+    )
+    parser.add_argument(
         "--time-premium-pct-cap",
         type=float,
         default=0.01,
-        help="Max acceptable time premium as a fraction of stock price per reference DTE "
-        "(default: 0.01 = 1%%). Threshold scales with DTE: 1%% / 5-day ref * actual DTE.",
+        help="Max time premium as a fraction of stock price per reference DTE "
+        "(default: 0.01 = 1%%). Only used when --option-selector time-premium is set. "
+        "Threshold scales with DTE: 1%% / 5-day ref * actual DTE.",
     )
     parser.add_argument(
         "--collect-option-prices",
@@ -428,6 +439,14 @@ def _build_option_price_monitor(args, client, tickers):
     )
 
 
+def _build_contract_selector(args, client):
+    if args.option_selector == "time-premium":
+        return TimePremiumContractSelector(
+            client, time_premium_pct_cap=args.time_premium_pct_cap
+        )
+    return OptionContractSelector(client)
+
+
 if __name__ == "__main__":
     args = parse_args()
     _load_config()
@@ -461,7 +480,7 @@ if __name__ == "__main__":
             windows=windows,
             trade_type=args.trade_type,
             option_price_monitor=_build_option_price_monitor(args, client, args.tickers),
-            time_premium_pct_cap=args.time_premium_pct_cap,
+            contract_selector=_build_contract_selector(args, client),
             enable_reversal=args.reversal,
             reversal_max_bars=args.reversal_max_bars,
             enable_bearish_reentry=args.bearish_reentry,
@@ -539,7 +558,7 @@ if __name__ == "__main__":
             windows=windows,
             trade_type=args.trade_type,
             option_price_monitor=_build_option_price_monitor(args, client, args.tickers),
-            time_premium_pct_cap=args.time_premium_pct_cap,
+            contract_selector=_build_contract_selector(args, client),
             enable_reversal=args.reversal,
             reversal_max_bars=args.reversal_max_bars,
             enable_bearish_reentry=args.bearish_reentry,

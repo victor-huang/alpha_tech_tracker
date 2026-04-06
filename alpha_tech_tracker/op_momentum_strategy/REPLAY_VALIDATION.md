@@ -136,6 +136,52 @@ unrealized gains this is ≤$5 in absolute cap P&L terms.
 
 ---
 
+---
+
+## Feature Gaps: Replay vs Live Trading
+
+### Stock trades (trade-type stock)
+
+Replay is highly accurate for stock trades. The three ✓ validation dates are within $2.
+
+| Area | Replay | Live |
+|------|--------|------|
+| Entry price | Bar close (`event.stock_price`) | Same when `mock_trade_execution=True`; live quote mid otherwise |
+| Exit price | Bar close or stop level (exact) | Same |
+| Order fills | Instant | 3-step escalation: mid → ask/bid → market, up to 120s |
+| Re-entry callback | Synchronous — fires within same bar | Background thread — fires async |
+| Notifications | Disabled | SMS + Telegram enabled |
+
+**P&L impact:** None for entry/exit pricing. Fill timing could shift entry by 1-2 bars in live
+(order placed at 9:45, filled at 9:46:30 — first monitoring bar still 9:50, same as replay).
+
+### Options trades (trade-type options)
+
+Options replay has inherent limitations. Treat as directional validation only, not P&L-exact.
+
+| Area | Replay | Live | Impact |
+|------|--------|------|--------|
+| Contract selection | `MockContractSelector` — fixed 90%/110% strike offset, synthetic OCC symbol | `TimePremiumContractSelector` — fetches live ITM contracts, picks shallowest ITM within DTE-adjusted time premium cap | HIGH — strike differs, entry prices off ±2-5% per trade |
+| Entry price | `mock_entry_price()` — fixed 20% time premium over intrinsic | Live API bid/ask mid, or `OptionPriceMonitor` fair price if enabled | MEDIUM — ±2-8% per trade |
+| Exit price | `mock_exit_price()` — zero theta decay (`_TIME_DECAY = 1.0`) | Live API bid/ask mid; same zero-decay mock if `mock_trade_execution=True` | MEDIUM — both modes overstate P&L on multi-bar holds; real theta ≈ 3-10%/day in final week |
+| `OptionPriceMonitor` | Cannot use (requires live WebSocket) | Optional; improves entry/exit pricing accuracy | LOW — usually off in paper mode too |
+
+**Biggest actionable gap:** `MockContractSelector` uses a fixed 90%/110% offset that can't
+replicate `TimePremiumContractSelector`'s market-driven strike selection. To improve fidelity,
+persist the actual selected contract symbols during a live/paper run and replay using those
+saved symbols instead of the mock formula.
+
+### Re-entry callback threading
+
+In replay, re-entry callbacks (reversal, BRE, BRU) fire **synchronously** within the same bar
+loop — the re-entry position is created before the next bar is processed.
+
+In live, a background thread is spawned. In practice the bar loop runs every ~30s, so the
+thread finishes well before the next bar. However under heavy load or delayed GIL scheduling,
+there is a theoretical risk of the re-entry position missing its first monitoring bar.
+
+---
+
 ## Bugs Fixed During This Audit (2026-04-05)
 
 ### B1 — `_parse_weights` renormalized truncated weights
