@@ -1,7 +1,7 @@
 import logging
 import threading
 import time
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Optional
 
 import pytz
@@ -16,8 +16,10 @@ from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector import (
 from alpha_tech_tracker.trade_api.alpaca_client.client import AlpacaAPIClient
 
 from .config import (
+    ACCOUNT_BUDGET,
     ARMED_MA20_EXIT,
     BEARISH_MA200,
+    CAPITAL_PER_SYMBOL,
     EOD_EXIT_TIME,
     MAX_ACTIVE_SYMBOLS,
     MAX_LOSS_PCT,
@@ -35,10 +37,9 @@ from .config import (
     _fmt_option,
     disable_notifications,
     enable_notifications,
-    ACCOUNT_BUDGET,
 )
 from .bar_recorder import BarRecorder
-from .contract_selector import TimePremiumContractSelector
+from .contract_selector import MockContractSelector, TimePremiumContractSelector
 from .models import ActivePosition, ReentryWatcher, SignalEvent, WindowConfig, _D
 from .option_price_monitor import OptionPriceMonitor
 from .order_executor import _place_with_fill_escalation, place_stock_order
@@ -464,9 +465,13 @@ class OpMomentumTradeEngine:
         reentry_type: Optional[str] = None,
     ):
         try:
-            selector = TimePremiumContractSelector(
-                self._client, time_premium_pct_cap=self._time_premium_pct_cap
-            )
+            if is_replay_mode():
+                ref_date = getattr(self._signal_engine, "_session_date", None)
+                selector = MockContractSelector(ref_date or date.today())
+            else:
+                selector = TimePremiumContractSelector(
+                    self._client, time_premium_pct_cap=self._time_premium_pct_cap
+                )
             option_symbol = selector.select(
                 event.ticker, event.signal, event.stock_price
             )
@@ -478,8 +483,10 @@ class OpMomentumTradeEngine:
 
         try:
             sizer = PositionSizer(self._client)
+            mock_stock_price = event.entry_price if self._mock_trade_execution else None
             contracts, limit_price = sizer.compute(
-                option_symbol, capital_weight, window_budget
+                option_symbol, capital_weight, window_budget,
+                mock_stock_price=mock_stock_price,
             )
         except Exception:
             logger.exception("Could not size position for %s", option_symbol)
@@ -504,6 +511,11 @@ class OpMomentumTradeEngine:
         sim_entry_mid = (
             order.get("simulated_fill_mid") if self._mock_trade_execution else None
         )
+
+        if window_budget is not None:
+            slot_capital = window_budget * CAPITAL_PER_SYMBOL * capital_weight
+        else:
+            slot_capital = None
 
         pos = ActivePosition(
             ticker=event.ticker,
@@ -531,6 +543,7 @@ class OpMomentumTradeEngine:
             window_label=window_label,
             rank=rank,
             window_budget=window_budget,
+            slot_capital=slot_capital,
         )
         self._monitor.add_position(pos)
 
@@ -601,7 +614,10 @@ class OpMomentumTradeEngine:
                 raw = entry - exit_
             else:
                 raw = exit_ - entry
-            cap_pnl = pos.slot_capital / entry * raw
+            if pos.trade_type == "stock":
+                cap_pnl = pos.slot_capital / entry * raw
+            else:
+                cap_pnl = _D(pos.contracts) * _D("100") * raw
         else:
             cap_pnl = _D("0")
 
@@ -885,25 +901,33 @@ class OpMomentumTradeEngine:
                 )
 
         if entry_mid == limit_price:
-            try:
-                quote_resp = self._client._option_data_client.get_option_latest_quote(
-                    OptionLatestQuoteRequest(symbol_or_symbols=[option_symbol])
-                )
-                quote = quote_resp[option_symbol]
-                bid = _D(quote.bid_price)
-                ask = _D(quote.ask_price)
-                entry_mid = (bid + ask) / _D("2")
-                logger.info(
-                    "ENTRY QUOTE %s: bid=%s ask=%s mid=%s",
-                    option_symbol,
-                    bid,
-                    ask,
-                    entry_mid.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
-                )
-            except Exception:
-                logger.warning(
-                    "Could not fetch entry quote for %s, using sizer mid", option_symbol
-                )
+            if self._mock_trade_execution:
+                from .mock_option_pricer import mock_entry_price
+                latest_bar = self._signal_engine.get_latest_bar(ticker)
+                if latest_bar is not None:
+                    stock_price = _D(str(latest_bar["Close"]))
+                    entry_mid = mock_entry_price(stock_price, option_symbol, option_type_lower)
+                    logger.info("MOCK ENTRY PRICE %s: %s", option_symbol, entry_mid)
+            else:
+                try:
+                    quote_resp = self._client._option_data_client.get_option_latest_quote(
+                        OptionLatestQuoteRequest(symbol_or_symbols=[option_symbol])
+                    )
+                    quote = quote_resp[option_symbol]
+                    bid = _D(quote.bid_price)
+                    ask = _D(quote.ask_price)
+                    entry_mid = (bid + ask) / _D("2")
+                    logger.info(
+                        "ENTRY QUOTE %s: bid=%s ask=%s mid=%s",
+                        option_symbol,
+                        bid,
+                        ask,
+                        entry_mid.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
+                    )
+                except Exception:
+                    logger.warning(
+                        "Could not fetch entry quote for %s, using sizer mid", option_symbol
+                    )
 
         if self._mock_trade_execution:
             sim_mid = entry_mid.quantize(_D("0.01"), rounding=ROUND_HALF_UP)

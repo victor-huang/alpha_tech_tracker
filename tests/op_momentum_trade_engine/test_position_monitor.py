@@ -712,6 +712,79 @@ class TestStockPrintSummaryPnl:
         assert "5sh" in captured
 
 
+class TestMockOptionExitPricing:
+    # strike $90 call — ITM when stock=$100 (intrinsic=$10)
+    _CALL_SYM = "NVDA260328C00090000"
+    # strike $110 put — ITM when stock=$100 (intrinsic=$10)
+    _PUT_SYM = "NVDA260328P00110000"
+
+    def _make_option_pos(self, signal, option_symbol, entry_stock_price, entry_mid):
+        pos = _make_active_position(signal=signal)
+        pos.option_symbol = option_symbol
+        pos.entry_stock_price = _D(str(entry_stock_price))
+        pos.simulated_entry_mid = _D(str(entry_mid))
+        return pos
+
+    def _run_eod_close(self, pos, exit_stock_price):
+        client = _make_alpaca_client()
+        df = _build_history_df([100.0], ma20=95.0, ma50=95.0, ma200=90.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine, mock_trade_execution=True)
+        monitor.add_position(pos)
+        _set_latest_bar(engine, "NVDA", close=exit_stock_price, ma50=95.0)
+        monitor.close_all(reason="end_of_day")
+        return client
+
+    def test_call_exit_skips_api_quote_in_mock_mode(self):
+        pos = self._make_option_pos("BULLISH", self._CALL_SYM, 100, "12.00")
+        client = self._run_eod_close(pos, exit_stock_price=102.0)
+
+        client._option_data_client.get_option_latest_quote.assert_not_called()
+
+    def test_call_exit_price_increases_when_stock_rises(self):
+        # entry: stock=$100, strike=$90 → entry_iv=$10, entry_tp=$2.00
+        # exit: stock=$102, bars_held=0 < 12 → no time decay
+        # exit_iv=$12, exit_tp=$2.00, exit_price=$14.00
+        pos = self._make_option_pos("BULLISH", self._CALL_SYM, 100, "12.00")
+        self._run_eod_close(pos, exit_stock_price=102.0)
+
+        assert pos.simulated_exit_mid == _D("14.00")
+
+    def test_call_exit_price_decreases_when_stock_falls(self):
+        # exit: stock=$98, bars_held=0 < 12 → no time decay
+        # exit_iv=$8, exit_tp=$2.00, exit_price=$10.00
+        pos = self._make_option_pos("BULLISH", self._CALL_SYM, 100, "12.00")
+        self._run_eod_close(pos, exit_stock_price=98.0)
+
+        assert pos.simulated_exit_mid == _D("10.00")
+
+    def test_put_exit_price_increases_when_stock_falls(self):
+        # entry: stock=$100, strike=$110 → put_iv=$10, entry_tp=$2.00
+        # exit: stock=$98, bars_held=0 < 12 → no time decay
+        # put_iv=$12, exit_tp=$2.00, exit_price=$14.00
+        pos = self._make_option_pos("BEARISH", self._PUT_SYM, 100, "12.00")
+        self._run_eod_close(pos, exit_stock_price=98.0)
+
+        assert pos.simulated_exit_mid == _D("14.00")
+
+    def test_no_time_decay_for_quick_exit_when_stock_flat(self):
+        # bars_held=0 < 12 → time_decay=1.0; stock flat so only intrinsic matters
+        # exit_iv=$10, exit_tp=$2.00 (no decay), exit_price=$12.00
+        pos = self._make_option_pos("BULLISH", self._CALL_SYM, 100, "12.00")
+        self._run_eod_close(pos, exit_stock_price=100.0)
+
+        assert pos.simulated_exit_mid == _D("12.00")
+
+    def test_no_time_decay_when_held_longer_than_one_hour(self):
+        # bars_held=12 ≥ 12 → time_decay=1.0 (disabled); stock flat
+        # exit_iv=$10, exit_tp=$2×1.0=$2.00, exit_price=$12.00
+        pos = self._make_option_pos("BULLISH", self._CALL_SYM, 100, "12.00")
+        pos.bars_held = 12
+        self._run_eod_close(pos, exit_stock_price=100.0)
+
+        assert pos.simulated_exit_mid == _D("12.00")
+
+
 class TestReentryWatcher:
     @pytest.fixture(autouse=True)
     def patch_sleep(self, monkeypatch):

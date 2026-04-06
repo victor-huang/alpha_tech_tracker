@@ -373,7 +373,7 @@ class PositionMonitor:
         if pos.trade_type == "stock":
             self._close_stock_position(pos, reason, exit_stock_price_override=exit_stock_price_override)
         else:
-            self._close_option_position(pos, reason)
+            self._close_option_position(pos, reason, exit_stock_price_override=exit_stock_price_override)
 
         if self._close_callback:
             self._close_callback(pos)
@@ -448,7 +448,7 @@ class PositionMonitor:
         except Exception:
             logger.exception("Failed to place stock close order for %s", pos.ticker)
 
-    def _close_option_position(self, pos: ActivePosition, reason: str):
+    def _close_option_position(self, pos: ActivePosition, reason: str, exit_stock_price_override=None):
         logger.info(
             "EXIT %s %s reason=%s opt=%s contracts=%d",
             pos.ticker,
@@ -472,26 +472,45 @@ class PositionMonitor:
                 mid = None
 
         if mid is None:
-            try:
-                quote_resp = self._client._option_data_client.get_option_latest_quote(
-                    OptionLatestQuoteRequest(symbol_or_symbols=[pos.option_symbol])
-                )
-                quote = quote_resp[pos.option_symbol]
-                bid = _D(quote.bid_price)
-                ask = _D(quote.ask_price)
-                mid = (bid + ask) / _D("2")
-                logger.info(
-                    "EXIT QUOTE %s: bid=%s ask=%s mid=%s",
-                    pos.option_symbol,
-                    bid,
-                    ask,
-                    mid.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
-                )
-            except Exception:
-                logger.exception(
-                    "Could not fetch exit quote for %s, using market order",
-                    pos.option_symbol,
-                )
+            if self._mock_trade_execution:
+                from .mock_option_pricer import mock_exit_price, _TIME_DECAY
+                current_bar = self._signal_engine.get_latest_bar(pos.ticker)
+                if current_bar is not None and pos.simulated_entry_mid:
+                    if exit_stock_price_override is not None:
+                        exit_stock_price = exit_stock_price_override
+                    else:
+                        exit_stock_price = _D(str(current_bar["Close"]))
+                    time_decay = _D("1") if pos.bars_held < 12 else _TIME_DECAY
+                    mid = mock_exit_price(
+                        exit_stock_price=exit_stock_price,
+                        option_symbol=pos.option_symbol,
+                        option_type=option_type_lower,
+                        entry_price=pos.simulated_entry_mid,
+                        entry_stock_price=_D(str(pos.entry_stock_price)),
+                        time_decay=time_decay,
+                    )
+                    logger.info("MOCK EXIT PRICE %s: %s", pos.option_symbol, mid)
+            else:
+                try:
+                    quote_resp = self._client._option_data_client.get_option_latest_quote(
+                        OptionLatestQuoteRequest(symbol_or_symbols=[pos.option_symbol])
+                    )
+                    quote = quote_resp[pos.option_symbol]
+                    bid = _D(quote.bid_price)
+                    ask = _D(quote.ask_price)
+                    mid = (bid + ask) / _D("2")
+                    logger.info(
+                        "EXIT QUOTE %s: bid=%s ask=%s mid=%s",
+                        pos.option_symbol,
+                        bid,
+                        ask,
+                        mid.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
+                    )
+                except Exception:
+                    logger.exception(
+                        "Could not fetch exit quote for %s, using market order",
+                        pos.option_symbol,
+                    )
 
         if self._mock_trade_execution:
             sim_mid = (
@@ -732,7 +751,10 @@ class PositionMonitor:
                             raw = entry - exit_
                         else:
                             raw = exit_ - entry
-                        total_cap_pnl += pos.slot_capital / entry * raw
+                        if pos.trade_type == "stock":
+                            total_cap_pnl += pos.slot_capital / entry * raw
+                        else:
+                            total_cap_pnl += _D(pos.contracts) * _D("100") * raw
                         has_cap = True
             if not has_any:
                 return
@@ -812,16 +834,34 @@ class PositionMonitor:
             )
             print(f"{'=' * width}\n")
         else:
-            width = 93
+            width = 132
             print(f"\n{'=' * width}")
             print("  DAILY TRADE SUMMARY")
             print(f"{'=' * width}")
             print(
                 f"  {'Ticker':<7} {'Signal':<16} {'Instrument':<26} {'Qty':>6}"
-                f"  {'Entry':>5} {'Exit':>5}  Exit Reason"
+                f"  {'Entry':>5} {'Exit':>5}  {'EntryFill':>9} {'ExitFill':>8} {'P&L':>10}  {'%P&L':>7}  Exit Reason"
             )
-            print(f"  {'─' * 91}")
+            print(f"  {'─' * 130}")
             for pos in self._positions:
+                entry_fill = pos.entry_fill_price
+                exit_fill = pos.exit_fill_price
+                pnl = _position_pnl(pos, entry_fill, exit_fill)
+                if pnl is not None:
+                    pnl_str = f"+${pnl:.2f}" if pnl >= 0 else f"-${abs(pnl):.2f}"
+                    entry_str = f"${entry_fill:.2f}"
+                    exit_str = f"${exit_fill:.2f}"
+                    if pos.trade_type == "stock" and pos.signal == "BEARISH":
+                        pnl_per_unit = entry_fill - exit_fill
+                    else:
+                        pnl_per_unit = exit_fill - entry_fill
+                    if entry_fill and entry_fill > 0:
+                        pnl_pct = float(pnl_per_unit / entry_fill * 100)
+                        pnl_pct_str = f"+{pnl_pct:.2f}%" if pnl_pct >= 0 else f"{pnl_pct:.2f}%"
+                    else:
+                        pnl_pct_str = "—"
+                else:
+                    pnl_str = entry_str = exit_str = pnl_pct_str = "—"
                 if pos.trade_type == "stock":
                     sym_str = f"{pos.ticker} [stock]"
                     qty_str = f"{pos.shares}sh"
@@ -832,6 +872,7 @@ class PositionMonitor:
                     f"  {pos.ticker:<7} {_trade_label(pos):<16} {sym_str:<26} "
                     f"{qty_str:>6}"
                     f"  {_fmt_time(pos.entry_time):>5} {_fmt_time(pos.exit_time):>5}"
+                    f"  {entry_str:>9} {exit_str:>8} {pnl_str:>10}  {pnl_pct_str:>7}"
                     f"  {pos.exit_reason or 'open'}"
                 )
             _print_totals(
