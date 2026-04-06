@@ -480,14 +480,12 @@ class PositionMonitor:
                         exit_stock_price = exit_stock_price_override
                     else:
                         exit_stock_price = _D(str(current_bar["Close"]))
-                    time_decay = _D("1") if pos.bars_held < 12 else _TIME_DECAY
                     mid = mock_exit_price(
                         exit_stock_price=exit_stock_price,
                         option_symbol=pos.option_symbol,
                         option_type=option_type_lower,
                         entry_price=pos.simulated_entry_mid,
                         entry_stock_price=_D(str(pos.entry_stock_price)),
-                        time_decay=time_decay,
                     )
                     logger.info("MOCK EXIT PRICE %s: %s", pos.option_symbol, mid)
             else:

@@ -552,19 +552,20 @@ entry_intrinsic = max(0, entry_stock - strike)
 entry_time_prem = max(0, entry_price  - entry_intrinsic)
 
 exit_intrinsic  = max(0, exit_stock  - strike)
-exit_time_prem  = entry_time_prem × 1.0         # no time decay (_TIME_DECAY = 1)
+exit_time_prem  = entry_time_prem × 0.9998      # 0.02% decay (_TIME_DECAY = 0.9998)
 
 exit_price      = exit_intrinsic + exit_time_prem
 ```
 
-Reconstructs the time premium actually paid at entry (fully retained at exit), then adds
-the new intrinsic at exit. This means:
+Reconstructs the time premium actually paid at entry, applies a small 0.02% friction
+to model the cost of trading in and out, then adds the new intrinsic at exit:
 - Stock gain/loss flows through the intrinsic dollar-for-dollar
-- Time premium is preserved in full — exit P&L reflects only the stock price move
+- The 0.02% decay is a trading-cost proxy; on a $2 time premium this is $0.0004 —
+  smaller than the $0.10 option tick, so it rounds away for most trades
 
 **Example:** entry stock=$100, strike=$90, entry_price=$12
 - entry_intrinsic=$10, entry_tp=$2.00
-- exit stock=$102 → exit_intrinsic=$12, exit_tp=$2×1.0=$2.00
+- exit stock=$102 → exit_intrinsic=$12, exit_tp=$2×0.9998=$1.9996 → rounds to $2.00
 - exit_price=**$14.00**
 
 #### Integration points

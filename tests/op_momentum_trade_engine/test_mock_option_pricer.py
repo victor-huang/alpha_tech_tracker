@@ -122,8 +122,8 @@ class TestMockExitPrice:
             )
         assert exit_p < entry
 
-    def test_flat_stock_exit_price_unchanged_with_no_time_decay(self):
-        # stock unchanged → intrinsic unchanged; time decay disabled → tp fully retained
+    def test_flat_stock_exit_price_unchanged_with_minimal_time_decay(self):
+        # stock unchanged → intrinsic unchanged; 0.02% decay on $2 tp = $0.0004 → rounds to $0
         with patch(_DATE_PATH) as m:
             m.today.return_value = __import__("datetime").date(2026, 4, 1)
             m.side_effect = __import__("datetime").date
@@ -135,7 +135,7 @@ class TestMockExitPrice:
                 entry_price=entry,
                 entry_stock_price=_D("100"),
             )
-        # intrinsic same ($10), tp=$2*1.0=$2.00 → exit=$12.00 (same as entry)
+        # intrinsic same ($10), tp=$2*0.9998=$1.9996 → quantizes to $2.00 → exit=$12.00
         assert exit_p == _D("12.00")
 
     def test_invalid_occ_symbol_returns_entry_price(self):

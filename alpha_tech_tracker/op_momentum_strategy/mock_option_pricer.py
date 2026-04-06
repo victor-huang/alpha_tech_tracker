@@ -7,7 +7,7 @@ from .option_price_monitor import _parse_occ_symbol, _quantize_option_price
 logger = logging.getLogger(__name__)
 
 _TIME_PREMIUM_RATIO = _D("0.20")  # 20% of intrinsic added as time premium
-_TIME_DECAY = _D("1")              # no time decay applied (time premium fully retained at exit)
+_TIME_DECAY = _D("0.9998")         # 0.02% decay applied to time premium at exit (trading friction)
 
 
 def _intrinsic(stock_price: Decimal, strike: Decimal, option_type: str) -> Decimal:
