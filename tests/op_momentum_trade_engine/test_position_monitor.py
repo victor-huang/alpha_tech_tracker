@@ -767,15 +767,17 @@ class TestMockOptionExitPricing:
 
         assert pos.simulated_exit_mid == _D("14.00")
 
-    def test_minimal_time_decay_for_quick_exit_when_stock_flat(self):
-        # stock flat → exit_iv=$10, tp=$2×0.9998=$1.9996 → quantizes to $2.00 → exit=$12.00
+    def test_no_time_decay_for_quick_exit_when_stock_flat(self):
+        # bars_held=0 < 12 → time_decay=1.0; stock flat so only intrinsic matters
+        # exit_iv=$10, exit_tp=$2.00 (no decay), exit_price=$12.00
         pos = self._make_option_pos("BULLISH", self._CALL_SYM, 100, "12.00")
         self._run_eod_close(pos, exit_stock_price=100.0)
 
         assert pos.simulated_exit_mid == _D("12.00")
 
-    def test_minimal_time_decay_when_held_longer_than_one_hour(self):
-        # bars_held=12; stock flat → same as quick exit: $2×0.9998 rounds to $2.00
+    def test_no_time_decay_when_held_longer_than_one_hour(self):
+        # bars_held=12 ≥ 12 → time_decay=1.0 (disabled); stock flat
+        # exit_iv=$10, exit_tp=$2×1.0=$2.00, exit_price=$12.00
         pos = self._make_option_pos("BULLISH", self._CALL_SYM, 100, "12.00")
         pos.bars_held = 12
         self._run_eod_close(pos, exit_stock_price=100.0)
