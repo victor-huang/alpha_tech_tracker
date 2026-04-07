@@ -86,13 +86,26 @@ class TickerSelector:
         today = _now_et().date()
 
         fetch_start = today - timedelta(days=max(self._lookback_days, 30) + 5)
-        ticker_dfs = fetch_bars(
-            self._tickers,
-            fetch_start,
-            _safe_bars_end(today),
-            source="alpaca",
-            allow_intraday=True,
-        )
+        if is_replay_mode():
+            # Pre-market selection only needs data up to the day before replay_date.
+            # Using allow_intraday=True with today's date in replay mode would call
+            # the live Alpaca API (bypassing cache) because _safe_bars_end uses the
+            # real wall clock, not the replay clock.
+            bars_end = today - timedelta(days=1)
+            ticker_dfs = fetch_bars(
+                self._tickers,
+                fetch_start,
+                bars_end,
+                source="alpaca",
+            )
+        else:
+            ticker_dfs = fetch_bars(
+                self._tickers,
+                fetch_start,
+                _safe_bars_end(today),
+                source="alpaca",
+                allow_intraday=True,
+            )
 
         result = select_top_n(
             n=self._top_n,
