@@ -1,4 +1,5 @@
-from datetime import datetime, timedelta
+import threading
+from datetime import date, datetime, timedelta
 from unittest.mock import Mock, patch
 
 import pytz
@@ -26,6 +27,7 @@ ET = pytz.timezone("America/New_York")
 
 _SELECT_TOP_N_PATH = "alpha_tech_tracker.op_momentum_strategy.trade_engine.select_top_n"
 _FETCH_BARS_PATH = "alpha_tech_tracker.op_momentum_strategy.trade_engine.fetch_bars"
+_SCORE_TICKER_PATH = "alpha_tech_tracker.op_momentum_strategy.trade_engine.score_ticker"
 _OPTION_CONTRACT_SELECTOR_PATH = (
     "alpha_tech_tracker.op_momentum_strategy.trade_engine.OptionContractSelector.select"
 )
@@ -944,3 +946,346 @@ class TestContractSelectorInjection:
 
         custom_selector.select.assert_not_called()
         mock_select.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# TickerSelector — replay mode bars_end
+# ---------------------------------------------------------------------------
+
+class TestTickerSelectorReplayMode:
+    @patch(_SELECT_TOP_N_PATH)
+    @patch(_FETCH_BARS_PATH)
+    def test_replay_mode_passes_yesterday_as_bars_end(
+        self, mock_fetch_bars, mock_select_top_n
+    ):
+        mock_fetch_bars.return_value = {}
+        mock_select_top_n.return_value = {
+            "picks": [{"ticker": "NVDA", "score": 1.0, "ev_trade": 0.5}],
+            "no_signal": [],
+            "negative_ev": [],
+            "rolling_stats": {"NVDA": {}},
+        }
+        selector = TickerSelector(tickers=["NVDA"], top_n=1)
+        today = date(2026, 4, 7)
+
+        with patch(
+            "alpha_tech_tracker.op_momentum_strategy.trade_engine.is_replay_mode",
+            return_value=True,
+        ), patch(
+            "alpha_tech_tracker.op_momentum_strategy.trade_engine._now_et"
+        ) as mock_now_et:
+            mock_now_et.return_value = Mock()
+            mock_now_et.return_value.date.return_value = today
+            selector.select()
+
+        call_args = mock_fetch_bars.call_args[0]
+        assert call_args[2] == today - timedelta(days=1)
+        assert "allow_intraday" not in mock_fetch_bars.call_args[1]
+
+    @patch(_SELECT_TOP_N_PATH)
+    @patch(_FETCH_BARS_PATH)
+    def test_live_mode_passes_allow_intraday_true(
+        self, mock_fetch_bars, mock_select_top_n
+    ):
+        mock_fetch_bars.return_value = {}
+        mock_select_top_n.return_value = {
+            "picks": [{"ticker": "NVDA", "score": 1.0, "ev_trade": 0.5}],
+            "no_signal": [],
+            "negative_ev": [],
+            "rolling_stats": {"NVDA": {}},
+        }
+        selector = TickerSelector(tickers=["NVDA"], top_n=1)
+
+        with patch(
+            "alpha_tech_tracker.op_momentum_strategy.trade_engine.is_replay_mode",
+            return_value=False,
+        ), patch(
+            "alpha_tech_tracker.op_momentum_strategy.trade_engine._safe_bars_end",
+            return_value=date(2026, 4, 7),
+        ):
+            selector.select()
+
+        assert mock_fetch_bars.call_args[1].get("allow_intraday") is True
+
+
+# ---------------------------------------------------------------------------
+# _on_position_closed — options formula
+# ---------------------------------------------------------------------------
+
+class TestOnPositionClosedOptions:
+    def _make_engine(self):
+        client = _make_alpaca_client()
+        return OpMomentumTradeEngine(alpaca_client=client, mock_trade_execution=True)
+
+    def _make_closed_option_pos(self, signal, entry, exit_, contracts, slot_capital):
+        pos = _make_active_position(signal=signal)
+        pos.trade_type = "options"
+        pos.simulated_entry_mid = _D(str(entry))
+        pos.simulated_exit_mid = _D(str(exit_))
+        pos.contracts = contracts
+        pos.slot_capital = _D(str(slot_capital))
+        pos.trailing_arm_price = None
+        pos.window_label = "M1"
+        return pos
+
+    def test_options_win_returns_slot_capital_plus_contracts_times_100_times_pnl(self):
+        engine = self._make_engine()
+        pos = self._make_closed_option_pos(
+            "BULLISH", entry=8.50, exit_=10.00, contracts=2, slot_capital=2000
+        )
+
+        engine._on_position_closed(pos)
+
+        # cap_pnl = 2 * 100 * (10.00 - 8.50) = 300
+        # returned = 2000 + 300 = 2300
+        assert engine._window_returned["M1"] == _D("2300")
+
+    def test_options_loss_returns_slot_capital_minus_loss(self):
+        engine = self._make_engine()
+        pos = self._make_closed_option_pos(
+            "BEARISH", entry=5.00, exit_=3.50, contracts=3, slot_capital=1500
+        )
+
+        engine._on_position_closed(pos)
+
+        # cap_pnl = 3 * 100 * (3.50 - 5.00) = -450
+        # returned = 1500 + (-450) = 1050
+        assert engine._window_returned["M1"] == _D("1050")
+
+
+# ---------------------------------------------------------------------------
+# _get_window_budget — open prior positions + undeployed capital
+# ---------------------------------------------------------------------------
+
+class TestGetWindowBudgetCapitalFlow:
+    def _make_m1_a1_engine(self):
+        from alpha_tech_tracker.op_momentum_strategy.models import WindowConfig
+
+        client = _make_alpaca_client()
+        return OpMomentumTradeEngine(
+            alpaca_client=client,
+            mock_trade_execution=True,
+            windows=[
+                WindowConfig(label="M1", opening_start="09:30", opening_bars=3),
+                WindowConfig(
+                    label="A1",
+                    opening_start="13:15",
+                    opening_bars=1,
+                    is_sequential=True,
+                ),
+            ],
+        )
+
+    def test_sequential_budget_includes_still_open_prior_position_slot_capital(self):
+        engine = self._make_m1_a1_engine()
+        engine._window_returned["M1"] = _D("2000")
+
+        open_pos = _make_active_position()
+        open_pos.window_label = "M1"
+        open_pos.is_closed = False
+        open_pos.trailing_arm_price = None
+        open_pos.slot_capital = _D("3333")
+
+        mock_monitor = Mock()
+        mock_monitor._lock = threading.Lock()
+        mock_monitor._positions = [open_pos]
+        engine._monitor = mock_monitor
+
+        a1_win = next(w for w in engine._windows if w.label == "A1")
+        result = engine._get_window_budget(a1_win)
+
+        assert result == _D("5333")
+        engine._client.get_accounts.assert_not_called()
+
+    def test_sequential_budget_excludes_reentry_open_positions(self):
+        """Re-entries share the primary's capital slot — their slot_capital must
+        not be double-counted when computing the sequential window budget."""
+        engine = self._make_m1_a1_engine()
+        engine._window_returned["M1"] = _D("0")
+
+        reentry_pos = _make_active_position()
+        reentry_pos.window_label = "M1"
+        reentry_pos.is_closed = False
+        reentry_pos.trailing_arm_price = _D("110")  # marks as re-entry
+        reentry_pos.slot_capital = _D("5000")
+
+        mock_monitor = Mock()
+        mock_monitor._lock = threading.Lock()
+        mock_monitor._positions = [reentry_pos]
+        engine._monitor = mock_monitor
+
+        engine._client.get_accounts.return_value = {"buying_power": 12000.0}
+        a1_win = next(w for w in engine._windows if w.label == "A1")
+        result = engine._get_window_budget(a1_win)
+
+        # reentry slot not counted → prior_returned stays 0 → falls back to account
+        assert result == _D("12000")
+
+    def test_sequential_budget_forwards_undeployed_capital_from_prior_window(self):
+        """When M1 deploys fewer slots than its budget allows, the undeployed
+        portion flows forward to the sequential window."""
+        engine = self._make_m1_a1_engine()
+        engine._window_returned["M1"] = _D("3200")
+        engine._window_primary_deployed["M1"] = _D("3333")
+        engine._window_state["M1"]["budget"] = _D("10000")
+
+        mock_monitor = Mock()
+        mock_monitor._lock = threading.Lock()
+        mock_monitor._positions = []
+        engine._monitor = mock_monitor
+
+        a1_win = next(w for w in engine._windows if w.label == "A1")
+        result = engine._get_window_budget(a1_win)
+
+        # returned=3200 + undeployed(10000 - 3333)=6667 → 9867
+        assert result == _D("9867")
+        engine._client.get_accounts.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# _drain_pending_signals_for_window — rank ordering + budget storage
+# ---------------------------------------------------------------------------
+
+class TestDrainPendingSignals:
+    def test_signals_entered_in_descending_score_order(self):
+        engine = _make_engine_with_mock_client()
+        engine._window_state["W1"]["collection_deadline"] = datetime.now(ET) - timedelta(
+            seconds=1
+        )
+        # AMD inserted first, NVDA second — controls score_ticker call order
+        engine._window_state["W1"]["pending_signals"] = {
+            "AMD": _make_signal_event("AMD"),
+            "NVDA": _make_signal_event("NVDA"),
+        }
+        engine._rolling_stats = {
+            "AMD": {"ev_trade": 0.5, "win_rate": 0.5, "avg_win_pct": 1.0},
+            "NVDA": {"ev_trade": 0.8, "win_rate": 0.6, "avg_win_pct": 2.0},
+        }
+
+        rank_calls = []
+
+        with patch(_SCORE_TICKER_PATH, side_effect=[1.5, 3.0]), \
+             patch.object(
+                 engine,
+                 "_enter_position",
+                 side_effect=lambda e, **kw: rank_calls.append((e.ticker, kw["rank"])),
+             ), \
+             patch.object(engine, "_get_window_budget", return_value=None):
+            engine._drain_pending_signals_for_window(engine._windows[0])
+
+        # NVDA scored 3.0 → rank=0; AMD scored 1.5 → rank=1
+        assert rank_calls[0] == ("NVDA", 0)
+        assert rank_calls[1] == ("AMD", 1)
+
+    def test_window_budget_stored_in_window_state_after_drain(self):
+        engine = _make_engine_with_mock_client()
+        engine._window_state["W1"]["collection_deadline"] = datetime.now(ET) - timedelta(
+            seconds=1
+        )
+        engine._window_state["W1"]["pending_signals"] = {
+            "NVDA": _make_signal_event("NVDA")
+        }
+        engine._rolling_stats = {
+            "NVDA": {"ev_trade": 0.5, "win_rate": 0.5, "avg_win_pct": 1.0}
+        }
+
+        with patch.object(engine, "_enter_position"), \
+             patch.object(engine, "_get_window_budget", return_value=_D("8000")):
+            engine._drain_pending_signals_for_window(engine._windows[0])
+
+        assert engine._window_state["W1"].get("budget") == _D("8000")
+
+
+# ---------------------------------------------------------------------------
+# _enter_position failure paths — open_position_count must be decremented
+# ---------------------------------------------------------------------------
+
+class TestEnterPositionFailures:
+    def _make_engine(self):
+        client = _make_alpaca_client()
+        engine = OpMomentumTradeEngine(alpaca_client=client, mock_trade_execution=True)
+        engine._monitor = Mock()
+        engine._signal_engine = Mock()
+        engine._signal_engine.get_latest_bar.return_value = None
+        return engine
+
+    def test_open_position_count_decremented_when_contract_selector_raises(self):
+        engine = self._make_engine()
+        engine._contract_selector = Mock()
+        engine._contract_selector.select.side_effect = Exception("selector failure")
+        engine._window_state["W1"]["open_position_count"] = 1
+
+        with patch(
+            "alpha_tech_tracker.op_momentum_strategy.trade_engine.is_replay_mode",
+            return_value=False,
+        ):
+            engine._enter_position(_make_signal_event("NVDA"), window_label="W1")
+
+        assert engine._window_state["W1"]["open_position_count"] == 0
+
+    def test_open_position_count_decremented_when_sizer_raises(self):
+        engine = self._make_engine()
+        engine._contract_selector = Mock()
+        engine._contract_selector.select.return_value = "NVDA260411C00170000"
+        engine._window_state["W1"]["open_position_count"] = 1
+
+        with patch(_POSITION_SIZER_PATH, side_effect=Exception("sizer failure")), \
+             patch(
+                 "alpha_tech_tracker.op_momentum_strategy.trade_engine.is_replay_mode",
+                 return_value=False,
+             ):
+            engine._enter_position(_make_signal_event("NVDA"), window_label="W1")
+
+        assert engine._window_state["W1"]["open_position_count"] == 0
+
+
+# ---------------------------------------------------------------------------
+# _window_primary_deployed — primary vs re-entry tracking
+# ---------------------------------------------------------------------------
+
+class TestWindowPrimaryDeployed:
+    def _make_stock_engine(self):
+        client = _make_alpaca_client()
+        engine = OpMomentumTradeEngine(
+            alpaca_client=client,
+            mock_trade_execution=True,
+            trade_type="stock",
+            rank_weighted_sizing=False,
+            top_n=3,
+        )
+        engine._monitor = Mock()
+        engine._signal_engine = Mock()
+        engine._signal_engine.get_latest_bar.return_value = None
+        return engine
+
+    def test_primary_entry_updates_window_primary_deployed(self):
+        engine = self._make_stock_engine()
+        engine._monitor.add_position = Mock()
+
+        with patch(_COMPUTE_STOCK_PATH, return_value=(20, _D("100.00"))), \
+             patch(_NOTIFY_PATH):
+            engine._enter_position(
+                _make_signal_event("NVDA"),
+                window_label="W1",
+                window_budget=_D("9000"),
+            )
+
+        # rank_weighted_sizing=False, top_n=3 → slot_weight=1/3 → slot_capital=3000
+        assert "W1" in engine._window_primary_deployed
+        expected_slot = _D("9000") / _D("3")
+        assert engine._window_primary_deployed["W1"] == expected_slot
+
+    def test_reentry_does_not_update_window_primary_deployed(self):
+        engine = self._make_stock_engine()
+        engine._monitor.add_position = Mock()
+
+        with patch(_COMPUTE_STOCK_PATH, return_value=(20, _D("100.00"))), \
+             patch(_NOTIFY_PATH):
+            engine._enter_position(
+                _make_signal_event("NVDA"),
+                window_label="W1",
+                window_budget=_D("9000"),
+                trailing_arm_price=_D("115"),
+            )
+
+        assert "W1" not in engine._window_primary_deployed

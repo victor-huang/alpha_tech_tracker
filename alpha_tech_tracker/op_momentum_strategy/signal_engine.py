@@ -339,9 +339,65 @@ class LiveSignalEngine:
             or_start.strftime("%H:%M"),
             or_end.strftime("%H:%M"),
         )
+
+        # OR bar period-start timestamps in chronological order
+        or_bar_period_starts = [
+            or_start + timedelta(minutes=i * 5)
+            for i in range(win["opening_bars"])
+        ]
+        # For the most recent 2 OR bars, use client-side aggregated data from
+        # _minute_buf rather than querying Alpaca, which may return a partial
+        # in-progress bar before the period has fully closed.
+        recent_periods = set(or_bar_period_starts[-2:])
+
+        for ticker in self._tickers:
+            if self._signal_fired[label].get(ticker):
+                continue
+            for period_ts in sorted(recent_periods):
+                with self._lock:
+                    existing = self._history.get(ticker, pd.DataFrame())
+                    if not existing.empty and period_ts in existing.index:
+                        continue
+                    mbuf = self._minute_buf.get(
+                        ticker, {"period_start": None, "bars": []}
+                    )
+                    if mbuf["period_start"] == period_ts and mbuf["bars"]:
+                        five_min = self._aggregate_bars(
+                            ticker, period_ts, mbuf["bars"]
+                        )
+                        logger.info(
+                            "Catchup [%s]: %s using client-side bar at %s (%d 1-min bars)",
+                            label,
+                            ticker,
+                            period_ts.strftime("%H:%M"),
+                            len(mbuf["bars"]),
+                        )
+                        self._process_five_min_bar(five_min)
+
+        # Check which tickers still need Alpaca for bars not covered client-side
+        tickers_need_api = [
+            t
+            for t in self._tickers
+            if not self._signal_fired[label].get(t)
+            and len(self._opening_buf[label].get(t, [])) < win["opening_bars"]
+        ]
+        if not tickers_need_api:
+            logger.info(
+                "Catchup [%s]: all tickers served from client-side data", label
+            )
+            for ticker in self._tickers:
+                logger.info(
+                    "Catchup [%s]: %s has %d/%d opening bars",
+                    label,
+                    ticker,
+                    len(self._opening_buf[label].get(ticker, [])),
+                    win["opening_bars"],
+                )
+            return
+
         hist_client = StockHistoricalDataClient(self._api_key, self._secret_key)
         request = StockBarsRequest(
-            symbol_or_symbols=self._tickers,
+            symbol_or_symbols=tickers_need_api,
             timeframe=TimeFrame(amount=5, unit=TimeFrameUnit.Minute),
             start=or_start,
             end=or_end,
@@ -354,7 +410,7 @@ class LiveSignalEngine:
             logger.exception("Failed to fetch opening bar catchup data for [%s]", label)
             return
 
-        for ticker in self._tickers:
+        for ticker in tickers_need_api:
             if self._signal_fired[label].get(ticker):
                 continue
             try:
@@ -366,6 +422,10 @@ class LiveSignalEngine:
             tick_df.columns = [c.capitalize() for c in tick_df.columns]
 
             for ts, row in tick_df.iterrows():
+                # Skip bars in the recent window — those were already handled
+                # (or intentionally skipped) in the client-side pass above.
+                if ts in recent_periods:
+                    continue
                 synthetic = _FiveMinBar(
                     symbol=ticker,
                     timestamp=ts,

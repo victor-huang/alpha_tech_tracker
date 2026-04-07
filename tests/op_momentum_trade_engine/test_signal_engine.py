@@ -1,5 +1,5 @@
-from datetime import datetime, timedelta
-from unittest.mock import patch
+from datetime import date, datetime, timedelta
+from unittest.mock import Mock, patch
 
 import pandas as pd
 import pytz
@@ -456,3 +456,194 @@ class TestMultiWindowSignalEngine:
 
         assert engine._opening_catchup_done["M1"] is False
         assert engine._opening_catchup_done["A1"] is False
+
+
+class TestCatchUpOpeningBarsForWindow:
+    """Tests for _catch_up_opening_bars_for_window client-side bar preference."""
+
+    def _empty_alpaca_df(self):
+        """Return an empty multi-index DataFrame matching Alpaca's bar response schema."""
+        return pd.DataFrame(
+            columns=["open", "high", "low", "close", "volume"],
+            index=pd.MultiIndex.from_tuples([], names=["symbol", "timestamp"]),
+        )
+
+    def _make_a1_engine(self, ticker="FN"):
+        return LiveSignalEngine(
+            tickers=[ticker],
+            api_key="k",
+            secret_key="s",
+            windows=[
+                {
+                    "label": "A1",
+                    "opening_start": "13:15",
+                    "opening_bars": 1,
+                    "on_signal": None,
+                }
+            ],
+        )
+
+    def _make_m1_engine(self, ticker="AMD"):
+        return LiveSignalEngine(
+            tickers=[ticker],
+            api_key="k",
+            secret_key="s",
+            windows=[
+                {
+                    "label": "M1",
+                    "opening_start": "09:30",
+                    "opening_bars": 3,
+                    "on_signal": None,
+                }
+            ],
+        )
+
+    def _make_1min_bar(self, open_, high, low, close, volume=500.0):
+        bar = Mock()
+        bar.open, bar.high, bar.low, bar.close, bar.volume = open_, high, low, close, volume
+        return bar
+
+    def test_uses_minute_buf_bars_instead_of_alpaca_for_recent_period(self):
+        today = date(2026, 4, 6)
+        engine = self._make_a1_engine("FN")
+        or_start = ET.localize(
+            datetime.combine(today, datetime.strptime("13:15", "%H:%M").time())
+        )
+
+        bar1 = self._make_1min_bar(550.0, 551.5, 549.5, 551.0)
+        bar2 = self._make_1min_bar(551.0, 552.0, 550.5, 551.06)
+        engine._minute_buf["FN"] = {"period_start": or_start, "bars": [bar1, bar2]}
+
+        injected_bars = []
+
+        def fake_process(bar):
+            injected_bars.append(bar)
+            engine._opening_buf["A1"]["FN"].append(bar)
+            engine._signal_fired["A1"]["FN"] = True
+
+        with patch.object(engine, "_process_five_min_bar", side_effect=fake_process), \
+             patch(
+                 "alpha_tech_tracker.op_momentum_strategy.signal_engine.StockHistoricalDataClient"
+             ) as mock_alpaca:
+            engine._catch_up_opening_bars_for_window(today, engine._windows[0])
+
+        assert len(injected_bars) == 1
+        injected = injected_bars[0]
+        assert injected.symbol == "FN"
+        assert injected.timestamp == or_start
+        assert injected.open == 550.0
+        assert injected.high == 552.0
+        assert injected.low == 549.5
+        assert injected.close == 551.06
+        mock_alpaca.assert_not_called()
+
+    def test_falls_back_to_alpaca_when_minute_buf_bars_list_is_empty(self):
+        today = date(2026, 4, 6)
+        engine = self._make_a1_engine("FN")
+        or_start = ET.localize(
+            datetime.combine(today, datetime.strptime("13:15", "%H:%M").time())
+        )
+        engine._minute_buf["FN"] = {"period_start": or_start, "bars": []}
+
+        mock_alpaca_instance = Mock()
+        mock_alpaca_instance.get_stock_bars.return_value = Mock(df=self._empty_alpaca_df())
+
+        with patch(
+            "alpha_tech_tracker.op_momentum_strategy.signal_engine.StockHistoricalDataClient",
+            return_value=mock_alpaca_instance,
+        ) as mock_alpaca:
+            engine._catch_up_opening_bars_for_window(today, engine._windows[0])
+
+        mock_alpaca.assert_called_once()
+        mock_alpaca_instance.get_stock_bars.assert_called_once()
+
+    def test_falls_back_to_alpaca_when_minute_buf_is_on_a_different_period(self):
+        today = date(2026, 4, 6)
+        engine = self._make_a1_engine("FN")
+        or_start = ET.localize(
+            datetime.combine(today, datetime.strptime("13:15", "%H:%M").time())
+        )
+        engine._minute_buf["FN"] = {
+            "period_start": or_start - timedelta(minutes=5),
+            "bars": [self._make_1min_bar(550.0, 551.0, 549.0, 550.5)],
+        }
+
+        mock_alpaca_instance = Mock()
+        mock_alpaca_instance.get_stock_bars.return_value = Mock(df=self._empty_alpaca_df())
+
+        with patch(
+            "alpha_tech_tracker.op_momentum_strategy.signal_engine.StockHistoricalDataClient",
+            return_value=mock_alpaca_instance,
+        ) as mock_alpaca:
+            engine._catch_up_opening_bars_for_window(today, engine._windows[0])
+
+        mock_alpaca.assert_called_once()
+
+    def test_bar_already_in_history_is_not_reprocessed(self):
+        today = date(2026, 4, 6)
+        engine = self._make_a1_engine("FN")
+        or_start = ET.localize(
+            datetime.combine(today, datetime.strptime("13:15", "%H:%M").time())
+        )
+
+        engine._minute_buf["FN"] = {
+            "period_start": or_start,
+            "bars": [self._make_1min_bar(551.0, 552.0, 550.0, 551.06)],
+        }
+        engine._history["FN"] = pd.DataFrame(
+            {"Open": [551.0], "High": [552.0], "Low": [550.0], "Close": [551.06],
+             "Volume": [500.0], "MA20": [540.0], "MA50": [535.0], "MA200": [520.0]},
+            index=[or_start],
+        )
+
+        with patch.object(engine, "_process_five_min_bar") as mock_process, \
+             patch(
+                 "alpha_tech_tracker.op_momentum_strategy.signal_engine.StockHistoricalDataClient"
+             ):
+            engine._catch_up_opening_bars_for_window(today, engine._windows[0])
+
+        mock_process.assert_not_called()
+
+    def test_m1_three_bar_window_fills_last_two_from_minute_buf(self):
+        """For a 3-bar M1 window, the last 2 OR bars come from _minute_buf; the
+        first (older) bar triggers the Alpaca fallback."""
+        today = date(2026, 4, 6)
+        engine = self._make_m1_engine("AMD")
+        or_start = ET.localize(
+            datetime.combine(today, datetime.strptime("09:30", "%H:%M").time())
+        )
+        bar_09_35 = or_start + timedelta(minutes=5)
+        bar_09_40 = or_start + timedelta(minutes=10)
+
+        # 09:35 already processed live and in _history; 09:40 accumulating in _minute_buf
+        engine._history["AMD"] = pd.DataFrame(
+            {"Open": [99.0], "High": [101.0], "Low": [98.0], "Close": [100.0],
+             "Volume": [1000.0], "MA20": [95.0], "MA50": [93.0], "MA200": [90.0]},
+            index=[bar_09_35],
+        )
+        engine._minute_buf["AMD"] = {
+            "period_start": bar_09_40,
+            "bars": [self._make_1min_bar(100.0, 101.0, 99.0, 100.5)],
+        }
+
+        injected_bars = []
+
+        def fake_process(bar):
+            injected_bars.append(bar)
+            engine._opening_buf["M1"]["AMD"].append(bar)
+
+        mock_alpaca_instance = Mock()
+        mock_alpaca_instance.get_stock_bars.return_value = Mock(df=self._empty_alpaca_df())
+
+        with patch.object(engine, "_process_five_min_bar", side_effect=fake_process), \
+             patch(
+                 "alpha_tech_tracker.op_momentum_strategy.signal_engine.StockHistoricalDataClient",
+                 return_value=mock_alpaca_instance,
+             ):
+            engine._catch_up_opening_bars_for_window(today, engine._windows[0])
+
+        # Only the 09:40 bar was injected from _minute_buf (09:35 skipped — in history)
+        assert len(injected_bars) == 1
+        assert injected_bars[0].timestamp == bar_09_40
+        # 09:30 bar still missing → Alpaca called for older bars
+        mock_alpaca_instance.get_stock_bars.assert_called_once()
