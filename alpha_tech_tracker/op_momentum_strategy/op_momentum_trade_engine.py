@@ -360,6 +360,17 @@ def parse_args():
         "the live engine instead of a live WebSocket stream. Implies mock-trade-execution.",
     )
     parser.add_argument(
+        "--live-data-dir",
+        type=str,
+        default=None,
+        dest="live_data_dir",
+        help=(
+            "Directory of recorded live-session bar CSVs. When combined with "
+            "--replay-date, feeds real intraday data instead of Alpaca historical "
+            "cache. Expects {dir}/{date}/{ticker}_5min.csv (CsvLiveBarsSource format)."
+        ),
+    )
+    parser.add_argument(
         "--top",
         type=int,
         default=MAX_ACTIVE_SYMBOLS,
@@ -493,8 +504,14 @@ if __name__ == "__main__":
         )
         if args.replay_date:
             from datetime import date as _date
+            from .replay import CsvLiveBarsSource
             replay_date = _date.fromisoformat(args.replay_date)
-            engine.run_replay(replay_date, tickers_override=args.tickers)
+            bars_source = CsvLiveBarsSource(args.live_data_dir) if args.live_data_dir else None
+            engine.run_replay(
+                replay_date,
+                tickers_override=args.tickers,
+                bars_source=bars_source,
+            )
         else:
             engine.run(tickers_override=args.tickers)
         sys.exit(0)

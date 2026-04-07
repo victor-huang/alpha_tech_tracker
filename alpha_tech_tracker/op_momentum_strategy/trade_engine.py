@@ -45,7 +45,7 @@ from .option_price_monitor import OptionPriceMonitor
 from .order_executor import _place_with_fill_escalation, place_stock_order
 from .position_monitor import PositionMonitor
 from .position_sizer import PositionSizer
-from .replay import BarReplayDriver, _now_et, is_replay_mode, set_replay_clock, clear_replay_clock
+from .replay import BarReplayDriver, LiveBarsSource, _now_et, is_replay_mode, set_replay_clock, clear_replay_clock
 from .signal_engine import LiveSignalEngine
 
 logger = logging.getLogger(__name__)
@@ -1129,7 +1129,12 @@ class OpMomentumTradeEngine:
         bar_recorder.close()
         self._monitor.print_summary()
 
-    def run_replay(self, replay_date, tickers_override: list = None):
+    def run_replay(
+        self,
+        replay_date,
+        tickers_override: list = None,
+        bars_source: "LiveBarsSource | None" = None,
+    ):
         """
         Run a full trading session against historical bar data for `replay_date`.
 
@@ -1257,6 +1262,7 @@ class OpMomentumTradeEngine:
             replay_date=replay_date,
             signal_engine=self._signal_engine,
             on_bar_injected=_on_bar,
+            bars_source=bars_source,
         )
         driver.run()
 

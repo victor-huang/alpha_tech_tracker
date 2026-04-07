@@ -1,10 +1,13 @@
+import abc
 import logging
 import threading
 from dataclasses import dataclass
 from datetime import date, datetime
 from itertools import groupby
-from typing import Callable, Optional
+from pathlib import Path
+from typing import Callable, List, Optional
 
+import pandas as pd
 import pytz
 
 from alpha_tech_tracker.op_momentum_strategy.models import _FiveMinBar
@@ -13,6 +16,75 @@ from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import fetch_b
 logger = logging.getLogger(__name__)
 
 ET = pytz.timezone("America/New_York")
+
+
+# ── Bar data sources ──────────────────────────────────────────────────────────
+
+
+class LiveBarsSource(abc.ABC):
+    """Interface for supplying intraday 5-min bars to the replay driver.
+
+    Implement this to add new data sources (e.g. a different CSV schema,
+    a local database, a remote API).  The driver calls `load()` once at
+    the start of `run()` and feeds the returned bars through the signal
+    engine in chronological order.
+    """
+
+    @abc.abstractmethod
+    def load(
+        self, tickers: List[str], replay_date: date
+    ) -> "dict[str, List[_FiveMinBar]]":
+        """Return {ticker: [_FiveMinBar, ...]} for the given date.
+
+        Missing or empty tickers should map to an empty list, not raise.
+        """
+
+
+class CsvLiveBarsSource(LiveBarsSource):
+    """Loads 5-min bars from BarRecorder CSV files.
+
+    Expects files at: {base_dir}/{replay_date}/{ticker}_5min.csv
+    CSV schema: timestamp,open,high,low,close,volume
+      - timestamps are naive ET strings (e.g. "2026-04-02 09:30:00")
+    """
+
+    def __init__(self, base_dir: str):
+        self._base_dir = Path(base_dir)
+
+    def load(
+        self, tickers: List[str], replay_date: date
+    ) -> "dict[str, List[_FiveMinBar]]":
+        date_dir = self._base_dir / str(replay_date)
+        result = {}
+        for ticker in tickers:
+            csv_path = date_dir / f"{ticker}_5min.csv"
+            if not csv_path.exists():
+                logger.warning(
+                    "CsvLiveBarsSource: no file for %s at %s", ticker, csv_path
+                )
+                result[ticker] = []
+                continue
+            df = pd.read_csv(csv_path, parse_dates=["timestamp"])
+            bars = []
+            for _, row in df.iterrows():
+                ts = ET.localize(row["timestamp"].to_pydatetime())
+                bars.append(
+                    _FiveMinBar(
+                        symbol=ticker,
+                        timestamp=ts,
+                        open=float(row["open"]),
+                        high=float(row["high"]),
+                        low=float(row["low"]),
+                        close=float(row["close"]),
+                        volume=float(row["volume"]),
+                    )
+                )
+            result[ticker] = bars
+            logger.info(
+                "CsvLiveBarsSource: loaded %d bars for %s", len(bars), ticker
+            )
+        return result
+
 
 # ── Replay clock ──────────────────────────────────────────────────────────────
 # Module-level singleton so signal_engine and trade_engine can both call
@@ -72,6 +144,7 @@ class BarReplayDriver:
     signal_engine: object  # LiveSignalEngine
     on_bar_injected: Optional[Callable[[str], None]] = None
     last_bar_time: Optional[datetime] = None
+    bars_source: Optional[LiveBarsSource] = None
 
     def run(self):
         bars_by_ticker = self._fetch_session_bars()
@@ -102,7 +175,19 @@ class BarReplayDriver:
         logger.info("Replay %s complete", self.replay_date)
 
     def _fetch_session_bars(self) -> dict:
-        """Return {ticker: [_FiveMinBar, ...]} for `replay_date` only."""
+        """Return {ticker: [_FiveMinBar, ...]} for `replay_date` only.
+
+        Delegates to `bars_source.load()` when a source is provided,
+        otherwise falls back to the Alpaca cache via fetch_bars.
+        """
+        if self.bars_source is not None:
+            logger.info(
+                "Replay %s — loading bars from %s",
+                self.replay_date,
+                type(self.bars_source).__name__,
+            )
+            return self.bars_source.load(self.tickers, self.replay_date)
+
         all_bars = fetch_bars(
             self.tickers,
             self.replay_date,
