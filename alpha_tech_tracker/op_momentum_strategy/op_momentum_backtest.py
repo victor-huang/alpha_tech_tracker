@@ -1176,6 +1176,52 @@ def _stitch_cache(
     return combined
 
 
+def _partial_stitch_cache(
+    ticker: str, start_date: date, end_date: date, source: str
+) -> "tuple[pd.DataFrame | None, date | None]":
+    """Return the best contiguous partial cache coverage without requiring full coverage.
+
+    Unlike _stitch_cache, does not bail when covered_end < end_date — returns
+    (df, covered_end) so the caller can delta-fetch only the missing tail.
+    Returns (None, None) when there is no usable partial cache at all.
+    """
+    import re
+
+    pattern = re.compile(
+        rf"^{re.escape(source)}_5min_{re.escape(ticker)}_(\d{{4}}-\d{{2}}-\d{{2}})_(\d{{4}}-\d{{2}}-\d{{2}})\.json$"
+    )
+    pieces = []
+    for f in _CACHE_DIR.iterdir():
+        m = pattern.match(f.name)
+        if not m:
+            continue
+        c_start = date.fromisoformat(m.group(1))
+        c_end = date.fromisoformat(m.group(2))
+        if c_end >= start_date and c_start <= end_date:
+            pieces.append((c_start, c_end, f))
+
+    if not pieces:
+        return None, None
+
+    pieces.sort(key=lambda x: x[0])
+    covered_end = pieces[0][0] - timedelta(days=1)
+    dfs = []
+    for c_start, c_end, f in pieces:
+        if c_start > covered_end + timedelta(days=7):
+            break  # Gap too large — stop with contiguous coverage we have
+        dfs.append(_load_cache(f, "5min"))
+        if c_end > covered_end:
+            covered_end = c_end
+
+    if not dfs:
+        return None, None
+
+    combined = pd.concat(dfs)
+    combined = combined[~combined.index.duplicated(keep="last")]
+    combined.sort_index(inplace=True)
+    return combined, covered_end
+
+
 def fetch_bars(
     tickers: list,
     start_date: date,
@@ -1188,6 +1234,7 @@ def fetch_bars(
 
     result = {}
     to_fetch = []
+    to_fetch_delta = []  # (ticker, partial_df, partial_end)
     for ticker in tickers:
         if cacheable:
             cp = _cache_path(ticker, start_date, end_date_only, source, "5min")
@@ -1199,7 +1246,42 @@ def fetch_bars(
                 result[ticker] = stitched
                 _save_cache(stitched, cp, "5min")
                 continue
+            partial_df, partial_end = _partial_stitch_cache(
+                ticker, start_date, end_date_only, source
+            )
+            if partial_df is not None:
+                to_fetch_delta.append((ticker, partial_df, partial_end))
+                continue
         to_fetch.append(ticker)
+
+    if to_fetch_delta:
+        delta_start = min(pe for _, _, pe in to_fetch_delta) + timedelta(days=1)
+        delta_tickers = [t for t, _, _ in to_fetch_delta]
+        print(
+            f"  [cache] delta-fetching {len(delta_tickers)} tickers from {source} "
+            f"({delta_start} → {end_date_only})"
+        )
+        if source == "yfinance":
+            delta_fetched = fetch_yfinance_bars(delta_tickers, delta_start, end_date)
+        else:
+            delta_fetched = fetch_alpaca_bars(
+                delta_tickers, delta_start, end_date, allow_intraday=allow_intraday
+            )
+        for ticker, partial_df, _ in to_fetch_delta:
+            tail_df = delta_fetched.get(ticker, pd.DataFrame())
+            if tail_df.empty:
+                merged = partial_df
+            else:
+                merged = pd.concat([partial_df, tail_df])
+                merged = merged[~merged.index.duplicated(keep="last")]
+                merged.sort_index(inplace=True)
+            result[ticker] = merged
+            if not merged.empty:
+                _save_cache(
+                    merged,
+                    _cache_path(ticker, start_date, end_date_only, source, "5min"),
+                    "5min",
+                )
 
     if to_fetch:
         if cacheable:
@@ -1221,7 +1303,7 @@ def fetch_bars(
                     "5min",
                 )
 
-    cached_count = len(tickers) - len(to_fetch)
+    cached_count = len(tickers) - len(to_fetch) - len(to_fetch_delta)
     if cached_count:
         print(f"  [cache] loaded {cached_count} tickers from cache")
 
