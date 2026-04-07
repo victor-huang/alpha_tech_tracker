@@ -1084,6 +1084,8 @@ class OpMomentumTradeEngine:
             initial_capital = float(account.get("buying_power", ACCOUNT_BUDGET))
         except Exception:
             initial_capital = float(ACCOUNT_BUDGET)
+        if self._replay_capital is not None:
+            initial_capital = self._replay_capital
 
         self._monitor = PositionMonitor(
             self._client,

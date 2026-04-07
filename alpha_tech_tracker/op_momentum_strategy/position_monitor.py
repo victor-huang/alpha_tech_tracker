@@ -764,7 +764,7 @@ class PositionMonitor:
             summary = f"  Daily P&L: {sign}${total_pnl:.2f}  ({pct_sign}{pct:.2f}%  on  ${total_cost:.0f} deployed)"
             if has_cap and self._initial_capital:
                 cap_pct = float(total_cap_pnl / _D(str(self._initial_capital)) * 100)
-                cap_sign = "+" if total_cap_pnl >= 0 else ""
+                cap_sign = "+" if total_cap_pnl >= 0 else "-"
                 cap_pct_sign = "+" if cap_pct >= 0 else ""
                 summary += (
                     f"  │  cap: {cap_sign}${abs(float(total_cap_pnl)):.2f}"
