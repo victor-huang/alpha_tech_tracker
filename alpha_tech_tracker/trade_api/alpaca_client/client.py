@@ -71,7 +71,7 @@ class AlpacaAPIClient:
         )
 
         option_type_code = "C" if option_type == "CALL" else "P"
-        strike_price_formatted = f"{float(strike_price):08.3f}".replace(".", "")
+        strike_price_formatted = f"{float(strike_price):09.3f}".replace(".", "")
 
         option_symbol = (
             f"{symbol}{expiry_year[2:]}{expiry_month}{expiry_day}"
