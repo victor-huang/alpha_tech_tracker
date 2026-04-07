@@ -12,6 +12,7 @@ from alpha_tech_tracker.trade_api.alpaca_client.client import (
 )
 
 from .models import _D, _stock_bid_ask
+from .option_price_monitor import _quantize_option_price
 
 logger = logging.getLogger(__name__)
 
@@ -42,7 +43,7 @@ def _place_with_fill_escalation(
         return bid, ask, mid
 
     def _place_limit(price) -> dict:
-        rounded = price.quantize(_D("0.01"), rounding=ROUND_HALF_UP)
+        rounded = _quantize_option_price(price)
         return client.place_option_order(
             symbol=ticker,
             option_key=None,
