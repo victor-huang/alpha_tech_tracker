@@ -647,3 +647,75 @@ class TestCatchUpOpeningBarsForWindow:
         assert injected_bars[0].timestamp == bar_09_40
         # 09:30 bar still missing → Alpaca called for older bars
         mock_alpaca_instance.get_stock_bars.assert_called_once()
+
+    def test_late_start_engine_gets_uncovered_recent_bar_from_alpaca(self):
+        """Regression: engine starts late (e.g. 10:39 for a 10:25/3bar window).
+        _minute_buf is on period 10:35, so pass 1 covers 10:35 but cannot serve
+        10:30. Pass 2 must fetch 10:30 from Alpaca — not skip it — so all 3 OR
+        bars are available and the signal can fire."""
+        today = date(2026, 4, 7)
+        engine = LiveSignalEngine(
+            tickers=["APP"],
+            api_key="k",
+            secret_key="s",
+            windows=[
+                {
+                    "label": "M1",
+                    "opening_start": "10:25",
+                    "opening_bars": 3,
+                    "on_signal": None,
+                }
+            ],
+        )
+        or_start = ET.localize(
+            datetime.combine(today, datetime.strptime("10:25", "%H:%M").time())
+        )
+        bar_10_25 = or_start
+        bar_10_30 = or_start + timedelta(minutes=5)
+        bar_10_35 = or_start + timedelta(minutes=10)
+
+        # Engine started at 10:39 — only 1-min bar 10:39 in _minute_buf for period 10:35
+        engine._minute_buf["APP"] = {
+            "period_start": bar_10_35,
+            "bars": [self._make_1min_bar(403.0, 404.0, 402.0, 403.5)],
+        }
+
+        def _make_alpaca_df(*period_starts):
+            """Build a minimal multi-index DataFrame like Alpaca returns."""
+            tuples = [(sym, ts) for sym in ["APP"] for ts in period_starts]
+            idx = pd.MultiIndex.from_tuples(tuples, names=["symbol", "timestamp"])
+            return pd.DataFrame(
+                {
+                    "open": [400.0] * len(tuples),
+                    "high": [401.0] * len(tuples),
+                    "low":  [399.0] * len(tuples),
+                    "close": [400.5] * len(tuples),
+                    "volume": [1000.0] * len(tuples),
+                },
+                index=idx,
+            )
+
+        # Alpaca returns 10:25 and 10:30 bars (the two older OR bars)
+        alpaca_df = _make_alpaca_df(bar_10_25, bar_10_30)
+        mock_alpaca_instance = Mock()
+        mock_alpaca_instance.get_stock_bars.return_value = Mock(df=alpaca_df)
+
+        injected_bars = []
+
+        def fake_process(bar):
+            injected_bars.append(bar)
+            engine._opening_buf["M1"]["APP"].append(bar)
+
+        with patch.object(engine, "_process_five_min_bar", side_effect=fake_process), \
+             patch(
+                 "alpha_tech_tracker.op_momentum_strategy.signal_engine.StockHistoricalDataClient",
+                 return_value=mock_alpaca_instance,
+             ):
+            engine._catch_up_opening_bars_for_window(today, engine._windows[0])
+
+        injected_timestamps = {b.timestamp for b in injected_bars}
+        # All 3 OR bars must be present
+        assert bar_10_25 in injected_timestamps, "10:25 bar missing — Alpaca pass skipped it"
+        assert bar_10_30 in injected_timestamps, "10:30 bar missing — incorrectly skipped as recent_period"
+        assert bar_10_35 in injected_timestamps, "10:35 bar missing — client-side pass failed"
+        assert len(engine._opening_buf["M1"]["APP"]) == 3

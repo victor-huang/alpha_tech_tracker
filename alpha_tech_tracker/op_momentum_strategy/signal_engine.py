@@ -345,10 +345,16 @@ class LiveSignalEngine:
             or_start + timedelta(minutes=i * 5)
             for i in range(win["opening_bars"])
         ]
-        # For the most recent 2 OR bars, use client-side aggregated data from
+        # For the most recent 2 OR bars, prefer client-side aggregated data from
         # _minute_buf rather than querying Alpaca, which may return a partial
         # in-progress bar before the period has fully closed.
         recent_periods = set(or_bar_period_starts[-2:])
+
+        # Track which (ticker, period) pairs were actually injected in pass 1 so
+        # that pass 2 only skips those — not periods that _minute_buf couldn't
+        # serve (e.g. when the engine started late and _minute_buf has moved on
+        # to a later period, leaving an earlier recent period uncovered).
+        client_covered: dict = {}  # ticker -> set of period_ts
 
         for ticker in self._tickers:
             if self._signal_fired[label].get(ticker):
@@ -357,6 +363,7 @@ class LiveSignalEngine:
                 with self._lock:
                     existing = self._history.get(ticker, pd.DataFrame())
                     if not existing.empty and period_ts in existing.index:
+                        client_covered.setdefault(ticker, set()).add(period_ts)
                         continue
                     mbuf = self._minute_buf.get(
                         ticker, {"period_start": None, "bars": []}
@@ -373,6 +380,7 @@ class LiveSignalEngine:
                             len(mbuf["bars"]),
                         )
                         self._process_five_min_bar(five_min)
+                        client_covered.setdefault(ticker, set()).add(period_ts)
 
         # Check which tickers still need Alpaca for bars not covered client-side
         tickers_need_api = [
@@ -422,9 +430,10 @@ class LiveSignalEngine:
             tick_df.columns = [c.capitalize() for c in tick_df.columns]
 
             for ts, row in tick_df.iterrows():
-                # Skip bars in the recent window — those were already handled
-                # (or intentionally skipped) in the client-side pass above.
-                if ts in recent_periods:
+                # Skip only bars that were actually served from _minute_buf in
+                # pass 1. If a recent period wasn't covered there (e.g. engine
+                # started late and _minute_buf moved past it), Alpaca fills it.
+                if ts in client_covered.get(ticker, set()):
                     continue
                 synthetic = _FiveMinBar(
                     symbol=ticker,
