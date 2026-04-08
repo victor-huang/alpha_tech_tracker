@@ -1,15 +1,21 @@
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
+from unittest.mock import patch
 
 import pandas as pd
 import pytest
 import pytz
 
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import (
+    _CACHE_WARMUP_DAYS,
+    _trim_bars_to_range,
     compute_signals_with_backtest,
+    fetch_bars,
 )
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector_backtest import (
     _apply_capital_flow,
 )
+
+_M = "alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest"
 
 
 ET = pytz.timezone("America/New_York")
@@ -369,3 +375,202 @@ class TestApplyCapitalFlowWithReentry:
         _apply_capital_flow(rows, [_W1], 10_000, _WEIGHTS, 3)
 
         assert rows[0]["cap_pnl"] == pytest.approx(60.0)
+
+
+# ---------------------------------------------------------------------------
+# Helpers for cache-trimming tests
+# ---------------------------------------------------------------------------
+
+
+def _make_date_bars(date_strs):
+    """One 09:30 bar per date — minimal fixture for cache-trim tests."""
+    index = [
+        ET.localize(datetime.strptime(f"{d} 09:30", "%Y-%m-%d %H:%M"))
+        for d in date_strs
+    ]
+    rows = [
+        {"Open": 100.0, "High": 101.0, "Low": 99.0, "Close": 100.0, "Volume": 1000}
+        for _ in date_strs
+    ]
+    return pd.DataFrame(rows, index=pd.DatetimeIndex(index))
+
+
+def _read_cache_file(path):
+    df = pd.read_json(path, orient="split")
+    df.index = pd.to_datetime(df.index, utc=True).tz_convert("America/New_York")
+    return df
+
+
+# ---------------------------------------------------------------------------
+# TestTrimBarsToRange
+# ---------------------------------------------------------------------------
+
+
+class TestTrimBarsToRange:
+    _START = date(2026, 3, 1)
+    _END = date(2026, 3, 31)
+
+    def test_removes_data_older_than_warmup_buffer(self):
+        too_old = self._START - timedelta(days=_CACHE_WARMUP_DAYS + 1)
+        df = _make_date_bars([str(too_old), str(self._START), str(self._END)])
+
+        result = _trim_bars_to_range(df, self._START, self._END)
+
+        assert too_old not in set(result.index.date)
+        assert self._START in set(result.index.date)
+
+    def test_keeps_data_within_warmup_buffer(self):
+        warmup_day = self._START - timedelta(days=_CACHE_WARMUP_DAYS)
+        df = _make_date_bars([str(warmup_day), str(self._START)])
+
+        result = _trim_bars_to_range(df, self._START, self._END)
+
+        assert warmup_day in set(result.index.date)
+
+    def test_removes_data_after_end_date(self):
+        after_end = self._END + timedelta(days=1)
+        df = _make_date_bars([str(self._END), str(after_end)])
+
+        result = _trim_bars_to_range(df, self._START, self._END)
+
+        assert self._END in set(result.index.date)
+        assert after_end not in set(result.index.date)
+
+    def test_data_already_within_range_is_unchanged(self):
+        df = _make_date_bars([str(self._START), str(self._END)])
+
+        result = _trim_bars_to_range(df, self._START, self._END)
+
+        assert len(result) == len(df)
+
+    def test_multi_year_historical_bloat_removed(self):
+        df = _make_date_bars(["2020-01-02", "2022-06-15", str(self._START)])
+
+        result = _trim_bars_to_range(df, self._START, self._END)
+
+        result_dates = set(result.index.date)
+        assert date(2020, 1, 2) not in result_dates
+        assert date(2022, 6, 15) not in result_dates
+        assert self._START in result_dates
+
+
+# ---------------------------------------------------------------------------
+# TestFetchBarsCacheTrimming
+# ---------------------------------------------------------------------------
+#
+# Verifies that fetch_bars never returns or saves data outside the requested
+# [start_date - warmup, end_date] window, regardless of which cache path is
+# taken (exact hit, stitch, or partial + delta).
+
+
+class TestFetchBarsCacheTrimming:
+    _START = date(2026, 3, 1)
+    _END = date(2026, 3, 31)
+    _TICKER = "NVDA"
+
+    def _bloated_df(self):
+        return _make_date_bars(["2020-01-02", "2022-06-15", str(self._START), str(self._END)])
+
+    def _cache_filename(self):
+        return f"alpaca_5min_{self._TICKER}_{self._START}_{self._END}.json"
+
+    def _write_cache(self, path, df):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        df.to_json(path, orient="split", date_format="iso")
+
+    # --- exact cache hit ---
+
+    def test_exact_cache_hit_returns_trimmed_data(self, tmp_path):
+        self._write_cache(tmp_path / self._cache_filename(), self._bloated_df())
+        with patch(f"{_M}._CACHE_DIR", tmp_path), \
+             patch(f"{_M}._stitch_cache", return_value=None), \
+             patch(f"{_M}._partial_stitch_cache", return_value=(None, None)):
+            result = fetch_bars([self._TICKER], self._START, self._END, source="alpaca")
+
+        result_dates = set(result[self._TICKER].index.date)
+        assert date(2020, 1, 2) not in result_dates
+        assert date(2022, 6, 15) not in result_dates
+        assert self._START in result_dates
+        assert self._END in result_dates
+
+    def test_exact_cache_hit_resaves_smaller_file_when_bloated(self, tmp_path):
+        cache_file = tmp_path / self._cache_filename()
+        self._write_cache(cache_file, self._bloated_df())
+        size_before = cache_file.stat().st_size
+
+        with patch(f"{_M}._CACHE_DIR", tmp_path), \
+             patch(f"{_M}._stitch_cache", return_value=None), \
+             patch(f"{_M}._partial_stitch_cache", return_value=(None, None)):
+            fetch_bars([self._TICKER], self._START, self._END, source="alpaca")
+
+        assert cache_file.stat().st_size < size_before
+
+    def test_exact_cache_hit_does_not_resave_when_already_trimmed(self, tmp_path):
+        clean_df = _make_date_bars([str(self._START), str(self._END)])
+        cache_file = tmp_path / self._cache_filename()
+        self._write_cache(cache_file, clean_df)
+
+        with patch(f"{_M}._CACHE_DIR", tmp_path), \
+             patch(f"{_M}._stitch_cache", return_value=None), \
+             patch(f"{_M}._partial_stitch_cache", return_value=(None, None)), \
+             patch(f"{_M}._save_cache") as save_spy:
+            fetch_bars([self._TICKER], self._START, self._END, source="alpaca")
+
+        save_spy.assert_not_called()
+
+    # --- stitch path ---
+
+    def test_stitch_path_returns_trimmed_data(self, tmp_path):
+        with patch(f"{_M}._CACHE_DIR", tmp_path), \
+             patch(f"{_M}._stitch_cache", return_value=self._bloated_df()), \
+             patch(f"{_M}._partial_stitch_cache", return_value=(None, None)):
+            result = fetch_bars([self._TICKER], self._START, self._END, source="alpaca")
+
+        result_dates = set(result[self._TICKER].index.date)
+        assert date(2020, 1, 2) not in result_dates
+        assert self._START in result_dates
+
+    def test_stitch_path_saves_trimmed_data_to_cache(self, tmp_path):
+        with patch(f"{_M}._CACHE_DIR", tmp_path), \
+             patch(f"{_M}._stitch_cache", return_value=self._bloated_df()), \
+             patch(f"{_M}._partial_stitch_cache", return_value=(None, None)):
+            fetch_bars([self._TICKER], self._START, self._END, source="alpaca")
+
+        saved = _read_cache_file(tmp_path / self._cache_filename())
+        saved_dates = set(saved.index.date)
+        assert date(2020, 1, 2) not in saved_dates
+        assert self._START in saved_dates
+
+    # --- partial + delta path ---
+
+    def test_partial_delta_path_returns_trimmed_data(self, tmp_path):
+        partial_end = date(2026, 3, 15)
+        partial_df = _make_date_bars(["2020-01-02", str(self._START), str(partial_end)])
+        delta_df = _make_date_bars([str(self._END)])
+
+        with patch(f"{_M}._CACHE_DIR", tmp_path), \
+             patch(f"{_M}._stitch_cache", return_value=None), \
+             patch(f"{_M}._partial_stitch_cache", return_value=(partial_df, partial_end)), \
+             patch(f"{_M}.fetch_alpaca_bars", return_value={self._TICKER: delta_df}):
+            result = fetch_bars([self._TICKER], self._START, self._END, source="alpaca")
+
+        result_dates = set(result[self._TICKER].index.date)
+        assert date(2020, 1, 2) not in result_dates
+        assert self._START in result_dates
+        assert self._END in result_dates
+
+    def test_partial_delta_path_saves_trimmed_data_to_cache(self, tmp_path):
+        partial_end = date(2026, 3, 15)
+        partial_df = _make_date_bars(["2020-01-02", str(self._START), str(partial_end)])
+        delta_df = _make_date_bars([str(self._END)])
+
+        with patch(f"{_M}._CACHE_DIR", tmp_path), \
+             patch(f"{_M}._stitch_cache", return_value=None), \
+             patch(f"{_M}._partial_stitch_cache", return_value=(partial_df, partial_end)), \
+             patch(f"{_M}.fetch_alpaca_bars", return_value={self._TICKER: delta_df}):
+            fetch_bars([self._TICKER], self._START, self._END, source="alpaca")
+
+        saved = _read_cache_file(tmp_path / self._cache_filename())
+        assert date(2020, 1, 2) not in set(saved.index.date)
+        assert self._START in set(saved.index.date)
+        assert self._END in set(saved.index.date)

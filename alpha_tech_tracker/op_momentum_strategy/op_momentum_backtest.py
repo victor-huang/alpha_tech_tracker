@@ -17,6 +17,15 @@ SUCCESS_BARS = 3  # "long enough" = held correct side for >= 3 bars (15 min)
 
 _CACHE_DIR = Path(__file__).parent.parent.parent / "market_data" / "cache"
 
+# Extra calendar days before start_date retained for MA warmup (MA200 needs ~3 trading days).
+_CACHE_WARMUP_DAYS = 7
+
+
+def _trim_bars_to_range(df: pd.DataFrame, start_date: date, end_date: date) -> pd.DataFrame:
+    """Trim a 5-min bar DataFrame to [start_date - warmup, end_date] to prevent cache bloat."""
+    warmup_start = start_date - timedelta(days=_CACHE_WARMUP_DAYS)
+    return df[(df.index.date >= warmup_start) & (df.index.date <= end_date)]
+
 
 def _cache_path(
     ticker: str, start: date, end: date, source: str, timeframe: str
@@ -1239,10 +1248,15 @@ def fetch_bars(
         if cacheable:
             cp = _cache_path(ticker, start_date, end_date_only, source, "5min")
             if cp.exists():
-                result[ticker] = _load_cache(cp, "5min")
+                loaded = _load_cache(cp, "5min")
+                trimmed = _trim_bars_to_range(loaded, start_date, end_date_only)
+                if len(trimmed) < len(loaded):
+                    _save_cache(trimmed, cp, "5min")
+                result[ticker] = trimmed
                 continue
             stitched = _stitch_cache(ticker, start_date, end_date_only, source)
             if stitched is not None:
+                stitched = _trim_bars_to_range(stitched, start_date, end_date_only)
                 result[ticker] = stitched
                 _save_cache(stitched, cp, "5min")
                 continue
@@ -1250,6 +1264,7 @@ def fetch_bars(
                 ticker, start_date, end_date_only, source
             )
             if partial_df is not None:
+                partial_df = _trim_bars_to_range(partial_df, start_date, partial_end)
                 to_fetch_delta.append((ticker, partial_df, partial_end))
                 continue
         to_fetch.append(ticker)
@@ -1275,6 +1290,7 @@ def fetch_bars(
                 merged = pd.concat([partial_df, tail_df])
                 merged = merged[~merged.index.duplicated(keep="last")]
                 merged.sort_index(inplace=True)
+            merged = _trim_bars_to_range(merged, start_date, end_date_only)
             result[ticker] = merged
             if not merged.empty:
                 _save_cache(
