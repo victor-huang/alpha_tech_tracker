@@ -73,10 +73,10 @@
     "hard_stop_price": "819.9",
     "fallback_price": "819.2",
     "option_symbol": "NVDA260327C00810000",
-    "contracts": 9,
+    "contracts": 4,
     "entry_mid": "12.00",
     "exit_reason": "trailing_stop_ma20",
     "exit_mid": "12.50",
-    "pnl": "450.00"
+    "pnl": "200.00"
   }
 }

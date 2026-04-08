@@ -33,7 +33,6 @@ from .trade_engine import OpMomentumTradeEngine
 from .config import (  # noqa: F401
     ACCOUNT_BUDGET,
     BEARISH_MA200,
-    CAPITAL_PER_SYMBOL,
     EOD_EXIT_TIME,
     MA_WARMUP_DAYS,
     MAX_ACTIVE_SYMBOLS,

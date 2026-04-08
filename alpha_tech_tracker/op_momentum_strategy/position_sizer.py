@@ -6,7 +6,7 @@ from alpaca.data.requests import OptionLatestQuoteRequest
 
 from alpha_tech_tracker.trade_api.alpaca_client.client import AlpacaAPIClient
 
-from .config import ACCOUNT_BUDGET, CAPITAL_PER_SYMBOL
+from .config import ACCOUNT_BUDGET, MAX_CAPITAL_PERCENTAGE_PER_SYMBOL_IN_WINDOW
 from .models import _D, _stock_bid_ask
 
 logger = logging.getLogger(__name__)
@@ -26,11 +26,11 @@ class PositionSizer:
         mock_stock_price: Optional[Decimal] = None,
     ) -> tuple:
         if window_budget is not None:
-            budget = window_budget * CAPITAL_PER_SYMBOL * capital_weight
+            budget = window_budget * capital_weight
         else:
             account = self._client.get_accounts()
             buying_power = _D(account.get("buying_power", ACCOUNT_BUDGET))
-            budget = buying_power * CAPITAL_PER_SYMBOL * capital_weight
+            budget = buying_power * MAX_CAPITAL_PERCENTAGE_PER_SYMBOL_IN_WINDOW * capital_weight
 
         ask = _D("0")
         if mock_stock_price is not None:
@@ -74,11 +74,11 @@ class PositionSizer:
         window_budget: Optional[Decimal] = None,
     ) -> tuple:
         if window_budget is not None:
-            budget = window_budget * CAPITAL_PER_SYMBOL * capital_weight
+            budget = window_budget * capital_weight
         else:
             account = self._client.get_accounts()
             buying_power = _D(account.get("buying_power", ACCOUNT_BUDGET))
-            budget = buying_power * CAPITAL_PER_SYMBOL * capital_weight
+            budget = buying_power * MAX_CAPITAL_PERCENTAGE_PER_SYMBOL_IN_WINDOW * capital_weight
 
         raw_quote = self._client.get_stock_quote(ticker)
         bid_f, ask_f = _stock_bid_ask(raw_quote)

@@ -280,7 +280,7 @@ class TestRankWeightedSizing:
         engine._signal_engine.get_latest_bar.return_value = None
         return engine
 
-    def test_rank_weighted_sizing_off_passes_full_weight_to_sizer(self):
+    def test_rank_weighted_sizing_off_passes_equal_fraction_to_sizer(self):
         engine = self._make_engine(rank_weighted_sizing=False)
 
         with patch(_OPTION_CONTRACT_SELECTOR_PATH, return_value="NVDA260328C00730000"), \
@@ -288,8 +288,9 @@ class TestRankWeightedSizing:
              patch(_PLACE_ENTRY_PATH, return_value={"order_id": "sim-1", "simulated_fill_mid": _D("8.50")}):
             engine._enter_position(_make_signal_event("NVDA"), rank=0)
 
+        # capital_weight = 1/top_n for equal sizing (default top_n=MAX_ACTIVE_SYMBOLS=2)
         call_args, _ = compute_mock.call_args
-        assert call_args[1] == _D("1")
+        assert call_args[1] == _D("1") / _D(str(engine._top_n))
 
     def test_rank_weighted_sizing_on_passes_first_weight_for_rank_zero(self):
         engine = self._make_engine(rank_weighted_sizing=True)
@@ -1182,6 +1183,31 @@ class TestGetWindowBudgetCapitalFlow:
         assert result == _D("9867")
         engine._client.get_accounts.assert_not_called()
 
+    def test_sequential_budget_not_inflated_when_option_slots_fully_deployed(self):
+        """When all M1 option slots are filled, no phantom undeployed capital
+        must flow to A1.  Prior to the bug fix, _window_primary_deployed was
+        never updated for option entries, so deployed=0 caused the full M1
+        window_budget to be added as undeployed — inflating A1's budget."""
+        engine = self._make_m1_a1_engine()
+        m1_window_budget = _D("10000")
+        # Two option positions fully deployed (top_n=2, equal sizing → capital_weight=1/2)
+        slot_capital = m1_window_budget / _D("2")  # 5000 each
+        engine._window_returned["M1"] = slot_capital * _D("2")  # 10000 returned
+        engine._window_primary_deployed["M1"] = slot_capital * _D("2")  # 10000 deployed
+        engine._window_state["M1"]["budget"] = m1_window_budget
+
+        mock_monitor = Mock()
+        mock_monitor._lock = threading.Lock()
+        mock_monitor._positions = []
+        engine._monitor = mock_monitor
+
+        a1_win = next(w for w in engine._windows if w.label == "A1")
+        result = engine._get_window_budget(a1_win)
+
+        # returned=10000 + undeployed(10000-10000)=0 → 10000
+        # Must NOT be 10000 + 10000 = 20000 (the bug value when deployed was 0)
+        assert result == _D("10000")
+
 
 # ---------------------------------------------------------------------------
 # _drain_pending_signals_for_window — rank ordering + budget storage
@@ -1299,6 +1325,67 @@ class TestWindowPrimaryDeployed:
         engine._signal_engine.get_latest_bar.return_value = None
         return engine
 
+    def _make_option_engine(self):
+        client = _make_alpaca_client()
+        engine = OpMomentumTradeEngine(
+            alpaca_client=client,
+            mock_trade_execution=True,
+            trade_type="option",
+            rank_weighted_sizing=False,
+        )
+        engine._monitor = Mock()
+        engine._signal_engine = Mock()
+        engine._signal_engine.get_latest_bar.return_value = None
+        engine._contract_selector = Mock()
+        engine._contract_selector.select.return_value = "NVDA260411C00170000"
+        return engine
+
+    def test_option_primary_entry_updates_window_primary_deployed(self):
+        """Option entries must track deployed capital so sequential window
+        budgets can compute undeployed correctly — currently broken (bug)."""
+        engine = self._make_option_engine()
+        engine._monitor.add_position = Mock()
+
+        with patch(_POSITION_SIZER_PATH, return_value=(3, _D("10.00"))), \
+             patch(_PLACE_ENTRY_PATH, return_value={"order_id": "o1"}), \
+             patch(_NOTIFY_PATH), \
+             patch(
+                 "alpha_tech_tracker.op_momentum_strategy.trade_engine.is_replay_mode",
+                 return_value=False,
+             ):
+            engine._enter_position(
+                _make_signal_event("NVDA"),
+                window_label="W1",
+                window_budget=_D("10000"),
+            )
+
+        # slot_capital = window_budget * capital_weight
+        # rank_weighted=False, top_n=2 (default) → capital_weight=1/2 → slot=5000
+        expected_slot = _D("10000") / _D("2")
+        assert "W1" in engine._window_primary_deployed
+        assert engine._window_primary_deployed["W1"] == expected_slot
+
+    def test_option_reentry_does_not_update_window_primary_deployed(self):
+        """Re-entry option entries must not update _window_primary_deployed."""
+        engine = self._make_option_engine()
+        engine._monitor.add_position = Mock()
+
+        with patch(_POSITION_SIZER_PATH, return_value=(3, _D("10.00"))), \
+             patch(_PLACE_ENTRY_PATH, return_value={"order_id": "o1"}), \
+             patch(_NOTIFY_PATH), \
+             patch(
+                 "alpha_tech_tracker.op_momentum_strategy.trade_engine.is_replay_mode",
+                 return_value=False,
+             ):
+            engine._enter_position(
+                _make_signal_event("NVDA"),
+                window_label="W1",
+                window_budget=_D("10000"),
+                trailing_arm_price=_D("115"),
+            )
+
+        assert "W1" not in engine._window_primary_deployed
+
     def test_primary_entry_updates_window_primary_deployed(self):
         engine = self._make_stock_engine()
         engine._monitor.add_position = Mock()
@@ -1311,7 +1398,8 @@ class TestWindowPrimaryDeployed:
                 window_budget=_D("9000"),
             )
 
-        # rank_weighted_sizing=False, top_n=3 → slot_weight=1/3 → slot_capital=3000
+        # slot_capital = window_budget * capital_weight
+        # rank_weighted=False, top_n=3 → capital_weight=1/3 → slot=3000
         assert "W1" in engine._window_primary_deployed
         expected_slot = _D("9000") / _D("3")
         assert engine._window_primary_deployed["W1"] == expected_slot

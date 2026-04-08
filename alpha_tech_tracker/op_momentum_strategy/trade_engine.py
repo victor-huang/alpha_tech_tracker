@@ -1,8 +1,11 @@
+import hashlib
+import json
 import logging
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from typing import Optional
 
 import pytz
@@ -20,7 +23,6 @@ from .config import (
     ACCOUNT_BUDGET,
     ARMED_MA20_EXIT,
     BEARISH_MA200,
-    CAPITAL_PER_SYMBOL,
     EOD_EXIT_TIME,
     MAX_ACTIVE_SYMBOLS,
     MAX_LOSS_PCT,
@@ -83,6 +85,20 @@ class TickerSelector:
         self._regime_ma = regime_ma
         self.rolling_stats: dict = {}
 
+    def _selector_cache_path(self, target_date: date) -> Path:
+        tickers_hash = hashlib.md5(",".join(sorted(self._tickers)).encode()).hexdigest()[:8]
+        cache_dir = Path(__file__).parent.parent.parent / "market_data" / "cache"
+        fname = (
+            f"selector_{target_date}"
+            f"_{self._opening_start_time.replace(':', '')}"
+            f"_{self._opening_bars}bar"
+            f"_lk{self._lookback_days}"
+            f"_reg{int(self._regime_filter)}{self._regime_ma}"
+            f"_stop{self._stop_pct}"
+            f"_{tickers_hash}.json"
+        )
+        return cache_dir / fname
+
     def fetch_bars(self) -> dict:
         """Fetch and return bar data without running the selector. Can be passed to select()."""
         today = _now_et().date()
@@ -114,20 +130,28 @@ class TickerSelector:
             target = today - timedelta(days=1)
             while target.weekday() >= 5:
                 target -= timedelta(days=1)
-            result = select_top_n(
-                n=self._top_n,
-                tickers=self._tickers,
-                lookback_days=self._lookback_days,
-                opening_bars=self._opening_bars,
-                bearish_ma200=BEARISH_MA200,
-                stop_pct=self._stop_pct,
-                source="alpaca",
-                target_date=target,
-                ticker_dfs=ticker_dfs,
-                opening_start_time=self._opening_start_time,
-                regime_filter=self._regime_filter,
-                regime_ma=self._regime_ma,
-            )
+            cache_path = self._selector_cache_path(target)
+            if cache_path.exists():
+                logger.info("Selector cache hit for %s (%s/%dbar)", target, self._opening_start_time, self._opening_bars)
+                with open(cache_path) as f:
+                    result = json.load(f)
+            else:
+                result = select_top_n(
+                    n=self._top_n,
+                    tickers=self._tickers,
+                    lookback_days=self._lookback_days,
+                    opening_bars=self._opening_bars,
+                    bearish_ma200=BEARISH_MA200,
+                    stop_pct=self._stop_pct,
+                    source="alpaca",
+                    target_date=target,
+                    ticker_dfs=ticker_dfs,
+                    opening_start_time=self._opening_start_time,
+                    regime_filter=self._regime_filter,
+                    regime_ma=self._regime_ma,
+                )
+                with open(cache_path, "w") as f:
+                    json.dump(result, f)
             picks = result["picks"]
         else:
             result = select_top_n(
@@ -314,7 +338,7 @@ class OpMomentumTradeEngine:
         if self._rank_weighted_sizing and rank < len(RANK_WEIGHTS):
             capital_weight = _D(str(RANK_WEIGHTS[rank]))
         else:
-            capital_weight = _D("1")
+            capital_weight = _D("1") / _D(str(self._top_n))
 
         if hard_stop_override is not None:
             bull_hard_stop = hard_stop_override
@@ -435,11 +459,7 @@ class OpMomentumTradeEngine:
             order.get("simulated_fill_mid") if self._mock_trade_execution else None
         )
         if window_budget is not None:
-            if self._rank_weighted_sizing and rank < len(RANK_WEIGHTS):
-                slot_weight = _D(str(RANK_WEIGHTS[rank]))
-            else:
-                slot_weight = _D("1") / _D(str(self._top_n))
-            slot_capital = window_budget * slot_weight
+            slot_capital = window_budget * capital_weight
         else:
             slot_capital = None
 
@@ -552,9 +572,16 @@ class OpMomentumTradeEngine:
         )
 
         if window_budget is not None:
-            slot_capital = window_budget * CAPITAL_PER_SYMBOL * capital_weight
+            slot_capital = window_budget * capital_weight
         else:
             slot_capital = None
+
+        is_reentry = trailing_arm_price is not None
+        if not is_reentry and slot_capital is not None:
+            with self._returned_lock:
+                if window_label not in self._window_primary_deployed:
+                    self._window_primary_deployed[window_label] = _D("0")
+                self._window_primary_deployed[window_label] += slot_capital
 
         pos = ActivePosition(
             ticker=event.ticker,
