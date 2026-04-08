@@ -1210,7 +1210,7 @@ class OpMomentumTradeEngine:
         replay_date,
         tickers_override: list = None,
         bars_source: "LiveBarsSource | None" = None,
-        replay_exit_time: str = "14:55",
+        replay_exit_time: str = "13:55",
     ):
         """
         Run a full trading session against historical bar data for `replay_date`.

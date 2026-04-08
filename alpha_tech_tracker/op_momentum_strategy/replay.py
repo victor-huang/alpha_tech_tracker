@@ -145,7 +145,7 @@ class BarReplayDriver:
     on_bar_injected: Optional[Callable[[str], None]] = None
     last_bar_time: Optional[datetime] = None
     bars_source: Optional[LiveBarsSource] = None
-    exit_time: str = "14:55"
+    exit_time: str = "13:55"
 
     def run(self):
         bars_by_ticker = self._fetch_session_bars()

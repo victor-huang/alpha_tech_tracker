@@ -376,7 +376,7 @@ def parse_args():
         dest="full_day",
         help=(
             "Replay through end of market hours (15:55). By default replay exits "
-            "at 14:55 so afternoon windows can be added without the EOD close "
+            "at 13:55 so afternoon windows can be added without the EOD close "
             "interfering. Use --full-day when replaying a session that includes "
             "A1/A2 windows up to market close."
         ),
@@ -523,7 +523,7 @@ if __name__ == "__main__":
                 replay_date,
                 tickers_override=args.tickers,
                 bars_source=bars_source,
-                replay_exit_time=EOD_EXIT_TIME if args.full_day else "14:55",
+                replay_exit_time=EOD_EXIT_TIME if args.full_day else "13:55",
             )
         else:
             engine.run(tickers_override=args.tickers)
