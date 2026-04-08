@@ -2,7 +2,7 @@ import abc
 import logging
 import threading
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, time as _time
 from itertools import groupby
 from pathlib import Path
 from typing import Callable, List, Optional
@@ -10,6 +10,7 @@ from typing import Callable, List, Optional
 import pandas as pd
 import pytz
 
+from alpha_tech_tracker.op_momentum_strategy.config import EOD_EXIT_TIME
 from alpha_tech_tracker.op_momentum_strategy.models import _FiveMinBar
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import fetch_bars
 
@@ -220,5 +221,12 @@ class BarReplayDriver:
         return result
 
     def _build_timeline(self, bars_by_ticker: dict) -> list:
-        all_bars = [b for bars_list in bars_by_ticker.values() for b in bars_list]
+        eod_h, eod_m = [int(x) for x in EOD_EXIT_TIME.split(":")]
+        eod_cutoff = _time(eod_h, eod_m)
+        all_bars = [
+            b
+            for bars_list in bars_by_ticker.values()
+            for b in bars_list
+            if b.timestamp.time() < eod_cutoff
+        ]
         return sorted(all_bars, key=lambda b: b.timestamp)

@@ -101,6 +101,20 @@ class TestBarReplayDriverTimeline:
         assert len(timeline) == 1
         assert timeline[0].symbol == "NVDA"
 
+    def test_build_timeline_excludes_bars_at_or_after_eod_exit_time(self):
+        bars = {
+            "NVDA": [
+                _bar("NVDA", 15, 50),
+                _bar("NVDA", 15, 55),  # EOD_EXIT_TIME — should be excluded
+                _bar("NVDA", 16, 0),   # after close — should be excluded
+            ],
+        }
+        driver = BarReplayDriver(tickers=["NVDA"], replay_date=date(2026, 3, 17), signal_engine=MagicMock())
+        timeline = driver._build_timeline(bars)
+        assert len(timeline) == 1
+        assert timeline[0].timestamp.hour == 15
+        assert timeline[0].timestamp.minute == 50
+
 
 class TestBarReplayDriverRun:
     def teardown_method(self, _):
