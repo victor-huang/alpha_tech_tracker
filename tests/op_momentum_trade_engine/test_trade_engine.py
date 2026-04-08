@@ -643,6 +643,47 @@ class TestEntryAlert:
             engine._enter_position(_make_signal_event("NVDA"), rank=2)
         assert "R3" in mock_notify.call_args[0][0]
 
+    def test_entry_alert_shows_fill_price_in_live_mode(self):
+        """Issue 2: live entry SMS shows the quote mid from the sizer, before order placement."""
+        client = _make_alpaca_client()
+        engine = OpMomentumTradeEngine(
+            alpaca_client=client,
+            mock_trade_execution=False,
+        )
+        engine._window_state["W1"] = {
+            "pending_signals": {},
+            "collection_deadline": datetime.now(ET),
+            "open_position_count": 0,
+            "capital_fraction": 1.0,
+        }
+        engine._monitor = Mock()
+        engine._monitor.add_position = Mock()
+        engine._signal_engine = Mock()
+        engine._signal_engine.get_latest_bar.return_value = None
+
+        with patch(_OPTION_CONTRACT_SELECTOR_PATH, return_value="NVDA260404C00170000"), \
+             patch(_POSITION_SIZER_PATH, return_value=(3, _D("8.50"))), \
+             patch(_PLACE_ENTRY_PATH, return_value={"order_id": "live-1"}), \
+             patch(_NOTIFY_PATH) as mock_notify:
+            engine._enter_position(_make_signal_event("NVDA"), rank=0)
+
+        msg = mock_notify.call_args[0][0]
+        assert "8.50" in msg
+        assert "[SIMULATE]" not in msg
+
+    def test_entry_alert_strike_not_shown_as_fill_price(self):
+        """Issue 3: the option strike must appear as (k=$...) so it is not confused with fill."""
+        engine = self._make_engine()
+        with patch(_OPTION_CONTRACT_SELECTOR_PATH, return_value="NVDA260404C00170000"), \
+             patch(_POSITION_SIZER_PATH, return_value=(3, _D("8.50"))), \
+             patch(_PLACE_ENTRY_PATH, return_value={"order_id": "sim-1", "simulated_fill_mid": _D("8.50")}), \
+             patch(_NOTIFY_PATH) as mock_notify:
+            engine._enter_position(_make_signal_event("NVDA"), rank=0)
+
+        msg = mock_notify.call_args[0][0]
+        assert "(k=$170)" in msg
+        assert "@ $170" not in msg
+
 
 _COMPUTE_STOCK_PATH = (
     "alpha_tech_tracker.op_momentum_strategy.trade_engine.PositionSizer.compute_stock"

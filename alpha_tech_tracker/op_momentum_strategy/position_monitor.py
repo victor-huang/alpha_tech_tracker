@@ -387,41 +387,41 @@ class PositionMonitor:
             pos.shares,
         )
 
+        mid = None
+        if exit_stock_price_override is not None:
+            mid = exit_stock_price_override
+        elif is_replay_mode():
+            latest_bar = self._signal_engine.get_latest_bar(pos.ticker)
+            if latest_bar is not None:
+                mid = _D(str(latest_bar["Close"]))
+        else:
+            try:
+                raw_quote = self._client.get_stock_quote(pos.ticker)
+                bid_f, ask_f = _stock_bid_ask(raw_quote)
+                bid = _D(str(bid_f))
+                ask = _D(str(ask_f))
+                mid = (bid + ask) / _D("2")
+                logger.info(
+                    "EXIT STOCK QUOTE %s: bid=%s ask=%s mid=%s",
+                    pos.ticker,
+                    bid,
+                    ask,
+                    mid.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
+                )
+            except Exception:
+                logger.exception("Could not fetch exit stock quote for %s", pos.ticker)
+
+        mid_str = f" @ ~${float(mid):.2f}" if mid is not None else ""
+        prefix = "[SIMULATE] " if self._mock_trade_execution else ""
+        _notify(f"{prefix}SELL {pos.ticker} x{pos.shares} shares{mid_str} reason={reason}")
+
         if self._mock_trade_execution:
-            mid = None
-            if exit_stock_price_override is not None:
-                mid = exit_stock_price_override
-            elif is_replay_mode():
-                # Use the bar close that triggered the exit so replay shows
-                # the historical price rather than a live API quote.
-                latest_bar = self._signal_engine.get_latest_bar(pos.ticker)
-                if latest_bar is not None:
-                    mid = _D(str(latest_bar["Close"]))
-            else:
-                try:
-                    raw_quote = self._client.get_stock_quote(pos.ticker)
-                    bid_f, ask_f = _stock_bid_ask(raw_quote)
-                    bid = _D(str(bid_f))
-                    ask = _D(str(ask_f))
-                    mid = (bid + ask) / _D("2")
-                    logger.info(
-                        "EXIT STOCK QUOTE %s: bid=%s ask=%s mid=%s",
-                        pos.ticker,
-                        bid,
-                        ask,
-                        mid.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
-                    )
-                except Exception:
-                    logger.exception("Could not fetch exit stock quote for %s", pos.ticker)
             sim_mid = (
                 mid.quantize(_D("0.01"), rounding=ROUND_HALF_UP)
                 if mid is not None
                 else _D("0")
             )
             pos.simulated_exit_mid = sim_mid
-            _notify(
-                f"[SIMULATE] SELL {pos.ticker} x{pos.shares} shares reason={reason} @ ~{sim_mid}"
-            )
             logger.info(
                 "SIMULATE SELL_CLOSE %s shares=%d simulated_fill=%.2f (no order placed)",
                 pos.ticker,
@@ -431,18 +431,30 @@ class PositionMonitor:
             return
 
         try:
-            logger.info(
-                "Placing SELL_CLOSE stock with fill escalation: %s %d shares",
-                pos.ticker,
-                pos.shares,
-            )
-            _notify(f"SELL {pos.ticker} x{pos.shares} shares reason={reason}")
-            order = place_stock_order(
-                client=self._client,
-                ticker=pos.ticker,
-                shares=pos.shares,
-                order_action="SELL_CLOSE",
-            )
+            if reason == "end_of_day":
+                logger.info(
+                    "EOD SELL_CLOSE stock market order: %s %d shares",
+                    pos.ticker,
+                    pos.shares,
+                )
+                order = self._client.place_stock_order(
+                    symbol=pos.ticker,
+                    quantity=pos.shares,
+                    side="SELL",
+                    order_type="MARKET",
+                )
+            else:
+                logger.info(
+                    "Placing SELL_CLOSE stock with fill escalation: %s %d shares",
+                    pos.ticker,
+                    pos.shares,
+                )
+                order = place_stock_order(
+                    client=self._client,
+                    ticker=pos.ticker,
+                    shares=pos.shares,
+                    order_action="SELL_CLOSE",
+                )
             pos.exit_order_id = order.get("order_id")
             logger.info("Stock close order placed: %s", pos.exit_order_id)
         except Exception:
@@ -512,6 +524,10 @@ class PositionMonitor:
                         pos.option_symbol,
                     )
 
+        mid_str = f" @ ~${float(mid):.2f}" if mid is not None else ""
+        prefix = "[SIMULATE] " if self._mock_trade_execution else ""
+        _notify(f"{prefix}SELL {_fmt_option(pos.option_symbol)} x{pos.contracts}{mid_str} reason={reason}")
+
         if self._mock_trade_execution:
             sim_mid = (
                 mid.quantize(_D("0.01"), rounding=ROUND_HALF_UP)
@@ -519,9 +535,6 @@ class PositionMonitor:
                 else _D("0")
             )
             pos.simulated_exit_mid = sim_mid
-            _notify(
-                f"[SIMULATE] SELL {_fmt_option(pos.option_symbol)} x{pos.contracts} reason={reason} @ ~{sim_mid}"
-            )
             logger.info(
                 "SIMULATE SELL_CLOSE %s contracts=%d simulated_fill=%.2f (no order placed)",
                 pos.option_symbol,
@@ -532,22 +545,35 @@ class PositionMonitor:
 
         try:
             option_type = "CALL" if pos.signal == "BULLISH" else "PUT"
-            logger.info(
-                "Placing SELL_CLOSE with fill escalation: %s %d contracts",
-                pos.option_symbol,
-                pos.contracts,
-            )
-            _notify(
-                f"SELL {_fmt_option(pos.option_symbol)} x{pos.contracts} reason={reason} closing {pos.ticker}"
-            )
-            order = _place_with_fill_escalation(
-                client=self._client,
-                ticker=pos.ticker,
-                option_symbol=pos.option_symbol,
-                option_type=option_type,
-                contracts=pos.contracts,
-                order_action="SELL_CLOSE",
-            )
+            if reason == "end_of_day":
+                logger.info(
+                    "EOD SELL_CLOSE market order: %s %d contracts",
+                    pos.option_symbol,
+                    pos.contracts,
+                )
+                order = self._client.place_option_order(
+                    symbol=pos.ticker,
+                    option_key=None,
+                    price_type="MARKET",
+                    option_type=option_type,
+                    order_action="SELL_CLOSE",
+                    quantity=pos.contracts,
+                    _option_symbol_override=pos.option_symbol,
+                )
+            else:
+                logger.info(
+                    "Placing SELL_CLOSE with fill escalation: %s %d contracts",
+                    pos.option_symbol,
+                    pos.contracts,
+                )
+                order = _place_with_fill_escalation(
+                    client=self._client,
+                    ticker=pos.ticker,
+                    option_symbol=pos.option_symbol,
+                    option_type=option_type,
+                    contracts=pos.contracts,
+                    order_action="SELL_CLOSE",
+                )
             pos.exit_order_id = order.get("order_id")
             logger.info("Close order placed: %s", pos.exit_order_id)
         except Exception:
@@ -555,10 +581,12 @@ class PositionMonitor:
 
     def close_all(self, reason: str = "end_of_day"):
         with self._lock:
-            for pos in self._positions:
+            open_positions = [p for p in self._positions if not p.is_closed]
+            self._reentry_watchers.clear()
+        for pos in open_positions:
+            with self._lock:
                 if not pos.is_closed:
                     self._close_position(pos, reason)
-            self._reentry_watchers.clear()
 
     def _fetch_option_mid(self, option_symbol: str) -> Optional[object]:
         try:
@@ -709,6 +737,8 @@ class PositionMonitor:
 
     def print_summary(self):
         has_sim = any(pos.simulated_entry_mid is not None for pos in self._positions)
+        if not has_sim:
+            self._refresh_fill_prices(self._positions)
 
         def _fmt_time(dt: Optional[datetime]) -> str:
             return dt.strftime("%H:%M") if dt else "—"

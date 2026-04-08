@@ -7,6 +7,7 @@ from alpha_tech_tracker.op_momentum_strategy.config import (
     _notify,
     _send_telegram,
     _load_config,
+    _fmt_option,
     disable_notifications,
     enable_notifications,
 )
@@ -142,3 +143,35 @@ class TestLoadConfigTelegram:
         _load_config(str(config_file))
 
         assert "telegram_bot_token" not in config_module._clicksend_cfg
+
+
+class TestFmtOption:
+    """Issue 3: _fmt_option must label the strike as strike price, not fill price."""
+
+    def test_strike_labeled_with_k_prefix_not_at_symbol(self):
+        result = _fmt_option("NVDA260404C00170000")
+        assert "(k=$170)" in result
+        assert "@ $170" not in result
+
+    def test_call_option_contains_ticker_expiry_and_type(self):
+        result = _fmt_option("NVDA260404C00170000")
+        assert "NVDA" in result
+        assert "Apr 04" in result
+        assert "Call" in result
+
+    def test_put_option_contains_correct_type(self):
+        result = _fmt_option("SNDK260410P00677500")
+        assert "Put" in result
+        assert "(k=$677.50)" in result
+
+    def test_whole_dollar_strike_omits_decimal(self):
+        result = _fmt_option("TSLA260411C00325000")
+        assert "(k=$325)" in result
+        assert "325.00" not in result
+
+    def test_fractional_strike_shows_two_decimal_places(self):
+        result = _fmt_option("AAPL260411C00222500")
+        assert "(k=$222.50)" in result
+
+    def test_unrecognised_symbol_returned_unchanged(self):
+        assert _fmt_option("bad-symbol") == "bad-symbol"

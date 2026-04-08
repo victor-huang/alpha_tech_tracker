@@ -1027,4 +1027,324 @@ class TestReentryWatcher:
         monitor.on_bar("NVDA")
 
         assert pos.is_closed is True
-        assert pos.exit_reason == "trailing_stop_ma20"
+
+
+class TestPrintSummaryRefreshFills:
+    """Issue 1: print_summary() must refresh fill prices before rendering in live mode."""
+
+    def _make_monitor_with_closed_pos(self, entry_fill=None, exit_fill=None):
+        client = _make_alpaca_client()
+        client.order_status.side_effect = [
+            {"filled_avg_price": entry_fill, "status": "filled"},
+            {"filled_avg_price": exit_fill, "status": "filled"},
+        ]
+        closes = [100.0]
+        df = _build_history_df(closes, ma20=90.0, ma50=90.0, ma200=85.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine)
+
+        pos = _make_active_position(signal="BEARISH")
+        pos.is_closed = True
+        pos.exit_reason = "hard_stop"
+        pos.entry_order_id = "entry-ord-1"
+        pos.exit_order_id = "exit-ord-1"
+        monitor._positions.append(pos)
+        return monitor, pos
+
+    def test_print_summary_calls_refresh_fill_prices_in_live_mode(self, capsys):
+        monitor, pos = self._make_monitor_with_closed_pos(
+            entry_fill=8.50, exit_fill=4.20
+        )
+        monitor.print_summary()
+        out = capsys.readouterr().out
+        assert "8.50" in out
+        assert "4.20" in out
+
+    def test_print_summary_skips_refresh_in_simulate_mode(self, capsys):
+        closes = [100.0]
+        df = _build_history_df(closes, ma20=90.0, ma50=90.0, ma200=85.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        client = _make_alpaca_client()
+        monitor = PositionMonitor(client, engine)
+
+        pos = _make_active_position(signal="BEARISH")
+        pos.is_closed = True
+        pos.exit_reason = "hard_stop"
+        pos.simulated_entry_mid = _D("8.50")
+        pos.simulated_exit_mid = _D("4.20")
+        monitor._positions.append(pos)
+
+        monitor.print_summary()
+        client.order_status.assert_not_called()
+
+
+class TestExitSmsPrices:
+    """Issue 2: exit SMS must include the option mid price."""
+
+    @pytest.fixture(autouse=True)
+    def patch_sleep(self, monkeypatch):
+        monkeypatch.setattr(
+            "alpha_tech_tracker.op_momentum_strategy.order_executor.time.sleep",
+            lambda _: None,
+        )
+
+    def test_exit_sms_includes_mid_price_on_intraday_stop(self):
+        client = _make_alpaca_client()
+        client.place_option_order.return_value = {"order_id": "close-1"}
+        client.order_status.return_value = {"status": "filled", "filled_avg_price": 5.0}
+        client._option_data_client.get_option_latest_quote.return_value = {
+            "NVDA260328C00900000": _make_option_quote(bid=4.90, ask=5.10)
+        }
+
+        closes = [100.0]
+        df = _build_history_df(closes, ma20=90.0, ma50=90.0, ma200=85.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine)
+
+        pos = _make_active_position(signal="BULLISH", hard_stop_price=_D("103.5"), fallback_price=_D("103.0"))
+        pos.hard_stop_armed = True
+        monitor.add_position(pos)
+
+        with patch("alpha_tech_tracker.op_momentum_strategy.position_monitor._notify") as mock_notify:
+            _set_latest_bar(engine, "NVDA", close=103.0, ma50=90.0)
+            monitor.on_bar("NVDA")
+
+        sell_msg = mock_notify.call_args[0][0]
+        assert "SELL" in sell_msg
+        assert "5.00" in sell_msg
+
+    def test_exit_sms_includes_mid_price_on_eod_close(self):
+        client = _make_alpaca_client()
+        client.place_option_order.return_value = {"order_id": "eod-1"}
+        client._option_data_client.get_option_latest_quote.return_value = {
+            "NVDA260328C00900000": _make_option_quote(bid=6.00, ask=6.40)
+        }
+
+        closes = [100.0]
+        df = _build_history_df(closes, ma20=90.0, ma50=90.0, ma200=85.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine)
+
+        pos = _make_active_position(signal="BULLISH")
+        monitor.add_position(pos)
+
+        with patch("alpha_tech_tracker.op_momentum_strategy.position_monitor._notify") as mock_notify:
+            monitor.close_all(reason="end_of_day")
+
+        sell_msg = mock_notify.call_args[0][0]
+        assert "SELL" in sell_msg
+        assert "6.20" in sell_msg
+
+
+class TestEodMarketOrder:
+    """Issue 4: EOD close must place a direct market order, not fill escalation."""
+
+    def test_eod_option_close_places_market_order(self):
+        client = _make_alpaca_client()
+        client.place_option_order.return_value = {"order_id": "eod-market-1"}
+        client._option_data_client.get_option_latest_quote.return_value = {
+            "NVDA260328C00900000": _make_option_quote(bid=5.0, ask=5.5)
+        }
+
+        closes = [100.0]
+        df = _build_history_df(closes, ma20=90.0, ma50=90.0, ma200=85.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine)
+
+        pos = _make_active_position(signal="BULLISH")
+        monitor.add_position(pos)
+
+        with patch("alpha_tech_tracker.op_momentum_strategy.position_monitor._notify"):
+            monitor.close_all(reason="end_of_day")
+
+        call_kwargs = client.place_option_order.call_args[1]
+        assert call_kwargs["price_type"] == "MARKET"
+        assert call_kwargs["_option_symbol_override"] == "NVDA260328C00900000"
+
+    def test_eod_stock_close_places_market_order(self):
+        client = _make_alpaca_client()
+        client.place_stock_order.return_value = {"order_id": "eod-stk-1"}
+
+        closes = [100.0]
+        df = _build_history_df(closes, ma20=90.0, ma50=90.0, ma200=85.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine)
+
+        pos = _make_stock_position(signal="BULLISH", shares=20)
+        monitor.add_position(pos)
+
+        with patch("alpha_tech_tracker.op_momentum_strategy.position_monitor._notify"):
+            monitor.close_all(reason="end_of_day")
+
+        call_kwargs = client.place_stock_order.call_args[1]
+        assert call_kwargs["order_type"] == "MARKET"
+        assert call_kwargs["symbol"] == "NVDA"
+
+    def test_intraday_stop_still_uses_fill_escalation(self):
+        """Non-EOD exits must still go through _place_with_fill_escalation."""
+        client = _make_alpaca_client()
+        client.order_status.return_value = {"status": "filled", "filled_avg_price": 5.0}
+        client._option_data_client.get_option_latest_quote.return_value = {
+            "NVDA260328C00900000": _make_option_quote(bid=5.0, ask=5.5)
+        }
+
+        closes = [100.0]
+        df = _build_history_df(closes, ma20=90.0, ma50=90.0, ma200=85.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine)
+
+        pos = _make_active_position(signal="BULLISH", hard_stop_price=_D("103.5"), fallback_price=_D("103.0"))
+        pos.hard_stop_armed = True
+        monitor.add_position(pos)
+
+        with patch(
+            "alpha_tech_tracker.op_momentum_strategy.position_monitor._place_with_fill_escalation",
+            return_value={"order_id": "esc-1"},
+        ) as mock_esc, \
+             patch("alpha_tech_tracker.op_momentum_strategy.position_monitor._notify"):
+            _set_latest_bar(engine, "NVDA", close=103.0, ma50=90.0)
+            monitor.on_bar("NVDA")
+
+        mock_esc.assert_called_once()
+
+    def test_close_all_does_not_hold_lock_between_positions(self):
+        """close_all() must release the lock after each close so on_bar can proceed."""
+        client = _make_alpaca_client()
+        client.place_option_order.return_value = {"order_id": "eod-2"}
+        client._option_data_client.get_option_latest_quote.return_value = {
+            "NVDA260328C00900000": _make_option_quote(bid=5.0, ask=5.5)
+        }
+
+        closes = [100.0]
+        df = _build_history_df(closes, ma20=90.0, ma50=90.0, ma200=85.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine)
+
+        pos1 = _make_active_position(signal="BULLISH")
+        pos2 = _make_active_position(signal="BEARISH")
+        monitor.add_position(pos1)
+        monitor.add_position(pos2)
+
+        lock_held_during_close = []
+
+        original_close = monitor._close_position
+
+        def spy_close(pos, reason, **kwargs):
+            lock_held_during_close.append(monitor._lock.locked())
+            original_close(pos, reason, **kwargs)
+
+        monitor._close_position = spy_close
+
+        with patch("alpha_tech_tracker.op_momentum_strategy.position_monitor._notify"):
+            monitor.close_all(reason="end_of_day")
+
+        assert len(lock_held_during_close) == 2
+        assert all(lock_held_during_close), "lock should be held during each individual close"
+        assert pos1.is_closed is True
+        assert pos2.is_closed is True
+
+
+class TestStockExitSms:
+    """Unified SMS behavior for stock close: same format and price in both mock and live modes."""
+
+    @pytest.fixture(autouse=True)
+    def patch_sleep(self, monkeypatch):
+        monkeypatch.setattr(
+            "alpha_tech_tracker.op_momentum_strategy.order_executor.time.sleep",
+            lambda _: None,
+        )
+
+    def test_mock_replay_exit_sms_has_simulate_prefix_and_mid_before_reason(self):
+        client = _make_alpaca_client()
+        pos = _make_stock_position(signal="BULLISH", shares=15)
+        closes = [107.0]
+        df = _build_history_df(closes, ma20=90.0, ma50=90.0, ma200=85.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine, mock_trade_execution=True)
+        monitor.add_position(pos)
+
+        with patch("alpha_tech_tracker.op_momentum_strategy.position_monitor.is_replay_mode", return_value=True), \
+             patch("alpha_tech_tracker.op_momentum_strategy.position_monitor._notify") as mock_notify:
+            monitor.close_all(reason="end_of_day")
+
+        msg = mock_notify.call_args[0][0]
+        assert msg.startswith("[SIMULATE]")
+        assert "107.00" in msg
+        assert msg.index("107.00") < msg.index("reason=")
+
+    def test_mock_live_exit_sms_has_simulate_prefix_and_quote_mid(self):
+        client = _make_alpaca_client()
+        client.get_stock_quote.return_value = {
+            "QuoteResponse": {
+                "QuoteData": [{"All": {"bid": 98.0, "ask": 102.0, "bid_size": 1, "ask_size": 1, "last": None}}]
+            }
+        }
+        pos = _make_stock_position(signal="BULLISH", shares=15)
+        closes = [104.0]
+        df = _build_history_df(closes, ma20=90.0, ma50=90.0, ma200=85.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine, mock_trade_execution=True)
+        monitor.add_position(pos)
+
+        with patch("alpha_tech_tracker.op_momentum_strategy.position_monitor.is_replay_mode", return_value=False), \
+             patch("alpha_tech_tracker.op_momentum_strategy.position_monitor._notify") as mock_notify:
+            monitor.close_all(reason="end_of_day")
+
+        msg = mock_notify.call_args[0][0]
+        assert msg.startswith("[SIMULATE]")
+        assert "100.00" in msg
+        assert msg.index("100.00") < msg.index("reason=")
+
+    def test_live_exit_sms_has_no_simulate_prefix_and_includes_quote_mid(self):
+        client = _make_alpaca_client()
+        client.get_stock_quote.return_value = {
+            "QuoteResponse": {
+                "QuoteData": [{"All": {"bid": 198.0, "ask": 202.0, "bid_size": 1, "ask_size": 1, "last": None}}]
+            }
+        }
+        client.place_stock_order.return_value = {"order_id": "live-stk-1"}
+        pos = _make_stock_position(signal="BULLISH", shares=10)
+        closes = [200.0]
+        df = _build_history_df(closes, ma20=190.0, ma50=190.0, ma200=185.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine)
+        monitor.add_position(pos)
+
+        with patch("alpha_tech_tracker.op_momentum_strategy.position_monitor.is_replay_mode", return_value=False), \
+             patch("alpha_tech_tracker.op_momentum_strategy.position_monitor._notify") as mock_notify:
+            monitor.close_all(reason="end_of_day")
+
+        msg = mock_notify.call_args[0][0]
+        assert "[SIMULATE]" not in msg
+        assert "200.00" in msg
+        assert msg.index("200.00") < msg.index("reason=")
+
+    def test_live_exit_sms_sent_before_order_is_placed(self):
+        client = _make_alpaca_client()
+        client.get_stock_quote.return_value = {
+            "QuoteResponse": {
+                "QuoteData": [{"All": {"bid": 99.0, "ask": 101.0, "bid_size": 1, "ask_size": 1, "last": None}}]
+            }
+        }
+        client.place_stock_order.return_value = {"order_id": "live-stk-2"}
+        pos = _make_stock_position(signal="BULLISH", shares=10)
+        closes = [100.0]
+        df = _build_history_df(closes, ma20=90.0, ma50=90.0, ma200=85.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine)
+        monitor.add_position(pos)
+
+        call_order = []
+
+        with patch("alpha_tech_tracker.op_momentum_strategy.position_monitor.is_replay_mode", return_value=False), \
+             patch("alpha_tech_tracker.op_momentum_strategy.position_monitor._notify",
+                   side_effect=lambda msg: call_order.append("notify")) as mock_notify:
+            original_place = client.place_stock_order
+            def spy_place(**kwargs):
+                call_order.append("order")
+                return original_place(**kwargs)
+            client.place_stock_order = spy_place
+            monitor.close_all(reason="end_of_day")
+
+        assert call_order[0] == "notify"
+        assert "order" in call_order

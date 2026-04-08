@@ -129,7 +129,7 @@ def _fmt_option(symbol: str) -> str:
     option_type = "Call" if cp == "C" else "Put"
     strike = int(strike_raw) / 1000
     strike_str = f"${strike:.0f}" if strike == int(strike) else f"${strike:.2f}"
-    return f"{ticker} {expiry.strftime('%b %d')} {option_type} @ {strike_str}"
+    return f"{ticker} {expiry.strftime('%b %d')} {option_type} (k={strike_str})"
 
 
 _notifications_enabled = True

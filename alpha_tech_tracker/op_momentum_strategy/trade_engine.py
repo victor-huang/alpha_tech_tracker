@@ -1,6 +1,7 @@
 import logging
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
 from typing import Optional
 
@@ -82,58 +83,37 @@ class TickerSelector:
         self._regime_ma = regime_ma
         self.rolling_stats: dict = {}
 
-    def select(self) -> list:
+    def fetch_bars(self) -> dict:
+        """Fetch and return bar data without running the selector. Can be passed to select()."""
         today = _now_et().date()
-
         fetch_start = today - timedelta(days=max(self._lookback_days, 30) + 5)
         if is_replay_mode():
-            # Pre-market selection only needs data up to the day before replay_date.
-            # Using allow_intraday=True with today's date in replay mode would call
-            # the live Alpaca API (bypassing cache) because _safe_bars_end uses the
-            # real wall clock, not the replay clock.
             bars_end = today - timedelta(days=1)
-            ticker_dfs = fetch_bars(
+            return fetch_bars(
                 self._tickers,
                 fetch_start,
                 bars_end,
                 source="alpaca",
             )
-        else:
-            ticker_dfs = fetch_bars(
-                self._tickers,
-                fetch_start,
-                _safe_bars_end(today),
-                source="alpaca",
-                allow_intraday=True,
-            )
-
-        result = select_top_n(
-            n=self._top_n,
-            tickers=self._tickers,
-            lookback_days=self._lookback_days,
-            opening_bars=self._opening_bars,
-            bearish_ma200=BEARISH_MA200,
-            stop_pct=self._stop_pct,
+        return fetch_bars(
+            self._tickers,
+            fetch_start,
+            _safe_bars_end(today),
             source="alpaca",
-            target_date=today,
-            ticker_dfs=ticker_dfs,
-            opening_start_time=self._opening_start_time,
-            regime_filter=self._regime_filter,
-            regime_ma=self._regime_ma,
+            allow_intraday=True,
         )
-        self.rolling_stats = result.get("rolling_stats", {})
 
-        picks = result["picks"]
+    def select(self, ticker_dfs: dict = None) -> list:
+        today = _now_et().date()
+        if ticker_dfs is None:
+            ticker_dfs = self.fetch_bars()
 
-        if not picks:
-            prev_day = today - timedelta(days=1)
-            while prev_day.weekday() >= 5:
-                prev_day -= timedelta(days=1)
-            logger.info(
-                "No picks for today (%s) — falling back to %s for pre-market selection",
-                today,
-                prev_day,
-            )
+        if is_replay_mode():
+            # In replay mode bars only cover up to yesterday, so today always
+            # produces no picks. Skip directly to the last trading day.
+            target = today - timedelta(days=1)
+            while target.weekday() >= 5:
+                target -= timedelta(days=1)
             result = select_top_n(
                 n=self._top_n,
                 tickers=self._tickers,
@@ -142,15 +122,56 @@ class TickerSelector:
                 bearish_ma200=BEARISH_MA200,
                 stop_pct=self._stop_pct,
                 source="alpaca",
-                target_date=prev_day,
+                target_date=target,
                 ticker_dfs=ticker_dfs,
                 opening_start_time=self._opening_start_time,
                 regime_filter=self._regime_filter,
                 regime_ma=self._regime_ma,
             )
-            self.rolling_stats = result.get("rolling_stats", {})
+            picks = result["picks"]
+        else:
+            result = select_top_n(
+                n=self._top_n,
+                tickers=self._tickers,
+                lookback_days=self._lookback_days,
+                opening_bars=self._opening_bars,
+                bearish_ma200=BEARISH_MA200,
+                stop_pct=self._stop_pct,
+                source="alpaca",
+                target_date=today,
+                ticker_dfs=ticker_dfs,
+                opening_start_time=self._opening_start_time,
+                regime_filter=self._regime_filter,
+                regime_ma=self._regime_ma,
+            )
             picks = result["picks"]
 
+            if not picks:
+                prev_day = today - timedelta(days=1)
+                while prev_day.weekday() >= 5:
+                    prev_day -= timedelta(days=1)
+                logger.info(
+                    "No picks for today (%s) — falling back to %s for pre-market selection",
+                    today,
+                    prev_day,
+                )
+                result = select_top_n(
+                    n=self._top_n,
+                    tickers=self._tickers,
+                    lookback_days=self._lookback_days,
+                    opening_bars=self._opening_bars,
+                    bearish_ma200=BEARISH_MA200,
+                    stop_pct=self._stop_pct,
+                    source="alpaca",
+                    target_date=prev_day,
+                    ticker_dfs=ticker_dfs,
+                    opening_start_time=self._opening_start_time,
+                    regime_filter=self._regime_filter,
+                    regime_ma=self._regime_ma,
+                )
+                picks = result["picks"]
+
+        self.rolling_stats = result.get("rolling_stats", {})
         selected = [p["ticker"] for p in picks]
         logger.info(
             "Selector picks: %s | no_signal: %s | negative_ev: %s",
@@ -370,6 +391,14 @@ class OpMomentumTradeEngine:
                 self._window_state[window_label]["open_position_count"] -= 1
             return
 
+        hard_stop = bull_hard_stop if event.signal == "BULLISH" else bear_hard_stop
+        prefix = "[SIMULATE] " if self._mock_trade_execution else ""
+        _notify(
+            f"{prefix}BUY {event.ticker} x{shares} shares"
+            f" @ ~${float(limit_price):.2f}"
+            f" | R{rank + 1} | stop ${hard_stop:.2f}"
+        )
+
         try:
             if self._mock_trade_execution:
                 sim_mid = event.stock_price if is_replay_mode() else limit_price
@@ -433,9 +462,7 @@ class OpMomentumTradeEngine:
             or_high=event.or_high,
             or_low=event.or_low,
             or_range=event.or_range,
-            hard_stop_price=(
-                bull_hard_stop if event.signal == "BULLISH" else bear_hard_stop
-            ),
+            hard_stop_price=hard_stop,
             fallback_price=(
                 bull_fallback if event.signal == "BULLISH" else bear_fallback
             ),
@@ -453,13 +480,6 @@ class OpMomentumTradeEngine:
             slot_capital=slot_capital,
         )
         self._monitor.add_position(pos)
-
-        prefix = "[SIMULATE] " if self._mock_trade_execution else ""
-        entry_mid_str = f" @ ~{pos.simulated_entry_mid}" if pos.simulated_entry_mid else ""
-        _notify(
-            f"{prefix}BUY {event.ticker} x{shares} shares{entry_mid_str}"
-            f" | R{rank + 1} | stop ${pos.hard_stop_price:.2f}"
-        )
 
     def _enter_option_position(
         self,
@@ -505,6 +525,14 @@ class OpMomentumTradeEngine:
                 self._window_state[window_label]["open_position_count"] -= 1
             return
 
+        hard_stop = bull_hard_stop if event.signal == "BULLISH" else bear_hard_stop
+        prefix = "[SIMULATE] " if self._mock_trade_execution else ""
+        _notify(
+            f"{prefix}BUY {_fmt_option(option_symbol)} x{contracts}"
+            f" @ ~${float(limit_price):.2f}"
+            f" | R{rank + 1} | stop ${hard_stop:.2f}"
+        )
+
         try:
             order = self._place_entry(
                 ticker=event.ticker,
@@ -538,9 +566,7 @@ class OpMomentumTradeEngine:
             or_high=event.or_high,
             or_low=event.or_low,
             or_range=event.or_range,
-            hard_stop_price=(
-                bull_hard_stop if event.signal == "BULLISH" else bear_hard_stop
-            ),
+            hard_stop_price=hard_stop,
             fallback_price=(
                 bull_fallback if event.signal == "BULLISH" else bear_fallback
             ),
@@ -557,13 +583,6 @@ class OpMomentumTradeEngine:
             slot_capital=slot_capital,
         )
         self._monitor.add_position(pos)
-
-        prefix = "[SIMULATE] " if self._mock_trade_execution else ""
-        entry_mid_str = f" @ ~{pos.simulated_entry_mid}" if pos.simulated_entry_mid else ""
-        _notify(
-            f"{prefix}BUY {_fmt_option(option_symbol)} x{contracts}{entry_mid_str}"
-            f" | R{rank + 1} | stop ${pos.hard_stop_price:.2f}"
-        )
 
     def _enter_reentry(self, watcher: ReentryWatcher, trigger_price: _D):
         reentry_signal = "BEARISH" if watcher.reentry_type == "bearish_reentry" else "BULLISH"
@@ -989,6 +1008,55 @@ class OpMomentumTradeEngine:
 
             time.sleep(30)
 
+    def _run_window_selectors(self, all_tickers: list) -> list:
+        """
+        Fetch bars once, then score all unique window configs in parallel.
+        Returns the pre-market picks for the first window.
+        """
+        # Deduplicate windows by (opening_start, opening_bars).
+        unique_selectors = {}   # config_key -> TickerSelector
+        first_config_key = None
+        for win in self._windows:
+            config_key = (win.opening_start, win.opening_bars)
+            if config_key not in unique_selectors:
+                unique_selectors[config_key] = TickerSelector(
+                    tickers=all_tickers,
+                    top_n=self._top_n,
+                    stop_pct=float(self._stop_pct),
+                    opening_start_time=win.opening_start,
+                    opening_bars=win.opening_bars,
+                    lookback_days=self._lookback_days,
+                    regime_filter=self._regime_filter,
+                    regime_ma=self._regime_ma,
+                )
+                if first_config_key is None:
+                    first_config_key = config_key
+
+        # Fetch bar data once; all windows share the same date range.
+        shared_ticker_dfs = unique_selectors[first_config_key].fetch_bars()
+
+        # Score unique window configs in parallel.
+        config_picks = {}
+        if len(unique_selectors) > 1:
+            with ThreadPoolExecutor(max_workers=len(unique_selectors)) as executor:
+                future_to_key = {
+                    executor.submit(sel.select, shared_ticker_dfs): key
+                    for key, sel in unique_selectors.items()
+                }
+                for fut, key in [(f, future_to_key[f]) for f in future_to_key]:
+                    config_picks[key] = fut.result()
+        else:
+            for key, sel in unique_selectors.items():
+                config_picks[key] = sel.select(shared_ticker_dfs)
+
+        # Map rolling stats back to each window label (including duplicates).
+        for win in self._windows:
+            config_key = (win.opening_start, win.opening_bars)
+            self._rolling_stats_by_window[win.label] = unique_selectors[config_key].rolling_stats
+
+        first_win = self._windows[0]
+        return config_picks[(first_win.opening_start, first_win.opening_bars)]
+
     def run(self, tickers_override: list = None):
         api_key = self._api_key
         secret_key = self._secret_key
@@ -999,28 +1067,7 @@ class OpMomentumTradeEngine:
         self._window_returned = {}
         self._window_primary_deployed = {}
         self._rolling_stats_by_window = {}
-        seen_configs: dict = {}
-        pre_market_picks: list = []
-        for i, win in enumerate(self._windows):
-            config_key = (win.opening_start, win.opening_bars)
-            if config_key in seen_configs:
-                self._rolling_stats_by_window[win.label] = seen_configs[config_key]
-                continue
-            win_selector = TickerSelector(
-                tickers=all_tickers,
-                top_n=self._top_n,
-                stop_pct=float(self._stop_pct),
-                opening_start_time=win.opening_start,
-                opening_bars=win.opening_bars,
-                lookback_days=self._lookback_days,
-                regime_filter=self._regime_filter,
-                regime_ma=self._regime_ma,
-            )
-            win_picks = win_selector.select()
-            if i == 0:
-                pre_market_picks = win_picks
-            self._rolling_stats_by_window[win.label] = win_selector.rolling_stats
-            seen_configs[config_key] = win_selector.rolling_stats
+        pre_market_picks = self._run_window_selectors(all_tickers)
         self._rolling_stats = self._rolling_stats_by_window.get(first_window.label, {})
         print(f"\nPre-market top picks: {pre_market_picks}")
         print(f"Subscribing all {len(all_tickers)} tickers to live stream...")
@@ -1159,28 +1206,7 @@ class OpMomentumTradeEngine:
         self._window_returned = {}
         self._window_primary_deployed = {}
         self._rolling_stats_by_window = {}
-        seen_configs: dict = {}
-        pre_market_picks: list = []
-        for i, win in enumerate(self._windows):
-            config_key = (win.opening_start, win.opening_bars)
-            if config_key in seen_configs:
-                self._rolling_stats_by_window[win.label] = seen_configs[config_key]
-                continue
-            win_selector = TickerSelector(
-                tickers=all_tickers,
-                top_n=self._top_n,
-                stop_pct=float(self._stop_pct),
-                opening_start_time=win.opening_start,
-                opening_bars=win.opening_bars,
-                lookback_days=self._lookback_days,
-                regime_filter=self._regime_filter,
-                regime_ma=self._regime_ma,
-            )
-            win_picks = win_selector.select()
-            if i == 0:
-                pre_market_picks = win_picks
-            self._rolling_stats_by_window[win.label] = win_selector.rolling_stats
-            seen_configs[config_key] = win_selector.rolling_stats
+        pre_market_picks = self._run_window_selectors(all_tickers)
         self._rolling_stats = self._rolling_stats_by_window.get(first_window.label, {})
         print(f"\nReplay {replay_date} — pre-market picks: {pre_market_picks}")
 
