@@ -101,18 +101,18 @@ class TestBarReplayDriverTimeline:
         assert len(timeline) == 1
         assert timeline[0].symbol == "NVDA"
 
-    def test_build_timeline_default_exit_excludes_bars_at_or_after_1355(self):
+    def test_build_timeline_default_exit_excludes_bars_at_or_after_1555(self):
         bars = {
             "NVDA": [
-                _bar("NVDA", 13, 50),
-                _bar("NVDA", 13, 55),  # default exit_time — should be excluded
-                _bar("NVDA", 14, 0),   # after default cutoff — should be excluded
+                _bar("NVDA", 15, 50),
+                _bar("NVDA", 15, 55),  # default exit_time — should be excluded
+                _bar("NVDA", 16, 0),   # after market close — should be excluded
             ],
         }
         driver = BarReplayDriver(tickers=["NVDA"], replay_date=date(2026, 3, 17), signal_engine=MagicMock())
         timeline = driver._build_timeline(bars)
         assert len(timeline) == 1
-        assert timeline[0].timestamp.hour == 13
+        assert timeline[0].timestamp.hour == 15
         assert timeline[0].timestamp.minute == 50
 
     def test_build_timeline_full_day_exit_time_includes_afternoon_bars(self):
