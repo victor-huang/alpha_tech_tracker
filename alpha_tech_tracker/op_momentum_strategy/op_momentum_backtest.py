@@ -1249,17 +1249,24 @@ def fetch_bars(
             cp = _cache_path(ticker, start_date, end_date_only, source, "5min")
             if cp.exists():
                 loaded = _load_cache(cp, "5min")
-                trimmed = _trim_bars_to_range(loaded, start_date, end_date_only)
-                if len(trimmed) < len(loaded):
-                    _save_cache(trimmed, cp, "5min")
-                result[ticker] = trimmed
-                continue
+                if loaded.empty:
+                    cp.unlink()  # delete corrupt empty cache file, re-fetch below
+                else:
+                    trimmed = _trim_bars_to_range(loaded, start_date, end_date_only)
+                    if not trimmed.empty:
+                        if len(trimmed) < len(loaded):
+                            _save_cache(trimmed, cp, "5min")
+                        result[ticker] = trimmed
+                        continue
+                    cp.unlink()  # cached data doesn't cover range, re-fetch below
             stitched = _stitch_cache(ticker, start_date, end_date_only, source)
             if stitched is not None:
                 stitched = _trim_bars_to_range(stitched, start_date, end_date_only)
-                result[ticker] = stitched
-                _save_cache(stitched, cp, "5min")
-                continue
+                if not stitched.empty:
+                    result[ticker] = stitched
+                    _save_cache(stitched, cp, "5min")
+                    continue
+                # Stitch returned data that doesn't cover requested range — fall through to API
             partial_df, partial_end = _partial_stitch_cache(
                 ticker, start_date, end_date_only, source
             )
@@ -1272,16 +1279,19 @@ def fetch_bars(
     if to_fetch_delta:
         delta_start = min(pe for _, _, pe in to_fetch_delta) + timedelta(days=1)
         delta_tickers = [t for t, _, _ in to_fetch_delta]
-        print(
-            f"  [cache] delta-fetching {len(delta_tickers)} tickers from {source} "
-            f"({delta_start} → {end_date_only})"
-        )
-        if source == "yfinance":
-            delta_fetched = fetch_yfinance_bars(delta_tickers, delta_start, end_date)
-        else:
-            delta_fetched = fetch_alpaca_bars(
-                delta_tickers, delta_start, end_date, allow_intraday=allow_intraday
+        if delta_start <= end_date_only:
+            print(
+                f"  [cache] delta-fetching {len(delta_tickers)} tickers from {source} "
+                f"({delta_start} → {end_date_only})"
             )
+            if source == "yfinance":
+                delta_fetched = fetch_yfinance_bars(delta_tickers, delta_start, end_date)
+            else:
+                delta_fetched = fetch_alpaca_bars(
+                    delta_tickers, delta_start, end_date, allow_intraday=allow_intraday
+                )
+        else:
+            delta_fetched = {}  # partial cache already covers full range
         for ticker, partial_df, _ in to_fetch_delta:
             tail_df = delta_fetched.get(ticker, pd.DataFrame())
             if tail_df.empty:

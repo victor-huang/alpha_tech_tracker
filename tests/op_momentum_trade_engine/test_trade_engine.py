@@ -6,7 +6,7 @@ import pytz
 
 from alpha_tech_tracker.op_momentum_strategy.config import (
     MAX_ACTIVE_SYMBOLS,
-    RANK_WEIGHTS,
+
 )
 from alpha_tech_tracker.op_momentum_strategy.contract_selector import (
     OptionContractSelector,
@@ -281,7 +281,7 @@ class TestRankWeightedSizing:
         return engine
 
     def test_rank_weighted_sizing_off_passes_equal_fraction_to_sizer(self):
-        engine = self._make_engine(rank_weighted_sizing=False)
+        engine = self._make_engine(rank_weights=None)
 
         with patch(_OPTION_CONTRACT_SELECTOR_PATH, return_value="NVDA260328C00730000"), \
              patch(_POSITION_SIZER_PATH, return_value=(3, _D("8.50"))) as compute_mock, \
@@ -293,7 +293,7 @@ class TestRankWeightedSizing:
         assert call_args[1] == _D("1") / _D(str(engine._top_n))
 
     def test_rank_weighted_sizing_on_passes_first_weight_for_rank_zero(self):
-        engine = self._make_engine(rank_weighted_sizing=True)
+        engine = self._make_engine(rank_weights=[60, 40])
 
         with patch(_OPTION_CONTRACT_SELECTOR_PATH, return_value="NVDA260328C00730000"), \
              patch(_POSITION_SIZER_PATH, return_value=(3, _D("8.50"))) as compute_mock, \
@@ -301,10 +301,10 @@ class TestRankWeightedSizing:
             engine._enter_position(_make_signal_event("NVDA"), rank=0)
 
         call_args, _ = compute_mock.call_args
-        assert call_args[1] == _D(str(RANK_WEIGHTS[0]))
+        assert call_args[1] == _D("0.6")
 
     def test_rank_weighted_sizing_on_passes_second_weight_for_rank_one(self):
-        engine = self._make_engine(rank_weighted_sizing=True)
+        engine = self._make_engine(rank_weights=[60, 40])
 
         with patch(_OPTION_CONTRACT_SELECTOR_PATH, return_value="NVDA260328C00730000"), \
              patch(_POSITION_SIZER_PATH, return_value=(2, _D("8.50"))) as compute_mock, \
@@ -312,7 +312,7 @@ class TestRankWeightedSizing:
             engine._enter_position(_make_signal_event("NVDA"), rank=1)
 
         call_args, _ = compute_mock.call_args
-        assert call_args[1] == _D(str(RANK_WEIGHTS[1]))
+        assert call_args[1] == _D("0.4")
 
 
 class TestMultiWindowEngine:
@@ -1317,7 +1317,7 @@ class TestWindowPrimaryDeployed:
             alpaca_client=client,
             mock_trade_execution=True,
             trade_type="stock",
-            rank_weighted_sizing=False,
+            rank_weights=None,
             top_n=3,
         )
         engine._monitor = Mock()
@@ -1331,7 +1331,7 @@ class TestWindowPrimaryDeployed:
             alpaca_client=client,
             mock_trade_execution=True,
             trade_type="option",
-            rank_weighted_sizing=False,
+            rank_weights=None,
         )
         engine._monitor = Mock()
         engine._signal_engine = Mock()

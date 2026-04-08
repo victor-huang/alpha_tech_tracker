@@ -14,7 +14,6 @@ from .config import (
     MAX_LOSS_PCT,
     OPENING_BARS,
     OPENING_START_TIME,
-    RANK_WEIGHTED_SIZING,
     RANK_WEIGHTS,
     REGIME_FILTER,
     REGIME_MA,
@@ -212,9 +211,16 @@ def parse_args():
     )
     parser.add_argument(
         "--rank-weighted-sizing",
-        action="store_true",
-        default=RANK_WEIGHTED_SIZING,
-        help=f"Weight position size by ticker rank using {RANK_WEIGHTS} (default: off).",
+        type=int,
+        nargs="+",
+        default=None,
+        metavar="W",
+        dest="rank_weighted_sizing",
+        help=(
+            "Weight position size by rank. Pass weights as integers, e.g. "
+            "--rank-weighted-sizing 60 40 or --rank-weighted-sizing 50 25 25. "
+            f"Defaults to equal sizing when omitted. Legacy default: {RANK_WEIGHTS}."
+        ),
     )
     parser.add_argument(
         "--opening-start",
@@ -375,10 +381,10 @@ def parse_args():
         default=False,
         dest="full_day",
         help=(
-            "Replay through end of market hours (15:55). By default replay exits "
-            "at 15:55 so afternoon windows can be added without the EOD close "
-            "interfering. Use --full-day when replaying a session that includes "
-            "A1/A2 windows up to market close."
+            "Replay the full market session including the 15:55 bar; close_all "
+            "records exits at 16:00. By default replay exits at 15:55 so the "
+            "EOD close does not interfere when adding afternoon windows. Use "
+            "--full-day when replaying a complete session to market close."
         ),
     )
     parser.add_argument(
@@ -395,7 +401,13 @@ def parse_args():
         dest="lookback",
         help=f"Rolling lookback window in days for pre-market ticker scoring (default: {_DEFAULT_LOOKBACK_DAYS}).",
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    if args.rank_weighted_sizing and len(args.rank_weighted_sizing) != args.top:
+        parser.error(
+            f"--rank-weighted-sizing requires exactly --top weights "
+            f"(got {len(args.rank_weighted_sizing)} weights, --top {args.top})"
+        )
+    return args
 
 
 def _parse_windows(args) -> list:
@@ -498,7 +510,7 @@ if __name__ == "__main__":
             armed_ma20_exit=args.armed_ma20_exit,
             regime_filter=args.regime_filter,
             regime_ma=args.regime_ma,
-            rank_weighted_sizing=args.rank_weighted_sizing,
+            rank_weights=args.rank_weighted_sizing,
             windows=windows,
             trade_type=args.trade_type,
             option_price_monitor=_build_option_price_monitor(args, client, args.tickers),
@@ -523,7 +535,7 @@ if __name__ == "__main__":
                 replay_date,
                 tickers_override=args.tickers,
                 bars_source=bars_source,
-                replay_exit_time=EOD_EXIT_TIME,
+                replay_exit_time="16:05" if args.full_day else EOD_EXIT_TIME,
             )
         else:
             engine.run(tickers_override=args.tickers)
@@ -584,7 +596,7 @@ if __name__ == "__main__":
             armed_ma20_exit=args.armed_ma20_exit,
             regime_filter=args.regime_filter,
             regime_ma=args.regime_ma,
-            rank_weighted_sizing=args.rank_weighted_sizing,
+            rank_weights=args.rank_weighted_sizing,
             windows=windows,
             trade_type=args.trade_type,
             option_price_monitor=_build_option_price_monitor(args, client, args.tickers),

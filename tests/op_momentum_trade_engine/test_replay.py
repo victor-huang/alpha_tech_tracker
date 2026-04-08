@@ -134,6 +134,24 @@ class TestBarReplayDriverTimeline:
         assert len(timeline) == 3
         assert timeline[-1].timestamp.minute == 50
 
+    def test_build_timeline_full_day_1605_includes_1555_bar(self):
+        bars = {
+            "NVDA": [
+                _bar("NVDA", 15, 50),
+                _bar("NVDA", 15, 55),  # included when exit_time="16:05"
+            ],
+        }
+        driver = BarReplayDriver(
+            tickers=["NVDA"],
+            replay_date=date(2026, 3, 17),
+            signal_engine=MagicMock(),
+            exit_time="16:05",
+        )
+        timeline = driver._build_timeline(bars)
+        assert len(timeline) == 2
+        assert timeline[-1].timestamp.hour == 15
+        assert timeline[-1].timestamp.minute == 55
+
 
 class TestBarReplayDriverRun:
     def teardown_method(self, _):
@@ -210,6 +228,21 @@ class TestBarReplayDriverRun:
             driver.run()
 
         assert injected[0].timestamp < injected[1].timestamp
+
+    def test_run_sets_last_bar_time_to_eod_bar_when_full_day(self):
+        b_eod = _bar("NVDA", 15, 55)
+
+        signal_engine = MagicMock()
+        driver = BarReplayDriver(
+            tickers=["NVDA"],
+            replay_date=date(2026, 3, 17),
+            signal_engine=signal_engine,
+            exit_time="16:05",
+        )
+        with patch.object(driver, "_fetch_session_bars", return_value={"NVDA": [b_eod]}):
+            driver.run()
+
+        assert driver.last_bar_time == b_eod.timestamp
 
 
 class TestBarReplayDriverFetch:

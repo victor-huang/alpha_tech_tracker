@@ -28,8 +28,7 @@ from .config import (
     MAX_LOSS_PCT,
     OPENING_BARS,
     OPENING_START_TIME,
-    RANK_WEIGHTED_SIZING,
-    RANK_WEIGHTS,
+
     REGIME_FILTER,
     REGIME_MA,
     SIGNAL_BUFFER_MINUTES,
@@ -234,7 +233,7 @@ class OpMomentumTradeEngine:
         armed_ma20_exit: bool = ARMED_MA20_EXIT,
         regime_filter: bool = REGIME_FILTER,
         regime_ma: int = REGIME_MA,
-        rank_weighted_sizing: bool = RANK_WEIGHTED_SIZING,
+        rank_weights: Optional[list] = None,
         top_n: int = MAX_ACTIVE_SYMBOLS,
         lookback_days: int = ROLLING_LOOKBACK_DAYS,
         windows: Optional[list] = None,
@@ -260,7 +259,11 @@ class OpMomentumTradeEngine:
         self._armed_ma20_exit = armed_ma20_exit
         self._regime_filter = regime_filter
         self._regime_ma = regime_ma
-        self._rank_weighted_sizing = rank_weighted_sizing
+        if rank_weights:
+            total = sum(rank_weights)
+            self._rank_weights = [_D(str(w / total)) for w in rank_weights]
+        else:
+            self._rank_weights = None
         self._top_n = top_n
         self._lookback_days = lookback_days
         self._trade_type = trade_type
@@ -335,8 +338,8 @@ class OpMomentumTradeEngine:
             float(event.stock_price),
             rank,
         )
-        if self._rank_weighted_sizing and rank < len(RANK_WEIGHTS):
-            capital_weight = _D(str(RANK_WEIGHTS[rank]))
+        if self._rank_weights and rank < len(self._rank_weights):
+            capital_weight = self._rank_weights[rank]
         else:
             capital_weight = _D("1") / _D(str(self._top_n))
 
@@ -1326,8 +1329,15 @@ class OpMomentumTradeEngine:
         # BarReplayDriver.run() clears the replay clock internally.  Re-pin it to the
         # last bar's timestamp so close_all() records the correct exit time and uses
         # bar prices (not wall-clock time / live API quotes) for EOD-closed positions.
+        # When the last bar is the EOD bar (15:55), advance the clock by 5 minutes so
+        # close_all() records 16:00 (the bar's close time) rather than its open time.
         if driver.last_bar_time is not None:
-            set_replay_clock(lambda ts=driver.last_bar_time: ts)
+            eod_h, eod_m = [int(x) for x in EOD_EXIT_TIME.split(":")]
+            if driver.last_bar_time.time() >= _time(eod_h, eod_m):
+                close_ts = driver.last_bar_time + timedelta(minutes=5)
+            else:
+                close_ts = driver.last_bar_time
+            set_replay_clock(lambda ts=close_ts: ts)
         self._monitor.close_all(reason="end_of_day")
         clear_replay_clock()
         enable_notifications()
