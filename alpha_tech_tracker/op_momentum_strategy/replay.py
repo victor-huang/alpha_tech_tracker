@@ -10,7 +10,6 @@ from typing import Callable, List, Optional
 import pandas as pd
 import pytz
 
-from alpha_tech_tracker.op_momentum_strategy.config import EOD_EXIT_TIME
 from alpha_tech_tracker.op_momentum_strategy.models import _FiveMinBar
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import fetch_bars
 
@@ -146,6 +145,7 @@ class BarReplayDriver:
     on_bar_injected: Optional[Callable[[str], None]] = None
     last_bar_time: Optional[datetime] = None
     bars_source: Optional[LiveBarsSource] = None
+    exit_time: str = "14:55"
 
     def run(self):
         bars_by_ticker = self._fetch_session_bars()
@@ -221,12 +221,12 @@ class BarReplayDriver:
         return result
 
     def _build_timeline(self, bars_by_ticker: dict) -> list:
-        eod_h, eod_m = [int(x) for x in EOD_EXIT_TIME.split(":")]
-        eod_cutoff = _time(eod_h, eod_m)
+        exit_h, exit_m = [int(x) for x in self.exit_time.split(":")]
+        cutoff = _time(exit_h, exit_m)
         all_bars = [
             b
             for bars_list in bars_by_ticker.values()
             for b in bars_list
-            if b.timestamp.time() < eod_cutoff
+            if b.timestamp.time() < cutoff
         ]
         return sorted(all_bars, key=lambda b: b.timestamp)

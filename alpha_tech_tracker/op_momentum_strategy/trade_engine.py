@@ -1210,6 +1210,7 @@ class OpMomentumTradeEngine:
         replay_date,
         tickers_override: list = None,
         bars_source: "LiveBarsSource | None" = None,
+        replay_exit_time: str = "14:55",
     ):
         """
         Run a full trading session against historical bar data for `replay_date`.
@@ -1318,6 +1319,7 @@ class OpMomentumTradeEngine:
             signal_engine=self._signal_engine,
             on_bar_injected=_on_bar,
             bars_source=bars_source,
+            exit_time=replay_exit_time,
         )
         driver.run()
 

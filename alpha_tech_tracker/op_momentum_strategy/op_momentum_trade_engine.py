@@ -370,6 +370,18 @@ def parse_args():
         ),
     )
     parser.add_argument(
+        "--full-day",
+        action="store_true",
+        default=False,
+        dest="full_day",
+        help=(
+            "Replay through end of market hours (15:55). By default replay exits "
+            "at 14:55 so afternoon windows can be added without the EOD close "
+            "interfering. Use --full-day when replaying a session that includes "
+            "A1/A2 windows up to market close."
+        ),
+    )
+    parser.add_argument(
         "--top",
         type=int,
         default=MAX_ACTIVE_SYMBOLS,
@@ -504,12 +516,14 @@ if __name__ == "__main__":
         if args.replay_date:
             from datetime import date as _date
             from .replay import CsvLiveBarsSource
+            from .config import EOD_EXIT_TIME
             replay_date = _date.fromisoformat(args.replay_date)
             bars_source = CsvLiveBarsSource(args.live_data_dir) if args.live_data_dir else None
             engine.run_replay(
                 replay_date,
                 tickers_override=args.tickers,
                 bars_source=bars_source,
+                replay_exit_time=EOD_EXIT_TIME if args.full_day else "14:55",
             )
         else:
             engine.run(tickers_override=args.tickers)
