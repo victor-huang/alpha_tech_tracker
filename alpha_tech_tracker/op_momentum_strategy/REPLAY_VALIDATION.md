@@ -16,7 +16,7 @@ PYTHONPATH=/Users/victorhuang/work/alpha_tech_tracker \
   --window M1 09:30 3 --window A1 13:15 1 --window A2 15:00 1 \
   --morning-split 100 --reversal --top 2 \
   --bearish-reentry --bullish-reentry \
-  --rank-weighted-sizing --capital 10000 \
+  --rank-weighted-sizing 60 40 --capital 10000 \
   --replay-date <YYYY-MM-DD>
 ```
 
@@ -203,3 +203,100 @@ exactly the deadline (common for sparse tickers like ANAB at the boundary) fired
 as a bypass (rank=0 entry) instead of being buffered for the ranked drain.
 
 **Fix:** Changed to `if now <= state["collection_deadline"]`.
+
+---
+
+## Multi-Day Period Comparison Studies
+
+Compares the selector backtest output against trade engine replay over full trading
+periods. Both systems run with identical parameters; the replay simulates live
+execution by playing historical 5-min bars through the live engine code path.
+
+### Methodology
+
+**Replay script** (`/tmp/run_replays_2025.py`): invokes
+`op_momentum_trade_engine run --mock-trade-execution` for each trading day using
+`ThreadPoolExecutor(max_workers=4)`. Parses `cap:` line from each run's stdout.
+Outputs one CSV row per day to `/tmp/replay_results_2025.csv`.
+
+**Comparison script** (`/tmp/compare_2025.py`): parses the backtest execution log
+(produced with `--show-execution-log`) and the replay CSV, diffs per-window
+per-rank picks, and totals cap P&L.
+
+**Shared config for all studies:**
+```
+--window M1 09:30 3 --window A1 13:15 1 --window A2 15:00 1 --morning-split 100
+--regime-filter --regime-ma 8 --top 2 --rank-weighted-sizing 60 40
+--trade-type stock --bearish-reentry --bullish-reentry --reversal --full-day
+--capital 10000
+```
+
+---
+
+### Study 1 — Jan–Mar 2026 (38 trading days, 2026-04-05)
+
+| Metric | Value |
+|--------|-------|
+| Days covered | 38 |
+| Identical days | 23 (61%) |
+| Days with pick differences | 15 (39%) |
+| Backtest total cap P&L | (not recorded) |
+| Replay total cap P&L | (not recorded) |
+| Net cumulative difference | **+$4.04** (replay vs backtest, essentially zero) |
+
+**Most common dropped tickers** (in backtest but missed in replay):
+ANAB, FN, RH — all sparse-bar tickers whose signals arrive after the collection
+drain fires in replay.
+
+**Interpretation**: Over a short recent period, backtest and replay are nearly
+P&L-equivalent. The +$4.04 cumulative gap across 38 days is noise — individual
+day differences cancel out.
+
+---
+
+### Study 2 — Full Year 2025 (245 trading days, 2026-04-08)
+
+| Metric | Value |
+|--------|-------|
+| Days covered | 245 |
+| Identical days | 68 (28%) |
+| Days with pick differences | 177 (72%) |
+| Backtest total cap P&L | **+$16,424** |
+| Replay total cap P&L | **+$24,782** |
+| Net difference | **Replay +$8,357 ahead** |
+
+**Most common dropped tickers** (in backtest but missed in replay):
+
+| Ticker | Days dropped | Notes |
+|--------|-------------|-------|
+| ANAB | 92× | ~1,737 intraday bars vs pool median ~3,750 |
+| RH | 70× | ~3,222 bars, thin morning volume |
+| FN | 55× | ~3,222 bars, thin morning volume |
+| PLTR | 28× | Occasionally sparse in early 2025 |
+| CVNA | 19× | — |
+| COIN | 18× | — |
+
+**Why replay exceeds backtest by +$8,357**: Different ticker selection, not better
+execution. When sparse-bar tickers (ANAB, RH, FN) are dropped in replay, the engine
+substitutes the next-ranked ticker. Over 177 days those substitute tickers happened
+to produce higher actual returns on those specific days. The 2025 market environment
+(volatile tech names) amplified these divergences.
+
+**This is not a bug** — replay behavior is more representative of live execution.
+In live trading, ANAB/RH/FN also arrive late and would be replaced by the same
+substitute tickers the replay selects.
+
+**Root cause of differences (structural, same as D2 above)**:
+- Backtest ignores intraday bar timestamps — takes first N bars regardless of
+  actual wallclock arrival time
+- Live engine (and replay) respects real timing — sparse tickers miss the
+  collection deadline and are skipped
+
+**Cache bugs fixed before running this study** (2026-04-08, 3 bugs in `fetch_bars()`):
+1. Stitch path saved empty trimmed results → 92-byte corrupt cache files
+2. Exact cache hit path served corrupt 92-byte empty file as valid data
+3. Delta-fetch computed inverted date range when large multi-month files extended
+   past the requested end date → Alpaca API error
+
+Deleted 10,734 corrupt 92-byte files and 1,321 corrupt multi-month files, plus all
+`selector_2025*.json` selector cache files, before the final replay run.
