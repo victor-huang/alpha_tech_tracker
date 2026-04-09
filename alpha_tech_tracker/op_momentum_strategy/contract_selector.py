@@ -39,6 +39,8 @@ class _NYSEHolidayCalendar(AbstractHolidayCalendar):
 
 _NYSE_CAL = _NYSEHolidayCalendar()
 
+_OPTION_CONTRACT_SELECTOR_SEARCH_RADIUS_INCREMENTS = 5
+
 
 def _is_nyse_holiday(d: date) -> bool:
     holidays = _NYSE_CAL.holidays(start=f"{d.year}-01-01", end=f"{d.year}-12-31")
@@ -148,25 +150,50 @@ class OptionContractSelector:
             target_strike = -(-raw // incr) * incr
             option_type = "put"
 
-        search_low = (stock_price * _D("0.80")).quantize(incr, rounding=ROUND_HALF_UP)
-        search_high = (stock_price * _D("1.20")).quantize(incr, rounding=ROUND_HALF_UP)
-        contracts, expiry = _fetch_contracts_with_expiry_fallback(
-            self._client, ticker, option_type, search_low, search_high
-        )
         logger.info(
-            "%s %s signal: stock=%s target_strike=%s expiry=%s",
+            "%s %s signal: stock=%s target_strike=%s",
             ticker,
             signal,
             stock_price,
             target_strike,
+        )
+
+        radius = incr * _OPTION_CONTRACT_SELECTOR_SEARCH_RADIUS_INCREMENTS
+        contracts, expiry = _fetch_contracts_with_expiry_fallback(
+            self._client,
+            ticker,
+            option_type,
+            target_strike - radius,
+            target_strike + radius,
+        )
+
+        if not contracts:
+            search_low = (stock_price * _D("0.80")).quantize(incr, rounding=ROUND_HALF_UP)
+            search_high = (stock_price * _D("1.20")).quantize(incr, rounding=ROUND_HALF_UP)
+            contracts, expiry = _fetch_contracts_with_expiry_fallback(
+                self._client, ticker, option_type, search_low, search_high
+            )
+            logger.info(
+                "%s %s: narrow search empty, broad fallback %s–%s, got %d contracts",
+                ticker,
+                signal,
+                search_low,
+                search_high,
+                len(contracts),
+            )
+
+        logger.info(
+            "%s %s expiry=%s target_strike=%s",
+            ticker,
+            signal,
             expiry,
+            target_strike,
         )
 
         if not contracts:
             raise RuntimeError(
                 f"No {option_type} contracts found for {ticker} "
-                f"expiry={expiry} strike~{target_strike} "
-                f"(searched {search_low}–{search_high})"
+                f"expiry={expiry} strike~{target_strike}"
             )
 
         best = min(contracts, key=lambda c: abs(_D(c["strike_price"]) - target_strike))

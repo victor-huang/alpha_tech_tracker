@@ -96,13 +96,14 @@ class TestOptionContractSelector:
         selector = OptionContractSelector(client)
         symbol = selector.select("NVDA", "BULLISH", 820.0)
 
+        # stock=$820, incr=$10, target=floor(820*0.90/10)*10=730, radius=50
         assert symbol == "NVDA260328C00730000"
         client.get_options_contracts.assert_called_once_with(
             underlying_symbol="NVDA",
             expiration_date=date(2026, 3, 27),
             option_type="call",
-            strike_price_gte="656",
-            strike_price_lte="984",
+            strike_price_gte="680",
+            strike_price_lte="780",
             limit=50,
         )
 
@@ -146,13 +147,14 @@ class TestOptionContractSelector:
         selector = OptionContractSelector(client)
         symbol = selector.select("NVDA", "BULLISH", 820.0)
 
+        # stock=$820, incr=$10, target=730, radius=50 → narrow range [680, 780]
         assert symbol == "NVDA260327C00730000"
         client.get_options_contracts.assert_called_once_with(
             underlying_symbol="NVDA",
             expiration_date=date(2026, 3, 27),
             option_type="call",
-            strike_price_gte="656",
-            strike_price_lte="984",
+            strike_price_gte="680",
+            strike_price_lte="780",
             limit=50,
         )
 
@@ -182,7 +184,8 @@ class TestOptionContractSelector:
         with pytest.raises(RuntimeError, match="No call contracts found"):
             selector.select("NVDA", "BULLISH", 820.0)
 
-        assert client.get_options_contracts.call_count == 2
+        # narrow weekly, narrow monthly, broad weekly, broad monthly
+        assert client.get_options_contracts.call_count == 4
 
     @patch(_TODAY_PATH, return_value=date(2026, 3, 23))  # Monday
     @patch(_NEXT_FRIDAY_PATH, return_value=date(2026, 3, 27))
@@ -193,24 +196,28 @@ class TestOptionContractSelector:
             "strike_price": 20.0,
             "expiration_date": "2026-04-17",  # 3rd Friday of April
         }
-        client.get_options_contracts.side_effect = [[], [monthly_contract]]
+        # narrow weekly, narrow monthly, broad weekly, broad monthly (succeeds)
+        client.get_options_contracts.side_effect = [[], [], [], [monthly_contract]]
 
         selector = OptionContractSelector(client)
         symbol = selector.select("ISSC", "BULLISH", 21.5)
 
         assert symbol == "ISSC260417C00020000"
-        assert client.get_options_contracts.call_count == 2
-        second_call = client.get_options_contracts.call_args_list[1]
-        # second call uses date range, not a fixed expiration_date
-        assert second_call.kwargs.get("expiration_date") is None
-        assert second_call.kwargs["expiration_date_gte"] == date(2026, 3, 23)
-        assert second_call.kwargs["expiration_date_lte"] == date(2026, 4, 30)
+        assert client.get_options_contracts.call_count == 4
+        broad_monthly_call = client.get_options_contracts.call_args_list[3]
+        assert broad_monthly_call.kwargs.get("expiration_date") is None
+        assert broad_monthly_call.kwargs["expiration_date_gte"] == date(2026, 3, 23)
+        assert broad_monthly_call.kwargs["expiration_date_lte"] == date(2026, 4, 30)
 
     @patch(_TODAY_PATH, return_value=date(2026, 3, 23))  # Monday
     @patch(_NEXT_FRIDAY_PATH, return_value=date(2026, 3, 27))
     def test_fallback_picks_earliest_expiry_when_multiple_available(self, _, __):
         client = _make_alpaca_client()
+        # stock=$552, target=$495, narrow=[470,520] misses $550 → all 3 narrow calls empty
+        # broad monthly returns both expiries; earliest wins
         client.get_options_contracts.side_effect = [
+            [],
+            [],
             [],
             [
                 {"symbol": "FN260417C00550000", "strike_price": 550.0, "expiration_date": "2026-04-17"},
@@ -222,6 +229,58 @@ class TestOptionContractSelector:
         symbol = selector.select("FN", "BULLISH", 552.0)
 
         assert symbol == "FN260417C00550000"
+
+    @patch(_TODAY_PATH, return_value=date(2026, 4, 8))  # Tuesday — SNDK live session date
+    @patch(_NEXT_FRIDAY_PATH, return_value=date(2026, 4, 10))
+    def test_narrow_search_finds_target_strike_on_sparse_chain(self, _, __):
+        """Reproduce the 2026-04-08 SNDK bug: broad ±20% search returned K=745 (OTM)
+        because the first page of results didn't include the target K=850.
+        Narrow search [800, 900] is centered on the target and finds it directly."""
+        client = _make_alpaca_client()
+        # stock=$777, incr=$10, target=850 (777*1.10=854.7 → rounds to 850), radius=50
+        # narrow range [800, 900] contains the target
+        client.get_options_contracts.return_value = [
+            {"symbol": "SNDK260410P00840000", "strike_price": 840.0, "expiration_date": "2026-04-10"},
+            {"symbol": "SNDK260410P00850000", "strike_price": 850.0, "expiration_date": "2026-04-10"},
+        ]
+
+        selector = OptionContractSelector(client)
+        symbol = selector.select("SNDK", "BEARISH", 777.0)
+
+        assert symbol == "SNDK260410P00850000"
+        client.get_options_contracts.assert_called_once_with(
+            underlying_symbol="SNDK",
+            expiration_date=date(2026, 4, 10),
+            option_type="put",
+            strike_price_gte="800",
+            strike_price_lte="900",
+            limit=50,
+        )
+
+    @patch(_TODAY_PATH, return_value=date(2026, 3, 23))  # Monday
+    @patch(_NEXT_FRIDAY_PATH, return_value=date(2026, 3, 27))
+    def test_broad_fallback_used_when_narrow_search_returns_empty(self, _, __):
+        """When the narrow ±5-increment window has no contracts, the selector
+        falls back to the broad ±20% stock-price range."""
+        client = _make_alpaca_client()
+        broad_contract = {
+            "symbol": "NVDA260327C00730000",
+            "strike_price": 730.0,
+            "expiration_date": "2026-03-27",
+        }
+        # narrow weekly [], narrow monthly [], broad weekly [contract]
+        client.get_options_contracts.side_effect = [[], [], [broad_contract]]
+
+        selector = OptionContractSelector(client)
+        symbol = selector.select("NVDA", "BULLISH", 820.0)
+
+        assert symbol == "NVDA260327C00730000"
+        # 3 calls: narrow weekly, narrow monthly (inside _fetch_contracts_with_expiry_fallback),
+        # then broad weekly (which succeeds, so no broad monthly needed)
+        assert client.get_options_contracts.call_count == 3
+        broad_call = client.get_options_contracts.call_args_list[2]
+        assert broad_call.kwargs["strike_price_gte"] == "656"
+        assert broad_call.kwargs["strike_price_lte"] == "984"
 
     @patch(_TODAY_PATH, return_value=date(2026, 3, 23))  # Monday
     @patch(_NEXT_FRIDAY_PATH, return_value=date(2026, 3, 27))
@@ -248,9 +307,10 @@ class TestOptionContractSelector:
         selector = OptionContractSelector(client)
         symbol = selector.select("COIN", "BEARISH", 100.0)
 
+        # stock=$100, incr=$5, target=110, radius=25 → narrow range [85, 135]
         call_args = client.get_options_contracts.call_args
-        assert call_args.kwargs["strike_price_lte"] == "120"
-        assert call_args.kwargs["strike_price_gte"] == "80"
+        assert call_args.kwargs["strike_price_gte"] == "85"
+        assert call_args.kwargs["strike_price_lte"] == "135"
         assert call_args.kwargs["limit"] == 50
         assert symbol == "COIN260328P00110000"
 
