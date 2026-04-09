@@ -42,7 +42,7 @@ The same signal logic drives both **live trading** (`trade_engine.py`) and **bac
 |---|---|
 | `config.py` | Constants, Alpaca credentials loader, Telegram/SMS `_notify()` helper |
 | `models.py` | Shared dataclasses: `ActivePosition`, `SignalEvent`, `_FiveMinBar`, `WindowConfig`; `_D()`, `_stock_bid_ask()` |
-| `contract_selector.py` | `TimePremiumContractSelector` (live default), `OptionContractSelector` (legacy), `_fetch_contracts_with_expiry_fallback()` |
+| `contract_selector.py` | `TimePremiumContractSelector` (live default), `ITMOptionContractSelector` (legacy), `_fetch_contracts_with_expiry_fallback()` |
 | `option_price_monitor.py` | Background bid/ask/intrinsic/time-value snapshots + `get_fair_price()` pricing advisor |
 | `position_sizer.py` | `PositionSizer`: `compute()` for options, `compute_stock()` for stock sizing |
 | `bar_recorder.py` | `BarRecorder`: records live 1-min and 5-min bars to CSV during trading sessions |
@@ -146,7 +146,7 @@ Defaults: `time_premium_pct_cap=0.01` (1%), `reference_dte=5`.
 - Shared weekly → monthly expiry fallback via `_fetch_contracts_with_expiry_fallback()`
 - Exposed via `--time-premium-pct-cap` CLI flag
 
-The legacy `OptionContractSelector` (fixed offset) is still available for backtesting or custom use.
+The legacy `ITMOptionContractSelector` (fixed offset) is still available for backtesting or custom use.
 
 ---
 
@@ -245,7 +245,7 @@ PYTHONPATH=/Users/victorhuang/work/alpha_tech_tracker \
 | `conftest.py` | Shared helpers: `_make_alpaca_client()`, `_make_active_position()`, `_make_signal_engine_with_history()`, `_build_history_df()` |
 | `test_config.py` | `_notify()`, `_send_telegram()`, `_load_config()` — credential loading, exception swallowing |
 | `test_signal_engine.py` | `LiveSignalEngine` — BULLISH/BEARISH conditions, OR computation, regime filter |
-| `test_contract_selector.py` | `TimePremiumContractSelector` (DTE-adjusted threshold, fallback), `OptionContractSelector`, helper functions (`_next_friday`, `_strike_increment`, etc.) |
+| `test_contract_selector.py` | `TimePremiumContractSelector` (DTE-adjusted threshold, fallback), `ITMOptionContractSelector`, helper functions (`_next_friday`, `_strike_increment`, etc.) |
 | `test_position_sizer.py` | `PositionSizer.compute()` and `compute_stock()` — sizing from buying power, window budget override |
 | `test_position_monitor.py` | `PositionMonitor` — hard stop arming/exit, trailing MA exit, EOD exit, stock positions; `TestReentryWatcher` — `bars_held` tracking, watcher creation/suppression, reversal priority, trigger firing, EOD cleanup, `trailing_arm_price` gate |
 | `test_bar_recorder.py` | `BarRecorder` — CSV creation, header, ET timestamp, per-ticker file separation |

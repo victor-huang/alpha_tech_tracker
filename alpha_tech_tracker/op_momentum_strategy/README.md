@@ -282,7 +282,7 @@ For example, with TSLA at $300 (1% target = $3):
 - Selects the first strike where `mid − intrinsic ≤ $3`
 - Falls back to deepest ITM if all strikes have higher time premium
 
-The legacy fixed-offset selector (`OptionContractSelector`) is still available in
+The legacy fixed-offset selector (`ITMOptionContractSelector`) is still available in
 `contract_selector.py` for backtesting or custom use.
 
 ---

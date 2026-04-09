@@ -19,7 +19,7 @@ single responsibilities. **No behavior changes — pure restructuring.**
 alpha_tech_tracker/op_momentum_strategy/
   models.py              (~50 lines)   SignalEvent, _FiveMinBar, ActivePosition, _D()
   config.py              (~100 lines)  all constants, _clicksend_cfg, _load_config(), _send_sms()
-  contract_selector.py   (~120 lines)  _next_friday(), _strike_increment(), OptionContractSelector
+  contract_selector.py   (~120 lines)  _next_friday(), _strike_increment(), ITMOptionContractSelector
   position_sizer.py      (~60 lines)   PositionSizer
   order_executor.py      (~160 lines)  _place_with_fill_escalation(), AlpacaAPIClient monkey-patch
   signal_engine.py       (~430 lines)  LiveSignalEngine
@@ -33,7 +33,7 @@ alpha_tech_tracker/op_momentum_strategy/
 ```
 tests/op_momentum_trade_engine/           ← new dedicated test folder
   __init__.py
-  test_contract_selector.py    ← TestNextFriday, TestStrikeIncrement, TestOptionContractSelector
+  test_contract_selector.py    ← TestNextFriday, TestStrikeIncrement, TestITMOptionContractSelector
   test_position_sizer.py       ← TestPositionSizer + sizer parts of TestRankWeightedSizing
   test_signal_engine.py        ← TestLiveSignalEngine
   test_position_monitor.py     ← TestPositionMonitor, TestPrintSummaryPnl
@@ -69,7 +69,7 @@ Plus config file helpers:
 ### `contract_selector.py`
 - `_next_friday(ref_date)` — compute next Friday from a date
 - `_strike_increment(price)` — returns $1 / $5 / $10 based on price range
-- `OptionContractSelector` — finds the nearest weekly option contract for a signal
+- `ITMOptionContractSelector` — finds the nearest weekly option contract for a signal
 
 ### `position_sizer.py`
 - `PositionSizer` — computes contract quantity from buying power × `capital_weight`
@@ -94,7 +94,7 @@ Daemon helpers + CLI + `__main__` block, plus re-exports for backward compatibil
 ```python
 from .models import SignalEvent, ActivePosition, _FiveMinBar, _D
 from .config import CAPITAL_PER_SYMBOL, MAX_ACTIVE_SYMBOLS, RANK_WEIGHTS, ...
-from .contract_selector import OptionContractSelector, _next_friday, _strike_increment
+from .contract_selector import ITMOptionContractSelector, _next_friday, _strike_increment
 from .position_sizer import PositionSizer
 from .signal_engine import LiveSignalEngine
 from .position_monitor import PositionMonitor
@@ -107,7 +107,7 @@ from .trade_engine import TickerSelector, OpMomentumTradeEngine
 
 1. Create `models.py` — move `_D`, `SignalEvent`, `_FiveMinBar`, `ActivePosition`
 2. Create `config.py` — move all constants + `_clicksend_cfg` + `_load_config` + `_send_sms`
-3. Create `contract_selector.py` — move `_next_friday`, `_strike_increment`, `OptionContractSelector`
+3. Create `contract_selector.py` — move `_next_friday`, `_strike_increment`, `ITMOptionContractSelector`
 4. Create `position_sizer.py` — move `PositionSizer`
 5. Create `order_executor.py` — move `_place_with_fill_escalation` + monkey-patch block
 6. Create `signal_engine.py` — move `LiveSignalEngine`

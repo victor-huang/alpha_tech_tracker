@@ -19,7 +19,7 @@ Alpaca's paper/live trading API.
 alpha_tech_tracker/op_momentum_strategy/
   models.py              _D(), SignalEvent, _FiveMinBar, ActivePosition
   config.py              All constants, _load_config(), _send_sms()
-  contract_selector.py   _next_friday(), _strike_increment(), OptionContractSelector
+  contract_selector.py   _next_friday(), _strike_increment(), ITMOptionContractSelector
   position_sizer.py      PositionSizer
   order_executor.py      _place_with_fill_escalation(), AlpacaAPIClient monkey-patch
   signal_engine.py       LiveSignalEngine
@@ -143,7 +143,7 @@ force-close applies globally at 3:55 PM regardless of which window opened the po
 
 ---
 
-### 2. `OptionContractSelector`
+### 2. `ITMOptionContractSelector`
 
 **When:** Called once per ticker immediately after signal fires.
 
@@ -321,7 +321,7 @@ Startup     _load_config() — load alpaca + clicksend credentials
 
 Collection  Buffered signals ranked by composite score
 window      Top MAX_ACTIVE_SYMBOLS entered via _enter_position(event, rank=i)
-closes      → OptionContractSelector.select(...)
+closes      → ITMOptionContractSelector.select(...)
             → PositionSizer.compute(symbol, capital_weight, window_budget)
             → _place_entry(...) with fill escalation
             → PositionMonitor.add_position(...)
