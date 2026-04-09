@@ -389,11 +389,24 @@ class OptionPriceMonitor:
 
 def _quantize_option_price(price: Decimal) -> Decimal:
     """
-    Round an option limit price to the exchange-standard tick increment:
-      < $3.00  → nearest $0.05
-      ≥ $3.00  → nearest $0.10
+    Round an option limit price to the exchange-standard tick increment.
+
+    All tickers in this strategy's pool (TSLA, NVDA, META, AMD, COIN, etc.)
+    participate in the CBOE Penny Pilot Program, which uses finer increments
+    than the standard non-pilot schedule:
+
+      Penny Pilot (default — all pool tickers):
+        < $3.00  → nearest $0.01
+        ≥ $3.00  → nearest $0.05
+
+      Non-pilot (standard, not used here):
+        < $3.00  → nearest $0.05
+        ≥ $3.00  → nearest $0.10
+
+    Using non-pilot increments on penny pilot names causes limit orders to be
+    placed at suboptimal price points, wasting $0.01–$0.05 per order.
     """
-    tick = _D("0.05") if price < _D("3") else _D("0.10")
+    tick = _D("0.01") if price < _D("3") else _D("0.05")
     return (price / tick).to_integral_value(rounding=ROUND_HALF_UP) * tick
 
 

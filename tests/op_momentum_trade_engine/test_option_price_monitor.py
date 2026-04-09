@@ -339,19 +339,28 @@ class TestGetFairPrice:
 
 
 class TestQuantizeOptionPrice:
-    def test_price_above_3_rounds_to_10_cent_tick(self):
-        assert _quantize_option_price(_D("21.73")) == _D("21.70")
+    """
+    All pool tickers are on the CBOE Penny Pilot Program:
+      < $3.00  → $0.01 tick
+      ≥ $3.00  → $0.05 tick
+    """
+
+    def test_price_above_3_rounds_to_5_cent_tick(self):
+        assert _quantize_option_price(_D("21.73")) == _D("21.75")
+
+    def test_price_above_3_rounds_down_on_less_than_half(self):
+        assert _quantize_option_price(_D("21.72")) == _D("21.70")
 
     def test_price_above_3_rounds_up_on_half(self):
-        assert _quantize_option_price(_D("21.75")) == _D("21.80")
+        assert _quantize_option_price(_D("21.725")) == _D("21.75")
 
-    def test_price_below_3_rounds_to_5_cent_tick(self):
-        assert _quantize_option_price(_D("2.63")) == _D("2.65")
+    def test_price_below_3_rounds_to_1_cent_tick(self):
+        assert _quantize_option_price(_D("2.634")) == _D("2.63")
 
-    def test_price_below_3_rounds_down(self):
-        assert _quantize_option_price(_D("2.61")) == _D("2.60")
+    def test_price_below_3_rounds_up(self):
+        assert _quantize_option_price(_D("2.615")) == _D("2.62")
 
-    def test_price_exactly_3_uses_10_cent_tick(self):
+    def test_price_exactly_3_uses_5_cent_tick(self):
         assert _quantize_option_price(_D("3.00")) == _D("3.00")
 
     def test_price_already_on_tick_is_unchanged(self):
@@ -375,25 +384,26 @@ class TestGetFairPriceQuantization:
             )
         return monitor
 
-    def test_liquid_mid_is_rounded_to_10_cent_tick(self):
+    def test_liquid_mid_is_rounded_to_5_cent_tick(self):
         # bid=$21.05 ask=$21.75 → mid=$21.40, spread=3.3% liquid
         # intrinsic=stock$300 - strike$280=$20; bid > intrinsic → use mid
-        # mid $21.40 → nearest $0.10 = $21.40
+        # mid $21.40 → penny pilot ≥$3 → nearest $0.05 = $21.40
         monitor = self._monitor_with_quote(bid=21.05, ask=21.75)
         fair = monitor.get_fair_price("TSLA", self._SYM, "call", _D("300"))
         assert fair == _D("21.40")
 
-    def test_cache_path_result_rounded_to_10_cent_tick(self):
-        # Wide spread; intrinsic=$20 + cached_tv=$1.83 = $21.83 → rounds to $21.80
+    def test_cache_path_result_rounded_to_5_cent_tick(self):
+        # Wide spread; intrinsic=$20 + cached_tv=$1.83 = $21.83
+        # penny pilot ≥$3 → nearest $0.05 = $21.85
         monitor = self._monitor_with_quote(bid=21.0, ask=35.0, cache_tv=_D("1.83"))
         fair = monitor.get_fair_price("TSLA", self._SYM, "call", _D("300"))
-        assert fair == _D("21.80")
+        assert fair == _D("21.85")
 
-    def test_price_below_3_rounded_to_5_cent_tick(self):
+    def test_price_below_3_rounded_to_1_cent_tick(self):
         # OTM call: stock=$278, strike=$280 → intrinsic=$0; bid=$0.80, ask=$0.94
         # mid=$0.87, spread=16.1% wide → use 20% of spread fallback
         # median_tv = (0.94-0.80)*0.20 = $0.028 → fair = 0 + 0.028 = $0.028
-        # clamped to bid=$0.80; $0.80 < $3 → tick $0.05 → $0.80
+        # clamped to bid=$0.80; $0.80 < $3 → penny pilot tick $0.01 → $0.80
         monitor = self._monitor_with_quote(bid=0.80, ask=0.94)
         fair = monitor.get_fair_price("TSLA", self._SYM, "call", _D("278"))
         assert fair == _D("0.80")

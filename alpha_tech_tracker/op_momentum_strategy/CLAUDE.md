@@ -163,6 +163,16 @@ Two-role module at `option_price_monitor.py`:
 - `get_fair_price(ticker, symbol, option_type, stock_price)` returns a limit price within bid/ask
 - Algorithm: liquid spread (≤15%) + bid ≥ intrinsic → use mid; stale bid or wide spread → `intrinsic + median_time_value_from_cache`; no cache → 20% of spread; always clamp to [bid, ask]
 
+**Tick size — `_quantize_option_price()` (Penny Pilot Program)**:
+All tickers in the pool (TSLA, NVDA, META, AMD, COIN, PLTR, etc.) are on the CBOE Penny Pilot Program. The correct tick increments are:
+
+| Price | Penny Pilot (pool tickers) | Standard non-pilot |
+|---|---|---|
+| < $3.00 | $0.01 | $0.05 |
+| ≥ $3.00 | $0.05 | $0.10 |
+
+Using non-pilot increments causes limit orders to be placed at suboptimal price points ($0.01–$0.05 off per order). Do not change `_quantize_option_price()` to use $0.10 ticks.
+
 ---
 
 ## Multi-Window System
