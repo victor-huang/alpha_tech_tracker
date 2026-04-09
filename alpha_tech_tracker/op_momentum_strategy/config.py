@@ -13,6 +13,9 @@ from .models import _D
 logger = logging.getLogger(__name__)
 
 TICKERS = DEFAULT_TICKERS
+EXECUTION_BROKER = "alpaca"   # "alpaca" | "etrade"
+ETRADE_ACCOUNT_ID = None
+ETRADE_SANDBOX = False
 ACCOUNT_BUDGET = 25_000
 MAX_ACTIVE_SYMBOLS = 2
 OPENING_BARS = 3
@@ -41,31 +44,63 @@ _CONFIG_FILE = os.path.join(os.path.dirname(__file__), "config.json")
 
 def _load_config(config_file: str = _CONFIG_FILE):
     """
-    Load credentials from config.json and inject them into the environment
-    for any key not already set. Environment variables always take precedence.
+    Load credentials and broker settings from config.json.
+
+    Environment variables always take precedence over the config file.
 
     Config file format (alpha_tech_tracker/op_momentum_strategy/config.json):
         {
+          "execution_broker": "alpaca",   // "alpaca" (default) | "etrade"
           "alpaca": {
             "api_key": "YOUR_KEY",
             "secret_key": "YOUR_SECRET"
+          },
+          "etrade": {
+            "account_id": "712793764",
+            "sandbox": false
+          },
+          "etrade_credentials": {
+            "api_key_id": "YOUR_ETRADE_KEY",     // optional — prefer env vars
+            "api_secret_key": "YOUR_ETRADE_SECRET"
           }
         }
     """
+    global EXECUTION_BROKER, ETRADE_ACCOUNT_ID, ETRADE_SANDBOX
+
     if not os.path.exists(config_file):
         return
 
     with open(config_file) as f:
         cfg = json.load(f)
 
+    # Broker selection
+    if cfg.get("execution_broker"):
+        EXECUTION_BROKER = cfg["execution_broker"]
+
+    # Alpaca credentials → env vars
     alpaca = cfg.get("alpaca", {})
-    mapping = {
-        "api_key": "ALPACA_API_KEY",
-        "secret_key": "ALPACA_SECRET_KEY",
-    }
-    for cfg_key, env_key in mapping.items():
+    for cfg_key, env_key in (
+        ("api_key", "ALPACA_API_KEY"),
+        ("secret_key", "ALPACA_SECRET_KEY"),
+    ):
         if alpaca.get(cfg_key) and not os.environ.get(env_key):
             os.environ[env_key] = alpaca[cfg_key]
+
+    # ETrade account config
+    etrade = cfg.get("etrade", {})
+    if etrade.get("account_id"):
+        ETRADE_ACCOUNT_ID = str(etrade["account_id"])
+    if "sandbox" in etrade:
+        ETRADE_SANDBOX = bool(etrade["sandbox"])
+
+    # ETrade credentials → env vars (prefer env vars set externally)
+    etrade_creds = cfg.get("etrade_credentials", {})
+    for cfg_key, env_key in (
+        ("api_key_id", "ETRADE_API_KEY_ID"),
+        ("api_secret_key", "ETRADE_API_SECRET_KEY"),
+    ):
+        if etrade_creds.get(cfg_key) and not os.environ.get(env_key):
+            os.environ[env_key] = etrade_creds[cfg_key]
 
     _clicksend_cfg.clear()
     _clicksend_cfg.update(cfg.get("clicksend", {}))
@@ -75,6 +110,30 @@ def _load_config(config_file: str = _CONFIG_FILE):
         _clicksend_cfg["telegram_bot_token"] = telegram["bot_token"]
     if telegram.get("chat_id"):
         _clicksend_cfg["telegram_chat_id"] = telegram["chat_id"]
+
+
+def build_execution_client(is_paper: bool = True):
+    """
+    Construct and return an ExecutionClient based on EXECUTION_BROKER.
+
+    "alpaca": returns AlpacaAPIClient; is_paper controls paper vs live account.
+    "etrade": returns EtradeAPIClient and calls authorize_session() to complete
+              the OAuth flow (interactive — opens browser and prompts for token).
+
+    Call _load_config() before this function so EXECUTION_BROKER and ETrade
+    account settings are populated.
+    """
+    if EXECUTION_BROKER == "etrade":
+        from alpha_tech_tracker.trade_api.etrade.client import EtradeAPIClient
+        client = EtradeAPIClient(
+            selected_account_id=ETRADE_ACCOUNT_ID,
+            is_sandbox_enabled=ETRADE_SANDBOX,
+        )
+        client.authorize_session()
+        return client
+
+    from alpha_tech_tracker.trade_api.alpaca_client.client import AlpacaAPIClient
+    return AlpacaAPIClient(is_paper_trading=is_paper)
 
 
 def _send_telegram(message: str):

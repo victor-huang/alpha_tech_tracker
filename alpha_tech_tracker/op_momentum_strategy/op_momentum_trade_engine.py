@@ -7,8 +7,6 @@ import sys
 import time
 from datetime import date
 
-from alpha_tech_tracker.trade_api.alpaca_client.client import AlpacaAPIClient
-
 from .config import (
     ARMED_MA20_EXIT,
     MAX_LOSS_PCT,
@@ -21,6 +19,7 @@ from .config import (
     TRAILING_MA,
     _CONFIG_FILE,
     _load_config,
+    build_execution_client,
 )
 from .models import WindowConfig
 from .op_momentum_selector import ROLLING_LOOKBACK_DAYS as _DEFAULT_LOOKBACK_DAYS
@@ -498,7 +497,7 @@ if __name__ == "__main__":
             handlers=[logging.StreamHandler(), _make_log_handler(log_file)],
         )
         is_paper = not (args.live or args.mock_trade_execution)
-        client = AlpacaAPIClient(is_paper_trading=is_paper)
+        client = build_execution_client(is_paper=is_paper)
         engine = OpMomentumTradeEngine(
             alpaca_client=client,
             is_paper=is_paper,
@@ -584,7 +583,7 @@ if __name__ == "__main__":
 
     try:
         is_paper = not (args.live or args.mock_trade_execution)
-        client = AlpacaAPIClient(is_paper_trading=is_paper)
+        client = build_execution_client(is_paper=is_paper)
         engine = OpMomentumTradeEngine(
             alpaca_client=client,
             is_paper=is_paper,

@@ -1,13 +1,13 @@
 import json
 from unittest.mock import MagicMock, patch
 
-
 import alpha_tech_tracker.op_momentum_strategy.config as config_module
 from alpha_tech_tracker.op_momentum_strategy.config import (
     _notify,
     _send_telegram,
     _load_config,
     _fmt_option,
+    build_execution_client,
     disable_notifications,
     enable_notifications,
 )
@@ -143,6 +143,127 @@ class TestLoadConfigTelegram:
         _load_config(str(config_file))
 
         assert "telegram_bot_token" not in config_module._clicksend_cfg
+
+
+class TestLoadConfigBrokerSettings:
+    def setup_method(self):
+        config_module.EXECUTION_BROKER = "alpaca"
+        config_module.ETRADE_ACCOUNT_ID = None
+        config_module.ETRADE_SANDBOX = False
+
+    def teardown_method(self, _):
+        config_module.EXECUTION_BROKER = "alpaca"
+        config_module.ETRADE_ACCOUNT_ID = None
+        config_module.ETRADE_SANDBOX = False
+
+    def test_sets_execution_broker_from_config(self, tmp_path):
+        cfg = {"execution_broker": "etrade"}
+        config_file = tmp_path / "config.json"
+        config_file.write_text(json.dumps(cfg))
+
+        _load_config(str(config_file))
+
+        assert config_module.EXECUTION_BROKER == "etrade"
+
+    def test_defaults_to_alpaca_when_key_absent(self, tmp_path):
+        cfg = {"alpaca": {"api_key": "k", "secret_key": "s"}}
+        config_file = tmp_path / "config.json"
+        config_file.write_text(json.dumps(cfg))
+
+        _load_config(str(config_file))
+
+        assert config_module.EXECUTION_BROKER == "alpaca"
+
+    def test_sets_etrade_account_id(self, tmp_path):
+        cfg = {"etrade": {"account_id": "712793764"}}
+        config_file = tmp_path / "config.json"
+        config_file.write_text(json.dumps(cfg))
+
+        _load_config(str(config_file))
+
+        assert config_module.ETRADE_ACCOUNT_ID == "712793764"
+
+    def test_sets_etrade_sandbox_flag(self, tmp_path):
+        cfg = {"etrade": {"account_id": "123", "sandbox": True}}
+        config_file = tmp_path / "config.json"
+        config_file.write_text(json.dumps(cfg))
+
+        _load_config(str(config_file))
+
+        assert config_module.ETRADE_SANDBOX is True
+
+    def test_etrade_credentials_injected_into_env(self, tmp_path, monkeypatch):
+        monkeypatch.delenv("ETRADE_API_KEY_ID", raising=False)
+        monkeypatch.delenv("ETRADE_API_SECRET_KEY", raising=False)
+        cfg = {
+            "etrade_credentials": {
+                "api_key_id": "MY_ETRADE_KEY",
+                "api_secret_key": "MY_ETRADE_SECRET",
+            }
+        }
+        config_file = tmp_path / "config.json"
+        config_file.write_text(json.dumps(cfg))
+
+        _load_config(str(config_file))
+
+        import os
+        assert os.environ["ETRADE_API_KEY_ID"] == "MY_ETRADE_KEY"
+        assert os.environ["ETRADE_API_SECRET_KEY"] == "MY_ETRADE_SECRET"
+
+    def test_env_var_takes_precedence_over_etrade_credentials(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("ETRADE_API_KEY_ID", "ENV_KEY")
+        cfg = {"etrade_credentials": {"api_key_id": "CFG_KEY"}}
+        config_file = tmp_path / "config.json"
+        config_file.write_text(json.dumps(cfg))
+
+        _load_config(str(config_file))
+
+        import os
+        assert os.environ["ETRADE_API_KEY_ID"] == "ENV_KEY"
+
+
+class TestBuildExecutionClient:
+    def setup_method(self):
+        config_module.EXECUTION_BROKER = "alpaca"
+        config_module.ETRADE_ACCOUNT_ID = None
+        config_module.ETRADE_SANDBOX = False
+
+    def teardown_method(self, _):
+        config_module.EXECUTION_BROKER = "alpaca"
+
+    def test_returns_alpaca_client_by_default(self):
+        from alpha_tech_tracker.trade_api.alpaca_client.client import AlpacaAPIClient
+        client = build_execution_client(is_paper=True)
+        assert isinstance(client, AlpacaAPIClient)
+        assert client._is_paper_trading is True
+
+    def test_alpaca_paper_flag_passed_through(self):
+        from alpha_tech_tracker.trade_api.alpaca_client.client import AlpacaAPIClient
+        client = build_execution_client(is_paper=False)
+        assert isinstance(client, AlpacaAPIClient)
+        assert client._is_paper_trading is False
+
+    def test_returns_etrade_client_when_broker_is_etrade(self):
+        from alpha_tech_tracker.trade_api.etrade.client import EtradeAPIClient
+        config_module.EXECUTION_BROKER = "etrade"
+        config_module.ETRADE_ACCOUNT_ID = "712793764"
+        config_module.ETRADE_SANDBOX = True
+
+        with patch.object(EtradeAPIClient, "authorize_session"):
+            client = build_execution_client(is_paper=True)
+
+        assert isinstance(client, EtradeAPIClient)
+        assert client._selected_account_id == "712793764"
+        assert client._base_url_host == "apisb.etrade.com"
+
+    def test_etrade_calls_authorize_session(self):
+        from alpha_tech_tracker.trade_api.etrade.client import EtradeAPIClient
+        config_module.EXECUTION_BROKER = "etrade"
+
+        with patch.object(EtradeAPIClient, "authorize_session") as mock_auth:
+            build_execution_client()
+
+        mock_auth.assert_called_once()
 
 
 class TestFmtOption:
