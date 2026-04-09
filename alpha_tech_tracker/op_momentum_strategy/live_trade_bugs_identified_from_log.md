@@ -4,10 +4,11 @@ Bugs identified by reviewing the trade log and 5-min/1-min bar data from the 202
 
 ---
 
-## Bug 1 (Critical): Trade Engine Uses `ITMOptionContractSelector` Instead of `TimePremiumContractSelector`
+## Bug 1 (Critical): `ITMOptionContractSelector` Selected OTM Strike Due to API Pagination
 
 **Discovered:** 2026-04-08
 **Trade affected:** SNDK [Bearish] A2 — `SNDK260410P00745000` x4, −$680
+**Status: Fixed** — commits `6a3a902`, `867d7df`
 
 ### What happened
 
@@ -23,43 +24,29 @@ The background option price monitor (running `TimePremiumContractSelector`) had 
 
 ### Root cause
 
-`trade_engine.py` line 271 defaults to the legacy `ITMOptionContractSelector`:
+`ITMOptionContractSelector.select()` searched a broad ±20% stock-price range (`$622–$932` for SNDK at $777) with `limit=50`. The Alpaca listing API returned K=$745 in its first page of results — the target K=$850 was never in the returned set. The selector then picked K=$745 as the nearest to target among whatever was returned, with no time premium check.
+
+### Fix (applied 2026-04-08)
+
+`ITMOptionContractSelector` was renamed from `OptionContractSelector` and its strike search was changed to use a **narrow ±5-increment window centered on `target_strike`** as the primary search:
 
 ```python
-self._contract_selector = (
-    contract_selector if contract_selector is not None
-    else ITMOptionContractSelector(alpaca_client)
+# contract_selector.py
+_OPTION_CONTRACT_SELECTOR_SEARCH_RADIUS_INCREMENTS = 5
+
+radius = incr * _OPTION_CONTRACT_SELECTOR_SEARCH_RADIUS_INCREMENTS
+contracts, expiry = _fetch_contracts_with_expiry_fallback(
+    self._client, ticker, option_type,
+    target_strike - radius,   # e.g. $800 for SNDK target=$850, incr=$10
+    target_strike + radius,   # e.g. $900
 )
 ```
 
-`ITMOptionContractSelector` does **not** validate time premiums. It:
-1. Computes a `target_strike` from a fixed offset on stock price
-2. Calls `_fetch_contracts_with_expiry_fallback()` which lists available option contracts from Alpaca
-3. Picks the contract **nearest to `target_strike`** regardless of ITM/OTM status or time premium
-
-For SNDK (new WD spinoff, sparse Apr 10 option chain), the listing returned K=$745 as the nearest available strike to the $850 target — an OTM put.
-
-The background option_price_monitor uses `TimePremiumContractSelector` (via `TradeEngineStrikeSelector`), which quotes specific strikes batch-fetching actual bid/ask, validates time premium ≤ DTE-adjusted cap, and correctly selects deeply ITM contracts. This is what the `CLAUDE.md` documents as the live engine's contract selector, but the code diverges from that description.
-
-### Fix
-
-Change the default in `OpMomentumTradeEngine.__init__`:
-
-```python
-# trade_engine.py
-from .contract_selector import TimePremiumContractSelector
-
-self._contract_selector = (
-    contract_selector if contract_selector is not None
-    else TimePremiumContractSelector(alpaca_client)
-)
-```
-
-Ensure the `TimePremiumContractSelector` is also imported in the module's imports block.
+For SNDK BEARISH at $777: target=$850, incr=$10, narrow range=[$800, $900]. With only ~10 strikes in this window, `limit=50` easily covers all results and K=$850 is guaranteed to be present. The old broad ±20% range is retained as a fallback if the narrow search returns nothing.
 
 ### Why this matters beyond SNDK
 
-Any ticker with a sparse option chain or unusually high IV can trigger this. High-IV stocks have large time premiums on all strikes; the `ITMOptionContractSelector` may fall back to OTM because no listed strike near target has been evaluated. `TimePremiumContractSelector` handles this correctly by finding the deepest ITM strike where time premium still falls under the target.
+Any ticker with a dense option chain (many strikes across a wide range) can hit the pagination limit. The narrow search eliminates this by centering the query on exactly where the target strike should be.
 
 ---
 
@@ -185,7 +172,7 @@ Likely a stale or split-adjusted Alpaca stock quote returned for FN during the p
 
 | # | Bug | Trades | P&L Impact | Fix Location |
 |---|-----|--------|-----------|--------------|
-| 1 | `ITMOptionContractSelector` used for live trades | SNDK | −$680 | `trade_engine.py:271` — change default to `TimePremiumContractSelector` |
+| 1 | `ITMOptionContractSelector` broad search missed target strike (pagination) | SNDK | −$680 | **Fixed** — narrow ±5-increment search in `contract_selector.py` (commits `6a3a902`, `867d7df`) |
 | 2 | No min OR range guard → instant `fallback_20pct` | TSLA, FN | −$550 | `signal_engine.py` — add `OR_range / price < 0.3%` filter before emitting signal |
 | 3 | Stale M1 catchup signals after mid-session restart | AMD, SHOP | Indirect | `signal_engine.py` — add elapsed-time guard on catchup signals |
 | 4 | Bad Alpaca pre-market quote for FN (stock=299.875) | None | — | `option_price_monitor.py` — add quote sanity check vs last warmup close |
