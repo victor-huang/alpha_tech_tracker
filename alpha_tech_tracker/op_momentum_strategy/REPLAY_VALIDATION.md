@@ -300,3 +300,63 @@ substitute tickers the replay selects.
 
 Deleted 10,734 corrupt 92-byte files and 1,321 corrupt multi-month files, plus all
 `selector_2025*.json` selector cache files, before the final replay run.
+
+---
+
+### Study 3 — 2024 Monthly Breakdown (Jan–Aug 2024, 2026-04-08)
+
+**Tools used:**
+- `/tmp/run_replays_month.py` — generic per-month replay runner, `ThreadPoolExecutor(max_workers=4)`, credentials passed via env
+- `/tmp/compare_month.py` — parses backtest execution log + replay CSV, diffs per-window per-rank picks
+
+**Cache bugs found during this study** (2026-04-08):
+- 3,026 additional corrupt multi-month files discovered across all years: files where
+  `actual_start > fname_start + 14 days` (IEX 3-month look-back artifact — requests for
+  long historical ranges return only ~3 months of intraday data, but the filename records
+  the full requested range). Previous sweeps only checked end-date gaps; start-date gaps
+  were added to the detection logic.
+- Deleted with: check both `actual_start > fname_start + 14d` and `actual_end < fname_end - 14d`
+- All `selector_2024*.json` caches also deleted after cleanup.
+
+#### Monthly Results
+
+| Month | Days | Identical | BT Cap P&L | RP Cap P&L | Diff (RP−BT) |
+|-------|------|-----------|-----------|-----------|-------------|
+| Jan 2024 | 21 | 7 (33%) | +$1,220.95 | +$744.16 | **−$476.79** |
+| Feb 2024 | 19 | 4 (21%) | +$1,612.37 | +$1,767.83 | **+$155.46** |
+| Mar 2024 | 20 | 3 (15%) | +$1,742.68 | +$1,987.19 | **+$244.51** |
+| Apr 2024 | 22 | 9 (41%) | +$1,774.59 | +$1,130.12 | **−$644.47** |
+| May 2024 | 22 | 5 (23%) | +$873.37 | +$677.28 | **−$196.09** |
+| Jun 2024 | 19 | 7 (37%) | +$840.19 | +$504.32 | **−$335.87** |
+| Jul 2024 | 22 | 7 (32%) | +$1,873.22 | +$1,107.52 | **−$765.70** |
+| Aug 2024 | 22 | 5 (23%) | +$2,420.35 | +$2,140.96 | **−$279.39** |
+| **8-mo total** | **167** | **47 (28%)** | **+$12,357.72** | **+$10,059.38** | **−$2,298.34** |
+
+Note: June 2024 backtest shows only 19 trading days (one day had no signal on any ticker).
+
+#### Most Common Dropped Tickers (across all 8 months)
+
+| Ticker | Approx. drops | Pattern |
+|--------|--------------|---------|
+| ANAB | ~60× | Consistently sparse — misses across every month |
+| RH | ~40× | Sparse in afternoon windows especially |
+| FN | ~40× | Strongest in Jul–Aug; FN ran hard those months |
+| COIN | ~15× | Sporadic, mainly morning windows |
+| CVNA | ~10× | Sporadic |
+
+#### Interpretation
+
+Backtest leads by **−$2,298** over 8 months (−18.6% of BT total). Only Feb and Mar 2024
+went in replay's favor (+$400 combined); the remaining 6 months favor backtest.
+
+**Why backtest leads here (vs replay leading in full-year 2025):**
+- In 2024, ANAB/RH/FN were frequently the strongest picks on the days they were dropped.
+  Their substitutes underperformed. The direction of the outcome (backtest wins or replay
+  wins) is entirely determined by whether the dropped tickers outperformed their replacements
+  on those specific days — it has no systematic direction.
+- 2025's bull/volatile environment happened to make substitutes outperform; 2024's patterns
+  ran the other way for 6 of 8 months.
+
+**Identical rate**: 28% across 8 months — exactly matches the 2025 full-year rate (28%).
+This confirms the sparse-bar timing gap is a stable structural property of these tickers,
+not a year-specific artifact.
