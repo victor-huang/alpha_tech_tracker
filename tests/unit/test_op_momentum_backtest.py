@@ -967,16 +967,20 @@ class TestSaveCacheAtomic:
 
         assert not path.with_suffix(".tmp").exists()
 
-    def test_atomic_rename_replaces_final_path(self, tmp_path):
-        # Verify that Path.replace() is called with the final target path,
-        # confirming the tmp → final rename pattern rather than direct write.
+    def test_data_written_to_tmp_before_rename(self, tmp_path):
+        # If the rename step fails, the .tmp file exists with valid data and
+        # the final file is absent — proving data flows through .tmp first.
         df = _make_date_bars(["2025-01-01"])
         path = tmp_path / "test.json"
 
-        with patch.object(Path, "replace", wraps=Path.replace) as spy:
-            _save_cache(df, path, "5min")
+        with patch.object(Path, "replace", side_effect=OSError("simulated rename failure")):
+            try:
+                _save_cache(df, path, "5min")
+            except OSError:
+                pass
 
-        spy.assert_called_once_with(path)
+        assert not path.exists()
+        assert path.with_suffix(".tmp").exists()
 
 
 # ---------------------------------------------------------------------------
