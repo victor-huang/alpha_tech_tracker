@@ -3,14 +3,7 @@ import time
 from decimal import ROUND_HALF_UP
 from typing import Optional
 
-from alpaca.data.requests import OptionLatestQuoteRequest
-from alpaca.trading.enums import OrderSide, TimeInForce
-from alpaca.trading.requests import LimitOrderRequest, MarketOrderRequest
-
-from alpha_tech_tracker.trade_api.alpaca_client.client import (
-    AlpacaAPIClient,
-    APIInvalidArgumentError,
-)
+from alpha_tech_tracker.trade_api.execution_client import ExecutionClient
 
 from .models import _D, _stock_bid_ask
 from .option_price_monitor import _quantize_option_price
@@ -19,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 def _place_with_fill_escalation(
-    client: AlpacaAPIClient,
+    client: ExecutionClient,
     ticker: str,
     option_symbol: str,
     option_type: str,
@@ -41,13 +34,10 @@ def _place_with_fill_escalation(
     is_buy = order_action == "BUY_OPEN"
 
     def _fetch_mid_bid_ask():
-        quote_resp = client._option_data_client.get_option_latest_quote(
-            OptionLatestQuoteRequest(symbol_or_symbols=[option_symbol])
-        )
-        q = quote_resp[option_symbol]
-        bid = _D(q.bid_price)
-        ask = _D(q.ask_price)
-        mid = (bid + ask) / _D("2")
+        q = client.get_option_quote_by_occ(option_symbol)
+        bid = _D(str(q["bid"]))
+        ask = _D(str(q["ask"]))
+        mid = _D(str(q["mid"]))
         return bid, ask, mid
 
     def _place_limit(price) -> dict:
@@ -166,98 +156,8 @@ def _place_with_fill_escalation(
     return order
 
 
-# ---------------------------------------------------------------------------
-# Patch AlpacaAPIClient.place_option_order to accept _option_symbol_override
-# ---------------------------------------------------------------------------
-
-_original_place_option_order = AlpacaAPIClient.place_option_order
-
-
-def _patched_place_option_order(
-    self,
-    symbol,
-    option_key=None,
-    price=None,
-    order_id=None,
-    preview_order=None,
-    price_type="LIMIT",
-    option_type="CALL",
-    order_action="BUY_OPEN",
-    quantity=1,
-    _option_symbol_override=None,
-):
-    """Extends place_option_order to accept a pre-built OCC symbol directly."""
-    if _option_symbol_override:
-        option_symbol = _option_symbol_override
-    else:
-        option_symbol = self._build_option_symbol(symbol, option_key, option_type)
-
-    side_mapping = {
-        "BUY_OPEN": "BUY",
-        "BUY_CLOSE": "BUY",
-        "SELL_OPEN": "SELL",
-        "SELL_CLOSE": "SELL",
-    }
-    side = side_mapping.get(order_action, "BUY")
-
-    if price_type.upper() == "SMART_MARKET":
-        quote = self.get_option_quote(symbol, option_key, option_type=option_type)
-        price_info = self.get_price_from_quote(quote)
-        price = price_info["s-mid"]
-        price_type = "LIMIT"
-
-    order_side = OrderSide.BUY if side == "BUY" else OrderSide.SELL
-
-    if price_type.upper() == "MARKET":
-        order_data = MarketOrderRequest(
-            symbol=option_symbol,
-            qty=quantity,
-            side=order_side,
-            time_in_force=TimeInForce.DAY,
-        )
-    elif price_type.upper() == "LIMIT":
-        if price is None:
-            raise APIInvalidArgumentError(
-                code="MISSING_LIMIT_PRICE",
-                message="price is required for LIMIT orders",
-            )
-        order_data = LimitOrderRequest(
-            symbol=option_symbol,
-            qty=quantity,
-            side=order_side,
-            time_in_force=TimeInForce.DAY,
-            limit_price=float(price),
-        )
-    else:
-        raise APIInvalidArgumentError(
-            code="INVALID_PRICE_TYPE",
-            message=f"Unsupported price type: {price_type}",
-        )
-
-    order = self._trading_client.submit_order(order_data=order_data)
-    return {
-        "order_id": order.id,
-        "client_order_id": order.client_order_id,
-        "symbol": order.symbol,
-        "quantity": float(order.qty),
-        "filled_qty": float(order.filled_qty) if order.filled_qty else 0,
-        "side": order.side.value,
-        "type": order.type.value,
-        "status": order.status.value,
-        "limit_price": float(order.limit_price) if order.limit_price else None,
-        "filled_avg_price": (
-            float(order.filled_avg_price) if order.filled_avg_price else None
-        ),
-        "submitted_at": order.submitted_at,
-        "raw_response": order,
-    }
-
-
-AlpacaAPIClient.place_option_order = _patched_place_option_order
-
-
 def place_stock_order(
-    client: AlpacaAPIClient,
+    client: ExecutionClient,
     ticker: str,
     shares: int,
     order_action: str,

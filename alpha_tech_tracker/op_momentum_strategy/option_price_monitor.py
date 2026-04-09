@@ -13,9 +13,7 @@ from typing import Optional
 
 import pytz
 
-from alpaca.data.requests import OptionLatestQuoteRequest
-
-from alpha_tech_tracker.trade_api.alpaca_client.client import AlpacaAPIClient
+from alpha_tech_tracker.trade_api.execution_client import ExecutionClient
 
 from .config import TICKERS
 from .contract_selector import TimePremiumContractSelector
@@ -69,7 +67,7 @@ class TradeEngineStrikeSelector:
     interface can be passed to OptionPriceMonitor.
     """
 
-    def __init__(self, client: AlpacaAPIClient):
+    def __init__(self, client: ExecutionClient):
         self._selector = TimePremiumContractSelector(client)
 
     def select_contracts(self, ticker: str, stock_price: Decimal) -> list:
@@ -117,7 +115,7 @@ class OptionPriceMonitor:
 
     def __init__(
         self,
-        client: AlpacaAPIClient,
+        client: ExecutionClient,
         tickers: list,
         output_dir: str = "market_data/options_price_data",
         contract_selector=None,
@@ -199,12 +197,9 @@ class OptionPriceMonitor:
         self, ticker: str, spec: ContractSpec, stock_price: Decimal
     ) -> Optional[dict]:
         try:
-            quote_resp = self._client._option_data_client.get_option_latest_quote(
-                OptionLatestQuoteRequest(symbol_or_symbols=[spec.symbol])
-            )
-            quote = quote_resp[spec.symbol]
-            bid = _D(str(quote.bid_price))
-            ask = _D(str(quote.ask_price))
+            q = self._client.get_option_quote_by_occ(spec.symbol)
+            bid = _D(str(q["bid"]))
+            ask = _D(str(q["ask"]))
         except Exception:
             logger.warning("Could not fetch option quote for %s", spec.symbol)
             return None
@@ -282,12 +277,9 @@ class OptionPriceMonitor:
           5. Clamp result to [bid, ask].
         """
         try:
-            quote_resp = self._client._option_data_client.get_option_latest_quote(
-                OptionLatestQuoteRequest(symbol_or_symbols=[option_symbol])
-            )
-            quote = quote_resp[option_symbol]
-            bid = _D(str(quote.bid_price))
-            ask = _D(str(quote.ask_price))
+            q = self._client.get_option_quote_by_occ(option_symbol)
+            bid = _D(str(q["bid"]))
+            ask = _D(str(q["ask"]))
         except Exception:
             logger.warning(
                 "get_fair_price: could not fetch quote for %s, returning mid fallback",

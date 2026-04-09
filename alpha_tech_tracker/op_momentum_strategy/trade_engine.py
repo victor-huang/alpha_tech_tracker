@@ -17,7 +17,7 @@ from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector import (
     score_ticker,
     select_top_n,
 )
-from alpha_tech_tracker.trade_api.alpaca_client.client import AlpacaAPIClient
+from alpha_tech_tracker.trade_api.execution_client import ExecutionClient
 
 from .config import (
     ACCOUNT_BUDGET,
@@ -223,7 +223,7 @@ class OpMomentumTradeEngine:
 
     def __init__(
         self,
-        alpaca_client: AlpacaAPIClient,
+        alpaca_client: ExecutionClient,
         is_paper: bool = True,
         stop_pct: float = float(STOP_PCT),
         mock_trade_execution: bool = False,
@@ -939,7 +939,6 @@ class OpMomentumTradeEngine:
         limit_price,
     ) -> dict:
         from decimal import ROUND_HALF_UP
-        from alpaca.data.requests import OptionLatestQuoteRequest
 
         option_type = "CALL" if signal == "BULLISH" else "PUT"
         option_type_lower = option_type.lower()
@@ -970,13 +969,10 @@ class OpMomentumTradeEngine:
                     logger.info("MOCK ENTRY PRICE %s: %s", option_symbol, entry_mid)
             else:
                 try:
-                    quote_resp = self._client._option_data_client.get_option_latest_quote(
-                        OptionLatestQuoteRequest(symbol_or_symbols=[option_symbol])
-                    )
-                    quote = quote_resp[option_symbol]
-                    bid = _D(quote.bid_price)
-                    ask = _D(quote.ask_price)
-                    entry_mid = (bid + ask) / _D("2")
+                    q = self._client.get_option_quote_by_occ(option_symbol)
+                    bid = _D(str(q["bid"]))
+                    ask = _D(str(q["ask"]))
+                    entry_mid = _D(str(q["mid"]))
                     logger.info(
                         "ENTRY QUOTE %s: bid=%s ask=%s mid=%s",
                         option_symbol,

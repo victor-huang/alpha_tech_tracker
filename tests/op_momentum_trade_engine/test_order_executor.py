@@ -8,15 +8,11 @@ _MODULE = "alpha_tech_tracker.op_momentum_strategy.order_executor"
 
 
 def _make_client(bid=4.90, ask=5.10, order_status="open"):
-    """Return a mock AlpacaAPIClient with a pre-configured option quote and order status."""
+    """Return a mock ExecutionClient with a pre-configured option quote and order status."""
     client = MagicMock()
 
-    quote = MagicMock()
-    quote.bid_price = bid
-    quote.ask_price = ask
-    client._option_data_client.get_option_latest_quote.return_value = {
-        "TSLA260328C00280000": quote
-    }
+    mid = (bid + ask) / 2
+    client.get_option_quote_by_occ.return_value = {"bid": bid, "ask": ask, "mid": mid}
 
     client.place_option_order.return_value = {
         "order_id": "ord-001",

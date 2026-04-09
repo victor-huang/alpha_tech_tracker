@@ -149,11 +149,12 @@ class TestFullDaySimulationNvdaBullish:
         exit_q = _make_option_quote(
             mock_api["exit_quote"]["bid"], mock_api["exit_quote"]["ask"]
         )
-        client._option_data_client.get_option_latest_quote.side_effect = [
-            {option_symbol: entry_q},  # TimePremiumContractSelector batch fetch
-            {option_symbol: entry_q},  # PositionSizer.compute()
-            {option_symbol: entry_q},  # _place_entry() re-fetches for exact mid
-            {option_symbol: exit_q},   # _close_position() exit mid
+        # TimePremiumContractSelector uses batch fetch; sizer/entry/exit use single fetch
+        client.get_option_quotes_by_occ_batch.return_value = {option_symbol: entry_q}
+        client.get_option_quote_by_occ.side_effect = [
+            entry_q,   # PositionSizer.compute()
+            entry_q,   # _place_entry() re-fetches for exact mid
+            exit_q,    # _close_position() exit mid
         ]
 
         engine, monitor = _wire_engine_and_monitor(client, signal_engine)
@@ -374,11 +375,12 @@ class TestLivePipingFullDay:
         exit_q = _make_option_quote(
             mock_api["exit_quote"]["bid"], mock_api["exit_quote"]["ask"]
         )
-        client._option_data_client.get_option_latest_quote.side_effect = [
-            {option_symbol: entry_q},  # TimePremiumContractSelector batch fetch
-            {option_symbol: entry_q},
-            {option_symbol: entry_q},
-            {option_symbol: exit_q},
+        # TimePremiumContractSelector uses batch fetch; sizer/entry/exit use single fetch
+        client.get_option_quotes_by_occ_batch.return_value = {option_symbol: entry_q}
+        client.get_option_quote_by_occ.side_effect = [
+            entry_q,   # PositionSizer.compute()
+            entry_q,   # _place_entry() re-fetches for exact mid
+            exit_q,    # _close_position() exit mid
         ]
 
         engine, monitor = _wire_engine_and_monitor(client, signal_engine)

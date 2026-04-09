@@ -4,7 +4,6 @@ from decimal import ROUND_CEILING, ROUND_HALF_UP
 
 import pandas as pd
 import pytz
-from alpaca.data.requests import OptionLatestQuoteRequest
 from pandas.tseries.holiday import (
     AbstractHolidayCalendar,
     GoodFriday,
@@ -15,7 +14,7 @@ from pandas.tseries.holiday import (
     nearest_workday,
 )
 
-from alpha_tech_tracker.trade_api.alpaca_client.client import AlpacaAPIClient
+from alpha_tech_tracker.trade_api.execution_client import ExecutionClient
 
 from .config import STRIKE_CALL_OFFSET, STRIKE_PUT_OFFSET
 from .models import _D
@@ -78,7 +77,7 @@ def _strike_increment(price) -> object:
 
 
 def _fetch_contracts_with_expiry_fallback(
-    client: AlpacaAPIClient,
+    client: ExecutionClient,
     ticker: str,
     option_type: str,
     search_low,
@@ -131,7 +130,7 @@ def _fetch_contracts_with_expiry_fallback(
 class ITMOptionContractSelector:
     """Finds the nearest weekly option contract matching the signal."""
 
-    def __init__(self, alpaca_client: AlpacaAPIClient):
+    def __init__(self, alpaca_client: ExecutionClient):
         self._client = alpaca_client
 
     def select(self, ticker: str, signal: str, stock_price: float) -> str:
@@ -228,7 +227,7 @@ class TimePremiumContractSelector:
 
     def __init__(
         self,
-        client: AlpacaAPIClient,
+        client: ExecutionClient,
         time_premium_pct_cap: float = 0.01,
         reference_dte: int = 5,
     ):
@@ -290,9 +289,9 @@ class TimePremiumContractSelector:
             quote = quotes.get(sym)
             if quote is None:
                 continue
-            bid = _D(str(quote.bid_price))
-            ask = _D(str(quote.ask_price))
-            mid = (bid + ask) / _D("2")
+            bid = _D(str(quote["bid"]))
+            ask = _D(str(quote["ask"]))
+            mid = _D(str(quote["mid"]))
             if mid <= _D("0"):
                 continue
             strike = _D(str(contract["strike_price"]))
@@ -325,9 +324,7 @@ class TimePremiumContractSelector:
 
     def _fetch_quotes_batch(self, symbols: list) -> dict:
         try:
-            return self._client._option_data_client.get_option_latest_quote(
-                OptionLatestQuoteRequest(symbol_or_symbols=symbols)
-            )
+            return self._client.get_option_quotes_by_occ_batch(symbols)
         except Exception:
             logger.warning(
                 "Failed to batch-fetch option quotes for %d symbols", len(symbols)

@@ -2,9 +2,7 @@ import logging
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Optional
 
-from alpaca.data.requests import OptionLatestQuoteRequest
-
-from alpha_tech_tracker.trade_api.alpaca_client.client import AlpacaAPIClient
+from alpha_tech_tracker.trade_api.execution_client import ExecutionClient
 
 from .config import ACCOUNT_BUDGET, MAX_CAPITAL_PERCENTAGE_PER_SYMBOL_IN_WINDOW
 from .models import _D, _stock_bid_ask
@@ -15,7 +13,7 @@ logger = logging.getLogger(__name__)
 class PositionSizer:
     """Computes contract quantity based on available buying power."""
 
-    def __init__(self, alpaca_client: AlpacaAPIClient):
+    def __init__(self, alpaca_client: ExecutionClient):
         self._client = alpaca_client
 
     def compute(
@@ -37,13 +35,10 @@ class PositionSizer:
             from .mock_option_pricer import mock_entry_price
             mid = mock_entry_price(mock_stock_price, option_symbol)
         else:
-            quote_resp = self._client._option_data_client.get_option_latest_quote(
-                OptionLatestQuoteRequest(symbol_or_symbols=[option_symbol])
-            )
-            quote = quote_resp[option_symbol]
-            bid = _D(quote.bid_price)
-            ask = _D(quote.ask_price)
-            mid = (bid + ask) / _D("2")
+            q = self._client.get_option_quote_by_occ(option_symbol)
+            bid = _D(str(q["bid"]))
+            ask = _D(str(q["ask"]))
+            mid = _D(str(q["mid"]))
 
         if mid <= _D("0"):
             logger.warning(

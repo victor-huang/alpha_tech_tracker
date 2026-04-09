@@ -114,10 +114,8 @@ def _set_latest_bar(engine, ticker, close, ma50, ma20=None):
 
 
 def _make_option_quote(bid, ask):
-    q = Mock()
-    q.bid_price = bid
-    q.ask_price = ask
-    return q
+    mid = (bid + ask) / 2
+    return {"bid": bid, "ask": ask, "mid": mid}
 
 
 def _make_stock_position(

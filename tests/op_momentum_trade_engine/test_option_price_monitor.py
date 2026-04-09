@@ -114,9 +114,7 @@ class TestFetchStats:
 
     def test_call_intrinsic_is_stock_minus_strike(self):
         client = _make_alpaca_client()
-        client._option_data_client.get_option_latest_quote.return_value = {
-            _WEEKLY_CALL: _make_option_quote(bid=19.0, ask=21.0)
-        }
+        client.get_option_quote_by_occ.return_value = _make_option_quote(bid=19.0, ask=21.0)
         spec = ContractSpec(symbol=_WEEKLY_CALL, option_type="call")
 
         row = self._run(client, spec, stock_price=300.0)
@@ -128,9 +126,7 @@ class TestFetchStats:
 
     def test_put_intrinsic_is_strike_minus_stock(self):
         client = _make_alpaca_client()
-        client._option_data_client.get_option_latest_quote.return_value = {
-            _MONTHLY_CALL: _make_option_quote(bid=18.0, ask=22.0)
-        }
+        client.get_option_quote_by_occ.return_value = _make_option_quote(bid=18.0, ask=22.0)
         spec = ContractSpec(symbol=_MONTHLY_CALL, option_type="put")
 
         row = self._run(client, spec, stock_price=260.0)
@@ -141,9 +137,7 @@ class TestFetchStats:
 
     def test_spread_pct_computed_correctly(self):
         client = _make_alpaca_client()
-        client._option_data_client.get_option_latest_quote.return_value = {
-            _WEEKLY_CALL: _make_option_quote(bid=18.0, ask=22.0)
-        }
+        client.get_option_quote_by_occ.return_value = _make_option_quote(bid=18.0, ask=22.0)
         spec = ContractSpec(symbol=_WEEKLY_CALL, option_type="call")
 
         row = self._run(client, spec, stock_price=300.0)
@@ -153,9 +147,7 @@ class TestFetchStats:
 
     def test_spread_pct_is_zero_when_mid_is_zero(self):
         client = _make_alpaca_client()
-        client._option_data_client.get_option_latest_quote.return_value = {
-            _WEEKLY_CALL: _make_option_quote(bid=0.0, ask=0.0)
-        }
+        client.get_option_quote_by_occ.return_value = _make_option_quote(bid=0.0, ask=0.0)
         spec = ContractSpec(symbol=_WEEKLY_CALL, option_type="call")
 
         row = self._run(client, spec, stock_price=300.0)
@@ -164,9 +156,7 @@ class TestFetchStats:
 
     def test_daily_theta_is_zero_when_already_expired(self):
         client = _make_alpaca_client()
-        client._option_data_client.get_option_latest_quote.return_value = {
-            _WEEKLY_CALL: _make_option_quote(bid=19.0, ask=21.0)
-        }
+        client.get_option_quote_by_occ.return_value = _make_option_quote(bid=19.0, ask=21.0)
         spec = ContractSpec(symbol=_WEEKLY_CALL, option_type="call")
 
         # today is after expiry
@@ -176,9 +166,7 @@ class TestFetchStats:
 
     def test_expiry_type_weekly_for_non_third_friday(self):
         client = _make_alpaca_client()
-        client._option_data_client.get_option_latest_quote.return_value = {
-            _WEEKLY_CALL: _make_option_quote(bid=19.0, ask=21.0)
-        }
+        client.get_option_quote_by_occ.return_value = _make_option_quote(bid=19.0, ask=21.0)
         spec = ContractSpec(symbol=_WEEKLY_CALL, option_type="call")
 
         row = self._run(client, spec, stock_price=300.0)
@@ -187,9 +175,7 @@ class TestFetchStats:
 
     def test_expiry_type_monthly_for_third_friday(self):
         client = _make_alpaca_client()
-        client._option_data_client.get_option_latest_quote.return_value = {
-            _MONTHLY_CALL: _make_option_quote(bid=19.0, ask=21.0)
-        }
+        client.get_option_quote_by_occ.return_value = _make_option_quote(bid=19.0, ask=21.0)
         spec = ContractSpec(symbol=_MONTHLY_CALL, option_type="call")
 
         row = self._run(client, spec, stock_price=300.0)
@@ -198,7 +184,7 @@ class TestFetchStats:
 
     def test_returns_none_when_quote_fetch_fails(self):
         client = _make_alpaca_client()
-        client._option_data_client.get_option_latest_quote.side_effect = Exception(
+        client.get_option_quote_by_occ.side_effect = Exception(
             "network error"
         )
         spec = ContractSpec(symbol=_WEEKLY_CALL, option_type="call")
@@ -209,9 +195,7 @@ class TestFetchStats:
 
     def test_returns_none_for_unparseable_symbol(self):
         client = _make_alpaca_client()
-        client._option_data_client.get_option_latest_quote.return_value = {
-            "BADSYM": _make_option_quote(bid=5.0, ask=6.0)
-        }
+        client.get_option_quote_by_occ.return_value = _make_option_quote(bid=5.0, ask=6.0)
         spec = ContractSpec(symbol="BADSYM", option_type="call")
 
         monitor = _make_monitor(client=client)
@@ -221,9 +205,7 @@ class TestFetchStats:
 
     def test_row_contains_all_required_csv_fields(self):
         client = _make_alpaca_client()
-        client._option_data_client.get_option_latest_quote.return_value = {
-            _WEEKLY_CALL: _make_option_quote(bid=19.0, ask=21.0)
-        }
+        client.get_option_quote_by_occ.return_value = _make_option_quote(bid=19.0, ask=21.0)
         spec = ContractSpec(symbol=_WEEKLY_CALL, option_type="call")
 
         row = self._run(client, spec, stock_price=300.0)
@@ -264,9 +246,7 @@ class TestGetFairPrice:
 
     def _monitor_with_quote(self, bid, ask, cache_tv=None):
         client = _make_alpaca_client()
-        client._option_data_client.get_option_latest_quote.return_value = {
-            self._SYM: _make_option_quote(bid=bid, ask=ask)
-        }
+        client.get_option_quote_by_occ.return_value = _make_option_quote(bid=bid, ask=ask)
         monitor = _make_monitor(client=client)
         if cache_tv is not None:
             monitor._cache[self._SYM] = deque(
@@ -308,15 +288,16 @@ class TestGetFairPrice:
         fair = monitor.get_fair_price("TSLA", self._SYM, "call", _D("300"))
         assert fair == _D("50.00")
 
-    def test_clamps_fair_price_to_bid_when_below(self):
-        # Wide spread → cache path; intrinsic=$20 + median_tv=$1 = $21 < bid=$22 → clamp to $22
+    def test_fair_price_stays_below_bid_when_cache_tv_is_small(self):
+        # Wide spread → cache path; intrinsic=$20 + median_tv=$1 = $21
+        # bid clamping is intentionally skipped (see get_fair_price comment)
         monitor = self._monitor_with_quote(bid=22.0, ask=35.0, cache_tv=_D("1"))
         fair = monitor.get_fair_price("TSLA", self._SYM, "call", _D("300"))
-        assert fair == _D("22.00")
+        assert fair == _D("21.00")
 
     def test_returns_zero_when_quote_fetch_fails(self):
         client = _make_alpaca_client()
-        client._option_data_client.get_option_latest_quote.side_effect = Exception(
+        client.get_option_quote_by_occ.side_effect = Exception(
             "timeout"
         )
         monitor = _make_monitor(client=client)
@@ -325,9 +306,7 @@ class TestGetFairPrice:
 
     def test_returns_mid_when_occ_symbol_cannot_be_parsed(self):
         client = _make_alpaca_client()
-        client._option_data_client.get_option_latest_quote.return_value = {
-            "BADSYM": _make_option_quote(bid=5.0, ask=7.0)
-        }
+        client.get_option_quote_by_occ.return_value = _make_option_quote(bid=5.0, ask=7.0)
         monitor = _make_monitor(client=client)
         fair = monitor.get_fair_price("TSLA", "BADSYM", "call", _D("300"))
         assert fair == _D("6.00")
@@ -374,9 +353,7 @@ class TestGetFairPriceQuantization:
 
     def _monitor_with_quote(self, bid, ask, cache_tv=None):
         client = _make_alpaca_client()
-        client._option_data_client.get_option_latest_quote.return_value = {
-            self._SYM: _make_option_quote(bid=bid, ask=ask)
-        }
+        client.get_option_quote_by_occ.return_value = _make_option_quote(bid=bid, ask=ask)
         monitor = _make_monitor(client=client)
         if cache_tv is not None:
             monitor._cache[self._SYM] = deque(
@@ -403,10 +380,10 @@ class TestGetFairPriceQuantization:
         # OTM call: stock=$278, strike=$280 → intrinsic=$0; bid=$0.80, ask=$0.94
         # mid=$0.87, spread=16.1% wide → use 20% of spread fallback
         # median_tv = (0.94-0.80)*0.20 = $0.028 → fair = 0 + 0.028 = $0.028
-        # clamped to bid=$0.80; $0.80 < $3 → penny pilot tick $0.01 → $0.80
+        # bid clamping is intentionally skipped; $0.028 < $3 → penny pilot tick $0.01 → $0.03
         monitor = self._monitor_with_quote(bid=0.80, ask=0.94)
         fair = monitor.get_fair_price("TSLA", self._SYM, "call", _D("278"))
-        assert fair == _D("0.80")
+        assert fair == _D("0.03")
 
 
 class TestIsMarketHours:
@@ -450,9 +427,7 @@ class TestSnapshotTicker:
         selector = Mock()
         selector.select_contracts.return_value = [spec]
 
-        client._option_data_client.get_option_latest_quote.return_value = {
-            _WEEKLY_CALL: _make_option_quote(bid=19.0, ask=21.0)
-        }
+        client.get_option_quote_by_occ.return_value = _make_option_quote(bid=19.0, ask=21.0)
 
         monitor = OptionPriceMonitor(
             client=client,
@@ -476,7 +451,7 @@ class TestSnapshotTicker:
     def test_skips_spec_when_fetch_stats_returns_none(self):
         client = _make_alpaca_client()
         client.get_stock_quote.return_value = self._stock_quote(299.0, 301.0)
-        client._option_data_client.get_option_latest_quote.side_effect = Exception(
+        client.get_option_quote_by_occ.side_effect = Exception(
             "no quote"
         )
 

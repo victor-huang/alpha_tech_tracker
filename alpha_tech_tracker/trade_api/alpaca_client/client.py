@@ -13,6 +13,8 @@ from alpaca.trading.requests import (
 from alpaca.trading.enums import OrderSide, TimeInForce
 from alpaca.data.requests import StockLatestQuoteRequest, OptionLatestQuoteRequest
 
+from alpha_tech_tracker.trade_api.execution_client import ExecutionClient
+
 logger = logging.getLogger("trade_api.alpaca")
 
 
@@ -31,7 +33,7 @@ class ClientError(Exception):
     pass
 
 
-class AlpacaAPIClient:
+class AlpacaAPIClient(ExecutionClient):
     def __init__(
         self,
         api_key=None,
@@ -148,6 +150,26 @@ class AlpacaAPIClient:
         }
 
         return formatted_quote
+
+    def get_option_quote_by_occ(self, occ_symbol: str) -> dict:
+        request_params = OptionLatestQuoteRequest(symbol_or_symbols=[occ_symbol])
+        quotes = self._option_data_client.get_option_latest_quote(request_params)
+        q = quotes[occ_symbol]
+        bid = float(q.bid_price)
+        ask = float(q.ask_price)
+        mid = (bid + ask) / 2
+        return {"bid": bid, "ask": ask, "mid": mid}
+
+    def get_option_quotes_by_occ_batch(self, occ_symbols: list) -> dict:
+        request_params = OptionLatestQuoteRequest(symbol_or_symbols=occ_symbols)
+        quotes = self._option_data_client.get_option_latest_quote(request_params)
+        result = {}
+        for sym, q in quotes.items():
+            bid = float(q.bid_price)
+            ask = float(q.ask_price)
+            mid = (bid + ask) / 2
+            result[sym] = {"bid": bid, "ask": ask, "mid": mid}
+        return result
 
     def get_price_from_quote(
         self, quote, percentage_deviate_from_mid_point=-0.1, smallest_unit=0.05
@@ -275,7 +297,7 @@ class AlpacaAPIClient:
     def place_option_order(
         self,
         symbol,
-        option_key,
+        option_key=None,
         price=None,
         order_id=None,
         preview_order=None,
@@ -283,8 +305,12 @@ class AlpacaAPIClient:
         option_type="CALL",
         order_action="BUY_OPEN",
         quantity=1,
+        _option_symbol_override=None,
     ):
-        option_symbol = self._build_option_symbol(symbol, option_key, option_type)
+        if _option_symbol_override:
+            option_symbol = _option_symbol_override
+        else:
+            option_symbol = self._build_option_symbol(symbol, option_key, option_type)
 
         side_mapping = {
             "BUY_OPEN": "BUY",

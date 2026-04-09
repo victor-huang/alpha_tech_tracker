@@ -339,7 +339,7 @@ class TestTimePremiumContractSelector:
         # strike $290 (intrinsic $10): mid=$14 → time_premium=$4 > $3 → skip
         # strike $280 (intrinsic $20): mid=$22 → time_premium=$2 <= $3 → select
         client.get_options_contracts.return_value = _make_contracts([280, 290])
-        client._option_data_client.get_option_latest_quote.return_value = {
+        client.get_option_quotes_by_occ_batch.return_value = {
             "TSLA260327C00290000": _make_option_quote(bid=13.0, ask=15.0),  # mid=14, tp=4
             "TSLA260327C00280000": _make_option_quote(bid=21.0, ask=23.0),  # mid=22, tp=2
         }
@@ -359,7 +359,7 @@ class TestTimePremiumContractSelector:
         client.get_options_contracts.return_value = _make_contracts(
             [310, 320], option_type="put"
         )
-        client._option_data_client.get_option_latest_quote.return_value = {
+        client.get_option_quotes_by_occ_batch.return_value = {
             "TSLA260327P00310000": _make_option_quote(bid=13.0, ask=15.0),  # mid=14, tp=4
             "TSLA260327P00320000": _make_option_quote(bid=21.0, ask=23.0),  # mid=22, tp=2
         }
@@ -375,7 +375,7 @@ class TestTimePremiumContractSelector:
         client = _make_alpaca_client()
         # DTE=4, target = $2.40; all strikes tp > $2.40 → deepest ITM (lowest call strike)
         client.get_options_contracts.return_value = _make_contracts([290, 295])
-        client._option_data_client.get_option_latest_quote.return_value = {
+        client.get_option_quotes_by_occ_batch.return_value = {
             "TSLA260327C00295000": _make_option_quote(bid=9.0, ask=11.0),   # mid=10, tp=5 > 2.40
             "TSLA260327C00290000": _make_option_quote(bid=13.5, ask=14.5),  # mid=14, tp=4 > 2.40
         }
@@ -389,7 +389,7 @@ class TestTimePremiumContractSelector:
         client = _make_alpaca_client()
         # strike $295: mid=0 → skip; strike $285: tp=$2 ≤ $3 → select
         client.get_options_contracts.return_value = _make_contracts([285, 295])
-        client._option_data_client.get_option_latest_quote.return_value = {
+        client.get_option_quotes_by_occ_batch.return_value = {
             "TSLA260327C00295000": _make_option_quote(bid=0.0, ask=0.0),    # mid=0, skip
             "TSLA260327C00285000": _make_option_quote(bid=16.0, ask=18.0),  # mid=17, tp=2
         }
@@ -403,7 +403,7 @@ class TestTimePremiumContractSelector:
         client = _make_alpaca_client()
         # $295 not in quote response → skip; $285 has tp=$2 ≤ $3 → select
         client.get_options_contracts.return_value = _make_contracts([285, 295])
-        client._option_data_client.get_option_latest_quote.return_value = {
+        client.get_option_quotes_by_occ_batch.return_value = {
             "TSLA260327C00285000": _make_option_quote(bid=16.0, ask=18.0),  # mid=17, tp=2
         }
 
@@ -415,7 +415,7 @@ class TestTimePremiumContractSelector:
     def test_quote_fetch_failure_falls_back_to_deepest_itm(self, _, __):
         client = _make_alpaca_client()
         client.get_options_contracts.return_value = _make_contracts([280, 290, 295])
-        client._option_data_client.get_option_latest_quote.side_effect = Exception(
+        client.get_option_quotes_by_occ_batch.side_effect = Exception(
             "network error"
         )
 
@@ -439,7 +439,7 @@ class TestTimePremiumContractSelector:
         client.get_options_contracts.side_effect = [[], monthly]
 
         selector = TimePremiumContractSelector(client, time_premium_pct_cap=0.01)
-        client._option_data_client.get_option_latest_quote.return_value = {
+        client.get_option_quotes_by_occ_batch.return_value = {
             monthly[0]["symbol"]: _make_option_quote(bid=21.0, ask=23.0),
         }
 
@@ -454,7 +454,7 @@ class TestTimePremiumContractSelector:
         # time_premium_pct_cap=0.02 → target = 0.02/5 * 4 * $300 = $4.80
         #   strike $290 tp=$4 ≤ $4.80 → picked first
         client.get_options_contracts.return_value = _make_contracts([280, 290])
-        client._option_data_client.get_option_latest_quote.return_value = {
+        client.get_option_quotes_by_occ_batch.return_value = {
             "TSLA260327C00290000": _make_option_quote(bid=13.0, ask=15.0),  # mid=14, tp=4
             "TSLA260327C00280000": _make_option_quote(bid=21.0, ask=23.0),  # mid=22, tp=2
         }
@@ -471,7 +471,7 @@ class TestTimePremiumContractSelector:
         client = _make_alpaca_client()
         monthly = _make_contracts([280], option_type="call", expiry="2026-04-17")
         client.get_options_contracts.side_effect = [[], monthly]
-        client._option_data_client.get_option_latest_quote.return_value = {
+        client.get_option_quotes_by_occ_batch.return_value = {
             monthly[0]["symbol"]: _make_option_quote(bid=29.0, ask=31.0),  # mid=30, tp=10
         }
 
@@ -483,7 +483,7 @@ class TestTimePremiumContractSelector:
     def test_bullish_fetches_itm_call_strike_range(self, _, __):
         client = _make_alpaca_client()
         client.get_options_contracts.return_value = _make_contracts([280])
-        client._option_data_client.get_option_latest_quote.return_value = {
+        client.get_option_quotes_by_occ_batch.return_value = {
             "TSLA260327C00280000": _make_option_quote(bid=21.0, ask=23.0),
         }
 
@@ -500,7 +500,7 @@ class TestTimePremiumContractSelector:
         client.get_options_contracts.return_value = _make_contracts(
             [310], option_type="put"
         )
-        client._option_data_client.get_option_latest_quote.return_value = {
+        client.get_option_quotes_by_occ_batch.return_value = {
             "TSLA260327P00310000": _make_option_quote(bid=8.0, ask=12.0),  # mid=10, tp=0 ≤ 3
         }
 

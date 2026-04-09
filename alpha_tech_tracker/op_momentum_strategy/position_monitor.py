@@ -7,9 +7,7 @@ from typing import Callable, Optional
 import pandas as pd
 import pytz
 
-from alpaca.data.requests import OptionLatestQuoteRequest
-
-from alpha_tech_tracker.trade_api.alpaca_client.client import AlpacaAPIClient
+from alpha_tech_tracker.trade_api.execution_client import ExecutionClient
 
 from .config import (
     ARMED_MA20_EXIT,
@@ -63,7 +61,7 @@ class PositionMonitor:
 
     def __init__(
         self,
-        alpaca_client: AlpacaAPIClient,
+        alpaca_client: ExecutionClient,
         signal_engine,
         mock_trade_execution: bool = False,
         trailing_ma: str = TRAILING_MA,
@@ -523,13 +521,10 @@ class PositionMonitor:
                     logger.info("MOCK EXIT PRICE %s: %s", pos.option_symbol, mid)
             else:
                 try:
-                    quote_resp = self._client._option_data_client.get_option_latest_quote(
-                        OptionLatestQuoteRequest(symbol_or_symbols=[pos.option_symbol])
-                    )
-                    quote = quote_resp[pos.option_symbol]
-                    bid = _D(quote.bid_price)
-                    ask = _D(quote.ask_price)
-                    mid = (bid + ask) / _D("2")
+                    q = self._client.get_option_quote_by_occ(pos.option_symbol)
+                    bid = _D(str(q["bid"]))
+                    ask = _D(str(q["ask"]))
+                    mid = _D(str(q["mid"]))
                     logger.info(
                         "EXIT QUOTE %s: bid=%s ask=%s mid=%s",
                         pos.option_symbol,
@@ -620,11 +615,8 @@ class PositionMonitor:
 
     def _fetch_option_mid(self, option_symbol: str) -> Optional[object]:
         try:
-            resp = self._client._option_data_client.get_option_latest_quote(
-                OptionLatestQuoteRequest(symbol_or_symbols=[option_symbol])
-            )
-            q = resp[option_symbol]
-            return (_D(q.bid_price) + _D(q.ask_price)) / _D("2")
+            q = self._client.get_option_quote_by_occ(option_symbol)
+            return _D(str(q["mid"]))
         except Exception:
             return None
 

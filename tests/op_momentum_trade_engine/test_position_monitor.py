@@ -38,9 +38,7 @@ class TestPositionMonitor:
             "status": "filled",
             "filled_avg_price": 5.25,
         }
-        client._option_data_client.get_option_latest_quote.return_value = {
-            "NVDA260328C00900000": _make_option_quote(bid=5.0, ask=5.5)
-        }
+        client.get_option_quote_by_occ.return_value = _make_option_quote(bid=5.0, ask=5.5)
 
         pos = _make_active_position(
             signal="BULLISH",
@@ -77,9 +75,7 @@ class TestPositionMonitor:
             "status": "filled",
             "filled_avg_price": 5.25,
         }
-        client._option_data_client.get_option_latest_quote.return_value = {
-            "NVDA260328C00900000": _make_option_quote(bid=5.0, ask=5.5)
-        }
+        client.get_option_quote_by_occ.return_value = _make_option_quote(bid=5.0, ask=5.5)
 
         pos = _make_active_position(
             signal="BULLISH", hard_stop_price=_D("103.5"), fallback_price=_D("103.0")
@@ -106,9 +102,7 @@ class TestPositionMonitor:
             "status": "filled",
             "filled_avg_price": 5.25,
         }
-        client._option_data_client.get_option_latest_quote.return_value = {
-            "NVDA260328C00900000": _make_option_quote(bid=5.0, ask=5.5)
-        }
+        client.get_option_quote_by_occ.return_value = _make_option_quote(bid=5.0, ask=5.5)
 
         pos = _make_active_position(
             signal="BULLISH", hard_stop_price=_D("103.5"), fallback_price=_D("103.0")
@@ -134,9 +128,7 @@ class TestPositionMonitor:
             "status": "filled",
             "filled_avg_price": 5.25,
         }
-        client._option_data_client.get_option_latest_quote.return_value = {
-            "NVDA260328C00900000": _make_option_quote(bid=5.0, ask=5.5)
-        }
+        client.get_option_quote_by_occ.return_value = _make_option_quote(bid=5.0, ask=5.5)
 
         pos = _make_active_position(
             signal="BEARISH",
@@ -177,9 +169,7 @@ class TestPositionMonitor:
             "status": "filled",
             "filled_avg_price": 5.25,
         }
-        client._option_data_client.get_option_latest_quote.return_value = {
-            "NVDA260328C00900000": _make_option_quote(bid=5.0, ask=5.5)
-        }
+        client.get_option_quote_by_occ.return_value = _make_option_quote(bid=5.0, ask=5.5)
 
         pos = _make_active_position(
             signal="BEARISH",
@@ -231,9 +221,7 @@ class TestPositionMonitor:
             "status": "filled",
             "filled_avg_price": 5.25,
         }
-        client._option_data_client.get_option_latest_quote.return_value = {
-            "NVDA260328C00900000": _make_option_quote(bid=5.0, ask=5.5)
-        }
+        client.get_option_quote_by_occ.return_value = _make_option_quote(bid=5.0, ask=5.5)
 
         pos1 = _make_active_position(signal="BULLISH")
         pos2 = _make_active_position(signal="BEARISH")
@@ -257,9 +245,7 @@ class TestPositionMonitor:
         client = _make_alpaca_client()
         client.place_option_order.return_value = {"order_id": "close-ml-1"}
         client.order_status.return_value = {"status": "filled", "filled_avg_price": 5.0}
-        client._option_data_client.get_option_latest_quote.return_value = {
-            "NVDA260328C00900000": _make_option_quote(bid=5.0, ask=5.5)
-        }
+        client.get_option_quote_by_occ.return_value = _make_option_quote(bid=5.0, ask=5.5)
 
         pos = _make_active_position(
             signal="BULLISH", hard_stop_price=_D("103.5"), fallback_price=_D("103.0")
@@ -281,9 +267,7 @@ class TestPositionMonitor:
         client = _make_alpaca_client()
         client.place_option_order.return_value = {"order_id": "close-ml-2"}
         client.order_status.return_value = {"status": "filled", "filled_avg_price": 5.0}
-        client._option_data_client.get_option_latest_quote.return_value = {
-            "NVDA260328C00900000": _make_option_quote(bid=5.0, ask=5.5)
-        }
+        client.get_option_quote_by_occ.return_value = _make_option_quote(bid=5.0, ask=5.5)
 
         pos = _make_active_position(
             signal="BEARISH",
@@ -307,9 +291,7 @@ class TestPositionMonitor:
 
     def test_max_loss_pct_does_not_exit_when_loss_within_threshold(self):
         client = _make_alpaca_client()
-        client._option_data_client.get_option_latest_quote.return_value = {
-            "NVDA260328C00900000": _make_option_quote(bid=5.0, ask=5.5)
-        }
+        client.get_option_quote_by_occ.return_value = _make_option_quote(bid=5.0, ask=5.5)
 
         pos = _make_active_position(
             signal="BULLISH", hard_stop_price=_D("101.0"), fallback_price=_D("102.0")
@@ -330,9 +312,7 @@ class TestPositionMonitor:
         client = _make_alpaca_client()
         client.place_option_order.return_value = {"order_id": "close-ame-1"}
         client.order_status.return_value = {"status": "filled", "filled_avg_price": 5.0}
-        client._option_data_client.get_option_latest_quote.return_value = {
-            "NVDA260328C00900000": _make_option_quote(bid=5.0, ask=5.5)
-        }
+        client.get_option_quote_by_occ.return_value = _make_option_quote(bid=5.0, ask=5.5)
 
         pos = _make_active_position(
             signal="BULLISH", hard_stop_price=_D("103.5"), fallback_price=_D("103.0")
@@ -360,9 +340,7 @@ class TestPositionMonitor:
         client = _make_alpaca_client()
         client.place_option_order.return_value = {"order_id": "close-ame-2"}
         client.order_status.return_value = {"status": "filled", "filled_avg_price": 5.0}
-        client._option_data_client.get_option_latest_quote.return_value = {
-            "NVDA260328C00900000": _make_option_quote(bid=5.0, ask=5.5)
-        }
+        client.get_option_quote_by_occ.return_value = _make_option_quote(bid=5.0, ask=5.5)
 
         pos = _make_active_position(
             signal="BEARISH",
@@ -394,9 +372,7 @@ class TestPositionMonitor:
         client = _make_alpaca_client()
         client.place_option_order.return_value = {"order_id": "close-ame-3"}
         client.order_status.return_value = {"status": "filled", "filled_avg_price": 5.0}
-        client._option_data_client.get_option_latest_quote.return_value = {
-            "NVDA260328C00900000": _make_option_quote(bid=5.0, ask=5.5)
-        }
+        client.get_option_quote_by_occ.return_value = _make_option_quote(bid=5.0, ask=5.5)
 
         pos = _make_active_position(
             signal="BULLISH", hard_stop_price=_D("103.5"), fallback_price=_D("103.0")
@@ -419,9 +395,7 @@ class TestPositionMonitor:
     def test_already_closed_position_is_not_closed_again(self):
         client = _make_alpaca_client()
         client.place_option_order.return_value = {"order_id": "eod-close"}
-        client._option_data_client.get_option_latest_quote.return_value = {
-            "NVDA260328C00900000": _make_option_quote(bid=5.0, ask=5.5)
-        }
+        client.get_option_quote_by_occ.return_value = _make_option_quote(bid=5.0, ask=5.5)
 
         pos = _make_active_position(signal="BULLISH")
         pos.is_closed = True
@@ -449,9 +423,7 @@ class TestPositionMonitor:
           entry close=112 (above midpoint → BULLISH, but also ≤ fallback)
         """
         client = _make_alpaca_client()
-        client._option_data_client.get_option_latest_quote.return_value = {
-            "NVDA260328C00900000": _make_option_quote(bid=5.0, ask=5.5)
-        }
+        client.get_option_quote_by_occ.return_value = _make_option_quote(bid=5.0, ask=5.5)
 
         pos = _make_active_position(
             signal="BULLISH",
@@ -482,9 +454,7 @@ class TestPositionMonitor:
     def test_exits_on_bar_after_entry_when_fallback_condition_met(self):
         """After the entry bar, fallback_20pct should fire normally."""
         client = _make_alpaca_client()
-        client._option_data_client.get_option_latest_quote.return_value = {
-            "NVDA260328C00900000": _make_option_quote(bid=5.0, ask=5.5)
-        }
+        client.get_option_quote_by_occ.return_value = _make_option_quote(bid=5.0, ask=5.5)
 
         pos = _make_active_position(
             signal="BULLISH",
@@ -743,7 +713,7 @@ class TestMockOptionExitPricing:
         pos = self._make_option_pos("BULLISH", self._CALL_SYM, 100, "12.00")
         client = self._run_eod_close(pos, exit_stock_price=102.0)
 
-        client._option_data_client.get_option_latest_quote.assert_not_called()
+        client.get_option_quote_by_occ.assert_not_called()
 
     def test_call_exit_price_increases_when_stock_rises(self):
         # entry: stock=$100, strike=$90 → entry_iv=$10, entry_tp=$2.00
@@ -824,9 +794,7 @@ class TestReentryWatcher:
             client = _make_alpaca_client()
             client.place_option_order.return_value = {"order_id": "close-x"}
             client.order_status.return_value = {"status": "filled", "filled_avg_price": 5.0}
-            client._option_data_client.get_option_latest_quote.return_value = {
-                "NVDA260328C00900000": _make_option_quote(bid=4.0, ask=5.0)
-            }
+            client.get_option_quote_by_occ.return_value = _make_option_quote(bid=4.0, ask=5.0)
         df = _build_history_df([100.0], ma20=98.0, ma50=97.0, ma200=90.0)
         engine = _make_signal_engine_with_history("NVDA", df)
         return PositionMonitor(client, engine, mock_trade_execution=True, **kwargs), client, engine
@@ -1096,9 +1064,7 @@ class TestExitSmsPrices:
         client = _make_alpaca_client()
         client.place_option_order.return_value = {"order_id": "close-1"}
         client.order_status.return_value = {"status": "filled", "filled_avg_price": 5.0}
-        client._option_data_client.get_option_latest_quote.return_value = {
-            "NVDA260328C00900000": _make_option_quote(bid=4.90, ask=5.10)
-        }
+        client.get_option_quote_by_occ.return_value = _make_option_quote(bid=4.90, ask=5.10)
 
         closes = [100.0]
         df = _build_history_df(closes, ma20=90.0, ma50=90.0, ma200=85.0)
@@ -1120,9 +1086,7 @@ class TestExitSmsPrices:
     def test_exit_sms_includes_mid_price_on_eod_close(self):
         client = _make_alpaca_client()
         client.place_option_order.return_value = {"order_id": "eod-1"}
-        client._option_data_client.get_option_latest_quote.return_value = {
-            "NVDA260328C00900000": _make_option_quote(bid=6.00, ask=6.40)
-        }
+        client.get_option_quote_by_occ.return_value = _make_option_quote(bid=6.00, ask=6.40)
 
         closes = [100.0]
         df = _build_history_df(closes, ma20=90.0, ma50=90.0, ma200=85.0)
@@ -1146,9 +1110,7 @@ class TestEodMarketOrder:
     def test_eod_option_close_places_market_order(self):
         client = _make_alpaca_client()
         client.place_option_order.return_value = {"order_id": "eod-market-1"}
-        client._option_data_client.get_option_latest_quote.return_value = {
-            "NVDA260328C00900000": _make_option_quote(bid=5.0, ask=5.5)
-        }
+        client.get_option_quote_by_occ.return_value = _make_option_quote(bid=5.0, ask=5.5)
 
         closes = [100.0]
         df = _build_history_df(closes, ma20=90.0, ma50=90.0, ma200=85.0)
@@ -1188,9 +1150,7 @@ class TestEodMarketOrder:
         """Non-EOD exits must still go through _place_with_fill_escalation."""
         client = _make_alpaca_client()
         client.order_status.return_value = {"status": "filled", "filled_avg_price": 5.0}
-        client._option_data_client.get_option_latest_quote.return_value = {
-            "NVDA260328C00900000": _make_option_quote(bid=5.0, ask=5.5)
-        }
+        client.get_option_quote_by_occ.return_value = _make_option_quote(bid=5.0, ask=5.5)
 
         closes = [100.0]
         df = _build_history_df(closes, ma20=90.0, ma50=90.0, ma200=85.0)
@@ -1215,9 +1175,7 @@ class TestEodMarketOrder:
         """close_all() must release the lock after each close so on_bar can proceed."""
         client = _make_alpaca_client()
         client.place_option_order.return_value = {"order_id": "eod-2"}
-        client._option_data_client.get_option_latest_quote.return_value = {
-            "NVDA260328C00900000": _make_option_quote(bid=5.0, ask=5.5)
-        }
+        client.get_option_quote_by_occ.return_value = _make_option_quote(bid=5.0, ask=5.5)
 
         closes = [100.0]
         df = _build_history_df(closes, ma20=90.0, ma50=90.0, ma200=85.0)
