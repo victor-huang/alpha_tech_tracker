@@ -1,6 +1,7 @@
 import logging
 import time
 from decimal import ROUND_HALF_UP
+from typing import Optional
 
 from alpaca.data.requests import OptionLatestQuoteRequest
 from alpaca.trading.enums import OrderSide, TimeInForce
@@ -24,11 +25,18 @@ def _place_with_fill_escalation(
     option_type: str,
     contracts: int,
     order_action: str,
+    entry_fill_price: Optional[float] = None,
 ) -> dict:
     """
     Place a limit order at mid price, then escalate if unfilled:
       - After 60s unfilled: cancel + re-place at ask (buy) or bid (sell)
       - After another 60s unfilled: cancel + market order
+
+    When entry_fill_price is provided (quick-exit scenario: position held < 10 min),
+    an extra step 0 is prepended: try a limit at entry_fill_price for 60s first.
+    If unfilled, the normal mid → ask/bid → market escalation follows.
+    This protects against selling at a loss when the position was just opened and
+    the market hasn't had time to reflect the entry price.
     """
     is_buy = order_action == "BUY_OPEN"
 
@@ -80,6 +88,24 @@ def _place_with_fill_escalation(
             logger.warning(
                 "Could not cancel order %s (may already be filled)", order_id
             )
+
+    if entry_fill_price is not None:
+        step0_price = _D(str(entry_fill_price))
+        logger.info(
+            "FILL_ESC step0 %s %s: quick-exit, trying entry_fill_price=%s",
+            order_action,
+            option_symbol,
+            step0_price.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
+        )
+        order = _place_limit(step0_price)
+        order_id = order.get("order_id")
+        logger.info("FILL_ESC step0 order placed: id=%s", order_id)
+        time.sleep(60)
+        if _is_filled(order_id):
+            logger.info("FILL_ESC step0 filled at entry price: %s", order_id)
+            return order
+        _cancel_safely(order_id)
+        logger.info("FILL_ESC step0 unfilled, escalating to normal flow: %s", option_symbol)
 
     try:
         bid, ask, mid = _fetch_mid_bid_ask()

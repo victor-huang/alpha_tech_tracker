@@ -1,7 +1,11 @@
 import pytest
 from unittest.mock import patch
 
-from alpha_tech_tracker.op_momentum_strategy.position_monitor import PositionMonitor
+from alpha_tech_tracker.op_momentum_strategy.position_monitor import (
+    PositionMonitor,
+    _QUICK_EXIT_MAX_SECONDS,
+    _quick_exit_entry_price,
+)
 
 from conftest import (
     _D,
@@ -1348,3 +1352,60 @@ class TestStockExitSms:
 
         assert call_order[0] == "notify"
         assert "order" in call_order
+
+
+class TestQuickExitEntryPrice:
+    """
+    _quick_exit_entry_price returns entry_fill_price (float) when the position was
+    opened recently (< _QUICK_EXIT_MAX_SECONDS), and None otherwise.
+    """
+
+    _MODULE = "alpha_tech_tracker.op_momentum_strategy.position_monitor"
+
+    def _make_pos(self, entry_fill_price=None, entry_time=None):
+        pos = _make_active_position()
+        pos.entry_fill_price = _D(str(entry_fill_price)) if entry_fill_price is not None else None
+        pos.entry_time = entry_time
+        return pos
+
+    def _now(self):
+        from datetime import datetime
+        import pytz
+        return datetime.now(pytz.timezone("America/New_York"))
+
+    def test_returns_entry_fill_price_when_held_under_threshold(self):
+        from datetime import timedelta
+        now = self._now()
+        pos = self._make_pos(entry_fill_price=5.0, entry_time=now - timedelta(seconds=300))
+        with patch(f"{self._MODULE}._now_et", return_value=now):
+            result = _quick_exit_entry_price(pos)
+        assert result == 5.0
+
+    def test_returns_none_when_held_over_threshold(self):
+        from datetime import timedelta
+        now = self._now()
+        pos = self._make_pos(entry_fill_price=5.0, entry_time=now - timedelta(seconds=_QUICK_EXIT_MAX_SECONDS + 1))
+        with patch(f"{self._MODULE}._now_et", return_value=now):
+            result = _quick_exit_entry_price(pos)
+        assert result is None
+
+    def test_returns_none_when_entry_fill_price_missing(self):
+        from datetime import timedelta
+        now = self._now()
+        pos = self._make_pos(entry_fill_price=None, entry_time=now - timedelta(seconds=60))
+        with patch(f"{self._MODULE}._now_et", return_value=now):
+            result = _quick_exit_entry_price(pos)
+        assert result is None
+
+    def test_returns_none_when_entry_time_missing(self):
+        pos = self._make_pos(entry_fill_price=5.0, entry_time=None)
+        result = _quick_exit_entry_price(pos)
+        assert result is None
+
+    def test_returns_none_exactly_at_threshold(self):
+        from datetime import timedelta
+        now = self._now()
+        pos = self._make_pos(entry_fill_price=5.0, entry_time=now - timedelta(seconds=_QUICK_EXIT_MAX_SECONDS))
+        with patch(f"{self._MODULE}._now_et", return_value=now):
+            result = _quick_exit_entry_price(pos)
+        assert result is None
