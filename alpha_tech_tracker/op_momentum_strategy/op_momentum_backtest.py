@@ -268,6 +268,7 @@ def compute_signals_with_backtest(
     bearish_reentry_max_bars: int = 3,
     enable_bullish_reentry: bool = False,
     bullish_reentry_max_bars: int = 5,
+    close_top_pct: float = None,
 ) -> pd.DataFrame:
     opening_start_t = datetime.strptime(opening_start_time, "%H:%M").time()
 
@@ -312,9 +313,16 @@ def compute_signals_with_backtest(
 
         bearish_ma_ok = close < ma20 and (close < ma200 if bearish_ma200 else True)
 
-        if close > midpoint and close > ma20 and close > ma200:
+        if close_top_pct is not None:
+            bull_ok = close >= or_high - close_top_pct * or_range
+            bear_ok = close <= or_low + close_top_pct * or_range
+        else:
+            bull_ok = close > midpoint
+            bear_ok = close <= bottom_30_threshold
+
+        if bull_ok and close > ma20 and close > ma200:
             signal = "BULLISH"
-        elif close <= bottom_30_threshold and bearish_ma_ok:
+        elif bear_ok and bearish_ma_ok:
             signal = "BEARISH"
         else:
             continue
@@ -337,14 +345,19 @@ def compute_signals_with_backtest(
         bear_fallback = or_low + 0.20 * effective_or_range
         fallback_price = bull_fallback if signal == "BULLISH" else bear_fallback
 
+        if close_top_pct is not None:
+            # Stop is the opposite end of the bar; pre-arm so fallback path is bypassed.
+            hard_stop_price = or_low if signal == "BULLISH" else or_high
+            fallback_price = hard_stop_price
+
         # All bars from entry through EOD — no forced close at any window boundary.
         # Trades exit naturally (hard stop, trailing MA, or EOD).
         post_open = day_from_start.iloc[opening_bars:]
         bars_held = 0
         max_favorable_move = 0.0
+        hard_stop_armed = close_top_pct is not None  # pre-arm in close_top_pct mode
         exit_price = fallback_price
-        exit_reason = "fallback_20pct"
-        hard_stop_armed = False
+        exit_reason = "fallback_20pct" if close_top_pct is None else "hard_stop"
         exit_bar_idx = -1  # index into post_open where the primary trade exited
 
         for bar_idx, (_, bar) in enumerate(post_open.iterrows()):
@@ -1465,6 +1478,7 @@ def run_backtest(
     bearish_reentry_max_bars: int = 3,
     enable_bullish_reentry: bool = False,
     bullish_reentry_max_bars: int = 5,
+    close_top_pct: float = None,
 ) -> dict:
     if ticker_dfs is None:
         ticker_dfs = fetch_bars(tickers, start_date, end_date, source=source)
@@ -1494,6 +1508,7 @@ def run_backtest(
             bearish_reentry_max_bars=bearish_reentry_max_bars,
             enable_bullish_reentry=enable_bullish_reentry,
             bullish_reentry_max_bars=bullish_reentry_max_bars,
+            close_top_pct=close_top_pct,
         )
         if not results.empty:
             results = results[results["date"] >= start_date].reset_index(drop=True)

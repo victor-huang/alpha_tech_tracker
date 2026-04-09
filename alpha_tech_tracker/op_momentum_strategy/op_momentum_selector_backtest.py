@@ -224,6 +224,7 @@ def run_selector_backtest(
     bearish_reentry_max_bars: int = 3,
     enable_bullish_reentry: bool = False,
     bullish_reentry_max_bars: int = 5,
+    close_top_pct: float = None,
 ) -> tuple:
     """
     Walk each trading day in [eval_start, eval_end], apply rolling selector
@@ -290,6 +291,7 @@ def run_selector_backtest(
                 bearish_reentry_max_bars=bearish_reentry_max_bars,
                 enable_bullish_reentry=enable_bullish_reentry,
                 bullish_reentry_max_bars=bullish_reentry_max_bars,
+                close_top_pct=close_top_pct,
             )
         all_window_results[label] = results_for_window
         print(f"  [{label}] {win['opening_start']} / {win['opening_bars']} bars — done")
@@ -1417,6 +1419,19 @@ def _parse_args():
         help="If OR range < 1/4 of avg High-Low of last N bars before the window, use that avg as the effective OR range for scoring. Default: 3.",
     )
     parser.add_argument(
+        "--close-top-pct",
+        type=float,
+        default=None,
+        dest="close_top_pct",
+        help=(
+            "Tighter signal filter: BULLISH only if close >= OR_high - PCT * OR_range; "
+            "BEARISH only if close <= OR_low + PCT * OR_range. "
+            "Hard stop set to OR_low (bull) or OR_high (bear), pre-armed from bar 0. "
+            "Example: --close-top-pct 0.05 requires close in top/bottom 5%% of the bar. "
+            "Default: off (uses standard midpoint/bottom-30 conditions)."
+        ),
+    )
+    parser.add_argument(
         "--bearish-reentry",
         action="store_true",
         default=False,
@@ -1549,6 +1564,9 @@ if __name__ == "__main__":
     print(
         f"  OR bar lookback: {f'last {args.or_bar_lookback} bars' if args.or_bar_lookback > 0 else 'disabled'}"
     )
+    print(
+        f"  Close top pct: {f'top/bottom {args.close_top_pct * 100:.0f}% of bar required' if args.close_top_pct is not None else 'disabled (standard midpoint/bottom-30)'}"
+    )
     print(f"  Source       : {args.source}")
 
     trade_rows, all_window_results, trading_days = run_selector_backtest(
@@ -1580,6 +1598,7 @@ if __name__ == "__main__":
         min_score=args.min_score,
         min_ev=args.min_ev,
         or_bar_lookback=args.or_bar_lookback,
+        close_top_pct=args.close_top_pct,
     )
 
     skip_log = _apply_capital_flow(

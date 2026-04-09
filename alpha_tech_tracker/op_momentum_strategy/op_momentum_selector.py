@@ -229,6 +229,7 @@ def select_top_n(
     or_bar_lookback: int = 3,
     regime_filter: bool = False,
     regime_ma: int = 8,
+    close_top_pct: float = None,
 ) -> list:
     if target_date is None:
         target_date = datetime.now(_ET).date()
@@ -260,6 +261,7 @@ def select_top_n(
         or_bar_lookback=or_bar_lookback,
         regime_filter=regime_filter,
         regime_ma=regime_ma,
+        close_top_pct=close_top_pct,
     )
 
     rolling_stats = {
