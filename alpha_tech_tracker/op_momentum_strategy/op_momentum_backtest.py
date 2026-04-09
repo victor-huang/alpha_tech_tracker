@@ -1,6 +1,7 @@
 import argparse
 import os
 import re
+import threading
 import pandas as pd
 import pytz
 import yfinance as yf
@@ -36,7 +37,7 @@ def _cache_path(
 
 def _save_cache(df: pd.DataFrame, path: Path, timeframe: str):
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
+    tmp = path.with_suffix(f".{os.getpid()}_{threading.get_ident()}.tmp")
     df.to_json(tmp, orient="split", date_format="iso")
     tmp.replace(path)  # atomic on POSIX — readers see old or new file, never a partial write
 
