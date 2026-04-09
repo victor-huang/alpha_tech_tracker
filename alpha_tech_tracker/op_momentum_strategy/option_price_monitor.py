@@ -322,7 +322,22 @@ class OptionPriceMonitor:
             fair = intrinsic + median_tv
             reason = "stale_bid" if bid < intrinsic else "wide_spread"
 
-        fair = max(bid, min(ask, fair))
+        # Hard floor: never price a sell below intrinsic value.
+        # Clamping to max(bid, ...) is intentionally avoided here — if the market
+        # maker's bid is below intrinsic we want to sit above it, not follow it down.
+        fair = max(fair, intrinsic)
+        fair = min(ask, fair)   # cap at ask; resting limit above ask is not useful
+        if fair < intrinsic:
+            # Only reachable when ask itself is below intrinsic (entire quote mispriced).
+            logger.warning(
+                "get_fair_price %s: entire quote is below intrinsic"
+                " (bid=%s ask=%s intrinsic=%s) — best available=%s",
+                option_symbol,
+                bid.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
+                ask.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
+                intrinsic.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
+                fair.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
+            )
         fair = _quantize_option_price(fair)
         logger.info(
             "get_fair_price %s: bid=%s ask=%s intrinsic=%s spread_pct=%s → fair=%s (%s)",

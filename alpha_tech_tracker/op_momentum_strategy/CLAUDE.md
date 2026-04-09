@@ -44,6 +44,7 @@ The same signal logic drives both **live trading** (`trade_engine.py`) and **bac
 | `models.py` | Shared dataclasses: `ActivePosition`, `SignalEvent`, `_FiveMinBar`, `WindowConfig`; `_D()`, `_stock_bid_ask()` |
 | `contract_selector.py` | `TimePremiumContractSelector` (live default), `ITMOptionContractSelector` (legacy), `_fetch_contracts_with_expiry_fallback()` |
 | `option_price_monitor.py` | Background bid/ask/intrinsic/time-value snapshots + `get_fair_price()` pricing advisor |
+| `option_fair_price_tester.py` | Live paper-account shadow-test for `get_fair_price()` — buys, places limit sell, escalates, records fills to CSV |
 | `position_sizer.py` | `PositionSizer`: `compute()` for options, `compute_stock()` for stock sizing |
 | `bar_recorder.py` | `BarRecorder`: records live 1-min and 5-min bars to CSV during trading sessions |
 
@@ -172,6 +173,65 @@ All tickers in the pool (TSLA, NVDA, META, AMD, COIN, PLTR, etc.) are on the CBO
 | ≥ $3.00 | $0.05 | $0.10 |
 
 Using non-pilot increments causes limit orders to be placed at suboptimal price points ($0.01–$0.05 off per order). Do not change `_quantize_option_price()` to use $0.10 ticks.
+
+---
+
+## FairPriceTester (`option_fair_price_tester.py`)
+
+Live shadow-test that validates `get_fair_price()` against a real paper Alpaca account. Useful for measuring whether the fair-price limit achieves fills above the market bid in practice.
+
+**One test cycle:**
+1. Select contract — manual `--strike` or via `TimePremiumContractSelector`
+2. Buy 1 contract via limit escalation: mid → mid+20% of spread → mid+40% → … → ask (each step 15s), then market fallback
+3. Compute `fair_price` via `get_fair_price()` logic (intrinsic as hard floor)
+4. Place limit SELL at `fair_price`, poll bid/ask every 5s for 15s
+5. If unfilled → cancel, market SELL to close
+6. Write `quotes_*.csv` (per-5s bid/ask log) and `summary_*.csv` to `output_dir`
+
+**Pricing safeguards:**
+- `fair_price` is always ≥ intrinsic (hard floor — never place a sell below exercise value)
+- If market fill comes in below intrinsic, a `BELOW INTRINSIC` warning is logged and flagged in the summary CSV as `below_intrinsic=True`
+
+**Output files** (written to `market_data/fair_price_test/YYYY-MM-DD/`):
+- `quotes_{ticker}_{type}_{ts}.csv` — per-5s quote snapshots + order status + fill fields
+- `summary_{ticker}_{type}_{ts}.csv` — one row with entry price, fair_price, fill_method, fill_price, intrinsic_value, improvement_vs_mid, below_intrinsic
+
+**Usage:**
+
+```bash
+export PYTHONPATH=/Users/victorhuang/work/alpha_tech_tracker
+export ALPACA_API_KEY=<paper_key>    # PK... prefix for paper account
+export ALPACA_SECRET_KEY=<paper_secret>
+
+# Single cycle — auto-select contract
+python -m alpha_tech_tracker.op_momentum_strategy.option_fair_price_tester \
+    --ticker TSLA --option-type call
+
+# Single cycle — manual strike and expiry
+python -m alpha_tech_tracker.op_momentum_strategy.option_fair_price_tester \
+    --ticker SPOT --option-type call --strike 460 --expiry 2026-04-10
+
+# Run for 2 minutes (multiple cycles back-to-back)
+python -m alpha_tech_tracker.op_momentum_strategy.option_fair_price_tester \
+    --ticker SPOT --option-type call --strike 460 --duration 2
+```
+
+**CLI flags:**
+
+| Flag | Default | Description |
+|---|---|---|
+| `--ticker` | required | Ticker symbol |
+| `--option-type` | `call` | `call` or `put` |
+| `--strike` | None | Manual strike price; omit to use `TimePremiumContractSelector` |
+| `--expiry` | next Friday | Expiry as `YYYY-MM-DD` |
+| `--duration` | None | Run for N minutes with back-to-back cycles; omit for one cycle |
+| `--output-dir` | `market_data/fair_price_test` | CSV output directory |
+| `--log-level` | `INFO` | `DEBUG`/`INFO`/`WARNING`/`ERROR` |
+
+**Notes:**
+- Requires a **paper** Alpaca account (`PK...` key prefix). Live keys (`AK...`) use a different endpoint and will fail with 401.
+- Paper trading fill simulator only honors market orders — limit fills will always time out in paper. The buy escalation and sell limit logic are correct for live; the CSV output is the meaningful artifact from paper runs.
+- The `no_cache` fair_price branch fires when no historical time-value data exists for the contract (first run of the day). Subsequent runs on the same contract benefit from the collected cache.
 
 ---
 
