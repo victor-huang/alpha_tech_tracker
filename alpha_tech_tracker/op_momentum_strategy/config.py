@@ -16,6 +16,7 @@ TICKERS = DEFAULT_TICKERS
 EXECUTION_BROKER = "alpaca"   # "alpaca" | "etrade"
 ETRADE_ACCOUNT_ID = None
 ETRADE_SANDBOX = False
+_ETRADE_SESSION_TOKENS: dict = {}
 ACCOUNT_BUDGET = 25_000
 MAX_ACTIVE_SYMBOLS = 2
 OPENING_BARS = 3
@@ -93,6 +94,10 @@ def _load_config(config_file: str = _CONFIG_FILE):
     if "sandbox" in etrade:
         ETRADE_SANDBOX = bool(etrade["sandbox"])
 
+    # ETrade stored session tokens
+    _ETRADE_SESSION_TOKENS.clear()
+    _ETRADE_SESSION_TOKENS.update(cfg.get("etrade_session", {}))
+
     # ETrade credentials → env vars (prefer env vars set externally)
     etrade_creds = cfg.get("etrade_credentials", {})
     for cfg_key, env_key in (
@@ -112,6 +117,27 @@ def _load_config(config_file: str = _CONFIG_FILE):
         _clicksend_cfg["telegram_chat_id"] = telegram["chat_id"]
 
 
+def _save_etrade_session_tokens(
+    oauth_token: str,
+    oauth_token_secret: str,
+    config_file: str = _CONFIG_FILE,
+):
+    """Persist ETrade OAuth tokens to config.json so the engine can reuse them."""
+    cfg = {}
+    if os.path.exists(config_file):
+        with open(config_file) as f:
+            cfg = json.load(f)
+    cfg["etrade_session"] = {
+        "oauth_token": oauth_token,
+        "oauth_token_secret": oauth_token_secret,
+    }
+    tmp = config_file + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(cfg, f, indent=2)
+    os.replace(tmp, config_file)
+    logger.info("ETrade session tokens saved to %s", config_file)
+
+
 def build_execution_client(is_paper: bool = True):
     """
     Construct and return an ExecutionClient based on EXECUTION_BROKER.
@@ -129,6 +155,17 @@ def build_execution_client(is_paper: bool = True):
             selected_account_id=ETRADE_ACCOUNT_ID,
             is_sandbox_enabled=ETRADE_SANDBOX,
         )
+        if _ETRADE_SESSION_TOKENS.get("oauth_token"):
+            client.restore_session(
+                _ETRADE_SESSION_TOKENS["oauth_token"],
+                _ETRADE_SESSION_TOKENS["oauth_token_secret"],
+            )
+            if client.verify_session():
+                logger.info("ETrade session restored from stored tokens")
+                return client
+            logger.warning(
+                "Stored ETrade session is expired — run etrade_auth.py to renew"
+            )
         client.authorize_session()
         return client
 

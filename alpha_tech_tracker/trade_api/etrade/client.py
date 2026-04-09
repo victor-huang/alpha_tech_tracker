@@ -357,7 +357,29 @@ class EtradeAPIClient(ExecutionClient):
         logger.info(access_token_info)
 
         self._session = session
-        return session
+        return {
+            "oauth_token": access_token_info["oauth_token"],
+            "oauth_token_secret": access_token_info["oauth_token_secret"],
+        }
+
+    def restore_session(self, oauth_token: str, oauth_token_secret: str):
+        """Restore a previously authorized session from stored OAuth tokens."""
+        self._session = OAuth1Session(
+            self._api_key,
+            client_secret=self._client_secret,
+            resource_owner_key=oauth_token,
+            resource_owner_secret=oauth_token_secret,
+        )
+
+    def verify_session(self) -> bool:
+        """Return True if the current session is valid (makes a lightweight API call)."""
+        if self._session is None:
+            return False
+        try:
+            response = self._session.get(self._base_url() + "/v1/accounts/list.json")
+            return response.status_code == 200
+        except Exception:
+            return False
 
     # ------------------------------------------------------------------
     # ExecutionClient interface

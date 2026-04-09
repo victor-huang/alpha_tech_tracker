@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from datetime import date
 
 from alpha_tech_tracker.trade_api.etrade.client import (
@@ -521,6 +521,76 @@ class TestPlaceStockOrder:
 
         preview_payload = client._session.post.call_args_list[0][1]["json"]
         assert preview_payload["PreviewOrderRequest"]["Order"][0]["priceType"] == "MARKET"
+
+
+class TestRestoreSession:
+    def test_creates_session_with_provided_tokens(self):
+        client = _make_client()
+        assert client._session is not None  # already mocked
+
+        client.restore_session("tok123", "sec456")
+
+        # After restore, session should be an OAuth1Session (not a MagicMock)
+        from requests_oauthlib import OAuth1Session
+        assert isinstance(client._session, OAuth1Session)
+
+    def test_restored_session_can_make_requests(self):
+        # Verify the restored session is a real OAuth1Session that the
+        # client will use for API calls (verify_session should use it)
+        client = EtradeAPIClient(key_id="key", client_secret="secret")
+        client.restore_session("MY_TOKEN", "MY_SECRET")
+
+        from requests_oauthlib import OAuth1Session
+        assert isinstance(client._session, OAuth1Session)
+
+
+class TestVerifySession:
+    def test_returns_true_when_accounts_endpoint_returns_200(self):
+        client = _make_client()
+        client._session.get.return_value = _mock_response({"ok": True}, status_code=200)
+
+        assert client.verify_session() is True
+
+    def test_returns_false_when_accounts_endpoint_returns_401(self):
+        client = _make_client()
+        expired = _mock_response({"Error": {"code": 401, "message": "token_rejected"}}, status_code=401)
+        client._session.get.return_value = expired
+
+        assert client.verify_session() is False
+
+    def test_returns_false_when_no_session(self):
+        client = EtradeAPIClient(key_id="key", client_secret="secret")
+        assert client._session is None
+        assert client.verify_session() is False
+
+    def test_returns_false_when_request_raises(self):
+        client = _make_client()
+        client._session.get.side_effect = ConnectionError("network down")
+
+        assert client.verify_session() is False
+
+
+class TestAuthorizeSessionReturnValue:
+    def test_returns_token_dict_not_session_object(self):
+        client = _make_client()
+
+        mock_session = MagicMock()
+        mock_session.fetch_request_token.return_value = {
+            "oauth_token": "req_tok",
+            "oauth_token_secret": "req_sec",
+        }
+        mock_session.fetch_access_token.return_value = {
+            "oauth_token": "acc_tok",
+            "oauth_token_secret": "acc_sec",
+        }
+
+        with patch("alpha_tech_tracker.trade_api.etrade.client.OAuth1Session", return_value=mock_session), \
+             patch("alpha_tech_tracker.trade_api.etrade.client.webbrowser"), \
+             patch.object(client, "input_with_timeout", return_value="VERIFIER"), \
+             patch.object(client, "read_oauth_verifier_from_file", side_effect=Exception("no file")):
+            result = client.authorize_session()
+
+        assert result == {"oauth_token": "acc_tok", "oauth_token_secret": "acc_sec"}
 
 
 @pytest.mark.etrade

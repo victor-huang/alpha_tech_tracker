@@ -7,6 +7,7 @@ from alpha_tech_tracker.op_momentum_strategy.config import (
     _send_telegram,
     _load_config,
     _fmt_option,
+    _save_etrade_session_tokens,
     build_execution_client,
     disable_notifications,
     enable_notifications,
@@ -150,11 +151,13 @@ class TestLoadConfigBrokerSettings:
         config_module.EXECUTION_BROKER = "alpaca"
         config_module.ETRADE_ACCOUNT_ID = None
         config_module.ETRADE_SANDBOX = False
+        config_module._ETRADE_SESSION_TOKENS.clear()
 
     def teardown_method(self, _):
         config_module.EXECUTION_BROKER = "alpaca"
         config_module.ETRADE_ACCOUNT_ID = None
         config_module.ETRADE_SANDBOX = False
+        config_module._ETRADE_SESSION_TOKENS.clear()
 
     def test_sets_execution_broker_from_config(self, tmp_path):
         cfg = {"execution_broker": "etrade"}
@@ -221,15 +224,79 @@ class TestLoadConfigBrokerSettings:
         import os
         assert os.environ["ETRADE_API_KEY_ID"] == "ENV_KEY"
 
+    def test_loads_etrade_session_tokens(self, tmp_path):
+        cfg = {
+            "etrade_session": {
+                "oauth_token": "tok_abc",
+                "oauth_token_secret": "sec_xyz",
+            }
+        }
+        config_file = tmp_path / "config.json"
+        config_file.write_text(json.dumps(cfg))
+
+        _load_config(str(config_file))
+
+        assert config_module._ETRADE_SESSION_TOKENS["oauth_token"] == "tok_abc"
+        assert config_module._ETRADE_SESSION_TOKENS["oauth_token_secret"] == "sec_xyz"
+
+    def test_clears_stale_session_tokens_when_section_absent(self, tmp_path):
+        config_module._ETRADE_SESSION_TOKENS.update(
+            {"oauth_token": "old", "oauth_token_secret": "old_sec"}
+        )
+        cfg = {"alpaca": {"api_key": "k", "secret_key": "s"}}
+        config_file = tmp_path / "config.json"
+        config_file.write_text(json.dumps(cfg))
+
+        _load_config(str(config_file))
+
+        assert config_module._ETRADE_SESSION_TOKENS == {}
+
+
+class TestSaveEtradeSessionTokens:
+    def test_writes_tokens_to_config_json(self, tmp_path):
+        config_file = tmp_path / "config.json"
+
+        _save_etrade_session_tokens("tok_abc", "sec_xyz", config_file=str(config_file))
+
+        with open(config_file) as f:
+            saved = json.load(f)
+        assert saved["etrade_session"]["oauth_token"] == "tok_abc"
+        assert saved["etrade_session"]["oauth_token_secret"] == "sec_xyz"
+
+    def test_merges_with_existing_config(self, tmp_path):
+        config_file = tmp_path / "config.json"
+        config_file.write_text(json.dumps({"execution_broker": "etrade"}))
+
+        _save_etrade_session_tokens("tok", "sec", config_file=str(config_file))
+
+        with open(config_file) as f:
+            saved = json.load(f)
+        assert saved["execution_broker"] == "etrade"
+        assert saved["etrade_session"]["oauth_token"] == "tok"
+
+    def test_overwrites_existing_session_tokens(self, tmp_path):
+        config_file = tmp_path / "config.json"
+        config_file.write_text(
+            json.dumps({"etrade_session": {"oauth_token": "old", "oauth_token_secret": "old_s"}})
+        )
+
+        _save_etrade_session_tokens("new_tok", "new_sec", config_file=str(config_file))
+
+        with open(config_file) as f:
+            saved = json.load(f)
+        assert saved["etrade_session"]["oauth_token"] == "new_tok"
+
 
 class TestBuildExecutionClient:
     def setup_method(self):
         config_module.EXECUTION_BROKER = "alpaca"
         config_module.ETRADE_ACCOUNT_ID = None
         config_module.ETRADE_SANDBOX = False
+        config_module._ETRADE_SESSION_TOKENS.clear()
 
     def teardown_method(self, _):
         config_module.EXECUTION_BROKER = "alpaca"
+        config_module._ETRADE_SESSION_TOKENS.clear()
 
     def test_returns_alpaca_client_by_default(self):
         from alpha_tech_tracker.trade_api.alpaca_client.client import AlpacaAPIClient
@@ -261,6 +328,35 @@ class TestBuildExecutionClient:
         config_module.EXECUTION_BROKER = "etrade"
 
         with patch.object(EtradeAPIClient, "authorize_session") as mock_auth:
+            build_execution_client()
+
+        mock_auth.assert_called_once()
+
+    def test_etrade_uses_stored_session_without_oauth_when_valid(self):
+        from alpha_tech_tracker.trade_api.etrade.client import EtradeAPIClient
+        config_module.EXECUTION_BROKER = "etrade"
+        config_module._ETRADE_SESSION_TOKENS.update(
+            {"oauth_token": "stored_tok", "oauth_token_secret": "stored_sec"}
+        )
+
+        with patch.object(EtradeAPIClient, "restore_session") as mock_restore, \
+             patch.object(EtradeAPIClient, "verify_session", return_value=True), \
+             patch.object(EtradeAPIClient, "authorize_session") as mock_auth:
+            build_execution_client()
+
+        mock_restore.assert_called_once_with("stored_tok", "stored_sec")
+        mock_auth.assert_not_called()
+
+    def test_etrade_falls_back_to_oauth_when_stored_session_expired(self):
+        from alpha_tech_tracker.trade_api.etrade.client import EtradeAPIClient
+        config_module.EXECUTION_BROKER = "etrade"
+        config_module._ETRADE_SESSION_TOKENS.update(
+            {"oauth_token": "expired_tok", "oauth_token_secret": "expired_sec"}
+        )
+
+        with patch.object(EtradeAPIClient, "restore_session"), \
+             patch.object(EtradeAPIClient, "verify_session", return_value=False), \
+             patch.object(EtradeAPIClient, "authorize_session") as mock_auth:
             build_execution_client()
 
         mock_auth.assert_called_once()
