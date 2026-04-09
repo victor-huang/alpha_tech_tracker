@@ -1191,7 +1191,7 @@ def _stitch_cache(
         return None
 
     pieces.sort(key=lambda x: x[0])
-    covered_end = pieces[0][0] - timedelta(days=1)
+    covered_end = start_date - timedelta(days=1)
     dfs = []
     for c_start, c_end, f in pieces:
         if c_start > covered_end + timedelta(days=7):
@@ -1235,7 +1235,7 @@ def _partial_stitch_cache(
         return None, None
 
     pieces.sort(key=lambda x: x[0])
-    covered_end = pieces[0][0] - timedelta(days=1)
+    covered_end = start_date - timedelta(days=1)
     dfs = []
     for c_start, c_end, f in pieces:
         if c_start > covered_end + timedelta(days=7):

@@ -8,6 +8,8 @@ import pytz
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import (
     _CACHE_WARMUP_DAYS,
     _evict_contained_cache_pieces,
+    _partial_stitch_cache,
+    _stitch_cache,
     _trim_bars_to_range,
     compute_signals_with_backtest,
     fetch_bars,
@@ -766,3 +768,171 @@ class TestFetchBarsConsolidatesCache:
             fetch_bars([self._TICKER], self._START, self._END, source=self._SOURCE)
 
         assert wider.exists()
+
+
+# ---------------------------------------------------------------------------
+# TestStitchCacheStartGap  /  TestPartialStitchCacheStartGap
+# ---------------------------------------------------------------------------
+#
+# Both _stitch_cache and _partial_stitch_cache used to seed covered_end from
+# pieces[0][0] - 1 day instead of start_date - 1 day. That made the gap-check
+# blind to holes between the *request* start and the *first piece* start,
+# allowing a file for Jul-Dec to be returned as if it covered Jan-Dec.
+#
+# The corruption scenario:
+#   cache: alpaca_5min_NVDA_2025-07-01_2025-12-31.json
+#   request: 2025-01-01 → 2025-12-31
+#   → stitch returns Jul-Dec data
+#   → fetch_bars saves as 2025-01-01_2025-12-31.json (only contains Jul-Dec!)
+#   → eviction deletes the original Jul-Dec file
+#   → future Jan-Dec requests get silently truncated data
+
+
+def _write_real_cache_file(directory, source, ticker, start, end, bar_dates):
+    """Write a real (readable) cache file for the given date range."""
+    df = _make_date_bars(bar_dates)
+    path = directory / f"{source}_5min_{ticker}_{start}_{end}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    df.to_json(path, orient="split", date_format="iso")
+    return path
+
+
+class TestStitchCacheStartGap:
+    _SOURCE = "alpaca"
+    _TICKER = "NVDA"
+
+    def test_returns_none_when_only_file_starts_well_after_request_start(self, tmp_path):
+        # Cache covers Jul-Dec only; request is Jan-Dec — 6-month head gap.
+        _write_real_cache_file(
+            tmp_path, self._SOURCE, self._TICKER,
+            "2025-07-01", "2025-12-31",
+            ["2025-07-01", "2025-12-31"],
+        )
+
+        with patch(f"{_M}._CACHE_DIR", tmp_path):
+            result = _stitch_cache(
+                self._TICKER, date(2025, 1, 1), date(2025, 12, 31), self._SOURCE
+            )
+
+        assert result is None
+
+    def test_returns_data_when_file_starts_within_7_days_of_request_start(self, tmp_path):
+        # Cache covers Jan 5 - Dec 31; request starts Jan 1 — 4-day gap (holiday/weekend).
+        _write_real_cache_file(
+            tmp_path, self._SOURCE, self._TICKER,
+            "2025-01-05", "2025-12-31",
+            ["2025-01-05", "2025-12-31"],
+        )
+
+        with patch(f"{_M}._CACHE_DIR", tmp_path):
+            result = _stitch_cache(
+                self._TICKER, date(2025, 1, 1), date(2025, 12, 31), self._SOURCE
+            )
+
+        assert result is not None
+
+    def test_returns_none_when_gap_between_two_pieces_and_request_start(self, tmp_path):
+        # Two pieces (Jul-Sep, Oct-Dec) contiguous with each other but both
+        # starting well after the Jan 1 request start.
+        _write_real_cache_file(
+            tmp_path, self._SOURCE, self._TICKER,
+            "2025-07-01", "2025-09-30",
+            ["2025-07-01", "2025-09-30"],
+        )
+        _write_real_cache_file(
+            tmp_path, self._SOURCE, self._TICKER,
+            "2025-10-01", "2025-12-31",
+            ["2025-10-01", "2025-12-31"],
+        )
+
+        with patch(f"{_M}._CACHE_DIR", tmp_path):
+            result = _stitch_cache(
+                self._TICKER, date(2025, 1, 1), date(2025, 12, 31), self._SOURCE
+            )
+
+        assert result is None
+
+    def test_stitches_successfully_when_pieces_cover_from_request_start(self, tmp_path):
+        # Two contiguous pieces covering the full Jan-Dec range.
+        _write_real_cache_file(
+            tmp_path, self._SOURCE, self._TICKER,
+            "2025-01-01", "2025-06-30",
+            ["2025-01-01", "2025-06-30"],
+        )
+        _write_real_cache_file(
+            tmp_path, self._SOURCE, self._TICKER,
+            "2025-07-01", "2025-12-31",
+            ["2025-07-01", "2025-12-31"],
+        )
+
+        with patch(f"{_M}._CACHE_DIR", tmp_path):
+            result = _stitch_cache(
+                self._TICKER, date(2025, 1, 1), date(2025, 12, 31), self._SOURCE
+            )
+
+        assert result is not None
+        result_dates = set(result.index.date)
+        assert date(2025, 1, 1) in result_dates
+        assert date(2025, 12, 31) in result_dates
+
+
+class TestPartialStitchCacheStartGap:
+    _SOURCE = "alpaca"
+    _TICKER = "NVDA"
+
+    def test_returns_none_when_only_file_starts_well_after_request_start(self, tmp_path):
+        # Cache covers Jul-Dec only; request is Jan-Dec — 6-month head gap.
+        _write_real_cache_file(
+            tmp_path, self._SOURCE, self._TICKER,
+            "2025-07-01", "2025-12-31",
+            ["2025-07-01", "2025-12-31"],
+        )
+
+        with patch(f"{_M}._CACHE_DIR", tmp_path):
+            df, covered_end = _partial_stitch_cache(
+                self._TICKER, date(2025, 1, 1), date(2025, 12, 31), self._SOURCE
+            )
+
+        assert df is None
+        assert covered_end is None
+
+    def test_returns_partial_when_file_starts_within_7_days_of_request_start(self, tmp_path):
+        # Cache covers Jan 5 - Jun 30; request starts Jan 1 — 4-day gap (holiday).
+        _write_real_cache_file(
+            tmp_path, self._SOURCE, self._TICKER,
+            "2025-01-05", "2025-06-30",
+            ["2025-01-05", "2025-06-30"],
+        )
+
+        with patch(f"{_M}._CACHE_DIR", tmp_path):
+            df, covered_end = _partial_stitch_cache(
+                self._TICKER, date(2025, 1, 1), date(2025, 12, 31), self._SOURCE
+            )
+
+        assert df is not None
+        assert covered_end == date(2025, 6, 30)
+
+    def test_fetch_bars_does_not_corrupt_cache_when_only_tail_is_cached(self, tmp_path):
+        # The corruption scenario: cache has Jul-Dec, request Jan-Dec.
+        # Before the fix, fetch_bars would save a Jan-Dec file with only Jul-Dec data
+        # and then evict the original Jul-Dec file.
+        # After the fix, a full API fetch should be triggered for the complete Jan-Dec range.
+        full_year_df = _make_date_bars(["2025-01-01", "2025-06-30", "2025-12-31"])
+        _write_real_cache_file(
+            tmp_path, self._SOURCE, self._TICKER,
+            "2025-07-01", "2025-12-31",
+            ["2025-07-01", "2025-12-31"],
+        )
+
+        with patch(f"{_M}._CACHE_DIR", tmp_path), \
+             patch(f"{_M}.fetch_alpaca_bars", return_value={self._TICKER: full_year_df}) \
+             as mock_fetch:
+            result = fetch_bars(
+                [self._TICKER], date(2025, 1, 1), date(2025, 12, 31), source=self._SOURCE
+            )
+
+        # Full API fetch should have been triggered for the complete range.
+        mock_fetch.assert_called_once()
+        # Result must contain January data, not just July onwards.
+        result_dates = set(result[self._TICKER].index.date)
+        assert date(2025, 1, 1) in result_dates
