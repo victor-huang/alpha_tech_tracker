@@ -36,7 +36,9 @@ def _cache_path(
 
 def _save_cache(df: pd.DataFrame, path: Path, timeframe: str):
     path.parent.mkdir(parents=True, exist_ok=True)
-    df.to_json(path, orient="split", date_format="iso")
+    tmp = path.with_suffix(".tmp")
+    df.to_json(tmp, orient="split", date_format="iso")
+    tmp.replace(path)  # atomic on POSIX — readers see old or new file, never a partial write
 
 
 def _load_cache(path: Path, timeframe: str) -> pd.DataFrame:
@@ -74,7 +76,10 @@ def _evict_contained_cache_pieces(
         if c_start == new_start and c_end == new_end:
             continue
         if c_start >= new_start and c_end <= new_end:
-            f.unlink()
+            try:
+                f.unlink()
+            except FileNotFoundError:
+                pass  # another process evicted it first
 
 
 def _is_cacheable(end_date: date) -> bool:
@@ -1209,7 +1214,10 @@ def _stitch_cache(
     for c_start, c_end, f in pieces:
         if c_start > covered_end + timedelta(days=7):
             return None
-        dfs.append(_load_cache(f, "5min"))
+        try:
+            dfs.append(_load_cache(f, "5min"))
+        except FileNotFoundError:
+            return None  # another process evicted this piece; fall through to API fetch
         if c_end > covered_end:
             covered_end = c_end
 
@@ -1253,7 +1261,10 @@ def _partial_stitch_cache(
     for c_start, c_end, f in pieces:
         if c_start > covered_end + timedelta(days=7):
             break  # Gap too large — stop with contiguous coverage we have
-        dfs.append(_load_cache(f, "5min"))
+        try:
+            dfs.append(_load_cache(f, "5min"))
+        except FileNotFoundError:
+            break  # another process evicted this piece; return coverage up to here
         if c_end > covered_end:
             covered_end = c_end
 
@@ -1285,7 +1296,10 @@ def fetch_bars(
             if cp.exists():
                 loaded = _load_cache(cp, "5min")
                 if loaded.empty:
-                    cp.unlink()  # delete corrupt empty cache file, re-fetch below
+                    try:
+                        cp.unlink()  # delete corrupt empty cache file, re-fetch below
+                    except FileNotFoundError:
+                        pass
                 else:
                     trimmed = _trim_bars_to_range(loaded, start_date, end_date_only)
                     if not trimmed.empty:
@@ -1293,7 +1307,10 @@ def fetch_bars(
                             _save_cache(trimmed, cp, "5min")
                         result[ticker] = trimmed
                         continue
-                    cp.unlink()  # cached data doesn't cover range, re-fetch below
+                    try:
+                        cp.unlink()  # cached data doesn't cover range, re-fetch below
+                    except FileNotFoundError:
+                        pass
             stitched = _stitch_cache(ticker, start_date, end_date_only, source)
             if stitched is not None:
                 stitched = _trim_bars_to_range(stitched, start_date, end_date_only)
