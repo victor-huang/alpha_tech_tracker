@@ -178,19 +178,28 @@ Using non-pilot increments causes limit orders to be placed at suboptimal price 
 
 ## FairPriceTester (`option_fair_price_tester.py`)
 
-Live shadow-test that validates `get_fair_price()` against a real paper Alpaca account. Useful for measuring whether the fair-price limit achieves fills above the market bid in practice.
+Live shadow-test that validates `get_fair_price()` against a real Alpaca account (paper or live). Useful for measuring whether the fair-price limit achieves fills above the market bid in practice.
 
 **One test cycle:**
 1. Select contract — manual `--strike` or via `TimePremiumContractSelector`
-2. Buy 1 contract via limit escalation: mid → mid+20% of spread → mid+40% → … → ask (each step 15s), then market fallback
-3. Compute `fair_price` via `get_fair_price()` logic (intrinsic as hard floor)
-4. Place limit SELL at `fair_price`, poll bid/ask every 5s for 15s
-5. If unfilled → cancel, market SELL to close
-6. Write `quotes_*.csv` (per-5s bid/ask log) and `summary_*.csv` to `output_dir`
+2. Buy 1 contract via limit escalation toward ask — re-fetches quote each step:
+   - Step 1: limit at mid
+   - Step 2: limit at mid + 20% of spread
+   - Step 3: limit at mid + 40% of spread
+   - … capped at ask; falls back to market only after the ask-level limit also fails
+3. Re-fetch stock price after fill to compute an up-to-date intrinsic value
+4. Compute `fair_price` via `get_fair_price()` logic — intrinsic is the hard floor
+5. If `--floor-at-entry`: raise `fair_price` to at least the entry fill price
+6. Place limit SELL at `fair_price`, poll bid/ask every 5s for 15s
+7. If unfilled → cancel, market SELL to close; confirm fill within 10s
+8. Log `UNCLOSED POSITION` error if sell phase raises an exception (e.g. PDT block)
+9. Write `quotes_*.csv` (per-5s bid/ask log) and `summary_*.csv` to `output_dir`
 
 **Pricing safeguards:**
-- `fair_price` is always ≥ intrinsic (hard floor — never place a sell below exercise value)
-- If market fill comes in below intrinsic, a `BELOW INTRINSIC` warning is logged and flagged in the summary CSV as `below_intrinsic=True`
+- `fair_price` ≥ intrinsic — never place a sell below exercise value
+- `fair_price` ≥ entry fill price when `--floor-at-entry` is set — prevents selling at a loss
+- `BELOW INTRINSIC` warning logged + `below_intrinsic=True` in CSV if market fill comes in below intrinsic
+- `UNCLOSED POSITION` error logged if the sell phase fails (e.g. PDT rejection) so the user knows to close manually before EOD
 
 **Output files** (written to `market_data/fair_price_test/YYYY-MM-DD/`):
 - `quotes_{ticker}_{type}_{ts}.csv` — per-5s quote snapshots + order status + fill fields
@@ -200,20 +209,26 @@ Live shadow-test that validates `get_fair_price()` against a real paper Alpaca a
 
 ```bash
 export PYTHONPATH=/Users/victorhuang/work/alpha_tech_tracker
-export ALPACA_API_KEY=<paper_key>    # PK... prefix for paper account
-export ALPACA_SECRET_KEY=<paper_secret>
 
-# Single cycle — auto-select contract
+# --- Paper account (safe for testing) ---
+ALPACA_API_KEY=<PK...> ALPACA_SECRET_KEY=<secret> \
 python -m alpha_tech_tracker.op_momentum_strategy.option_fair_price_tester \
     --ticker TSLA --option-type call
 
-# Single cycle — manual strike and expiry
+# Manual strike, floor sell at entry price
+ALPACA_API_KEY=<PK...> ALPACA_SECRET_KEY=<secret> \
 python -m alpha_tech_tracker.op_momentum_strategy.option_fair_price_tester \
-    --ticker SPOT --option-type call --strike 460 --expiry 2026-04-10
+    --ticker RH --option-type call --strike 115 --floor-at-entry
 
 # Run for 2 minutes (multiple cycles back-to-back)
+ALPACA_API_KEY=<PK...> ALPACA_SECRET_KEY=<secret> \
 python -m alpha_tech_tracker.op_momentum_strategy.option_fair_price_tester \
     --ticker SPOT --option-type call --strike 460 --duration 2
+
+# --- Live account (real money — use with care) ---
+source ~/.bash_profile   # loads live ALPACA_API_KEY / ALPACA_SECRET_KEY
+python -m alpha_tech_tracker.op_momentum_strategy.option_fair_price_tester \
+    --ticker RH --option-type call --strike 115 --floor-at-entry --live
 ```
 
 **CLI flags:**
@@ -224,14 +239,17 @@ python -m alpha_tech_tracker.op_momentum_strategy.option_fair_price_tester \
 | `--option-type` | `call` | `call` or `put` |
 | `--strike` | None | Manual strike price; omit to use `TimePremiumContractSelector` |
 | `--expiry` | next Friday | Expiry as `YYYY-MM-DD` |
+| `--floor-at-entry` | off | Floor the sell limit at entry fill price — never sell at a loss |
+| `--live` | off | Use live trading account; omit to use paper account |
 | `--duration` | None | Run for N minutes with back-to-back cycles; omit for one cycle |
 | `--output-dir` | `market_data/fair_price_test` | CSV output directory |
 | `--log-level` | `INFO` | `DEBUG`/`INFO`/`WARNING`/`ERROR` |
 
 **Notes:**
-- Requires a **paper** Alpaca account (`PK...` key prefix). Live keys (`AK...`) use a different endpoint and will fail with 401.
-- Paper trading fill simulator only honors market orders — limit fills will always time out in paper. The buy escalation and sell limit logic are correct for live; the CSV output is the meaningful artifact from paper runs.
-- The `no_cache` fair_price branch fires when no historical time-value data exists for the contract (first run of the day). Subsequent runs on the same contract benefit from the collected cache.
+- Paper account keys have a `PK...` prefix; live keys have `AK...`. They are separate accounts with separate endpoints — do not mix them.
+- Paper fill simulator only honors market orders — limit fills always time out in paper. The escalation logic is correct for live trading; paper runs are useful for validating flow and CSV output.
+- The `no_cache` fair_price branch fires when no historical time-value data exists for the contract (first run of the day). Subsequent cycles on the same contract benefit from the collected cache.
+- **PDT risk on live account**: each buy+sell cycle counts as a day trade. Exceeding 3 day trades in 5 days on a margin account under $25k triggers PDT protection and will block the sell order, leaving an open position. Use `--floor-at-entry` so the sell limit is at least at cost basis if you must trade live.
 
 ---
 

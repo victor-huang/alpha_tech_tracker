@@ -107,6 +107,7 @@ class FairPriceTester:
         option_type: str = "call",
         strike: float = None,
         expiry: date = None,
+        floor_at_entry: bool = False,
         output_dir: str = _DEFAULT_OUTPUT_DIR,
     ):
         self._client = client
@@ -114,6 +115,7 @@ class FairPriceTester:
         self._option_type = option_type.lower()
         self._strike = strike
         self._expiry = expiry or _nearest_weekly_expiry(date.today())
+        self._floor_at_entry = floor_at_entry
         self._output_dir = output_dir
         self._monitor = OptionPriceMonitor(
             client=client,
@@ -143,8 +145,22 @@ class FairPriceTester:
 
         logger.info("Entry fill confirmed: %.2f", float(entry_fill_price))
 
-        quote_log, fair_price, fair_branch, bid_at_place, ask_at_place, intrinsic = \
-            self._run_sell_phase(option_symbol, stock_price)
+        raw_quote = self._client.get_stock_quote(self._ticker)
+        bid_f, ask_f = _stock_bid_ask(raw_quote)
+        stock_price = _D(str((bid_f + ask_f) / 2))
+        logger.info("Stock price refreshed before sell: %.2f", float(stock_price))
+
+        try:
+            quote_log, fair_price, fair_branch, bid_at_place, ask_at_place, intrinsic = \
+                self._run_sell_phase(option_symbol, stock_price, entry_fill_price)
+        except Exception as exc:
+            logger.error(
+                "UNCLOSED POSITION: sell phase failed for %s — "
+                "you have 1 open contract of %s (entry fill=%.2f). "
+                "Close it manually before EOD to avoid assignment risk. Error: %s",
+                self._ticker, option_symbol, float(entry_fill_price), exc,
+            )
+            raise
 
         mid_at_placement = (bid_at_place + ask_at_place) / _D("2")
         spread_at_place = ask_at_place - bid_at_place
@@ -278,7 +294,7 @@ class FairPriceTester:
     # Sell phase: place fair-price limit, poll 5s, fallback market
     # ------------------------------------------------------------------
 
-    def _run_sell_phase(self, option_symbol: str, stock_price):
+    def _run_sell_phase(self, option_symbol: str, stock_price, entry_fill_price=None):
         """
         Returns:
             quote_log        — list of per-5s snapshot dicts
@@ -291,6 +307,15 @@ class FairPriceTester:
         t0 = time.time()
 
         bid, ask, fair_price, fair_branch, intrinsic = self._compute_fair_price(option_symbol, stock_price)
+
+        if self._floor_at_entry and entry_fill_price is not None:
+            entry_d = _quantize_option_price(entry_fill_price)
+            if fair_price < entry_d:
+                logger.info(
+                    "fair_price=%s floored up to entry_fill_price=%s (--floor-at-entry)",
+                    fair_price, entry_d,
+                )
+                fair_price = entry_d
         bid_at_place = bid
         ask_at_place = ask
         mid = (bid + ask) / _D("2")
@@ -385,7 +410,16 @@ class FairPriceTester:
                             float(intrinsic),
                             float(intrinsic - fill_price),
                         )
+                    else:
+                        logger.info("Market fill confirmed at %.2f — position closed", float(fill_price))
                     break
+
+            if fill_price is None:
+                logger.error(
+                    "UNCLOSED POSITION: market sell %s did not confirm fill within %ds"
+                    " — 1 open contract of %s needs to be closed manually",
+                    market_order_id, _ENTRY_FILL_WAIT, option_symbol,
+                )
 
             elapsed = round(time.time() - t0)
             bid, ask = self._fetch_option_bid_ask(option_symbol)
@@ -591,6 +625,14 @@ def _parse_args():
         help="Run repeated cycles for this many minutes (e.g. 2). Omit for a single cycle.",
     )
     parser.add_argument(
+        "--floor-at-entry", action="store_true",
+        help="Never sell below the entry fill price (floor the sell limit at cost basis).",
+    )
+    parser.add_argument(
+        "--live", action="store_true",
+        help="Use live trading account instead of paper (real money — use with care).",
+    )
+    parser.add_argument(
         "--log-level", default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
     )
@@ -609,13 +651,17 @@ if __name__ == "__main__":
 
     expiry = date.fromisoformat(args.expiry) if args.expiry else None
 
-    client = AlpacaAPIClient(is_paper_trading=True)
+    is_paper = not args.live
+    if not is_paper:
+        logger.warning("LIVE TRADING MODE — real money will be used")
+    client = AlpacaAPIClient(is_paper_trading=is_paper)
     tester = FairPriceTester(
         client=client,
         ticker=args.ticker,
         option_type=args.option_type,
         strike=args.strike,
         expiry=expiry,
+        floor_at_entry=args.floor_at_entry,
         output_dir=args.output_dir,
     )
 
