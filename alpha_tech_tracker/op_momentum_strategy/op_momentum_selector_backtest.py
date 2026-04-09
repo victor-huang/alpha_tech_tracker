@@ -291,7 +291,7 @@ def run_selector_backtest(
                 bearish_reentry_max_bars=bearish_reentry_max_bars,
                 enable_bullish_reentry=enable_bullish_reentry,
                 bullish_reentry_max_bars=bullish_reentry_max_bars,
-                close_top_pct=close_top_pct,
+                close_top_pct=win.get("close_top_pct", close_top_pct),
             )
         all_window_results[label] = results_for_window
         print(f"  [{label}] {win['opening_start']} / {win['opening_bars']} bars — done")
@@ -1282,10 +1282,12 @@ def _parse_args():
     parser.add_argument(
         "--window",
         action="append",
-        nargs=3,
-        metavar=("LABEL", "START", "BARS"),
+        nargs="+",
+        metavar="PARAM",
         default=None,
-        help="Define a trading window: LABEL START BARS (e.g. M1 09:30 3). "
+        help="Define a trading window: LABEL START BARS [CLOSE_TOP_PCT] (e.g. M1 09:30 3 or A1 13:15 1 0.05). "
+        "CLOSE_TOP_PCT is optional: if provided, BULLISH only when close >= OR_high - PCT*OR_range, "
+        "BEARISH only when close <= OR_low + PCT*OR_range (overrides --close-top-pct for this window). "
         "Repeat to add multiple windows. When specified, overrides --opening-start/--opening-bars.",
     )
     parser.add_argument(
@@ -1474,10 +1476,16 @@ if __name__ == "__main__":
     weights = _parse_weights(args.weights, args.top)
 
     if args.window:
-        windows = [
-            {"label": w[0], "opening_start": w[1], "opening_bars": int(w[2])}
-            for w in args.window
-        ]
+        windows = []
+        for w in args.window:
+            if len(w) < 3:
+                parser.error(
+                    f"--window requires LABEL START BARS [CLOSE_TOP_PCT], got: {w}"
+                )
+            win = {"label": w[0], "opening_start": w[1], "opening_bars": int(w[2])}
+            if len(w) > 3:
+                win["close_top_pct"] = float(w[3])
+            windows.append(win)
     else:
         windows = None
 
@@ -1519,8 +1527,10 @@ if __name__ == "__main__":
             group_desc = "sequential, inherits all returned capital"
             cap_approx = None
         cap_str = f"  (~${cap_approx:,.0f})" if cap_approx is not None else ""
+        ctp = w.get("close_top_pct")
+        ctp_str = f", top/bottom {ctp * 100:.0f}%" if ctp is not None else ""
         print(
-            f"    [{w['label']}] {w['opening_start']} / {w['opening_bars']} bars  ({group_desc}){cap_str}"
+            f"    [{w['label']}] {w['opening_start']} / {w['opening_bars']} bars{ctp_str}  ({group_desc}){cap_str}"
         )
     print(f"  Min capital  : ${args.min_window_capital:.0f} per window (skip if below)")
     print(
@@ -1565,7 +1575,7 @@ if __name__ == "__main__":
         f"  OR bar lookback: {f'last {args.or_bar_lookback} bars' if args.or_bar_lookback > 0 else 'disabled'}"
     )
     print(
-        f"  Close top pct: {f'top/bottom {args.close_top_pct * 100:.0f}% of bar required' if args.close_top_pct is not None else 'disabled (standard midpoint/bottom-30)'}"
+        f"  Close top pct: {f'top/bottom {args.close_top_pct * 100:.0f}% (global default, overridable per window)' if args.close_top_pct is not None else 'disabled (standard midpoint/bottom-30; per-window override via --window LABEL START BARS PCT)'}"
     )
     print(f"  Source       : {args.source}")
 

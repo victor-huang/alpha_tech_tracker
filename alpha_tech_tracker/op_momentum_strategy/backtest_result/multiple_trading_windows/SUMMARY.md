@@ -211,3 +211,184 @@ The filtered trades have slightly lower win rate but still contribute net positi
 | **Score** | **3 wins** | **3 wins** | **0 wins** | |
 
 `--min-or-range 0.2` on 1-bar is never the best config in any year — reject.
+
+---
+
+## A1/A2 `close_top_pct` Sweep — Preventing Immediate Bar-0 Exits
+
+**Date**: 2026-04-09
+
+**Background**: 1-bar afternoon windows (A1/A2) frequently exited on the very first monitored bar (`bars_held=0`) via `fallback_20pct`, because when the OR is a single 5-min bar the `close` is already near the OR boundary. The `close_top_pct` feature was introduced to fix this: a BULLISH signal only fires when `close >= OR_high - PCT * OR_range` (i.e. close in the top X% of the bar), and the hard stop is pre-armed at `OR_low` from bar 0, bypassing `fallback_20pct` entirely. Symmetrically for BEARISH.
+
+**Params**: `--regime-filter --regime-ma 8 --reversal --top 2 --or-bar-lookback 3 --bearish-reentry --bullish-reentry`, per-window `close_top_pct=0.05` set via `--window LABEL START BARS 0.05`
+
+### OR Bar Count Sweep — 2026 YTD (A1 13:15 + A2 15:00, close_top_pct=0.05)
+
+| Bars | Total Return | Win Rate | A1 Trades | A1 WR | A1 EV/trade | A1 Cap P&L | A2 Trades | A2 WR | A2 EV/trade | A2 Cap P&L |
+|------|-------------|----------|-----------|-------|------------|------------|-----------|-------|------------|------------|
+| **1** | **+35.99%** | 30% | 118 | 28% | −0.009% | +$2,040 | 106 | 32% | −0.046% | +$1,559 |
+| 2 | +5.43% | 34% | 82 | 33% | +0.014% | +$519 | 75 | 35% | −0.087% | +$25 |
+| 3 | +7.44% | 39% | 77 | 39% | +0.051% | +$589 | 78 | 38% | 0.000% | +$154 |
+
+- **1-bar wins on return (+35.99%)** despite lowest win rate — a handful of large breakout moves (SNDK Feb 24: +$29.47, FN Mar 6: +$30.34) drive the P&L; hard stop = bar extreme keeps individual losses tiny
+- 2-bar and 3-bar have better win rates and positive/near-zero EV/trade but far fewer signals; the tighter OR condition misses the big moves
+- EV/trade is negative for 1-bar (−0.009% / −0.046%) — results depend on fat-tail asymmetry, not a consistent per-signal edge
+- **Verdict**: 1-bar is the right choice for afternoon windows with `close_top_pct=0.05`
+
+### A1 Time Window Sweep — 2026 YTD (1-bar, close_top_pct=0.05)
+
+| Start | Trades | W/L | WR | Cap P&L | Return |
+|-------|--------|-----|----|---------|--------|
+| 12:00 | 112 | 24W/88L | 21% | +$381 | +3.81% |
+| 12:30 | 109 | 19W/90L | 17% | +$819 | +8.19% |
+| **13:00** | **115** | **27W/88L** | **23%** | **+$2,044** | **+20.44%** |
+| **13:15** | **118** | **33W/85L** | **28%** | **+$2,040** | **+20.40%** |
+| 13:30 | 116 | 26W/90L | 22% | +$1,246 | +12.46% |
+| 14:00 | 110 | 28W/82L | 25% | +$1,958 | +19.58% |
+| 14:30 | 102 | 27W/75L | 26% | +$1,116 | +11.16% |
+
+### A2 Time Window Sweep — 2026 YTD (1-bar, close_top_pct=0.05)
+
+| Start | Trades | W/L | WR | Cap P&L | Return |
+|-------|--------|-----|----|---------|--------|
+| 14:00 | 110 | 28W/82L | 25% | +$1,958 | +19.58% |
+| 14:30 | 102 | 27W/75L | 26% | +$1,116 | +11.16% |
+| **15:00** | **106** | **34W/72L** | **32%** | **+$1,552** | **+15.52%** |
+| 15:15 | 105 | 43W/62L | 41% | +$1,251 | +12.51% |
+| 15:30 | 102 | 40W/62L | 39% | +$547 | +5.47% |
+| 15:45 | 94 | 40W/54L | 43% | +$207 | +2.07% |
+
+- **A1**: 13:00 and 13:15 are essentially tied at ~+20.4% — the post-lunch sweet spot is narrow; earlier (12:00–12:30) and later (13:30+) both trail
+- **A2**: 15:00 wins on return (+15.5%); later windows (15:15–15:45) show higher win rates but smaller avg wins — big moves are over before they fire
+- 14:00/14:30 overlap with A1 signals (same bar pool), making them poor A2 choices
+- **Verdict**: 13:15/15:00 confirmed as the optimal timing for 2026 YTD
+
+---
+
+## A1 Start Time: 13:15 vs 12:30 — 5-Year Comparison (close_top_pct=0.05)
+
+**Date**: 2026-04-09
+
+**Question**: Does shifting A1 from 13:15 to 12:30 improve results? The 2025 sweep showed 12:30 returning +68.59% vs 13:15's +53.10%.
+
+**Params**: `--regime-filter --regime-ma 8 --reversal --top 2 --or-bar-lookback 3 --bearish-reentry --bullish-reentry --morning-split 100 --window A1 {time} 1 0.05`
+
+| Year | 13:15 Trades | 13:15 W/L | 13:15 WR | 13:15 Return | 12:30 Trades | 12:30 W/L | 12:30 WR | 12:30 Return | Winner |
+|------|-------------|-----------|----------|-------------|-------------|-----------|----------|-------------|--------|
+| 2021 | 469 | 102W/367L | 22% | +49.80% | 454 | 103W/351L | 23% | +52.36% | **12:30** (+2.6pp) |
+| 2022 | 433 | 111W/322L | 26% | +59.62% | 430 | 102W/328L | 24% | +43.50% | **13:15** (+16.1pp) |
+| 2023 | 453 | 96W/357L | 21% | +49.58% | 458 | 102W/356L | 22% | +54.93% | **12:30** (+5.4pp) |
+| 2024 | 451 | 100W/351L | 22% | +43.49% | 468 | 112W/356L | 24% | +54.29% | **12:30** (+10.8pp) |
+| 2025 | 443 | 103W/340L | 23% | +53.10% | 432 | 112W/320L | 26% | +68.59% | **12:30** (+15.5pp) |
+| **5-yr total** | | | | **+255.59%** | | | | **+273.67%** | **12:30 (+18.1pp)** |
+
+- **12:30 wins 4 of 5 years** and leads by +18pp total
+- **2022 is the exception**: 13:15 wins by +16pp in the high-volatility bear year — post-lunch momentum resolved faster, making the earlier 12:30 entry noisier
+- **Win rates are nearly identical** across both times — the difference is in avg win magnitude, not hit rate; 12:30 catches bigger directional moves that are partially diluted by 13:15
+- Trade counts comparable (~430–470), so this is not a small-sample artefact
+
+### Conclusion
+
+12:30 shows a consistent edge over 13:15 across most market conditions. The sole exception is a sustained bear market year (2022). Given that 2026 Q1 (high volatility, tariff-driven selloff) favors 13:15 (+20.40% vs 12:30's +8.19%), caution is warranted before switching.
+
+**Recommendation**: **Keep 13:15 as the live default for now** — it is more robust to volatile/uncertain regimes, which is the current market condition. Re-evaluate if the market returns to a trending bull environment where 12:30's earlier entry captures more directional follow-through.
+
+| Use case | A1 time | Rationale |
+|---|---|---|
+| Live trading (current regime: volatile/tariff-driven) | 13:15 | Safer; wins 2022 and 2026 YTD |
+| Bull/trending market | 12:30 | +18pp edge over 5 years; captures earlier directional move |
+
+---
+
+## A1/A2 Exit Speed Analysis — Noise vs Winners (close_top_pct=0.05)
+
+**Date**: 2026-04-09
+
+**Question**: With `close_top_pct=0.05` pre-arming the hard stop at the bar extreme, how quickly do winning vs losing trades exit? Are there structural similarities among the big winners that could help filter noise?
+
+**Config**: `--regime-filter --regime-ma 8 --reversal --top 2 --or-bar-lookback 3 --bearish-reentry --bullish-reentry --window A1 13:15 1 0.05 --window A2 15:00 1 0.05 --morning-split 100`
+
+**Method**: Called `compute_signals_with_backtest()` directly (primary trades only, no reversals/reentries) and bucketed each trade by `bars_held`: same-bar (0), 1 bar, 2 bars, 3+ bars.
+
+### Exit Speed Breakdown
+
+#### 2026 YTD (Jan 1 – Apr 8) — 491 trades
+
+| Bucket | Count | WR | Avg PnL% | Total PnL | Avg OR range% |
+|--------|-------|----|---------|-----------|---------------|
+| 0 (same bar) | 153 | 0% | −0.066% | −$28.58 | 0.066% |
+| 1 bar | 62 | 2% | −0.169% | −$35.89 | 0.185% |
+| 2 bars | 41 | 2% | −0.151% | −$20.39 | 0.155% |
+| **3+ bars** | **235** | **54%** | **+0.355%** | **+$255.54** | 0.220% |
+
+#### 2025 Full Year — 2,143 trades
+
+| Bucket | Count | WR | Avg PnL% | Total PnL | Avg OR range% |
+|--------|-------|----|---------|-----------|---------------|
+| 0 (same bar) | 666 | 0% | −0.052% | −$85.95 | 0.056% |
+| 1 bar | 253 | 1% | −0.101% | −$64.28 | 0.108% |
+| 2 bars | 173 | 4% | −0.109% | −$48.04 | 0.135% |
+| **3+ bars** | **1,051** | **51%** | **+0.423%** | **+$882.95** | 0.253% |
+
+**The pattern is identical across both years**: everything under 3 bars is noise (0–4% WR, net negative). All profit comes from 3+ bar trades.
+
+### Top 10 Gains — 2026 YTD
+
+| Date | Win | Ticker | Signal | Bars | Entry | PnL | Exit |
+|------|-----|--------|--------|------|-------|-----|------|
+| 2026-03-06 | A1 | FN | BEARISH | 27 | 519.83 | +$30.34 (+5.84%) | end_of_day |
+| 2026-02-24 | A1 | SNDK | BEARISH | 22 | 659.59 | +$29.47 (+4.47%) | trailing_stop_ma20 |
+| 2026-03-06 | A2 | FN | BEARISH | 11 | 510.76 | +$21.27 (+4.16%) | end_of_day |
+| 2026-02-18 | A1 | FN | BEARISH | 27 | 521.25 | +$15.31 (+2.94%) | end_of_day |
+| 2026-02-10 | A1 | FN | BEARISH | 31 | 479.63 | +$13.35 (+2.78%) | end_of_day |
+| 2026-02-05 | A1 | SNDK | BEARISH | 32 | 588.73 | +$12.97 (+2.20%) | end_of_day |
+| 2026-02-17 | A2 | SNDK | BEARISH | 11 | 603.82 | +$12.95 (+2.14%) | end_of_day |
+| 2026-03-31 | A2 | SNDK | BULLISH | 11 | 624.24 | +$11.73 (+1.88%) | end_of_day |
+| 2026-02-13 | A2 | SNDK | BEARISH | 11 | 638.18 | +$11.39 (+1.78%) | end_of_day |
+| 2026-02-24 | A1 | MU | BEARISH | 22 | 428.44 | +$9.73 (+2.27%) | trailing_stop_ma20 |
+
+### Top 10 Gains — 2025
+
+| Date | Win | Ticker | Signal | Bars | Entry | PnL | Exit |
+|------|-----|--------|--------|------|-------|-----|------|
+| 2025-04-09 | A1 | META | BULLISH | 32 | 526.47 | +$58.85 (+11.18%) | end_of_day |
+| 2025-04-09 | A1 | TSLA | BULLISH | 33 | 241.88 | +$30.56 (+12.63%) | end_of_day |
+| 2025-04-09 | A1 | CVNA | BULLISH | 19 | 185.88 | +$24.02 (+12.92%) | trailing_stop_ma20 |
+| 2025-12-12 | A1 | CVNA | BEARISH | 32 | 473.88 | +$18.38 (+3.88%) | end_of_day |
+| 2025-04-09 | A1 | FN | BULLISH | 19 | 186.16 | +$16.36 (+8.79%) | trailing_stop_ma20 |
+| 2025-04-09 | A1 | COIN | BULLISH | 27 | 163.19 | +$15.91 (+9.75%) | trailing_stop_ma20 |
+| 2025-04-09 | A1 | EXPE | BULLISH | 21 | 142.97 | +$15.62 (+10.93%) | trailing_stop_ma20 |
+| 2025-01-31 | A1 | TSLA | BEARISH | 32 | 417.71 | +$13.03 (+3.12%) | end_of_day |
+| 2025-04-09 | A2 | META | BULLISH | 11 | 573.25 | +$12.07 (+2.11%) | end_of_day |
+| 2025-04-09 | A1 | AMD | BULLISH | 32 | 84.82 | +$11.96 (+14.10%) | end_of_day |
+
+### Top-20 Winner Traits vs Same-Bar Noise
+
+| Trait | Top-20 Winners (2026) | Top-20 Winners (2025) | Same-Bar Noise |
+|-------|----------------------|----------------------|----------------|
+| Exit | 55% EOD, 45% trailing MA | 70% EOD, 30% trailing MA | 100% hard_stop |
+| Signal | 90% BEARISH | 55% BULLISH / 45% BEARISH | 73% BEARISH |
+| Window | A1: 65%, A2: 35% | A1: 85%, A2: 15% | A1/A2: ~50/50 |
+| Avg bars held | 20.2 (101 mins) | 25.8 (129 mins) | 0 (< 5 mins) |
+| Dominant tickers | SNDK (8), FN (7) | TSLA (4), FN (3), COIN (3) | spread evenly |
+| Avg OR range% | 0.200% | 1.866% | 0.056–0.066% |
+| Same-bar % of all trades | — | — | 31% (both years) |
+| Same-bar total cost | — | — | −$28 (2026), −$86 (2025) |
+
+### OR Range Filter — Does Not Help
+
+Filtering by minimum OR range% improves WR at every threshold but **always reduces total PnL** — the filtered-out trades contain more value than the remaining ones in 2026, and the 2025 big winners (April 9 tariff-pause event) had huge OR ranges that are event-driven and not predictable.
+
+| Threshold | 2025 trades kept | WR | PnL kept | PnL filtered |
+|-----------|------------------|----|----------|--------------|
+| OR≥0.10% | 942 | 34% | +$404 | +$281 |
+| OR≥0.20% | 599 | 38% | +$376 | +$309 |
+| OR≥0.30% | 357 | 42% | +$332 | +$352 |
+
+### Conclusions
+
+- **Fat-tail system by design**: absorb many cheap hard-stop losses (≤$1 each, hard stop = bar extreme), let rare big moves run to EOD or trailing MA. The structure is working as intended.
+- **3+ bars is the key discriminant**: trades held 3+ bars have 51–54% WR; ≤2 bars is 0–4%. This is determined post-entry by whether the market keeps moving — no entry-side filter predicts it.
+- **Winners are regime-dependent**: 2026 = almost all BEARISH (downtrend), concentrated in SNDK/FN; 2025 = balanced, dominated by one event day (Apr 9 tariff pause: 8 of top-15 trades from that single day).
+- **Same-bar noise is cheap and stable**: 31% of trades both years, costs < $90/year total — not worth adding entry-side complexity to eliminate.
+- **OR range filter rejected**: does not improve total PnL at any threshold in either year.

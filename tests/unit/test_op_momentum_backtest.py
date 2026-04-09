@@ -1,4 +1,5 @@
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from unittest.mock import patch
 
 import pandas as pd
@@ -9,6 +10,7 @@ from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import (
     _CACHE_WARMUP_DAYS,
     _evict_contained_cache_pieces,
     _partial_stitch_cache,
+    _save_cache,
     _stitch_cache,
     _trim_bars_to_range,
     compute_signals_with_backtest,
@@ -936,3 +938,191 @@ class TestPartialStitchCacheStartGap:
         # Result must contain January data, not just July onwards.
         result_dates = set(result[self._TICKER].index.date)
         assert date(2025, 1, 1) in result_dates
+
+
+# ---------------------------------------------------------------------------
+# TestSaveCacheAtomic
+# ---------------------------------------------------------------------------
+#
+# _save_cache writes to a .tmp sibling then renames via Path.replace() so
+# readers always see a complete file, never a partial write.
+
+
+class TestSaveCacheAtomic:
+    def test_final_file_exists_and_is_readable(self, tmp_path):
+        df = _make_date_bars(["2025-01-01", "2025-06-30"])
+        path = tmp_path / "alpaca_5min_NVDA_2025-01-01_2025-06-30.json"
+
+        _save_cache(df, path, "5min")
+
+        loaded = _read_cache_file(path)
+        assert date(2025, 1, 1) in set(loaded.index.date)
+        assert date(2025, 6, 30) in set(loaded.index.date)
+
+    def test_no_tmp_file_left_behind(self, tmp_path):
+        df = _make_date_bars(["2025-01-01"])
+        path = tmp_path / "alpaca_5min_NVDA_2025-01-01_2025-01-01.json"
+
+        _save_cache(df, path, "5min")
+
+        assert not path.with_suffix(".tmp").exists()
+
+    def test_atomic_rename_replaces_final_path(self, tmp_path):
+        # Verify that Path.replace() is called with the final target path,
+        # confirming the tmp → final rename pattern rather than direct write.
+        df = _make_date_bars(["2025-01-01"])
+        path = tmp_path / "test.json"
+
+        with patch.object(Path, "replace", wraps=Path.replace) as spy:
+            _save_cache(df, path, "5min")
+
+        spy.assert_called_once_with(path)
+
+
+# ---------------------------------------------------------------------------
+# TestStitchCacheFileNotFound
+# ---------------------------------------------------------------------------
+#
+# If a piece file is evicted by another process between the directory scan
+# and the load, _stitch_cache must return None gracefully instead of raising.
+
+
+class TestStitchCacheFileNotFound:
+    _SOURCE = "alpaca"
+    _TICKER = "NVDA"
+
+    def test_returns_none_when_piece_load_raises_file_not_found(self, tmp_path):
+        _write_real_cache_file(
+            tmp_path, self._SOURCE, self._TICKER,
+            "2025-01-01", "2025-06-30", ["2025-01-01", "2025-06-30"],
+        )
+        _write_real_cache_file(
+            tmp_path, self._SOURCE, self._TICKER,
+            "2025-07-01", "2025-12-31", ["2025-07-01", "2025-12-31"],
+        )
+
+        with patch(f"{_M}._CACHE_DIR", tmp_path), \
+             patch(f"{_M}._load_cache", side_effect=FileNotFoundError):
+            result = _stitch_cache(
+                self._TICKER, date(2025, 1, 1), date(2025, 12, 31), self._SOURCE
+            )
+
+        assert result is None
+
+
+# ---------------------------------------------------------------------------
+# TestPartialStitchCacheFileNotFound
+# ---------------------------------------------------------------------------
+#
+# If the first piece is gone, return (None, None). If a later piece is gone,
+# return coverage up to the last successfully loaded piece.
+
+
+class TestPartialStitchCacheFileNotFound:
+    _SOURCE = "alpaca"
+    _TICKER = "NVDA"
+
+    def test_returns_none_when_only_piece_load_raises_file_not_found(self, tmp_path):
+        _write_real_cache_file(
+            tmp_path, self._SOURCE, self._TICKER,
+            "2025-01-01", "2025-06-30", ["2025-01-01", "2025-06-30"],
+        )
+
+        with patch(f"{_M}._CACHE_DIR", tmp_path), \
+             patch(f"{_M}._load_cache", side_effect=FileNotFoundError):
+            df, covered_end = _partial_stitch_cache(
+                self._TICKER, date(2025, 1, 1), date(2025, 12, 31), self._SOURCE
+            )
+
+        assert df is None
+        assert covered_end is None
+
+    def test_returns_first_piece_coverage_when_second_piece_load_raises(self, tmp_path):
+        # Two pieces: Jan-Jun and Jul-Dec. Jul-Dec is evicted during load.
+        # Should return (Jan-Jun data, Jun 30) — coverage up to the last safe piece.
+        first_df = _make_date_bars(["2025-01-01", "2025-06-30"])
+        _write_real_cache_file(
+            tmp_path, self._SOURCE, self._TICKER,
+            "2025-01-01", "2025-06-30", ["2025-01-01", "2025-06-30"],
+        )
+        _write_real_cache_file(
+            tmp_path, self._SOURCE, self._TICKER,
+            "2025-07-01", "2025-12-31", ["2025-07-01", "2025-12-31"],
+        )
+
+        with patch(f"{_M}._CACHE_DIR", tmp_path), \
+             patch(f"{_M}._load_cache", side_effect=[first_df, FileNotFoundError()]):
+            df, covered_end = _partial_stitch_cache(
+                self._TICKER, date(2025, 1, 1), date(2025, 12, 31), self._SOURCE
+            )
+
+        assert df is not None
+        assert covered_end == date(2025, 6, 30)
+
+
+# ---------------------------------------------------------------------------
+# TestEvictContainedCachePiecesFileNotFound
+# ---------------------------------------------------------------------------
+#
+# If another process already deleted a contained piece, unlink raises
+# FileNotFoundError. The eviction must not propagate it.
+
+
+class TestEvictContainedCachePiecesFileNotFound:
+    def test_does_not_raise_when_unlink_raises_file_not_found(self, tmp_path):
+        _touch_cache_file(tmp_path, "alpaca", "NVDA", "2025-01-01", "2025-06-30")
+
+        with patch(f"{_M}._CACHE_DIR", tmp_path), \
+             patch.object(Path, "unlink", side_effect=FileNotFoundError):
+            # Must not raise
+            _evict_contained_cache_pieces(
+                "NVDA", date(2025, 1, 1), date(2025, 12, 31), "alpaca", "5min"
+            )
+
+
+# ---------------------------------------------------------------------------
+# TestFetchBarsUnlinkFileNotFound
+# ---------------------------------------------------------------------------
+#
+# fetch_bars calls cp.unlink() in two places when a cache file is stale:
+#   1. The loaded file is empty (corrupt).
+#   2. The loaded file's data doesn't cover the requested range after trimming.
+# Both must tolerate FileNotFoundError in case another process already deleted it.
+
+
+class TestFetchBarsUnlinkFileNotFound:
+    _START = date(2025, 1, 1)
+    _END = date(2025, 12, 31)
+    _TICKER = "NVDA"
+    _SOURCE = "alpaca"
+
+    def _cache_file(self, tmp_path):
+        path = tmp_path / f"alpaca_5min_{self._TICKER}_{self._START}_{self._END}.json"
+        path.write_text("{}")  # make cp.exists() True; content doesn't matter (load is mocked)
+        return path
+
+    def test_does_not_raise_when_empty_file_unlink_raises_file_not_found(self, tmp_path):
+        self._cache_file(tmp_path)
+
+        with patch(f"{_M}._CACHE_DIR", tmp_path), \
+             patch(f"{_M}._load_cache", return_value=pd.DataFrame()), \
+             patch.object(Path, "unlink", side_effect=FileNotFoundError), \
+             patch(f"{_M}._stitch_cache", return_value=None), \
+             patch(f"{_M}._partial_stitch_cache", return_value=(None, None)), \
+             patch(f"{_M}.fetch_alpaca_bars", return_value={}):
+            fetch_bars([self._TICKER], self._START, self._END, source=self._SOURCE)
+
+    def test_does_not_raise_when_non_covering_file_unlink_raises_file_not_found(
+        self, tmp_path
+    ):
+        self._cache_file(tmp_path)
+        # Loaded data is from 2020 — _trim_bars_to_range will strip it all, leaving empty.
+        stale_df = _make_date_bars(["2020-01-02"])
+
+        with patch(f"{_M}._CACHE_DIR", tmp_path), \
+             patch(f"{_M}._load_cache", return_value=stale_df), \
+             patch.object(Path, "unlink", side_effect=FileNotFoundError), \
+             patch(f"{_M}._stitch_cache", return_value=None), \
+             patch(f"{_M}._partial_stitch_cache", return_value=(None, None)), \
+             patch(f"{_M}.fetch_alpaca_bars", return_value={}):
+            fetch_bars([self._TICKER], self._START, self._END, source=self._SOURCE)
