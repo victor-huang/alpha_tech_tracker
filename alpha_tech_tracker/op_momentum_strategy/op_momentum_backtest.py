@@ -1,5 +1,6 @@
 import argparse
 import os
+import re
 import pandas as pd
 import pytz
 import yfinance as yf
@@ -49,6 +50,31 @@ def _load_cache(path: Path, timeframe: str) -> pd.DataFrame:
 
 def _to_date(d) -> date:
     return d.date() if isinstance(d, datetime) else d
+
+
+def _evict_contained_cache_pieces(
+    ticker: str, new_start: date, new_end: date, source: str, timeframe: str
+) -> None:
+    """Delete per-period cache files whose span is fully contained within [new_start, new_end].
+
+    Called after saving a consolidated cache file so that smaller overlapping
+    pieces don't accumulate and confuse the stitcher.
+    """
+    pattern = re.compile(
+        rf"^{re.escape(source)}_{re.escape(timeframe)}_{re.escape(ticker)}"
+        rf"_(\d{{4}}-\d{{2}}-\d{{2}})_(\d{{4}}-\d{{2}}-\d{{2}})\.json$"
+    )
+    for f in list(_CACHE_DIR.iterdir()):
+        m = pattern.match(f.name)
+        if not m:
+            continue
+        c_start = date.fromisoformat(m.group(1))
+        c_end = date.fromisoformat(m.group(2))
+        # Skip the file we just saved
+        if c_start == new_start and c_end == new_end:
+            continue
+        if c_start >= new_start and c_end <= new_end:
+            f.unlink()
 
 
 def _is_cacheable(end_date: date) -> bool:
@@ -1146,8 +1172,6 @@ def _stitch_cache(
     ticker: str, start_date: date, end_date: date, source: str
 ) -> "pd.DataFrame | None":
     """Try to build a full-range DataFrame by stitching existing per-period cache files."""
-    import re
-
     pattern = re.compile(
         rf"^{re.escape(source)}_5min_{re.escape(ticker)}_(\d{{4}}-\d{{2}}-\d{{2}})_(\d{{4}}-\d{{2}}-\d{{2}})\.json$"
     )
@@ -1194,8 +1218,6 @@ def _partial_stitch_cache(
     (df, covered_end) so the caller can delta-fetch only the missing tail.
     Returns (None, None) when there is no usable partial cache at all.
     """
-    import re
-
     pattern = re.compile(
         rf"^{re.escape(source)}_5min_{re.escape(ticker)}_(\d{{4}}-\d{{2}}-\d{{2}})_(\d{{4}}-\d{{2}}-\d{{2}})\.json$"
     )
@@ -1265,6 +1287,9 @@ def fetch_bars(
                 if not stitched.empty:
                     result[ticker] = stitched
                     _save_cache(stitched, cp, "5min")
+                    _evict_contained_cache_pieces(
+                        ticker, start_date, end_date_only, source, "5min"
+                    )
                     continue
                 # Stitch returned data that doesn't cover requested range — fall through to API
             partial_df, partial_end = _partial_stitch_cache(
@@ -1307,6 +1332,9 @@ def fetch_bars(
                     merged,
                     _cache_path(ticker, start_date, end_date_only, source, "5min"),
                     "5min",
+                )
+                _evict_contained_cache_pieces(
+                    ticker, start_date, end_date_only, source, "5min"
                 )
 
     if to_fetch:

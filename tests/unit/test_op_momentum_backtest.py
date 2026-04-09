@@ -7,6 +7,7 @@ import pytz
 
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import (
     _CACHE_WARMUP_DAYS,
+    _evict_contained_cache_pieces,
     _trim_bars_to_range,
     compute_signals_with_backtest,
     fetch_bars,
@@ -574,3 +575,194 @@ class TestFetchBarsCacheTrimming:
         assert date(2020, 1, 2) not in set(saved.index.date)
         assert self._START in set(saved.index.date)
         assert self._END in set(saved.index.date)
+
+
+# ---------------------------------------------------------------------------
+# TestEvictContainedCachePieces
+# ---------------------------------------------------------------------------
+#
+# Direct unit tests for _evict_contained_cache_pieces.
+# The helper scans _CACHE_DIR for per-ticker files whose span is fully
+# contained within [new_start, new_end] and deletes them, leaving the
+# newly-saved consolidated file and any file that extends beyond the range.
+
+
+def _touch_cache_file(directory, source, ticker, start, end):
+    """Create a minimal placeholder cache file with the correct naming convention."""
+    path = directory / f"{source}_5min_{ticker}_{start}_{end}.json"
+    path.write_text("{}")
+    return path
+
+
+class TestEvictContainedCachePieces:
+    _SOURCE = "alpaca"
+    _TICKER = "NVDA"
+    _NEW_START = date(2025, 1, 1)
+    _NEW_END = date(2025, 12, 31)
+
+    def _evict(self, tmp_path):
+        with patch(f"{_M}._CACHE_DIR", tmp_path):
+            _evict_contained_cache_pieces(
+                self._TICKER, self._NEW_START, self._NEW_END, self._SOURCE, "5min"
+            )
+
+    def test_deletes_file_fully_contained_within_new_range(self, tmp_path):
+        piece = _touch_cache_file(tmp_path, self._SOURCE, self._TICKER, "2025-01-01", "2025-06-30")
+
+        self._evict(tmp_path)
+
+        assert not piece.exists()
+
+    def test_deletes_multiple_contained_files(self, tmp_path):
+        piece1 = _touch_cache_file(tmp_path, self._SOURCE, self._TICKER, "2025-01-01", "2025-06-30")
+        piece2 = _touch_cache_file(tmp_path, self._SOURCE, self._TICKER, "2025-07-01", "2025-12-31")
+
+        self._evict(tmp_path)
+
+        assert not piece1.exists()
+        assert not piece2.exists()
+
+    def test_does_not_delete_newly_saved_file(self, tmp_path):
+        # The file whose span exactly matches [new_start, new_end] is the one just saved.
+        saved = _touch_cache_file(tmp_path, self._SOURCE, self._TICKER, "2025-01-01", "2025-12-31")
+
+        self._evict(tmp_path)
+
+        assert saved.exists()
+
+    def test_does_not_delete_file_extending_past_new_end(self, tmp_path):
+        wider = _touch_cache_file(tmp_path, self._SOURCE, self._TICKER, "2025-01-01", "2026-03-31")
+
+        self._evict(tmp_path)
+
+        assert wider.exists()
+
+    def test_does_not_delete_file_starting_before_new_start(self, tmp_path):
+        wider = _touch_cache_file(tmp_path, self._SOURCE, self._TICKER, "2024-06-01", "2025-12-31")
+
+        self._evict(tmp_path)
+
+        assert wider.exists()
+
+    def test_does_not_affect_different_ticker_files(self, tmp_path):
+        other_ticker = _touch_cache_file(tmp_path, self._SOURCE, "TSLA", "2025-01-01", "2025-06-30")
+
+        self._evict(tmp_path)
+
+        assert other_ticker.exists()
+
+    def test_does_not_affect_different_source_files(self, tmp_path):
+        other_source = _touch_cache_file(tmp_path, "yfinance", self._TICKER, "2025-01-01", "2025-06-30")
+
+        self._evict(tmp_path)
+
+        assert other_source.exists()
+
+    def test_does_not_affect_daily_bar_files(self, tmp_path):
+        daily = tmp_path / f"alpaca_1day_{self._TICKER}_2025-01-01_2025-06-30.json"
+        daily.write_text("{}")
+
+        self._evict(tmp_path)
+
+        assert daily.exists()
+
+    def test_noop_when_no_matching_files_exist(self, tmp_path):
+        # Should not raise even when the cache dir is empty.
+        self._evict(tmp_path)
+
+
+# ---------------------------------------------------------------------------
+# TestFetchBarsConsolidatesCache
+# ---------------------------------------------------------------------------
+#
+# Verifies that fetch_bars deletes contained piece files after saving a
+# consolidated cache file, for both the stitch path and the partial+delta path.
+
+
+class TestFetchBarsConsolidatesCache:
+    _START = date(2025, 1, 1)
+    _END = date(2025, 12, 31)
+    _TICKER = "NVDA"
+    _SOURCE = "alpaca"
+
+    def _consolidated_filename(self):
+        return f"alpaca_5min_{self._TICKER}_{self._START}_{self._END}.json"
+
+    # --- stitch path ---
+
+    def test_stitch_path_deletes_contained_pieces(self, tmp_path):
+        piece1 = _touch_cache_file(tmp_path, self._SOURCE, self._TICKER, "2025-01-01", "2025-06-30")
+        piece2 = _touch_cache_file(tmp_path, self._SOURCE, self._TICKER, "2025-07-01", "2025-12-31")
+        stitched_df = _make_date_bars([str(self._START), str(self._END)])
+
+        with patch(f"{_M}._CACHE_DIR", tmp_path), \
+             patch(f"{_M}._stitch_cache", return_value=stitched_df), \
+             patch(f"{_M}._partial_stitch_cache", return_value=(None, None)):
+            fetch_bars([self._TICKER], self._START, self._END, source=self._SOURCE)
+
+        assert not piece1.exists()
+        assert not piece2.exists()
+
+    def test_stitch_path_saves_consolidated_file(self, tmp_path):
+        stitched_df = _make_date_bars([str(self._START), str(self._END)])
+
+        with patch(f"{_M}._CACHE_DIR", tmp_path), \
+             patch(f"{_M}._stitch_cache", return_value=stitched_df), \
+             patch(f"{_M}._partial_stitch_cache", return_value=(None, None)):
+            fetch_bars([self._TICKER], self._START, self._END, source=self._SOURCE)
+
+        assert (tmp_path / self._consolidated_filename()).exists()
+
+    def test_stitch_path_keeps_file_extending_beyond_new_range(self, tmp_path):
+        wider = _touch_cache_file(tmp_path, self._SOURCE, self._TICKER, "2024-01-01", "2025-12-31")
+        stitched_df = _make_date_bars([str(self._START), str(self._END)])
+
+        with patch(f"{_M}._CACHE_DIR", tmp_path), \
+             patch(f"{_M}._stitch_cache", return_value=stitched_df), \
+             patch(f"{_M}._partial_stitch_cache", return_value=(None, None)):
+            fetch_bars([self._TICKER], self._START, self._END, source=self._SOURCE)
+
+        assert wider.exists()
+
+    # --- partial + delta path ---
+
+    def test_partial_delta_path_deletes_contained_piece(self, tmp_path):
+        piece = _touch_cache_file(tmp_path, self._SOURCE, self._TICKER, "2025-01-01", "2025-06-30")
+        partial_end = date(2025, 6, 30)
+        partial_df = _make_date_bars([str(self._START), str(partial_end)])
+        delta_df = _make_date_bars([str(self._END)])
+
+        with patch(f"{_M}._CACHE_DIR", tmp_path), \
+             patch(f"{_M}._stitch_cache", return_value=None), \
+             patch(f"{_M}._partial_stitch_cache", return_value=(partial_df, partial_end)), \
+             patch(f"{_M}.fetch_alpaca_bars", return_value={self._TICKER: delta_df}):
+            fetch_bars([self._TICKER], self._START, self._END, source=self._SOURCE)
+
+        assert not piece.exists()
+
+    def test_partial_delta_path_saves_consolidated_file(self, tmp_path):
+        partial_end = date(2025, 6, 30)
+        partial_df = _make_date_bars([str(self._START), str(partial_end)])
+        delta_df = _make_date_bars([str(self._END)])
+
+        with patch(f"{_M}._CACHE_DIR", tmp_path), \
+             patch(f"{_M}._stitch_cache", return_value=None), \
+             patch(f"{_M}._partial_stitch_cache", return_value=(partial_df, partial_end)), \
+             patch(f"{_M}.fetch_alpaca_bars", return_value={self._TICKER: delta_df}):
+            fetch_bars([self._TICKER], self._START, self._END, source=self._SOURCE)
+
+        assert (tmp_path / self._consolidated_filename()).exists()
+
+    def test_partial_delta_path_keeps_file_extending_beyond_new_range(self, tmp_path):
+        wider = _touch_cache_file(tmp_path, self._SOURCE, self._TICKER, "2024-01-01", "2025-12-31")
+        partial_end = date(2025, 6, 30)
+        partial_df = _make_date_bars([str(self._START), str(partial_end)])
+        delta_df = _make_date_bars([str(self._END)])
+
+        with patch(f"{_M}._CACHE_DIR", tmp_path), \
+             patch(f"{_M}._stitch_cache", return_value=None), \
+             patch(f"{_M}._partial_stitch_cache", return_value=(partial_df, partial_end)), \
+             patch(f"{_M}.fetch_alpaca_bars", return_value={self._TICKER: delta_df}):
+            fetch_bars([self._TICKER], self._START, self._END, source=self._SOURCE)
+
+        assert wider.exists()
