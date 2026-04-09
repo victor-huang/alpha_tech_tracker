@@ -5,7 +5,7 @@ import pytest
 
 from alpha_tech_tracker.op_momentum_strategy.contract_selector import (
     MockContractSelector,
-    OptionContractSelector,
+    ITMOptionContractSelector,
     TimePremiumContractSelector,
     _end_of_next_month,
     _is_nyse_holiday,
@@ -83,7 +83,7 @@ class TestIsNyseHoliday:
         assert _is_nyse_holiday(date(2026, 12, 25)) is True
 
 
-class TestOptionContractSelector:
+class TestITMOptionContractSelector:
     @patch(_TODAY_PATH, return_value=date(2026, 3, 23))  # Monday
     @patch(_NEXT_FRIDAY_PATH, return_value=date(2026, 3, 27))
     def test_bullish_signal_selects_call_with_lower_strike(self, _, __):
@@ -93,7 +93,7 @@ class TestOptionContractSelector:
             {"symbol": "NVDA260328C00740000", "strike_price": 740.0, "expiration_date": "2026-03-27"},
         ]
 
-        selector = OptionContractSelector(client)
+        selector = ITMOptionContractSelector(client)
         symbol = selector.select("NVDA", "BULLISH", 820.0)
 
         # stock=$820, incr=$10, target=floor(820*0.90/10)*10=730, radius=50
@@ -116,7 +116,7 @@ class TestOptionContractSelector:
             {"symbol": "NVDA260328P00900000", "strike_price": 900.0, "expiration_date": "2026-03-27"},
         ]
 
-        selector = OptionContractSelector(client)
+        selector = ITMOptionContractSelector(client)
         symbol = selector.select("NVDA", "BEARISH", 820.0)
 
         assert symbol == "NVDA260328P00900000"
@@ -131,7 +131,7 @@ class TestOptionContractSelector:
             {"symbol": "CRWD260328C00095000", "strike_price": 95.0, "expiration_date": "2026-03-27"},
         ]
 
-        selector = OptionContractSelector(client)
+        selector = ITMOptionContractSelector(client)
         # stock @ 100 → target call strike = floor(90/5)*5 = 90
         symbol = selector.select("CRWD", "BULLISH", 100.0)
 
@@ -144,7 +144,7 @@ class TestOptionContractSelector:
             {"symbol": "NVDA260327C00730000", "strike_price": 730.0, "expiration_date": "2026-03-27"},
         ]
 
-        selector = OptionContractSelector(client)
+        selector = ITMOptionContractSelector(client)
         symbol = selector.select("NVDA", "BULLISH", 820.0)
 
         # stock=$820, incr=$10, target=730, radius=50 → narrow range [680, 780]
@@ -167,7 +167,7 @@ class TestOptionContractSelector:
             {"symbol": "NVDA260402C00730000", "strike_price": 730.0, "expiration_date": "2026-04-02"},
         ]
 
-        selector = OptionContractSelector(client)
+        selector = ITMOptionContractSelector(client)
         selector.select("NVDA", "BULLISH", 820.0)
 
         call_args = client.get_options_contracts.call_args
@@ -179,7 +179,7 @@ class TestOptionContractSelector:
         client = _make_alpaca_client()
         client.get_options_contracts.return_value = []
 
-        selector = OptionContractSelector(client)
+        selector = ITMOptionContractSelector(client)
 
         with pytest.raises(RuntimeError, match="No call contracts found"):
             selector.select("NVDA", "BULLISH", 820.0)
@@ -199,7 +199,7 @@ class TestOptionContractSelector:
         # narrow weekly, narrow monthly, broad weekly, broad monthly (succeeds)
         client.get_options_contracts.side_effect = [[], [], [], [monthly_contract]]
 
-        selector = OptionContractSelector(client)
+        selector = ITMOptionContractSelector(client)
         symbol = selector.select("ISSC", "BULLISH", 21.5)
 
         assert symbol == "ISSC260417C00020000"
@@ -225,7 +225,7 @@ class TestOptionContractSelector:
             ],
         ]
 
-        selector = OptionContractSelector(client)
+        selector = ITMOptionContractSelector(client)
         symbol = selector.select("FN", "BULLISH", 552.0)
 
         assert symbol == "FN260417C00550000"
@@ -244,7 +244,7 @@ class TestOptionContractSelector:
             {"symbol": "SNDK260410P00850000", "strike_price": 850.0, "expiration_date": "2026-04-10"},
         ]
 
-        selector = OptionContractSelector(client)
+        selector = ITMOptionContractSelector(client)
         symbol = selector.select("SNDK", "BEARISH", 777.0)
 
         assert symbol == "SNDK260410P00850000"
@@ -271,7 +271,7 @@ class TestOptionContractSelector:
         # narrow weekly [], narrow monthly [], broad weekly [contract]
         client.get_options_contracts.side_effect = [[], [], [broad_contract]]
 
-        selector = OptionContractSelector(client)
+        selector = ITMOptionContractSelector(client)
         symbol = selector.select("NVDA", "BULLISH", 820.0)
 
         assert symbol == "NVDA260327C00730000"
@@ -290,7 +290,7 @@ class TestOptionContractSelector:
             {"symbol": "FN260327C00550000", "strike_price": 550.0, "expiration_date": "2026-03-27"}
         ]
 
-        selector = OptionContractSelector(client)
+        selector = ITMOptionContractSelector(client)
         selector.select("FN", "BULLISH", 552.0)
 
         client.get_options_contracts.assert_called_once()
@@ -304,7 +304,7 @@ class TestOptionContractSelector:
             {"symbol": "COIN260328P00110000", "strike_price": 110.0, "expiration_date": "2026-03-27"},
         ]
 
-        selector = OptionContractSelector(client)
+        selector = ITMOptionContractSelector(client)
         symbol = selector.select("COIN", "BEARISH", 100.0)
 
         # stock=$100, incr=$5, target=110, radius=25 → narrow range [85, 135]

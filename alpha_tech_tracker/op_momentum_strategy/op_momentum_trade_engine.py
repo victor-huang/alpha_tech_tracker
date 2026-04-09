@@ -24,7 +24,7 @@ from .config import (
 )
 from .models import WindowConfig
 from .op_momentum_selector import ROLLING_LOOKBACK_DAYS as _DEFAULT_LOOKBACK_DAYS
-from .contract_selector import OptionContractSelector, TimePremiumContractSelector
+from .contract_selector import ITMOptionContractSelector, TimePremiumContractSelector
 from .option_price_monitor import OptionPriceMonitor
 from .trade_engine import OpMomentumTradeEngine
 
@@ -276,7 +276,7 @@ def parse_args():
         default="standard",
         choices=["standard", "time-premium"],
         help="Option contract selector for live trading: "
-        "'standard' uses OptionContractSelector (fixed ±20%% ITM strike offset, default); "
+        "'standard' uses ITMOptionContractSelector (fixed ±20%% ITM strike offset, default); "
         "'time-premium' uses TimePremiumContractSelector (shallowest ITM within DTE-adjusted time premium cap).",
     )
     parser.add_argument(
@@ -478,7 +478,7 @@ def _build_contract_selector(args, client):
         return TimePremiumContractSelector(
             client, time_premium_pct_cap=args.time_premium_pct_cap
         )
-    return OptionContractSelector(client)
+    return ITMOptionContractSelector(client)
 
 
 if __name__ == "__main__":

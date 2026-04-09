@@ -9,7 +9,7 @@ from alpha_tech_tracker.op_momentum_strategy.config import (
 
 )
 from alpha_tech_tracker.op_momentum_strategy.contract_selector import (
-    OptionContractSelector,
+    ITMOptionContractSelector,
     TimePremiumContractSelector,
 )
 from alpha_tech_tracker.op_momentum_strategy.models import ReentryWatcher
@@ -29,7 +29,7 @@ _SELECT_TOP_N_PATH = "alpha_tech_tracker.op_momentum_strategy.trade_engine.selec
 _FETCH_BARS_PATH = "alpha_tech_tracker.op_momentum_strategy.trade_engine.fetch_bars"
 _SCORE_TICKER_PATH = "alpha_tech_tracker.op_momentum_strategy.trade_engine.score_ticker"
 _OPTION_CONTRACT_SELECTOR_PATH = (
-    "alpha_tech_tracker.op_momentum_strategy.trade_engine.OptionContractSelector.select"
+    "alpha_tech_tracker.op_momentum_strategy.trade_engine.ITMOptionContractSelector.select"
 )
 _POSITION_SIZER_PATH = (
     "alpha_tech_tracker.op_momentum_strategy.trade_engine.PositionSizer.compute"
@@ -913,7 +913,7 @@ class TestBuildContractSelector:
         client = _make_alpaca_client()
         selector = _build_contract_selector(self._make_args(), client)
 
-        assert isinstance(selector, OptionContractSelector)
+        assert isinstance(selector, ITMOptionContractSelector)
 
     def test_time_premium_returns_time_premium_contract_selector(self):
         client = _make_alpaca_client()
@@ -954,7 +954,7 @@ class TestContractSelectorInjection:
     def test_defaults_to_option_contract_selector_when_none_provided(self):
         engine = self._make_engine()
 
-        assert isinstance(engine._contract_selector, OptionContractSelector)
+        assert isinstance(engine._contract_selector, ITMOptionContractSelector)
 
     def test_uses_injected_selector_instance(self):
         custom_selector = Mock()

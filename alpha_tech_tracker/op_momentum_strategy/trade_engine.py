@@ -41,7 +41,7 @@ from .config import (
     enable_notifications,
 )
 from .bar_recorder import BarRecorder
-from .contract_selector import MockContractSelector, OptionContractSelector
+from .contract_selector import MockContractSelector, ITMOptionContractSelector
 from .models import ActivePosition, ReentryWatcher, SignalEvent, WindowConfig, _D
 from .option_price_monitor import OptionPriceMonitor
 from .order_executor import _place_with_fill_escalation, place_stock_order
@@ -268,7 +268,7 @@ class OpMomentumTradeEngine:
         self._lookback_days = lookback_days
         self._trade_type = trade_type
         self._option_price_monitor = option_price_monitor
-        self._contract_selector = contract_selector if contract_selector is not None else OptionContractSelector(alpaca_client)
+        self._contract_selector = contract_selector if contract_selector is not None else ITMOptionContractSelector(alpaca_client)
         self._enable_reversal = enable_reversal
         self._reversal_max_bars = reversal_max_bars
         self._enable_bearish_reentry = enable_bearish_reentry

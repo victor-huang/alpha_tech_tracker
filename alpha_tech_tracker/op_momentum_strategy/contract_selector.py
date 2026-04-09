@@ -128,7 +128,7 @@ def _fetch_contracts_with_expiry_fallback(
     return contracts, expiry
 
 
-class OptionContractSelector:
+class ITMOptionContractSelector:
     """Finds the nearest weekly option contract matching the signal."""
 
     def __init__(self, alpaca_client: AlpacaAPIClient):
@@ -223,7 +223,7 @@ class TimePremiumContractSelector:
       4. Select the first strike where time_premium <= DTE-adjusted target.
       5. Fallback to deepest ITM contract if all time premiums stay above target.
 
-    Mirrors OptionContractSelector expiry logic: weekly → monthly fallback.
+    Mirrors ITMOptionContractSelector expiry logic: weekly → monthly fallback.
     """
 
     def __init__(

@@ -4,7 +4,7 @@ import pytest
 from alpaca.data.live import StockDataStream
 
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine import (
-    OptionContractSelector,
+    ITMOptionContractSelector,
     PositionSizer,
     TickerSelector,
 )
@@ -82,10 +82,10 @@ class TestTickerSelectorIntegration:
 
 @pytest.mark.alpaca
 @pytest.mark.credentials
-class TestOptionContractSelectorIntegration:
+class TestITMOptionContractSelectorIntegration:
     def test_select_bullish_returns_call_symbol(self):
         client = AlpacaAPIClient(is_paper_trading=_IS_PAPER)
-        selector = OptionContractSelector(alpaca_client=client)
+        selector = ITMOptionContractSelector(alpaca_client=client)
         stock_price = _fetch_qqq_price(client)
 
         try:
@@ -109,7 +109,7 @@ class TestOptionContractSelectorIntegration:
 
     def test_select_bearish_returns_put_symbol(self):
         client = AlpacaAPIClient(is_paper_trading=_IS_PAPER)
-        selector = OptionContractSelector(alpaca_client=client)
+        selector = ITMOptionContractSelector(alpaca_client=client)
         stock_price = _fetch_qqq_price(client)
 
         try:
@@ -241,7 +241,7 @@ class TestPlaceOptionOrderWithSymbolOverrideIntegration:
         """
         client = AlpacaAPIClient(is_paper_trading=_IS_PAPER)
         stock_price = _fetch_qqq_price(client)
-        selector = OptionContractSelector(alpaca_client=client)
+        selector = ITMOptionContractSelector(alpaca_client=client)
 
         try:
             option_symbol = selector.select(

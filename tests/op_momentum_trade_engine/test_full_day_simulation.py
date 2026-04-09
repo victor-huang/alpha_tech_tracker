@@ -10,7 +10,7 @@ Data flow under test:
   LiveSignalEngine._process_five_min_bar()  (opening bars injected directly)
     → SignalEvent captured via on_signal callback
   OpMomentumTradeEngine._enter_position()   (called without threading)
-    → OptionContractSelector selects contract  (mock get_options_contracts)
+    → ITMOptionContractSelector selects contract  (mock get_options_contracts)
     → PositionSizer computes qty/price        (mock get_accounts + quote)
     → _place_entry in mock mode              (mock quote → simulated fill)
     → ActivePosition added to PositionMonitor
