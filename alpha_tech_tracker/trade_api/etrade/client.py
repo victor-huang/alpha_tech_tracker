@@ -312,6 +312,12 @@ class EtradeAPIClient(ExecutionClient):
         return input_queue.get()
 
     def authorize_session(self):
+        if not self._api_key or not self._client_secret:
+            raise RuntimeError(
+                "ETrade API credentials are missing.\n"
+                "Set ETRADE_API_KEY_ID and ETRADE_API_SECRET_KEY environment variables,\n"
+                "or add 'etrade_credentials' to config.json."
+            )
         callback_url = "oob"
         session = OAuth1Session(
             self._api_key,
