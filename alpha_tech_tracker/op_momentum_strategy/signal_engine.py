@@ -414,6 +414,10 @@ class LiveSignalEngine:
         try:
             bars = hist_client.get_stock_bars(request)
             all_df = bars.df
+            # Alpaca returns a flat DatetimeIndex when only one ticker is requested.
+            # Normalize to a (symbol, timestamp) MultiIndex so .xs() works uniformly.
+            if not isinstance(all_df.index, pd.MultiIndex) and len(tickers_need_api) == 1:
+                all_df = pd.concat({tickers_need_api[0]: all_df}, names=["symbol", "timestamp"])
         except Exception:
             logger.exception("Failed to fetch opening bar catchup data for [%s]", label)
             return

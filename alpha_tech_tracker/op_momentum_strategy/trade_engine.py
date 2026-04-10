@@ -28,9 +28,9 @@ from .config import (
     MAX_LOSS_PCT,
     OPENING_BARS,
     OPENING_START_TIME,
-
     REGIME_FILTER,
     REGIME_MA,
+    SESSION_END_TIME,
     SIGNAL_BUFFER_MINUTES,
     STOP_PCT,
     TICKERS,
@@ -1017,13 +1017,26 @@ class OpMomentumTradeEngine:
 
     def _monitor_loop(self, active_tickers: list):
         eod_h, eod_m = [int(x) for x in EOD_EXIT_TIME.split(":")]
+        end_h, end_m = [int(x) for x in SESSION_END_TIME.split(":")]
         last_status_print = _now_et()
+        eod_triggered = False
         while True:
             now = _now_et()
-            if now.hour > eod_h or (now.hour == eod_h and now.minute >= eod_m):
+
+            if not eod_triggered and (
+                now.hour > eod_h or (now.hour == eod_h and now.minute >= eod_m)
+            ):
                 logger.info("EOD: force-closing all positions")
                 self._monitor.close_all(reason="end_of_day")
-                break
+                eod_triggered = True
+
+            if eod_triggered:
+                if now.hour > end_h or (now.hour == end_h and now.minute >= end_m):
+                    logger.info("Session end: all fills confirmed, shutting down")
+                    break
+                self._monitor._refresh_fill_prices(self._monitor._positions)
+                time.sleep(30)
+                continue
 
             for ticker in active_tickers:
                 self._monitor.on_bar(ticker)
