@@ -1418,3 +1418,66 @@ class TestWindowPrimaryDeployed:
             )
 
         assert "W1" not in engine._window_primary_deployed
+
+
+class TestMonitorLoop:
+    """Tests for _monitor_loop post-EOD session-end behaviour."""
+
+    _NOW_ET = "alpha_tech_tracker.op_momentum_strategy.trade_engine._now_et"
+    _SLEEP = "alpha_tech_tracker.op_momentum_strategy.trade_engine.time.sleep"
+
+    def _make_engine(self):
+        client = _make_alpaca_client()
+        engine = OpMomentumTradeEngine(alpaca_client=client, mock_trade_execution=True)
+        engine._monitor = Mock()
+        engine._monitor._positions = []
+        return engine
+
+    def test_close_all_called_once_at_eod_time(self):
+        engine = self._make_engine()
+        eod_dt = datetime(2026, 4, 9, 15, 55, 0, tzinfo=pytz.timezone("America/New_York"))
+        end_dt = datetime(2026, 4, 9, 16, 5, 0, tzinfo=pytz.timezone("America/New_York"))
+        times = iter([eod_dt, eod_dt, end_dt])
+
+        with patch(self._NOW_ET, side_effect=lambda: next(times)), \
+             patch(self._SLEEP):
+            engine._monitor_loop([])
+
+        engine._monitor.close_all.assert_called_once_with(reason="end_of_day")
+
+    def test_refresh_fill_prices_called_between_eod_and_session_end(self):
+        engine = self._make_engine()
+        eod_dt = datetime(2026, 4, 9, 15, 55, 0, tzinfo=pytz.timezone("America/New_York"))
+        mid_dt = datetime(2026, 4, 9, 16, 0, 0, tzinfo=pytz.timezone("America/New_York"))
+        end_dt = datetime(2026, 4, 9, 16, 5, 0, tzinfo=pytz.timezone("America/New_York"))
+        times = iter([eod_dt, eod_dt, mid_dt, end_dt])
+
+        with patch(self._NOW_ET, side_effect=lambda: next(times)), \
+             patch(self._SLEEP):
+            engine._monitor_loop([])
+
+        engine._monitor._refresh_fill_prices.assert_called()
+
+    def test_loop_exits_at_session_end_time(self):
+        engine = self._make_engine()
+        eod_dt = datetime(2026, 4, 9, 15, 55, 0, tzinfo=pytz.timezone("America/New_York"))
+        end_dt = datetime(2026, 4, 9, 16, 5, 0, tzinfo=pytz.timezone("America/New_York"))
+        times = iter([eod_dt, eod_dt, end_dt])
+
+        with patch(self._NOW_ET, side_effect=lambda: next(times)), \
+             patch(self._SLEEP) as sleep_mock:
+            engine._monitor_loop([])
+
+        assert sleep_mock.call_count == 1
+
+    def test_on_bar_not_called_after_eod(self):
+        engine = self._make_engine()
+        eod_dt = datetime(2026, 4, 9, 15, 55, 0, tzinfo=pytz.timezone("America/New_York"))
+        end_dt = datetime(2026, 4, 9, 16, 5, 0, tzinfo=pytz.timezone("America/New_York"))
+        times = iter([eod_dt, eod_dt, end_dt])
+
+        with patch(self._NOW_ET, side_effect=lambda: next(times)), \
+             patch(self._SLEEP):
+            engine._monitor_loop(["NVDA"])
+
+        engine._monitor.on_bar.assert_not_called()

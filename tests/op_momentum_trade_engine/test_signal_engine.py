@@ -719,3 +719,122 @@ class TestCatchUpOpeningBarsForWindow:
         assert bar_10_30 in injected_timestamps, "10:30 bar missing — incorrectly skipped as recent_period"
         assert bar_10_35 in injected_timestamps, "10:35 bar missing — client-side pass failed"
         assert len(engine._opening_buf["M1"]["APP"]) == 3
+
+
+class TestCatchUpSingleTickerMultiIndex:
+    """Regression tests for single-ticker catchup crash.
+
+    When only one ticker needs API catchup, Alpaca returns a flat DatetimeIndex
+    instead of a (symbol, timestamp) MultiIndex.  The fix normalises the frame
+    with pd.concat before the per-ticker loop so .xs() works uniformly.
+    """
+
+    def _make_a1_engine(self, ticker="MU"):
+        return LiveSignalEngine(
+            tickers=[ticker],
+            api_key="k",
+            secret_key="s",
+            windows=[
+                {
+                    "label": "A1",
+                    "opening_start": "13:15",
+                    "opening_bars": 1,
+                    "on_signal": None,
+                }
+            ],
+        )
+
+    def _make_flat_alpaca_df(self, ticker, ts):
+        """Simulate what Alpaca returns when exactly one ticker is requested."""
+        idx = pd.DatetimeIndex([ts], name="timestamp")
+        return pd.DataFrame(
+            {"open": [408.0], "high": [409.0], "low": [407.5], "close": [408.5], "volume": [500.0]},
+            index=idx,
+        )
+
+    def test_single_ticker_flat_index_does_not_raise(self):
+        today = date(2026, 4, 9)
+        engine = self._make_a1_engine("MU")
+        or_start = ET.localize(
+            datetime.combine(today, datetime.strptime("13:15", "%H:%M").time())
+        )
+        flat_df = self._make_flat_alpaca_df("MU", or_start)
+
+        mock_alpaca_instance = Mock()
+        mock_alpaca_instance.get_stock_bars.return_value = Mock(df=flat_df)
+
+        with patch.object(engine, "_process_five_min_bar"), \
+             patch(
+                 "alpha_tech_tracker.op_momentum_strategy.signal_engine.StockHistoricalDataClient",
+                 return_value=mock_alpaca_instance,
+             ):
+            engine._catch_up_opening_bars_for_window(today, engine._windows[0])
+
+    def test_single_ticker_flat_index_injects_bar(self):
+        today = date(2026, 4, 9)
+        engine = self._make_a1_engine("MU")
+        or_start = ET.localize(
+            datetime.combine(today, datetime.strptime("13:15", "%H:%M").time())
+        )
+        flat_df = self._make_flat_alpaca_df("MU", or_start)
+
+        mock_alpaca_instance = Mock()
+        mock_alpaca_instance.get_stock_bars.return_value = Mock(df=flat_df)
+
+        injected = []
+
+        def fake_process(bar):
+            injected.append(bar)
+            engine._opening_buf["A1"]["MU"].append(bar)
+
+        with patch.object(engine, "_process_five_min_bar", side_effect=fake_process), \
+             patch(
+                 "alpha_tech_tracker.op_momentum_strategy.signal_engine.StockHistoricalDataClient",
+                 return_value=mock_alpaca_instance,
+             ):
+            engine._catch_up_opening_bars_for_window(today, engine._windows[0])
+
+        assert len(injected) == 1
+        assert injected[0].symbol == "MU"
+        assert injected[0].open == 408.0
+        assert injected[0].close == 408.5
+
+    def test_multi_ticker_multi_index_still_works(self):
+        """Existing multi-ticker path (MultiIndex) is unaffected by the fix."""
+        today = date(2026, 4, 9)
+        engine = LiveSignalEngine(
+            tickers=["MU", "NVDA"],
+            api_key="k",
+            secret_key="s",
+            windows=[{"label": "A1", "opening_start": "13:15", "opening_bars": 1, "on_signal": None}],
+        )
+        or_start = ET.localize(
+            datetime.combine(today, datetime.strptime("13:15", "%H:%M").time())
+        )
+        tuples = [("MU", or_start), ("NVDA", or_start)]
+        idx = pd.MultiIndex.from_tuples(tuples, names=["symbol", "timestamp"])
+        multi_df = pd.DataFrame(
+            {"open": [408.0, 183.0], "high": [409.0, 184.0], "low": [407.0, 182.0],
+             "close": [408.5, 183.5], "volume": [500.0, 1000.0]},
+            index=idx,
+        )
+
+        mock_alpaca_instance = Mock()
+        mock_alpaca_instance.get_stock_bars.return_value = Mock(df=multi_df)
+
+        injected = []
+
+        def fake_process(bar):
+            injected.append(bar)
+            engine._opening_buf["A1"][bar.symbol].append(bar)
+
+        with patch.object(engine, "_process_five_min_bar", side_effect=fake_process), \
+             patch(
+                 "alpha_tech_tracker.op_momentum_strategy.signal_engine.StockHistoricalDataClient",
+                 return_value=mock_alpaca_instance,
+             ):
+            engine._catch_up_opening_bars_for_window(today, engine._windows[0])
+
+        symbols = {b.symbol for b in injected}
+        assert "MU" in symbols
+        assert "NVDA" in symbols
