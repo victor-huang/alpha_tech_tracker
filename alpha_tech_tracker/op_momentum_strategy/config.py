@@ -13,10 +13,13 @@ from .models import _D
 logger = logging.getLogger(__name__)
 
 TICKERS = DEFAULT_TICKERS
-EXECUTION_BROKER = "alpaca"   # "alpaca" | "etrade"
+EXECUTION_BROKER = "alpaca"   # "alpaca" | "etrade" | "tradestation"
 ETRADE_ACCOUNT_ID = None
 ETRADE_SANDBOX = False
 _ETRADE_SESSION_TOKENS: dict = {}
+TRADESTATION_ACCOUNT_KEY = None
+TRADESTATION_ENVIRONMENT = "live"   # "live" | "sim"
+_TRADESTATION_SESSION_TOKENS: dict = {}
 ACCOUNT_BUDGET = 25_000
 MAX_ACTIVE_SYMBOLS = 2
 OPENING_BARS = 3
@@ -66,7 +69,8 @@ def _load_config(config_file: str = _CONFIG_FILE):
           }
         }
     """
-    global EXECUTION_BROKER, ETRADE_ACCOUNT_ID, ETRADE_SANDBOX
+    global EXECUTION_BROKER, ETRADE_ACCOUNT_ID, ETRADE_SANDBOX, \
+        TRADESTATION_ACCOUNT_KEY, TRADESTATION_ENVIRONMENT
 
     if not os.path.exists(config_file):
         return
@@ -107,6 +111,26 @@ def _load_config(config_file: str = _CONFIG_FILE):
         if etrade_creds.get(cfg_key) and not os.environ.get(env_key):
             os.environ[env_key] = etrade_creds[cfg_key]
 
+    # TradeStation account config
+    ts = cfg.get("tradestation", {})
+    if ts.get("account_key"):
+        TRADESTATION_ACCOUNT_KEY = str(ts["account_key"])
+    if ts.get("environment"):
+        TRADESTATION_ENVIRONMENT = ts["environment"]
+
+    # TradeStation stored session tokens
+    _TRADESTATION_SESSION_TOKENS.clear()
+    _TRADESTATION_SESSION_TOKENS.update(cfg.get("tradestation_session", {}))
+
+    # TradeStation credentials → env vars
+    ts_creds = cfg.get("tradestation_credentials", {})
+    for cfg_key, env_key in (
+        ("client_id", "TS_CLIENT_ID"),
+        ("client_secret", "TS_CLIENT_SECRET"),
+    ):
+        if ts_creds.get(cfg_key) and not os.environ.get(env_key):
+            os.environ[env_key] = ts_creds[cfg_key]
+
     _clicksend_cfg.clear()
     _clicksend_cfg.update(cfg.get("clicksend", {}))
 
@@ -138,6 +162,23 @@ def _save_etrade_session_tokens(
     logger.info("ETrade session tokens saved to %s", config_file)
 
 
+def _save_tradestation_session_tokens(
+    token: dict,
+    config_file: str = _CONFIG_FILE,
+):
+    """Persist TradeStation OAuth 2.0 token dict to config.json."""
+    cfg = {}
+    if os.path.exists(config_file):
+        with open(config_file) as f:
+            cfg = json.load(f)
+    cfg["tradestation_session"] = token
+    tmp = config_file + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(cfg, f, indent=2)
+    os.replace(tmp, config_file)
+    logger.info("TradeStation session tokens saved to %s", config_file)
+
+
 def build_execution_client(is_paper: bool = True):
     """
     Construct and return an ExecutionClient based on EXECUTION_BROKER.
@@ -165,6 +206,23 @@ def build_execution_client(is_paper: bool = True):
                 return client
             logger.warning(
                 "Stored ETrade session is expired — run etrade_auth.py to renew"
+            )
+        client.authorize_session()
+        return client
+
+    if EXECUTION_BROKER == "tradestation":
+        from alpha_tech_tracker.trade_api.tradestation.client import TradeStationAPIClient
+        client = TradeStationAPIClient(
+            selected_account_key=TRADESTATION_ACCOUNT_KEY,
+            environment=TRADESTATION_ENVIRONMENT,
+        )
+        if _TRADESTATION_SESSION_TOKENS.get("access_token"):
+            client.restore_session(_TRADESTATION_SESSION_TOKENS)
+            if client.verify_session():
+                logger.info("TradeStation session restored from stored tokens")
+                return client
+            logger.warning(
+                "Stored TradeStation session expired — run tradestation_auth.py to renew"
             )
         client.authorize_session()
         return client

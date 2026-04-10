@@ -1,0 +1,547 @@
+import logging
+import os
+import re
+import webbrowser
+from datetime import datetime
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from urllib.parse import parse_qs, urlparse
+
+from requests_oauthlib import OAuth2Session
+
+from alpha_tech_tracker.trade_api.execution_client import ExecutionClient
+
+logger = logging.getLogger("trade_api.tradestation")
+
+_AUTH_URL = "https://signin.tradestation.com/authorize"
+_TOKEN_URL = "https://signin.tradestation.com/oauth/token"
+_SCOPES = "openid offline_access profile MarketData ReadAccount Trade OptionSpreads"
+
+_BASE_URLS = {
+    "live": "https://api.tradestation.com",
+    "sim": "https://sim-api.tradestation.com",
+}
+
+_TS_STATUS_MAP = {
+    "OPN": "open",
+    "ACK": "open",
+    "DON": "open",
+    "FPR": "open",
+    "UCN": "open",
+    "LAT": "open",
+    "OUT": "open",
+    "PLA": "open",
+    "FLL": "filled",
+    "FLP": "filled",
+    "CAN": "canceled",
+    "REJ": "canceled",
+    "TSC": "canceled",
+    "BRO": "canceled",
+    "EXP": "expired",
+}
+
+_TRADE_ACTION_MAP = {
+    "BUY_OPEN": "BUYTOOPEN",
+    "BUY_CLOSE": "BUYTOCLOSE",
+    "SELL_OPEN": "SELLTOOPEN",
+    "SELL_CLOSE": "SELLTOCLOSE",
+}
+
+
+class APIError(Exception):
+    def __init__(self, code, message):
+        self.code = code
+        self.message = message
+        super().__init__(message)
+
+
+class APIInvalidArgumentError(APIError):
+    pass
+
+
+def _occ_to_ts(occ_symbol: str) -> str:
+    """Convert OCC symbol to TradeStation padded format.
+
+    e.g. 'TSLA250420C00240000' -> 'TSLA  250420C00240000'
+    """
+    m = re.match(r"^([A-Z]+)(\d{6}[CP]\d{8})$", occ_symbol)
+    if not m:
+        raise ValueError(f"Cannot parse OCC symbol: {occ_symbol}")
+    ticker, suffix = m.groups()
+    padded_ticker = ticker.ljust(6)
+    return padded_ticker + suffix
+
+
+def _ts_to_occ(ts_symbol: str) -> str:
+    """Strip spaces from TradeStation padded symbol to get OCC format.
+
+    e.g. 'TSLA  250420C00240000' -> 'TSLA250420C00240000'
+    """
+    return ts_symbol.replace(" ", "")
+
+
+class _CallbackHandler(BaseHTTPRequestHandler):
+    """Minimal HTTP handler that captures the OAuth callback code."""
+
+    auth_code = None
+
+    def do_GET(self):
+        parsed = urlparse(self.path)
+        params = parse_qs(parsed.query)
+        if "code" in params:
+            _CallbackHandler.auth_code = params["code"][0]
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"Authorization complete - you can close this tab.")
+
+    def log_message(self, format, *args):
+        pass  # suppress request logging
+
+
+class TradeStationAPIClient(ExecutionClient):
+    def __init__(
+        self,
+        client_id=None,
+        client_secret=None,
+        redirect_uri="http://localhost:8080",
+        selected_account_key=None,
+        environment="live",
+    ):
+        self._client_id = client_id or os.environ.get("TS_CLIENT_ID")
+        self._client_secret = client_secret or os.environ.get("TS_CLIENT_SECRET")
+        self._redirect_uri = redirect_uri
+        self._account_key = selected_account_key
+        self._environment = environment
+        self._base_url = _BASE_URLS.get(environment, _BASE_URLS["live"]) + "/v2"
+        self._session = None
+        self._user_id = None
+
+    # ------------------------------------------------------------------
+    # Auth
+    # ------------------------------------------------------------------
+
+    def authorize_session(self) -> dict:
+        if not self._client_id or not self._client_secret:
+            raise RuntimeError(
+                "TradeStation credentials are missing.\n"
+                "Set TS_CLIENT_ID and TS_CLIENT_SECRET environment variables,\n"
+                "or add 'tradestation_credentials' to config.json."
+            )
+
+        oauth = OAuth2Session(
+            client_id=self._client_id,
+            redirect_uri=self._redirect_uri,
+            scope=_SCOPES,
+        )
+        auth_url, _ = oauth.authorization_url(
+            _AUTH_URL,
+            audience="https://api.tradestation.com",
+        )
+
+        _CallbackHandler.auth_code = None
+        server = HTTPServer(("localhost", 8080), _CallbackHandler)
+        server.timeout = 120
+
+        print(f"\nOpening browser for TradeStation authorization...")
+        print(f"If the browser does not open, visit:\n  {auth_url}\n")
+        webbrowser.open(auth_url)
+
+        while _CallbackHandler.auth_code is None:
+            server.handle_request()
+        server.server_close()
+
+        token = oauth.fetch_token(
+            _TOKEN_URL,
+            code=_CallbackHandler.auth_code,
+            client_secret=self._client_secret,
+            include_client_id=True,
+        )
+        self._user_id = token.get("userid")
+        self._build_session(token)
+        return token
+
+    def restore_session(self, token: dict):
+        self._user_id = token.get("userid")
+        self._build_session(token)
+
+    def verify_session(self) -> bool:
+        if self._session is None:
+            return False
+        try:
+            url = self._base_url + "/data/quote/MSFT"
+            response = self._session.get(url)
+            return response.status_code == 200
+        except Exception:
+            return False
+
+    def _build_session(self, token: dict):
+        from alpha_tech_tracker.op_momentum_strategy.config import (
+            _save_tradestation_session_tokens,
+        )
+
+        self._session = OAuth2Session(
+            client_id=self._client_id,
+            token=token,
+            auto_refresh_url=_TOKEN_URL,
+            auto_refresh_kwargs={
+                "client_id": self._client_id,
+                "client_secret": self._client_secret,
+            },
+            token_updater=_save_tradestation_session_tokens,
+        )
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _get(self, path: str, **kwargs) -> dict:
+        response = self._session.get(self._base_url + path, **kwargs)
+        return self._parse(response)
+
+    def _post(self, path: str, json: dict) -> dict:
+        response = self._session.post(self._base_url + path, json=json)
+        return self._parse(response)
+
+    def _delete(self, path: str) -> dict:
+        response = self._session.delete(self._base_url + path)
+        return self._parse(response)
+
+    def _parse(self, response) -> dict:
+        data = response.json()
+        if response.status_code in (200, 201):
+            return data
+        code = str(response.status_code)
+        message = data.get("Message", str(data))
+        logger.error("TradeStation API error %s: %s", response.status_code, message)
+        if response.status_code == 400:
+            raise APIInvalidArgumentError(code=code, message=message)
+        raise APIError(code=code, message=message)
+
+    def _get_account_key(self) -> str:
+        if self._account_key is not None:
+            return str(self._account_key)
+        user_id = self._user_id or "me"
+        data = self._get(f"/users/{user_id}/accounts")
+        accounts = data if isinstance(data, list) else data.get("Accounts", [])
+        active = [a for a in accounts if a.get("Status") == "A"]
+        account = active[0] if active else accounts[0]
+        self._account_key = str(account["Key"])
+        return self._account_key
+
+    def _normalize_order(self, raw: dict, order_id: str = None) -> dict:
+        status_code = raw.get("Status", "OPN")
+        return {
+            "order_id": str(raw.get("OrderID", order_id or "")),
+            "symbol": _ts_to_occ(raw.get("Symbol", "")),
+            "quantity": float(raw.get("Quantity", 0)),
+            "filled_qty": float(raw.get("ExecuteQuantity", 0)),
+            "side": raw.get("Type", ""),
+            "type": raw.get("Duration", "DAY"),
+            "status": _TS_STATUS_MAP.get(status_code, "open"),
+            "limit_price": float(raw["LimitPrice"]) if raw.get("LimitPrice") else None,
+            "filled_avg_price": float(raw["FilledPrice"]) if raw.get("FilledPrice") else None,
+            "submitted_at": raw.get("TimeStamp"),
+            "raw_response": raw,
+        }
+
+    # ------------------------------------------------------------------
+    # ExecutionClient interface
+    # ------------------------------------------------------------------
+
+    def get_accounts(self) -> dict:
+        account_key = self._get_account_key()
+        data = self._get(f"/accounts/{account_key}/balances")
+        balances = data if isinstance(data, list) else data.get("Balances", [])
+        b = balances[0]
+        return {
+            "account_id": str(account_key),
+            "cash": float(b.get("BODNetCash", 0)),
+            "buying_power": float(b.get("RealTimeBuyingPower", 0)),
+            "portfolio_value": float(b.get("RealTimeEquity", 0)),
+            "equity": float(b.get("RealTimeEquity", 0)),
+            "raw_response": b,
+        }
+
+    def get_stock_quote(self, symbols) -> dict:
+        if isinstance(symbols, list):
+            symbols_str = ",".join(symbols)
+        else:
+            symbols_str = symbols
+            symbols = [symbols]
+
+        data = self._get(f"/data/quote/{symbols_str}")
+        quotes = data if isinstance(data, list) else data.get("Quotes", [])
+
+        formatted = {}
+        for q in quotes:
+            sym = q["Symbol"]
+            formatted[sym] = {
+                "QuoteResponse": {
+                    "QuoteData": [
+                        {
+                            "All": {
+                                "bid": float(q.get("Bid", 0)),
+                                "ask": float(q.get("Ask", 0)),
+                                "bid_size": q.get("BidSize"),
+                                "ask_size": q.get("AskSize"),
+                                "last": q.get("Last"),
+                            }
+                        }
+                    ]
+                }
+            }
+
+        if len(symbols) == 1:
+            return formatted.get(symbols[0], formatted)
+        return formatted
+
+    def get_option_quote_by_occ(self, occ_symbol: str) -> dict:
+        ts_symbol = _occ_to_ts(occ_symbol)
+        data = self._get(f"/data/quote/{ts_symbol}")
+        quotes = data if isinstance(data, list) else data.get("Quotes", [])
+        q = quotes[0]
+        bid = float(q.get("Bid", 0))
+        ask = float(q.get("Ask", 0))
+        return {"bid": bid, "ask": ask, "mid": (bid + ask) / 2}
+
+    def get_option_quotes_by_occ_batch(self, occ_symbols: list) -> dict:
+        if not occ_symbols:
+            return {}
+        ts_symbols = [_occ_to_ts(s) for s in occ_symbols]
+        data = self._get(f"/data/quote/{','.join(ts_symbols)}")
+        quotes = data if isinstance(data, list) else data.get("Quotes", [])
+
+        result = {}
+        for q in quotes:
+            occ = _ts_to_occ(q["Symbol"])
+            if occ not in occ_symbols:
+                logger.warning("Unexpected symbol in batch quote response: %s", occ)
+                continue
+            bid = float(q.get("Bid", 0))
+            ask = float(q.get("Ask", 0))
+            result[occ] = {"bid": bid, "ask": ask, "mid": (bid + ask) / 2}
+
+        missing = set(occ_symbols) - set(result)
+        for sym in missing:
+            logger.warning("Symbol missing from batch quote response: %s", sym)
+        return result
+
+    def get_options_contracts(
+        self,
+        underlying_symbol: str,
+        expiration_date=None,
+        expiration_date_gte=None,
+        expiration_date_lte=None,
+        option_type=None,
+        strike_price_gte=None,
+        strike_price_lte=None,
+        limit: int = 100,
+    ) -> list:
+        ot_map = {"call": "Call", "put": "Put", "CALL": "Call", "PUT": "Put"}
+        ot = ot_map.get(option_type, "Both") if option_type else "Both"
+
+        criteria = f"R={underlying_symbol}&C=StockOption&OT={ot}&Stk=20"
+
+        if expiration_date is not None:
+            if hasattr(expiration_date, "strftime"):
+                date_str = expiration_date.strftime("%m-%d-%Y")
+            else:
+                dt = datetime.strptime(str(expiration_date), "%Y-%m-%d")
+                date_str = dt.strftime("%m-%d-%Y")
+            criteria += f"&Edl={date_str}&Edh={date_str}"
+        elif expiration_date_gte is not None or expiration_date_lte is not None:
+            if expiration_date_gte is not None:
+                if hasattr(expiration_date_gte, "strftime"):
+                    low_str = expiration_date_gte.strftime("%m-%d-%Y")
+                else:
+                    low_str = datetime.strptime(str(expiration_date_gte), "%Y-%m-%d").strftime("%m-%d-%Y")
+                criteria += f"&Edl={low_str}"
+            if expiration_date_lte is not None:
+                if hasattr(expiration_date_lte, "strftime"):
+                    high_str = expiration_date_lte.strftime("%m-%d-%Y")
+                else:
+                    high_str = datetime.strptime(str(expiration_date_lte), "%Y-%m-%d").strftime("%m-%d-%Y")
+                criteria += f"&Edh={high_str}"
+
+        data = self._get(f"/data/symbols/search/{criteria}")
+        items = data if isinstance(data, list) else []
+
+        contracts = []
+        for item in items:
+            strike = float(item.get("StrikePrice", 0))
+            if strike_price_gte is not None and strike < float(strike_price_gte):
+                continue
+            if strike_price_lte is not None and strike > float(strike_price_lte):
+                continue
+
+            raw_exp = item.get("ExpirationDate", "")
+            try:
+                exp_date = datetime.strptime(raw_exp[:10], "%Y-%m-%d").strftime("%Y-%m-%d")
+            except ValueError:
+                exp_date = raw_exp[:10]
+
+            opt_type_raw = item.get("OptionType", "Calls")
+            opt_type = "call" if opt_type_raw == "Calls" else "put"
+
+            if option_type and opt_type != option_type.lower():
+                continue
+
+            contracts.append(
+                {
+                    "symbol": _ts_to_occ(item["Name"]),
+                    "underlying_symbol": item.get("Root", underlying_symbol),
+                    "expiration_date": exp_date,
+                    "strike_price": strike,
+                    "option_type": opt_type,
+                    "contract_size": 100,
+                }
+            )
+            if len(contracts) >= limit:
+                break
+
+        return contracts
+
+    def place_option_order(
+        self,
+        symbol,
+        option_key=None,
+        price=None,
+        order_id=None,
+        preview_order=None,
+        price_type="LIMIT",
+        option_type="CALL",
+        order_action="BUY_OPEN",
+        quantity=1,
+        _option_symbol_override=None,
+    ) -> dict:
+        if _option_symbol_override:
+            occ_symbol = _option_symbol_override
+        else:
+            raise APIInvalidArgumentError(
+                code="MISSING_OPTION_SYMBOL",
+                message="_option_symbol_override (OCC symbol) is required",
+            )
+
+        ts_symbol = _occ_to_ts(occ_symbol)
+        trade_action = _TRADE_ACTION_MAP.get(order_action, "BUYTOOPEN")
+
+        if price_type.upper() == "SMART_MARKET":
+            quote = self.get_option_quote_by_occ(occ_symbol)
+            bid, ask = quote["bid"], quote["ask"]
+            mid = (bid + ask) / 2
+            price = round(bid + (mid - bid) * 0.1, 2)
+            price_type = "LIMIT"
+
+        order_type = "Limit" if price_type.upper() == "LIMIT" else "Market"
+
+        body = {
+            "AccountKey": self._get_account_key(),
+            "AssetType": "OP",
+            "Symbol": ts_symbol,
+            "Quantity": str(quantity),
+            "OrderType": order_type,
+            "Duration": "DAY",
+            "TradeAction": trade_action,
+            "Route": "Intelligent",
+        }
+        if order_type == "Limit":
+            if price is None:
+                raise APIInvalidArgumentError(
+                    code="MISSING_LIMIT_PRICE",
+                    message="price is required for LIMIT orders",
+                )
+            body["LimitPrice"] = str(price)
+
+        data = self._post("/orders", json=body)
+
+        return {
+            "order_id": str(data.get("OrderID", "")),
+            "symbol": occ_symbol,
+            "quantity": float(quantity),
+            "filled_qty": 0.0,
+            "side": order_action,
+            "type": order_type,
+            "status": "open",
+            "limit_price": float(price) if price is not None else None,
+            "filled_avg_price": None,
+            "submitted_at": None,
+            "raw_response": data,
+        }
+
+    def place_stock_order(
+        self,
+        symbol: str,
+        quantity: int,
+        side: str = "BUY",
+        order_type: str = "MARKET",
+        limit_price: float = None,
+        time_in_force: str = "DAY",
+    ) -> dict:
+        trade_action = "BUY" if side.upper() == "BUY" else "SELL"
+        ts_order_type = "Limit" if order_type.upper() == "LIMIT" else "Market"
+
+        if ts_order_type == "Limit" and limit_price is None:
+            raise APIInvalidArgumentError(
+                code="MISSING_LIMIT_PRICE",
+                message="limit_price is required for LIMIT orders",
+            )
+
+        body = {
+            "AccountKey": self._get_account_key(),
+            "AssetType": "EQ",
+            "Symbol": symbol.upper(),
+            "Quantity": str(quantity),
+            "OrderType": ts_order_type,
+            "Duration": time_in_force.upper(),
+            "TradeAction": trade_action,
+            "Route": "Intelligent",
+        }
+        if ts_order_type == "Limit":
+            body["LimitPrice"] = str(limit_price)
+
+        data = self._post("/orders", json=body)
+
+        return {
+            "order_id": str(data.get("OrderID", "")),
+            "symbol": symbol.upper(),
+            "quantity": float(quantity),
+            "filled_qty": 0.0,
+            "side": trade_action,
+            "type": ts_order_type,
+            "status": "open",
+            "limit_price": float(limit_price) if limit_price is not None else None,
+            "filled_avg_price": None,
+            "submitted_at": None,
+            "raw_response": data,
+        }
+
+    def order_status(self, order_id: str) -> dict:
+        account_key = self._get_account_key()
+        data = self._get(f"/accounts/{account_key}/orders")
+        orders = data if isinstance(data, list) else data.get("Orders", [])
+
+        for order in orders:
+            if str(order.get("OrderID", "")) == str(order_id):
+                return self._normalize_order(order, order_id)
+
+        logger.warning("Order %s not found in today's orders — treating as open", order_id)
+        return {
+            "order_id": order_id,
+            "symbol": "",
+            "quantity": 0.0,
+            "filled_qty": 0.0,
+            "side": "",
+            "type": "",
+            "status": "open",
+            "limit_price": None,
+            "filled_avg_price": None,
+            "submitted_at": None,
+            "raw_response": {},
+        }
+
+    def cancel_order(self, order_id: str) -> dict:
+        data = self._delete(f"/orders/{order_id}")
+        return {
+            "order_id": order_id,
+            "status": "canceled",
+            "message": data.get("Message", "Cancel request submitted"),
+        }
