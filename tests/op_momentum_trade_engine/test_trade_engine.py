@@ -777,6 +777,26 @@ class TestStockTradeEntry:
         assert "[SIMULATE]" in msg
         assert "R1" in msg
 
+    def test_bullish_stock_entry_notify_says_buy(self):
+        engine = self._make_stock_engine()
+        with patch(_COMPUTE_STOCK_PATH, return_value=(10, _D("100.00"))), \
+             patch(_NOTIFY_PATH) as mock_notify:
+            engine._enter_position(_make_signal_event("NVDA", signal="BULLISH"))
+
+        msg = mock_notify.call_args[0][0]
+        assert "BUY" in msg
+        assert "SELL SHORT" not in msg
+
+    def test_bearish_stock_entry_notify_says_sell_short(self):
+        engine = self._make_stock_engine()
+        with patch(_COMPUTE_STOCK_PATH, return_value=(10, _D("100.00"))), \
+             patch(_NOTIFY_PATH) as mock_notify:
+            engine._enter_position(_make_signal_event("NVDA", signal="BEARISH"))
+
+        msg = mock_notify.call_args[0][0]
+        assert "SELL SHORT" in msg
+        assert msg.count("BUY") == 0
+
     def test_options_entry_unchanged_when_trade_type_is_options(self):
         client = _make_alpaca_client()
         engine = OpMomentumTradeEngine(

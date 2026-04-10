@@ -2,6 +2,7 @@ from unittest.mock import MagicMock, patch
 
 from alpha_tech_tracker.op_momentum_strategy.order_executor import (
     _place_with_fill_escalation,
+    place_stock_order,
 )
 
 _MODULE = "alpha_tech_tracker.op_momentum_strategy.order_executor"
@@ -97,3 +98,56 @@ class TestFillEscalationStep0:
         # step0 limit + step1 mid limit + step2 bid limit = 3 limit orders
         # (no market order since step2 also returns unfilled and escalates to market=4th call)
         assert client.place_option_order.call_count == 4
+
+
+def _make_stock_client(bid=329.0, ask=330.0, order_status="open"):
+    client = MagicMock()
+    client.get_stock_quote.return_value = {
+        "QuoteResponse": {
+            "QuoteData": [{"All": {"bid": bid, "ask": ask, "lastTrade": bid}}]
+        }
+    }
+    client.place_stock_order.return_value = {"order_id": "stock-ord-001", "status": order_status}
+    client.order_status.return_value = {"status": order_status}
+    return client
+
+
+class TestPlaceStockOrderAskZeroGuard:
+    """
+    When ask=0 is returned by the broker for a buy order, place_stock_order()
+    must fall back to a market order rather than submitting a $0 limit price.
+    """
+
+    def test_ask_zero_on_buy_falls_back_to_market_order(self):
+        client = _make_stock_client(bid=329.0, ask=0.0)
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            place_stock_order(client=client, ticker="FN", shares=1, order_action="BUY_OPEN")
+
+        calls = client.place_stock_order.call_args_list
+        assert calls[-1].kwargs["order_type"] == "MARKET"
+
+    def test_ask_zero_on_buy_does_not_submit_zero_limit_price(self):
+        client = _make_stock_client(bid=329.0, ask=0.0)
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            place_stock_order(client=client, ticker="FN", shares=1, order_action="BUY_OPEN")
+
+        for call in client.place_stock_order.call_args_list:
+            if call.kwargs.get("order_type") == "LIMIT":
+                assert call.kwargs["limit_price"] > 0, "limit price must never be 0"
+
+    def test_bid_zero_on_sell_falls_back_to_market_order(self):
+        client = _make_stock_client(bid=0.0, ask=330.0)
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            place_stock_order(client=client, ticker="FN", shares=1, order_action="SELL_CLOSE")
+
+        calls = client.place_stock_order.call_args_list
+        assert calls[-1].kwargs["order_type"] == "MARKET"
+
+    def test_normal_quote_places_limit_first(self):
+        client = _make_stock_client(bid=329.0, ask=331.0)
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            place_stock_order(client=client, ticker="FN", shares=1, order_action="BUY_OPEN")
+
+        first_call = client.place_stock_order.call_args_list[0]
+        assert first_call.kwargs["order_type"] == "LIMIT"
+        assert first_call.kwargs["limit_price"] == 330.0

@@ -420,8 +420,9 @@ class OpMomentumTradeEngine:
 
         hard_stop = bull_hard_stop if event.signal == "BULLISH" else bear_hard_stop
         prefix = "[SIMULATE] " if self._mock_trade_execution else ""
+        action_label = "BUY" if event.signal == "BULLISH" else "SELL SHORT"
         _notify(
-            f"{prefix}BUY {event.ticker} x{shares} shares"
+            f"{prefix}{action_label} {event.ticker} x{shares} shares"
             f" @ ~${float(limit_price):.2f}"
             f" | R{rank + 1} | stop ${hard_stop:.2f}"
         )

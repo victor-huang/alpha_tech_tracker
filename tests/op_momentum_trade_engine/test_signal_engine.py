@@ -1,3 +1,4 @@
+import asyncio
 from datetime import date, datetime, timedelta
 from unittest.mock import Mock, patch
 
@@ -5,6 +6,7 @@ import pandas as pd
 import pytz
 
 from alpha_tech_tracker.op_momentum_strategy.models import _FiveMinBar
+from alpha_tech_tracker.op_momentum_strategy.replay import _now_et
 from alpha_tech_tracker.op_momentum_strategy.signal_engine import LiveSignalEngine
 
 from conftest import (
@@ -606,7 +608,8 @@ class TestCatchUpOpeningBarsForWindow:
 
     def test_m1_three_bar_window_fills_last_two_from_minute_buf(self):
         """For a 3-bar M1 window, the last 2 OR bars come from _minute_buf; the
-        first (older) bar triggers the Alpaca fallback."""
+        first (older) bar triggers the Alpaca fallback. When Alpaca also has no data,
+        a flat bar is synthesized for the fully missing 09:30 slot."""
         today = date(2026, 4, 6)
         engine = self._make_m1_engine("AMD")
         or_start = ET.localize(
@@ -642,10 +645,15 @@ class TestCatchUpOpeningBarsForWindow:
              ):
             engine._catch_up_opening_bars_for_window(today, engine._windows[0])
 
-        # Only the 09:40 bar was injected from _minute_buf (09:35 skipped — in history)
-        assert len(injected_bars) == 1
-        assert injected_bars[0].timestamp == bar_09_40
-        # 09:30 bar still missing → Alpaca called for older bars
+        # 09:40 real bar from minute_buf + 09:30 flat bar synthesized (no Alpaca data)
+        # 09:35 is already in history so it is skipped (not re-injected)
+        assert len(injected_bars) == 2
+        timestamps = {b.timestamp for b in injected_bars}
+        assert bar_09_40 in timestamps
+        assert or_start in timestamps  # 09:30 flat bar
+        flat_bars = [b for b in injected_bars if b.volume == 0.0]
+        assert len(flat_bars) == 1
+        assert flat_bars[0].timestamp == or_start
         mock_alpaca_instance.get_stock_bars.assert_called_once()
 
     def test_late_start_engine_gets_uncovered_recent_bar_from_alpaca(self):
@@ -838,3 +846,380 @@ class TestCatchUpSingleTickerMultiIndex:
         symbols = {b.symbol for b in injected}
         assert "MU" in symbols
         assert "NVDA" in symbols
+
+
+class TestFlatOrSignalGuard:
+    """When all OR bars are synthetic (volume=0, or_range=0), _try_fire_signal
+    must not emit a signal — no real price discovery took place."""
+
+    def test_zero_range_or_does_not_fire_signal(self):
+        closes = [25.0] * 25
+        ma_vals = [30.0] * 25  # close < MA20 → would trigger BEARISH if not guarded
+        engine = _make_signal_engine_with_history(
+            "ANAB", _build_history_df(closes, ma_vals, ma_vals, ma_vals)
+        )
+        fired = []
+        engine._windows[0]["on_signal"] = fired.append
+
+        today = _now_et().date()
+        or_start = ET.localize(
+            datetime.combine(today, datetime.strptime("09:30", "%H:%M").time())
+        )
+        flat_bars = [
+            _FiveMinBar("ANAB", or_start + timedelta(minutes=i * 5),
+                        25.0, 25.0, 25.0, 25.0, 0.0)
+            for i in range(3)
+        ]
+        for bar in flat_bars:
+            engine._process_five_min_bar(bar)
+
+        assert len(fired) == 0
+
+    def test_partial_real_bar_with_nonzero_range_can_fire(self):
+        # Need 200+ bars so MA200 is not NaN after _append_bar recalculates it
+        n = 210
+        closes = [100.0] * n
+        ma_vals = [90.0] * n  # close > MA20/MA200 → BULLISH possible
+        engine = _make_signal_engine_with_history(
+            "NVDA", _build_history_df(closes, ma_vals, ma_vals, ma_vals)
+        )
+        fired = []
+        engine._windows[0]["on_signal"] = fired.append
+
+        today = _now_et().date()
+        or_start = ET.localize(
+            datetime.combine(today, datetime.strptime("09:30", "%H:%M").time())
+        )
+        # Two flat bars + one real bar with a higher high → nonzero OR range
+        flat_bar_0 = _FiveMinBar("NVDA", or_start, 100.0, 100.0, 100.0, 100.0, 0.0)
+        flat_bar_1 = _FiveMinBar("NVDA", or_start + timedelta(minutes=5),
+                                  100.0, 100.0, 100.0, 100.0, 0.0)
+        real_bar = _FiveMinBar("NVDA", or_start + timedelta(minutes=10),
+                               100.0, 106.0, 99.0, 104.0, 1500.0)
+        for bar in [flat_bar_0, flat_bar_1, real_bar]:
+            engine._process_five_min_bar(bar)
+
+        # OR range = 106 - 99 = 7 (nonzero) → signal evaluation proceeds
+        assert len(fired) == 1
+
+
+class TestMakeFlatBar:
+    def _make_engine_with_last_close(self, ticker, last_close):
+        engine = LiveSignalEngine(tickers=[ticker], api_key="k", secret_key="s")
+        engine._history[ticker] = _build_history_df(
+            closes=[last_close] * 5,
+            ma20=[last_close] * 5,
+            ma50=[last_close] * 5,
+            ma200=[last_close] * 5,
+        )
+        return engine
+
+    def test_flat_bar_ohlc_equals_last_close(self):
+        engine = self._make_engine_with_last_close("ANAB", 25.0)
+        ts = ET.localize(datetime(2026, 4, 10, 9, 35))
+        bar = engine._make_flat_bar("ANAB", ts)
+        assert bar.open == 25.0
+        assert bar.high == 25.0
+        assert bar.low == 25.0
+        assert bar.close == 25.0
+
+    def test_flat_bar_volume_is_zero(self):
+        engine = self._make_engine_with_last_close("ANAB", 25.0)
+        ts = ET.localize(datetime(2026, 4, 10, 9, 35))
+        bar = engine._make_flat_bar("ANAB", ts)
+        assert bar.volume == 0.0
+
+    def test_flat_bar_symbol_and_timestamp(self):
+        engine = self._make_engine_with_last_close("ANAB", 25.0)
+        ts = ET.localize(datetime(2026, 4, 10, 9, 35))
+        bar = engine._make_flat_bar("ANAB", ts)
+        assert bar.symbol == "ANAB"
+        assert bar.timestamp == ts
+
+    def test_returns_none_when_no_history(self):
+        engine = LiveSignalEngine(tickers=["ANAB"], api_key="k", secret_key="s")
+        ts = ET.localize(datetime(2026, 4, 10, 9, 35))
+        assert engine._make_flat_bar("ANAB", ts) is None
+
+
+class TestFillOrGapsWithFlatBars:
+    def _make_m1_engine(self, ticker="ANAB", last_close=25.0):
+        engine = LiveSignalEngine(
+            tickers=[ticker],
+            api_key="k",
+            secret_key="s",
+            windows=[{"label": "M1", "opening_start": "09:30", "opening_bars": 3, "on_signal": None}],
+        )
+        engine._history[ticker] = _build_history_df(
+            closes=[last_close] * 5,
+            ma20=[last_close] * 5,
+            ma50=[last_close] * 5,
+            ma200=[last_close] * 5,
+        )
+        return engine
+
+    def _or_bar_period_starts(self, today, opening_start="09:30", opening_bars=3):
+        or_start = ET.localize(datetime.combine(today, datetime.strptime(opening_start, "%H:%M").time()))
+        return [or_start + timedelta(minutes=i * 5) for i in range(opening_bars)]
+
+    def test_fills_all_three_missing_or_slots(self):
+        today = date(2026, 1, 15)  # past date — does not overlap warmup history timestamps
+        engine = self._make_m1_engine("ANAB")
+        injected = []
+
+        def fake_process(bar):
+            injected.append(bar)
+            engine._opening_buf["M1"]["ANAB"].append(bar)
+
+        with patch.object(engine, "_process_five_min_bar", side_effect=fake_process):
+            engine._fill_or_gaps_with_flat_bars(
+                "ANAB", "M1", self._or_bar_period_starts(today), engine._windows[0]
+            )
+
+        assert len(injected) == 3
+        assert all(b.symbol == "ANAB" for b in injected)
+        assert all(b.volume == 0.0 for b in injected)
+        assert all(b.open == b.high == b.low == b.close == 25.0 for b in injected)
+
+    def test_does_not_overwrite_existing_real_bar(self):
+        today = date(2026, 1, 15)
+        engine = self._make_m1_engine("ANAB")
+        or_starts = self._or_bar_period_starts(today)
+
+        # Pre-populate history with a real bar at the first OR slot
+        real_row = pd.Series(
+            {"Open": 26.0, "High": 27.0, "Low": 25.0, "Close": 26.5, "Volume": 1000.0,
+             "MA20": 25.0, "MA50": 25.0, "MA200": 25.0},
+            name=or_starts[0],
+        )
+        engine._history["ANAB"] = pd.concat(
+            [engine._history["ANAB"], real_row.to_frame().T]
+        )
+        engine._opening_buf["M1"]["ANAB"].append(Mock())  # 1 bar already in buf
+
+        injected = []
+
+        def fake_process(bar):
+            injected.append(bar)
+            engine._opening_buf["M1"]["ANAB"].append(bar)
+
+        with patch.object(engine, "_process_five_min_bar", side_effect=fake_process):
+            engine._fill_or_gaps_with_flat_bars(
+                "ANAB", "M1", or_starts, engine._windows[0]
+            )
+
+        # Only 2 flat bars should be synthesized (slots 2 and 3)
+        assert len(injected) == 2
+
+    def test_does_nothing_when_or_buffer_already_full(self):
+        today = date(2026, 1, 15)
+        engine = self._make_m1_engine("ANAB")
+        engine._opening_buf["M1"]["ANAB"] = [Mock(), Mock(), Mock()]
+
+        with patch.object(engine, "_process_five_min_bar") as mock_process:
+            engine._fill_or_gaps_with_flat_bars(
+                "ANAB", "M1", self._or_bar_period_starts(today), engine._windows[0]
+            )
+
+        mock_process.assert_not_called()
+
+
+class TestHandleBarGapFill:
+    """When a bar arrives for a period that is multiple slots ahead of the last
+    known period, _handle_bar should synthesize flat bars for each skipped slot."""
+
+    def _make_engine_with_history(self, ticker="ANAB", last_close=25.0):
+        today = date(2026, 4, 10)
+        engine = LiveSignalEngine(
+            tickers=[ticker],
+            api_key="k",
+            secret_key="s",
+            windows=[{"label": "M1", "opening_start": "09:30", "opening_bars": 3, "on_signal": None}],
+        )
+        engine._session_date = today
+        engine._history[ticker] = _build_history_df(
+            closes=[last_close] * 5,
+            ma20=[last_close] * 5,
+            ma50=[last_close] * 5,
+            ma200=[last_close] * 5,
+        )
+        return engine
+
+    def _make_ws_bar(self, ticker, ts_et, open_=25.0, high=25.5, low=24.5, close=25.0, volume=500):
+        bar = Mock()
+        bar.symbol = ticker
+        bar.open, bar.high, bar.low, bar.close, bar.volume = open_, high, low, close, volume
+        bar.timestamp = ts_et
+        return bar
+
+    def test_gap_of_one_period_emits_one_flat_bar(self):
+        today = date(2026, 4, 10)
+        engine = self._make_engine_with_history("ANAB")
+        # Seed minute buf at 09:30 with a real bar
+        period_930 = ET.localize(datetime.combine(today, datetime.strptime("09:30", "%H:%M").time()))
+        mock_min_bar = Mock()
+        mock_min_bar.open = mock_min_bar.high = mock_min_bar.low = mock_min_bar.close = 25.0
+        mock_min_bar.volume = 200.0
+        engine._minute_buf["ANAB"] = {"period_start": period_930, "bars": [mock_min_bar]}
+
+        injected = []
+        original_process = engine._process_five_min_bar
+
+        def capture_process(bar):
+            injected.append(bar)
+            original_process(bar)
+
+        # Deliver a bar that belongs to period 09:40 (skipping 09:35)
+        period_940 = period_930 + timedelta(minutes=10)
+        ws_bar = self._make_ws_bar("ANAB", period_940 + timedelta(seconds=30))
+
+        with patch.object(engine, "_process_five_min_bar", side_effect=capture_process):
+            asyncio.run(engine._handle_bar(ws_bar))
+
+        timestamps = [b.timestamp for b in injected]
+        flat_bars = [b for b in injected if b.volume == 0.0]
+        assert len(flat_bars) == 1
+        assert flat_bars[0].timestamp == period_930 + timedelta(minutes=5)
+
+    def test_gap_of_two_periods_emits_two_flat_bars(self):
+        today = date(2026, 4, 10)
+        engine = self._make_engine_with_history("ANAB")
+        period_930 = ET.localize(datetime.combine(today, datetime.strptime("09:30", "%H:%M").time()))
+        mock_min_bar = Mock()
+        mock_min_bar.open = mock_min_bar.high = mock_min_bar.low = mock_min_bar.close = 25.0
+        mock_min_bar.volume = 200.0
+        engine._minute_buf["ANAB"] = {"period_start": period_930, "bars": [mock_min_bar]}
+
+        injected = []
+        original_process = engine._process_five_min_bar
+
+        def capture_process(bar):
+            injected.append(bar)
+            original_process(bar)
+
+        # Deliver a bar that belongs to period 09:45 (skipping 09:35 and 09:40)
+        period_945 = period_930 + timedelta(minutes=15)
+        ws_bar = self._make_ws_bar("ANAB", period_945 + timedelta(seconds=30))
+
+        with patch.object(engine, "_process_five_min_bar", side_effect=capture_process):
+            asyncio.run(engine._handle_bar(ws_bar))
+
+        flat_bars = [b for b in injected if b.volume == 0.0]
+        assert len(flat_bars) == 2
+        flat_timestamps = sorted(b.timestamp for b in flat_bars)
+        assert flat_timestamps[0] == period_930 + timedelta(minutes=5)
+        assert flat_timestamps[1] == period_930 + timedelta(minutes=10)
+
+    def test_flat_bar_close_matches_last_known_close(self):
+        today = date(2026, 4, 10)
+        engine = self._make_engine_with_history("ANAB", last_close=31.5)
+        period_930 = ET.localize(datetime.combine(today, datetime.strptime("09:30", "%H:%M").time()))
+        mock_min_bar = Mock()
+        mock_min_bar.open = mock_min_bar.high = mock_min_bar.low = mock_min_bar.close = 31.5
+        mock_min_bar.volume = 200.0
+        engine._minute_buf["ANAB"] = {"period_start": period_930, "bars": [mock_min_bar]}
+
+        injected = []
+        original_process = engine._process_five_min_bar
+
+        def capture_process(bar):
+            injected.append(bar)
+            original_process(bar)
+
+        period_940 = period_930 + timedelta(minutes=10)
+        ws_bar = self._make_ws_bar("ANAB", period_940 + timedelta(seconds=30), open_=31.5, close=31.5)
+
+        with patch.object(engine, "_process_five_min_bar", side_effect=capture_process):
+            asyncio.run(engine._handle_bar(ws_bar))
+
+        flat_bars = [b for b in injected if b.volume == 0.0]
+        assert len(flat_bars) == 1
+        assert flat_bars[0].open == flat_bars[0].high == flat_bars[0].low == flat_bars[0].close
+
+
+class TestCatchUpWithFlatBarFallback:
+    """When Alpaca has no IEX data for a ticker's OR slots, the catchup should
+    synthesize flat bars so the signal can still fire."""
+
+    def _make_m1_engine(self, ticker="ANAB", last_close=25.0):
+        today = date(2026, 4, 10)
+        engine = LiveSignalEngine(
+            tickers=[ticker],
+            api_key="k",
+            secret_key="s",
+            windows=[{"label": "M1", "opening_start": "09:30", "opening_bars": 3, "on_signal": None}],
+        )
+        engine._history[ticker] = _build_history_df(
+            closes=[last_close] * 5,
+            ma20=[last_close] * 5,
+            ma50=[last_close] * 5,
+            ma200=[last_close] * 5,
+        )
+        return engine
+
+    def _empty_alpaca_df(self):
+        return pd.DataFrame(
+            columns=["open", "high", "low", "close", "volume"],
+            index=pd.MultiIndex.from_tuples([], names=["symbol", "timestamp"]),
+        )
+
+    def test_no_alpaca_data_synthesizes_three_flat_or_bars(self):
+        today = date(2026, 1, 15)
+        engine = self._make_m1_engine("ANAB")
+        injected = []
+
+        def fake_process(bar):
+            injected.append(bar)
+            engine._opening_buf["M1"]["ANAB"].append(bar)
+            engine._signal_fired["M1"]["ANAB"] = len(engine._opening_buf["M1"]["ANAB"]) >= 3
+
+        mock_alpaca = Mock()
+        mock_alpaca.get_stock_bars.return_value = Mock(df=self._empty_alpaca_df())
+
+        with patch.object(engine, "_process_five_min_bar", side_effect=fake_process), \
+             patch(
+                 "alpha_tech_tracker.op_momentum_strategy.signal_engine.StockHistoricalDataClient",
+                 return_value=mock_alpaca,
+             ):
+            engine._catch_up_opening_bars_for_window(today, engine._windows[0])
+
+        assert len(injected) == 3
+        assert all(b.volume == 0.0 for b in injected)
+        assert all(b.symbol == "ANAB" for b in injected)
+
+    def test_partial_alpaca_data_fills_remaining_slots_with_flat_bars(self):
+        today = date(2026, 1, 15)
+        engine = self._make_m1_engine("ANAB")
+        or_start = ET.localize(datetime.combine(today, datetime.strptime("09:30", "%H:%M").time()))
+
+        injected = []
+
+        def fake_process(bar):
+            injected.append(bar)
+            engine._opening_buf["M1"]["ANAB"].append(bar)
+
+        # Alpaca returns only 1 of the 3 OR bars
+        idx = pd.MultiIndex.from_tuples(
+            [("ANAB", or_start.astimezone(pytz.utc))],
+            names=["symbol", "timestamp"],
+        )
+        alpaca_df = pd.DataFrame(
+            [{"open": 26.0, "high": 27.0, "low": 25.0, "close": 26.5, "volume": 500.0}],
+            index=idx,
+        )
+        mock_alpaca = Mock()
+        mock_alpaca.get_stock_bars.return_value = Mock(df=alpaca_df)
+
+        with patch.object(engine, "_process_five_min_bar", side_effect=fake_process), \
+             patch(
+                 "alpha_tech_tracker.op_momentum_strategy.signal_engine.StockHistoricalDataClient",
+                 return_value=mock_alpaca,
+             ):
+            engine._catch_up_opening_bars_for_window(today, engine._windows[0])
+
+        # 1 real bar + 2 flat bars = 3 total
+        assert len(injected) == 3
+        real_bars = [b for b in injected if b.volume > 0]
+        flat_bars = [b for b in injected if b.volume == 0.0]
+        assert len(real_bars) == 1
+        assert len(flat_bars) == 2

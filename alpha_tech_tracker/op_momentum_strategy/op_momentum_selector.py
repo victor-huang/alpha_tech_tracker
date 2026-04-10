@@ -52,11 +52,32 @@ DEFAULT_TICKERS = [
     "RH",
     "FN",
     "MU",
-    "ANAB", # maybe replace by BE
+    "ANAB",
     "PLTR",
     "COIN",
     "NVDA",
     "TSLA",
+]
+
+# Liquidity-screened pool (2026-04-10): removed ANAB, RH, FN, EXPE, FANG (sparse bars / low trade count
+# from March 2026 data); added RKLB, ASTS, HOOD (Russell 2000 active), CRWD, NFLX (large-cap).
+ACTIVELY_TRADE_TICKERS = [
+    "SNDK",
+    "APP",
+    "SHOP",
+    "CVNA",
+    "AMD",
+    "META",
+    "MU",
+    "PLTR",
+    "COIN",
+    "NVDA",
+    "TSLA",
+    "RKLB",
+    "ASTS",
+    "HOOD",
+    "CRWD",
+    "NFLX",
 ]
 ROLLING_LOOKBACK_DAYS = 60
 OPENING_BARS = 3

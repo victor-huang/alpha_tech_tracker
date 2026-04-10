@@ -198,6 +198,13 @@ class LiveSignalEngine:
         or_high = _D(max(b.high for b in buf))
         or_low = _D(min(b.low for b in buf))
         or_range = or_high - or_low
+
+        if or_range == 0:
+            logger.info(
+                "%s [%s]: OR range is zero (all bars synthetic, no real trades) — skipping signal",
+                ticker, win["label"],
+            )
+            return
         # Apply or_bar_lookback adjustment: if the OR is unusually tight relative
         # to the N bars immediately before the window, expand effective_or_range to
         # match the backtest's stop/fallback price computation.
@@ -287,6 +294,64 @@ class LiveSignalEngine:
         on_signal = win.get("on_signal")
         if on_signal:
             on_signal(event)
+
+    def _make_flat_bar(self, ticker: str, period_ts: datetime) -> Optional[_FiveMinBar]:
+        """Return a zero-volume flat bar at *period_ts* using the ticker's last close.
+
+        Returns None if no history is available to derive the close price.
+        """
+        hist = self._history.get(ticker)
+        if hist is None or hist.empty:
+            return None
+        last_close = float(hist["Close"].iloc[-1])
+        return _FiveMinBar(
+            symbol=ticker,
+            timestamp=period_ts,
+            open=last_close,
+            high=last_close,
+            low=last_close,
+            close=last_close,
+            volume=0.0,
+        )
+
+    def _fill_or_gaps_with_flat_bars(
+        self, ticker: str, label: str, or_bar_period_starts: list, win: dict
+    ):
+        """Synthesize flat bars for OR slots that still have no bar in _history.
+
+        Called from _catch_up_opening_bars_for_window after Alpaca API data has
+        been processed. Fills only the minimum slots needed to complete the OR
+        buffer so the signal can fire.
+        """
+        if len(self._opening_buf[label].get(ticker, [])) >= win["opening_bars"]:
+            return
+        # Track bar timestamps already in the buffer to avoid double-injecting a
+        # period that was already served from _minute_buf or the Alpaca pass.
+        buf_timestamps = {b.timestamp for b in self._opening_buf[label][ticker]}
+        for period_ts in or_bar_period_starts:
+            if len(self._opening_buf[label][ticker]) >= win["opening_bars"]:
+                break
+            if period_ts in buf_timestamps:
+                continue
+            existing = self._history.get(ticker, pd.DataFrame())
+            if not existing.empty and period_ts in existing.index:
+                continue
+            flat_bar = self._make_flat_bar(ticker, period_ts)
+            if flat_bar is None:
+                logger.warning(
+                    "Catchup [%s]: %s has no history — cannot synthesize flat OR bar at %s",
+                    label, ticker, period_ts.strftime("%H:%M"),
+                )
+                break
+            logger.info(
+                "Catchup [%s]: %s flat bar %s close=%.2f (no trades)",
+                label, ticker, period_ts.strftime("%H:%M"), flat_bar.close,
+            )
+            with self._lock:
+                existing = self._history.get(ticker, pd.DataFrame())
+                if not existing.empty and period_ts in existing.index:
+                    continue
+                self._process_five_min_bar(flat_bar)
 
     def _aggregate_bars(
         self, ticker: str, period_start: datetime, bars: list
@@ -428,7 +493,14 @@ class LiveSignalEngine:
             try:
                 tick_df = all_df.xs(ticker, level=0).copy()
             except KeyError:
-                logger.warning("No catchup data for %s [%s]", ticker, label)
+                logger.warning("No catchup data for %s [%s] — synthesizing flat bars", ticker, label)
+                self._fill_or_gaps_with_flat_bars(ticker, label, or_bar_period_starts, win)
+                logger.info(
+                    "Catchup [%s]: %s has %d/%d opening bars",
+                    label, ticker,
+                    len(self._opening_buf[label].get(ticker, [])),
+                    win["opening_bars"],
+                )
                 continue
             tick_df.index = tick_df.index.tz_convert(ET)
             tick_df.columns = [c.capitalize() for c in tick_df.columns]
@@ -453,6 +525,10 @@ class LiveSignalEngine:
                     if not existing.empty and ts in existing.index:
                         continue
                     self._process_five_min_bar(synthetic)
+
+            # If Alpaca had fewer bars than needed (sparse IEX data), fill the
+            # remaining OR slots with flat bars so the signal can still fire.
+            self._fill_or_gaps_with_flat_bars(ticker, label, or_bar_period_starts, win)
 
             logger.info(
                 "Catchup [%s]: %s has %d/%d opening bars",
@@ -546,6 +622,24 @@ class LiveSignalEngine:
                     if self._bar_recorder:
                         self._bar_recorder.record_5min(ticker, five_min_bar, today)
                     self._process_five_min_bar(five_min_bar)
+
+                # Synthesize a flat bar for each silent 5-min period between the
+                # last known period and the newly arrived one.  This keeps the MA
+                # series continuous and lets OR bars accumulate for quiet tickers.
+                if mbuf["period_start"] is not None:
+                    gap_ts = mbuf["period_start"] + timedelta(minutes=5)
+                    while gap_ts < period_start:
+                        flat_bar = self._make_flat_bar(ticker, gap_ts)
+                        if flat_bar is not None:
+                            logger.info(
+                                "5-min gap  %-6s  %s  close=%.2f (no trades)",
+                                ticker, gap_ts.strftime("%H:%M"), flat_bar.close,
+                            )
+                            if self._bar_recorder:
+                                self._bar_recorder.record_5min(ticker, flat_bar, today)
+                            self._process_five_min_bar(flat_bar)
+                        gap_ts += timedelta(minutes=5)
+
                 mbuf["period_start"] = period_start
                 mbuf["bars"] = [bar]
 
