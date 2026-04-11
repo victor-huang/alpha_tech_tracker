@@ -27,6 +27,7 @@ _MARKET_OPEN = (9, 30)
 _MARKET_CLOSE = (16, 0)
 _LIQUID_SPREAD_THRESHOLD = _D("15")  # spread_pct above which quote is considered wide
 _CACHE_MAXLEN = 6                     # 6 × 5-min snapshots = 30-min window
+_RECENT_TRADE_MAX_AGE_SECONDS = 1800  # last trade older than this is considered stale
 
 
 @dataclass
@@ -235,6 +236,26 @@ class OptionPriceMonitor:
         expiry = parsed["expiry"]
         expiry_type = "weekly" if expiry.weekday() == 4 and not _is_third_friday(expiry) else "monthly"
 
+        # Fetch last trade to get a transaction-based time value estimate.
+        # Use it only when the trade is recent (within _RECENT_TRADE_MAX_AGE_SECONDS).
+        last_trade_price = None
+        last_trade_timestamp = None
+        last_trade_time_value = None
+        try:
+            trade = self._client.get_option_latest_trade_by_occ(spec.symbol)
+            if trade is not None:
+                last_trade_price = float(_D(str(trade["price"])).quantize(_D("0.01"), rounding=ROUND_HALF_UP))
+                last_trade_timestamp = trade["timestamp"].strftime("%Y-%m-%d %H:%M:%S")
+                age_seconds = (datetime.now(trade["timestamp"].tzinfo) - trade["timestamp"]).total_seconds()
+                if age_seconds <= _RECENT_TRADE_MAX_AGE_SECONDS:
+                    last_trade_time_value = float(
+                        max(_D("0"), _D(str(trade["price"])) - intrinsic).quantize(_D("0.01"), rounding=ROUND_HALF_UP)
+                    )
+        except Exception:
+            logger.warning("Could not fetch last trade for %s", spec.symbol)
+
+        best_time_value = last_trade_time_value if last_trade_time_value is not None else float(mid_time_value)
+
         q = _D("0.01")
         return {
             "timestamp": datetime.now(ET).strftime("%Y-%m-%d %H:%M:%S"),
@@ -253,6 +274,10 @@ class OptionPriceMonitor:
             "bid_time_value": float(bid_time_value.quantize(q, rounding=ROUND_HALF_UP)),
             "ask_time_value": float(ask_time_value.quantize(q, rounding=ROUND_HALF_UP)),
             "mid_time_value": float(mid_time_value.quantize(q, rounding=ROUND_HALF_UP)),
+            "last_trade_price": last_trade_price,
+            "last_trade_timestamp": last_trade_timestamp,
+            "last_trade_time_value": last_trade_time_value,
+            "best_time_value": best_time_value,
             "spread_pct": float(spread_pct.quantize(_D("0.01"), rounding=ROUND_HALF_UP)),
             "daily_theta_approx": float(daily_theta),
         }
@@ -358,7 +383,7 @@ class OptionPriceMonitor:
         snapshots = self._cache.get(option_symbol)
         if not snapshots:
             return None
-        values = sorted(max(_D("0"), _D(str(s["mid_time_value"]))) for s in snapshots)
+        values = sorted(max(_D("0"), _D(str(s["best_time_value"]))) for s in snapshots)
         n = len(values)
         if n % 2 == 1:
             return values[n // 2]
@@ -373,6 +398,7 @@ class OptionPriceMonitor:
         "strike", "expiry", "expiry_type", "days_to_expiry",
         "stock_price", "bid", "ask", "mid",
         "intrinsic_value", "bid_time_value", "ask_time_value", "mid_time_value",
+        "last_trade_price", "last_trade_timestamp", "last_trade_time_value", "best_time_value",
         "spread_pct", "daily_theta_approx",
     ]
 

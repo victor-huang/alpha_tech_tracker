@@ -12,7 +12,7 @@ from alpaca.trading.requests import (
 )
 from alpaca.trading.enums import OrderSide, TimeInForce
 from alpaca.data.enums import DataFeed
-from alpaca.data.requests import StockLatestQuoteRequest, OptionLatestQuoteRequest
+from alpaca.data.requests import StockLatestQuoteRequest, OptionLatestQuoteRequest, OptionLatestTradeRequest
 
 from alpha_tech_tracker.trade_api.execution_client import ExecutionClient
 
@@ -160,6 +160,14 @@ class AlpacaAPIClient(ExecutionClient):
         ask = float(q.ask_price)
         mid = (bid + ask) / 2
         return {"bid": bid, "ask": ask, "mid": mid}
+
+    def get_option_latest_trade_by_occ(self, occ_symbol: str):
+        request_params = OptionLatestTradeRequest(symbol_or_symbols=[occ_symbol])
+        trades = self._option_data_client.get_option_latest_trade(request_params)
+        t = trades.get(occ_symbol)
+        if t is None:
+            return None
+        return {"price": float(t.price), "timestamp": t.timestamp}
 
     def get_option_quotes_by_occ_batch(self, occ_symbols: list) -> dict:
         request_params = OptionLatestQuoteRequest(symbol_or_symbols=occ_symbols)

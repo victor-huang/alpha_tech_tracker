@@ -214,6 +214,47 @@ class TestFetchStats:
         for field in expected_fields:
             assert field in row, f"Missing field: {field}"
 
+    def test_recent_trade_sets_best_time_value_from_trade_price(self):
+        # strike=$280, stock=$300 → intrinsic=$20
+        # mid=(20.50+23.50)/2=$22 → mid_time_value=$2
+        # trade price=$21.50 → last_trade_time_value=$1.50; recent → best_time_value=$1.50
+        client = _make_alpaca_client()
+        client.get_option_quote_by_occ.return_value = _make_option_quote(bid=20.50, ask=23.50)
+        recent_ts = datetime.now(ET)
+        client.get_option_latest_trade_by_occ.return_value = {"price": 21.50, "timestamp": recent_ts}
+        spec = ContractSpec(symbol=_WEEKLY_CALL, option_type="call")
+
+        row = self._run(client, spec, stock_price=300.0)
+
+        assert row["last_trade_time_value"] == 1.50
+        assert row["best_time_value"] == 1.50
+
+    def test_stale_trade_falls_back_to_mid_time_value(self):
+        # Same quote; trade is 31 min old → stale, best_time_value falls back to mid_time_value=$2
+        client = _make_alpaca_client()
+        client.get_option_quote_by_occ.return_value = _make_option_quote(bid=20.50, ask=23.50)
+        from datetime import timedelta
+        stale_ts = datetime.now(ET) - timedelta(seconds=1860)
+        client.get_option_latest_trade_by_occ.return_value = {"price": 21.50, "timestamp": stale_ts}
+        spec = ContractSpec(symbol=_WEEKLY_CALL, option_type="call")
+
+        row = self._run(client, spec, stock_price=300.0)
+
+        assert row["last_trade_time_value"] is None
+        assert row["best_time_value"] == row["mid_time_value"]
+
+    def test_trade_fetch_failure_falls_back_to_mid_time_value(self):
+        # Trade API raises → best_time_value falls back to mid_time_value
+        client = _make_alpaca_client()
+        client.get_option_quote_by_occ.return_value = _make_option_quote(bid=20.50, ask=23.50)
+        client.get_option_latest_trade_by_occ.side_effect = Exception("network error")
+        spec = ContractSpec(symbol=_WEEKLY_CALL, option_type="call")
+
+        row = self._run(client, spec, stock_price=300.0)
+
+        assert row["last_trade_time_value"] is None
+        assert row["best_time_value"] == row["mid_time_value"]
+
 
 class TestMedianTimeValue:
     def test_returns_none_when_cache_is_empty(self):
@@ -223,21 +264,21 @@ class TestMedianTimeValue:
     def test_returns_median_for_odd_number_of_snapshots(self):
         monitor = _make_monitor()
         monitor._cache["SYM"] = deque(
-            [{"mid_time_value": 2.0}, {"mid_time_value": 4.0}, {"mid_time_value": 3.0}]
+            [{"best_time_value":2.0}, {"best_time_value":4.0}, {"best_time_value":3.0}]
         )
         assert monitor._median_time_value("SYM") == _D("3.0")
 
     def test_returns_average_of_middle_two_for_even_count(self):
         monitor = _make_monitor()
         monitor._cache["SYM"] = deque(
-            [{"mid_time_value": 1.0}, {"mid_time_value": 3.0},
-             {"mid_time_value": 5.0}, {"mid_time_value": 7.0}]
+            [{"best_time_value":1.0}, {"best_time_value":3.0},
+             {"best_time_value":5.0}, {"best_time_value":7.0}]
         )
         assert monitor._median_time_value("SYM") == _D("4.0")
 
     def test_returns_single_value_when_only_one_snapshot(self):
         monitor = _make_monitor()
-        monitor._cache["SYM"] = deque([{"mid_time_value": 5.5}])
+        monitor._cache["SYM"] = deque([{"best_time_value":5.5}])
         assert monitor._median_time_value("SYM") == _D("5.5")
 
 
@@ -250,7 +291,7 @@ class TestGetFairPrice:
         monitor = _make_monitor(client=client)
         if cache_tv is not None:
             monitor._cache[self._SYM] = deque(
-                [{"mid_time_value": float(cache_tv)}]
+                [{"best_time_value":float(cache_tv)}]
             )
         return monitor
 
@@ -357,7 +398,7 @@ class TestGetFairPriceQuantization:
         monitor = _make_monitor(client=client)
         if cache_tv is not None:
             monitor._cache[self._SYM] = deque(
-                [{"mid_time_value": float(cache_tv)}]
+                [{"best_time_value":float(cache_tv)}]
             )
         return monitor
 

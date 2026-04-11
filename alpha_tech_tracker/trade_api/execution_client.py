@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing import Optional
 
 
 class ExecutionClient(ABC):
@@ -43,6 +44,14 @@ class ExecutionClient(ABC):
         Return latest bid/ask for multiple options in one call.
         Returns: {occ_symbol: {"bid": float, "ask": float, "mid": float}}
         Missing symbols are omitted from the result.
+        """
+
+    @abstractmethod
+    def get_option_latest_trade_by_occ(self, occ_symbol: str) -> Optional[dict]:
+        """
+        Return the most recent trade for a single option by its OCC symbol.
+        Returns: {"price": float, "timestamp": datetime} or None if unavailable.
+        Raises on network/API error (caller decides fallback).
         """
 
     @abstractmethod

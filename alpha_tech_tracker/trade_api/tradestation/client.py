@@ -303,6 +303,9 @@ class TradeStationAPIClient(ExecutionClient):
         ask = float(q.get("Ask", 0))
         return {"bid": bid, "ask": ask, "mid": (bid + ask) / 2}
 
+    def get_option_latest_trade_by_occ(self, occ_symbol: str):
+        return None
+
     def get_option_quotes_by_occ_batch(self, occ_symbols: list) -> dict:
         if not occ_symbols:
             return {}
