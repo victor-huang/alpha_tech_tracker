@@ -2,6 +2,7 @@ import argparse
 import pandas as pd
 from datetime import date, datetime, timedelta
 
+from alpaca.data.enums import DataFeed
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import (
     build_bearish_regime_dates,
     compute_signals_with_backtest,
@@ -225,6 +226,7 @@ def run_selector_backtest(
     enable_bullish_reentry: bool = False,
     bullish_reentry_max_bars: int = 5,
     close_top_pct: float = None,
+    feed: DataFeed = None,
 ) -> tuple:
     """
     Walk each trading day in [eval_start, eval_end], apply rolling selector
@@ -244,12 +246,12 @@ def run_selector_backtest(
 
     fetch_start = eval_start - timedelta(days=lookback_days)
     print(f"Fetching bars for {len(tickers)} tickers ({eval_start} → {eval_end})...")
-    all_bars = fetch_bars(tickers, fetch_start, eval_end, source=source)
+    all_bars = fetch_bars(tickers, fetch_start, eval_end, source=source, feed=feed)
 
     # Regime dates must cover the full fetch window (lookback + eval) so that rolling
     # stats for each day are computed on regime-filtered signals, matching the selector.
     bearish_regime_dates = (
-        build_bearish_regime_dates(fetch_start, eval_end, source, regime_ma)
+        build_bearish_regime_dates(fetch_start, eval_end, source, regime_ma, feed=feed)
         if regime_filter
         else None
     )
@@ -504,7 +506,7 @@ def run_selector_backtest(
                         "window": label,
                         "rank": rank,
                         "pnl_pct": round(combined_pnl_pct, 3),
-                        "success": pick["pnl"] > 0,
+                        "success": combined_pnl_pct > 0,
                         # cap_pnl, window_capital, skipped filled in by _apply_capital_flow
                         "cap_pnl": 0.0,
                         "window_capital": 0.0,
@@ -1260,6 +1262,12 @@ def _parse_args():
         help="Market data source (default: alpaca)",
     )
     parser.add_argument(
+        "--feed",
+        choices=["iex", "sip"],
+        default="sip",
+        help="Alpaca data feed: 'sip' (consolidated, default) or 'iex' (free tier)",
+    )
+    parser.add_argument(
         "--bearish-ma200",
         action="store_true",
         default=False,
@@ -1578,6 +1586,9 @@ if __name__ == "__main__":
         f"  Close top pct: {f'top/bottom {args.close_top_pct * 100:.0f}% (global default, overridable per window)' if args.close_top_pct is not None else 'disabled (standard midpoint/bottom-30; per-window override via --window LABEL START BARS PCT)'}"
     )
     print(f"  Source       : {args.source}")
+    alpaca_feed = DataFeed.IEX if args.feed == "iex" else DataFeed.SIP
+    if args.source == "alpaca":
+        print(f"  Alpaca feed  : {args.feed.upper()}")
 
     trade_rows, all_window_results, trading_days = run_selector_backtest(
         n=args.top,
@@ -1609,6 +1620,7 @@ if __name__ == "__main__":
         min_ev=args.min_ev,
         or_bar_lookback=args.or_bar_lookback,
         close_top_pct=args.close_top_pct,
+        feed=alpaca_feed,
     )
 
     skip_log = _apply_capital_flow(
@@ -1625,7 +1637,7 @@ if __name__ == "__main__":
     baseline_df = _collect_baseline(all_window_results, eval_start, eval_end)
 
     print("Fetching QQQ daily bars for comparison...")
-    qqq_df = fetch_daily_bars(["QQQ"], eval_start, eval_end, source=args.source).get(
+    qqq_df = fetch_daily_bars(["QQQ"], eval_start, eval_end, source=args.source, feed=alpaca_feed).get(
         "QQQ", pd.DataFrame()
     )
     qqq_closes = qqq_df["Close"] if not qqq_df.empty else pd.Series(dtype=float)

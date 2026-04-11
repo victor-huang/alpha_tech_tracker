@@ -33,10 +33,11 @@ def _trim_bars_to_range(df: pd.DataFrame, start_date: date, end_date: date) -> p
     return df[(df.index.date >= warmup_start) & (df.index.date <= end_date)]
 
 
-def _cache_source(source: str) -> str:
+def _cache_source(source: str, feed: DataFeed = None) -> str:
     """Return the cache-key source string, encoding the Alpaca feed name for alpaca sources."""
     if source == "alpaca":
-        return f"alpaca_{_ALPACA_FEED.value}"
+        effective_feed = feed if feed is not None else _ALPACA_FEED
+        return f"alpaca_{effective_feed.value}"
     return source
 
 
@@ -130,7 +131,8 @@ def fetch_yfinance_bars(tickers: list, start_date: date, end_date: date) -> dict
 
 
 def fetch_alpaca_bars(
-    tickers: list, start_date: date, end_date, allow_intraday: bool = False
+    tickers: list, start_date: date, end_date, allow_intraday: bool = False,
+    feed: DataFeed = None,
 ) -> dict:
     key_id = os.environ.get("ALPACA_API_KEY")
     secret_key = os.environ.get("ALPACA_SECRET_KEY")
@@ -157,12 +159,13 @@ def fetch_alpaca_bars(
     else:
         fetch_end = datetime.combine(end_date + timedelta(days=1), datetime.min.time())
 
+    effective_feed = feed if feed is not None else _ALPACA_FEED
     request = StockBarsRequest(
         symbol_or_symbols=tickers,
         timeframe=TimeFrame(amount=5, unit=TimeFrameUnit.Minute),
         start=fetch_start,
         end=fetch_end,
-        feed=_ALPACA_FEED,
+        feed=effective_feed,
     )
     bars = client.get_stock_bars(request)
 
@@ -1310,11 +1313,12 @@ def fetch_bars(
     end_date,
     source: str = "alpaca",
     allow_intraday: bool = False,
+    feed: DataFeed = None,
 ) -> dict:
     end_date_only = _to_date(end_date)
     cacheable = _is_cacheable(end_date_only)
 
-    csource = _cache_source(source)
+    csource = _cache_source(source, feed)
     result = {}
     to_fetch = []
     to_fetch_delta = []  # (ticker, partial_df, partial_end)
@@ -1371,7 +1375,8 @@ def fetch_bars(
                 delta_fetched = fetch_yfinance_bars(delta_tickers, delta_start, end_date)
             else:
                 delta_fetched = fetch_alpaca_bars(
-                    delta_tickers, delta_start, end_date, allow_intraday=allow_intraday
+                    delta_tickers, delta_start, end_date, allow_intraday=allow_intraday,
+                    feed=feed,
                 )
         else:
             delta_fetched = {}  # partial cache already covers full range
@@ -1404,7 +1409,7 @@ def fetch_bars(
             fetched = fetch_yfinance_bars(to_fetch, start_date, end_date)
         else:
             fetched = fetch_alpaca_bars(
-                to_fetch, start_date, end_date, allow_intraday=allow_intraday
+                to_fetch, start_date, end_date, allow_intraday=allow_intraday, feed=feed,
             )
         for ticker, df in fetched.items():
             result[ticker] = df
@@ -1423,12 +1428,13 @@ def fetch_bars(
 
 
 def fetch_daily_bars(
-    tickers: list, start_date: date, end_date: date, source: str = "alpaca"
+    tickers: list, start_date: date, end_date: date, source: str = "alpaca",
+    feed: DataFeed = None,
 ) -> dict:
     """Fetch 1-day bars for the given tickers. Returns {ticker: DataFrame} with date index."""
     cacheable = _is_cacheable(end_date)
 
-    csource = _cache_source(source)
+    csource = _cache_source(source, feed)
     result = {}
     to_fetch = []
     for ticker in tickers:
@@ -1461,12 +1467,13 @@ def fetch_daily_bars(
         key_id = os.environ.get("ALPACA_API_KEY")
         secret_key = os.environ.get("ALPACA_SECRET_KEY")
         client = StockHistoricalDataClient(key_id, secret_key)
+        effective_feed = feed if feed is not None else _ALPACA_FEED
         request = StockBarsRequest(
             symbol_or_symbols=to_fetch,
             timeframe=TimeFrame(amount=1, unit=TimeFrameUnit.Day),
             start=datetime.combine(start_date, datetime.min.time()),
             end=datetime.combine(end_date + timedelta(days=1), datetime.min.time()),
-            feed=_ALPACA_FEED,
+            feed=effective_feed,
         )
         bars = client.get_stock_bars(request)
         for ticker in to_fetch:
@@ -1489,11 +1496,12 @@ def fetch_daily_bars(
 
 
 def build_bearish_regime_dates(
-    start_date: date, end_date: date, source: str = "alpaca", regime_ma: int = 5
+    start_date: date, end_date: date, source: str = "alpaca", regime_ma: int = 5,
+    feed: DataFeed = None,
 ) -> set:
     """Return the set of dates where QQQ daily close is below its regime_ma-day MA."""
     fetch_start = start_date - timedelta(days=regime_ma * 3 + 10)
-    qqq_df = fetch_daily_bars(["QQQ"], fetch_start, end_date, source=source).get(
+    qqq_df = fetch_daily_bars(["QQQ"], fetch_start, end_date, source=source, feed=feed).get(
         "QQQ", pd.DataFrame()
     )
     if qqq_df.empty:
