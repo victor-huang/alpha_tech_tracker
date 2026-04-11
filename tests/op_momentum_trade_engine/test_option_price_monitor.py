@@ -538,19 +538,14 @@ class TestSnapshotTicker:
 
 class TestTradeEngineStrikeSelector:
     def test_returns_call_and_put_contract_specs(self):
-        client = _make_alpaca_client()
         selector_mock = Mock()
         selector_mock.select.side_effect = [
             "TSLA260410C00280000",  # BULLISH call
             "TSLA260410P00320000",  # BEARISH put
         ]
 
-        with patch(
-            "alpha_tech_tracker.op_momentum_strategy.option_price_monitor.TimePremiumContractSelector",
-            return_value=selector_mock,
-        ):
-            tess = TradeEngineStrikeSelector(client)
-            specs = tess.select_contracts("TSLA", _D("300"))
+        tess = TradeEngineStrikeSelector(selector_mock)
+        specs = tess.select_contracts("TSLA", _D("300"))
 
         assert len(specs) == 2
         assert specs[0].symbol == "TSLA260410C00280000"
@@ -559,19 +554,14 @@ class TestTradeEngineStrikeSelector:
         assert specs[1].option_type == "put"
 
     def test_swallows_exception_and_returns_partial_list(self):
-        client = _make_alpaca_client()
         selector_mock = Mock()
         selector_mock.select.side_effect = [
             RuntimeError("no call contracts"),
             "TSLA260410P00320000",
         ]
 
-        with patch(
-            "alpha_tech_tracker.op_momentum_strategy.option_price_monitor.TimePremiumContractSelector",
-            return_value=selector_mock,
-        ):
-            tess = TradeEngineStrikeSelector(client)
-            specs = tess.select_contracts("TSLA", _D("300"))
+        tess = TradeEngineStrikeSelector(selector_mock)
+        specs = tess.select_contracts("TSLA", _D("300"))
 
         assert len(specs) == 1
         assert specs[0].option_type == "put"

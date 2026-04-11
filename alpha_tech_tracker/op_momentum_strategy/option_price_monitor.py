@@ -60,16 +60,17 @@ def _parse_occ_symbol(symbol: str) -> dict:
 
 class TradeEngineStrikeSelector:
     """
-    Selects the same CALL and PUT contracts the live trade engine would pick,
-    using TimePremiumContractSelector with BULLISH (call) and BEARISH (put) signals.
+    Selects CALL and PUT contracts for monitoring by delegating to any selector
+    that implements select(ticker, signal, stock_price) -> OCC symbol.
 
-    Extend or replace this class to monitor additional strikes in the future.
+    Pass any compatible selector (e.g. TimePremiumContractSelector,
+    ITMOptionContractSelector) to match whichever strategy the trade engine uses.
     Any object with a select_contracts(ticker, stock_price) -> list[ContractSpec]
-    interface can be passed to OptionPriceMonitor.
+    interface can be passed directly to OptionPriceMonitor instead.
     """
 
-    def __init__(self, client: ExecutionClient):
-        self._selector = TimePremiumContractSelector(client)
+    def __init__(self, selector):
+        self._selector = selector
 
     def select_contracts(self, ticker: str, stock_price: Decimal) -> list:
         specs = []
@@ -126,7 +127,9 @@ class OptionPriceMonitor:
         self._tickers = tickers
         self._output_dir = output_dir
         self._interval = interval_seconds
-        self._contract_selector = contract_selector or TradeEngineStrikeSelector(client)
+        self._contract_selector = contract_selector or TradeEngineStrikeSelector(
+            TimePremiumContractSelector(client)
+        )
         self._cache: dict = {}   # {option_symbol: deque of stat dicts}
         self._stop_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
