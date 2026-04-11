@@ -35,9 +35,12 @@ When a primary BEARISH trade stops out early (hard stop or fallback), the strate
 
 ### Mutual Exclusion with Reversal
 
-The reversal feature (`--reversal`) goes BULLISH after a BEARISH stop-out. The bearish re-entry stays BEARISH. They are mutually exclusive:
-- If `rev_entry_price is not None` (reversal fired), the re-entry block is skipped.
-- This prevents both from firing on the same primary trade and double-counting capital.
+The reversal feature (`--reversal`) goes BULLISH after a BEARISH stop-out. The bearish re-entry stays BEARISH. When both flags are enabled simultaneously they are mutually exclusive on any given primary trade — whichever trigger fires first chronologically wins, with reversal winning same-bar ties.
+
+**Recommended usage**: run `--reversal` and `--bearish-reentry` as independent flags without
+combining them on the same run. Each fires freely on days the other does not — the live engine
+handles them as independent bar-by-bar watchers, and independent backtest runs produce numbers
+that are consistent with live behaviour (no lookahead interaction).
 
 ### Hard Stop = Midpoint
 

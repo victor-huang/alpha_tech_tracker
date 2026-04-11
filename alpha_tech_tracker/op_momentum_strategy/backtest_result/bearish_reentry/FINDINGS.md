@@ -78,6 +78,61 @@ python alpha_tech_tracker/op_momentum_strategy/op_momentum_selector_backtest.py 
 
 ---
 
+## Reversal vs BRE — Independent Mode Comparison (2021–2026)
+
+Config: M1+A1+A2 windows, top-2, weights 60/40, regime filter MA8, `--bullish-reentry` always on, no-compound.
+Each row tests one secondary feature in isolation — reversal and BRE do not interact.
+
+```
+--regime-filter --regime-ma 8 --weights 60 40
+--window M1 09:30 3 --window A1 13:15 1 --window A2 15:00 1
+--morning-split 100 --bullish-reentry --top 2
+[--reversal | --bearish-reentry]
+```
+
+### Why independent modes matter
+
+When both `--reversal` and `--bearish-reentry` are enabled simultaneously, they are mutually
+exclusive on any given primary trade — whichever trigger fires first chronologically wins, with
+reversal winning same-bar ties. This creates a lookahead dependency: the backtest scans the
+whole day for both before deciding, which cannot be replicated in live trading.
+
+Running each feature independently avoids this interaction entirely. Each fires freely whenever
+eligible, matching the live engine's bar-by-bar event-driven behaviour.
+
+### Per-Year Results
+
+| Year | `--reversal` only | `--bearish-reentry` only | Winner |
+|---|---|---|---|
+| 2021 | +139.72% | +146.76% | **BRE** (+7pp) |
+| 2022 | +178.92% | +200.37% | **BRE** (+21pp) |
+| 2023 | +321.62% | +278.72% | **Reversal** (+43pp) |
+| 2024 | +136.10% | +149.27% | **BRE** (+13pp) |
+| 2025 | +170.51% | +150.90% | **Reversal** (+20pp) |
+| 2026 YTD (Jan–Apr 10) | +98.51% | +83.65% | **Reversal** (+15pp) |
+| **5-yr sum (2021–2025)** | **+946.87%** | **+926.02%** | **Reversal** (+21pp) |
+
+### Key Observations
+
+1. **Reversal wins the 5-year total** (+21pp) but only narrowly, driven almost entirely by
+   2023 (+43pp). BRE wins 3 of 5 full years.
+
+2. **BRE dominates bear and choppy years (2021, 2022, 2024)** — sustained directional
+   follow-through after OR breaks makes re-entering short more profitable than waiting for a
+   V-bottom.
+
+3. **Reversal dominates strong bull years (2023, 2025, 2026 YTD)** — uptrending markets
+   produce genuine intraday V-bottoms that the reversal captures fully.
+
+4. **The two features are additive, not competing** — they fire on different days in
+   independent mode. Running both together captures value from both market regimes.
+
+5. **Recommended config**: run both `--reversal` and `--bearish-reentry` independently
+   (no combined interaction). The live engine already handles them as independent bar-by-bar
+   watchers so backtest and live behaviour are consistent.
+
+---
+
 ## Log Files in This Directory
 
 ### M1+A1+A2 (primary — full config)
