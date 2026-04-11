@@ -54,6 +54,11 @@ _FILL_LOOKAHEAD_MIN = 15
 _CACHE_MAXLEN = 6
 _DEFAULT_OUTPUT_DIR = "back_test_result/fair_price_backtest"
 
+# Bar lookback: normal = 5 min; sparse = 60 min (deep ITM, intrinsic dominates)
+_BAR_LOOKBACK_NORMAL_MIN = 5
+_BAR_LOOKBACK_SPARSE_MIN = 60
+_SPARSE_BAR_THRESHOLD = 30  # bars/day below this triggers wide lookback
+
 _DETAIL_FIELDS = [
     "date", "ticker", "option_type", "option_symbol", "timestamp",
     "stock_price", "bid", "ask", "mid", "intrinsic",
@@ -64,7 +69,7 @@ _DETAIL_FIELDS = [
 ]
 
 _SUMMARY_FIELDS = [
-    "date", "ticker", "option_type", "branch",
+    "date", "ticker", "option_type", "occ_symbol", "branch",
     "count", "fill_rate_pct",
     "avg_improvement_vs_bid", "avg_improvement_vs_mid",
     "avg_minutes_to_fill",
@@ -86,10 +91,11 @@ class _HistoricalOptionClient:
     Alpaca's SDK at this time.
     """
 
-    def __init__(self):
+    def __init__(self, bar_lookback_minutes: int = _BAR_LOOKBACK_NORMAL_MIN):
         self._bars = {}     # {occ_symbol: {datetime_minute_et: bar}}
         self._trades = {}   # {occ_symbol: [trade, ...] sorted by timestamp}
         self._current_ts = None
+        self._bar_lookback_minutes = bar_lookback_minutes
 
     def set_current_ts(self, ts: datetime):
         self._current_ts = ts
@@ -128,8 +134,7 @@ class _HistoricalOptionClient:
         if not bars:
             return None
         ts_min = ts.astimezone(ET).replace(second=0, microsecond=0)
-        # Try exact match, then look back up to 5 minutes for sparse bars
-        for delta in range(6):
+        for delta in range(self._bar_lookback_minutes + 1):
             candidate = ts_min - timedelta(minutes=delta)
             if candidate in bars:
                 return bars[candidate]
@@ -169,7 +174,7 @@ def _fetch_stock_bars(ticker: str, trade_date, stock_client: StockHistoricalData
     )
     bars = stock_client.get_stock_bars(req)
     result = {}
-    for bar in bars.get(ticker, []):
+    for bar in bars.data.get(ticker, []):
         ts_et = bar.timestamp.astimezone(ET).replace(second=0, microsecond=0)
         result[ts_et] = _D(str((bar.high + bar.low) / 2))
     return result
@@ -184,7 +189,7 @@ def _fetch_option_bars(occ_symbol: str, trade_date, option_client: OptionHistori
         timeframe=TimeFrame.Minute,
     )
     bars_map = option_client.get_option_bars(req)
-    return list(bars_map.get(occ_symbol, []))
+    return list(bars_map.data.get(occ_symbol, []))
 
 
 def _fetch_option_trades(occ_symbol: str, trade_date, option_client: OptionHistoricalDataClient) -> list:
@@ -197,7 +202,7 @@ def _fetch_option_trades(occ_symbol: str, trade_date, option_client: OptionHisto
         end=end_extended,
     )
     trades_map = option_client.get_option_trades(req)
-    return list(trades_map.get(occ_symbol, []))
+    return list(trades_map.data.get(occ_symbol, []))
 
 
 # ---------------------------------------------------------------------------
@@ -228,7 +233,7 @@ def _build_snapshot(ts, occ_symbol, option_type, strike, hist_client, stock_bars
     bid = _D(str(q["bid"]))
     ask = _D(str(q["ask"]))
     mid = (bid + ask) / _D("2")
-    if mid <= _D("0") or ask <= bid:
+    if mid <= _D("0") or ask < bid:
         return None
 
     if option_type == "call":
@@ -321,7 +326,7 @@ def _simulate_fill(fair_price, trades: list, from_ts: datetime, lookahead_min: i
 
 def _run_contract(
     ticker, trade_date, occ_symbol, option_type,
-    hist_client, stock_bars, trades,
+    hist_client, stock_bars, trades, is_sparse=False,
 ):
     """
     Walk market hours at 1-min resolution. Update cache and call get_fair_price
@@ -374,6 +379,8 @@ def _run_contract(
             spread_pct = snap["spread_pct"]
 
             branch = _derive_branch(spread_pct, bid, intrinsic, list(cache))
+            if is_sparse:
+                branch = f"illiquid_{branch}"
             median_tv = _compute_median_tv(list(cache))
 
             fill_found, fill_price, min_to_fill = _simulate_fill(
@@ -425,7 +432,7 @@ class _NullContractSelector:
 # Summary computation
 # ---------------------------------------------------------------------------
 
-def _compute_summary(detail_rows, trade_date):
+def _compute_summary(detail_rows, trade_date, attempted_contracts):
     groups = defaultdict(list)
     for row in detail_rows:
         key = (row["ticker"], row["option_type"], row["branch"])
@@ -442,6 +449,7 @@ def _compute_summary(detail_rows, trade_date):
             "date": trade_date.isoformat(),
             "ticker": ticker,
             "option_type": option_type,
+            "occ_symbol": rows[0]["option_symbol"],
             "branch": branch,
             "count": len(rows),
             "fill_rate_pct": round(100 * len(fills) / len(rows), 1),
@@ -449,7 +457,26 @@ def _compute_summary(detail_rows, trade_date):
             "avg_improvement_vs_mid": round(sum(r["improvement_vs_mid"] for r in rows) / len(rows), 3),
             "avg_minutes_to_fill": avg_min_to_fill,
         })
-    return summary_rows
+
+    # Add zero rows for contracts that were attempted but produced no detail rows
+    seen = {(r["ticker"], r["option_type"]) for r in detail_rows}
+    for ticker, option_type, occ_symbol, bar_count in sorted(attempted_contracts):
+        if (ticker, option_type) not in seen:
+            branch = "no_bars" if bar_count == 0 else f"sparse_bars ({bar_count})"
+            summary_rows.append({
+                "date": trade_date.isoformat(),
+                "ticker": ticker,
+                "option_type": option_type,
+                "occ_symbol": occ_symbol,
+                "branch": branch,
+                "count": 0,
+                "fill_rate_pct": None,
+                "avg_improvement_vs_bid": None,
+                "avg_improvement_vs_mid": None,
+                "avg_minutes_to_fill": None,
+            })
+
+    return sorted(summary_rows, key=lambda r: (r["ticker"], r["option_type"], r["branch"]))
 
 
 # ---------------------------------------------------------------------------
@@ -471,6 +498,7 @@ def run_backtest(
     option_client = OptionHistoricalDataClient(api_key, secret_key)
 
     all_detail_rows = []
+    attempted_contracts = []  # (ticker, option_type, occ_symbol, bar_count)
 
     for ticker in tickers:
         logger.info("Processing %s on %s", ticker, trade_date)
@@ -487,12 +515,8 @@ def run_backtest(
             logger.warning("%s: no opening stock price — skipping", ticker)
             continue
 
-        hist_client = _HistoricalOptionClient()
-
-        # Build temporary execution client for contract selection
         from .config import build_execution_client
         exec_client = build_execution_client(is_paper=True)
-
         if option_selector == "time-premium":
             selector = TimePremiumContractSelector(exec_client, time_premium_pct_cap=time_premium_pct_cap)
         else:
@@ -509,25 +533,34 @@ def run_backtest(
 
             bars = _fetch_option_bars(occ_symbol, trade_date, option_client)
             trades = _fetch_option_trades(occ_symbol, trade_date, option_client)
+            attempted_contracts.append((ticker, option_type, occ_symbol, len(bars)))
 
             if not bars:
                 logger.warning("%s %s %s: no option bars — skipping", ticker, option_type, occ_symbol)
                 continue
 
+            is_sparse = len(bars) < _SPARSE_BAR_THRESHOLD
+            lookback = _BAR_LOOKBACK_SPARSE_MIN if is_sparse else _BAR_LOOKBACK_NORMAL_MIN
+            if is_sparse:
+                logger.info(
+                    "%s %s: sparse bars (%d) — using %d-min lookback",
+                    ticker, option_type, len(bars), lookback,
+                )
+            hist_client = _HistoricalOptionClient(bar_lookback_minutes=lookback)
             hist_client.register_bars(occ_symbol, bars)
             hist_client.register_trades(occ_symbol, trades)
 
             rows = _run_contract(
                 ticker, trade_date, occ_symbol, option_type,
-                hist_client, stock_bars, trades,
+                hist_client, stock_bars, trades, is_sparse=is_sparse,
             )
             all_detail_rows.extend(rows)
 
-    if not all_detail_rows:
+    if not all_detail_rows and not attempted_contracts:
         logger.warning("No data produced — check tickers and date")
         return
 
-    summary_rows = _compute_summary(all_detail_rows, trade_date)
+    summary_rows = _compute_summary(all_detail_rows, trade_date, attempted_contracts)
     _write_outputs(all_detail_rows, summary_rows, trade_date, output_dir)
 
 
@@ -553,12 +586,15 @@ def _write_outputs(detail_rows, summary_rows, trade_date, output_dir):
 
     # Print summary to stdout
     print(f"\n=== Fair Price Backtest — {date_str} ===\n")
-    print(f"{'Ticker':<8} {'Type':<6} {'Branch':<12} {'N':>4} {'Fill%':>6} {'vs_bid':>7} {'vs_mid':>7} {'min_fill':>9}")
-    print("-" * 65)
+    print(f"{'Ticker':<8} {'Type':<6} {'OCC Symbol':<26} {'Branch':<22} {'N':>4} {'Fill%':>6} {'vs_bid':>7} {'vs_mid':>7} {'min_fill':>9}")
+    print("-" * 100)
     for r in summary_rows:
+        if r["count"] == 0:
+            print(f"{r['ticker']:<8} {r['option_type']:<6} {r['occ_symbol']:<26} {r['branch']:<22} {'0':>4} {'—':>6} {'—':>7} {'—':>7} {'—':>9}")
+            continue
         min_fill = f"{r['avg_minutes_to_fill']:.1f}" if r["avg_minutes_to_fill"] is not None else "—"
         print(
-            f"{r['ticker']:<8} {r['option_type']:<6} {r['branch']:<12} "
+            f"{r['ticker']:<8} {r['option_type']:<6} {r['occ_symbol']:<26} {r['branch']:<22} "
             f"{r['count']:>4} {r['fill_rate_pct']:>6.1f} "
             f"{r['avg_improvement_vs_bid']:>+7.3f} {r['avg_improvement_vs_mid']:>+7.3f} "
             f"{min_fill:>9}"
