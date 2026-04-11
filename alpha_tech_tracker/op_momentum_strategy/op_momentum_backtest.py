@@ -528,13 +528,22 @@ def compute_signals_with_backtest(
             }
         )
 
-        # Reversal trade: BEARISH primary stopped out within 1-3 bars AND price
-        # later crosses above OR high — flip to BULLISH to catch the V-bottom rebound.
-        # Hard stop: OR_high - 15% × OR_range (immediately armed since entry > OR high).
-        # Trailing MA stop follows price upward.
-        # Reversal P&L is added to the primary trade row so selector_backtest picks it
-        # up automatically; reversal details stored in extra fields for diagnostics.
-        rev_entry_price = None  # set below if reversal fires; checked by bearish re-entry guard
+        # Reversal / Bearish re-entry — first chronological trigger wins.
+        #
+        # Both entry scans run before either simulation so we can compare bar
+        # indices.  Reversal wins same-bar ties (BRE scan stops before the bar
+        # where reversal fires).  Whichever loses has its entry price set to None
+        # and its simulation block is skipped.
+        #
+        # Reversal: BEARISH primary stopped out within N bars AND price later
+        # crosses above OR high — flip to BULLISH.
+        # BRE: BEARISH primary stopped out within N bars AND price later closes
+        # below OR low — re-enter short.
+
+        rev_entry_price = None
+        rev_entry_idx = None
+        reversal_hard_stop = None
+        reversal_scan = None
 
         reversal_eligible = enable_reversal and (
             signal == "BEARISH"
@@ -545,7 +554,6 @@ def compute_signals_with_backtest(
         if reversal_eligible:
             reversal_hard_stop = midpoint
             reversal_scan = post_open.iloc[exit_bar_idx + 1:]
-            rev_entry_idx = None
 
             for scan_idx, (_, scan_bar) in enumerate(reversal_scan.iterrows()):
                 if scan_bar["Close"] > or_high:
@@ -553,177 +561,184 @@ def compute_signals_with_backtest(
                     rev_entry_idx = scan_idx
                     break
 
-            if rev_entry_price is not None:
-                rev_bars_held = 0
-                rev_max_favorable_move = 0.0
-                rev_exit_price = rev_entry_price
-                rev_exit_reason = "end_of_day"
-                # Entry is already above OR high > reversal_hard_stop, so armed at start.
-                remaining_rev_bars = reversal_scan.iloc[rev_entry_idx + 1:]
-
-                rev_trailing_armed = False
-                for _, rev_bar in remaining_rev_bars.iterrows():
-                    rev_bar_ma20 = rev_bar["MA20"]
-                    rev_bar_ma50 = rev_bar["MA50"]
-                    rev_bar_close = rev_bar["Close"]
-                    rev_move = rev_bar_close - rev_entry_price
-
-                    if rev_bar_close >= rev_entry_price + or_range:
-                        rev_trailing_armed = True
-
-                    rev_hard_stop_hit = rev_bar_close <= reversal_hard_stop
-                    rev_ma20_trailing = (
-                        rev_trailing_armed
-                        and not rev_hard_stop_hit
-                        and trailing_ma in ("ma20", "both")
-                        and not pd.isna(rev_bar_ma20)
-                        and rev_bar_ma20 > reversal_hard_stop
-                        and rev_bar_close < rev_bar_ma20
-                    )
-                    rev_ma50_trailing = (
-                        rev_trailing_armed
-                        and trailing_ma in ("ma50", "both")
-                        and not pd.isna(rev_bar_ma50)
-                        and rev_bar_ma50 > reversal_hard_stop
-                        and rev_bar_close < rev_bar_ma50
-                    )
-                    rev_ma20_exit_price = (
-                        reversal_hard_stop if rev_hard_stop_hit else rev_bar_close
-                    )
-                    rev_ma20_exit_reason = (
-                        "hard_stop" if rev_hard_stop_hit else "trailing_stop_ma20"
-                    )
-                    rev_stop_hit = rev_hard_stop_hit or rev_ma20_trailing
-
-                    if rev_stop_hit:
-                        rev_exit_price = rev_ma20_exit_price
-                        rev_exit_reason = rev_ma20_exit_reason
-                        break
-                    elif rev_ma50_trailing:
-                        rev_exit_price = rev_bar_close
-                        rev_exit_reason = "trailing_stop_ma50"
-                        break
-                    else:
-                        rev_bars_held += 1
-                        rev_max_favorable_move = max(rev_max_favorable_move, rev_move)
-                        rev_exit_price = rev_bar_close
-                        rev_exit_reason = "end_of_day"
-
-                rev_pnl = rev_exit_price - rev_entry_price
-                rows.append(
-                    {
-                        "date": date_,
-                        "signal": "BULLISH",
-                        "or_high": round(or_high, 2),
-                        "or_low": round(or_low, 2),
-                        "midpoint": round(midpoint, 2),
-                        "entry_price": round(rev_entry_price, 2),
-                        "exit_price": round(rev_exit_price, 2),
-                        "pnl": round(rev_pnl, 2),
-                        "exit_reason": rev_exit_reason,
-                        "ma20": round(ma20, 2),
-                        "ma200": round(ma200, 2),
-                        "bars_held": rev_bars_held,
-                        "mins_held": rev_bars_held * 5,
-                        "max_favorable_move": round(rev_max_favorable_move, 2),
-                        "held_to_close": rev_exit_reason == "end_of_day",
-                        "total_post_bars": len(post_open),
-                        "success": rev_pnl > 0,
-                        "is_reversal": True,
-                        "is_bearish_reentry": False,
-                        "is_bullish_reentry": False,
-                    }
-                )
-
-        # Bearish re-entry: BEARISH primary stopped out within N bars AND reversal did
-        # NOT fire AND price later closes below OR_low — re-enter short.
-        # Hard stop: midpoint (recovering above midpoint = bearish thesis dead).
-        # Trailing MA: arm when price drops effective_or_range below re-entry;
-        # exit when MA20 < midpoint AND close > MA20.
+        # BRE entry scan — runs before reversal simulation.
+        # Stops at the bar where reversal fires (if it fires) so that reversal
+        # wins same-bar ties and BRE never "beats" reversal on an equal bar.
         bearish_reentry_eligible = (
             enable_bearish_reentry
             and signal == "BEARISH"
             and bars_held <= bearish_reentry_max_bars
             and exit_reason in ("hard_stop", "fallback_20pct")
             and exit_bar_idx >= 0
-            and rev_entry_price is None
         )
+        br_entry_price = None
+        br_entry_idx = None
         if bearish_reentry_eligible:
             br_hard_stop = midpoint
             br_scan = post_open.iloc[exit_bar_idx + 1:]
-            br_entry_price = None
-            br_entry_idx = None
 
             for scan_idx, (_, scan_bar) in enumerate(br_scan.iterrows()):
+                if rev_entry_idx is not None and scan_idx >= rev_entry_idx:
+                    break  # reversal fires here or earlier — stop before this bar
                 if scan_bar["Close"] < or_low:
                     br_entry_price = scan_bar["Close"]
                     br_entry_idx = scan_idx
                     break
 
+            # BRE fired on an earlier bar than reversal — cancel reversal.
             if br_entry_price is not None:
-                br_bars_held = 0
-                br_max_favorable_move = 0.0
-                br_exit_price = br_entry_price
-                br_exit_reason = "end_of_day"
-                br_trailing_armed = False
-                remaining_br_bars = br_scan.iloc[br_entry_idx + 1:]
+                rev_entry_price = None
+                rev_entry_idx = None
 
-                for _, br_bar in remaining_br_bars.iterrows():
-                    br_bar_ma20 = br_bar["MA20"]
-                    br_bar_close = br_bar["Close"]
-                    br_move = br_entry_price - br_bar_close
+        # Reversal simulation (only if reversal won).
+        if rev_entry_price is not None:
+            rev_bars_held = 0
+            rev_max_favorable_move = 0.0
+            rev_exit_price = rev_entry_price
+            rev_exit_reason = "end_of_day"
+            # Entry is already above OR high > reversal_hard_stop, so armed at start.
+            remaining_rev_bars = reversal_scan.iloc[rev_entry_idx + 1:]
 
-                    if br_bar_close <= br_entry_price - effective_or_range:
-                        br_trailing_armed = True
+            rev_trailing_armed = False
+            for _, rev_bar in remaining_rev_bars.iterrows():
+                rev_bar_ma20 = rev_bar["MA20"]
+                rev_bar_ma50 = rev_bar["MA50"]
+                rev_bar_close = rev_bar["Close"]
+                rev_move = rev_bar_close - rev_entry_price
 
-                    br_hard_stop_hit = br_bar_close >= br_hard_stop
-                    br_ma20_trailing = (
-                        br_trailing_armed
-                        and not br_hard_stop_hit
-                        and trailing_ma in ("ma20", "both")
-                        and not pd.isna(br_bar_ma20)
-                        and br_bar_ma20 < midpoint
-                        and br_bar_close > br_bar_ma20
-                    )
-                    br_exit_price_candidate = br_hard_stop if br_hard_stop_hit else br_bar_close
-                    br_exit_reason_candidate = "hard_stop" if br_hard_stop_hit else "trailing_stop_ma20"
-                    br_stop_hit = br_hard_stop_hit or br_ma20_trailing
+                if rev_bar_close >= rev_entry_price + or_range:
+                    rev_trailing_armed = True
 
-                    if br_stop_hit:
-                        br_exit_price = br_exit_price_candidate
-                        br_exit_reason = br_exit_reason_candidate
-                        break
-                    else:
-                        br_bars_held += 1
-                        br_max_favorable_move = max(br_max_favorable_move, br_move)
-                        br_exit_price = br_bar_close
-                        br_exit_reason = "end_of_day"
-
-                br_pnl = br_entry_price - br_exit_price
-                rows.append(
-                    {
-                        "date": date_,
-                        "signal": "BEARISH",
-                        "or_high": round(or_high, 2),
-                        "or_low": round(or_low, 2),
-                        "midpoint": round(midpoint, 2),
-                        "entry_price": round(br_entry_price, 2),
-                        "exit_price": round(br_exit_price, 2),
-                        "pnl": round(br_pnl, 2),
-                        "exit_reason": br_exit_reason,
-                        "ma20": round(ma20, 2),
-                        "ma200": round(ma200, 2),
-                        "bars_held": br_bars_held,
-                        "mins_held": br_bars_held * 5,
-                        "max_favorable_move": round(br_max_favorable_move, 2),
-                        "held_to_close": br_exit_reason == "end_of_day",
-                        "total_post_bars": len(post_open),
-                        "success": br_pnl > 0,
-                        "is_reversal": False,
-                        "is_bearish_reentry": True,
-                        "is_bullish_reentry": False,
-                    }
+                rev_hard_stop_hit = rev_bar_close <= reversal_hard_stop
+                rev_ma20_trailing = (
+                    rev_trailing_armed
+                    and not rev_hard_stop_hit
+                    and trailing_ma in ("ma20", "both")
+                    and not pd.isna(rev_bar_ma20)
+                    and rev_bar_ma20 > reversal_hard_stop
+                    and rev_bar_close < rev_bar_ma20
                 )
+                rev_ma50_trailing = (
+                    rev_trailing_armed
+                    and trailing_ma in ("ma50", "both")
+                    and not pd.isna(rev_bar_ma50)
+                    and rev_bar_ma50 > reversal_hard_stop
+                    and rev_bar_close < rev_bar_ma50
+                )
+                rev_ma20_exit_price = (
+                    reversal_hard_stop if rev_hard_stop_hit else rev_bar_close
+                )
+                rev_ma20_exit_reason = (
+                    "hard_stop" if rev_hard_stop_hit else "trailing_stop_ma20"
+                )
+                rev_stop_hit = rev_hard_stop_hit or rev_ma20_trailing
+
+                if rev_stop_hit:
+                    rev_exit_price = rev_ma20_exit_price
+                    rev_exit_reason = rev_ma20_exit_reason
+                    break
+                elif rev_ma50_trailing:
+                    rev_exit_price = rev_bar_close
+                    rev_exit_reason = "trailing_stop_ma50"
+                    break
+                else:
+                    rev_bars_held += 1
+                    rev_max_favorable_move = max(rev_max_favorable_move, rev_move)
+                    rev_exit_price = rev_bar_close
+                    rev_exit_reason = "end_of_day"
+
+            rev_pnl = rev_exit_price - rev_entry_price
+            rows.append(
+                {
+                    "date": date_,
+                    "signal": "BULLISH",
+                    "or_high": round(or_high, 2),
+                    "or_low": round(or_low, 2),
+                    "midpoint": round(midpoint, 2),
+                    "entry_price": round(rev_entry_price, 2),
+                    "exit_price": round(rev_exit_price, 2),
+                    "pnl": round(rev_pnl, 2),
+                    "exit_reason": rev_exit_reason,
+                    "ma20": round(ma20, 2),
+                    "ma200": round(ma200, 2),
+                    "bars_held": rev_bars_held,
+                    "mins_held": rev_bars_held * 5,
+                    "max_favorable_move": round(rev_max_favorable_move, 2),
+                    "held_to_close": rev_exit_reason == "end_of_day",
+                    "total_post_bars": len(post_open),
+                    "success": rev_pnl > 0,
+                    "is_reversal": True,
+                    "is_bearish_reentry": False,
+                    "is_bullish_reentry": False,
+                }
+            )
+
+        # BRE simulation (only if BRE won).
+        # br_scan is the full post-exit bar range; br_entry_idx is within it.
+        if br_entry_price is not None:
+            br_bars_held = 0
+            br_max_favorable_move = 0.0
+            br_exit_price = br_entry_price
+            br_exit_reason = "end_of_day"
+            br_trailing_armed = False
+            remaining_br_bars = br_scan.iloc[br_entry_idx + 1:]
+
+            for _, br_bar in remaining_br_bars.iterrows():
+                br_bar_ma20 = br_bar["MA20"]
+                br_bar_close = br_bar["Close"]
+                br_move = br_entry_price - br_bar_close
+
+                if br_bar_close <= br_entry_price - effective_or_range:
+                    br_trailing_armed = True
+
+                br_hard_stop_hit = br_bar_close >= br_hard_stop
+                br_ma20_trailing = (
+                    br_trailing_armed
+                    and not br_hard_stop_hit
+                    and trailing_ma in ("ma20", "both")
+                    and not pd.isna(br_bar_ma20)
+                    and br_bar_ma20 < midpoint
+                    and br_bar_close > br_bar_ma20
+                )
+                br_exit_price_candidate = br_hard_stop if br_hard_stop_hit else br_bar_close
+                br_exit_reason_candidate = "hard_stop" if br_hard_stop_hit else "trailing_stop_ma20"
+                br_stop_hit = br_hard_stop_hit or br_ma20_trailing
+
+                if br_stop_hit:
+                    br_exit_price = br_exit_price_candidate
+                    br_exit_reason = br_exit_reason_candidate
+                    break
+                else:
+                    br_bars_held += 1
+                    br_max_favorable_move = max(br_max_favorable_move, br_move)
+                    br_exit_price = br_bar_close
+                    br_exit_reason = "end_of_day"
+
+            br_pnl = br_entry_price - br_exit_price
+            rows.append(
+                {
+                    "date": date_,
+                    "signal": "BEARISH",
+                    "or_high": round(or_high, 2),
+                    "or_low": round(or_low, 2),
+                    "midpoint": round(midpoint, 2),
+                    "entry_price": round(br_entry_price, 2),
+                    "exit_price": round(br_exit_price, 2),
+                    "pnl": round(br_pnl, 2),
+                    "exit_reason": br_exit_reason,
+                    "ma20": round(ma20, 2),
+                    "ma200": round(ma200, 2),
+                    "bars_held": br_bars_held,
+                    "mins_held": br_bars_held * 5,
+                    "max_favorable_move": round(br_max_favorable_move, 2),
+                    "held_to_close": br_exit_reason == "end_of_day",
+                    "total_post_bars": len(post_open),
+                    "success": br_pnl > 0,
+                    "is_reversal": False,
+                    "is_bearish_reentry": True,
+                    "is_bullish_reentry": False,
+                }
+            )
 
         # Bullish re-entry: BULLISH primary stopped out within N bars AND price later
         # closes above OR_high — re-enter BULLISH.
