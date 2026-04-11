@@ -80,7 +80,7 @@ class PositionSizer:
 
         if mid <= _D("0"):
             logger.warning("Mid price is zero for %s, defaulting to 1 share", ticker)
-            return 1, ask
+            return 1, limit_price
 
         shares = max(1, int(budget / mid))
         budget_source = "window_budget" if window_budget is not None else "account"
