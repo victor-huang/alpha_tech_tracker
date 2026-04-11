@@ -452,6 +452,7 @@ class OpMomentumTradeEngine:
                     ticker=event.ticker,
                     shares=shares,
                     order_action="BUY_OPEN",
+                    signal_price=float(event.stock_price),
                 )
         except Exception:
             logger.exception("Failed to place stock entry order for %s", event.ticker)

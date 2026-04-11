@@ -162,6 +162,7 @@ def place_stock_order(
     shares: int,
     order_action: str,
     mock: bool = False,
+    signal_price: Optional[float] = None,
 ) -> dict:
     """
     Place a stock buy or sell order with the same 3-step fill escalation as options:
@@ -169,11 +170,15 @@ def place_stock_order(
       Step 2 (60-120s): cancel unfilled -> re-place at ask (buy) or bid (sell)
       Step 3 (120s+):   cancel unfilled -> market order
     order_action: "BUY_OPEN" or "SELL_CLOSE"
+    signal_price: the stock price at signal time (from streaming bars); used as fallback
+      mid when the broker quote has a spread > 3% (stale IEX snapshot).
     Returns: {order_id, status, filled_qty, filled_avg_price}
     """
     is_buy = order_action == "BUY_OPEN"
 
     side = "BUY" if is_buy else "SELL"
+
+    _STALE_SPREAD_THRESHOLD = _D("0.03")
 
     def _fetch_mid_bid_ask():
         raw_quote = client.get_stock_quote(ticker)
@@ -185,6 +190,20 @@ def place_stock_order(
         if not is_buy and bid == _D("0"):
             raise ValueError(f"bid=0 for {ticker} — cannot compute limit price for sell")
         mid = (bid + ask) / _D("2")
+        spread_pct = (ask - bid) / mid
+        if spread_pct > _STALE_SPREAD_THRESHOLD:
+            if signal_price is None:
+                raise ValueError(
+                    f"stale quote for {ticker}: spread={float(spread_pct):.1%}"
+                    " and no signal_price fallback — cannot compute limit price"
+                )
+            logger.warning(
+                "Stale quote for %s: bid=%.2f ask=%.2f spread=%.1f%% "
+                "— using signal_price=%.2f as mid",
+                ticker, float(bid), float(ask), float(spread_pct * 100), signal_price,
+            )
+            anchor = _D(str(signal_price))
+            return anchor - _D("0.05"), anchor + _D("0.05"), anchor
         return bid, ask, mid
 
     def _place_limit(price) -> dict:

@@ -16,6 +16,7 @@ from conftest import (
 )
 
 ET = pytz.timezone("America/New_York")
+_SE_MODULE = "alpha_tech_tracker.op_momentum_strategy.signal_engine"
 
 
 class TestLiveSignalEngine:
@@ -1052,6 +1053,12 @@ class TestHandleBarGapFill:
         bar.timestamp = ts_et
         return bar
 
+    def _run_handle_bar(self, engine, ws_bar, today, capture_fn):
+        fake_now = ET.localize(datetime.combine(today, datetime.strptime("10:00", "%H:%M").time()))
+        with patch(f"{_SE_MODULE}._now_et", return_value=fake_now), \
+             patch.object(engine, "_process_five_min_bar", side_effect=capture_fn):
+            asyncio.run(engine._handle_bar(ws_bar))
+
     def test_gap_of_one_period_emits_one_flat_bar(self):
         today = date(2026, 4, 10)
         engine = self._make_engine_with_history("ANAB")
@@ -1072,11 +1079,8 @@ class TestHandleBarGapFill:
         # Deliver a bar that belongs to period 09:40 (skipping 09:35)
         period_940 = period_930 + timedelta(minutes=10)
         ws_bar = self._make_ws_bar("ANAB", period_940 + timedelta(seconds=30))
+        self._run_handle_bar(engine, ws_bar, today, capture_process)
 
-        with patch.object(engine, "_process_five_min_bar", side_effect=capture_process):
-            asyncio.run(engine._handle_bar(ws_bar))
-
-        timestamps = [b.timestamp for b in injected]
         flat_bars = [b for b in injected if b.volume == 0.0]
         assert len(flat_bars) == 1
         assert flat_bars[0].timestamp == period_930 + timedelta(minutes=5)
@@ -1100,9 +1104,7 @@ class TestHandleBarGapFill:
         # Deliver a bar that belongs to period 09:45 (skipping 09:35 and 09:40)
         period_945 = period_930 + timedelta(minutes=15)
         ws_bar = self._make_ws_bar("ANAB", period_945 + timedelta(seconds=30))
-
-        with patch.object(engine, "_process_five_min_bar", side_effect=capture_process):
-            asyncio.run(engine._handle_bar(ws_bar))
+        self._run_handle_bar(engine, ws_bar, today, capture_process)
 
         flat_bars = [b for b in injected if b.volume == 0.0]
         assert len(flat_bars) == 2
@@ -1128,9 +1130,7 @@ class TestHandleBarGapFill:
 
         period_940 = period_930 + timedelta(minutes=10)
         ws_bar = self._make_ws_bar("ANAB", period_940 + timedelta(seconds=30), open_=31.5, close=31.5)
-
-        with patch.object(engine, "_process_five_min_bar", side_effect=capture_process):
-            asyncio.run(engine._handle_bar(ws_bar))
+        self._run_handle_bar(engine, ws_bar, today, capture_process)
 
         flat_bars = [b for b in injected if b.volume == 0.0]
         assert len(flat_bars) == 1

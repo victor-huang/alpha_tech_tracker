@@ -151,3 +151,75 @@ class TestPlaceStockOrderAskZeroGuard:
         first_call = client.place_stock_order.call_args_list[0]
         assert first_call.kwargs["order_type"] == "LIMIT"
         assert first_call.kwargs["limit_price"] == 330.0
+
+
+class TestPlaceStockOrderStaleQuoteGuard:
+    """
+    When bid/ask spread exceeds 3% of mid, the quote is considered stale.
+    With signal_price provided the limit should be anchored at signal_price.
+    Without signal_price the order must fall back to market.
+    """
+
+    # RH real-world case: bid=120.64 ask=132.99 on a ~$126 stock → spread ≈ 9.7%
+    _STALE_BID = 120.64
+    _STALE_ASK = 132.99
+    _SIGNAL_PRICE = 126.50
+
+    def test_stale_quote_with_signal_price_anchors_limit_at_signal_price(self):
+        client = _make_stock_client(bid=self._STALE_BID, ask=self._STALE_ASK)
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            place_stock_order(
+                client=client,
+                ticker="RH",
+                shares=1,
+                order_action="BUY_OPEN",
+                signal_price=self._SIGNAL_PRICE,
+            )
+
+        first_call = client.place_stock_order.call_args_list[0]
+        assert first_call.kwargs["order_type"] == "LIMIT"
+        assert first_call.kwargs["limit_price"] == self._SIGNAL_PRICE
+
+    def test_stale_quote_without_signal_price_falls_back_to_market(self):
+        client = _make_stock_client(bid=self._STALE_BID, ask=self._STALE_ASK)
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            place_stock_order(
+                client=client,
+                ticker="RH",
+                shares=1,
+                order_action="BUY_OPEN",
+                signal_price=None,
+            )
+
+        calls = client.place_stock_order.call_args_list
+        assert calls[-1].kwargs["order_type"] == "MARKET"
+
+    def test_tight_spread_quote_is_not_flagged_as_stale(self):
+        client = _make_stock_client(bid=125.95, ask=126.05)
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            place_stock_order(
+                client=client,
+                ticker="RH",
+                shares=1,
+                order_action="BUY_OPEN",
+                signal_price=self._SIGNAL_PRICE,
+            )
+
+        first_call = client.place_stock_order.call_args_list[0]
+        assert first_call.kwargs["order_type"] == "LIMIT"
+        # mid of tight quote used, not signal_price
+        assert first_call.kwargs["limit_price"] == 126.0
+
+    def test_stale_quote_sell_without_signal_price_falls_back_to_market(self):
+        client = _make_stock_client(bid=self._STALE_BID, ask=self._STALE_ASK)
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            place_stock_order(
+                client=client,
+                ticker="RH",
+                shares=1,
+                order_action="SELL_CLOSE",
+                signal_price=None,
+            )
+
+        calls = client.place_stock_order.call_args_list
+        assert calls[-1].kwargs["order_type"] == "MARKET"
