@@ -427,6 +427,9 @@ class EtradeAPIClient(ExecutionClient):
         mid = (bid + ask) / 2
         return {"bid": bid, "ask": ask, "mid": mid}
 
+    def get_option_latest_trade_by_occ(self, occ_symbol: str):
+        return None
+
     def get_option_quotes_by_occ_batch(self, occ_symbols: list) -> dict:
         """Return bid/ask/mid for multiple options. Falls back gracefully on errors."""
         result = {}

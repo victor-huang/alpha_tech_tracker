@@ -24,7 +24,7 @@ from .config import (
 from .models import WindowConfig
 from .op_momentum_selector import ROLLING_LOOKBACK_DAYS as _DEFAULT_LOOKBACK_DAYS
 from .contract_selector import ITMOptionContractSelector, TimePremiumContractSelector
-from .option_price_monitor import OptionPriceMonitor
+from .option_price_monitor import OptionPriceMonitor, TradeEngineStrikeSelector
 from .trade_engine import OpMomentumTradeEngine
 
 # re-export remaining config constants for backward compatibility
@@ -462,13 +462,14 @@ def _parse_windows(args) -> list:
     return windows
 
 
-def _build_option_price_monitor(args, client, tickers):
+def _build_option_price_monitor(args, client, tickers, contract_selector):
     if not args.collect_option_prices:
         return None
     return OptionPriceMonitor(
         client=client,
         tickers=tickers or TICKERS,
         interval_seconds=args.option_price_interval,
+        contract_selector=TradeEngineStrikeSelector(contract_selector),
     )
 
 
@@ -498,6 +499,7 @@ if __name__ == "__main__":
         )
         is_paper = not (args.live or args.mock_trade_execution)
         client = build_execution_client(is_paper=is_paper)
+        contract_selector = _build_contract_selector(args, client)
         engine = OpMomentumTradeEngine(
             alpaca_client=client,
             is_paper=is_paper,
@@ -512,8 +514,8 @@ if __name__ == "__main__":
             rank_weights=args.rank_weighted_sizing,
             windows=windows,
             trade_type=args.trade_type,
-            option_price_monitor=_build_option_price_monitor(args, client, args.tickers),
-            contract_selector=_build_contract_selector(args, client),
+            contract_selector=contract_selector,
+            option_price_monitor=_build_option_price_monitor(args, client, args.tickers, contract_selector),
             enable_reversal=args.reversal,
             reversal_max_bars=args.reversal_max_bars,
             enable_bearish_reentry=args.bearish_reentry,
@@ -584,6 +586,7 @@ if __name__ == "__main__":
     try:
         is_paper = not (args.live or args.mock_trade_execution)
         client = build_execution_client(is_paper=is_paper)
+        contract_selector = _build_contract_selector(args, client)
         engine = OpMomentumTradeEngine(
             alpaca_client=client,
             is_paper=is_paper,
@@ -598,8 +601,8 @@ if __name__ == "__main__":
             rank_weights=args.rank_weighted_sizing,
             windows=windows,
             trade_type=args.trade_type,
-            option_price_monitor=_build_option_price_monitor(args, client, args.tickers),
-            contract_selector=_build_contract_selector(args, client),
+            contract_selector=contract_selector,
+            option_price_monitor=_build_option_price_monitor(args, client, args.tickers, contract_selector),
             enable_reversal=args.reversal,
             reversal_max_bars=args.reversal_max_bars,
             enable_bearish_reentry=args.bearish_reentry,
