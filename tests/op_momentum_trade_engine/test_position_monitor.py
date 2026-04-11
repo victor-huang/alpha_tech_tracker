@@ -1000,6 +1000,76 @@ class TestReentryWatcher:
 
         assert pos.is_closed is True
 
+    def test_trailing_arm_price_latches_for_bullish_reentry_after_price_retreats(self):
+        """
+        Regression: once trailing_arm_price is reached, the MA trailing stop must
+        remain armed even when price subsequently falls back below the threshold.
+
+        Bug: _trailing_armed() was re-evaluated from the current bar's close each
+        call, so a retreat below trailing_arm_price silently disarmed the stop.
+        Fix: trailing_arm_reached flag latches to True on first crossing.
+
+        Sequence:
+          Bar 1: close=116 >= arm_threshold=115 → latch fires, but close >= MA20=117 → no exit
+          Bar 2: close=113 < arm_threshold=115 (would have disarmed before fix)
+                 but latch is set → close=113 < MA20=114 → trailing_stop_ma20 exits
+        """
+        monitor, _, engine = self._make_monitor()
+        pos = self._make_bullish_pos()
+        pos.hard_stop_price = _D("98")
+        pos.fallback_price = _D("98")
+        pos.hard_stop_armed = True
+        pos.trailing_arm_price = _D("115")
+        monitor.add_position(pos)
+
+        # Bar 1: arm threshold reached (116 >= 115), close=116 > MA20=115 → no exit yet
+        _set_latest_bar(engine, "NVDA", close=116.0, ma50=100.0, ma20=115.0)
+        monitor.on_bar("NVDA")
+        assert pos.is_closed is False
+        assert pos.trailing_arm_reached is True
+
+        # Bar 2: price retreats below arm threshold (113 < 115) — latch must hold
+        # close=113 < MA20=114 → trailing_stop_ma20 should fire
+        _set_latest_bar(engine, "NVDA", close=113.0, ma50=100.0, ma20=114.0)
+        monitor.on_bar("NVDA")
+
+        assert pos.is_closed is True
+        assert pos.exit_reason == "trailing_stop_ma20"
+
+    def test_trailing_arm_price_latches_for_bearish_reentry_after_price_retreats(self):
+        """
+        Bearish mirror of the latch regression: once price falls to the bearish arm
+        threshold, the MA trailing stop stays armed even if price bounces back above it.
+
+        Sequence:
+          Bar 1: close=84 <= arm_threshold=85 → latch fires; MA20=96 > or_low=95
+                 so trailing gate fails → no exit yet
+          Bar 2: close=88 > arm_threshold=85 (would disarm before fix)
+                 but latch holds → MA20=86 < or_low=95, close=88 > MA20 → exit
+        """
+        monitor, _, engine = self._make_monitor()
+        pos = self._make_bearish_pos()
+        pos.hard_stop_price = _D("102")
+        pos.fallback_price = _D("102")
+        pos.hard_stop_armed = True
+        # Bearish arm: price must fall to entry - or_range = 95 - 10 = 85
+        pos.trailing_arm_price = _D("85")
+        monitor.add_position(pos)
+
+        # Bar 1: arm threshold reached, but MA20=96 > or_low=95 → gate fails → no exit
+        _set_latest_bar(engine, "NVDA", close=84.0, ma50=110.0, ma20=96.0)
+        monitor.on_bar("NVDA")
+        assert pos.is_closed is False
+        assert pos.trailing_arm_reached is True
+
+        # Bar 2: price bounces above arm threshold — latch must hold
+        # MA20=86 < or_low=95 → gate passes; close=88 > MA20=86 → trailing_stop_ma20
+        _set_latest_bar(engine, "NVDA", close=88.0, ma50=110.0, ma20=86.0)
+        monitor.on_bar("NVDA")
+
+        assert pos.is_closed is True
+        assert pos.exit_reason == "trailing_stop_ma20"
+
 
 class TestPrintSummaryRefreshFills:
     """Issue 1: print_summary() must refresh fill prices before rendering in live mode."""

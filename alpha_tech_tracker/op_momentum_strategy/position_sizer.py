@@ -5,7 +5,7 @@ from typing import Optional
 from alpha_tech_tracker.trade_api.execution_client import ExecutionClient
 
 from .config import ACCOUNT_BUDGET, MAX_CAPITAL_PERCENTAGE_PER_SYMBOL_IN_WINDOW
-from .models import _D, _stock_bid_ask
+from .models import _D
 
 logger = logging.getLogger(__name__)
 
@@ -75,11 +75,7 @@ class PositionSizer:
             buying_power = _D(account.get("buying_power", ACCOUNT_BUDGET))
             budget = buying_power * MAX_CAPITAL_PERCENTAGE_PER_SYMBOL_IN_WINDOW * capital_weight
 
-        raw_quote = self._client.get_stock_quote(ticker)
-        bid_f, ask_f = _stock_bid_ask(raw_quote)
-        bid = _D(str(bid_f)) if bid_f else _D(str(stock_price))
-        ask = _D(str(ask_f)) if ask_f else _D(str(stock_price))
-        mid = (bid + ask) / _D("2")
+        mid = _D(str(stock_price))
         limit_price = mid.quantize(_D("0.01"), rounding=ROUND_HALF_UP)
 
         if mid <= _D("0"):

@@ -159,12 +159,18 @@ class PositionMonitor:
         the MA trailing stop is always eligible once armed via hard_stop_armed.
         Re-entry positions gate the trailing stop behind a price threshold
         (entry ± or_range) to match the backtest arming condition.
+
+        Once armed, the flag latches — matching the backtest's persistent
+        bru_trailing_armed boolean that stays True once set.
         """
         if pos.trailing_arm_price is None:
             return True
-        if pos.signal == "BULLISH":
-            return close >= pos.trailing_arm_price
-        return close <= pos.trailing_arm_price
+        if not pos.trailing_arm_reached:
+            if pos.signal == "BULLISH":
+                pos.trailing_arm_reached = close >= pos.trailing_arm_price
+            else:
+                pos.trailing_arm_reached = close <= pos.trailing_arm_price
+        return pos.trailing_arm_reached
 
     def _evaluate_stop(
         self,
