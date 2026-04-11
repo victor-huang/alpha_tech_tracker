@@ -11,6 +11,7 @@ from alpaca.trading.requests import (
     GetOptionContractsRequest,
 )
 from alpaca.trading.enums import OrderSide, TimeInForce
+from alpaca.data.enums import DataFeed
 from alpaca.data.requests import StockLatestQuoteRequest, OptionLatestQuoteRequest
 
 from alpha_tech_tracker.trade_api.execution_client import ExecutionClient
@@ -101,7 +102,7 @@ class AlpacaAPIClient(ExecutionClient):
         if isinstance(symbols, str):
             symbols = [symbols]
 
-        request_params = StockLatestQuoteRequest(symbol_or_symbols=symbols)
+        request_params = StockLatestQuoteRequest(symbol_or_symbols=symbols, feed=DataFeed.SIP)
         quotes = self._stock_data_client.get_stock_latest_quote(request_params)
 
         formatted_quotes = {}

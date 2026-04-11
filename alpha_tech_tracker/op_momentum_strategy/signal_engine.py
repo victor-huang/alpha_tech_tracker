@@ -134,7 +134,7 @@ class LiveSignalEngine:
             timeframe=TimeFrame(amount=5, unit=TimeFrameUnit.Minute),
             start=start_dt,
             end=end_dt,
-            feed=DataFeed.IEX,
+            feed=DataFeed.SIP,
         )
         bars = hist_client.get_stock_bars(request)
         all_df = bars.df
@@ -474,7 +474,7 @@ class LiveSignalEngine:
             timeframe=TimeFrame(amount=5, unit=TimeFrameUnit.Minute),
             start=or_start,
             end=or_end,
-            feed=DataFeed.IEX,
+            feed=DataFeed.SIP,
         )
         try:
             bars = hist_client.get_stock_bars(request)
@@ -721,6 +721,7 @@ class LiveSignalEngine:
         self._stream = StockDataStream(
             self._api_key,
             self._secret_key,
+            feed=DataFeed.SIP,
             websocket_params={"ping_interval": 20, "ping_timeout": 40},
         )
         self._stream.subscribe_bars(self._handle_bar, *self._tickers)
