@@ -881,7 +881,8 @@ class TestReentryWatcher:
         assert w.reentry_type == "reversal"
         assert trigger == _D("106.0")
 
-    def test_reversal_suppresses_bearish_reentry_for_same_position(self):
+    def test_reversal_and_bearish_reentry_both_created_when_both_eligible(self):
+        """Both watcher types are created simultaneously; first trigger wins."""
         monitor, _, engine = self._make_monitor(
             enable_reversal=True, reversal_max_bars=3,
             enable_bearish_reentry=True, bearish_reentry_max_bars=3,
@@ -893,8 +894,63 @@ class TestReentryWatcher:
         _set_latest_bar(engine, "NVDA", close=96.5, ma50=110.0)
         monitor.on_bar("NVDA")
 
-        assert len(monitor._reentry_watchers) == 1
-        assert monitor._reentry_watchers[0].reentry_type == "reversal"
+        types = {w.reentry_type for w in monitor._reentry_watchers}
+        assert types == {"reversal", "bearish_reentry"}
+
+    def test_reversal_wins_when_both_watchers_trigger_on_same_bar(self):
+        """When reversal and BRE both fire on the same bar, only reversal is returned."""
+        fired = []
+        monitor, _, engine = self._make_monitor(
+            enable_reversal=True, reversal_max_bars=3,
+            enable_bearish_reentry=True, bearish_reentry_max_bars=3,
+            re_entry_callback=lambda w, close: fired.append(w),
+        )
+        pos = self._make_bearish_pos(bars_held=2)
+        pos.hard_stop_armed = True
+        monitor.add_position(pos)
+
+        # Trigger the hard stop to create both watchers.
+        _set_latest_bar(engine, "NVDA", close=96.5, ma50=110.0)
+        monitor.on_bar("NVDA")
+        assert {w.reentry_type for w in monitor._reentry_watchers} == {"reversal", "bearish_reentry"}
+
+        # Bar where BOTH triggers fire simultaneously: close < or_low=95 AND close > or_high=105
+        # is impossible, so simulate by using a price that crosses or_high (reversal trigger)
+        # while we manually also patch or_low to be above close (BRE trigger).
+        for w in monitor._reentry_watchers:
+            if w.reentry_type == "bearish_reentry":
+                w.or_low = _D("120")  # force BRE to also see close=110 < or_low=120
+
+        _set_latest_bar(engine, "NVDA", close=110.0, ma50=110.0)
+        monitor.on_bar("NVDA")
+
+        assert len(fired) == 1
+        assert fired[0].reentry_type == "reversal"
+        assert len(monitor._reentry_watchers) == 0
+
+    def test_bre_fires_when_reversal_watcher_present_but_reversal_never_triggers(self):
+        """BRE fires on a later bar when the reversal trigger never appeared first."""
+        fired = []
+        monitor, _, engine = self._make_monitor(
+            enable_reversal=True, reversal_max_bars=3,
+            enable_bearish_reentry=True, bearish_reentry_max_bars=3,
+            re_entry_callback=lambda w, close: fired.append(w),
+        )
+        pos = self._make_bearish_pos(bars_held=2)
+        pos.hard_stop_armed = True
+        monitor.add_position(pos)
+
+        # Hard stop fires, creating both watchers.
+        _set_latest_bar(engine, "NVDA", close=96.5, ma50=110.0)
+        monitor.on_bar("NVDA")
+
+        # Price falls below or_low=95 → BRE fires; reversal (needs close > or_high=105) did not.
+        _set_latest_bar(engine, "NVDA", close=94.0, ma50=110.0)
+        monitor.on_bar("NVDA")
+
+        assert len(fired) == 1
+        assert fired[0].reentry_type == "bearish_reentry"
+        assert len(monitor._reentry_watchers) == 0
 
     def test_bearish_reentry_watcher_created_when_reversal_disabled(self):
         monitor, _, engine = self._make_monitor(

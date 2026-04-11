@@ -279,14 +279,13 @@ class PositionMonitor:
 
         midpoint = (_D(str(pos.or_high)) + _D(str(pos.or_low))) / _D("2")
 
-        # Reversal takes priority over bearish re-entry when both are eligible for
-        # the same position.  The backtest scans for a reversal first (exhaustively)
-        # and only falls through to BRE if no reversal trigger is ever found.  In
-        # the live engine we cannot know at watcher-creation time whether a reversal
-        # trigger will appear before a BRE trigger, so we follow the same priority
-        # rule: create a reversal watcher and skip BRE when the position is
-        # reversal-eligible.  BRE is created only when reversal is not eligible
-        # (bars_held > reversal_max_bars, or reversal not enabled).
+        # Reversal and BRE are created simultaneously when both are eligible.
+        # Both watchers compete on subsequent bars; whichever trigger fires first wins.
+        # _collect_fired_watchers enforces reversal priority if both fire on the same bar,
+        # and removes all sibling watchers for the ticker once one fires.
+        # This matches the backtest's behaviour: it scans for the reversal trigger
+        # exhaustively and falls through to BRE only if the reversal never fires —
+        # equivalent to "first chronological trigger wins, reversal breaks ties."
         if (
             self._enable_reversal
             and pos.signal == "BEARISH"
@@ -310,7 +309,6 @@ class PositionMonitor:
             logger.info(
                 "Reversal watcher created for %s (bars_held=%d)", pos.ticker, pos.bars_held
             )
-            return  # reversal and bearish re-entry are mutually exclusive
 
         if (
             self._enable_bearish_reentry
@@ -365,7 +363,12 @@ class PositionMonitor:
             )
 
     def _collect_fired_watchers(self, ticker: str, close, bar_time) -> list:
-        """Collect and remove watchers that trigger on this bar. Called under self._lock."""
+        """Collect and remove watchers that trigger on this bar. Called under self._lock.
+
+        When reversal and BRE both fire on the same bar, only the reversal is returned
+        (matching backtest priority). Once any watcher fires, all remaining watchers for
+        the same ticker are also removed to prevent a sibling from firing on a later bar.
+        """
         if not self._reentry_watchers:
             return []
 
@@ -382,8 +385,17 @@ class PositionMonitor:
             if triggered:
                 fired.append(w)
 
-        for w in fired:
-            self._reentry_watchers.remove(w)
+        if not fired:
+            return fired
+
+        # Reversal takes priority when it fires on the same bar as BRE.
+        reversal_fired = [w for w in fired if w.reentry_type == "reversal"]
+        if reversal_fired and len(fired) > 1:
+            fired = reversal_fired
+
+        # Remove all watchers for this ticker — fired ones and any siblings that
+        # did not fire yet (prevents double-entry on a later bar).
+        self._reentry_watchers = [w for w in self._reentry_watchers if w.ticker != ticker]
 
         return fired
 
