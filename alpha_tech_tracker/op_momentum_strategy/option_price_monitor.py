@@ -289,7 +289,7 @@ class OptionPriceMonitor:
 
         mid = (bid + ask) / _D("2")
         if mid <= _D("0"):
-            return mid
+            return _D("0")
 
         parsed = _parse_occ_symbol(option_symbol)
         if not parsed:
@@ -311,8 +311,10 @@ class OptionPriceMonitor:
             if median_tv is None:
                 # No cache yet: conservative estimate using 20% of spread
                 median_tv = (ask - bid) * _D("0.20")
+                reason = "no_cache"
+            else:
+                reason = "stale_bid" if bid < intrinsic else "wide_spread"
             fair = intrinsic + median_tv
-            reason = "stale_bid" if bid < intrinsic else "wide_spread"
 
         # Hard floor: never price a sell below intrinsic value.
         # Clamping to max(bid, ...) is intentionally avoided here — if the market
@@ -356,7 +358,7 @@ class OptionPriceMonitor:
         snapshots = self._cache.get(option_symbol)
         if not snapshots:
             return None
-        values = sorted(_D(str(s["mid_time_value"])) for s in snapshots)
+        values = sorted(max(_D("0"), _D(str(s["mid_time_value"]))) for s in snapshots)
         n = len(values)
         if n % 2 == 1:
             return values[n // 2]
