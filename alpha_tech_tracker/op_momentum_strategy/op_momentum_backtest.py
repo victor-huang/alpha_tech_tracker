@@ -151,7 +151,7 @@ def fetch_alpaca_bars(
         timeframe=TimeFrame(amount=5, unit=TimeFrameUnit.Minute),
         start=fetch_start,
         end=fetch_end,
-        feed=DataFeed.IEX,
+        feed=DataFeed.SIP,
     )
     bars = client.get_stock_bars(request)
 
@@ -1438,7 +1438,7 @@ def fetch_daily_bars(
             timeframe=TimeFrame(amount=1, unit=TimeFrameUnit.Day),
             start=datetime.combine(start_date, datetime.min.time()),
             end=datetime.combine(end_date + timedelta(days=1), datetime.min.time()),
-            feed=DataFeed.IEX,
+            feed=DataFeed.SIP,
         )
         bars = client.get_stock_bars(request)
         for ticker in to_fetch:
