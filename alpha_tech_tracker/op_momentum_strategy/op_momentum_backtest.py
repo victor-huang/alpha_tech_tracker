@@ -1499,7 +1499,13 @@ def build_bearish_regime_dates(
     start_date: date, end_date: date, source: str = "alpaca", regime_ma: int = 5,
     feed: DataFeed = None,
 ) -> set:
-    """Return the set of dates where QQQ daily close is below its regime_ma-day MA."""
+    """Return the set of dates on which BULLISH signals should be suppressed.
+
+    A date D is included when QQQ's settled close on the *prior* business day
+    was below its regime_ma-day MA.  Using the prior day's close means the set
+    contains only information that is available at signal time (~9:45 AM ET),
+    eliminating the 1-day lookahead that arises from using today's close.
+    """
     fetch_start = start_date - timedelta(days=regime_ma * 3 + 10)
     qqq_df = fetch_daily_bars(["QQQ"], fetch_start, end_date, source=source, feed=feed).get(
         "QQQ", pd.DataFrame()
@@ -1509,7 +1515,8 @@ def build_bearish_regime_dates(
     qqq_df = qqq_df.copy()
     qqq_df["regime_ma"] = qqq_df["Close"].rolling(regime_ma).mean()
     bearish = qqq_df[qqq_df["Close"] < qqq_df["regime_ma"]]
-    return set(bearish.index)
+    next_bday = pd.tseries.offsets.BDay(1)
+    return {(pd.Timestamp(d) + next_bday).date() for d in bearish.index}
 
 
 def run_backtest(
