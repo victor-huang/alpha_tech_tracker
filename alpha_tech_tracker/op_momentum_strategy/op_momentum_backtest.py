@@ -22,11 +22,22 @@ _CACHE_DIR = Path(__file__).parent.parent.parent / "market_data" / "cache"
 # Extra calendar days before start_date retained for MA warmup (MA200 needs ~3 trading days).
 _CACHE_WARMUP_DAYS = 7
 
+# Alpaca data feed used for all bar fetches. Changing this automatically updates cache keys
+# so IEX and SIP data live in separate cache files (e.g. alpaca_iex_5min_... vs alpaca_sip_5min_...).
+_ALPACA_FEED = DataFeed.SIP
+
 
 def _trim_bars_to_range(df: pd.DataFrame, start_date: date, end_date: date) -> pd.DataFrame:
     """Trim a 5-min bar DataFrame to [start_date - warmup, end_date] to prevent cache bloat."""
     warmup_start = start_date - timedelta(days=_CACHE_WARMUP_DAYS)
     return df[(df.index.date >= warmup_start) & (df.index.date <= end_date)]
+
+
+def _cache_source(source: str) -> str:
+    """Return the cache-key source string, encoding the Alpaca feed name for alpaca sources."""
+    if source == "alpaca":
+        return f"alpaca_{_ALPACA_FEED.value}"
+    return source
 
 
 def _cache_path(
@@ -151,7 +162,7 @@ def fetch_alpaca_bars(
         timeframe=TimeFrame(amount=5, unit=TimeFrameUnit.Minute),
         start=fetch_start,
         end=fetch_end,
-        feed=DataFeed.SIP,
+        feed=_ALPACA_FEED,
     )
     bars = client.get_stock_bars(request)
 
@@ -1288,12 +1299,13 @@ def fetch_bars(
     end_date_only = _to_date(end_date)
     cacheable = _is_cacheable(end_date_only)
 
+    csource = _cache_source(source)
     result = {}
     to_fetch = []
     to_fetch_delta = []  # (ticker, partial_df, partial_end)
     for ticker in tickers:
         if cacheable:
-            cp = _cache_path(ticker, start_date, end_date_only, source, "5min")
+            cp = _cache_path(ticker, start_date, end_date_only, csource, "5min")
             if cp.exists():
                 loaded = _load_cache(cp, "5min")
                 if loaded.empty:
@@ -1312,19 +1324,19 @@ def fetch_bars(
                         cp.unlink()  # cached data doesn't cover range, re-fetch below
                     except FileNotFoundError:
                         pass
-            stitched = _stitch_cache(ticker, start_date, end_date_only, source)
+            stitched = _stitch_cache(ticker, start_date, end_date_only, csource)
             if stitched is not None:
                 stitched = _trim_bars_to_range(stitched, start_date, end_date_only)
                 if not stitched.empty:
                     result[ticker] = stitched
                     _save_cache(stitched, cp, "5min")
                     _evict_contained_cache_pieces(
-                        ticker, start_date, end_date_only, source, "5min"
+                        ticker, start_date, end_date_only, csource, "5min"
                     )
                     continue
                 # Stitch returned data that doesn't cover requested range — fall through to API
             partial_df, partial_end = _partial_stitch_cache(
-                ticker, start_date, end_date_only, source
+                ticker, start_date, end_date_only, csource
             )
             if partial_df is not None:
                 partial_df = _trim_bars_to_range(partial_df, start_date, partial_end)
@@ -1361,11 +1373,11 @@ def fetch_bars(
             if not merged.empty:
                 _save_cache(
                     merged,
-                    _cache_path(ticker, start_date, end_date_only, source, "5min"),
+                    _cache_path(ticker, start_date, end_date_only, csource, "5min"),
                     "5min",
                 )
                 _evict_contained_cache_pieces(
-                    ticker, start_date, end_date_only, source, "5min"
+                    ticker, start_date, end_date_only, csource, "5min"
                 )
 
     if to_fetch:
@@ -1384,7 +1396,7 @@ def fetch_bars(
             if cacheable and not df.empty:
                 _save_cache(
                     df,
-                    _cache_path(ticker, start_date, end_date_only, source, "5min"),
+                    _cache_path(ticker, start_date, end_date_only, csource, "5min"),
                     "5min",
                 )
 
@@ -1401,11 +1413,12 @@ def fetch_daily_bars(
     """Fetch 1-day bars for the given tickers. Returns {ticker: DataFrame} with date index."""
     cacheable = _is_cacheable(end_date)
 
+    csource = _cache_source(source)
     result = {}
     to_fetch = []
     for ticker in tickers:
         if cacheable:
-            cp = _cache_path(ticker, start_date, end_date, source, "1day")
+            cp = _cache_path(ticker, start_date, end_date, csource, "1day")
             if cp.exists():
                 result[ticker] = _load_cache(cp, "1day")
                 continue
@@ -1438,7 +1451,7 @@ def fetch_daily_bars(
             timeframe=TimeFrame(amount=1, unit=TimeFrameUnit.Day),
             start=datetime.combine(start_date, datetime.min.time()),
             end=datetime.combine(end_date + timedelta(days=1), datetime.min.time()),
-            feed=DataFeed.SIP,
+            feed=_ALPACA_FEED,
         )
         bars = client.get_stock_bars(request)
         for ticker in to_fetch:
@@ -1454,7 +1467,7 @@ def fetch_daily_bars(
         result[ticker] = df
         if cacheable and not df.empty:
             _save_cache(
-                df, _cache_path(ticker, start_date, end_date, source, "1day"), "1day"
+                df, _cache_path(ticker, start_date, end_date, csource, "1day"), "1day"
             )
 
     return result
