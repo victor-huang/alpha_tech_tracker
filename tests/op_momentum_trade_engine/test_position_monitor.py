@@ -1126,6 +1126,94 @@ class TestReentryWatcher:
         assert pos.is_closed is True
         assert pos.exit_reason == "trailing_stop_ma20"
 
+    def test_watcher_from_different_exit_survives_sibling_trigger(self):
+        """
+        Watchers from different primary exits (different primary_exit_bar_time) on
+        the same ticker must not be removed when one sibling fires.
+
+        Scenario (mirrors Jan 5 live-engine behaviour):
+          - M1 BEARISH stops out at bar_time=T1 → creates reversal+BRE watchers (exit_time=T1)
+          - A1 BEARISH stops out at bar_time=T2 → creates reversal+BRE watchers (exit_time=T2)
+          - A1 reversal fires → only T2 siblings are removed; M1 BRE (exit_time=T1) survives
+          - M1 BRE fires on a later bar → callback invoked for M1 BRE
+        """
+        from datetime import datetime
+        fired = []
+        monitor, _, engine = self._make_monitor(
+            enable_reversal=True, reversal_max_bars=10,
+            enable_bearish_reentry=True, bearish_reentry_max_bars=10,
+            re_entry_callback=lambda w, close: fired.append(w),
+        )
+
+        t1 = datetime(2026, 1, 5, 9, 50)
+        t2 = datetime(2026, 1, 5, 13, 20)
+        t3 = datetime(2026, 1, 5, 13, 25)
+        t4 = datetime(2026, 1, 5, 14, 30)
+
+        from alpha_tech_tracker.op_momentum_strategy.models import ReentryWatcher
+        from decimal import Decimal as D
+
+        # Manually inject two pairs of watchers with different exit times.
+        # M1 has a higher OR high (110) so it does NOT fire at close=106.
+        # A1 has OR high=105 so its reversal fires at close=106.
+        # M1 BRE (or_low=95) must survive and fire later at close=94.
+        m1_reversal = ReentryWatcher(
+            ticker="NVDA", reentry_type="reversal", primary_signal="BEARISH",
+            or_high=D("110"), or_low=D("95"), or_range=D("15"), midpoint=D("102"),
+            window_label="M1", rank=1, window_budget=None, primary_exit_bar_time=t1,
+        )
+        m1_bre = ReentryWatcher(
+            ticker="NVDA", reentry_type="bearish_reentry", primary_signal="BEARISH",
+            or_high=D("110"), or_low=D("95"), or_range=D("15"), midpoint=D("102"),
+            window_label="M1", rank=1, window_budget=None, primary_exit_bar_time=t1,
+        )
+        a1_reversal = ReentryWatcher(
+            ticker="NVDA", reentry_type="reversal", primary_signal="BEARISH",
+            or_high=D("105"), or_low=D("95"), or_range=D("10"), midpoint=D("100"),
+            window_label="A1", rank=1, window_budget=None, primary_exit_bar_time=t2,
+        )
+        a1_bre = ReentryWatcher(
+            ticker="NVDA", reentry_type="bearish_reentry", primary_signal="BEARISH",
+            or_high=D("105"), or_low=D("95"), or_range=D("10"), midpoint=D("100"),
+            window_label="A1", rank=1, window_budget=None, primary_exit_bar_time=t2,
+        )
+        monitor._reentry_watchers = [m1_reversal, m1_bre, a1_reversal, a1_bre]
+
+        # Bar at t3: close=106 > or_high=105 → A1 reversal fires; M1 BRE should survive.
+        with patch(
+            "alpha_tech_tracker.op_momentum_strategy.position_monitor._now_et",
+            return_value=t3,
+        ):
+            _set_latest_bar(engine, "NVDA", close=106.0, ma50=110.0)
+            monitor.on_bar("NVDA")
+
+        import time
+        time.sleep(0.05)
+
+        assert len(fired) == 1
+        assert fired[0].reentry_type == "reversal"
+        assert fired[0].window_label == "A1"
+
+        # M1 BRE must still be in the watcher list.
+        remaining = {(w.window_label, w.reentry_type) for w in monitor._reentry_watchers}
+        assert ("M1", "bearish_reentry") in remaining
+        assert ("M1", "reversal") in remaining
+
+        # Bar at t4: close=94 < or_low=95 → M1 BRE fires.
+        with patch(
+            "alpha_tech_tracker.op_momentum_strategy.position_monitor._now_et",
+            return_value=t4,
+        ):
+            _set_latest_bar(engine, "NVDA", close=94.0, ma50=110.0)
+            monitor.on_bar("NVDA")
+
+        time.sleep(0.05)
+
+        assert len(fired) == 2
+        second_fired = [w for w in fired if w.reentry_type != "reversal" or w.window_label != "A1"]
+        assert any(w.reentry_type == "bearish_reentry" and w.window_label == "M1" for w in second_fired)
+        assert len(monitor._reentry_watchers) == 0
+
 
 class TestPrintSummaryRefreshFills:
     """Issue 1: print_summary() must refresh fill prices before rendering in live mode."""

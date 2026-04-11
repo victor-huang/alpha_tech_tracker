@@ -393,9 +393,15 @@ class PositionMonitor:
         if reversal_fired and len(fired) > 1:
             fired = reversal_fired
 
-        # Remove all watchers for this ticker — fired ones and any siblings that
-        # did not fire yet (prevents double-entry on a later bar).
-        self._reentry_watchers = [w for w in self._reentry_watchers if w.ticker != ticker]
+        # Remove watchers that share the same ticker AND primary_exit_bar_time as the
+        # fired watcher(s).  Only true siblings (same exit) are cleaned up — watchers
+        # from a different exit on the same ticker (e.g. an M1 BRE that outlives an A1
+        # reversal) are kept so they can fire later.
+        fired_exit_times = {w.primary_exit_bar_time for w in fired}
+        self._reentry_watchers = [
+            w for w in self._reentry_watchers
+            if not (w.ticker == ticker and w.primary_exit_bar_time in fired_exit_times)
+        ]
 
         return fired
 
