@@ -63,16 +63,18 @@ _DETAIL_FIELDS = [
     "date", "ticker", "option_type", "option_symbol", "timestamp",
     "stock_price", "bid", "ask", "mid", "intrinsic",
     "spread_pct", "cache_size", "median_tv",
-    "fair_price", "branch",
+    "fair_price", "bar_density", "branch",
     "improvement_vs_bid", "improvement_vs_mid",
-    "fill_found", "fill_price", "minutes_to_fill",
+    "sell_fill_found", "sell_fill_price", "sell_minutes_to_fill",
+    "buy_fill_found", "buy_fill_price", "buy_minutes_to_fill",
 ]
 
 _SUMMARY_FIELDS = [
-    "date", "ticker", "option_type", "occ_symbol", "branch",
-    "count", "fill_rate_pct",
+    "date", "ticker", "option_type", "occ_symbol", "bar_density", "branch",
+    "count",
+    "sell_fill_rate_pct", "avg_sell_minutes_to_fill",
+    "buy_fill_rate_pct", "avg_buy_minutes_to_fill",
     "avg_improvement_vs_bid", "avg_improvement_vs_mid",
-    "avg_minutes_to_fill",
 ]
 
 
@@ -294,10 +296,15 @@ def _compute_median_tv(cache):
 # Fill simulation
 # ---------------------------------------------------------------------------
 
-def _simulate_fill(fair_price, trades: list, from_ts: datetime, lookahead_min: int):
+def _simulate_fill(fair_price, trades: list, from_ts: datetime, lookahead_min: int, side: str = "sell"):
     """
     Scan trade ticks in (from_ts, from_ts + lookahead_min].
     Returns (fill_found, fill_price, minutes_to_fill).
+
+    side="sell": limit sell at fair_price — fills when trade_price >= fair_price
+                 (a buyer paid at least our ask)
+    side="buy":  limit buy at fair_price — fills when trade_price <= fair_price
+                 (a seller accepted at most our bid)
     """
     if not trades:
         return False, None, None
@@ -313,7 +320,9 @@ def _simulate_fill(fair_price, trades: list, from_ts: datetime, lookahead_min: i
         t_utc = t.timestamp.astimezone(UTC)
         if t_utc > end_ts:
             break
-        if _D(str(t.price)) >= fair_price:
+        trade_price = _D(str(t.price))
+        filled = trade_price >= fair_price if side == "sell" else trade_price <= fair_price
+        if filled:
             elapsed = (t_utc - start_ts).total_seconds() / 60
             return True, float(t.price), round(elapsed, 1)
 
@@ -379,12 +388,14 @@ def _run_contract(
             spread_pct = snap["spread_pct"]
 
             branch = _derive_branch(spread_pct, bid, intrinsic, list(cache))
-            if is_sparse:
-                branch = f"illiquid_{branch}"
+            bar_density = "sparse" if is_sparse else "normal"
             median_tv = _compute_median_tv(list(cache))
 
-            fill_found, fill_price, min_to_fill = _simulate_fill(
-                fair_price, trades, ts, _FILL_LOOKAHEAD_MIN
+            sell_found, sell_price, sell_min = _simulate_fill(
+                fair_price, trades, ts, _FILL_LOOKAHEAD_MIN, side="sell"
+            )
+            buy_found, buy_price, buy_min = _simulate_fill(
+                fair_price, trades, ts, _FILL_LOOKAHEAD_MIN, side="buy"
             )
 
             detail_rows.append({
@@ -402,22 +413,28 @@ def _run_contract(
                 "cache_size": len(cache),
                 "median_tv": float(median_tv.quantize(_D("0.01"), rounding=ROUND_HALF_UP)) if median_tv is not None else None,
                 "fair_price": float(fair_price),
+                "bar_density": bar_density,
                 "branch": branch,
                 "improvement_vs_bid": round(float(fair_price - bid), 2),
                 "improvement_vs_mid": round(float(fair_price - mid), 2),
-                "fill_found": fill_found,
-                "fill_price": fill_price,
-                "minutes_to_fill": min_to_fill,
+                "sell_fill_found": sell_found,
+                "sell_fill_price": sell_price,
+                "sell_minutes_to_fill": sell_min,
+                "buy_fill_found": buy_found,
+                "buy_fill_price": buy_price,
+                "buy_minutes_to_fill": buy_min,
             })
 
         ts += timedelta(minutes=_SNAPSHOT_INTERVAL_MIN)
 
+    n = len(detail_rows)
+    sell_fills = sum(1 for r in detail_rows if r["sell_fill_found"])
+    buy_fills = sum(1 for r in detail_rows if r["buy_fill_found"])
     logger.info(
-        "%s %s %s: %d fair_price calls, %d fills (%.0f%%)",
-        trade_date, ticker, option_type,
-        len(detail_rows),
-        sum(1 for r in detail_rows if r["fill_found"]),
-        100 * sum(1 for r in detail_rows if r["fill_found"]) / len(detail_rows) if detail_rows else 0,
+        "%s %s %s: %d fair_price calls, sell fills %d (%.0f%%), buy fills %d (%.0f%%)",
+        trade_date, ticker, option_type, n,
+        sell_fills, 100 * sell_fills / n if n else 0,
+        buy_fills, 100 * buy_fills / n if n else 0,
     )
     return detail_rows
 
@@ -435,48 +452,59 @@ class _NullContractSelector:
 def _compute_summary(detail_rows, trade_date, attempted_contracts):
     groups = defaultdict(list)
     for row in detail_rows:
-        key = (row["ticker"], row["option_type"], row["branch"])
+        key = (row["ticker"], row["option_type"], row["bar_density"], row["branch"])
         groups[key].append(row)
 
     summary_rows = []
-    for (ticker, option_type, branch), rows in sorted(groups.items()):
-        fills = [r for r in rows if r["fill_found"]]
-        avg_min_to_fill = (
-            round(sum(r["minutes_to_fill"] for r in fills) / len(fills), 1)
-            if fills else None
+    for (ticker, option_type, bar_density, branch), rows in sorted(groups.items()):
+        sell_fills = [r for r in rows if r["sell_fill_found"]]
+        buy_fills = [r for r in rows if r["buy_fill_found"]]
+        avg_sell_min = (
+            round(sum(r["sell_minutes_to_fill"] for r in sell_fills) / len(sell_fills), 1)
+            if sell_fills else None
+        )
+        avg_buy_min = (
+            round(sum(r["buy_minutes_to_fill"] for r in buy_fills) / len(buy_fills), 1)
+            if buy_fills else None
         )
         summary_rows.append({
             "date": trade_date.isoformat(),
             "ticker": ticker,
             "option_type": option_type,
             "occ_symbol": rows[0]["option_symbol"],
+            "bar_density": bar_density,
             "branch": branch,
             "count": len(rows),
-            "fill_rate_pct": round(100 * len(fills) / len(rows), 1),
+            "sell_fill_rate_pct": round(100 * len(sell_fills) / len(rows), 1),
+            "avg_sell_minutes_to_fill": avg_sell_min,
+            "buy_fill_rate_pct": round(100 * len(buy_fills) / len(rows), 1),
+            "avg_buy_minutes_to_fill": avg_buy_min,
             "avg_improvement_vs_bid": round(sum(r["improvement_vs_bid"] for r in rows) / len(rows), 3),
             "avg_improvement_vs_mid": round(sum(r["improvement_vs_mid"] for r in rows) / len(rows), 3),
-            "avg_minutes_to_fill": avg_min_to_fill,
         })
 
     # Add zero rows for contracts that were attempted but produced no detail rows
     seen = {(r["ticker"], r["option_type"]) for r in detail_rows}
     for ticker, option_type, occ_symbol, bar_count in sorted(attempted_contracts):
         if (ticker, option_type) not in seen:
-            branch = "no_bars" if bar_count == 0 else f"sparse_bars ({bar_count})"
+            bar_density = "no_bars" if bar_count == 0 else f"sparse ({bar_count} bars)"
             summary_rows.append({
                 "date": trade_date.isoformat(),
                 "ticker": ticker,
                 "option_type": option_type,
                 "occ_symbol": occ_symbol,
-                "branch": branch,
+                "bar_density": bar_density,
+                "branch": "—",
                 "count": 0,
-                "fill_rate_pct": None,
+                "sell_fill_rate_pct": None,
+                "avg_sell_minutes_to_fill": None,
+                "buy_fill_rate_pct": None,
+                "avg_buy_minutes_to_fill": None,
                 "avg_improvement_vs_bid": None,
                 "avg_improvement_vs_mid": None,
-                "avg_minutes_to_fill": None,
             })
 
-    return sorted(summary_rows, key=lambda r: (r["ticker"], r["option_type"], r["branch"]))
+    return sorted(summary_rows, key=lambda r: (r["ticker"], r["option_type"], r["bar_density"], r["branch"]))
 
 
 # ---------------------------------------------------------------------------
@@ -586,18 +614,26 @@ def _write_outputs(detail_rows, summary_rows, trade_date, output_dir):
 
     # Print summary to stdout
     print(f"\n=== Fair Price Backtest — {date_str} ===\n")
-    print(f"{'Ticker':<8} {'Type':<6} {'OCC Symbol':<26} {'Branch':<22} {'N':>4} {'Fill%':>6} {'vs_bid':>7} {'vs_mid':>7} {'min_fill':>9}")
-    print("-" * 100)
+    print(
+        f"{'Ticker':<8} {'Type':<6} {'OCC Symbol':<26} {'Bars':<8} {'Branch':<12} {'N':>4}"
+        f" {'Sell%':>6} {'sell_min':>8} {'Buy%':>6} {'buy_min':>7}"
+        f" {'vs_bid':>7} {'vs_mid':>7}"
+    )
+    print("-" * 110)
     for r in summary_rows:
         if r["count"] == 0:
-            print(f"{r['ticker']:<8} {r['option_type']:<6} {r['occ_symbol']:<26} {r['branch']:<22} {'0':>4} {'—':>6} {'—':>7} {'—':>7} {'—':>9}")
+            print(
+                f"{r['ticker']:<8} {r['option_type']:<6} {r['occ_symbol']:<26} {r['bar_density']:<8} {'—':<12} {'0':>4}"
+                f" {'—':>6} {'—':>8} {'—':>6} {'—':>7}"
+                f" {'—':>7} {'—':>7}"
+            )
             continue
-        min_fill = f"{r['avg_minutes_to_fill']:.1f}" if r["avg_minutes_to_fill"] is not None else "—"
+        s_min = f"{r['avg_sell_minutes_to_fill']:.1f}" if r["avg_sell_minutes_to_fill"] is not None else "—"
+        b_min = f"{r['avg_buy_minutes_to_fill']:.1f}" if r["avg_buy_minutes_to_fill"] is not None else "—"
         print(
-            f"{r['ticker']:<8} {r['option_type']:<6} {r['occ_symbol']:<26} {r['branch']:<22} "
-            f"{r['count']:>4} {r['fill_rate_pct']:>6.1f} "
-            f"{r['avg_improvement_vs_bid']:>+7.3f} {r['avg_improvement_vs_mid']:>+7.3f} "
-            f"{min_fill:>9}"
+            f"{r['ticker']:<8} {r['option_type']:<6} {r['occ_symbol']:<26} {r['bar_density']:<8} {r['branch']:<12} {r['count']:>4}"
+            f" {r['sell_fill_rate_pct']:>6.1f} {s_min:>8} {r['buy_fill_rate_pct']:>6.1f} {b_min:>7}"
+            f" {r['avg_improvement_vs_bid']:>+7.3f} {r['avg_improvement_vs_mid']:>+7.3f}"
         )
 
 
