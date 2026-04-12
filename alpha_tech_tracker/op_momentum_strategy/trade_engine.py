@@ -23,6 +23,7 @@ from .config import (
     ACCOUNT_BUDGET,
     ARMED_MA20_EXIT,
     BEARISH_MA200,
+    DAILY_MAX_LOSS_USD,
     EOD_EXIT_TIME,
     MAX_ACTIVE_SYMBOLS,
     MAX_LOSS_PCT,
@@ -231,6 +232,7 @@ class OpMomentumTradeEngine:
         opening_start_time: str = OPENING_START_TIME,
         trailing_ma: str = TRAILING_MA,
         max_loss_pct: Optional[float] = MAX_LOSS_PCT,
+        daily_max_loss_usd: Optional[float] = DAILY_MAX_LOSS_USD,
         armed_ma20_exit: bool = ARMED_MA20_EXIT,
         regime_filter: bool = REGIME_FILTER,
         regime_ma: int = REGIME_MA,
@@ -257,6 +259,9 @@ class OpMomentumTradeEngine:
         self._mock_trade_execution = mock_trade_execution
         self._trailing_ma = trailing_ma
         self._max_loss_pct = max_loss_pct
+        self._daily_max_loss_usd = _D(str(daily_max_loss_usd)) if daily_max_loss_usd is not None else None
+        self._daily_realized_pnl = _D("0")
+        self._pnl_lock = threading.Lock()
         self._armed_ma20_exit = armed_ma20_exit
         self._regime_filter = regime_filter
         self._regime_ma = regime_ma
@@ -738,6 +743,15 @@ class OpMomentumTradeEngine:
             with self._returned_lock:
                 self._window_returned.setdefault(pos.window_label, _D("0"))
                 self._window_returned[pos.window_label] += returned
+            with self._pnl_lock:
+                self._daily_realized_pnl += cap_pnl
+
+    def _is_circuit_breaker_tripped(self) -> bool:
+        """Return True when daily realized losses exceed the configured threshold."""
+        if self._daily_max_loss_usd is None:
+            return False
+        with self._pnl_lock:
+            return self._daily_realized_pnl <= -self._daily_max_loss_usd
 
     def _on_position_closed(self, pos: ActivePosition):
         """Accumulate capital returned by a closed position into _window_returned.
@@ -966,6 +980,13 @@ class OpMomentumTradeEngine:
                     event.signal,
                 )
                 return
+            if self._is_circuit_breaker_tripped():
+                logger.warning(
+                    "Daily max-loss circuit breaker tripped [%s], skipping %s",
+                    window_label,
+                    event.ticker,
+                )
+                return
             if state["open_position_count"] >= self._top_n:
                 logger.info(
                     "Max positions reached [%s] (%d), skipping %s",
@@ -1047,6 +1068,11 @@ class OpMomentumTradeEngine:
         if window_budget is not None:
             self._window_state[label]["budget"] = window_budget
         for rank, (score, ticker, event) in enumerate(scored):
+            if self._is_circuit_breaker_tripped():
+                logger.warning(
+                    "Daily max-loss circuit breaker tripped, stopping drain [%s]", label
+                )
+                break
             with self._signal_lock:
                 if state["open_position_count"] >= self._top_n:
                     logger.info("Max positions reached [%s], stopping selection", label)
@@ -1252,6 +1278,7 @@ class OpMomentumTradeEngine:
         self._window_returned = {}
         self._window_primary_deployed = {}
         self._rolling_stats_by_window = {}
+        self._daily_realized_pnl = _D("0")
         pre_market_picks = self._run_window_selectors(all_tickers)
         self._rolling_stats = self._rolling_stats_by_window.get(first_window.label, {})
         print(f"\nPre-market top picks: {pre_market_picks}")
@@ -1401,6 +1428,7 @@ class OpMomentumTradeEngine:
         self._window_returned = {}
         self._window_primary_deployed = {}
         self._rolling_stats_by_window = {}
+        self._daily_realized_pnl = _D("0")
         pre_market_picks = self._run_window_selectors(all_tickers)
         self._rolling_stats = self._rolling_stats_by_window.get(first_window.label, {})
         print(f"\nReplay {replay_date} — pre-market picks: {pre_market_picks}")

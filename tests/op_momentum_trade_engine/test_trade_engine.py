@@ -1928,4 +1928,93 @@ class TestRecoverSession:
             if p.trailing_arm_price is None:
                 engine._window_primary_deployed.setdefault(p.window_label, set()).add(p.ticker)
 
+
+# ---------------------------------------------------------------------------
+# TestCircuitBreaker — daily max-loss circuit breaker
+# ---------------------------------------------------------------------------
+
+
+class TestCircuitBreaker:
+    def _make_engine(self, daily_max_loss_usd=None):
+        client = _make_alpaca_client()
+        engine = OpMomentumTradeEngine(
+            alpaca_client=client,
+            mock_trade_execution=True,
+            daily_max_loss_usd=daily_max_loss_usd,
+        )
+        return engine
+
+    def test_not_tripped_when_disabled(self):
+        engine = self._make_engine(daily_max_loss_usd=None)
+        engine._daily_realized_pnl = _D("-9999")
+
+        assert engine._is_circuit_breaker_tripped() is False
+
+    def test_not_tripped_when_pnl_above_threshold(self):
+        engine = self._make_engine(daily_max_loss_usd=500)
+        engine._daily_realized_pnl = _D("-400")
+
+        assert engine._is_circuit_breaker_tripped() is False
+
+    def test_tripped_when_pnl_at_threshold(self):
+        engine = self._make_engine(daily_max_loss_usd=500)
+        engine._daily_realized_pnl = _D("-500")
+
+        assert engine._is_circuit_breaker_tripped() is True
+
+    def test_tripped_when_pnl_exceeds_threshold(self):
+        engine = self._make_engine(daily_max_loss_usd=500)
+        engine._daily_realized_pnl = _D("-600")
+
+        assert engine._is_circuit_breaker_tripped() is True
+
+    def test_rebuild_window_returned_accumulates_daily_pnl(self):
+        engine = self._make_engine(daily_max_loss_usd=500)
+        pos = _make_checkpoint_position(
+            slot_capital=_D("5000"),
+            contracts=2,
+            simulated_entry_mid=_D("5.00"),
+            simulated_exit_mid=_D("3.00"),
+            trailing_arm_price=None,
+        )
+
+        engine._rebuild_window_returned([pos])
+
+        expected_pnl = _D("2") * _D("100") * (_D("3.00") - _D("5.00"))
+        assert engine._daily_realized_pnl == expected_pnl
+
+    def test_on_signal_skips_entry_when_circuit_breaker_tripped(self):
+        engine = self._make_engine(daily_max_loss_usd=500)
+        engine._daily_realized_pnl = _D("-600")
+        engine._window_state["W1"]["collection_deadline"] = datetime.now(ET) - timedelta(
+            minutes=1
+        )
+        engine._window_state["W1"]["open_position_count"] = 0
+
+        with patch.object(engine, "_enter_position") as mock_enter:
+            engine._on_signal_for_window("W1", _make_signal_event("NVDA"))
+
+        mock_enter.assert_not_called()
+        assert engine._window_state["W1"]["open_position_count"] == 0
+
+    def test_drain_stops_when_circuit_breaker_tripped(self):
+        engine = self._make_engine(daily_max_loss_usd=500)
+        engine._daily_realized_pnl = _D("-600")
+        engine._window_state["W1"]["collection_deadline"] = datetime.now(ET) - timedelta(
+            seconds=1
+        )
+        engine._window_state["W1"]["pending_signals"] = {
+            "NVDA": _make_signal_event("NVDA"),
+        }
+        engine._rolling_stats = {
+            "NVDA": {"ev_trade": 0.8, "win_rate": 0.6, "avg_win_pct": 2.0},
+        }
+
+        with patch.object(engine, "_enter_position") as mock_enter, \
+             patch(_SCORE_TICKER_PATH, return_value=3.0), \
+             patch.object(engine, "_get_window_budget", return_value=None):
+            engine._drain_pending_signals_for_window(engine._windows[0])
+
+        mock_enter.assert_not_called()
+
         assert "NVDA" not in engine._window_primary_deployed.get("M1", set())

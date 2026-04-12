@@ -9,6 +9,7 @@ from datetime import date
 
 from .config import (
     ARMED_MA20_EXIT,
+    DAILY_MAX_LOSS_USD,
     MAX_LOSS_PCT,
     OPENING_BARS,
     OPENING_START_TIME,
@@ -189,6 +190,12 @@ def parse_args():
         type=float,
         default=MAX_LOSS_PCT,
         help="Per-trade max loss as a fraction of entry stock price (e.g. 0.02 = 2%%). Default: disabled.",
+    )
+    parser.add_argument(
+        "--daily-max-loss",
+        type=float,
+        default=DAILY_MAX_LOSS_USD,
+        help="Daily max-loss circuit breaker in dollars (e.g. 500). No new entries once realized P&L drops below -N. Default: disabled.",
     )
     parser.add_argument(
         "--armed-ma20-exit",
@@ -508,6 +515,7 @@ if __name__ == "__main__":
             opening_start_time=args.opening_start,
             trailing_ma=args.trailing_ma,
             max_loss_pct=args.max_loss_pct,
+            daily_max_loss_usd=args.daily_max_loss,
             armed_ma20_exit=args.armed_ma20_exit,
             regime_filter=args.regime_filter,
             regime_ma=args.regime_ma,
@@ -595,6 +603,7 @@ if __name__ == "__main__":
             opening_start_time=args.opening_start,
             trailing_ma=args.trailing_ma,
             max_loss_pct=args.max_loss_pct,
+            daily_max_loss_usd=args.daily_max_loss,
             armed_ma20_exit=args.armed_ma20_exit,
             regime_filter=args.regime_filter,
             regime_ma=args.regime_ma,
