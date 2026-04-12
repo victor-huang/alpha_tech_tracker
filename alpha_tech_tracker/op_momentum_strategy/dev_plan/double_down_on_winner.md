@@ -166,7 +166,7 @@ PYTHONPATH=/Users/victorhuang/work/alpha_tech_tracker \
 
 ## Doubledown Window Sweep
 
-The `--doubledown-minutes` parameter controls how long after OR close a stopout must occur to free capital, and when the add-on leg enters. A full sweep was run over 2025-01-01 → 2026-04-10 (IEX feed, top-2, 60/40, M1+A1+A2, morning-split 100, reversal+BRE+BRU on):
+The `--doubledown-start` parameter controls the start time (minutes from OR close) at which the DD check fires and the add-on leg enters. Stopouts that occurred before this mark are eligible to free capital. A full sweep was run over 2025-01-01 → 2026-04-10 (IEX feed, top-2, 60/40, M1+A1+A2, morning-split 100, reversal+BRE+BRU on):
 
 | DD minutes | Total return | Delta vs baseline |
 |---|---|---|
@@ -206,7 +206,7 @@ Top candidates retested per year against baseline and DD 15 min:
 
 DD beats baseline **every year** for all candidates. There is a smooth improvement as DD minutes increases from 15 → 50, with diminishing gains beyond 50. **50 min wins 3/5 years** (2023–2025); 40 min wins 2024 by a small margin (+155.93% vs +152.50%), and 110/130 min lead in 2021–2022 but by ≤7pp. The 15-min default is consistently the weakest DD config — upgrading to 50 min adds +13–24pp per year over DD 15.
 
-**Recommended default: `--doubledown-minutes 50`**
+**Recommended default: `--doubledown-start 50`** (flag renamed from `--doubledown-minutes` to `--doubledown-start` to reflect that it is the start time of the DD check from OR close, not a window duration)
 
 ---
 

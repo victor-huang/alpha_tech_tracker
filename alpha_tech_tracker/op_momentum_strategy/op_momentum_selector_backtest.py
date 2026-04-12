@@ -21,7 +21,7 @@ from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector import (
 
 MIN_WINDOW_CAPITAL = 100.0
 INITIAL_CAPITAL = 10_000.0
-DOUBLEDOWN_MINUTES = 50  # min from OR close; stopouts within this window free capital
+DOUBLEDOWN_START_MIN = 15  # min from OR close at which the DD check fires and addon enters
 
 
 def _signal_dict_from_row(row) -> dict:
@@ -247,34 +247,35 @@ def _annotate_doubledown_addon(
     bars_by_date: dict,
     window_opening_times: dict,
     opening_bars_by_label: dict,
-    doubledown_minutes: int = DOUBLEDOWN_MINUTES,
+    doubledown_start_min: int = DOUBLEDOWN_START_MIN,
 ) -> None:
     """
-    For each (date, window) group where rank-2+ positions stopped out within
-    doubledown_minutes of OR close, annotate the rank-1 row with the add-on leg P&L.
+    For each (date, window) group where rank-2+ positions stopped out before
+    doubledown_start_min minutes after OR close, annotate the winner row with
+    the add-on leg P&L.
 
-    All picks in a window enter at OR close, so the 15-min mark is the same for all.
-    The doubledown fires at that fixed mark — it does not fire at stopout time.
+    All picks in a window enter at OR close. The DD check fires at the fixed
+    start time (OR close + doubledown_start_min) — not at the stopout bar.
 
     Add-on leg mechanics (backtested approximation):
-    - Entry: close of the last bar in the doubledown window (= OR close + 15 min).
+    - Entry: close of the bar at OR close + doubledown_start_min.
     - Hard stop: same price as entry → break-even protection (addon never loses).
-    - Exit: rank-1's exit price (same trailing-stop path).
+    - Exit: winner's exit price (same trailing-stop path).
     - P&L: max(0, signed return from addon_entry to exit_price).
 
-    At most one doubledown per rank-1 per window per day. All freed capital from
-    multiple stopouts is combined into a single addon leg on rank-1.
+    At most one doubledown per window per day. All freed capital from multiple
+    stopouts is combined into a single addon leg on the highest-ranked survivor.
 
-    Mutates trade_rows in-place, adding to rank-1 rows:
+    Mutates trade_rows in-place, adding to winner rows:
       dd_addon_pnl_pct  float  add-on return as fraction of addon entry (≥ 0)
       dd_addon_entry    float  add-on entry / hard-stop price
-      dd_freed_ranks    list   ranks whose freed capital flows to rank-1
+      dd_freed_ranks    list   ranks whose freed capital flows to the winner
     """
     from datetime import datetime, timedelta
 
     stop_reasons = {"hard_stop", "fallback_20pct"}
-    # bars in the doubledown window; stopout <= this → eligible; addon bar = same index
-    dd_bars = doubledown_minutes // 5 - 1  # 15 min → 2 (0-indexed: bars 0, 1, 2)
+    # 0-indexed bar index at OR close + doubledown_start_min
+    dd_bars = doubledown_start_min // 5 - 1  # 15 min → 2, 50 min → 9
 
     by_day_window: dict = {}
     for row in trade_rows:
@@ -391,7 +392,7 @@ def run_selector_backtest(
     close_top_pct: float = None,
     feed: DataFeed = None,
     enable_doubledown: bool = False,
-    doubledown_minutes: int = DOUBLEDOWN_MINUTES,
+    doubledown_start_min: int = DOUBLEDOWN_START_MIN,
 ) -> tuple:
     """
     Walk each trading day in [eval_start, eval_end], apply rolling selector
@@ -709,7 +710,7 @@ def run_selector_backtest(
         opening_bars_by_label = {win["label"]: win["opening_bars"] for win in windows}
         _annotate_doubledown_addon(
             trade_rows, bars_by_date, window_opening_times, opening_bars_by_label,
-            doubledown_minutes=doubledown_minutes,
+            doubledown_start_min=doubledown_start_min,
         )
 
     return trade_rows, all_window_results, trading_days
@@ -1697,14 +1698,14 @@ def _parse_args():
         ),
     )
     parser.add_argument(
-        "--doubledown-minutes",
+        "--doubledown-start",
         type=int,
-        default=DOUBLEDOWN_MINUTES,
-        dest="doubledown_minutes",
+        default=DOUBLEDOWN_START_MIN,
+        dest="doubledown_start_min",
         help=(
-            f"Minutes from OR close that define the doubledown window. Stopouts within this "
-            f"window free capital for the add-on leg. Must be a multiple of 5. "
-            f"Default: {DOUBLEDOWN_MINUTES}."
+            f"Minutes from OR close at which the DD check fires and the add-on leg enters. "
+            f"Stopouts that occurred before this mark are eligible to free capital. "
+            f"Must be a multiple of 5. Default: {DOUBLEDOWN_START_MIN}."
         ),
     )
     return parser.parse_args()
@@ -1799,7 +1800,7 @@ if __name__ == "__main__":
         f"  Bullish RE   : {'on (max bars_held=' + str(args.bullish_reentry_max_bars) + ')' if args.bullish_reentry else 'off'}"
     )
     print(
-        f"  Double-down  : {'on (' + str(args.doubledown_minutes) + '-min window, break-even stop on add-on)' if args.doubledown else 'off'}"
+        f"  Double-down  : {'on (start +' + str(args.doubledown_start_min) + 'min from OR close, break-even stop on add-on)' if args.doubledown else 'off'}"
     )
     if args.min_or_range > 0:
         wins_str = (
@@ -1860,7 +1861,7 @@ if __name__ == "__main__":
         close_top_pct=args.close_top_pct,
         feed=alpaca_feed,
         enable_doubledown=args.doubledown,
-        doubledown_minutes=args.doubledown_minutes,
+        doubledown_start_min=args.doubledown_start_min,
     )
 
     skip_log = _apply_capital_flow(
