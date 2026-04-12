@@ -66,6 +66,29 @@ def _compute_cap_pnl(row: dict, slot_capital: float) -> float:
     return cap_pnl
 
 
+def _compute_dd_deployed(rows: list) -> float:
+    """
+    Return the amount of freed capital redeployed into the DD addon leg for this window.
+
+    Called after slot_capital is set on each row. The DD addon is still running when
+    the next sequential window starts, so this amount must be deducted from the capital
+    passed forward to that window.
+    """
+    winner = next((r for r in rows if "dd_freed_ranks" in r), None)
+    if winner is None or winner.get("skipped"):
+        return 0.0
+    freed_rank_set = set(winner["dd_freed_ranks"])
+    total = 0.0
+    for r in rows:
+        if r["rank"] not in freed_rank_set or r.get("skipped"):
+            continue
+        slot_cap = r.get("slot_capital", 0.0)
+        if slot_cap > 0 and r.get("entry_price", 0) > 0:
+            returned = slot_cap * (1.0 + r["pnl"] / r["entry_price"])
+            total += max(0.0, returned)
+    return total
+
+
 def _apply_doubledown_window(rows: list) -> float:
     """
     Apply the double-down add-on P&L for a single window's rows.
@@ -107,6 +130,7 @@ def _apply_capital_flow(
     morning_split: list = None,
     min_capital: float = MIN_WINDOW_CAPITAL,
     compound: bool = False,
+    enable_doubledown: bool = False,
 ) -> list:
     """
     Apply day-by-day capital flow across windows.
@@ -123,9 +147,9 @@ def _apply_capital_flow(
         of each day — isolates per-day strategy edge, good for strategy comparison.
       - compound=True: portfolio carries over day-to-day — reflects live account growth.
 
-    DD add-on P&L is applied separately after this function via _apply_doubledown().
-    The DD leg runs to its own natural exit (trailing stop or EOD) independently of
-    A1/A2 windows — its capital is not recycled into sequential windows.
+    When enable_doubledown=True, the DD freed capital is deducted from the capital
+    passed to sequential windows: available(W2) = W1 + W1_pnl - dd_deployed.
+    The DD leg runs independently and its P&L is applied separately via _apply_doubledown().
 
     Modelling assumption — capital recycling between windows:
       Each window's backtest runs independently with natural exits (hard stop,
@@ -194,6 +218,9 @@ def _apply_capital_flow(
                     row["cap_pnl"] = _compute_cap_pnl(row, slot_capital)
                     row["skipped"] = False
                     win_pnl += row["cap_pnl"]
+            if enable_doubledown and not skipped:
+                # DD freed capital is still deployed — deduct from what W2 sees
+                win_pnl -= _compute_dd_deployed(rows)
             first_group_pnl += win_pnl
 
         # --- Sequential windows: each inherits all returned capital ---
@@ -228,6 +255,8 @@ def _apply_capital_flow(
                     row["cap_pnl"] = _compute_cap_pnl(row, slot_capital)
                     row["skipped"] = False
                     win_pnl += row["cap_pnl"]
+            if enable_doubledown and not skipped:
+                win_pnl -= _compute_dd_deployed(rows)
             if not skipped:
                 available += win_pnl
                 seq_pnl += win_pnl
@@ -1869,6 +1898,7 @@ if __name__ == "__main__":
         morning_split=morning_split,
         min_capital=args.min_window_capital,
         compound=args.compound,
+        enable_doubledown=args.doubledown,
     )
 
     if args.doubledown:
