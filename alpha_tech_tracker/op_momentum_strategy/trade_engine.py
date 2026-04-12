@@ -43,7 +43,7 @@ from .config import (
     enable_notifications,
 )
 from .bar_recorder import BarRecorder
-from .contract_selector import MockContractSelector, ITMOptionContractSelector
+from .contract_selector import MockContractSelector, ITMOptionContractSelector, _is_nyse_holiday
 from .models import ActivePosition, ReentryWatcher, SignalEvent, WindowConfig, _D
 from .option_price_monitor import OptionPriceMonitor
 from .order_executor import _place_with_fill_escalation, place_stock_order
@@ -1298,6 +1298,15 @@ class OpMomentumTradeEngine:
         return config_picks[(first_win.opening_start, first_win.opening_bars)]
 
     def run(self, tickers_override: list = None):
+        today = _now_et().date()
+        if not self._mock_trade_execution:
+            if today.weekday() >= 5:
+                logger.warning("Today is a weekend (%s) — market is closed, exiting", today)
+                return
+            if _is_nyse_holiday(today):
+                logger.warning("Today is a NYSE holiday (%s) — market is closed, exiting", today)
+                return
+
         api_key = self._api_key
         secret_key = self._secret_key
 
@@ -1310,16 +1319,14 @@ class OpMomentumTradeEngine:
         self._daily_realized_pnl = _D("0")
         pre_market_picks = self._run_window_selectors(all_tickers)
         self._rolling_stats = self._rolling_stats_by_window.get(first_window.label, {})
-        print(f"\nPre-market top picks: {pre_market_picks}")
-        print(f"Subscribing all {len(all_tickers)} tickers to live stream...")
+        logger.info("Pre-market top picks: %s", pre_market_picks)
+        logger.info("Subscribing all %d tickers to live stream", len(all_tickers))
         if len(self._windows) > 1:
             labels = [
                 f"[{w.label}] {w.opening_start}/{w.opening_bars}bar"
                 for w in self._windows
             ]
-            print(f"Windows: {', '.join(labels)}")
-
-        today = _now_et().date()
+            logger.info("Windows: %s", ", ".join(labels))
 
         # Build per-window state and signal engine window configs
         engine_windows = []
@@ -1460,7 +1467,7 @@ class OpMomentumTradeEngine:
         self._daily_realized_pnl = _D("0")
         pre_market_picks = self._run_window_selectors(all_tickers)
         self._rolling_stats = self._rolling_stats_by_window.get(first_window.label, {})
-        print(f"\nReplay {replay_date} — pre-market picks: {pre_market_picks}")
+        logger.info("Replay %s — pre-market picks: %s", replay_date, pre_market_picks)
 
         # Build per-window states with replay_date deadlines.
         # Use or_close as the deadline (no buffer) so that the drain fires at the

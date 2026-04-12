@@ -2094,3 +2094,73 @@ class TestCheckWsHealth:
         engine._signal_engine.reconnect.side_effect = RuntimeError("network error")
 
         engine._check_ws_health(now)  # must not raise
+
+
+# ---------------------------------------------------------------------------
+# TestMarketHolidayGuard — run() exits early on weekends and NYSE holidays
+# ---------------------------------------------------------------------------
+
+_IS_NYSE_HOLIDAY_PATH = (
+    "alpha_tech_tracker.op_momentum_strategy.trade_engine._is_nyse_holiday"
+)
+_NOW_ET_RUN = "alpha_tech_tracker.op_momentum_strategy.trade_engine._now_et"
+
+
+class TestMarketHolidayGuard:
+    def _make_live_engine(self):
+        client = _make_alpaca_client()
+        return OpMomentumTradeEngine(alpaca_client=client, mock_trade_execution=False)
+
+    def test_run_returns_early_on_saturday(self):
+        engine = self._make_live_engine()
+        saturday = date(2026, 4, 11)  # a Saturday
+        mock_now = Mock()
+        mock_now.return_value.date.return_value = saturday
+
+        with patch(_NOW_ET_RUN, mock_now), \
+             patch.object(engine, "_run_window_selectors") as mock_sel:
+            engine.run()
+
+        mock_sel.assert_not_called()
+
+    def test_run_returns_early_on_sunday(self):
+        engine = self._make_live_engine()
+        sunday = date(2026, 4, 12)  # a Sunday
+        mock_now = Mock()
+        mock_now.return_value.date.return_value = sunday
+
+        with patch(_NOW_ET_RUN, mock_now), \
+             patch.object(engine, "_run_window_selectors") as mock_sel:
+            engine.run()
+
+        mock_sel.assert_not_called()
+
+    def test_run_returns_early_on_nyse_holiday(self):
+        engine = self._make_live_engine()
+        good_friday = date(2026, 4, 3)  # Good Friday 2026
+        mock_now = Mock()
+        mock_now.return_value.date.return_value = good_friday
+
+        with patch(_NOW_ET_RUN, mock_now), \
+             patch(_IS_NYSE_HOLIDAY_PATH, return_value=True), \
+             patch.object(engine, "_run_window_selectors") as mock_sel:
+            engine.run()
+
+        mock_sel.assert_not_called()
+
+    def test_guard_skipped_in_mock_mode(self):
+        engine = _make_engine_with_mock_client()
+        saturday = date(2026, 4, 11)  # a Saturday
+        mock_now = Mock()
+        mock_now.return_value.date.return_value = saturday
+
+        with patch(_NOW_ET_RUN, mock_now), \
+             patch(_IS_NYSE_HOLIDAY_PATH, return_value=False), \
+             patch.object(engine, "_run_window_selectors", return_value=[]) as mock_sel, \
+             patch.object(engine, "_signal_engine", Mock()):
+            try:
+                engine.run()
+            except Exception:
+                pass  # stream setup will fail — we only care the guard didn't block
+
+        mock_sel.assert_called_once()
