@@ -57,6 +57,16 @@ from .signal_engine import LiveSignalEngine
 
 logger = logging.getLogger(__name__)
 
+_PREMARKET_WAIT_TIME = "09:20"  # ET — wake up this early before session open
+
+
+def _next_trading_day(d: date) -> date:
+    """Return the nearest future weekday that is not a NYSE holiday."""
+    candidate = d + timedelta(days=1)
+    while candidate.weekday() >= 5 or _is_nyse_holiday(candidate):
+        candidate += timedelta(days=1)
+    return candidate
+
 ET = pytz.timezone("America/New_York")
 
 
@@ -1413,7 +1423,7 @@ class OpMomentumTradeEngine:
             except Exception:
                 logger.exception("WebSocket reconnect failed")
 
-    def _monitor_loop(self, active_tickers: list):
+    def _monitor_loop(self, active_tickers: list, session_date: date = None):
         eod_h, eod_m = [int(x) for x in EOD_EXIT_TIME.split(":")]
         end_h, end_m = [int(x) for x in SESSION_END_TIME.split(":")]
         last_status_print = _now_et()
@@ -1421,7 +1431,7 @@ class OpMomentumTradeEngine:
         while True:
             now = _now_et()
 
-            if not eod_triggered and (
+            if not eod_triggered and (session_date is None or now.date() >= session_date) and (
                 now.hour > eod_h or (now.hour == eod_h and now.minute >= eod_m)
             ):
                 logger.info("EOD: force-closing all positions")
@@ -1507,6 +1517,37 @@ class OpMomentumTradeEngine:
                 logger.warning("Today is a NYSE holiday (%s) — market is closed, exiting", today)
                 return
 
+        # Determine the trading session date. If started on Sunday or after market
+        # close on a weekday, advance to the next trading day and sleep until
+        # pre-market rather than exiting.
+        now_et = _now_et()
+        end_h, end_m = [int(x) for x in SESSION_END_TIME.split(":")]
+        after_close = now_et.hour > end_h or (now_et.hour == end_h and now_et.minute >= end_m)
+        if today.weekday() == 6 or after_close:
+            session_date = _next_trading_day(today)
+        else:
+            session_date = today
+
+        if session_date != today:
+            premarket_dt = ET.localize(
+                datetime.combine(session_date, datetime.strptime(_PREMARKET_WAIT_TIME, "%H:%M").time())
+            )
+            logger.info(
+                "Engine started early — next session %s, sleeping until %s ET",
+                session_date,
+                premarket_dt.strftime("%Y-%m-%d %H:%M"),
+            )
+            last_log = _now_et()
+            while _now_et() < premarket_dt:
+                time.sleep(60)
+                if (_now_et() - last_log).total_seconds() >= 3600:
+                    remaining = premarket_dt - _now_et()
+                    hours = int(remaining.total_seconds() // 3600)
+                    minutes = int((remaining.total_seconds() % 3600) // 60)
+                    logger.info("Waiting for session %s — ~%dh %dm remaining", session_date, hours, minutes)
+                    last_log = _now_et()
+            logger.info("Pre-market reached — starting session %s", session_date)
+
         api_key = self._api_key
         secret_key = self._secret_key
 
@@ -1535,7 +1576,7 @@ class OpMomentumTradeEngine:
         engine_windows = []
         for win in self._windows:
             opening_start_t = datetime.strptime(win.opening_start, "%H:%M").time()
-            or_open_et = ET.localize(datetime.combine(today, opening_start_t))
+            or_open_et = ET.localize(datetime.combine(session_date, opening_start_t))
             or_close_et = or_open_et + timedelta(minutes=win.opening_bars * 5)
             deadline = or_close_et + timedelta(minutes=SIGNAL_BUFFER_MINUTES)
 
@@ -1608,7 +1649,7 @@ class OpMomentumTradeEngine:
         if self._option_price_monitor:
             self._option_price_monitor.start()
 
-        recovered = self._recover_session(today)
+        recovered = self._recover_session(session_date)
         for pos in recovered:
             self._monitor.add_position(pos)
             label = pos.window_label
@@ -1628,7 +1669,7 @@ class OpMomentumTradeEngine:
             t.start()
 
         monitor_thread = threading.Thread(
-            target=self._monitor_loop, args=(all_tickers,), daemon=True
+            target=self._monitor_loop, args=(all_tickers, session_date), daemon=True
         )
         monitor_thread.start()
         monitor_thread.join()

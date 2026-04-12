@@ -2125,11 +2125,21 @@ class TestMarketHolidayGuard:
 
     def test_run_proceeds_on_sunday(self):
         engine = self._make_live_engine()
-        sunday = date(2026, 4, 12)  # a Sunday
-        mock_now = Mock()
-        mock_now.return_value.date.return_value = sunday
+        ET_tz = pytz.timezone("America/New_York")
+        # Sunday 10 PM ET — after_close=False (22 < 16:05 threshold fires, but
+        # weekday==6 alone advances session_date to Monday)
+        sunday_night = ET_tz.localize(datetime(2026, 4, 12, 22, 0, 0))
+        # Monday 9:21 ET — past the 9:20 pre-market wait threshold
+        monday_premarket = ET_tz.localize(datetime(2026, 4, 13, 9, 21, 0))
 
-        with patch(_NOW_ET_RUN, mock_now), \
+        # First 3 calls (today, now_et, last_log) return Sunday; 4th (loop
+        # condition) returns Monday so the wait loop exits immediately.
+        call_count = {"n": 0}
+        def _mock_now():
+            call_count["n"] += 1
+            return sunday_night if call_count["n"] <= 3 else monday_premarket
+
+        with patch(_NOW_ET_RUN, _mock_now), \
              patch(_IS_NYSE_HOLIDAY_PATH, return_value=False), \
              patch.object(engine, "_run_window_selectors", return_value=[]) as mock_sel, \
              patch.object(engine, "_signal_engine", Mock()):
@@ -2155,11 +2165,12 @@ class TestMarketHolidayGuard:
 
     def test_guard_skipped_in_mock_mode(self):
         engine = _make_engine_with_mock_client()
-        saturday = date(2026, 4, 11)  # a Saturday
-        mock_now = Mock()
-        mock_now.return_value.date.return_value = saturday
+        ET_tz = pytz.timezone("America/New_York")
+        # Saturday 10 AM ET in mock mode: guard is skipped; after_close=False so
+        # session_date stays as Saturday and no pre-market wait fires.
+        saturday_morning = ET_tz.localize(datetime(2026, 4, 11, 10, 0, 0))
 
-        with patch(_NOW_ET_RUN, mock_now), \
+        with patch(_NOW_ET_RUN, Mock(return_value=saturday_morning)), \
              patch(_IS_NYSE_HOLIDAY_PATH, return_value=False), \
              patch.object(engine, "_run_window_selectors", return_value=[]) as mock_sel, \
              patch.object(engine, "_signal_engine", Mock()):
