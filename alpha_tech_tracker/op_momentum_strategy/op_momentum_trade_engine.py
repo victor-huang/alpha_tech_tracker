@@ -397,8 +397,29 @@ def parse_args():
         type=str,
         default=None,
         dest="replay_date",
-        help="Replay a historical session (YYYY-MM-DD). Feeds cached 5-min bars through "
+        help="Replay a single historical session (YYYY-MM-DD). Feeds cached 5-min bars through "
         "the live engine instead of a live WebSocket stream. Implies mock-trade-execution.",
+    )
+    parser.add_argument(
+        "--replay-start",
+        type=str,
+        default=None,
+        dest="replay_start",
+        help="Start date for a multi-day replay range (YYYY-MM-DD). Must be paired with --replay-end.",
+    )
+    parser.add_argument(
+        "--replay-end",
+        type=str,
+        default=None,
+        dest="replay_end",
+        help="End date for a multi-day replay range (YYYY-MM-DD). Must be paired with --replay-start.",
+    )
+    parser.add_argument(
+        "--compound",
+        action="store_true",
+        default=False,
+        dest="compound",
+        help="In range replay mode, carry ending capital forward day-to-day instead of resetting each day.",
     )
     parser.add_argument(
         "--live-data-dir",
@@ -407,8 +428,8 @@ def parse_args():
         dest="live_data_dir",
         help=(
             "Directory of recorded live-session bar CSVs. When combined with "
-            "--replay-date, feeds real intraday data instead of Alpaca historical "
-            "cache. Expects {dir}/{date}/{ticker}_5min.csv (CsvLiveBarsSource format)."
+            "--replay-date or --replay-start/--replay-end, feeds real intraday data instead of "
+            "Alpaca historical cache. Expects {dir}/{date}/{ticker}_5min.csv (CsvLiveBarsSource format)."
         ),
     )
     parser.add_argument(
@@ -547,7 +568,8 @@ if __name__ == "__main__":
         _fh = _make_log_handler(log_file)
         _fh.setFormatter(_fmt)
         _root.addHandler(_fh)
-        mock_trade_execution = args.mock_trade_execution or bool(args.replay_date)
+        is_replay = bool(args.replay_date) or bool(args.replay_start and args.replay_end)
+        mock_trade_execution = args.mock_trade_execution or is_replay
         is_paper = not (args.live or mock_trade_execution)
         client = build_execution_client(is_paper=is_paper)
         contract_selector = _build_contract_selector(args, client)
@@ -593,6 +615,21 @@ if __name__ == "__main__":
                 tickers_override=args.tickers,
                 bars_source=bars_source,
                 replay_exit_time="16:05" if args.full_day else EOD_EXIT_TIME,
+            )
+        elif args.replay_start and args.replay_end:
+            from datetime import date as _date
+            from .replay import CsvLiveBarsSource
+            from .config import EOD_EXIT_TIME
+            start_date = _date.fromisoformat(args.replay_start)
+            end_date = _date.fromisoformat(args.replay_end)
+            bars_source = CsvLiveBarsSource(args.live_data_dir) if args.live_data_dir else None
+            engine.run_replay_range(
+                start_date,
+                end_date,
+                tickers_override=args.tickers,
+                bars_source=bars_source,
+                replay_exit_time="16:05" if args.full_day else EOD_EXIT_TIME,
+                compound=args.compound,
             )
         else:
             engine.run(tickers_override=args.tickers)

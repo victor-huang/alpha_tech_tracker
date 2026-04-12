@@ -67,6 +67,17 @@ def _next_trading_day(d: date) -> date:
         candidate += timedelta(days=1)
     return candidate
 
+
+def _trading_days_in_range(start: date, end: date) -> list:
+    """Return all weekdays that are not NYSE holidays between start and end (inclusive)."""
+    days = []
+    d = start
+    while d <= end:
+        if d.weekday() < 5 and not _is_nyse_holiday(d):
+            days.append(d)
+        d += timedelta(days=1)
+    return days
+
 ET = pytz.timezone("America/New_York")
 
 
@@ -1840,3 +1851,76 @@ class OpMomentumTradeEngine:
         clear_replay_clock()
         enable_notifications()
         self._monitor.print_summary()
+
+    def run_replay_range(
+        self,
+        start_date: date,
+        end_date: date,
+        tickers_override: list = None,
+        bars_source: "LiveBarsSource | None" = None,
+        replay_exit_time: str = "15:55",
+        compound: bool = False,
+    ):
+        """
+        Run replay for every trading day in [start_date, end_date].
+
+        Each day runs the full signal → entry → monitor → EOD-close pipeline via
+        run_replay().  With compound=True the ending capital from each day becomes
+        the starting capital for the next day.  With compound=False (default) the
+        starting capital resets to self._replay_capital each day — equivalent to
+        comparing daily edge in isolation.
+        """
+        days = _trading_days_in_range(start_date, end_date)
+        if not days:
+            logger.info("No trading days found in %s – %s", start_date, end_date)
+            return
+
+        original_capital = self._replay_capital
+        initial = float(original_capital) if original_capital is not None else float(ACCOUNT_BUDGET)
+        running_capital = initial
+        daily_results = []  # [(date, cap_pnl)]
+
+        for i, day in enumerate(days):
+            logger.info("─" * 70)
+            logger.info(
+                "REPLAY %d/%d — %s  (starting capital: $%.2f)",
+                i + 1, len(days), day, running_capital,
+            )
+            if compound:
+                self._replay_capital = running_capital
+
+            self.run_replay(
+                day,
+                tickers_override=tickers_override,
+                bars_source=bars_source,
+                replay_exit_time=replay_exit_time,
+            )
+
+            day_pnl = float(self._daily_realized_pnl)
+            daily_results.append((day, day_pnl))
+            running_capital += day_pnl
+
+        self._replay_capital = original_capital
+
+        total_pnl = sum(p for _, p in daily_results)
+        wins = sum(1 for _, p in daily_results if p > 0)
+        losses = len(daily_results) - wins
+        logger.info("═" * 70)
+        logger.info(
+            "RANGE REPLAY COMPLETE: %s – %s  |  %d trading days  |  %d W / %d L  (%.0f%% WR)",
+            start_date, end_date, len(days), wins, losses,
+            wins / len(days) * 100,
+        )
+        logger.info("Total cap P&L: %+.2f", total_pnl)
+        if compound:
+            logger.info(
+                "Compound return: %+.2f%%  ($%.2f → $%.2f)",
+                total_pnl / initial * 100, initial, initial + total_pnl,
+            )
+        else:
+            avg_pct = (total_pnl / len(days) / initial * 100) if initial else 0.0
+            logger.info(
+                "No-compound total: %+.2f  |  avg per day: %+.2f%%",
+                total_pnl, avg_pct,
+            )
+        logger.info("═" * 70)
