@@ -21,7 +21,7 @@ from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector import (
 
 MIN_WINDOW_CAPITAL = 100.0
 INITIAL_CAPITAL = 10_000.0
-DOUBLEDOWN_START_MIN = 15  # min from OR close at which the DD check fires and addon enters
+DOUBLEDOWN_START_MIN = 5  # min from OR close at which the DD check fires and addon enters
 
 
 def _signal_dict_from_row(row) -> dict:
