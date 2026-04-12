@@ -133,7 +133,7 @@ class PositionMonitor:
                     continue
                 if pos.entry_bar_time is not None and bar_time == pos.entry_bar_time:
                     continue
-                self._evaluate_stop(pos, close, high, ma20_val, ma50_val)
+                self._evaluate_stop(pos, close, high, ma20_val, ma50_val, bar_time)
 
             fired_watchers = self._collect_fired_watchers(ticker, close, bar_time)
 
@@ -184,6 +184,7 @@ class PositionMonitor:
         high,
         ma20: Optional[object],
         ma50: Optional[object],
+        bar_time=None,
     ):
         exit_reason = None
 
@@ -272,6 +273,9 @@ class PositionMonitor:
                     override = pos.fallback_price
             self._close_position(pos, exit_reason, exit_stock_price_override=override)
         else:
+            if bar_time is not None and bar_time == pos.last_evaluated_bar_time:
+                return  # same bar repeated poll — don't double-count
+            pos.last_evaluated_bar_time = bar_time
             pos.bars_held += 1
 
     def _maybe_create_reentry_watcher(self, pos: ActivePosition, reason: str):

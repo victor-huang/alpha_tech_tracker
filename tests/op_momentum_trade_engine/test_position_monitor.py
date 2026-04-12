@@ -812,6 +812,33 @@ class TestReentryWatcher:
         assert pos.bars_held == 2
         assert pos.is_closed is False
 
+    def test_bars_held_not_double_counted_on_repeated_poll_same_bar(self):
+        monitor, client, engine = self._make_monitor()
+        pos = self._make_bullish_pos()
+        monitor.add_position(pos)
+
+        _set_latest_bar(engine, "NVDA", close=106.0, ma50=97.0)
+        monitor.on_bar("NVDA")
+        # Poll again without advancing the bar — same timestamp returned
+        monitor.on_bar("NVDA")
+
+        assert pos.bars_held == 1
+
+    def test_bars_held_increments_on_new_bar_after_repeated_poll(self):
+        monitor, client, engine = self._make_monitor()
+        pos = self._make_bullish_pos()
+        monitor.add_position(pos)
+
+        _set_latest_bar(engine, "NVDA", close=106.0, ma50=97.0)
+        monitor.on_bar("NVDA")
+        # Repeated poll on bar 1
+        monitor.on_bar("NVDA")
+        # New bar arrives
+        _set_latest_bar(engine, "NVDA", close=106.5, ma50=97.0)
+        monitor.on_bar("NVDA")
+
+        assert pos.bars_held == 2
+
     def test_reversal_watcher_created_on_bearish_hard_stop_within_max_bars(self):
         monitor, _, engine = self._make_monitor(enable_reversal=True, reversal_max_bars=3)
         pos = self._make_bearish_pos(bars_held=2)

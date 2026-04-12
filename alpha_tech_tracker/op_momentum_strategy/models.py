@@ -83,6 +83,7 @@ class ActivePosition:
     rank: int = 0
     window_budget: Optional[Decimal] = None
     slot_capital: Optional[Decimal] = None
+    last_evaluated_bar_time: Optional[datetime] = None
 
     def to_dict(self) -> dict:
         def _ser_dec(v):
@@ -124,6 +125,7 @@ class ActivePosition:
             "rank": self.rank,
             "window_budget": _ser_dec(self.window_budget),
             "slot_capital": _ser_dec(self.slot_capital),
+            "last_evaluated_bar_time": _ser_dt(self.last_evaluated_bar_time),
         }
 
     @classmethod
@@ -167,6 +169,7 @@ class ActivePosition:
             rank=d.get("rank", 0),
             window_budget=_dec(d.get("window_budget")),
             slot_capital=_dec(d.get("slot_capital")),
+            last_evaluated_bar_time=_dt(d.get("last_evaluated_bar_time")),
         )
 
 
