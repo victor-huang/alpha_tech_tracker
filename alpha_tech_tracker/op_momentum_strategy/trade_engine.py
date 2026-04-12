@@ -25,6 +25,7 @@ from .config import (
     BEARISH_MA200,
     DAILY_MAX_LOSS_USD,
     EOD_EXIT_TIME,
+    WS_RECONNECT_TIMEOUT_SECONDS,
     MAX_ACTIVE_SYMBOLS,
     MAX_LOSS_PCT,
     OPENING_BARS,
@@ -251,6 +252,7 @@ class OpMomentumTradeEngine:
         bullish_reentry_max_bars: int = 5,
         replay_capital: Optional[float] = None,
         or_bar_lookback: int = 3,
+        ws_reconnect_timeout: int = WS_RECONNECT_TIMEOUT_SECONDS,
     ):
         self._client = alpaca_client
         self._api_key = alpaca_client._api_key
@@ -283,6 +285,7 @@ class OpMomentumTradeEngine:
         self._bullish_reentry_max_bars = bullish_reentry_max_bars
         self._replay_capital = replay_capital
         self._or_bar_lookback = or_bar_lookback
+        self._ws_reconnect_timeout = ws_reconnect_timeout
         self._monitor: PositionMonitor = None
         self._signal_engine: LiveSignalEngine = None
         self._signal_lock = threading.Lock()
@@ -1187,6 +1190,30 @@ class OpMomentumTradeEngine:
             order_action="BUY_OPEN",
         )
 
+    def _check_ws_health(self, now) -> None:
+        """Reconnect the WebSocket stream if no bar has been received for too long.
+
+        Uses _stream_started_at as the baseline when no bar has ever arrived so
+        the watchdog doesn't fire the instant the engine starts up.
+        """
+        engine = self._signal_engine
+        if engine is None:
+            return
+        last = engine._last_bar_received_at or engine._stream_started_at
+        if last is None:
+            return
+        elapsed = (now - last).total_seconds()
+        if elapsed > self._ws_reconnect_timeout:
+            logger.warning(
+                "WebSocket watchdog: no bar received for %.0fs (threshold %ds) — reconnecting",
+                elapsed,
+                self._ws_reconnect_timeout,
+            )
+            try:
+                engine.reconnect()
+            except Exception:
+                logger.exception("WebSocket reconnect failed")
+
     def _monitor_loop(self, active_tickers: list):
         eod_h, eod_m = [int(x) for x in EOD_EXIT_TIME.split(":")]
         end_h, end_m = [int(x) for x in SESSION_END_TIME.split(":")]
@@ -1209,6 +1236,8 @@ class OpMomentumTradeEngine:
                 self._monitor._refresh_fill_prices(self._monitor._positions)
                 time.sleep(30)
                 continue
+
+            self._check_ws_health(now)
 
             for ticker in active_tickers:
                 self._monitor.on_bar(ticker)

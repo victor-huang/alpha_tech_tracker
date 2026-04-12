@@ -11,6 +11,7 @@ from .config import (
     ARMED_MA20_EXIT,
     DAILY_MAX_LOSS_USD,
     MAX_LOSS_PCT,
+    WS_RECONNECT_TIMEOUT_SECONDS,
     OPENING_BARS,
     OPENING_START_TIME,
     RANK_WEIGHTS,
@@ -196,6 +197,12 @@ def parse_args():
         type=float,
         default=DAILY_MAX_LOSS_USD,
         help="Daily max-loss circuit breaker in dollars (e.g. 500). No new entries once realized P&L drops below -N. Default: disabled.",
+    )
+    parser.add_argument(
+        "--ws-reconnect-timeout",
+        type=int,
+        default=WS_RECONNECT_TIMEOUT_SECONDS,
+        help=f"Seconds without a bar before the WebSocket stream is reconnected (default: {WS_RECONNECT_TIMEOUT_SECONDS}).",
     )
     parser.add_argument(
         "--armed-ma20-exit",
@@ -533,6 +540,7 @@ if __name__ == "__main__":
             top_n=args.top,
             lookback_days=args.lookback,
             replay_capital=args.capital,
+            ws_reconnect_timeout=args.ws_reconnect_timeout,
         )
         if args.replay_date:
             from datetime import date as _date
@@ -621,6 +629,7 @@ if __name__ == "__main__":
             top_n=args.top,
             lookback_days=args.lookback,
             replay_capital=args.capital,
+            ws_reconnect_timeout=args.ws_reconnect_timeout,
         )
         engine.run(tickers_override=args.tickers)
     finally:

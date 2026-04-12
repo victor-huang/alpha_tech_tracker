@@ -107,6 +107,8 @@ class LiveSignalEngine:
         self._stream: StockDataStream = None
         self._lock = threading.Lock()
         self._bar_recorder = bar_recorder
+        self._last_bar_received_at: Optional[datetime] = None
+        self._stream_started_at: Optional[datetime] = None
 
     def _warmup(self):
         hist_client = StockHistoricalDataClient(self._api_key, self._secret_key)
@@ -579,6 +581,7 @@ class LiveSignalEngine:
                             daemon=True,
                         ).start()
 
+            self._last_bar_received_at = _now_et()
             logger.debug(
                 "1-min bar  %-6s  %s  O=%.2f H=%.2f L=%.2f C=%.2f  vol=%d",
                 ticker,
@@ -728,6 +731,28 @@ class LiveSignalEngine:
         logger.info("Starting live data stream for %s", self._tickers)
         thread = threading.Thread(target=self._stream.run, daemon=True)
         thread.start()
+        self._stream_started_at = _now_et()
+
+    def reconnect(self):
+        """Stop the current stream and start a fresh one without re-warmup.
+
+        Called by the watchdog when no bars have been received for too long.
+        The _history dict is preserved so signal state is not lost.
+        """
+        logger.warning("WebSocket watchdog: reconnecting stream")
+        self.stop()
+        self._stream = StockDataStream(
+            self._api_key,
+            self._secret_key,
+            feed=DataFeed.SIP,
+            websocket_params={"ping_interval": 20, "ping_timeout": 40},
+        )
+        self._stream.subscribe_bars(self._handle_bar, *self._tickers)
+        thread = threading.Thread(target=self._stream.run, daemon=True)
+        thread.start()
+        self._stream_started_at = _now_et()
+        self._last_bar_received_at = None
+        logger.info("WebSocket stream reconnected for %s", self._tickers)
 
     def stop(self):
         if self._stream:

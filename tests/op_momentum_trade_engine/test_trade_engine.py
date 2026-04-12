@@ -2018,3 +2018,79 @@ class TestCircuitBreaker:
         mock_enter.assert_not_called()
 
         assert "NVDA" not in engine._window_primary_deployed.get("M1", set())
+
+
+# ---------------------------------------------------------------------------
+# TestCheckWsHealth — WebSocket reconnect watchdog
+# ---------------------------------------------------------------------------
+
+_NOW_ET_TRADE = "alpha_tech_tracker.op_momentum_strategy.trade_engine._now_et"
+
+
+class TestCheckWsHealth:
+    def _make_engine(self, timeout=600):
+        engine = _make_engine_with_mock_client()
+        engine._ws_reconnect_timeout = timeout
+        engine._signal_engine = Mock()
+        engine._signal_engine._last_bar_received_at = None
+        engine._signal_engine._stream_started_at = None
+        return engine
+
+    def test_no_action_when_signal_engine_is_none(self):
+        engine = _make_engine_with_mock_client()
+        engine._signal_engine = None
+        now = ET.localize(datetime(2026, 4, 11, 10, 0))
+
+        engine._check_ws_health(now)  # must not raise
+
+    def test_no_action_when_no_start_time_recorded(self):
+        engine = self._make_engine()
+        now = ET.localize(datetime(2026, 4, 11, 10, 0))
+
+        engine._check_ws_health(now)
+
+        engine._signal_engine.reconnect.assert_not_called()
+
+    def test_no_reconnect_when_within_timeout(self):
+        engine = self._make_engine(timeout=600)
+        now = ET.localize(datetime(2026, 4, 11, 10, 10))
+        engine._signal_engine._last_bar_received_at = ET.localize(
+            datetime(2026, 4, 11, 10, 5)
+        )
+
+        engine._check_ws_health(now)
+
+        engine._signal_engine.reconnect.assert_not_called()
+
+    def test_reconnect_when_last_bar_exceeds_timeout(self):
+        engine = self._make_engine(timeout=600)
+        now = ET.localize(datetime(2026, 4, 11, 11, 0))
+        engine._signal_engine._last_bar_received_at = ET.localize(
+            datetime(2026, 4, 11, 10, 0)
+        )
+
+        engine._check_ws_health(now)
+
+        engine._signal_engine.reconnect.assert_called_once()
+
+    def test_reconnect_uses_stream_started_at_when_no_bar_received(self):
+        engine = self._make_engine(timeout=600)
+        now = ET.localize(datetime(2026, 4, 11, 11, 0))
+        engine._signal_engine._last_bar_received_at = None
+        engine._signal_engine._stream_started_at = ET.localize(
+            datetime(2026, 4, 11, 10, 0)
+        )
+
+        engine._check_ws_health(now)
+
+        engine._signal_engine.reconnect.assert_called_once()
+
+    def test_reconnect_exception_does_not_propagate(self):
+        engine = self._make_engine(timeout=600)
+        now = ET.localize(datetime(2026, 4, 11, 11, 0))
+        engine._signal_engine._last_bar_received_at = ET.localize(
+            datetime(2026, 4, 11, 10, 0)
+        )
+        engine._signal_engine.reconnect.side_effect = RuntimeError("network error")
+
+        engine._check_ws_health(now)  # must not raise

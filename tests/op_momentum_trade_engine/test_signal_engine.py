@@ -1223,3 +1223,74 @@ class TestCatchUpWithFlatBarFallback:
         flat_bars = [b for b in injected if b.volume == 0.0]
         assert len(real_bars) == 1
         assert len(flat_bars) == 2
+
+
+# ---------------------------------------------------------------------------
+# TestWsWatchdog — reconnect() restarts stream without re-warmup
+# ---------------------------------------------------------------------------
+
+
+class TestWsWatchdog:
+    def _make_engine(self):
+        return LiveSignalEngine(
+            tickers=["NVDA"],
+            api_key="k",
+            secret_key="s",
+            opening_bars=3,
+            on_signal=lambda e: None,
+        )
+
+    def test_reconnect_stops_old_stream_and_starts_new_one(self):
+        engine = self._make_engine()
+        old_stream = Mock()
+        engine._stream = old_stream
+
+        new_stream = Mock()
+        with patch(
+            f"{_SE_MODULE}.StockDataStream", return_value=new_stream
+        ) as mock_cls, \
+             patch("threading.Thread") as mock_thread:
+            mock_thread.return_value = Mock()
+            engine.reconnect()
+
+        old_stream.stop.assert_called_once()
+        mock_cls.assert_called_once()
+        new_stream.subscribe_bars.assert_called_once()
+        mock_thread.return_value.start.assert_called_once()
+
+    def test_reconnect_preserves_history(self):
+        engine = self._make_engine()
+        engine._stream = Mock()
+        engine._history["NVDA"] = "sentinel_df"
+
+        with patch(f"{_SE_MODULE}.StockDataStream", return_value=Mock()), \
+             patch("threading.Thread") as mock_thread:
+            mock_thread.return_value = Mock()
+            engine.reconnect()
+
+        assert engine._history["NVDA"] == "sentinel_df"
+
+    def test_reconnect_resets_last_bar_received_at(self):
+        engine = self._make_engine()
+        engine._stream = Mock()
+        engine._last_bar_received_at = ET.localize(datetime(2026, 4, 11, 10, 0))
+
+        with patch(f"{_SE_MODULE}.StockDataStream", return_value=Mock()), \
+             patch("threading.Thread") as mock_thread:
+            mock_thread.return_value = Mock()
+            engine.reconnect()
+
+        assert engine._last_bar_received_at is None
+
+    def test_stream_started_at_set_on_reconnect(self):
+        engine = self._make_engine()
+        engine._stream = Mock()
+
+        now = ET.localize(datetime(2026, 4, 11, 10, 30))
+        with patch(f"{_SE_MODULE}.StockDataStream", return_value=Mock()), \
+             patch("threading.Thread") as mock_thread, \
+             patch(f"{_SE_MODULE}._now_et", return_value=now):
+            mock_thread.return_value = Mock()
+            engine.reconnect()
+
+        assert engine._stream_started_at == now
