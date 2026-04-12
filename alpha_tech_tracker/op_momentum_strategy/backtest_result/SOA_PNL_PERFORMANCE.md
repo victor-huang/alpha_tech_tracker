@@ -1,4 +1,4 @@
-# Strategy P&L Performance — State of Affairs
+# Strategy P&L Performance — State of Art
 
 Summary of confirmed backtest results for the op-momentum strategy.
 All runs use no-compound (daily $10,000 reset) unless noted.
