@@ -21,6 +21,7 @@ from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector import (
 
 MIN_WINDOW_CAPITAL = 100.0
 INITIAL_CAPITAL = 10_000.0
+DOUBLEDOWN_MINUTES = 50  # min from OR close; stopouts within this window free capital
 
 
 def _signal_dict_from_row(row) -> dict:
@@ -152,6 +153,7 @@ def _apply_capital_flow(
                     row["skipped"] = True
                 else:
                     slot_capital = win_capital * weights[row["rank"] - 1]
+                    row["slot_capital"] = slot_capital
                     row["cap_pnl"] = _compute_cap_pnl(row, slot_capital)
                     row["skipped"] = False
                     first_group_pnl += row["cap_pnl"]
@@ -184,6 +186,7 @@ def _apply_capital_flow(
                     row["skipped"] = True
                 else:
                     slot_capital = available * weights[row["rank"] - 1]
+                    row["slot_capital"] = slot_capital
                     row["cap_pnl"] = _compute_cap_pnl(row, slot_capital)
                     row["skipped"] = False
                     win_pnl += row["cap_pnl"]
@@ -194,6 +197,123 @@ def _apply_capital_flow(
         portfolio += first_group_pnl + seq_pnl
 
     return skip_log
+
+
+def _annotate_doubledown_addon(
+    trade_rows: list,
+    bars_by_date: dict,
+    window_opening_times: dict,
+    opening_bars_by_label: dict,
+    doubledown_minutes: int = DOUBLEDOWN_MINUTES,
+) -> None:
+    """
+    For each (date, window) group where rank-2+ positions stopped out within
+    doubledown_minutes of OR close, annotate the rank-1 row with the add-on leg P&L.
+
+    All picks in a window enter at OR close, so the 15-min mark is the same for all.
+    The doubledown fires at that fixed mark — it does not fire at stopout time.
+
+    Add-on leg mechanics (backtested approximation):
+    - Entry: close of the last bar in the doubledown window (= OR close + 15 min).
+    - Hard stop: same price as entry → break-even protection (addon never loses).
+    - Exit: rank-1's exit price (same trailing-stop path).
+    - P&L: max(0, signed return from addon_entry to exit_price).
+
+    At most one doubledown per rank-1 per window per day. All freed capital from
+    multiple stopouts is combined into a single addon leg on rank-1.
+
+    Mutates trade_rows in-place, adding to rank-1 rows:
+      dd_addon_pnl_pct  float  add-on return as fraction of addon entry (≥ 0)
+      dd_addon_entry    float  add-on entry / hard-stop price
+      dd_freed_ranks    list   ranks whose freed capital flows to rank-1
+    """
+    from datetime import datetime, timedelta
+
+    stop_reasons = {"hard_stop", "fallback_20pct"}
+    # bars in the doubledown window; stopout <= this → eligible; addon bar = same index
+    dd_bars = doubledown_minutes // 5 - 1  # 15 min → 2 (0-indexed: bars 0, 1, 2)
+
+    by_day_window: dict = {}
+    for row in trade_rows:
+        key = (row["date"], row["window"])
+        by_day_window.setdefault(key, []).append(row)
+
+    for (d, label), rows in by_day_window.items():
+        if len(rows) < 2:
+            continue
+
+        rows_by_rank = sorted(rows, key=lambda r: r["rank"])
+
+        # Partition into stopouts and survivors at the 15-min mark.
+        # A rank is only a "stopout" (capital freed) if it stopped early AND has no
+        # reversal/re-entry — if it does, the capital was redeployed into that leg,
+        # not freed for doubledown.
+        def _has_reentry(r):
+            return (
+                r.get("rev_entry_price", 0) != 0
+                or r.get("br_entry_price", 0) != 0
+                or r.get("bru_entry_price", 0) != 0
+            )
+
+        stopouts = [
+            r for r in rows_by_rank
+            if r.get("exit_reason", "") in stop_reasons
+            and r.get("bars_held", 999) <= dd_bars
+            and not _has_reentry(r)
+        ]
+        survivors = [
+            r for r in rows_by_rank
+            if not (
+                r.get("exit_reason", "") in stop_reasons
+                and r.get("bars_held", 999) <= dd_bars
+                and not _has_reentry(r)
+            )
+        ]
+
+        if not stopouts or not survivors:
+            continue
+
+        # Winner = highest-ranked survivor (lowest rank number).
+        # Freed capital from ALL stopouts flows to this one position.
+        winner = survivors[0]
+
+        # If the winner already exited before the addon entry bar, the addon
+        # can't fire — there is no open position to add on to.
+        if winner.get("bars_held", 0) < dd_bars:
+            continue
+        freed_ranks = [r["rank"] for r in stopouts]
+
+        # Look up the doubledown bar close for the winner's ticker.
+        opening_bars = opening_bars_by_label.get(label, 3)
+        opening_start = window_opening_times.get(label)
+        if opening_start is None:
+            continue
+
+        day_bars = bars_by_date.get(winner["ticker"], {}).get(d)
+        if day_bars is None or day_bars.empty:
+            continue
+
+        or_close_time = (
+            datetime.combine(d, opening_start) + timedelta(minutes=opening_bars * 5)
+        ).time()
+        post_or = day_bars[day_bars.index.time >= or_close_time]
+        if len(post_or) <= dd_bars:
+            continue
+
+        addon_bar = post_or.iloc[dd_bars]
+        addon_entry = float(addon_bar["Close"])
+        if addon_entry == 0:
+            continue
+
+        exit_price = float(winner["exit_price"])
+        if winner["signal"] == "BULLISH":
+            raw_pct = (exit_price - addon_entry) / addon_entry
+        else:
+            raw_pct = (addon_entry - exit_price) / addon_entry
+
+        winner["dd_addon_pnl_pct"] = max(0.0, raw_pct)
+        winner["dd_addon_entry"] = addon_entry
+        winner["dd_freed_ranks"] = freed_ranks
 
 
 def run_selector_backtest(
@@ -227,6 +347,8 @@ def run_selector_backtest(
     bullish_reentry_max_bars: int = 5,
     close_top_pct: float = None,
     feed: DataFeed = None,
+    enable_doubledown: bool = False,
+    doubledown_minutes: int = DOUBLEDOWN_MINUTES,
 ) -> tuple:
     """
     Walk each trading day in [eval_start, eval_end], apply rolling selector
@@ -475,6 +597,8 @@ def run_selector_backtest(
                         "bru_exit_reason": str(bru_row["exit_reason"])
                         if bru_row is not None
                         else "",
+                        "bars_held": int(row["bars_held"]),
+                        "mins_held": int(row["mins_held"]),
                     }
                 )
 
@@ -538,7 +662,59 @@ def run_selector_backtest(
                     }
                 )
 
+    if enable_doubledown:
+        opening_bars_by_label = {win["label"]: win["opening_bars"] for win in windows}
+        _annotate_doubledown_addon(
+            trade_rows, bars_by_date, window_opening_times, opening_bars_by_label,
+            doubledown_minutes=doubledown_minutes,
+        )
+
     return trade_rows, all_window_results, trading_days
+
+
+def _apply_doubledown(trade_rows: list) -> None:
+    """
+    After _apply_capital_flow has set slot_capital on each row, apply the double-down
+    add-on P&L to rank-1 rows whose co-picks stopped out early.
+
+    For each (date, window) group where _annotate_doubledown_addon set dd_freed_ranks
+    on rank-1:
+    - Freed capital = sum of returned capital from each stopped-out rank.
+      returned = slot_capital * (1 + pnl / entry_price)  [clamped to ≥ 0]
+    - Addon P&L = freed_capital * dd_addon_pnl_pct  [≥ 0, break-even floor]
+
+    Mutates trade_rows in-place, adding to affected rank-1 rows:
+      dd_addon_cap_pnl  float  dollar P&L from the add-on leg
+      dd_freed_capital  float  total freed capital redeployed as add-on
+    """
+    by_day_window: dict = {}
+    for row in trade_rows:
+        key = (row["date"], row["window"])
+        by_day_window.setdefault(key, []).append(row)
+
+    for rows in by_day_window.values():
+        # Find the winner — whichever row was annotated by _annotate_doubledown_addon.
+        winner = next((r for r in rows if "dd_freed_ranks" in r), None)
+        if winner is None or winner.get("skipped"):
+            continue
+
+        freed_rank_set = set(winner["dd_freed_ranks"])
+        total_freed = 0.0
+        for r in rows:
+            if r["rank"] not in freed_rank_set or r.get("skipped"):
+                continue
+            slot_cap = r.get("slot_capital", 0.0)
+            if slot_cap > 0 and r.get("entry_price", 0) > 0:
+                returned = slot_cap * (1.0 + r["pnl"] / r["entry_price"])
+                total_freed += max(0.0, returned)
+
+        if total_freed <= 0:
+            continue
+
+        addon_cap_pnl = total_freed * winner.get("dd_addon_pnl_pct", 0.0)
+        winner["cap_pnl"] += addon_cap_pnl
+        winner["dd_addon_cap_pnl"] = addon_cap_pnl
+        winner["dd_freed_capital"] = total_freed
 
 
 def _collect_baseline(
@@ -771,6 +947,28 @@ def _print_daily_table(
                     day_wins += 1
                 else:
                     day_losses += 1
+
+        dd_cap_pnl = row.get("dd_addon_cap_pnl", 0.0)
+        if dd_cap_pnl != 0.0:
+            freed = row.get("dd_freed_capital", 0.0)
+            addon_entry = row.get("dd_addon_entry", 0.0)
+            freed_ranks = row.get("dd_freed_ranks", [])
+            exit_p = float(row["exit_price"])
+            if row["signal"] == "BULLISH":
+                per_share = max(0.0, exit_p - addon_entry)
+            else:
+                per_share = max(0.0, addon_entry - exit_p)
+            pnl_pct = per_share / addon_entry * 100 if addon_entry else 0.0
+            pnl_str = f"+${per_share:.2f}" if per_share >= 0 else f"-${abs(per_share):.2f}"
+            pct_str = f"+{pnl_pct:.2f}%" if pnl_pct >= 0 else f"{pnl_pct:.2f}%"
+            blank_win = f"{'':5} " if multi_window else ""
+            ranks_str = "/".join(f"R{r}" for r in freed_ranks)
+            print(
+                f"  {'':12} {blank_win}{'':5} {'':6} "
+                f"{'[DD]':<9} {'':>5}  "
+                f"{addon_entry:>7.2f} {exit_p:>7.2f} "
+                f"{pnl_str:>7} {pct_str:>7}  {'WIN':<6}  freed ${freed:.0f} ← {ranks_str}"
+            )
 
     if current_date is not None:
         portfolio += day_cap_pnl
@@ -1472,6 +1670,28 @@ def _parse_args():
         dest="bullish_reentry_max_bars",
         help="Max bars_held for the primary BULLISH trade to be eligible for re-entry (default: 3).",
     )
+    parser.add_argument(
+        "--doubledown",
+        action="store_true",
+        default=False,
+        help=(
+            "Enable double-down: if rank-2+ positions stop out within the doubledown window "
+            "of OR close, deploy their returned capital into the highest-ranked survivor as a "
+            "single add-on leg. Add-on entry = close of the doubledown bar; hard stop = same "
+            "price (break-even). Default: off."
+        ),
+    )
+    parser.add_argument(
+        "--doubledown-minutes",
+        type=int,
+        default=DOUBLEDOWN_MINUTES,
+        dest="doubledown_minutes",
+        help=(
+            f"Minutes from OR close that define the doubledown window. Stopouts within this "
+            f"window free capital for the add-on leg. Must be a multiple of 5. "
+            f"Default: {DOUBLEDOWN_MINUTES}."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -1563,6 +1783,9 @@ if __name__ == "__main__":
     print(
         f"  Bullish RE   : {'on (max bars_held=' + str(args.bullish_reentry_max_bars) + ')' if args.bullish_reentry else 'off'}"
     )
+    print(
+        f"  Double-down  : {'on (' + str(args.doubledown_minutes) + '-min window, break-even stop on add-on)' if args.doubledown else 'off'}"
+    )
     if args.min_or_range > 0:
         wins_str = (
             ",".join(args.min_or_range_windows)
@@ -1621,6 +1844,8 @@ if __name__ == "__main__":
         or_bar_lookback=args.or_bar_lookback,
         close_top_pct=args.close_top_pct,
         feed=alpaca_feed,
+        enable_doubledown=args.doubledown,
+        doubledown_minutes=args.doubledown_minutes,
     )
 
     skip_log = _apply_capital_flow(
@@ -1633,6 +1858,9 @@ if __name__ == "__main__":
         min_capital=args.min_window_capital,
         compound=args.compound,
     )
+
+    if args.doubledown:
+        _apply_doubledown(trade_rows)
 
     baseline_df = _collect_baseline(all_window_results, eval_start, eval_end)
 
