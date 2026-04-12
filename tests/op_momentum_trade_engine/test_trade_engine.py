@@ -1500,4 +1500,146 @@ class TestMonitorLoop:
              patch(self._SLEEP):
             engine._monitor_loop(["NVDA"])
 
+
+_POLL_ENTRY_FILL_PATH = (
+    "alpha_tech_tracker.op_momentum_strategy.trade_engine.OpMomentumTradeEngine._poll_entry_fill"
+)
+
+
+class TestPollEntryFill:
+    def _make_live_engine(self):
+        client = _make_alpaca_client()
+        engine = OpMomentumTradeEngine(
+            alpaca_client=client,
+            mock_trade_execution=False,
+        )
+        engine._monitor = Mock()
+        engine._signal_engine = Mock()
+        engine._signal_engine.get_latest_bar.return_value = None
+        engine._window_state["W1"] = {
+            "pending_signals": {},
+            "collection_deadline": datetime.now(ET) - timedelta(minutes=1),
+            "open_position_count": 0,
+            "capital_fraction": 1.0,
+        }
+        return engine
+
+    def test_returns_fill_price_on_first_attempt(self):
+        engine = self._make_live_engine()
+        engine._client.order_status.return_value = {"filled_avg_price": "8.75"}
+
+        with patch("alpha_tech_tracker.op_momentum_strategy.trade_engine.time.sleep"):
+            result = engine._poll_entry_fill("order-1")
+
+        assert result == _D("8.75")
+        engine._client.order_status.assert_called_once_with("order-1")
+
+    def test_retries_when_fill_not_yet_available(self):
+        engine = self._make_live_engine()
+        engine._client.order_status.side_effect = [
+            {"filled_avg_price": None},
+            {"filled_avg_price": None},
+            {"filled_avg_price": "9.10"},
+        ]
+
+        with patch("alpha_tech_tracker.op_momentum_strategy.trade_engine.time.sleep"):
+            result = engine._poll_entry_fill("order-2")
+
+        assert result == _D("9.10")
+        assert engine._client.order_status.call_count == 3
+
+    def test_returns_none_after_all_retries_exhausted(self):
+        engine = self._make_live_engine()
+        engine._client.order_status.return_value = {"filled_avg_price": None}
+
+        with patch("alpha_tech_tracker.op_momentum_strategy.trade_engine.time.sleep"):
+            result = engine._poll_entry_fill("order-3", retries=2)
+
+        assert result is None
+        assert engine._client.order_status.call_count == 2
+
+    def test_retries_on_order_status_exception(self):
+        engine = self._make_live_engine()
+        engine._client.order_status.side_effect = [
+            Exception("API error"),
+            {"filled_avg_price": "7.50"},
+        ]
+
+        with patch("alpha_tech_tracker.op_momentum_strategy.trade_engine.time.sleep"):
+            result = engine._poll_entry_fill("order-4")
+
+        assert result == _D("7.50")
+
+    def test_options_entry_sets_fill_price_in_live_mode(self):
+        engine = self._make_live_engine()
+        captured_positions = []
+        engine._monitor.add_position.side_effect = captured_positions.append
+
+        with patch(_OPTION_CONTRACT_SELECTOR_PATH, return_value="NVDA260404C00170000"), \
+             patch(_POSITION_SIZER_PATH, return_value=(2, _D("8.50"))), \
+             patch(_PLACE_ENTRY_PATH, return_value={"order_id": "live-opt-1"}), \
+             patch(_POLL_ENTRY_FILL_PATH, return_value=_D("8.60")) as poll_mock, \
+             patch(_NOTIFY_PATH):
+            engine._enter_position(_make_signal_event("NVDA"), rank=0)
+
+        poll_mock.assert_called_once_with("live-opt-1")
+        assert captured_positions[0].entry_fill_price == _D("8.60")
+
+    def test_stock_entry_sets_fill_price_in_live_mode(self):
+        engine = self._make_live_engine()
+        engine._trade_type = "stock"
+        captured_positions = []
+        engine._monitor.add_position.side_effect = captured_positions.append
+
+        with patch(_COMPUTE_STOCK_PATH, return_value=(10, _D("100.00"))), \
+             patch(_PLACE_STOCK_ORDER_PATH, return_value={"order_id": "live-stk-1"}), \
+             patch(_POLL_ENTRY_FILL_PATH, return_value=_D("100.25")) as poll_mock, \
+             patch(_NOTIFY_PATH):
+            engine._enter_position(_make_signal_event("NVDA"), rank=0)
+
+        poll_mock.assert_called_once_with("live-stk-1")
+        assert captured_positions[0].entry_fill_price == _D("100.25")
+
+    def test_options_entry_skips_poll_in_mock_mode(self):
+        client = _make_alpaca_client()
+        engine = OpMomentumTradeEngine(
+            alpaca_client=client,
+            mock_trade_execution=True,
+        )
+        engine._monitor = Mock()
+        engine._signal_engine = Mock()
+        engine._signal_engine.get_latest_bar.return_value = None
+        engine._window_state["W1"] = {
+            "pending_signals": {},
+            "collection_deadline": datetime.now(ET) - timedelta(minutes=1),
+            "open_position_count": 0,
+            "capital_fraction": 1.0,
+        }
+        captured_positions = []
+        engine._monitor.add_position.side_effect = captured_positions.append
+
+        with patch(_OPTION_CONTRACT_SELECTOR_PATH, return_value="NVDA260404C00170000"), \
+             patch(_POSITION_SIZER_PATH, return_value=(2, _D("8.50"))), \
+             patch(_PLACE_ENTRY_PATH, return_value={"order_id": "sim-1", "simulated_fill_mid": _D("8.50")}), \
+             patch(_POLL_ENTRY_FILL_PATH) as poll_mock, \
+             patch(_NOTIFY_PATH):
+            engine._enter_position(_make_signal_event("NVDA"), rank=0)
+
+        poll_mock.assert_not_called()
+        assert captured_positions[0].entry_fill_price is None
+
+    def test_fill_price_none_when_poll_returns_none(self):
+        engine = self._make_live_engine()
+        captured_positions = []
+        engine._monitor.add_position.side_effect = captured_positions.append
+
+        with patch(_OPTION_CONTRACT_SELECTOR_PATH, return_value="NVDA260404C00170000"), \
+             patch(_POSITION_SIZER_PATH, return_value=(2, _D("8.50"))), \
+             patch(_PLACE_ENTRY_PATH, return_value={"order_id": "live-2"}), \
+             patch(_POLL_ENTRY_FILL_PATH, return_value=None), \
+             patch(_NOTIFY_PATH):
+            engine._enter_position(_make_signal_event("NVDA"), rank=0)
+
+        assert captured_positions[0].entry_fill_price is None
+
         engine._monitor.on_bar.assert_not_called()

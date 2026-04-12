@@ -504,6 +504,8 @@ class OpMomentumTradeEngine:
             window_budget=window_budget,
             slot_capital=slot_capital,
         )
+        if not self._mock_trade_execution:
+            pos.entry_fill_price = self._poll_entry_fill(order.get("order_id", ""))
         self._monitor.add_position(pos)
 
     def _enter_option_position(
@@ -614,7 +616,45 @@ class OpMomentumTradeEngine:
             window_budget=window_budget,
             slot_capital=slot_capital,
         )
+        if not self._mock_trade_execution:
+            pos.entry_fill_price = self._poll_entry_fill(order.get("order_id", ""))
         self._monitor.add_position(pos)
+
+    def _poll_entry_fill(self, order_id: str, retries: int = 3, delay: float = 5.0) -> Optional[_D]:
+        """Poll broker for entry fill price after a live order is placed.
+
+        Called once per entry (live mode only) so that entry_fill_price is
+        available from the very first monitoring bar, enabling quick-exit
+        protection on positions held under 8 minutes.
+
+        Returns the fill price as Decimal, or None if unavailable after all retries.
+        """
+        for attempt in range(retries):
+            try:
+                status = self._client.order_status(order_id)
+                fill = status.get("filled_avg_price")
+                if fill is not None:
+                    logger.info(
+                        "Entry fill confirmed %s: %.4f (attempt %d)",
+                        order_id,
+                        float(fill),
+                        attempt + 1,
+                    )
+                    return _D(str(fill))
+            except Exception:
+                logger.warning(
+                    "Could not fetch entry fill for %s (attempt %d/%d)",
+                    order_id,
+                    attempt + 1,
+                    retries,
+                )
+            time.sleep(delay)
+        logger.warning(
+            "Entry fill unavailable after %d attempts for %s — quick-exit disabled for this position",
+            retries,
+            order_id,
+        )
+        return None
 
     def _enter_reentry(self, watcher: ReentryWatcher, trigger_price: _D):
         reentry_signal = "BEARISH" if watcher.reentry_type == "bearish_reentry" else "BULLISH"

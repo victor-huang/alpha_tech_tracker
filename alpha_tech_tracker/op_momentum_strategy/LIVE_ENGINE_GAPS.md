@@ -378,3 +378,145 @@ if pos.trailing_arm_price is not None:
     return  # re-entry positions do not spawn further watchers
 ```
 `trailing_arm_price` is set for all re-entry positions and `None` for primary trades.
+
+---
+
+## Production Readiness Gaps (2026-04-11 review)
+
+The gaps below were identified by a full read of `trade_engine.py`, `position_monitor.py`,
+`order_executor.py`, `signal_engine.py`, and `config.py` against the strategy's confirmed
+best parameters.
+
+---
+
+### ~~G20 — Entry fill price never populated during the session (quick-exit broken)~~ ✓ Fixed
+
+**File:** `position_monitor.py:42-56`, `_monitor_loop` in `trade_engine.py`
+**Severity:** High — quick-exit protection is silently disabled in live mode
+
+`_quick_exit_entry_price()` returns `None` when `pos.entry_fill_price is None`.
+`entry_fill_price` starts `None` and is only populated by `_refresh_fill_prices()`,
+which runs exclusively in the EOD polling phase (`eod_triggered` block in
+`_monitor_loop`). During normal trading hours `entry_fill_price` is always `None`,
+so every call to `_quick_exit_entry_price()` returns `None` — the step-0 "try
+entry price first" protection never fires in live mode.
+
+**Fix:** After `_place_entry()` / `place_stock_order()` returns the order dict,
+poll `client.order_status(order_id)` in a short retry loop (e.g., 3 × 5s) and
+set `pos.entry_fill_price` before handing the position off to the monitor.
+
+---
+
+### G21 — `bars_held` inflates from polling — breaks reversal/re-entry bar gate
+
+**File:** `position_monitor.py` `_evaluate_stop()` / `on_bar()`
+**Severity:** Medium (only affects `--enable-reversal` / `--enable-bearish-reentry`)
+
+`_monitor_loop` calls `on_bar()` for all tickers every 30 seconds, but
+`get_latest_bar()` returns the same bar until a new 5-min bar arrives. Each poll
+increments `pos.bars_held` when no exit fires. A position stopped out after 1 real
+bar has `bars_held ≈ 10` (10 polls × 30s ≈ 5 min). With the default
+`reversal_max_bars=3`, positions held for 1–3 real bars may not get a reversal
+watcher because `bars_held` already exceeds 3 by the time the exit fires.
+
+This is a no-op for the default single-window M1 config (reversal disabled).
+It also inflates `bars_held` in the mock pricer time-decay check (`bars_held < 12`),
+but that only affects replay mode, not live.
+
+**Fix:** Track the last-evaluated bar timestamp per position:
+```python
+# in _evaluate_stop, before incrementing
+if bar_time == pos.last_evaluated_bar_time:
+    return  # same bar, skip
+pos.last_evaluated_bar_time = bar_time
+pos.bars_held += 1
+```
+Add `last_evaluated_bar_time: Optional[datetime] = None` to `ActivePosition`.
+
+---
+
+### G22 — `MAX_ACTIVE_SYMBOLS = 2` in config.py conflicts with best-parameter top-3
+
+**File:** `config.py:24`
+**Severity:** Medium — running without `--top 3` silently uses top-2, a worse config
+
+All 5-year backtests are validated at top-3 (+56pp over top-5). `OpMomentumTradeEngine`
+defaults `top_n` to `MAX_ACTIVE_SYMBOLS = 2`. A live session started without
+`--top 3` quietly runs with 2 slots, deploying less capital per day.
+
+**Fix:** Change `MAX_ACTIVE_SYMBOLS = 2` → `MAX_ACTIVE_SYMBOLS = 3` in `config.py`,
+or add a loud warning in `op_momentum_trade_engine.py` when `top_n < 3` in live mode.
+
+---
+
+### G23 — No position reconciliation on startup (crash recovery)
+
+**File:** `trade_engine.py` `run()`
+**Severity:** High — crash-restart leaves open broker positions unmonitored
+
+On startup `run()` fetches account buying power but never queries the broker for
+existing open positions. If the engine crashes mid-session and restarts, any
+already-filled entries are invisible to the new `PositionMonitor` and will go
+unmonitored until the market closes (no stop, no EOD close from the engine).
+
+**Fix:** At startup, call `client.get_open_positions()` (or equivalent) and
+reconstruct `ActivePosition` objects for any open option/stock positions before
+starting the stream. Log a loud warning listing any reconciled positions.
+
+---
+
+### G24 — No account-level daily max-loss circuit breaker
+
+**Severity:** Medium — per-trade `max_loss_pct` does not protect the account overall
+
+`--max-loss-pct` caps loss on individual positions. If multiple positions each hit
+max-loss back-to-back in a bad market, the engine keeps opening new trades. A daily
+P&L floor (e.g., halt if account drops 3% from opening balance) is standard practice
+for live algo trading and would prevent runaway losses on volatile days.
+
+**Fix:** Track `session_opening_balance` at startup. In `_drain_pending_signals_for_window`,
+before entering any position, check current account balance. If it has fallen more than
+`daily_max_loss_pct` from `session_opening_balance`, skip all remaining signals and
+log/notify.
+
+---
+
+### G25 — No WebSocket reconnect watchdog
+
+**File:** `signal_engine.py` `start()` / `trade_engine.py` `_monitor_loop`
+**Severity:** Medium — stream drop is silent; engine continues polling stale bars
+
+If `StockDataStream` drops and the SDK's internal reconnect fails (or the thread
+dies from an unhandled exception in `_handle_bar`), `get_latest_bar()` keeps
+returning the last known bar. The monitor loop continues evaluating stops against
+stale data; no new signals fire; no alert is raised.
+
+**Fix:** Record `_last_bar_received_at` timestamp in `_handle_bar`. In
+`_monitor_loop`, if `_last_bar_received_at` has not advanced in > 10 minutes during
+market hours, log an error and send a Telegram alert. Optionally attempt to restart
+the stream.
+
+---
+
+### G26 — `print()` in `run()` bypasses log file
+
+**File:** `trade_engine.py:1113-1114, 1253`
+**Severity:** Low — pre-market output missing from `logs/op_momentum_YYYY-MM-DD.log`
+
+Three `print(f"...")` calls in `run()` and `run_replay()` write to stdout only.
+In daemon mode (no terminal) these lines are silently dropped.
+
+**Fix:** Replace with `logger.info(...)`.
+
+---
+
+### G27 — No market holiday detection
+
+**Severity:** Low — engine idles silently on holidays
+
+If started on a US market holiday, the engine subscribes to the WebSocket and waits
+for OR bars that never arrive. The TickerSelector falls back to the prior trading day,
+so picks are computed, but no signals ever fire. No alert is sent.
+
+**Fix:** Add a `pandas_market_calendars` or `exchange_calendars` check at startup;
+exit early with a Telegram notification if today is not a trading day.
