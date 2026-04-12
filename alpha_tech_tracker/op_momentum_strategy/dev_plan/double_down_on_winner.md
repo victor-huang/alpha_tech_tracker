@@ -196,9 +196,7 @@ After the capital recycling fix (`_apply_capital_flow` correctly deducts DD-depl
 
 Returns decrease monotonically as start time increases. Earlier is consistently better — the opposite of the pre-fix finding. Beyond 120 min, DD provides near-zero or negative lift.
 
-### 5-year per-year consistency check
-
-Run over 2021–2025, per year (IEX feed, top-2, 60/40, M1+A1+A2, morning-split 100, reversal+BRE+BRU on):
+### Per-year consistency check — IEX feed (2021–2025)
 
 | Year | Baseline | DD 5 | DD 10 | DD 15 | DD 60 | DD 120 |
 |------|----------|------|-------|-------|-------|--------|
@@ -209,7 +207,19 @@ Run over 2021–2025, per year (IEX feed, top-2, 60/40, M1+A1+A2, morning-split 
 | 2025 | +178.6% | **+199.22% (+20.6pp)** | +198.86% (+20.3pp) | +193.28% (+14.7pp) | +183.40% (+4.8pp) | +178.79% (+0.2pp) |
 | **Wins** | | **4/5** | 1/5 | 0/5 | 0/5 | 0/5 |
 
-**DD 5 wins 4/5 years** — only trails DD 10 in 2021 by 0.4pp (essentially a tie). DD 5 and DD 10 are within 1–4pp every year and both far ahead of DD 15+. There is a sharp cliff between DD 10 and DD 15 (~5.5pp in 2025) and another between DD 15 and DD 60. DD 120 barely beats baseline (+0.7pp in 2021/2023, near-zero in 2025).
+### Per-year consistency check — SIP feed (2021–2026)
+
+| Year | Baseline | DD 5 | DD 10 | DD 15 | DD 60 | DD 120 |
+|------|----------|------|-------|-------|-------|--------|
+| 2021 | +147.87% | **+158.41% (+10.5pp)** | +158.08% (+10.2pp) | +155.96% (+8.1pp) | +154.51% (+6.6pp) | +149.69% (+1.8pp) |
+| 2022 | +191.51% | **+210.80% (+19.3pp)** | +210.79% (+19.3pp) | +206.17% (+14.7pp) | +200.64% (+9.1pp) | +194.02% (+2.5pp) |
+| 2023 | +334.58% | +352.89% (+18.3pp) | **+354.47% (+19.9pp)** | +353.26% (+18.7pp) | +346.57% (+12.0pp) | +337.55% (+3.0pp) |
+| 2024 | +138.51% | **+151.69% (+13.2pp)** | +150.48% (+12.0pp) | +148.96% (+10.5pp) | +146.71% (+8.2pp) | +140.76% (+2.3pp) |
+| 2025 | +174.27% | **+185.14% (+10.9pp)** | +182.92% (+8.7pp) | +180.31% (+6.0pp) | +177.88% (+3.6pp) | +174.06% (-0.2pp) |
+| 2026 | +88.49% | **+97.55% (+9.1pp)** | +95.48% (+7.0pp) | +94.48% (+6.0pp) | +91.24% (+2.8pp) | +88.36% (-0.1pp) |
+| **Wins** | | **5/6** | 1/6 | 0/6 | 0/6 | 0/6 |
+
+**DD 5 wins 5/6 years on SIP** — only trails DD 10 in 2023 by 1.6pp (18.3pp vs 19.9pp). The finding is fully consistent across both IEX and SIP feeds. DD 5 and DD 10 are within 0.3–2pp every year; both far ahead of DD 15+. Sharp cliff between DD 10 and DD 15. DD 120 near-zero or negative lift in 2025 and 2026.
 
 **Why the shift from the pre-fix finding:** the earlier sweep (which favored 50 min) did not account for DD capital being tied up when A1/A2 started. With the recycling fix, a later DD start means the add-on leg is still running during A1, reducing available capital there. Earlier DD starts (5–10 min) fire sooner, give the add-on more time to exit naturally before afternoon windows, and reduce the capital drag.
 
