@@ -59,6 +59,7 @@ class LiveSignalEngine:
         windows: list = None,
         bar_recorder: BarRecorder = None,
         or_bar_lookback: int = 3,
+        alpaca_feed: DataFeed = DataFeed.SIP,
     ):
         self._tickers = tickers
         self._bearish_ma200 = bearish_ma200
@@ -109,6 +110,7 @@ class LiveSignalEngine:
         self._bar_recorder = bar_recorder
         self._last_bar_received_at: Optional[datetime] = None
         self._stream_started_at: Optional[datetime] = None
+        self._alpaca_feed = alpaca_feed
 
     def _warmup(self):
         hist_client = StockHistoricalDataClient(self._api_key, self._secret_key)
@@ -136,7 +138,7 @@ class LiveSignalEngine:
             timeframe=TimeFrame(amount=5, unit=TimeFrameUnit.Minute),
             start=start_dt,
             end=end_dt,
-            feed=DataFeed.SIP,
+            feed=self._alpaca_feed,
         )
         bars = hist_client.get_stock_bars(request)
         all_df = bars.df
@@ -724,7 +726,7 @@ class LiveSignalEngine:
         self._stream = StockDataStream(
             self._api_key,
             self._secret_key,
-            feed=DataFeed.SIP,
+            feed=self._alpaca_feed,
             websocket_params={"ping_interval": 20, "ping_timeout": 40},
         )
         self._stream.subscribe_bars(self._handle_bar, *self._tickers)
@@ -744,7 +746,7 @@ class LiveSignalEngine:
         self._stream = StockDataStream(
             self._api_key,
             self._secret_key,
-            feed=DataFeed.SIP,
+            feed=self._alpaca_feed,
             websocket_params={"ping_interval": 20, "ping_timeout": 40},
         )
         self._stream.subscribe_bars(self._handle_bar, *self._tickers)

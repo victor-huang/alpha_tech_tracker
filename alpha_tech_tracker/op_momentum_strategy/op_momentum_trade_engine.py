@@ -7,6 +7,8 @@ import sys
 import time
 from datetime import date
 
+from alpaca.data.enums import DataFeed
+
 from .config import (
     ARMED_MA20_EXIT,
     DAILY_MAX_LOSS_USD,
@@ -414,6 +416,12 @@ def parse_args():
         dest="lookback",
         help=f"Rolling lookback window in days for pre-market ticker scoring (default: {_DEFAULT_LOOKBACK_DAYS}).",
     )
+    parser.add_argument(
+        "--feed",
+        choices=["sip", "iex"],
+        default="iex",
+        help="Alpaca data feed: 'iex' (free tier, default) or 'sip' (consolidated, requires paid subscription).",
+    )
     args = parser.parse_args()
     if args.rank_weighted_sizing and len(args.rank_weighted_sizing) != args.top:
         parser.error(
@@ -505,12 +513,19 @@ if __name__ == "__main__":
     windows = _parse_windows(args)
 
     if args.action == "run":
-        logging.basicConfig(
-            level=getattr(logging, args.log_level),
-            format="%(asctime)s %(levelname)s %(name)s — %(message)s",
+        _fmt = logging.Formatter(
+            "%(asctime)s %(levelname)s %(name)s — %(message)s",
             datefmt="%Y-%m-%d %H:%M:%S",
-            handlers=[logging.StreamHandler(), _make_log_handler(log_file)],
         )
+        _root = logging.getLogger()
+        _root.setLevel(getattr(logging, args.log_level))
+        _root.handlers.clear()
+        _sh = logging.StreamHandler()
+        _sh.setFormatter(_fmt)
+        _root.addHandler(_sh)
+        _fh = _make_log_handler(log_file)
+        _fh.setFormatter(_fmt)
+        _root.addHandler(_fh)
         is_paper = not (args.live or args.mock_trade_execution)
         client = build_execution_client(is_paper=is_paper)
         contract_selector = _build_contract_selector(args, client)
@@ -541,6 +556,7 @@ if __name__ == "__main__":
             lookback_days=args.lookback,
             replay_capital=args.capital,
             ws_reconnect_timeout=args.ws_reconnect_timeout,
+            alpaca_feed=DataFeed.IEX if args.feed == "iex" else DataFeed.SIP,
         )
         if args.replay_date:
             from datetime import date as _date
@@ -587,12 +603,16 @@ if __name__ == "__main__":
     # --- daemon process only beyond this point ---
     _write_pid(args.pid_file)
 
-    logging.basicConfig(
-        level=getattr(logging, args.log_level),
-        format="%(asctime)s %(levelname)s %(name)s — %(message)s",
+    _fmt = logging.Formatter(
+        "%(asctime)s %(levelname)s %(name)s — %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
-        handlers=[_make_log_handler(log_file)],
     )
+    _root = logging.getLogger()
+    _root.setLevel(getattr(logging, args.log_level))
+    _root.handlers.clear()
+    _fh = _make_log_handler(log_file)
+    _fh.setFormatter(_fmt)
+    _root.addHandler(_fh)
     logger.info(
         "Daemon started — api_key_set=%s config_file=%s",
         bool(os.environ.get("ALPACA_API_KEY")),
@@ -630,6 +650,7 @@ if __name__ == "__main__":
             lookback_days=args.lookback,
             replay_capital=args.capital,
             ws_reconnect_timeout=args.ws_reconnect_timeout,
+            alpaca_feed=DataFeed.IEX if args.feed == "iex" else DataFeed.SIP,
         )
         engine.run(tickers_override=args.tickers)
     finally:

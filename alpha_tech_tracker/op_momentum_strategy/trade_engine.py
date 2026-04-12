@@ -10,6 +10,8 @@ from typing import Optional
 
 import pytz
 
+from alpaca.data.enums import DataFeed
+
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import fetch_bars
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector import (
     ROLLING_LOOKBACK_DAYS,
@@ -76,6 +78,7 @@ class TickerSelector:
         lookback_days: int = ROLLING_LOOKBACK_DAYS,
         regime_filter: bool = False,
         regime_ma: int = 8,
+        alpaca_feed: DataFeed = DataFeed.SIP,
     ):
         self._tickers = tickers
         self._top_n = top_n
@@ -85,6 +88,7 @@ class TickerSelector:
         self._lookback_days = lookback_days
         self._regime_filter = regime_filter
         self._regime_ma = regime_ma
+        self._alpaca_feed = alpaca_feed
         self.rolling_stats: dict = {}
 
     def _selector_cache_path(self, target_date: date) -> Path:
@@ -112,6 +116,7 @@ class TickerSelector:
                 fetch_start,
                 bars_end,
                 source="alpaca",
+                feed=self._alpaca_feed,
             )
         return fetch_bars(
             self._tickers,
@@ -119,6 +124,7 @@ class TickerSelector:
             _safe_bars_end(today),
             source="alpaca",
             allow_intraday=True,
+            feed=self._alpaca_feed,
         )
 
     def select(self, ticker_dfs: dict = None) -> list:
@@ -253,6 +259,7 @@ class OpMomentumTradeEngine:
         replay_capital: Optional[float] = None,
         or_bar_lookback: int = 3,
         ws_reconnect_timeout: int = WS_RECONNECT_TIMEOUT_SECONDS,
+        alpaca_feed: DataFeed = DataFeed.SIP,
     ):
         self._client = alpaca_client
         self._api_key = alpaca_client._api_key
@@ -286,6 +293,7 @@ class OpMomentumTradeEngine:
         self._replay_capital = replay_capital
         self._or_bar_lookback = or_bar_lookback
         self._ws_reconnect_timeout = ws_reconnect_timeout
+        self._alpaca_feed = alpaca_feed
         self._monitor: PositionMonitor = None
         self._signal_engine: LiveSignalEngine = None
         self._signal_lock = threading.Lock()
@@ -1268,6 +1276,7 @@ class OpMomentumTradeEngine:
                     lookback_days=self._lookback_days,
                     regime_filter=self._regime_filter,
                     regime_ma=self._regime_ma,
+                    alpaca_feed=self._alpaca_feed,
                 )
                 if first_config_key is None:
                     first_config_key = config_key
@@ -1310,6 +1319,7 @@ class OpMomentumTradeEngine:
         api_key = self._api_key
         secret_key = self._secret_key
 
+        logger.info("Alpaca data feed: %s", self._alpaca_feed.value.upper())
         all_tickers = tickers_override or TICKERS
         first_window = self._windows[0]
 
@@ -1373,6 +1383,7 @@ class OpMomentumTradeEngine:
             windows=engine_windows,
             bar_recorder=bar_recorder,
             or_bar_lookback=self._or_bar_lookback,
+            alpaca_feed=self._alpaca_feed,
         )
         try:
             account = self._client.get_accounts()
@@ -1458,6 +1469,7 @@ class OpMomentumTradeEngine:
         replay_open = ET.localize(datetime.combine(replay_date, _time(9, 30)))
         set_replay_clock(lambda: replay_open)
 
+        logger.info("Alpaca data feed: %s", self._alpaca_feed.value.upper())
         all_tickers = tickers_override or TICKERS
         first_window = self._windows[0]
 
@@ -1505,6 +1517,7 @@ class OpMomentumTradeEngine:
             regime_ma=self._regime_ma,
             windows=engine_windows,
             or_bar_lookback=self._or_bar_lookback,
+            alpaca_feed=self._alpaca_feed,
         )
         self._signal_engine.start_replay(replay_date)
 

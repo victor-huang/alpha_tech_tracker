@@ -64,9 +64,11 @@ tests/op_momentum_trade_engine/
 | `MAX_LOSS_PCT` | `None` | Per-trade max stock loss % (e.g. `0.02` = 2%). Disabled by default |
 | `ARMED_MA20_EXIT` | `False` | Use MA20 as trailing exit once hard stop is armed |
 | `REGIME_FILTER` | `False` | Suppress BULLISH signals on QQQ bearish days |
-| `REGIME_MA` | `5` | N-day MA period for QQQ regime filter |
+| `REGIME_MA` | `8` | N-day MA period for QQQ regime filter |
 | `RANK_WEIGHTED_SIZING` | `False` | Weight position size by ticker rank |
 | `RANK_WEIGHTS` | `[0.50, 0.30, 0.20]` | Capital weights for rank-0, rank-1, rank-2 tickers |
+| `DAILY_MAX_LOSS_USD` | `None` | Daily P&L circuit-breaker threshold in USD; disabled by default |
+| `WS_RECONNECT_TIMEOUT_SECONDS` | `600` | Seconds without a bar before watchdog reconnects the WebSocket stream |
 
 ---
 
@@ -211,6 +213,12 @@ serves all windows — bars are evaluated against each window's OR independently
 7. Continues appending bars and updating MAs for `PositionMonitor` use.
 8. Includes a per-window historical catch-up path for tickers that missed opening bars.
 
+**WebSocket health monitoring:** `_handle_bar()` updates `_last_bar_received_at` on every
+bar; `start()` sets `_stream_started_at`. If no bar arrives within `WS_RECONNECT_TIMEOUT_SECONDS`
+(checked by the trade engine's `_monitor_loop`), `reconnect()` is called. `reconnect()` stops
+the old stream, creates a new `StockDataStream`, resubscribes all tickers, and starts a new
+daemon thread — preserving `_history` so no re-warmup is needed.
+
 ---
 
 ### 5. `PositionMonitor`
@@ -313,6 +321,8 @@ order placement.
 
 ```
 Startup     _load_config() — load alpaca + clicksend credentials
+            Weekend / NYSE holiday check — exit early if market closed (live mode only)
+            _recover_session() — reconcile any open broker positions from a prior crash
             TickerSelector.select() — rank tickers, cache rolling_stats
             LiveSignalEngine.start() — warmup bars, build regime dates, start stream
 
@@ -327,7 +337,8 @@ closes      → ITMOptionContractSelector.select(...)
             → PositionMonitor.add_position(...)
 
 9:45–3:55   _monitor_loop() polls PositionMonitor every 30s
-            Each tick: evaluate stops, close if triggered
+            Each tick: _check_ws_health() — reconnect if stream silent > timeout
+                       evaluate stops, close if triggered
             Status printed every 5 minutes
 
 3:55 PM     close_all(reason="end_of_day")
@@ -397,8 +408,11 @@ python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine \
 | `--max-loss-pct FLOAT` | disabled | Per-trade max stock loss % (e.g. `0.02`) |
 | `--armed-ma20-exit` | off | Use MA20 as trailing exit once hard stop armed |
 | `--regime-filter` | off | Suppress BULLISH signals on QQQ bearish days |
-| `--regime-ma INT` | `5` | N-day MA for QQQ regime filter |
+| `--regime-ma INT` | `8` | N-day MA for QQQ regime filter |
 | `--rank-weighted-sizing` | off | Weight positions by rank (50/30/20%) |
+| `--daily-max-loss USD` | disabled | Halt new entries for the day once realized P&L drops this many dollars |
+| `--ws-reconnect-timeout SEC` | `600` | Seconds without a bar before the watchdog reconnects the WebSocket stream |
+| `--feed {sip,iex}` | `sip` | Alpaca data feed: `sip` (consolidated, requires paid sub) or `iex` (free tier) |
 | `--opening-start HH:MM` | `09:30` | Opening window start time (single-window mode) |
 | `--window LABEL START BARS` | — | Define a named trading window (repeatable) |
 | `--morning-split PCT …` | — | Capital split % for simultaneous first-group windows |

@@ -80,6 +80,8 @@ python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine run \
   --log-level INFO
 ```
 
+> Default feed is `iex` (free tier). Pass `--feed sip` if your Alpaca account has a paid SIP subscription.
+
 ### Live trading (real money)
 
 ```bash
@@ -157,7 +159,10 @@ optional arguments:
   --max-loss-pct            Per-trade max loss as fraction of entry price (e.g. 0.02)
   --armed-ma20-exit         Use MA20 as trailing exit once hard stop is armed
   --regime-filter           Suppress BULLISH signals on QQQ bearish days
-  --regime-ma               N-day MA for QQQ regime filter (default: 5)
+  --regime-ma               N-day MA for QQQ regime filter (default: 8)
+  --daily-max-loss          Halt new entries once realized P&L drops this many USD (e.g. 500)
+  --ws-reconnect-timeout    Seconds without a bar before watchdog reconnects stream (default: 600)
+  --feed {sip,iex}          Alpaca data feed: iex (free tier, default) or sip (consolidated, requires paid subscription; works for historical/replay dates)
   --rank-weighted-sizing    Weight positions 50/30/20% by rank
   --opening-start           Single-window start time HH:MM ET (default: 09:30)
   --window LABEL START BARS Define a named trading window (repeatable)
@@ -295,7 +300,7 @@ Defined in `config.py` (16 tickers, pool v2):
 TICKERS = [
     "SNDK", "APP", "SHOP", "CVNA", "AMD", "META",
     "EXPE", "FANG", "RH", "FN", "MU",
-    "ANAB", "PLTR", "COIN", "NVDA", "TSLA",
+    "CRDO", "PLTR", "COIN", "NVDA", "TSLA",
 ]
 ```
 

@@ -407,7 +407,7 @@ set `pos.entry_fill_price` before handing the position off to the monitor.
 
 ---
 
-### G21 — `bars_held` inflates from polling — breaks reversal/re-entry bar gate
+### ~~G21 — `bars_held` inflates from polling — breaks reversal/re-entry bar gate~~ ✓ Fixed
 
 **File:** `position_monitor.py` `_evaluate_stop()` / `on_bar()`
 **Severity:** Medium (only affects `--enable-reversal` / `--enable-bearish-reentry`)
@@ -419,19 +419,10 @@ bar has `bars_held ≈ 10` (10 polls × 30s ≈ 5 min). With the default
 `reversal_max_bars=3`, positions held for 1–3 real bars may not get a reversal
 watcher because `bars_held` already exceeds 3 by the time the exit fires.
 
-This is a no-op for the default single-window M1 config (reversal disabled).
-It also inflates `bars_held` in the mock pricer time-decay check (`bars_held < 12`),
-but that only affects replay mode, not live.
-
-**Fix:** Track the last-evaluated bar timestamp per position:
-```python
-# in _evaluate_stop, before incrementing
-if bar_time == pos.last_evaluated_bar_time:
-    return  # same bar, skip
-pos.last_evaluated_bar_time = bar_time
-pos.bars_held += 1
-```
-Add `last_evaluated_bar_time: Optional[datetime] = None` to `ActivePosition`.
+**Fix:** Added `last_evaluated_bar_time: Optional[datetime] = None` to `ActivePosition`.
+In `_evaluate_stop`, skip the increment if `bar_time == pos.last_evaluated_bar_time`;
+otherwise update `last_evaluated_bar_time` and increment `bars_held`. Repeated 30s
+polls of the same 5-min bar are no-ops.
 
 ---
 
@@ -444,12 +435,14 @@ All 5-year backtests are validated at top-3 (+56pp over top-5). `OpMomentumTrade
 defaults `top_n` to `MAX_ACTIVE_SYMBOLS = 2`. A live session started without
 `--top 3` quietly runs with 2 slots, deploying less capital per day.
 
-**Fix:** Change `MAX_ACTIVE_SYMBOLS = 2` → `MAX_ACTIVE_SYMBOLS = 3` in `config.py`,
-or add a loud warning in `op_momentum_trade_engine.py` when `top_n < 3` in live mode.
+**Decision: Won't Fix** — `MAX_ACTIVE_SYMBOLS = 2` is intentional for live trading. Top-2
+has been tested and produces good results; the extra capital concentration reduces the
+number of simultaneous positions to manage and is the current live operating standard.
+Always pass `--top 3` explicitly if running the top-3 backtest configuration.
 
 ---
 
-### G23 — No position reconciliation on startup (crash recovery)
+### ~~G23 — No position reconciliation on startup (crash recovery)~~ ✓ Fixed
 
 **File:** `trade_engine.py` `run()`
 **Severity:** High — crash-restart leaves open broker positions unmonitored
@@ -459,13 +452,15 @@ existing open positions. If the engine crashes mid-session and restarts, any
 already-filled entries are invisible to the new `PositionMonitor` and will go
 unmonitored until the market closes (no stop, no EOD close from the engine).
 
-**Fix:** At startup, call `client.get_open_positions()` (or equivalent) and
-reconstruct `ActivePosition` objects for any open option/stock positions before
-starting the stream. Log a loud warning listing any reconciled positions.
+**Fix:** Added `_recover_session()` called at the top of `run()`. It calls
+`client.get_open_positions()`, reconstructs `ActivePosition` objects for any open
+positions, adds them to the `PositionMonitor`, and logs a loud `WARNING` for each
+reconciled position. `_rebuild_window_returned()` accumulates the cost basis into
+`_window_returned` so sequential window budgets remain correct after a restart.
 
 ---
 
-### G24 — No account-level daily max-loss circuit breaker
+### ~~G24 — No account-level daily max-loss circuit breaker~~ ✓ Fixed
 
 **Severity:** Medium — per-trade `max_loss_pct` does not protect the account overall
 
@@ -474,14 +469,16 @@ max-loss back-to-back in a bad market, the engine keeps opening new trades. A da
 P&L floor (e.g., halt if account drops 3% from opening balance) is standard practice
 for live algo trading and would prevent runaway losses on volatile days.
 
-**Fix:** Track `session_opening_balance` at startup. In `_drain_pending_signals_for_window`,
-before entering any position, check current account balance. If it has fallen more than
-`daily_max_loss_pct` from `session_opening_balance`, skip all remaining signals and
-log/notify.
+**Fix:** Added `--daily-max-loss USD` CLI flag (maps to `DAILY_MAX_LOSS_USD` config constant).
+`_daily_realized_pnl` accumulates closed-position P&L in `_rebuild_window_returned()`
+(covers both live close and crash-recovery paths). `_is_circuit_breaker_tripped()` returns
+`True` when `_daily_realized_pnl <= -daily_max_loss_usd`. The breaker gates both
+`_on_signal_for_window` (immediate signal) and `_drain_pending_signals_for_window`
+(buffered signals). P&L resets to zero at the start of each `run()` / `run_replay()` call.
 
 ---
 
-### G25 — No WebSocket reconnect watchdog
+### ~~G25 — No WebSocket reconnect watchdog~~ ✓ Fixed
 
 **File:** `signal_engine.py` `start()` / `trade_engine.py` `_monitor_loop`
 **Severity:** Medium — stream drop is silent; engine continues polling stale bars
@@ -491,26 +488,29 @@ dies from an unhandled exception in `_handle_bar`), `get_latest_bar()` keeps
 returning the last known bar. The monitor loop continues evaluating stops against
 stale data; no new signals fire; no alert is raised.
 
-**Fix:** Record `_last_bar_received_at` timestamp in `_handle_bar`. In
-`_monitor_loop`, if `_last_bar_received_at` has not advanced in > 10 minutes during
-market hours, log an error and send a Telegram alert. Optionally attempt to restart
-the stream.
+**Fix:** Added `--ws-reconnect-timeout SECONDS` CLI flag (default 600s, maps to
+`WS_RECONNECT_TIMEOUT_SECONDS`). `_handle_bar()` now updates `_last_bar_received_at`;
+`start()` sets `_stream_started_at`. `_check_ws_health(now)` in `_monitor_loop`
+compares `now` against the later of the two timestamps; if the gap exceeds the timeout
+it calls `signal_engine.reconnect()`. `reconnect()` stops the old stream, creates a new
+`StockDataStream`, resubscribes, starts a new daemon thread, resets `_last_bar_received_at`
+to `None`, and preserves `_history` so no re-warmup is needed.
 
 ---
 
-### G26 — `print()` in `run()` bypasses log file
+### ~~G26 — `print()` in `run()` bypasses log file~~ ✓ Fixed
 
-**File:** `trade_engine.py:1113-1114, 1253`
+**File:** `trade_engine.py`
 **Severity:** Low — pre-market output missing from `logs/op_momentum_YYYY-MM-DD.log`
 
 Three `print(f"...")` calls in `run()` and `run_replay()` write to stdout only.
 In daemon mode (no terminal) these lines are silently dropped.
 
-**Fix:** Replace with `logger.info(...)`.
+**Fix:** Replaced all four `print()` calls in `run()` and `run_replay()` with `logger.info()`.
 
 ---
 
-### G27 — No market holiday detection
+### ~~G27 — No market holiday detection~~ ✓ Fixed
 
 **Severity:** Low — engine idles silently on holidays
 
@@ -518,5 +518,8 @@ If started on a US market holiday, the engine subscribes to the WebSocket and wa
 for OR bars that never arrive. The TickerSelector falls back to the prior trading day,
 so picks are computed, but no signals ever fire. No alert is sent.
 
-**Fix:** Add a `pandas_market_calendars` or `exchange_calendars` check at startup;
-exit early with a Telegram notification if today is not a trading day.
+**Fix:** Added weekend (`weekday() >= 5`) and NYSE holiday checks at the top of `run()`
+using the existing `_is_nyse_holiday()` from `contract_selector.py` (backed by
+`_NYSEHolidayCalendar` with 7 NYSE rules). When a non-trading day is detected, the engine
+logs a `WARNING` and returns immediately. The guard is skipped when
+`_mock_trade_execution` is `True` so replay and test mode are unaffected.

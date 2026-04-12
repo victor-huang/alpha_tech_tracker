@@ -97,11 +97,11 @@ The same signal logic drives both **live trading** (`trade_engine.py`) and **bac
 DEFAULT_TICKERS = [
     "SNDK", "APP", "SHOP", "CVNA", "AMD", "META",
     "EXPE", "FANG", "RH", "FN", "MU",
-    "ANAB", "PLTR", "COIN", "NVDA", "TSLA",
+    "CRDO", "PLTR", "COIN", "NVDA", "TSLA",
 ]
 ```
 
-Added PLTR, COIN, NVDA in March 2026 after 30-day + 90-day screening. Added TSLA April 2026 (+10.9pp over 5 years). Pool v2 outperforms the original 13-ticker pool by +11pp over 5 years.
+Added PLTR, COIN, NVDA in March 2026 after 30-day + 90-day screening. Added TSLA April 2026 (+10.9pp over 5 years). Replaced ANAB → CRDO April 2026 (ANAB had sparse live bars, min 17/day; CRDO has min 72 bars/day, 3.65% OR%, $121 avg price). Pool v2 outperforms the original 13-ticker pool by +11pp over 5 years.
 
 ---
 
