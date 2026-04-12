@@ -477,7 +477,7 @@ class TestFetchBarsCacheTrimming:
         return _make_date_bars(["2020-01-02", "2022-06-15", str(self._START), str(self._END)])
 
     def _cache_filename(self):
-        return f"alpaca_5min_{self._TICKER}_{self._START}_{self._END}.json"
+        return f"alpaca_sip_5min_{self._TICKER}_{self._START}_{self._END}.json"
 
     def _write_cache(self, path, df):
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -687,10 +687,10 @@ class TestFetchBarsConsolidatesCache:
     _START = date(2025, 1, 1)
     _END = date(2025, 12, 31)
     _TICKER = "NVDA"
-    _SOURCE = "alpaca"
+    _SOURCE = "alpaca_sip"
 
     def _consolidated_filename(self):
-        return f"alpaca_5min_{self._TICKER}_{self._START}_{self._END}.json"
+        return f"alpaca_sip_5min_{self._TICKER}_{self._START}_{self._END}.json"
 
     # --- stitch path ---
 
@@ -980,7 +980,7 @@ class TestSaveCacheAtomic:
                 pass
 
         assert not path.exists()
-        assert path.with_suffix(".tmp").exists()
+        assert any(tmp_path.glob("*.tmp"))
 
 
 # ---------------------------------------------------------------------------

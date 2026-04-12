@@ -161,10 +161,11 @@ def compute_today_signals(
         if today_rows.empty:
             continue
 
+        _false = pd.Series(False, index=today_rows.index)
         primary_rows = today_rows[
-            (today_rows.get("is_reversal", False) != True)  # noqa: E712
-            & (today_rows.get("is_bearish_reentry", False) != True)  # noqa: E712
-            & (today_rows.get("is_bullish_reentry", False) != True)  # noqa: E712
+            (today_rows.get("is_reversal", _false) != True)  # noqa: E712
+            & (today_rows.get("is_bearish_reentry", _false) != True)  # noqa: E712
+            & (today_rows.get("is_bullish_reentry", _false) != True)  # noqa: E712
         ]
         if primary_rows.empty:
             continue

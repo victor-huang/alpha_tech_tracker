@@ -147,7 +147,7 @@ class TestOptionQuoteRetrieval:
 
         mock_client_instance = Mock()
         mock_client_instance.get_option_latest_quote.return_value = {
-            "TSLA241020C0200000": mock_quote  # 7 digits for strike
+            "TSLA241020C00200000": mock_quote
         }
         mock_option_client.return_value = mock_client_instance
 
@@ -167,9 +167,7 @@ class TestOptionQuoteRetrieval:
             symbol="TSLA", option_key="2024-10-20 s200", option_type="CALL"
         )
 
-        # Format: TSLA + YY + MM + DD + C/P + Strike (7 digits: 200.000 → 0200000)
-        # Expected: TSLA241020C0200000
-        assert option_symbol == "TSLA241020C0200000"
+        assert option_symbol == "TSLA241020C00200000"
 
     def test_build_option_symbol_put(self):
         """Should correctly build PUT option symbol."""
@@ -179,7 +177,7 @@ class TestOptionQuoteRetrieval:
             symbol="AAPL", option_key="2024-11-15 s150", option_type="PUT"
         )
 
-        assert option_symbol == "AAPL241115P0150000"
+        assert option_symbol == "AAPL241115P00150000"
 
 
 class TestStockOrderPlacement:
