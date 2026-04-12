@@ -1189,6 +1189,13 @@ class OpMomentumTradeEngine:
             option_type,
             contracts,
         )
+        opm = self._option_price_monitor
+        se = self._signal_engine
+        option_type_lower = option_type.lower()
+        def _entry_fair_price_fn():
+            bar = se.get_latest_bar(ticker) if se else None
+            stock_price = _D(str(bar["Close"])) if bar is not None else None
+            return opm.get_fair_price(ticker, option_symbol, option_type_lower, stock_price)
         return _place_with_fill_escalation(
             client=self._client,
             ticker=ticker,
@@ -1196,6 +1203,7 @@ class OpMomentumTradeEngine:
             option_type=option_type,
             contracts=contracts,
             order_action="BUY_OPEN",
+            get_fair_price_fn=_entry_fair_price_fn if opm else None,
         )
 
     def _check_ws_health(self, now) -> None:

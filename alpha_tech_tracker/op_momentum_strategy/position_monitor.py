@@ -623,6 +623,20 @@ class PositionMonitor:
                         pos.option_symbol,
                         pos.contracts,
                     )
+                opm = self._option_price_monitor
+                se = self._signal_engine
+                if opm is not None:
+                    def _exit_fair_price_fn(
+                        _ticker=pos.ticker,
+                        _symbol=pos.option_symbol,
+                        _otype=option_type_lower,
+                        _entry_stock=pos.entry_stock_price,
+                    ):
+                        bar = se.get_latest_bar(_ticker) if se else None
+                        stock_price = _D(str(bar["Close"])) if bar is not None else _D(str(_entry_stock))
+                        return opm.get_fair_price(_ticker, _symbol, _otype, stock_price)
+                else:
+                    _exit_fair_price_fn = None
                 order = _place_with_fill_escalation(
                     client=self._client,
                     ticker=pos.ticker,
@@ -631,6 +645,7 @@ class PositionMonitor:
                     contracts=pos.contracts,
                     order_action="SELL_CLOSE",
                     entry_fill_price=quick_exit_fill_price,
+                    get_fair_price_fn=_exit_fair_price_fn,
                 )
             pos.exit_order_id = order.get("order_id")
             logger.info("Close order placed: %s", pos.exit_order_id)

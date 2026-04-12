@@ -61,14 +61,14 @@ class TestFillEscalationStep0:
     def test_without_entry_fill_price_skips_step0(self):
         client = _make_client()
         self._run(client, entry_fill_price=None)
-        # No step-0 means only 2 order_status calls: mid check + ask/bid check
-        assert client.order_status.call_count == 2
+        # No step-0: step1(mid) + step2(ask/bid) + step3(final) = 3 order_status calls
+        assert client.order_status.call_count == 3
 
     def test_with_entry_fill_price_places_step0_order_first(self):
         client = _make_client()
         self._run(client, entry_fill_price=5.0, step0_filled=False)
-        # step0 + step1(mid) + step2(ask/bid) = 3 order_status checks
-        assert client.order_status.call_count == 3
+        # step0 + step1(mid) + step2(ask/bid) + step3(final) = 4 order_status checks
+        assert client.order_status.call_count == 4
 
     def test_step0_filled_returns_immediately_without_further_orders(self):
         client = _make_client()
