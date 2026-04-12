@@ -130,14 +130,14 @@ The floor of `max(0, ...)` preserves the break-even property: the backtest never
 ## CLI Usage
 
 ```bash
-# Confirmed best config (used for 7-year validation below)
+# Confirmed best config (--doubledown-start 5, updated after capital recycling fix)
 PYTHONPATH=/Users/victorhuang/work/alpha_tech_tracker \
   python alpha_tech_tracker/op_momentum_strategy/op_momentum_selector_backtest.py \
   --weights 60 40 \
   --window M1 09:30 3 --window A1 13:15 1 --window A2 15:00 1 \
   --morning-split 100 \
   --reversal --bearish-reentry --bullish-reentry \
-  --top 2 --doubledown --feed iex \
+  --top 2 --doubledown --doubledown-start 5 --feed iex \
   --start 2025-01-01 --end 2025-12-31
 
 # With regime filter (more conservative, fewer trades)
@@ -148,7 +148,7 @@ PYTHONPATH=/Users/victorhuang/work/alpha_tech_tracker \
   --morning-split 100 \
   --reversal --bearish-reentry --bullish-reentry \
   --regime-filter --regime-ma 8 \
-  --top 2 --doubledown --feed iex \
+  --top 2 --doubledown --doubledown-start 5 --feed iex \
   --start 2025-01-01 --end 2025-12-31
 
 # Multi-year compound growth projection
@@ -158,7 +158,7 @@ PYTHONPATH=/Users/victorhuang/work/alpha_tech_tracker \
   --window M1 09:30 3 --window A1 13:15 1 --window A2 15:00 1 \
   --morning-split 100 \
   --reversal --bearish-reentry --bullish-reentry \
-  --top 2 --doubledown --compound --feed iex \
+  --top 2 --doubledown --doubledown-start 5 --compound --feed iex \
   --start 2020-01-01 --end 2026-04-10
 ```
 
@@ -166,47 +166,54 @@ PYTHONPATH=/Users/victorhuang/work/alpha_tech_tracker \
 
 ## Doubledown Window Sweep
 
-The `--doubledown-start` parameter controls the start time (minutes from OR close) at which the DD check fires and the add-on leg enters. Stopouts that occurred before this mark are eligible to free capital. A full sweep was run over 2025-01-01 → 2026-04-10 (IEX feed, top-2, 60/40, M1+A1+A2, morning-split 100, reversal+BRE+BRU on):
+The `--doubledown-start` parameter controls the start time (minutes from OR close) at which the DD check fires and the add-on leg enters. Stopouts that occurred before this mark are eligible to free capital.
 
-| DD minutes | Total return | Delta vs baseline |
-|---|---|---|
-| baseline (no DD) | +277.66% | — |
-| 5 | +308.44% | +30.8pp |
-| 10 | +312.20% | +34.5pp |
-| 15 | +310.66% | +33.0pp |
-| 20 | +309.41% | +31.8pp |
-| 25 | +309.33% | +31.7pp |
-| 30 | +311.09% | +33.4pp |
-| 40 | +320.84% | +43.2pp |
-| **50** | **+331.90%** | **+54.2pp** |
-| 60 | +325.10% | +47.4pp |
-| 70 | +324.99% | +47.3pp |
-| 80 | +326.52% | +48.9pp |
-| 90 | +326.03% | +48.4pp |
-| 100 | +329.63% | +52.0pp |
-| 110 | +329.33% | +51.7pp |
-| 120 | +328.75% | +51.1pp |
-| 130 | +330.39% | +52.7pp |
-| 140 | +329.85% | +52.2pp |
-| 150 | +326.77% | +49.1pp |
+### Updated sweep (2025 and 2026, with DD capital recycling fix)
 
-**50 min is the overall peak.** There is a clear step-up from the 5–30 min range (~308–312%) to 40+ min (~320–332%), with 50 min as the local maximum before leveling off in the 60–150 range.
+After the capital recycling fix (`_apply_capital_flow` correctly deducts DD-deployed capital from sequential windows when the DD leg is still running), the optimal start time shifted dramatically. Full sweep over 2025-01-01 → 2025-12-31 and 2026-01-01 → 2026-04-10 (IEX feed, top-2, 60/40, M1+A1+A2, morning-split 100, reversal+BRE+BRU on):
 
-### 5-year per-year consistency check (top candidates)
+| DD start | 2025 return | 2025 delta | 2026 return | 2026 delta |
+|---|---|---|---|---|
+| baseline (no DD) | +178.58% | — | +99.08% | — |
+| **5** | **+199.22%** | **+20.6pp** | **+108.79%** | **+9.7pp** |
+| **10** | **+198.86%** | **+20.3pp** | +107.10% | +8.0pp |
+| 15 | +193.28% | +14.7pp | +106.28% | +7.2pp |
+| 20 | +190.70% | +12.1pp | +105.09% | +6.0pp |
+| 25 | +187.80% | +9.2pp | +104.08% | +5.0pp |
+| 30 | +187.81% | +9.2pp | +104.56% | +5.5pp |
+| 40 | +186.57% | +8.0pp | +104.49% | +5.4pp |
+| 50 | +185.55% | +7.0pp | +104.85% | +5.8pp |
+| 60 | +183.40% | +4.8pp | +104.09% | +5.0pp |
+| 70 | +182.00% | +3.4pp | +103.54% | +4.5pp |
+| 80 | +181.58% | +3.0pp | +102.42% | +3.3pp |
+| 90 | +180.47% | +1.9pp | +101.09% | +2.0pp |
+| 100 | +179.85% | +1.3pp | +100.76% | +1.7pp |
+| 110 | +179.40% | +0.8pp | +100.10% | +1.0pp |
+| 120 | +178.79% | +0.2pp | +100.13% | +1.0pp |
+| 130 | +178.98% | +0.4pp | +100.02% | +0.9pp |
+| 140 | +178.60% | +0.0pp | +99.67% | -0.4pp |
+| 150 | +178.42% | -0.2pp | +99.75% | -0.3pp |
 
-Top candidates retested per year against baseline and DD 15 min:
+Returns decrease monotonically as start time increases. Earlier is consistently better — the opposite of the pre-fix finding. Beyond 120 min, DD provides near-zero or negative lift.
 
-| Year | Baseline | DD 15 | DD 30 | DD 40 | DD 50 | DD 100 | DD 110 | DD 130 |
-|------|----------|-------|-------|-------|-------|--------|--------|--------|
-| 2021 | +132.85% | +148.60% | +153.88% | +160.48% | +161.77% | +167.10% | **+169.19%** | +168.99% |
-| 2022 | +214.88% | +233.62% | +241.83% | +244.56% | +251.91% | +253.28% | +252.86% | **+257.23%** |
-| 2023 | +278.38% | +301.41% | +312.55% | +318.80% | **+325.77%** | +318.68% | +317.97% | +313.56% |
-| 2024 | +125.30% | +139.83% | +150.82% | **+155.93%** | +152.50% | +151.23% | +152.97% | +152.42% |
-| 2025 | +178.58% | +202.39% | +203.11% | +208.35% | **+215.74%** | +214.03% | +213.90% | +214.41% |
+### 5-year per-year consistency check
 
-DD beats baseline **every year** for all candidates. There is a smooth improvement as DD minutes increases from 15 → 50, with diminishing gains beyond 50. **50 min wins 3/5 years** (2023–2025); 40 min wins 2024 by a small margin (+155.93% vs +152.50%), and 110/130 min lead in 2021–2022 but by ≤7pp. The 15-min default is consistently the weakest DD config — upgrading to 50 min adds +13–24pp per year over DD 15.
+Run over 2021–2025, per year (IEX feed, top-2, 60/40, M1+A1+A2, morning-split 100, reversal+BRE+BRU on):
 
-**Recommended default: `--doubledown-start 50`** (flag renamed from `--doubledown-minutes` to `--doubledown-start` to reflect that it is the start time of the DD check from OR close, not a window duration)
+| Year | Baseline | DD 5 | DD 10 | DD 15 | DD 60 | DD 120 |
+|------|----------|------|-------|-------|-------|--------|
+| 2021 | +132.9% | +144.25% (+11.4pp) | **+144.69% (+11.8pp)** | +141.54% (+8.6pp) | +137.73% (+4.8pp) | +133.61% (+0.7pp) |
+| 2022 | +214.9% | **+232.10% (+17.2pp)** | +228.50% (+13.6pp) | +225.44% (+10.5pp) | +222.03% (+7.1pp) | +217.40% (+2.5pp) |
+| 2023 | +278.4% | **+291.34% (+12.9pp)** | +290.58% (+12.2pp) | +287.85% (+9.5pp) | +283.98% (+5.6pp) | +279.13% (+0.7pp) |
+| 2024 | +125.3% | **+137.81% (+12.5pp)** | +135.69% (+10.4pp) | +134.33% (+9.0pp) | +134.06% (+8.8pp) | +127.76% (+2.5pp) |
+| 2025 | +178.6% | **+199.22% (+20.6pp)** | +198.86% (+20.3pp) | +193.28% (+14.7pp) | +183.40% (+4.8pp) | +178.79% (+0.2pp) |
+| **Wins** | | **4/5** | 1/5 | 0/5 | 0/5 | 0/5 |
+
+**DD 5 wins 4/5 years** — only trails DD 10 in 2021 by 0.4pp (essentially a tie). DD 5 and DD 10 are within 1–4pp every year and both far ahead of DD 15+. There is a sharp cliff between DD 10 and DD 15 (~5.5pp in 2025) and another between DD 15 and DD 60. DD 120 barely beats baseline (+0.7pp in 2021/2023, near-zero in 2025).
+
+**Why the shift from the pre-fix finding:** the earlier sweep (which favored 50 min) did not account for DD capital being tied up when A1/A2 started. With the recycling fix, a later DD start means the add-on leg is still running during A1, reducing available capital there. Earlier DD starts (5–10 min) fire sooner, give the add-on more time to exit naturally before afternoon windows, and reduce the capital drag.
+
+**Recommended default: `--doubledown-start 5`** (DD 10 is equally valid — the gap is negligible and it gives the winner one more bar to confirm direction before the add-on enters).
 
 ---
 
