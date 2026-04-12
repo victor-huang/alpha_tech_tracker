@@ -2164,3 +2164,411 @@ class TestMarketHolidayGuard:
                 pass  # stream setup will fail — we only care the guard didn't block
 
         mock_sel.assert_called_once()
+
+
+_IS_REPLAY_MODE_PATH = "alpha_tech_tracker.op_momentum_strategy.trade_engine.is_replay_mode"
+
+
+class TestComputePositionReturnedCapital:
+    def _make_engine(self):
+        return OpMomentumTradeEngine(
+            alpaca_client=_make_alpaca_client(), mock_trade_execution=True
+        )
+
+    def test_option_bullish_profit(self):
+        engine = self._make_engine()
+        pos = _make_active_position(signal="BULLISH")
+        pos.slot_capital = _D("4000")
+        pos.contracts = 4
+        pos.simulated_entry_mid = _D("10")
+        pos.simulated_exit_mid = _D("12")
+        # returned = 4000 + 4*100*(12-10) = 4000 + 800 = 4800
+        assert engine._compute_position_returned_capital(pos) == _D("4800")
+
+    def test_option_bullish_loss(self):
+        engine = self._make_engine()
+        pos = _make_active_position(signal="BULLISH")
+        pos.slot_capital = _D("4000")
+        pos.contracts = 4
+        pos.simulated_entry_mid = _D("10")
+        pos.simulated_exit_mid = _D("9.50")
+        # returned = 4000 + 4*100*(9.5-10) = 4000 - 200 = 3800
+        assert engine._compute_position_returned_capital(pos) == _D("3800")
+
+    def test_option_bearish_profit(self):
+        engine = self._make_engine()
+        pos = _make_active_position(signal="BEARISH")
+        pos.slot_capital = _D("3000")
+        pos.contracts = 3
+        pos.simulated_entry_mid = _D("8")
+        pos.simulated_exit_mid = _D("6")
+        # raw = entry - exit = 8 - 6 = 2 (BEARISH: profit when price falls)
+        # returned = 3000 + 3*100*2 = 3000 + 600 = 3600
+        assert engine._compute_position_returned_capital(pos) == _D("3600")
+
+    def test_falls_back_to_slot_capital_when_no_exit_price(self):
+        engine = self._make_engine()
+        pos = _make_active_position(signal="BULLISH")
+        pos.slot_capital = _D("5000")
+        pos.contracts = 5
+        pos.simulated_entry_mid = _D("10")
+        pos.simulated_exit_mid = None
+        pos.exit_fill_price = None
+        assert engine._compute_position_returned_capital(pos) == _D("5000")
+
+    def test_returns_zero_when_no_slot_capital(self):
+        engine = self._make_engine()
+        pos = _make_active_position(signal="BULLISH")
+        pos.slot_capital = None
+        pos.simulated_entry_mid = _D("10")
+        pos.simulated_exit_mid = _D("12")
+        assert engine._compute_position_returned_capital(pos) == _D("0")
+
+
+class TestDoubleDown:
+    def _make_engine(self, **kwargs):
+        client = _make_alpaca_client()
+        engine = OpMomentumTradeEngine(
+            alpaca_client=client,
+            mock_trade_execution=True,
+            enable_doubledown=True,
+            doubledown_start_min=5,
+            top_n=2,
+            rank_weights=[0.6, 0.4],
+            **kwargs,
+        )
+        engine._monitor = Mock()
+        engine._monitor._lock = threading.Lock()
+        engine._signal_engine = Mock()
+        engine._window_state["W1"] = {
+            "pending_signals": {},
+            "collection_deadline": datetime.now(ET),
+            "open_position_count": 0,
+            "capital_fraction": 1.0,
+        }
+        return engine
+
+    def _make_win(self, label="W1"):
+        from alpha_tech_tracker.op_momentum_strategy.models import WindowConfig
+        return WindowConfig(label=label, opening_start="09:30", opening_bars=3)
+
+    def _make_latest_bar(self, close=290.0):
+        import pandas as pd
+        return pd.Series({"Close": close, "MA20": 285.0}, name=datetime.now(ET))
+
+    def _make_open_pos(self, rank, slot_capital, ticker="NVDA",
+                       signal="BULLISH", window_label="W1"):
+        pos = _make_active_position(signal=signal)
+        pos.ticker = ticker
+        pos.rank = rank
+        pos.window_label = window_label
+        pos.is_closed = False
+        pos.slot_capital = _D(str(slot_capital))
+        pos.trailing_arm_price = None
+        pos.is_doubledown_addon = False
+        return pos
+
+    def _make_stopout_pos(self, rank, slot_capital, ticker="TSLA",
+                          signal="BULLISH", exit_reason="hard_stop",
+                          entry_mid=10.0, exit_mid=9.5, contracts=4,
+                          window_label="W1"):
+        pos = _make_active_position(signal=signal)
+        pos.ticker = ticker
+        pos.rank = rank
+        pos.window_label = window_label
+        pos.is_closed = True
+        pos.exit_reason = exit_reason
+        pos.slot_capital = _D(str(slot_capital))
+        pos.simulated_entry_mid = _D(str(entry_mid))
+        pos.simulated_exit_mid = _D(str(exit_mid))
+        pos.contracts = contracts
+        pos.trailing_arm_price = None
+        pos.is_doubledown_addon = False
+        return pos
+
+    def test_dd_fires_when_one_stopout_and_one_survivor(self):
+        engine = self._make_engine()
+        winner = self._make_open_pos(rank=0, slot_capital=6000, ticker="NVDA")
+        stopout = self._make_stopout_pos(rank=1, slot_capital=4000, ticker="TSLA")
+        engine._monitor._positions = [winner, stopout]
+        engine._signal_engine.get_latest_bar.return_value = self._make_latest_bar(close=290.0)
+
+        with patch.object(engine, "_enter_position") as mock_enter, \
+             patch(_NOTIFY_PATH):
+            engine._check_doubledown_for_window(self._make_win())
+
+        mock_enter.assert_called_once()
+        kw = mock_enter.call_args[1]
+        assert kw["reentry_type"] == "doubledown"
+        assert kw["capital_weight_override"] == _D("1")
+        assert kw["initial_hard_stop_armed"] is True
+        assert kw["hard_stop_override"] == _D("290")
+
+    def test_dd_freed_capital_equals_returned_capital_from_stopout(self):
+        engine = self._make_engine()
+        winner = self._make_open_pos(rank=0, slot_capital=6000, ticker="NVDA")
+        # entry=10, exit=9.5, contracts=4 → returned = 4000 + 4*100*(9.5-10) = 3800
+        stopout = self._make_stopout_pos(rank=1, slot_capital=4000, ticker="TSLA",
+                                          entry_mid=10.0, exit_mid=9.5, contracts=4)
+        engine._monitor._positions = [winner, stopout]
+        engine._signal_engine.get_latest_bar.return_value = self._make_latest_bar(close=290.0)
+
+        with patch.object(engine, "_enter_position") as mock_enter, \
+             patch(_NOTIFY_PATH):
+            engine._check_doubledown_for_window(self._make_win())
+
+        assert mock_enter.call_args[1]["window_budget"] == _D("3800")
+
+    def test_dd_skips_when_no_survivors(self):
+        engine = self._make_engine()
+        stopout1 = self._make_stopout_pos(rank=0, slot_capital=6000, ticker="NVDA")
+        stopout2 = self._make_stopout_pos(rank=1, slot_capital=4000, ticker="TSLA")
+        engine._monitor._positions = [stopout1, stopout2]
+        engine._signal_engine.get_latest_bar.return_value = self._make_latest_bar()
+
+        with patch.object(engine, "_enter_position") as mock_enter:
+            engine._check_doubledown_for_window(self._make_win())
+
+        mock_enter.assert_not_called()
+
+    def test_dd_skips_when_all_positions_survive(self):
+        engine = self._make_engine()
+        survivor1 = self._make_open_pos(rank=0, slot_capital=6000, ticker="NVDA")
+        survivor2 = self._make_open_pos(rank=1, slot_capital=4000, ticker="TSLA")
+        engine._monitor._positions = [survivor1, survivor2]
+        engine._signal_engine.get_latest_bar.return_value = self._make_latest_bar()
+
+        with patch.object(engine, "_enter_position") as mock_enter:
+            engine._check_doubledown_for_window(self._make_win())
+
+        mock_enter.assert_not_called()
+
+    def test_stopout_with_open_reentry_excluded_from_freed_capital(self):
+        engine = self._make_engine()
+        winner = self._make_open_pos(rank=0, slot_capital=6000, ticker="NVDA")
+        stopout = self._make_stopout_pos(rank=1, slot_capital=4000, ticker="TSLA")
+        # Open re-entry leg for rank-1: trailing_arm_price is not None marks it as re-entry
+        reentry = _make_active_position(signal="BULLISH")
+        reentry.ticker = "TSLA"
+        reentry.rank = 1
+        reentry.window_label = "W1"
+        reentry.is_closed = False
+        reentry.trailing_arm_price = _D("295")
+        engine._monitor._positions = [winner, stopout, reentry]
+        engine._signal_engine.get_latest_bar.return_value = self._make_latest_bar()
+
+        with patch.object(engine, "_enter_position") as mock_enter:
+            engine._check_doubledown_for_window(self._make_win())
+
+        # rank-1 stopout excluded (rank-1 has an active re-entry) → no eligible stopout → DD skips
+        mock_enter.assert_not_called()
+
+    def test_dd_deducts_freed_capital_from_window_returned(self):
+        engine = self._make_engine()
+        engine._window_returned["W1"] = _D("3800")
+        winner = self._make_open_pos(rank=0, slot_capital=6000, ticker="NVDA")
+        # entry=10, exit=9.5, contracts=4 → returned = 3800
+        stopout = self._make_stopout_pos(rank=1, slot_capital=4000, ticker="TSLA",
+                                          entry_mid=10.0, exit_mid=9.5, contracts=4)
+        engine._monitor._positions = [winner, stopout]
+        engine._signal_engine.get_latest_bar.return_value = self._make_latest_bar(close=290.0)
+
+        with patch.object(engine, "_enter_position"), \
+             patch(_NOTIFY_PATH):
+            engine._check_doubledown_for_window(self._make_win())
+
+        assert engine._window_returned["W1"] == _D("0")
+
+    def test_dd_does_not_fire_twice_for_same_window(self):
+        engine = self._make_engine()
+        winner = self._make_open_pos(rank=0, slot_capital=6000, ticker="NVDA")
+        stopout = self._make_stopout_pos(rank=1, slot_capital=4000, ticker="TSLA")
+        engine._monitor._positions = [winner, stopout]
+        engine._signal_engine.get_latest_bar.return_value = self._make_latest_bar()
+
+        with patch.object(engine, "_enter_position") as mock_enter, \
+             patch(_NOTIFY_PATH):
+            engine._check_doubledown_for_window(self._make_win())
+            engine._check_doubledown_for_window(self._make_win())
+
+        mock_enter.assert_called_once()
+
+    def test_winner_is_highest_ranked_survivor(self):
+        engine = self._make_engine()
+        # top-3 scenario: rank-0 stops out, rank-1 and rank-2 survive → rank-1 is winner
+        stopout = self._make_stopout_pos(rank=0, slot_capital=5000, ticker="NVDA")
+        survivor1 = self._make_open_pos(rank=1, slot_capital=3000, ticker="TSLA")
+        survivor2 = self._make_open_pos(rank=2, slot_capital=2000, ticker="COIN")
+        engine._monitor._positions = [stopout, survivor1, survivor2]
+        engine._signal_engine.get_latest_bar.return_value = self._make_latest_bar()
+
+        with patch.object(engine, "_enter_position") as mock_enter, \
+             patch(_NOTIFY_PATH):
+            engine._check_doubledown_for_window(self._make_win())
+
+        event = mock_enter.call_args[0][0]
+        assert event.ticker == "TSLA"
+
+    def test_fallback_20pct_stopout_is_eligible(self):
+        engine = self._make_engine()
+        winner = self._make_open_pos(rank=0, slot_capital=6000, ticker="NVDA")
+        stopout = self._make_stopout_pos(rank=1, slot_capital=4000, ticker="TSLA",
+                                          exit_reason="fallback_20pct")
+        engine._monitor._positions = [winner, stopout]
+        engine._signal_engine.get_latest_bar.return_value = self._make_latest_bar()
+
+        with patch.object(engine, "_enter_position") as mock_enter, \
+             patch(_NOTIFY_PATH):
+            engine._check_doubledown_for_window(self._make_win())
+
+        mock_enter.assert_called_once()
+
+    def test_trailing_stop_exit_not_eligible_for_dd(self):
+        engine = self._make_engine()
+        winner = self._make_open_pos(rank=0, slot_capital=6000, ticker="NVDA")
+        # trailing_stop exits are not considered stopouts for DD purposes
+        late_exit = self._make_stopout_pos(rank=1, slot_capital=4000, ticker="TSLA",
+                                            exit_reason="trailing_stop_ma20")
+        engine._monitor._positions = [winner, late_exit]
+        engine._signal_engine.get_latest_bar.return_value = self._make_latest_bar()
+
+        with patch.object(engine, "_enter_position") as mock_enter:
+            engine._check_doubledown_for_window(self._make_win())
+
+        mock_enter.assert_not_called()
+
+    def test_dd_addon_is_flagged_is_doubledown_addon(self):
+        client = _make_alpaca_client()
+        engine = OpMomentumTradeEngine(
+            alpaca_client=client,
+            mock_trade_execution=True,
+            enable_doubledown=True,
+            top_n=2,
+        )
+        engine._monitor = Mock()
+        engine._monitor._lock = threading.Lock()
+        engine._signal_engine = Mock()
+        engine._signal_engine.get_latest_bar.return_value = self._make_latest_bar(close=290.0)
+        engine._window_state["W1"] = {
+            "pending_signals": {},
+            "collection_deadline": datetime.now(ET),
+            "open_position_count": 0,
+            "capital_fraction": 1.0,
+        }
+        captured = []
+        engine._monitor.add_position = Mock(side_effect=captured.append)
+
+        winner = self._make_open_pos(rank=0, slot_capital=6000, ticker="NVDA")
+        stopout = self._make_stopout_pos(rank=1, slot_capital=4000, ticker="TSLA",
+                                          entry_mid=10.0, exit_mid=9.5, contracts=4)
+        engine._monitor._positions = [winner, stopout]
+
+        with patch(_OPTION_CONTRACT_SELECTOR_PATH, return_value="NVDA260404C00290000"), \
+             patch(_POSITION_SIZER_PATH, return_value=(3, _D("8.50"))), \
+             patch(_PLACE_ENTRY_PATH, return_value={"order_id": "sim-dd", "simulated_fill_mid": _D("8.50")}), \
+             patch(_NOTIFY_PATH):
+            engine._check_doubledown_for_window(self._make_win())
+
+        assert len(captured) == 1
+        assert captured[0].is_doubledown_addon is True
+
+    def test_dd_addon_not_tracked_in_window_primary_deployed(self):
+        client = _make_alpaca_client()
+        engine = OpMomentumTradeEngine(
+            alpaca_client=client,
+            mock_trade_execution=True,
+            enable_doubledown=True,
+            top_n=2,
+        )
+        engine._monitor = Mock()
+        engine._monitor._lock = threading.Lock()
+        engine._signal_engine = Mock()
+        engine._signal_engine.get_latest_bar.return_value = self._make_latest_bar(close=290.0)
+        engine._window_state["W1"] = {
+            "pending_signals": {},
+            "collection_deadline": datetime.now(ET),
+            "open_position_count": 0,
+            "capital_fraction": 1.0,
+        }
+        engine._monitor.add_position = Mock()
+
+        winner = self._make_open_pos(rank=0, slot_capital=6000, ticker="NVDA")
+        stopout = self._make_stopout_pos(rank=1, slot_capital=4000, ticker="TSLA",
+                                          entry_mid=10.0, exit_mid=9.5, contracts=4)
+        engine._monitor._positions = [winner, stopout]
+
+        with patch(_OPTION_CONTRACT_SELECTOR_PATH, return_value="NVDA260404C00290000"), \
+             patch(_POSITION_SIZER_PATH, return_value=(3, _D("8.50"))), \
+             patch(_PLACE_ENTRY_PATH, return_value={"order_id": "sim-dd", "simulated_fill_mid": _D("8.50")}), \
+             patch(_NOTIFY_PATH):
+            engine._check_doubledown_for_window(self._make_win())
+
+        assert "W1" not in engine._window_primary_deployed
+
+    def test_sequential_window_budget_not_inflated_by_dd_addon(self):
+        """A1 budget must equal open M1 capital only — no double-count from freed stopout capital."""
+        from alpha_tech_tracker.op_momentum_strategy.models import WindowConfig
+        from alpha_tech_tracker.op_momentum_strategy.position_monitor import PositionMonitor
+
+        client = _make_alpaca_client()
+        engine = OpMomentumTradeEngine(
+            alpaca_client=client,
+            mock_trade_execution=True,
+            enable_doubledown=True,
+            top_n=2,
+            windows=[
+                WindowConfig(label="M1", opening_start="09:30", opening_bars=3,
+                             capital_fraction=1.0, is_sequential=False),
+                WindowConfig(label="A1", opening_start="13:15", opening_bars=1,
+                             capital_fraction=1.0, is_sequential=True),
+            ],
+        )
+        engine._monitor = Mock()
+        engine._monitor._lock = threading.Lock()
+        engine._signal_engine = Mock()
+        engine._window_state["A1"] = {
+            "pending_signals": {},
+            "collection_deadline": datetime.now(ET),
+            "open_position_count": 0,
+            "capital_fraction": 1.0,
+        }
+
+        # rank-1 (M1) still open: slot_capital = $6000
+        rank1 = self._make_open_pos(rank=0, slot_capital=6000, ticker="NVDA", window_label="M1")
+        # DD add-on (M1) still open: slot_capital = $3800 (freed from rank-2 stopout)
+        dd_addon = self._make_open_pos(rank=0, slot_capital=3800, ticker="NVDA", window_label="M1")
+        dd_addon.is_doubledown_addon = True
+
+        engine._monitor._positions = [rank1, dd_addon]
+        # _window_returned["M1"] = 0 (freed capital was deducted when DD add-on entered)
+        engine._window_returned["M1"] = _D("0")
+        engine._window_primary_deployed["M1"] = _D("10000")
+        engine._window_state["M1"] = {"budget": _D("10000")}
+
+        a1_win = WindowConfig(label="A1", opening_start="13:15", opening_bars=1,
+                              capital_fraction=1.0, is_sequential=True)
+        budget = engine._get_window_budget(a1_win)
+
+        # A1 budget should be $9800 (rank-1 $6000 + DD add-on $3800), not $13600
+        assert budget == _D("9800")
+
+    def test_schedule_dd_skips_in_replay_mode(self):
+        engine = self._make_engine()
+        with patch(_IS_REPLAY_MODE_PATH, return_value=True):
+            engine._schedule_dd_check_for_window(self._make_win())
+        assert "W1" not in engine._dd_timers
+
+    def test_schedule_dd_skips_when_already_fired(self):
+        engine = self._make_engine()
+        engine._dd_fired.add("W1")
+        with patch(_IS_REPLAY_MODE_PATH, return_value=False):
+            engine._schedule_dd_check_for_window(self._make_win())
+        assert "W1" not in engine._dd_timers
+
+    def test_schedule_dd_skips_when_feature_disabled(self):
+        client = _make_alpaca_client()
+        engine = OpMomentumTradeEngine(
+            alpaca_client=client, mock_trade_execution=True, enable_doubledown=False
+        )
+        engine._schedule_dd_check_for_window(self._make_win())
+        assert "W1" not in engine._dd_timers

@@ -260,6 +260,8 @@ class OpMomentumTradeEngine:
         or_bar_lookback: int = 3,
         ws_reconnect_timeout: int = WS_RECONNECT_TIMEOUT_SECONDS,
         alpaca_feed: DataFeed = DataFeed.SIP,
+        enable_doubledown: bool = False,
+        doubledown_start_min: int = 5,
     ):
         self._client = alpaca_client
         self._api_key = alpaca_client._api_key
@@ -294,6 +296,10 @@ class OpMomentumTradeEngine:
         self._or_bar_lookback = or_bar_lookback
         self._ws_reconnect_timeout = ws_reconnect_timeout
         self._alpaca_feed = alpaca_feed
+        self._enable_doubledown = enable_doubledown
+        self._doubledown_start_min = doubledown_start_min
+        self._dd_timers: dict = {}
+        self._dd_fired: set = set()
         self._monitor: PositionMonitor = None
         self._signal_engine: LiveSignalEngine = None
         self._signal_lock = threading.Lock()
@@ -346,16 +352,20 @@ class OpMomentumTradeEngine:
         trailing_arm_price: Optional[_D] = None,
         initial_hard_stop_armed: bool = False,
         reentry_type: Optional[str] = None,
+        capital_weight_override: Optional[_D] = None,
     ):
         logger.info(
-            "Entering position [%s]: %s %s @ %.2f (rank=%d)",
+            "Entering position [%s]: %s %s @ %.2f (rank=%d%s)",
             window_label,
             event.ticker,
             event.signal,
             float(event.stock_price),
             rank,
+            " [DD add-on]" if reentry_type == "doubledown" else "",
         )
-        if self._rank_weights and rank < len(self._rank_weights):
+        if capital_weight_override is not None:
+            capital_weight = capital_weight_override
+        elif self._rank_weights and rank < len(self._rank_weights):
             capital_weight = self._rank_weights[rank]
         else:
             capital_weight = _D("1") / _D(str(self._top_n))
@@ -487,7 +497,8 @@ class OpMomentumTradeEngine:
 
         # Track primary slot capital deployed per window so undeployed capital
         # can be forwarded to the next sequential window.
-        is_reentry = trailing_arm_price is not None
+        # DD add-ons deploy recycled capital, not original window budget — exclude them.
+        is_reentry = trailing_arm_price is not None or reentry_type == "doubledown"
         if not is_reentry and slot_capital is not None:
             with self._returned_lock:
                 if window_label not in self._window_primary_deployed:
@@ -520,6 +531,7 @@ class OpMomentumTradeEngine:
             rank=rank,
             window_budget=window_budget,
             slot_capital=slot_capital,
+            is_doubledown_addon=(reentry_type == "doubledown"),
         )
         if not self._mock_trade_execution:
             pos.entry_fill_price = self._poll_entry_fill(order.get("order_id", ""))
@@ -601,7 +613,8 @@ class OpMomentumTradeEngine:
         else:
             slot_capital = None
 
-        is_reentry = trailing_arm_price is not None
+        # DD add-ons deploy recycled capital, not original window budget — exclude them.
+        is_reentry = trailing_arm_price is not None or reentry_type == "doubledown"
         if not is_reentry and slot_capital is not None:
             with self._returned_lock:
                 if window_label not in self._window_primary_deployed:
@@ -633,6 +646,7 @@ class OpMomentumTradeEngine:
             rank=rank,
             window_budget=window_budget,
             slot_capital=slot_capital,
+            is_doubledown_addon=(reentry_type == "doubledown"),
         )
         if not self._mock_trade_execution:
             pos.entry_fill_price = self._poll_entry_fill(order.get("order_id", ""))
@@ -717,6 +731,173 @@ class OpMomentumTradeEngine:
             if w.label == win.label and i > 0:
                 return self._windows[i - 1].label
         return None
+
+    def _compute_position_returned_capital(self, pos) -> _D:
+        """Return the capital actually returned from a closed position (principal + P&L)."""
+        if pos.slot_capital is None:
+            return _D("0")
+        entry = pos.simulated_entry_mid or pos.entry_stock_price
+        exit_ = pos.simulated_exit_mid or pos.exit_fill_price
+        if not entry or entry <= 0 or not exit_:
+            return pos.slot_capital
+        if pos.trade_type == "stock":
+            raw = (exit_ - entry) if pos.signal == "BULLISH" else (entry - exit_)
+            return pos.slot_capital + pos.slot_capital / entry * raw
+        else:
+            raw = (exit_ - entry) if pos.signal == "BULLISH" else (entry - exit_)
+            return pos.slot_capital + _D(pos.contracts) * _D("100") * raw
+
+    def _schedule_dd_check_for_window(self, win: WindowConfig):
+        """Start a timer to fire _check_doubledown_for_window at OR close + doubledown_start_min.
+
+        Skipped in replay mode (the replay _on_bar loop handles DD inline).
+        Skipped when the computed check time falls at or after EOD.
+        """
+        if not self._enable_doubledown or win.label in self._dd_fired:
+            return
+        if is_replay_mode():
+            return
+        today = _now_et().date()
+        opening_start_t = datetime.strptime(win.opening_start, "%H:%M").time()
+        or_open = ET.localize(datetime.combine(today, opening_start_t))
+        or_close = or_open + timedelta(minutes=win.opening_bars * 5)
+        dd_check_time = or_close + timedelta(minutes=self._doubledown_start_min)
+        eod_dt = ET.localize(
+            datetime.combine(today, datetime.strptime(EOD_EXIT_TIME, "%H:%M").time())
+        )
+        if dd_check_time >= eod_dt:
+            logger.info(
+                "DD [%s]: check time %s is at/after EOD (%s), skipping",
+                win.label,
+                dd_check_time.strftime("%H:%M"),
+                EOD_EXIT_TIME,
+            )
+            return
+        delay = (dd_check_time - _now_et()).total_seconds()
+        if delay <= 0:
+            logger.info("DD [%s]: check time already passed, skipping", win.label)
+            return
+        t = threading.Timer(delay, self._check_doubledown_for_window, args=(win,))
+        t.daemon = True
+        t.start()
+        self._dd_timers[win.label] = t
+        logger.info(
+            "DD [%s]: check scheduled at %s ET (+%d min from OR close)",
+            win.label,
+            dd_check_time.strftime("%H:%M"),
+            self._doubledown_start_min,
+        )
+
+    def _check_doubledown_for_window(self, win: WindowConfig):
+        """Fire the double-down add-on if one or more co-picks stopped out and a survivor remains.
+
+        Fires once per window per day. Freed capital from eligible stopouts is
+        deployed 100% into the highest-ranked survivor as a break-even-stopped add-on.
+        """
+        label = win.label
+        if label in self._dd_fired:
+            return
+        self._dd_fired.add(label)
+
+        with self._monitor._lock:
+            all_positions = list(self._monitor._positions)
+
+        # All primary (non-re-entry, non-DD) positions in this window
+        window_primary = [
+            p for p in all_positions
+            if p.window_label == label
+            and p.trailing_arm_price is None
+            and not p.is_doubledown_addon
+        ]
+
+        survivors = [p for p in window_primary if not p.is_closed]
+        if not survivors:
+            logger.info("DD [%s]: no survivors at check time, skipping", label)
+            return
+
+        # Ranks that have an open re-entry — their slot capital is already redeployed
+        open_reentry_ranks = {
+            p.rank for p in all_positions
+            if p.window_label == label
+            and not p.is_closed
+            and p.trailing_arm_price is not None
+        }
+
+        stopouts = [
+            p for p in window_primary
+            if p.is_closed
+            and p.exit_reason in ("hard_stop", "fallback_20pct")
+            and p.rank not in open_reentry_ranks
+        ]
+        if not stopouts:
+            logger.info("DD [%s]: no eligible stopouts at check time, skipping", label)
+            return
+
+        freed_capital = _D("0")
+        freed_ranks = []
+        for p in stopouts:
+            freed_capital += self._compute_position_returned_capital(p)
+            freed_ranks.append(p.rank)
+
+        if freed_capital <= 0:
+            logger.info("DD [%s]: freed capital is zero, skipping", label)
+            return
+
+        winner = min(survivors, key=lambda p: p.rank)
+
+        latest_bar = self._signal_engine.get_latest_bar(winner.ticker)
+        if latest_bar is None:
+            logger.warning(
+                "DD [%s]: no bar available for %s, skipping", label, winner.ticker
+            )
+            return
+        dd_entry_price = _D(str(latest_bar["Close"]))
+
+        logger.info(
+            "DD [%s] firing: winner=%s freed=%.2f from ranks %s entry=%.2f",
+            label,
+            winner.ticker,
+            float(freed_capital),
+            freed_ranks,
+            float(dd_entry_price),
+        )
+        _notify(
+            f"[DD] [{label}] ADD-ON {winner.ticker}"
+            f" freed=${float(freed_capital):.0f} from rank(s) {freed_ranks}"
+            f" @ ~${float(dd_entry_price):.2f} (break-even stop)"
+        )
+
+        # Subtract freed capital from _window_returned to prevent double-counting
+        # with sequential window budgets. The capital is being re-deployed, not free.
+        with self._returned_lock:
+            current = self._window_returned.get(label, _D("0"))
+            self._window_returned[label] = max(_D("0"), current - freed_capital)
+
+        event = SignalEvent(
+            ticker=winner.ticker,
+            signal=winner.signal,
+            entry_price=dd_entry_price,
+            stock_price=dd_entry_price,
+            or_high=winner.or_high,
+            or_low=winner.or_low,
+            or_range=winner.or_range,
+            ma50_at_signal=dd_entry_price,
+            signal_bar_time=getattr(latest_bar, "name", None),
+        )
+
+        with self._signal_lock:
+            self._window_state[label]["open_position_count"] += 1
+
+        self._enter_position(
+            event,
+            rank=winner.rank,
+            window_label=label,
+            window_budget=freed_capital,
+            hard_stop_override=dd_entry_price,
+            initial_hard_stop_armed=True,
+            reentry_type="doubledown",
+            capital_weight_override=_D("1"),
+        )
 
     def _rebuild_window_returned(self, positions: list) -> None:
         """Accumulate returned capital from a list of positions into _window_returned.
@@ -1100,6 +1281,8 @@ class OpMomentumTradeEngine:
                 event, rank=rank, window_label=label, window_budget=window_budget
             )
 
+        self._schedule_dd_check_for_window(win)
+
     def _signal_selection_loop_for_window(self, win: WindowConfig):
         label = win.label
         state = self._window_state[label]
@@ -1335,6 +1518,8 @@ class OpMomentumTradeEngine:
         self._window_primary_deployed = {}
         self._rolling_stats_by_window = {}
         self._daily_realized_pnl = _D("0")
+        self._dd_timers = {}
+        self._dd_fired = set()
         pre_market_picks = self._run_window_selectors(all_tickers)
         self._rolling_stats = self._rolling_stats_by_window.get(first_window.label, {})
         logger.info("Pre-market top picks: %s", pre_market_picks)
@@ -1485,6 +1670,8 @@ class OpMomentumTradeEngine:
         self._window_primary_deployed = {}
         self._rolling_stats_by_window = {}
         self._daily_realized_pnl = _D("0")
+        self._dd_timers = {}
+        self._dd_fired = set()
         pre_market_picks = self._run_window_selectors(all_tickers)
         self._rolling_stats = self._rolling_stats_by_window.get(first_window.label, {})
         logger.info("Replay %s — pre-market picks: %s", replay_date, pre_market_picks)
@@ -1553,6 +1740,18 @@ class OpMomentumTradeEngine:
         # so that _drain_pending_signals_for_window runs while the replay clock is active.
         _drained_windows = set()
 
+        # Pre-compute the DD check time for each window (OR close + doubledown_start_min).
+        _dd_check_times = {}
+        if self._enable_doubledown:
+            for win in self._windows:
+                opening_start_t = datetime.strptime(win.opening_start, "%H:%M").time()
+                or_open_et = ET.localize(datetime.combine(replay_date, opening_start_t))
+                or_close_et = or_open_et + timedelta(minutes=win.opening_bars * 5)
+                _dd_check_times[win.label] = or_close_et + timedelta(
+                    minutes=self._doubledown_start_min
+                )
+        _dd_checked_windows = set()
+
         def _on_bar(ticker):
             # Drain before monitor so newly-entered positions are evaluated
             # at the same bar that triggers the drain (matching backtest order).
@@ -1563,6 +1762,15 @@ class OpMomentumTradeEngine:
                     if _now_et() >= deadline:
                         _drained_windows.add(lbl)
                         self._drain_pending_signals_for_window(win)
+            # DD check fires after the window has been drained (positions entered).
+            if self._enable_doubledown:
+                for win in self._windows:
+                    lbl = win.label
+                    if (lbl in _drained_windows
+                            and lbl not in _dd_checked_windows
+                            and _now_et() >= _dd_check_times[lbl]):
+                        _dd_checked_windows.add(lbl)
+                        self._check_doubledown_for_window(win)
             self._monitor.on_bar(ticker)
 
         driver = BarReplayDriver(

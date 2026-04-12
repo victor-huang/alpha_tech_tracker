@@ -299,6 +299,7 @@ class PositionMonitor:
             self._enable_reversal
             and pos.signal == "BEARISH"
             and pos.bars_held <= self._reversal_max_bars
+            and not pos.is_doubledown_addon
         ):
             self._reentry_watchers.append(
                 ReentryWatcher(
@@ -323,6 +324,7 @@ class PositionMonitor:
             self._enable_bearish_reentry
             and pos.signal == "BEARISH"
             and pos.bars_held <= self._bearish_reentry_max_bars
+            and not pos.is_doubledown_addon
         ):
             self._reentry_watchers.append(
                 ReentryWatcher(
@@ -349,6 +351,7 @@ class PositionMonitor:
             self._enable_bullish_reentry
             and pos.signal == "BULLISH"
             and pos.bars_held <= self._bullish_reentry_max_bars
+            and not pos.is_doubledown_addon
         ):
             self._reentry_watchers.append(
                 ReentryWatcher(

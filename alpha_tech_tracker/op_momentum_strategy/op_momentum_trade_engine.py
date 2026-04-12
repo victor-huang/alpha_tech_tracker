@@ -361,6 +361,27 @@ def parse_args():
         help="Max bars_held for primary BULLISH trade to be eligible for bullish re-entry (default: 5).",
     )
     parser.add_argument(
+        "--doubledown",
+        action="store_true",
+        default=False,
+        help=(
+            "Enable double-down add-on leg: when a co-pick stops out early, "
+            "its freed capital is redeployed into the surviving position at a "
+            "break-even hard stop. Fires once per window at OR close + doubledown-start."
+        ),
+    )
+    parser.add_argument(
+        "--doubledown-start",
+        type=int,
+        default=5,
+        dest="doubledown_start_min",
+        metavar="MINUTES",
+        help=(
+            "Minutes after OR close to fire the double-down check and enter the "
+            "add-on leg. Must be a multiple of 5. Default: 5."
+        ),
+    )
+    parser.add_argument(
         "--capital",
         type=float,
         default=None,
@@ -526,14 +547,15 @@ if __name__ == "__main__":
         _fh = _make_log_handler(log_file)
         _fh.setFormatter(_fmt)
         _root.addHandler(_fh)
-        is_paper = not (args.live or args.mock_trade_execution)
+        mock_trade_execution = args.mock_trade_execution or bool(args.replay_date)
+        is_paper = not (args.live or mock_trade_execution)
         client = build_execution_client(is_paper=is_paper)
         contract_selector = _build_contract_selector(args, client)
         engine = OpMomentumTradeEngine(
             alpaca_client=client,
             is_paper=is_paper,
             stop_pct=args.stop_pct,
-            mock_trade_execution=args.mock_trade_execution,
+            mock_trade_execution=mock_trade_execution,
             opening_start_time=args.opening_start,
             trailing_ma=args.trailing_ma,
             max_loss_pct=args.max_loss_pct,
@@ -557,6 +579,8 @@ if __name__ == "__main__":
             replay_capital=args.capital,
             ws_reconnect_timeout=args.ws_reconnect_timeout,
             alpaca_feed=DataFeed.IEX if args.feed == "iex" else DataFeed.SIP,
+            enable_doubledown=args.doubledown,
+            doubledown_start_min=args.doubledown_start_min,
         )
         if args.replay_date:
             from datetime import date as _date
@@ -651,6 +675,8 @@ if __name__ == "__main__":
             replay_capital=args.capital,
             ws_reconnect_timeout=args.ws_reconnect_timeout,
             alpaca_feed=DataFeed.IEX if args.feed == "iex" else DataFeed.SIP,
+            enable_doubledown=args.doubledown,
+            doubledown_start_min=args.doubledown_start_min,
         )
         engine.run(tickers_override=args.tickers)
     finally:
