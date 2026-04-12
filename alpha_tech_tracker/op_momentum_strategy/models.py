@@ -84,6 +84,91 @@ class ActivePosition:
     window_budget: Optional[Decimal] = None
     slot_capital: Optional[Decimal] = None
 
+    def to_dict(self) -> dict:
+        def _ser_dec(v):
+            return str(v) if v is not None else None
+
+        def _ser_dt(v):
+            return v.isoformat() if v is not None else None
+
+        return {
+            "ticker": self.ticker,
+            "signal": self.signal,
+            "option_symbol": self.option_symbol,
+            "entry_order_id": self.entry_order_id,
+            "contracts": self.contracts,
+            "entry_stock_price": str(self.entry_stock_price),
+            "or_high": str(self.or_high),
+            "or_low": str(self.or_low),
+            "or_range": str(self.or_range),
+            "hard_stop_price": str(self.hard_stop_price),
+            "fallback_price": str(self.fallback_price),
+            "trade_type": self.trade_type,
+            "shares": self.shares,
+            "hard_stop_armed": self.hard_stop_armed,
+            "is_closed": self.is_closed,
+            "exit_reason": self.exit_reason,
+            "entry_bar_time": _ser_dt(self.entry_bar_time),
+            "entry_time": _ser_dt(self.entry_time),
+            "exit_time": _ser_dt(self.exit_time),
+            "simulated_entry_mid": _ser_dec(self.simulated_entry_mid),
+            "simulated_exit_mid": _ser_dec(self.simulated_exit_mid),
+            "exit_order_id": self.exit_order_id,
+            "entry_fill_price": _ser_dec(self.entry_fill_price),
+            "exit_fill_price": _ser_dec(self.exit_fill_price),
+            "bars_held": self.bars_held,
+            "trailing_arm_price": _ser_dec(self.trailing_arm_price),
+            "trailing_arm_reached": self.trailing_arm_reached,
+            "reentry_type": self.reentry_type,
+            "window_label": self.window_label,
+            "rank": self.rank,
+            "window_budget": _ser_dec(self.window_budget),
+            "slot_capital": _ser_dec(self.slot_capital),
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict) -> "ActivePosition":
+        def _dec(v):
+            return _D(v) if v is not None else None
+
+        def _dt(v):
+            return datetime.fromisoformat(v) if v is not None else None
+
+        return cls(
+            ticker=d["ticker"],
+            signal=d["signal"],
+            option_symbol=d["option_symbol"],
+            entry_order_id=d["entry_order_id"],
+            contracts=d["contracts"],
+            entry_stock_price=_D(d["entry_stock_price"]),
+            or_high=_D(d["or_high"]),
+            or_low=_D(d["or_low"]),
+            or_range=_D(d["or_range"]),
+            hard_stop_price=_D(d["hard_stop_price"]),
+            fallback_price=_D(d["fallback_price"]),
+            trade_type=d.get("trade_type", "options"),
+            shares=d.get("shares", 0),
+            hard_stop_armed=d.get("hard_stop_armed", False),
+            is_closed=d.get("is_closed", False),
+            exit_reason=d.get("exit_reason", ""),
+            entry_bar_time=_dt(d.get("entry_bar_time")),
+            entry_time=_dt(d.get("entry_time")),
+            exit_time=_dt(d.get("exit_time")),
+            simulated_entry_mid=_dec(d.get("simulated_entry_mid")),
+            simulated_exit_mid=_dec(d.get("simulated_exit_mid")),
+            exit_order_id=d.get("exit_order_id"),
+            entry_fill_price=_dec(d.get("entry_fill_price")),
+            exit_fill_price=_dec(d.get("exit_fill_price")),
+            bars_held=d.get("bars_held", 0),
+            trailing_arm_price=_dec(d.get("trailing_arm_price")),
+            trailing_arm_reached=d.get("trailing_arm_reached", False),
+            reentry_type=d.get("reentry_type"),
+            window_label=d.get("window_label", "W1"),
+            rank=d.get("rank", 0),
+            window_budget=_dec(d.get("window_budget")),
+            slot_capital=_dec(d.get("slot_capital")),
+        )
+
 
 @dataclass
 class ReentryWatcher:

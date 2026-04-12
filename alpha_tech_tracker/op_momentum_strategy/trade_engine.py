@@ -48,6 +48,7 @@ from .order_executor import _place_with_fill_escalation, place_stock_order
 from .position_monitor import PositionMonitor
 from .position_sizer import PositionSizer
 from .replay import BarReplayDriver, LiveBarsSource, _now_et, is_replay_mode, set_replay_clock, clear_replay_clock
+from .session_state import save as _save_session, load as _load_session
 from .signal_engine import LiveSignalEngine
 
 logger = logging.getLogger(__name__)
@@ -507,6 +508,7 @@ class OpMomentumTradeEngine:
         if not self._mock_trade_execution:
             pos.entry_fill_price = self._poll_entry_fill(order.get("order_id", ""))
         self._monitor.add_position(pos)
+        self._flush_session_state()
 
     def _enter_option_position(
         self,
@@ -619,6 +621,7 @@ class OpMomentumTradeEngine:
         if not self._mock_trade_execution:
             pos.entry_fill_price = self._poll_entry_fill(order.get("order_id", ""))
         self._monitor.add_position(pos)
+        self._flush_session_state()
 
     def _poll_entry_fill(self, order_id: str, retries: int = 3, delay: float = 5.0) -> Optional[_D]:
         """Poll broker for entry fill price after a live order is placed.
@@ -699,6 +702,43 @@ class OpMomentumTradeEngine:
                 return self._windows[i - 1].label
         return None
 
+    def _rebuild_window_returned(self, positions: list) -> None:
+        """Accumulate returned capital from a list of positions into _window_returned.
+
+        Side-effect-free with respect to logging — used both by _on_position_closed
+        (single live position) and _recover_session (batch of closed checkpoint positions).
+        """
+        for pos in positions:
+            if pos.slot_capital is None:
+                continue
+            entry = (
+                pos.simulated_entry_mid
+                if pos.simulated_entry_mid is not None
+                else pos.entry_stock_price
+            )
+            exit_ = (
+                pos.simulated_exit_mid
+                if pos.simulated_exit_mid is not None
+                else pos.exit_fill_price
+            )
+            if entry and entry > 0 and exit_:
+                if pos.trade_type == "stock" and pos.signal == "BEARISH":
+                    raw = entry - exit_
+                else:
+                    raw = exit_ - entry
+                if pos.trade_type == "stock":
+                    cap_pnl = pos.slot_capital / entry * raw
+                else:
+                    cap_pnl = _D(pos.contracts) * _D("100") * raw
+            else:
+                cap_pnl = _D("0")
+
+            is_reentry = pos.trailing_arm_price is not None
+            returned = cap_pnl if is_reentry else pos.slot_capital + cap_pnl
+            with self._returned_lock:
+                self._window_returned.setdefault(pos.window_label, _D("0"))
+                self._window_returned[pos.window_label] += returned
+
     def _on_position_closed(self, pos: ActivePosition):
         """Accumulate capital returned by a closed position into _window_returned.
 
@@ -709,32 +749,38 @@ class OpMomentumTradeEngine:
         """
         if pos.slot_capital is None:
             return
-        entry = pos.simulated_entry_mid if pos.simulated_entry_mid is not None else pos.entry_stock_price
-        exit_ = pos.simulated_exit_mid if pos.simulated_exit_mid is not None else pos.exit_fill_price
+
+        self._rebuild_window_returned([pos])
+
+        # Recompute totals for logging only.
+        entry = (
+            pos.simulated_entry_mid
+            if pos.simulated_entry_mid is not None
+            else pos.entry_stock_price
+        )
+        exit_ = (
+            pos.simulated_exit_mid
+            if pos.simulated_exit_mid is not None
+            else pos.exit_fill_price
+        )
         if entry and entry > 0 and exit_:
             if pos.trade_type == "stock" and pos.signal == "BEARISH":
                 raw = entry - exit_
             else:
                 raw = exit_ - entry
-            if pos.trade_type == "stock":
-                cap_pnl = pos.slot_capital / entry * raw
-            else:
-                cap_pnl = _D(pos.contracts) * _D("100") * raw
+            cap_pnl = (
+                pos.slot_capital / entry * raw
+                if pos.trade_type == "stock"
+                else _D(pos.contracts) * _D("100") * raw
+            )
         else:
             cap_pnl = _D("0")
 
         is_reentry = pos.trailing_arm_price is not None
-        if is_reentry:
-            # Re-entry reuses the primary slot's capital; add only the net P&L.
-            returned = cap_pnl
-        else:
-            returned = pos.slot_capital + cap_pnl
+        returned = cap_pnl if is_reentry else pos.slot_capital + cap_pnl
 
         with self._returned_lock:
-            if pos.window_label not in self._window_returned:
-                self._window_returned[pos.window_label] = _D("0")
-            self._window_returned[pos.window_label] += returned
-            total = self._window_returned[pos.window_label]
+            total = self._window_returned.get(pos.window_label, _D("0"))
         logger.info(
             "Capital returned [%s] %s (reentry=%s): slot=%.2f cap_pnl=%.2f returned=%.2f window_total=%.2f",
             pos.window_label,
@@ -745,6 +791,64 @@ class OpMomentumTradeEngine:
             float(returned),
             float(total),
         )
+        self._flush_session_state()
+
+    def _flush_session_state(self) -> None:
+        """Checkpoint all positions to disk. Skipped in mock/replay mode."""
+        if self._mock_trade_execution:
+            return
+        try:
+            _save_session(self._monitor.get_all_positions(), _now_et().date())
+        except Exception:
+            logger.exception("Failed to flush session state")
+
+    def _recover_session(self, session_date: date) -> list:
+        """Load today's checkpoint and broker-verify each saved open position.
+
+        Skipped in mock/replay mode. Rebuilds _window_returned from closed
+        positions so afternoon-window budgets are correct after a restart.
+        Returns the list of verified open ActivePosition objects to re-add to
+        the monitor.
+        """
+        if self._mock_trade_execution:
+            return []
+
+        all_saved = _load_session(session_date)
+        if not all_saved:
+            return []
+
+        self._rebuild_window_returned([p for p in all_saved if p.is_closed])
+
+        verified = []
+        for pos in [p for p in all_saved if not p.is_closed]:
+            try:
+                status = self._client.order_status(pos.entry_order_id)
+                if status.get("status") in ("filled", "partially_filled"):
+                    if pos.entry_fill_price is None:
+                        fill = status.get("filled_avg_price")
+                        if fill is not None:
+                            pos.entry_fill_price = _D(str(fill))
+                    verified.append(pos)
+                    logger.warning(
+                        "RECOVERED position %s %s (order %s)",
+                        pos.ticker,
+                        pos.option_symbol or "stock",
+                        pos.entry_order_id,
+                    )
+                else:
+                    logger.warning(
+                        "Skipping saved position %s — broker order status: %s",
+                        pos.ticker,
+                        status.get("status"),
+                    )
+            except Exception:
+                logger.exception(
+                    "Could not verify order %s for %s — skipping",
+                    pos.entry_order_id,
+                    pos.ticker,
+                )
+
+        return verified
 
     def _get_window_budget(self, win: WindowConfig) -> Optional[_D]:
         """Return window budget based on available capital.
@@ -1236,6 +1340,15 @@ class OpMomentumTradeEngine:
 
         if self._option_price_monitor:
             self._option_price_monitor.start()
+
+        recovered = self._recover_session(today)
+        for pos in recovered:
+            self._monitor.add_position(pos)
+            label = pos.window_label
+            if label in self._window_state:
+                self._window_state[label]["open_position_count"] += 1
+            if pos.trailing_arm_price is None:
+                self._window_primary_deployed.setdefault(label, set()).add(pos.ticker)
 
         self._signal_engine.start()
 

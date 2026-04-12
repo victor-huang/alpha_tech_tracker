@@ -1643,3 +1643,289 @@ class TestPollEntryFill:
         assert captured_positions[0].entry_fill_price is None
 
         engine._monitor.on_bar.assert_not_called()
+
+
+_SAVE_SESSION_PATH = "alpha_tech_tracker.op_momentum_strategy.trade_engine._save_session"
+_LOAD_SESSION_PATH = "alpha_tech_tracker.op_momentum_strategy.trade_engine._load_session"
+_FLUSH_PATH = "alpha_tech_tracker.op_momentum_strategy.trade_engine.OpMomentumTradeEngine._flush_session_state"
+
+
+def _make_checkpoint_position(**overrides):
+    defaults = dict(
+        ticker="NVDA",
+        signal="BULLISH",
+        option_symbol="NVDA260418C00120000",
+        entry_order_id="ord-001",
+        contracts=2,
+        entry_stock_price=_D("120.00"),
+        or_high=_D("122.00"),
+        or_low=_D("118.00"),
+        or_range=_D("4.00"),
+        hard_stop_price=_D("117.40"),
+        fallback_price=_D("118.80"),
+        trade_type="options",
+        window_label="M1",
+        rank=0,
+        window_budget=_D("10000"),
+        slot_capital=_D("5000"),
+        entry_fill_price=_D("3.50"),
+        hard_stop_armed=True,
+    )
+    defaults.update(overrides)
+    from alpha_tech_tracker.op_momentum_strategy.models import ActivePosition
+    return ActivePosition(**defaults)
+
+
+# ---------------------------------------------------------------------------
+# TestRebuildWindowReturned
+# ---------------------------------------------------------------------------
+
+
+class TestRebuildWindowReturned:
+    def _make_engine(self):
+        engine = _make_engine_with_mock_client()
+        engine._returned_lock = __import__("threading").Lock()
+        engine._window_returned = {}
+        return engine
+
+    def test_primary_position_returns_slot_capital_plus_pnl(self):
+        engine = self._make_engine()
+        pos = _make_checkpoint_position(
+            slot_capital=_D("5000"),
+            contracts=2,
+            simulated_entry_mid=_D("3.00"),
+            simulated_exit_mid=_D("5.00"),
+            trailing_arm_price=None,
+        )
+
+        engine._rebuild_window_returned([pos])
+
+        returned = engine._window_returned["M1"]
+        expected = _D("5000") + _D("2") * _D("100") * (_D("5.00") - _D("3.00"))
+        assert returned == expected
+
+    def test_reentry_position_returns_pnl_only(self):
+        engine = self._make_engine()
+        pos = _make_checkpoint_position(
+            slot_capital=_D("5000"),
+            contracts=1,
+            simulated_entry_mid=_D("3.00"),
+            simulated_exit_mid=_D("4.00"),
+            trailing_arm_price=_D("121.00"),
+        )
+
+        engine._rebuild_window_returned([pos])
+
+        returned = engine._window_returned["M1"]
+        assert returned == _D("1") * _D("100") * (_D("4.00") - _D("3.00"))
+
+    def test_skips_position_with_no_slot_capital(self):
+        engine = self._make_engine()
+        pos = _make_checkpoint_position(slot_capital=None)
+
+        engine._rebuild_window_returned([pos])
+
+        assert engine._window_returned == {}
+
+    def test_empty_list_is_noop(self):
+        engine = self._make_engine()
+
+        engine._rebuild_window_returned([])
+
+        assert engine._window_returned == {}
+
+
+# ---------------------------------------------------------------------------
+# TestFlushSessionState
+# ---------------------------------------------------------------------------
+
+
+class TestFlushSessionState:
+    def test_flush_skipped_in_mock_mode(self):
+        engine = _make_engine_with_mock_client()
+        engine._monitor = Mock()
+
+        with patch(_SAVE_SESSION_PATH) as mock_save:
+            engine._flush_session_state()
+
+        mock_save.assert_not_called()
+
+    def test_flush_calls_save_with_all_positions_in_live_mode(self):
+        client = _make_alpaca_client()
+        engine = OpMomentumTradeEngine(alpaca_client=client, mock_trade_execution=False)
+        pos = _make_checkpoint_position()
+        engine._monitor = Mock()
+        engine._monitor.get_all_positions.return_value = [pos]
+
+        with patch(_SAVE_SESSION_PATH) as mock_save, \
+             patch("alpha_tech_tracker.op_momentum_strategy.trade_engine._now_et") as mock_now:
+            mock_now.return_value.date.return_value = date(2026, 4, 11)
+            engine._flush_session_state()
+
+        mock_save.assert_called_once_with([pos], date(2026, 4, 11))
+
+    def test_flush_exception_does_not_propagate(self):
+        client = _make_alpaca_client()
+        engine = OpMomentumTradeEngine(alpaca_client=client, mock_trade_execution=False)
+        engine._monitor = Mock()
+        engine._monitor.get_all_positions.side_effect = RuntimeError("boom")
+
+        engine._flush_session_state()  # must not raise
+
+
+# ---------------------------------------------------------------------------
+# TestRecoverSession
+# ---------------------------------------------------------------------------
+
+
+class TestRecoverSession:
+    def _make_live_engine(self):
+        client = _make_alpaca_client()
+        engine = OpMomentumTradeEngine(alpaca_client=client, mock_trade_execution=False)
+        engine._returned_lock = __import__("threading").Lock()
+        engine._window_returned = {}
+        engine._window_state = {
+            "M1": {"open_position_count": 0, "capital_fraction": 1.0}
+        }
+        engine._window_primary_deployed = {}
+        return engine
+
+    def test_skips_recovery_in_mock_mode(self):
+        engine = _make_engine_with_mock_client()
+
+        with patch(_LOAD_SESSION_PATH) as mock_load:
+            result = engine._recover_session(date(2026, 4, 11))
+
+        mock_load.assert_not_called()
+        assert result == []
+
+    def test_returns_empty_when_no_checkpoint(self):
+        engine = self._make_live_engine()
+
+        with patch(_LOAD_SESSION_PATH, return_value=[]):
+            result = engine._recover_session(date(2026, 4, 11))
+
+        assert result == []
+
+    def test_adds_broker_verified_position(self):
+        engine = self._make_live_engine()
+        pos = _make_checkpoint_position(is_closed=False)
+        engine._client.order_status.return_value = {
+            "status": "filled",
+            "filled_avg_price": "3.55",
+        }
+
+        with patch(_LOAD_SESSION_PATH, return_value=[pos]):
+            result = engine._recover_session(date(2026, 4, 11))
+
+        assert len(result) == 1
+        assert result[0].ticker == "NVDA"
+
+    def test_skips_position_when_broker_order_not_filled(self):
+        engine = self._make_live_engine()
+        pos = _make_checkpoint_position(is_closed=False)
+        engine._client.order_status.return_value = {"status": "new"}
+
+        with patch(_LOAD_SESSION_PATH, return_value=[pos]):
+            result = engine._recover_session(date(2026, 4, 11))
+
+        assert result == []
+
+    def test_skips_position_when_order_status_raises(self):
+        engine = self._make_live_engine()
+        pos = _make_checkpoint_position(is_closed=False)
+        engine._client.order_status.side_effect = RuntimeError("network error")
+
+        with patch(_LOAD_SESSION_PATH, return_value=[pos]):
+            result = engine._recover_session(date(2026, 4, 11))
+
+        assert result == []
+
+    def test_populates_entry_fill_price_when_none_in_checkpoint(self):
+        engine = self._make_live_engine()
+        pos = _make_checkpoint_position(is_closed=False, entry_fill_price=None)
+        engine._client.order_status.return_value = {
+            "status": "filled",
+            "filled_avg_price": "3.75",
+        }
+
+        with patch(_LOAD_SESSION_PATH, return_value=[pos]):
+            result = engine._recover_session(date(2026, 4, 11))
+
+        assert result[0].entry_fill_price == _D("3.75")
+
+    def test_preserves_existing_fill_price_from_checkpoint(self):
+        engine = self._make_live_engine()
+        pos = _make_checkpoint_position(is_closed=False, entry_fill_price=_D("3.50"))
+        engine._client.order_status.return_value = {
+            "status": "filled",
+            "filled_avg_price": "9.99",
+        }
+
+        with patch(_LOAD_SESSION_PATH, return_value=[pos]):
+            result = engine._recover_session(date(2026, 4, 11))
+
+        assert result[0].entry_fill_price == _D("3.50")
+
+    def test_rebuilds_window_returned_from_closed_positions(self):
+        engine = self._make_live_engine()
+        closed = _make_checkpoint_position(
+            is_closed=True,
+            slot_capital=_D("5000"),
+            contracts=2,
+            simulated_entry_mid=_D("3.00"),
+            simulated_exit_mid=_D("5.00"),
+            trailing_arm_price=None,
+        )
+
+        with patch(_LOAD_SESSION_PATH, return_value=[closed]):
+            engine._recover_session(date(2026, 4, 11))
+
+        assert "M1" in engine._window_returned
+        assert engine._window_returned["M1"] > _D("0")
+
+    def test_increments_open_position_count_after_recovery(self):
+        engine = self._make_live_engine()
+        pos = _make_checkpoint_position(is_closed=False)
+        engine._client.order_status.return_value = {"status": "filled"}
+        engine._monitor = Mock()
+
+        with patch(_LOAD_SESSION_PATH, return_value=[pos]):
+            recovered = engine._recover_session(date(2026, 4, 11))
+        for p in recovered:
+            engine._monitor.add_position(p)
+            engine._window_state[p.window_label]["open_position_count"] += 1
+
+        assert engine._window_state["M1"]["open_position_count"] == 1
+
+    def test_primary_ticker_added_to_window_primary_deployed(self):
+        engine = self._make_live_engine()
+        pos = _make_checkpoint_position(is_closed=False, trailing_arm_price=None)
+        engine._client.order_status.return_value = {"status": "filled"}
+        engine._monitor = Mock()
+
+        with patch(_LOAD_SESSION_PATH, return_value=[pos]):
+            recovered = engine._recover_session(date(2026, 4, 11))
+        for p in recovered:
+            if p.trailing_arm_price is None:
+                engine._window_primary_deployed.setdefault(p.window_label, set()).add(p.ticker)
+
+        assert "NVDA" in engine._window_primary_deployed.get("M1", set())
+
+    def test_reentry_ticker_not_added_to_primary_deployed(self):
+        engine = self._make_live_engine()
+        pos = _make_checkpoint_position(
+            is_closed=False,
+            trailing_arm_price=_D("121.00"),
+            reentry_type="reversal",
+        )
+        engine._client.order_status.return_value = {"status": "filled"}
+        engine._monitor = Mock()
+
+        with patch(_LOAD_SESSION_PATH, return_value=[pos]):
+            recovered = engine._recover_session(date(2026, 4, 11))
+        for p in recovered:
+            if p.trailing_arm_price is None:
+                engine._window_primary_deployed.setdefault(p.window_label, set()).add(p.ticker)
+
+        assert "NVDA" not in engine._window_primary_deployed.get("M1", set())

@@ -63,3 +63,4 @@ build-iPhoneSimulator/
 .rvmrc
 pip-selfcheck.json
 alpha_tech_tracker/op_momentum_strategy/config.json
+alpha_tech_tracker/op_momentum_strategy/state/*.json

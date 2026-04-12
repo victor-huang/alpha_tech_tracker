@@ -109,6 +109,11 @@ class PositionMonitor:
                 position.contracts,
             )
 
+    def get_all_positions(self) -> list:
+        """Return a thread-safe snapshot of all positions (open and closed)."""
+        with self._lock:
+            return list(self._positions)
+
     def on_bar(self, ticker: str):
         latest = self._signal_engine.get_latest_bar(ticker)
         if latest is None:
