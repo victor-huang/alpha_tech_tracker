@@ -59,8 +59,9 @@ DEFAULT_TICKERS = [
     "TSLA",
 ]
 
-# Liquidity-screened pool (2026-04-10): removed ANAB, RH, FN, EXPE, FANG (sparse bars / low trade count
-# from March 2026 data); added RKLB, ASTS, HOOD (Russell 2000 active), CRWD, NFLX (large-cap).
+# AT pool (2026-04-12): removed ANAB, RH, FN, EXPE, FANG (sparse bars / low trade count
+# from March 2026 data); added RKLB, ASTS, HOOD (Russell 2000 active), MSTR, NFLX (large-cap).
+# CRWD → MSTR swap: MSTR wins 5/7 years vs CRWD (+4.5pp over 7 years); BTC-correlated beta driver.
 ACTIVELY_TRADE_TICKERS = [
     "SNDK",
     "APP",
@@ -76,7 +77,7 @@ ACTIVELY_TRADE_TICKERS = [
     "RKLB",
     "ASTS",
     "HOOD",
-    "CRWD",
+    "MSTR",
     "NFLX",
 ]
 ROLLING_LOOKBACK_DAYS = 60
