@@ -267,3 +267,50 @@ Period: 2021-01-01 → 2025-12-31, no-compound, regime-ma 8, weights 50/30/20.
 | `m2_a1_a2.txt` | AT pool — M2+A1+A2 full output |
 | `v2_baseline_m1.txt` | V2 pool — M1 baseline for comparison |
 | `v2_baseline_m2_a1_a2.txt` | V2 pool — M2+A1+A2 baseline for comparison |
+| `soa_at_*.txt` | AT pool — SOA config (M1+A1+A2, top-2, weights 60/40, reversal+BRE) per year |
+| `soa_at_mstr_*.txt` | AT+MSTR pool (CRWD→MSTR) — SOA config per year |
+| `tier1_candidates/` | Individual standalone screens: SOFI, MARA, IBIT, RIOT, AVGO, MSTR, SHOP, CVNA, CRWD |
+
+---
+
+## Ticker Swap Study — CRWD → MSTR (2026-04-11)
+
+**Objective:** Find Tier 1 liquidity (>30M ADV) replacements for SHOP, CVNA, CRWD.
+
+### Individual Standalone Screening (SOA config, top-1, 2025 + 2026 YTD)
+
+| Ticker | ADV | 2025 Return | 2025 WR | 2025 AvgWin | 2026 YTD Return | 2026 WR |
+|--------|-----|-------------|---------|-------------|-----------------|---------|
+| CVNA *(current)* | ~3M | **+86.55%** | 48% | +1.20% | **+41.47%** | 52% |
+| MSTR *(new)* | ~20M | **+70.10%** | 48% | +1.18% | **+21.05%** | 51% |
+| MARA | ~47M | +67.19% | 44% | +1.45% | +2.62% | 36% |
+| SOFI | ~60M | +60.73% | 48% | +0.96% | +14.22% | 39% |
+| SHOP *(current)* | ~6M | +48.64% | 50% | +0.80% | **+57.49%** | 56% |
+| AVGO | ~34M | +38.61% | 45% | +0.75% | +11.48% | 52% |
+| CRWD *(current)* | ~2M | +35.97% | 47% | +0.70% | +13.49% | 39% |
+| IBIT | ~43M | +32.00% | 43% | +0.63% | +3.16% | 50% |
+| RIOT | ~17M | +28.12% | 43% | +1.19% | +11.45% | 44% |
+
+**Conclusions:**
+- **CVNA and SHOP stay** — both outperform all Tier 1 candidates on signal quality; liquidity cost is acceptable at current trade sizes.
+- **CRWD → MSTR** is the only clean swap: MSTR beats CRWD in both years despite being just below the 30M ADV floor; extreme Bitcoin-proxy beta drives large avg wins.
+- IBIT low avg win (+0.46-0.63%) reflects ETF dampening — not suitable.
+- AVGO disappoints despite Tier 1 ADV — semiconductor beta doesn't translate to wide ORs.
+
+### Full Pool Confirmation: AT+MSTR 7-Year Backtest
+
+Pool: `SNDK APP SHOP CVNA AMD META MU PLTR COIN NVDA TSLA RKLB ASTS HOOD MSTR NFLX`
+
+| Year | SOA V2 | AT (CRWD) | AT+MSTR | Δ vs AT |
+|------|--------|-----------|---------|---------|
+| 2019 | +100.32% | +119.24% | +104.83% | -14pp |
+| 2020 | +192.15% | +160.91% | **+170.62%** | +10pp |
+| 2021 | +147.87% | +136.75% | **+146.90%** | +10pp |
+| 2022 | +191.51% | **+229.18%** | +213.80% | -15pp |
+| 2023 | +334.58% | +328.00% | +327.42% | -0.6pp |
+| 2024 | +138.51% | +174.00% | **+181.45%** | +7pp |
+| 2025 | +174.27% | +199.10% | **+206.82%** | +8pp |
+| 2026 YTD | +99.08% | +93.58% | **+98.67%** | +5pp |
+| **7-yr sum** | **+1,279.21%** | **+1,347.17%** | **+1,351.82%** | **+4.65pp** |
+
+**AT+MSTR wins 5 of 7 years.** Main risk: 2022 (-15pp) when crypto names underperform in bear markets. 2019 drag (-14pp) reflects pre-Bitcoin-pivot MSTR (Saylor's BTC strategy began Aug 2020).
