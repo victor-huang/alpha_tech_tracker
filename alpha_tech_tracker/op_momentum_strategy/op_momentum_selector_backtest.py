@@ -66,6 +66,38 @@ def _compute_cap_pnl(row: dict, slot_capital: float) -> float:
     return cap_pnl
 
 
+def _apply_doubledown_window(rows: list) -> float:
+    """
+    Apply the double-down add-on P&L for a single window's rows.
+
+    Requires slot_capital to be set on each row (called after _compute_cap_pnl).
+    Mutates the winner row in-place (cap_pnl, dd_addon_cap_pnl, dd_freed_capital).
+    Returns the addon dollar P&L added (0.0 if no DD fired).
+    """
+    winner = next((r for r in rows if "dd_freed_ranks" in r), None)
+    if winner is None or winner.get("skipped"):
+        return 0.0
+
+    freed_rank_set = set(winner["dd_freed_ranks"])
+    total_freed = 0.0
+    for r in rows:
+        if r["rank"] not in freed_rank_set or r.get("skipped"):
+            continue
+        slot_cap = r.get("slot_capital", 0.0)
+        if slot_cap > 0 and r.get("entry_price", 0) > 0:
+            returned = slot_cap * (1.0 + r["pnl"] / r["entry_price"])
+            total_freed += max(0.0, returned)
+
+    if total_freed <= 0:
+        return 0.0
+
+    addon_cap_pnl = total_freed * winner.get("dd_addon_pnl_pct", 0.0)
+    winner["cap_pnl"] += addon_cap_pnl
+    winner["dd_addon_cap_pnl"] = addon_cap_pnl
+    winner["dd_freed_capital"] = total_freed
+    return addon_cap_pnl
+
+
 def _apply_capital_flow(
     trade_rows: list,
     windows: list,
@@ -75,6 +107,7 @@ def _apply_capital_flow(
     morning_split: list = None,
     min_capital: float = MIN_WINDOW_CAPITAL,
     compound: bool = False,
+    enable_doubledown: bool = False,
 ) -> list:
     """
     Apply day-by-day capital flow across windows.
@@ -90,6 +123,10 @@ def _apply_capital_flow(
       - compound=False (default): portfolio resets to initial_capital at the start
         of each day — isolates per-day strategy edge, good for strategy comparison.
       - compound=True: portfolio carries over day-to-day — reflects live account growth.
+
+    When enable_doubledown=True, the DD add-on P&L for each window is included
+    immediately after that window's rows are processed, so it flows correctly into
+    sequential window capital (A1/A2) and into the next day's portfolio in compound mode.
 
     Modelling assumption — capital recycling between windows:
       Each window's backtest runs independently with natural exits (hard stop,
@@ -146,6 +183,7 @@ def _apply_capital_flow(
                     "picks": len(rows),
                 }
             )
+            win_pnl = 0.0
             for row in rows:
                 row["window_capital"] = win_capital
                 if skipped:
@@ -156,7 +194,10 @@ def _apply_capital_flow(
                     row["slot_capital"] = slot_capital
                     row["cap_pnl"] = _compute_cap_pnl(row, slot_capital)
                     row["skipped"] = False
-                    first_group_pnl += row["cap_pnl"]
+                    win_pnl += row["cap_pnl"]
+            if enable_doubledown and not skipped:
+                win_pnl += _apply_doubledown_window(rows)
+            first_group_pnl += win_pnl
 
         # --- Sequential windows: each inherits all returned capital ---
         available = portfolio + first_group_pnl
@@ -190,6 +231,8 @@ def _apply_capital_flow(
                     row["cap_pnl"] = _compute_cap_pnl(row, slot_capital)
                     row["skipped"] = False
                     win_pnl += row["cap_pnl"]
+            if enable_doubledown and not skipped:
+                win_pnl += _apply_doubledown_window(rows)
             if not skipped:
                 available += win_pnl
                 seq_pnl += win_pnl
@@ -674,18 +717,11 @@ def run_selector_backtest(
 
 def _apply_doubledown(trade_rows: list) -> None:
     """
-    After _apply_capital_flow has set slot_capital on each row, apply the double-down
-    add-on P&L to rank-1 rows whose co-picks stopped out early.
+    Apply double-down add-on P&L across all windows in trade_rows.
 
-    For each (date, window) group where _annotate_doubledown_addon set dd_freed_ranks
-    on rank-1:
-    - Freed capital = sum of returned capital from each stopped-out rank.
-      returned = slot_capital * (1 + pnl / entry_price)  [clamped to ≥ 0]
-    - Addon P&L = freed_capital * dd_addon_pnl_pct  [≥ 0, break-even floor]
-
-    Mutates trade_rows in-place, adding to affected rank-1 rows:
-      dd_addon_cap_pnl  float  dollar P&L from the add-on leg
-      dd_freed_capital  float  total freed capital redeployed as add-on
+    Delegates to _apply_doubledown_window per (date, window) group.
+    Prefer passing enable_doubledown=True to _apply_capital_flow so that DD P&L
+    is recycled into sequential window capital on the same day.
     """
     by_day_window: dict = {}
     for row in trade_rows:
@@ -693,28 +729,7 @@ def _apply_doubledown(trade_rows: list) -> None:
         by_day_window.setdefault(key, []).append(row)
 
     for rows in by_day_window.values():
-        # Find the winner — whichever row was annotated by _annotate_doubledown_addon.
-        winner = next((r for r in rows if "dd_freed_ranks" in r), None)
-        if winner is None or winner.get("skipped"):
-            continue
-
-        freed_rank_set = set(winner["dd_freed_ranks"])
-        total_freed = 0.0
-        for r in rows:
-            if r["rank"] not in freed_rank_set or r.get("skipped"):
-                continue
-            slot_cap = r.get("slot_capital", 0.0)
-            if slot_cap > 0 and r.get("entry_price", 0) > 0:
-                returned = slot_cap * (1.0 + r["pnl"] / r["entry_price"])
-                total_freed += max(0.0, returned)
-
-        if total_freed <= 0:
-            continue
-
-        addon_cap_pnl = total_freed * winner.get("dd_addon_pnl_pct", 0.0)
-        winner["cap_pnl"] += addon_cap_pnl
-        winner["dd_addon_cap_pnl"] = addon_cap_pnl
-        winner["dd_freed_capital"] = total_freed
+        _apply_doubledown_window(rows)
 
 
 def _collect_baseline(
@@ -1857,10 +1872,8 @@ if __name__ == "__main__":
         morning_split=morning_split,
         min_capital=args.min_window_capital,
         compound=args.compound,
+        enable_doubledown=args.doubledown,
     )
-
-    if args.doubledown:
-        _apply_doubledown(trade_rows)
 
     baseline_df = _collect_baseline(all_window_results, eval_start, eval_end)
 
