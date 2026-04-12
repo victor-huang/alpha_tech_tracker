@@ -1565,7 +1565,7 @@ class OpMomentumTradeEngine:
                 }
             )
 
-        bar_recorder = BarRecorder()
+        bar_recorder = BarRecorder(feed=self._alpaca_feed.value)
         self._signal_engine = LiveSignalEngine(
             tickers=all_tickers,
             api_key=api_key,

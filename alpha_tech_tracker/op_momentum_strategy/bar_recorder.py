@@ -17,14 +17,15 @@ class BarRecorder:
     Appends 1-min and 5-min bars to CSV files as they arrive during live trading.
 
     Files are stored at:
-        live_trade_market_data/{date}/{ticker}_1min.csv
-        live_trade_market_data/{date}/{ticker}_5min.csv
+        live_trade_market_data/{date}/{feed}_{ticker}_1min.csv
+        live_trade_market_data/{date}/{feed}_{ticker}_5min.csv
 
     Timestamps are written in ET (America/New_York).
     """
 
-    def __init__(self, base_dir: str = _DEFAULT_BASE_DIR):
+    def __init__(self, base_dir: str = _DEFAULT_BASE_DIR, feed: str = "sip"):
         self._base_dir = base_dir
+        self._feed = feed
         self._files: dict = {}
         self._writers: dict = {}
 
@@ -33,7 +34,7 @@ class BarRecorder:
         if key not in self._writers:
             date_dir = os.path.join(self._base_dir, str(session_date))
             os.makedirs(date_dir, exist_ok=True)
-            path = os.path.join(date_dir, f"{ticker}_{timeframe}.csv")
+            path = os.path.join(date_dir, f"{self._feed}_{ticker}_{timeframe}.csv")
             is_new = not os.path.exists(path)
             f = open(path, "a", newline="")
             writer = csv.writer(f)
