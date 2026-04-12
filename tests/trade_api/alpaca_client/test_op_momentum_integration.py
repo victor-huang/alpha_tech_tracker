@@ -3,11 +3,9 @@ import threading
 import pytest
 from alpaca.data.live import StockDataStream
 
-from alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine import (
-    ITMOptionContractSelector,
-    PositionSizer,
-    TickerSelector,
-)
+from alpha_tech_tracker.op_momentum_strategy.contract_selector import ITMOptionContractSelector
+from alpha_tech_tracker.op_momentum_strategy.position_sizer import PositionSizer
+from alpha_tech_tracker.op_momentum_strategy.trade_engine import TickerSelector
 from alpha_tech_tracker.trade_api.alpaca_client.client import AlpacaAPIClient
 
 _OPTIONS_NOT_ENABLED_CODES = ("40110000", "42210000")
