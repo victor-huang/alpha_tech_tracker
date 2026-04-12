@@ -40,6 +40,8 @@ def _safe_bars_end(target_date: date):
 # GS and REGN: $2.50/signal over 90 days from 3/26/2026, during down trend
 # removed UI 2026-03-31: Alpaca returns only sparse extended-hours bars, no reliable morning session data
 # removed ISSC, added RH 2026-04-01: swap gains +19pp over 5 years; RH has cleaner OR breakouts
+# removed FANG (structurally weak, +1-2% in Q1/Q2 2025 and Q1 2026), NVDA (fading trend, +0.6% Q4 2024),
+# TSLA (peaked Q2/Q3 2025, declining to +6.5% Q1 2026) — replaced with CLS, MSTR, CRWV, MRVL (2026-04-12)
 DEFAULT_TICKERS = [
     "SNDK",
     "APP",
@@ -48,15 +50,16 @@ DEFAULT_TICKERS = [
     "AMD",
     "META",
     "EXPE",
-    "FANG",
     "RH",
     "FN",
     "MU",
     "CRDO", # replaced ANAB 2026-04-10: sparse live data; CRDO has min 72 bars/day, 3.65% OR
     "PLTR",
     "COIN",
-    "NVDA",
-    "TSLA",
+    "CLS",  # replaced FANG 2026-04-12: CLS +12-39% per quarter vs FANG structurally weak
+    "MSTR", # replaced NVDA 2026-04-12: MSTR consistent +8-56%, NVDA fading (+0.6% Q4 2024)
+    "CRWV", # replaced TSLA 2026-04-12: CRWV accelerating (+24% Q4 2025, +37% Q1 2026); TSLA peaked
+    "MRVL", # added 2026-04-12: high-variance but strong peaks (+40% Q2 2025, +28% Q1 2026)
 ]
 
 # AT pool (2026-04-12): removed ANAB, RH, FN, EXPE, FANG (sparse bars / low trade count

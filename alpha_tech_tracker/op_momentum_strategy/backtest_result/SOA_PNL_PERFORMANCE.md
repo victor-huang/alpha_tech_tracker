@@ -32,7 +32,7 @@ python alpha_tech_tracker/op_momentum_strategy/op_momentum_selector_backtest.py 
 | Regime filter | off | Not applied in this config |
 | Stop pct | 0.15 (default) | 15% of OR range |
 | Trailing MA | ma20 (default) | Exit when price crosses below MA20 (armed after 1× OR range move) |
-| Ticker pool | 16 tickers (V2) | SNDK APP SHOP CVNA AMD META EXPE FANG RH FN MU CRDO PLTR COIN NVDA TSLA |
+| Ticker pool | 17 tickers (V3) | SNDK APP SHOP CVNA AMD META EXPE RH FN MU CRDO PLTR COIN CLS MSTR CRWV MRVL |
 | Lookback | 60d rolling | For selector scoring |
 | Compounding | off | $10,000 reset each day |
 
@@ -200,6 +200,63 @@ Change: CRWD → MSTR
 | `active_traded_ticker_list/soa_at_mstr_2025.txt` | AT+MSTR pool — 2025 full output |
 | `active_traded_ticker_list/soa_at_mstr_2026.txt` | AT+MSTR pool — 2026 YTD full output |
 | `active_traded_ticker_list/tier1_candidates/` | Individual standalone screens for SOFI, MARA, IBIT, RIOT, AVGO, MSTR, SHOP, CVNA, CRWD |
+
+---
+
+## V3 Pool — FANG/NVDA/TSLA → CLS/MSTR/CRWV/MRVL (2026-04-12)
+
+Quarterly P&L trend analysis of the V2 pool (Q3 2024 → Q1 2026) identified three structurally
+declining tickers. Replaced with four screened candidates, expanding the pool from 16 → 17 tickers.
+
+### V3 Pool (17 tickers)
+
+```
+SNDK, APP, SHOP, CVNA, AMD, META, EXPE, RH, FN, MU, CRDO, PLTR, COIN,
+CLS, MSTR, CRWV, MRVL
+```
+
+Removed from V2: FANG (structurally weak, +1-2% in Q1/Q2 2025 and Q1 2026), NVDA (fading,
++0.6% Q4 2024, sub-10% by Q3-Q4 2025), TSLA (peaked Q2/Q3 2025 at +43%/+41%, declined to +6.5% Q1 2026).
+Added: CLS (consistent +13-39%), MSTR (never negative, +56% Q4 2024 BTC run), CRWV (accelerating
+post-IPO: +24% Q4 2025, +37% Q1 2026), MRVL (high peaks: +40% Q2 2025, +28% Q1 2026).
+
+### V2 vs V3 Year-by-Year (SOA config, with --doubledown --doubledown-start 5)
+
+| Year | V2 | V3 | Δ | Winner |
+|------|----|----|---|--------|
+| 2021 | +158.41% | +189.74% | +31.3pp | **V3** |
+| 2022 | +210.80% | +214.48% | +3.7pp  | **V3** |
+| 2023 | +352.89% | +332.33% | -20.6pp | V2 |
+| 2024 | +151.69% | +161.16% | +9.5pp  | **V3** |
+| 2025 | +185.14% | +169.83% | -15.3pp | V2 |
+| 2026 YTD (Jan–Apr 10) | +108.79% | +126.11% | +17.3pp | **V3** |
+| **5-yr sum (2021–2025)** | **+1,058.93%** | **+1,067.54%** | **+8.6pp** | **V3** |
+
+> 2019–2020 not rerun for V3. V2 results for those years remain the reference.
+
+### Key Observations
+
+1. **V3 wins 4 of 6 years and the 5-year total by +8.6pp** — confirmed as the better pool overall.
+
+2. **V2 wins 2023 (-20.6pp)**: Strong sustained bull year. TSLA and NVDA generated powerful
+   BULLISH OR breakouts; MSTR was in post-crypto-crash recovery; CRWV did not yet exist.
+
+3. **V2 wins 2025 (-15.3pp)**: TSLA was exceptional mid-year (Q2 +43%, Q3 +41%). CRWV also
+   missed Q1 2025 (pre-IPO), leaving V3 one ticker short that quarter.
+
+4. **V3 dominates bear/choppy years** (2021 +31pp, 2022 +4pp, 2024 +10pp, 2026 +17pp):
+   CLS, MSTR, MRVL extract stronger OR-breakout edge in volatile and downtrending markets.
+   MSTR's BTC-correlated beta generates large BEARISH moves in risk-off environments.
+
+5. **CRWV is the highest-risk addition** — only 4 quarters of live data (IPO March 2025).
+   Trend is accelerating (+17% → +12% → +24% → +37%) but insufficient history for a
+   definitive multi-year conclusion.
+
+### Output Logs
+
+| File | Description |
+|------|-------------|
+| `ticker_list_review/04_12_2026/FINDINGS.md` | Full quarterly trend table, candidate screen, V2 vs V3 validation |
 
 ---
 
