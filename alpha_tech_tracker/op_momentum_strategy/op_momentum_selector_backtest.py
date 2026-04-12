@@ -147,9 +147,12 @@ def _apply_capital_flow(
         of each day — isolates per-day strategy edge, good for strategy comparison.
       - compound=True: portfolio carries over day-to-day — reflects live account growth.
 
-    When enable_doubledown=True, the DD freed capital is deducted from the capital
-    passed to sequential windows: available(W2) = W1 + W1_pnl - dd_deployed.
-    The DD leg runs independently and its P&L is applied separately via _apply_doubledown().
+    DD capital recycling (enable_doubledown=True):
+      For each sequential window Wk, available = base + pnl_acc - active_dd_capital,
+      where active_dd_capital is the sum of freed capital from all preceding DDs whose
+      winner has NOT yet exited by Wk's OR close time. If a DD exits before Wk starts,
+      its capital naturally flows back in (no deduction). DD P&L is applied separately
+      via _apply_doubledown() and does not affect sequential window sizing.
 
     Modelling assumption — capital recycling between windows:
       Each window's backtest runs independently with natural exits (hard stop,
@@ -173,6 +176,14 @@ def _apply_capital_flow(
     n_first = len(morning_split)
     window_labels = [w["label"] for w in windows]
 
+    # Pre-compute OR close time (minutes from midnight) for each window label.
+    # Used to determine whether a DD leg has exited before each sequential window starts.
+    or_close_min: dict = {}
+    if enable_doubledown:
+        for w in windows:
+            h, m = map(int, w["opening_start"].split(":"))
+            or_close_min[w["label"]] = h * 60 + m + w["opening_bars"] * 5
+
     # Index trade_rows by (date, window) for fast lookup
     by_day_window = {}
     for row in trade_rows:
@@ -186,6 +197,11 @@ def _apply_capital_flow(
     for d in trading_days:
         if not compound:
             portfolio = initial_capital
+
+        # day_dds: list of (dd_deployed, winner_exit_min) for all DDs fired today.
+        # Used by sequential windows to decide how much capital is still locked in DD.
+        day_dds: list = []
+
         # --- First group: simultaneous windows, each gets portfolio * split[i] ---
         first_group_pnl = 0.0
         for i, label in enumerate(window_labels[:n_first]):
@@ -219,14 +235,32 @@ def _apply_capital_flow(
                     row["skipped"] = False
                     win_pnl += row["cap_pnl"]
             if enable_doubledown and not skipped:
-                # DD freed capital is still deployed — deduct from what W2 sees
-                win_pnl -= _compute_dd_deployed(rows)
+                dd_dep = _compute_dd_deployed(rows)
+                if dd_dep > 0:
+                    winner = next((r for r in rows if "dd_freed_ranks" in r), None)
+                    if winner is not None:
+                        exit_min = (
+                            or_close_min[label] + (winner["bars_held"] + 1) * 5
+                        )
+                        day_dds.append((dd_dep, exit_min))
             first_group_pnl += win_pnl
 
-        # --- Sequential windows: each inherits all returned capital ---
-        available = portfolio + first_group_pnl
+        # --- Sequential windows ---
+        # available is recomputed per window from base + pnl_acc - active DDs so that
+        # a DD that exits between two sequential windows is correctly recycled.
+        base = portfolio + first_group_pnl
+        pnl_acc = 0.0
         seq_pnl = 0.0
         for label in window_labels[n_first:]:
+            this_or_close = or_close_min.get(label, 0)
+
+            # Deduct capital from any DD legs still running at this window's OR close.
+            available = base + pnl_acc
+            if enable_doubledown:
+                for dd_dep, exit_min in day_dds:
+                    if exit_min >= this_or_close:
+                        available -= dd_dep
+
             rows = by_day_window.get((d, label), [])
             skipped = available < min_capital
             status = (
@@ -256,9 +290,16 @@ def _apply_capital_flow(
                     row["skipped"] = False
                     win_pnl += row["cap_pnl"]
             if enable_doubledown and not skipped:
-                win_pnl -= _compute_dd_deployed(rows)
+                dd_dep = _compute_dd_deployed(rows)
+                if dd_dep > 0:
+                    winner = next((r for r in rows if "dd_freed_ranks" in r), None)
+                    if winner is not None:
+                        exit_min = (
+                            or_close_min[label] + (winner["bars_held"] + 1) * 5
+                        )
+                        day_dds.append((dd_dep, exit_min))
             if not skipped:
-                available += win_pnl
+                pnl_acc += win_pnl
                 seq_pnl += win_pnl
 
         portfolio += first_group_pnl + seq_pnl
