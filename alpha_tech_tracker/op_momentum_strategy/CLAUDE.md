@@ -433,6 +433,74 @@ PYTHONPATH=/Users/victorhuang/work/alpha_tech_tracker \
 
 ---
 
+## Pre-Implementation Checklist
+
+Before writing code for any new feature — signal filter, re-entry type, exit rule,
+cache change, or data source parameter — work through this list. Each item maps to a
+real bug found in this codebase (see `retrospects/RETRO_APRIL_2026.md` for full detail).
+
+### Temporal alignment (data lookahead)
+- Does every filter or gating signal use only data that is **known at signal time (~9:45 AM ET)**?
+- Daily closes, rolling MAs on daily bars, and external index values (QQQ, VIX) are
+  settled after market close — they must be shifted **+1 business day** before gating
+  intraday signals.
+- Sanity check: run the filter with shift=0 vs shift=1 and compare P&L. A large
+  difference means you had a lookahead.
+
+### Backtest / live engine parity
+- Does the new logic behave identically in the backtest (batch scan) and live engine
+  (bar-by-bar loop)?
+- If two signals can both fire on the same day, is the **tie-breaking rule identical**
+  in both? "First bar wins" and "exhaustive scan" only agree when at most one fires.
+- Write a test where Signal A fires on bar 3 and Signal B fires on bar 5 — verify both
+  environments pick A. Then swap: B on bar 3, A on bar 5 — verify both pick B.
+
+### State that should latch
+- Is the new condition meant to be **"ever crossed"** or **"currently above"**?
+- Threshold-crossing conditions that should be permanent once met (arm flags, trailing
+  stop activation) must be stored as a latched boolean — not recomputed from current price.
+- Check: does price retreating below the threshold after first crossing change behavior?
+  If not, use a persistent flag.
+
+### Scope of cleanup / cancellation
+- When a watcher, callback, or competing entry is cancelled, is the **cleanup scoped
+  correctly**? Keying cleanup on `ticker` alone is almost always too broad when multiple
+  windows can trade the same ticker simultaneously.
+- The correct key is typically `(ticker, primary_exit_bar_time)` or equivalent.
+
+### Derived fields after adding a new P&L component
+- When a new P&L source (reversal, re-entry, rebate) is added to a trade row, audit
+  **every derived flag and stat** computed from P&L: `success`, `win_rate`,
+  `avg_win_pct`, `avg_loss_pct`, `ev_trade`.
+- The `success` flag must match the `pnl_pct` field stored in the same row.
+
+### Cache key completeness
+- Does the new parameter **change the data returned**? If yes, it must be encoded in
+  the cache key/filename.
+- Test: fetch with param=A → confirm cache file created. Fetch with param=B → confirm
+  a *different* cache file is created.
+
+### Cache correctness under parallel access
+- If the cache can be written by multiple processes simultaneously (e.g., sweep scripts):
+  - Writes must be **atomic** (write to `.tmp`, then `Path.replace()`).
+  - Reads and deletes must tolerate `FileNotFoundError` — another process may have
+    evicted the file between your directory scan and your open/unlink.
+
+### Degenerate input guards
+- What happens when `or_range == 0`? `entry_price == 0`? `close == NaN`?
+- Any percent-based condition relative to a range or price must guard against zero
+  denominator. A condition like `close <= low + pct × range` is trivially true when
+  `range == 0`.
+- For sparse tickers: does the signal engine handle silent 5-min periods where no bars
+  arrive? Missing bars must be synthesized as flat bars to keep MA series continuous.
+
+### External constants
+- Option tick sizes differ by program — pool tickers use **Penny Pilot** ($0.01/<$3,
+  $0.05/≥$3), not the non-pilot schedule ($0.05/$0.10). Verify before placing limits.
+- When adding a new ticker: confirm Penny Pilot enrollment before assuming tick size.
+
+---
+
 ## Pitfalls to Avoid
 
 1. **Never compare no-compound results to compound results** — they are not comparable. Rerun the baseline with the same flags before comparing.
