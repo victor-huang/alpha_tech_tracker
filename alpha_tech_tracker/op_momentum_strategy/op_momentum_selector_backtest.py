@@ -107,7 +107,6 @@ def _apply_capital_flow(
     morning_split: list = None,
     min_capital: float = MIN_WINDOW_CAPITAL,
     compound: bool = False,
-    enable_doubledown: bool = False,
 ) -> list:
     """
     Apply day-by-day capital flow across windows.
@@ -124,9 +123,9 @@ def _apply_capital_flow(
         of each day — isolates per-day strategy edge, good for strategy comparison.
       - compound=True: portfolio carries over day-to-day — reflects live account growth.
 
-    When enable_doubledown=True, the DD add-on P&L for each window is included
-    immediately after that window's rows are processed, so it flows correctly into
-    sequential window capital (A1/A2) and into the next day's portfolio in compound mode.
+    DD add-on P&L is applied separately after this function via _apply_doubledown().
+    The DD leg runs to its own natural exit (trailing stop or EOD) independently of
+    A1/A2 windows — its capital is not recycled into sequential windows.
 
     Modelling assumption — capital recycling between windows:
       Each window's backtest runs independently with natural exits (hard stop,
@@ -195,8 +194,6 @@ def _apply_capital_flow(
                     row["cap_pnl"] = _compute_cap_pnl(row, slot_capital)
                     row["skipped"] = False
                     win_pnl += row["cap_pnl"]
-            if enable_doubledown and not skipped:
-                win_pnl += _apply_doubledown_window(rows)
             first_group_pnl += win_pnl
 
         # --- Sequential windows: each inherits all returned capital ---
@@ -231,8 +228,6 @@ def _apply_capital_flow(
                     row["cap_pnl"] = _compute_cap_pnl(row, slot_capital)
                     row["skipped"] = False
                     win_pnl += row["cap_pnl"]
-            if enable_doubledown and not skipped:
-                win_pnl += _apply_doubledown_window(rows)
             if not skipped:
                 available += win_pnl
                 seq_pnl += win_pnl
@@ -720,9 +715,10 @@ def _apply_doubledown(trade_rows: list) -> None:
     """
     Apply double-down add-on P&L across all windows in trade_rows.
 
-    Delegates to _apply_doubledown_window per (date, window) group.
-    Prefer passing enable_doubledown=True to _apply_capital_flow so that DD P&L
-    is recycled into sequential window capital on the same day.
+    Called after _apply_capital_flow so that DD P&L is NOT recycled into
+    sequential window (A1/A2) capital. The DD leg runs to its own natural
+    exit (trailing stop or EOD) independently — A1/A2 use only the base
+    primary-leg capital, not freed capital from the DD addon.
     """
     by_day_window: dict = {}
     for row in trade_rows:
@@ -1873,8 +1869,10 @@ if __name__ == "__main__":
         morning_split=morning_split,
         min_capital=args.min_window_capital,
         compound=args.compound,
-        enable_doubledown=args.doubledown,
     )
+
+    if args.doubledown:
+        _apply_doubledown(trade_rows)
 
     baseline_df = _collect_baseline(all_window_results, eval_start, eval_end)
 
