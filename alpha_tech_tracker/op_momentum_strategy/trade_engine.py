@@ -1500,8 +1500,8 @@ class OpMomentumTradeEngine:
     def run(self, tickers_override: list = None):
         today = _now_et().date()
         if not self._mock_trade_execution:
-            if today.weekday() >= 5:
-                logger.warning("Today is a weekend (%s) — market is closed, exiting", today)
+            if today.weekday() == 5:
+                logger.warning("Today is Saturday (%s) — market is closed, exiting", today)
                 return
             if _is_nyse_holiday(today):
                 logger.warning("Today is a NYSE holiday (%s) — market is closed, exiting", today)

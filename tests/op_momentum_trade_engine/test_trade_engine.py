@@ -2123,17 +2123,22 @@ class TestMarketHolidayGuard:
 
         mock_sel.assert_not_called()
 
-    def test_run_returns_early_on_sunday(self):
+    def test_run_proceeds_on_sunday(self):
         engine = self._make_live_engine()
         sunday = date(2026, 4, 12)  # a Sunday
         mock_now = Mock()
         mock_now.return_value.date.return_value = sunday
 
         with patch(_NOW_ET_RUN, mock_now), \
-             patch.object(engine, "_run_window_selectors") as mock_sel:
-            engine.run()
+             patch(_IS_NYSE_HOLIDAY_PATH, return_value=False), \
+             patch.object(engine, "_run_window_selectors", return_value=[]) as mock_sel, \
+             patch.object(engine, "_signal_engine", Mock()):
+            try:
+                engine.run()
+            except Exception:
+                pass  # stream setup will fail — we only care the guard didn't block
 
-        mock_sel.assert_not_called()
+        mock_sel.assert_called_once()
 
     def test_run_returns_early_on_nyse_holiday(self):
         engine = self._make_live_engine()
@@ -2508,7 +2513,6 @@ class TestDoubleDown:
     def test_sequential_window_budget_not_inflated_by_dd_addon(self):
         """A1 budget must equal open M1 capital only — no double-count from freed stopout capital."""
         from alpha_tech_tracker.op_momentum_strategy.models import WindowConfig
-        from alpha_tech_tracker.op_momentum_strategy.position_monitor import PositionMonitor
 
         client = _make_alpaca_client()
         engine = OpMomentumTradeEngine(
