@@ -77,6 +77,7 @@ class PositionMonitor:
         re_entry_callback=None,
         initial_capital: Optional[float] = None,
         close_callback: Optional[Callable] = None,
+        alpaca_feed=None,
     ):
         self._client = alpaca_client
         self._signal_engine = signal_engine
@@ -94,6 +95,7 @@ class PositionMonitor:
         self._re_entry_callback = re_entry_callback
         self._initial_capital = initial_capital
         self._close_callback = close_callback
+        self._alpaca_feed = alpaca_feed
         self._positions: list = []
         self._reentry_watchers: list = []
         self._lock = threading.Lock()
@@ -507,6 +509,7 @@ class PositionMonitor:
                     ticker=pos.ticker,
                     shares=pos.shares,
                     order_action="SELL_CLOSE",
+                    feed=self._alpaca_feed,
                 )
             pos.exit_order_id = order.get("order_id")
             logger.info("Stock close order placed: %s", pos.exit_order_id)

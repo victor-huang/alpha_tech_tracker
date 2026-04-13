@@ -223,3 +223,37 @@ class TestPlaceStockOrderStaleQuoteGuard:
 
         calls = client.place_stock_order.call_args_list
         assert calls[-1].kwargs["order_type"] == "MARKET"
+
+
+class TestPlaceStockOrderFeedForwarding:
+    """
+    When a feed is provided to place_stock_order(), it must be forwarded to
+    get_stock_quote() so the quote uses IEX (or whichever feed is configured)
+    rather than defaulting to SIP.
+    """
+
+    def test_feed_forwarded_to_get_stock_quote(self):
+        from alpaca.data.enums import DataFeed
+        client = _make_stock_client(bid=329.0, ask=331.0, order_status="filled")
+        client.order_status.return_value = {"status": "filled"}
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            place_stock_order(
+                client=client,
+                ticker="FN",
+                shares=1,
+                order_action="BUY_OPEN",
+                feed=DataFeed.IEX,
+            )
+        client.get_stock_quote.assert_called_with("FN", feed=DataFeed.IEX)
+
+    def test_no_feed_calls_get_stock_quote_without_feed_kwarg(self):
+        client = _make_stock_client(bid=329.0, ask=331.0, order_status="filled")
+        client.order_status.return_value = {"status": "filled"}
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            place_stock_order(
+                client=client,
+                ticker="FN",
+                shares=1,
+                order_action="BUY_OPEN",
+            )
+        client.get_stock_quote.assert_called_with("FN")

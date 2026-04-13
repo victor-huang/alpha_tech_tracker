@@ -225,6 +225,7 @@ def place_stock_order(
     order_action: str,
     mock: bool = False,
     signal_price: Optional[float] = None,
+    feed=None,
 ) -> dict:
     """
     Place a stock buy or sell order with 3-step fill escalation:
@@ -243,7 +244,8 @@ def place_stock_order(
     _STALE_SPREAD_THRESHOLD = _D("0.03")
 
     def _fetch_mid_bid_ask():
-        raw_quote = client.get_stock_quote(ticker)
+        kwargs = {"feed": feed} if feed is not None else {}
+        raw_quote = client.get_stock_quote(ticker, **kwargs)
         bid_f, ask_f = _stock_bid_ask(raw_quote)
         bid = _D(str(bid_f))
         ask = _D(str(ask_f))

@@ -501,6 +501,7 @@ class OpMomentumTradeEngine:
                     shares=shares,
                     order_action="BUY_OPEN",
                     signal_price=float(event.stock_price),
+                    feed=self._alpaca_feed,
                 )
         except Exception:
             logger.exception("Failed to place stock entry order for %s", event.ticker)
@@ -1655,6 +1656,7 @@ class OpMomentumTradeEngine:
             re_entry_callback=self._enter_reentry,
             initial_capital=initial_capital,
             close_callback=self._on_position_closed,
+            alpaca_feed=self._alpaca_feed,
         )
 
         if self._option_price_monitor:
@@ -1786,6 +1788,7 @@ class OpMomentumTradeEngine:
             re_entry_callback=self._enter_reentry,
             initial_capital=initial_capital,
             close_callback=self._on_position_closed,
+            alpaca_feed=self._alpaca_feed,
         )
 
         # In replay mode signals are drained synchronously in _on_bar (no background threads)

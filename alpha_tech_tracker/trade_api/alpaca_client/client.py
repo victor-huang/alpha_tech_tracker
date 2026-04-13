@@ -287,7 +287,7 @@ class AlpacaAPIClient(ExecutionClient):
         order = self._trading_client.submit_order(order_data=order_data)
 
         return {
-            "order_id": order.id,
+            "order_id": str(order.id),
             "client_order_id": order.client_order_id,
             "symbol": order.symbol,
             "quantity": float(order.qty),
@@ -366,7 +366,7 @@ class AlpacaAPIClient(ExecutionClient):
         order = self._trading_client.submit_order(order_data=order_data)
 
         return {
-            "order_id": order.id,
+            "order_id": str(order.id),
             "client_order_id": order.client_order_id,
             "symbol": order.symbol,
             "quantity": float(order.qty),
@@ -398,7 +398,7 @@ class AlpacaAPIClient(ExecutionClient):
         order = self._trading_client.get_order_by_id(order_id)
 
         return {
-            "order_id": order.id,
+            "order_id": str(order.id),
             "client_order_id": order.client_order_id,
             "symbol": order.symbol,
             "quantity": float(order.qty),

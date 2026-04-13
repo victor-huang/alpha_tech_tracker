@@ -642,6 +642,29 @@ class TestStockClosePosition:
         assert pos.exit_reason == "hard_stop"
         client.place_stock_order.assert_called_once()
 
+    def test_alpaca_feed_forwarded_to_get_stock_quote_on_close(self):
+        from alpaca.data.enums import DataFeed
+        client = _make_alpaca_client()
+        client.get_stock_quote.return_value = {
+            "QuoteResponse": {
+                "QuoteData": [{"All": {"bid": 99.0, "ask": 101.0, "bid_size": 1, "ask_size": 1, "last": None}}]
+            }
+        }
+        client.place_stock_order.return_value = {"order_id": "stk-feed-1"}
+        client.order_status.return_value = {"status": "filled", "filled_avg_price": 100.0}
+
+        pos = _make_stock_position(signal="BULLISH", shares=10)
+        closes = [104.0]
+        df = _build_history_df(closes, ma20=90.0, ma50=90.0, ma200=85.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine, alpaca_feed=DataFeed.IEX)
+        monitor.add_position(pos)
+
+        monitor.close_all(reason="trailing_stop")
+
+        call_args = client.get_stock_quote.call_args
+        assert call_args.kwargs.get("feed") == DataFeed.IEX
+
 
 class TestStockPrintSummaryPnl:
     def test_stock_profit_uses_shares_not_contracts_multiplier(self, capsys):
