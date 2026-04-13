@@ -129,15 +129,33 @@ class PositionMonitor:
         ma50 = latest.get("MA50")
         ma50_val = _D(ma50) if ma50 is not None and not pd.isna(ma50) else None
 
+        to_close = []
         with self._lock:
             for pos in self._positions:
                 if pos.ticker != ticker or pos.is_closed:
                     continue
                 if pos.entry_bar_time is not None and bar_time == pos.entry_bar_time:
                     continue
-                self._evaluate_stop(pos, close, high, ma20_val, ma50_val, bar_time)
+                close_intent = self._evaluate_stop(pos, close, high, ma20_val, ma50_val, bar_time)
+                if close_intent is not None:
+                    reason, override = close_intent
+                    pos.is_closed = True
+                    pos.exit_reason = reason
+                    pos.exit_time = _now_et()
+                    self._maybe_create_reentry_watcher(pos, reason)
+                    to_close.append((pos, reason, override))
 
             fired_watchers = self._collect_fired_watchers(ticker, close, bar_time)
+
+        # Execute close operations outside the lock so sequential window drains
+        # are not blocked in _get_window_budget() during slow API calls.
+        for pos, reason, override in to_close:
+            if pos.trade_type == "stock":
+                self._close_stock_position(pos, reason, exit_stock_price_override=override)
+            else:
+                self._close_option_position(pos, reason, exit_stock_price_override=override)
+            if self._close_callback:
+                self._close_callback(pos)
 
         # Invoke re-entry callbacks outside the lock to avoid deadlock with add_position.
         # In replay mode call synchronously so the position exists for the next bar.
@@ -198,8 +216,7 @@ class PositionMonitor:
                 else (close - entry) / entry
             )
             if loss_pct >= _D(str(self._max_loss_pct)):
-                self._close_position(pos, "max_loss")
-                return
+                return ("max_loss", None)
 
         trailing_armed = self._trailing_armed(pos, close)
 
@@ -273,12 +290,13 @@ class PositionMonitor:
                     # Bar traded at/above fallback level before closing below it;
                     # exit at fallback_price to match backtest stop-order simulation.
                     override = pos.fallback_price
-            self._close_position(pos, exit_reason, exit_stock_price_override=override)
+            return (exit_reason, override)
         else:
             if bar_time is not None and bar_time == pos.last_evaluated_bar_time:
-                return  # same bar repeated poll — don't double-count
+                return None  # same bar repeated poll — don't double-count
             pos.last_evaluated_bar_time = bar_time
             pos.bars_held += 1
+            return None
 
     def _maybe_create_reentry_watcher(self, pos: ActivePosition, reason: str):
         if reason not in ("hard_stop", "fallback_20pct"):
