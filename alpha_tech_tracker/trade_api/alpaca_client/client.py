@@ -1,3 +1,4 @@
+import functools
 import logging
 import os
 import random
@@ -56,6 +57,29 @@ class AlpacaAPIClient(ExecutionClient):
         self._option_data_client = OptionHistoricalDataClient(
             self._api_key, self._secret_key
         )
+        self._apply_request_timeout(timeout=30)
+
+    def _apply_request_timeout(self, timeout: int):
+        """Patch every SDK client's requests.Session to enforce a hard timeout.
+
+        alpaca-py passes no timeout to requests, so a hung API server will block
+        a thread forever. This wraps Session.request on each internal client so
+        that every HTTP call raises requests.exceptions.Timeout after `timeout`
+        seconds rather than hanging indefinitely.
+        """
+        for sdk_client in (
+            self._trading_client,
+            self._stock_data_client,
+            self._option_data_client,
+        ):
+            session = getattr(sdk_client, "_session", None)
+            if session is None:
+                continue
+            original_request = session.request
+            session.request = functools.partial(
+                lambda orig, *a, **kw: orig(*a, **{**kw, "timeout": kw.get("timeout", timeout)}),
+                original_request,
+            )
 
     def _generate_order_id(self, length=8):
         chars = string.ascii_letters + string.digits
