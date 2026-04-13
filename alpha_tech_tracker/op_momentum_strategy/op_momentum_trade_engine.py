@@ -571,7 +571,7 @@ if __name__ == "__main__":
         _root.addHandler(_fh)
         is_replay = bool(args.replay_date) or bool(args.replay_start and args.replay_end)
         mock_trade_execution = args.mock_trade_execution or is_replay
-        is_paper = not (args.live or mock_trade_execution)
+        is_paper = is_replay
         client = build_execution_client(is_paper=is_paper)
         contract_selector = _build_contract_selector(args, client)
         engine = OpMomentumTradeEngine(
@@ -682,7 +682,7 @@ if __name__ == "__main__":
     )
 
     try:
-        is_paper = not (args.live or args.mock_trade_execution)
+        is_paper = False
         client = build_execution_client(is_paper=is_paper)
         contract_selector = _build_contract_selector(args, client)
         engine = OpMomentumTradeEngine(
