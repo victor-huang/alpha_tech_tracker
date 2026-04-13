@@ -670,6 +670,7 @@ class PositionMonitor:
                     order_action="SELL_CLOSE",
                     entry_fill_price=quick_exit_fill_price,
                     get_fair_price_fn=_exit_fair_price_fn,
+                    feed=self._alpaca_feed,
                 )
             pos.exit_order_id = order.get("order_id")
             logger.info("Close order placed: %s", pos.exit_order_id)

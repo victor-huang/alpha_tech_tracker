@@ -1409,6 +1409,7 @@ class OpMomentumTradeEngine:
             contracts=contracts,
             order_action="BUY_OPEN",
             get_fair_price_fn=_entry_fair_price_fn if opm else None,
+            feed=self._alpaca_feed,
         )
 
     def _check_ws_health(self, now) -> None:

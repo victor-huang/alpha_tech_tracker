@@ -20,6 +20,7 @@ def _place_with_fill_escalation(
     order_action: str,
     entry_fill_price: Optional[float] = None,
     get_fair_price_fn=None,
+    feed=None,
 ) -> dict:
     """
     Place a limit order and escalate if unfilled.
@@ -180,7 +181,8 @@ def _place_with_fill_escalation(
 
     if not is_buy and step3_price is not None:
         try:
-            raw_quote = client.get_stock_quote(ticker)
+            kwargs = {"feed": feed} if feed is not None else {}
+            raw_quote = client.get_stock_quote(ticker, **kwargs)
             bid_f, ask_f = _stock_bid_ask(raw_quote)
             stock_mid = (_D(str(bid_f)) + _D(str(ask_f))) / _D("2")
             parsed = _parse_occ_symbol(option_symbol)

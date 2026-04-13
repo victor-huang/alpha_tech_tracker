@@ -164,7 +164,7 @@ def _market_window(trade_date):
     return open_et, close_et
 
 
-def _fetch_stock_bars(ticker: str, trade_date, stock_client: StockHistoricalDataClient) -> dict:
+def _fetch_stock_bars(ticker: str, trade_date, stock_client: StockHistoricalDataClient, feed=DataFeed.IEX) -> dict:
     """Returns {datetime_minute_et: mid_price_decimal}."""
     open_et, close_et = _market_window(trade_date)
     req = StockBarsRequest(
@@ -172,7 +172,7 @@ def _fetch_stock_bars(ticker: str, trade_date, stock_client: StockHistoricalData
         start=open_et,
         end=close_et,
         timeframe=TimeFrame.Minute,
-        feed=DataFeed.SIP,
+        feed=feed,
     )
     bars = stock_client.get_stock_bars(req)
     result = {}
@@ -518,6 +518,7 @@ def run_backtest(
     time_premium_pct_cap=0.01,
     lookahead_min=_FILL_LOOKAHEAD_MIN,
     output_dir=_DEFAULT_OUTPUT_DIR,
+    feed=DataFeed.IEX,
 ):
     api_key = os.environ.get("ALPACA_API_KEY")
     secret_key = os.environ.get("ALPACA_SECRET_KEY")
@@ -531,7 +532,7 @@ def run_backtest(
     for ticker in tickers:
         logger.info("Processing %s on %s", ticker, trade_date)
 
-        stock_bars = _fetch_stock_bars(ticker, trade_date, stock_client)
+        stock_bars = _fetch_stock_bars(ticker, trade_date, stock_client, feed=feed)
         if not stock_bars:
             logger.warning("%s: no stock bars found for %s — skipping", ticker, trade_date)
             continue
@@ -672,6 +673,12 @@ def _parse_args():
         help=f"Output directory (default: {_DEFAULT_OUTPUT_DIR})",
     )
     parser.add_argument(
+        "--feed",
+        default="iex",
+        choices=["iex", "sip"],
+        help="Alpaca data feed: 'iex' (default) or 'sip' (requires paid subscription)",
+    )
+    parser.add_argument(
         "--log-level",
         default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
@@ -695,4 +702,5 @@ if __name__ == "__main__":
         time_premium_pct_cap=args.time_premium_pct_cap,
         lookahead_min=args.lookahead,
         output_dir=args.output_dir,
+        feed=DataFeed.IEX if args.feed == "iex" else DataFeed.SIP,
     )
