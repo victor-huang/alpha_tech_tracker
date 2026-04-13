@@ -743,16 +743,17 @@ class PositionMonitor:
 
         bar = "━" * 82
         sep = "─" * 80
-        print(f"\n{bar}")
-        print(
+        lines = [
+            "",
+            bar,
             f"  POSITION STATUS  {now.strftime('%H:%M ET')}  |  "
-            f"open={len(open_pos)}  closed={len(closed_pos)}"
-        )
-        print(bar)
+            f"open={len(open_pos)}  closed={len(closed_pos)}",
+            bar,
+        ]
 
         if open_pos:
-            print("  OPEN POSITIONS")
-            print(f"  {sep}")
+            lines.append("  OPEN POSITIONS")
+            lines.append(f"  {sep}")
             for p in open_pos:
                 if has_sim:
                     entry_price = p.simulated_entry_mid
@@ -781,16 +782,17 @@ class PositionMonitor:
                 else:
                     qty_str = f"x{p.contracts}"
                     sym_str = p.option_symbol
-                print(
+                lines.append(
                     f"  {p.ticker:<7} {p.signal:<9} {sym_str:<26} "
                     f"{qty_str}  in={_fmt(p.entry_time)}{entry_str}{unreal_str}"
                 )
         else:
-            print("  No open positions")
+            lines.append("  No open positions")
 
         if closed_pos:
-            print(f"\n  CLOSED POSITIONS")
-            print(f"  {sep}")
+            lines.append("")
+            lines.append("  CLOSED POSITIONS")
+            lines.append(f"  {sep}")
             total_pnl = _D("0")
             for p in closed_pos:
                 if has_sim:
@@ -808,7 +810,7 @@ class PositionMonitor:
                 else:
                     qty_str = f"x{p.contracts}"
                     sym_str = p.option_symbol
-                print(
+                lines.append(
                     f"  {p.ticker:<7} {p.signal:<9} {sym_str:<26} "
                     f"{qty_str}  {_fmt(p.entry_time)}→{_fmt(p.exit_time)}"
                     f"  {p.exit_reason}{_pnl_str(pnl)}"
@@ -825,10 +827,11 @@ class PositionMonitor:
             )
             if any_pnl:
                 sign = "+" if total_pnl >= 0 else ""
-                print(f"  {sep}")
-                print(f"  Running P&L: {sign}${total_pnl:.2f}")
+                lines.append(f"  {sep}")
+                lines.append(f"  Running P&L: {sign}${total_pnl:.2f}")
 
-        print(f"{bar}\n")
+        lines.append(f"{bar}\n")
+        logger.info("\n".join(lines))
 
     def print_summary(self):
         has_sim = any(pos.simulated_entry_mid is not None for pos in self._positions)
