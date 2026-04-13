@@ -534,6 +534,7 @@ def _build_option_price_monitor(args, client, tickers, contract_selector):
         tickers=tickers or TICKERS,
         interval_seconds=args.option_price_interval,
         contract_selector=TradeEngineStrikeSelector(contract_selector),
+        feed=DataFeed.IEX if args.feed == "iex" else DataFeed.SIP,
     )
 
 

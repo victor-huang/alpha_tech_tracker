@@ -478,7 +478,7 @@ class LiveSignalEngine:
             timeframe=TimeFrame(amount=5, unit=TimeFrameUnit.Minute),
             start=or_start,
             end=or_end,
-            feed=DataFeed.SIP,
+            feed=self._alpaca_feed,
         )
         try:
             bars = hist_client.get_stock_bars(request)

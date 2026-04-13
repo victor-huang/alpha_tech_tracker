@@ -98,11 +98,11 @@ class AlpacaAPIClient(ExecutionClient):
             "raw_response": account,
         }
 
-    def get_stock_quote(self, symbols):
+    def get_stock_quote(self, symbols, feed: DataFeed = DataFeed.SIP):
         if isinstance(symbols, str):
             symbols = [symbols]
 
-        request_params = StockLatestQuoteRequest(symbol_or_symbols=symbols, feed=DataFeed.SIP)
+        request_params = StockLatestQuoteRequest(symbol_or_symbols=symbols, feed=feed)
         quotes = self._stock_data_client.get_stock_latest_quote(request_params)
 
         formatted_quotes = {}

@@ -12,6 +12,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from typing import Optional
 
 import pytz
+from alpaca.data.enums import DataFeed
 
 from alpha_tech_tracker.trade_api.execution_client import ExecutionClient
 
@@ -122,11 +123,13 @@ class OptionPriceMonitor:
         output_dir: str = "market_data/options_price_data",
         contract_selector=None,
         interval_seconds: int = 300,
+        feed: DataFeed = DataFeed.IEX,
     ):
         self._client = client
         self._tickers = tickers
         self._output_dir = output_dir
         self._interval = interval_seconds
+        self._feed = feed
         self._contract_selector = contract_selector or TradeEngineStrikeSelector(
             TimePremiumContractSelector(client)
         )
@@ -182,7 +185,7 @@ class OptionPriceMonitor:
                 logger.warning("Snapshot failed for %s", ticker, exc_info=True)
 
     def _snapshot_ticker(self, ticker: str):
-        raw_quote = self._client.get_stock_quote(ticker)
+        raw_quote = self._client.get_stock_quote(ticker, feed=self._feed)
         bid_f, ask_f = _stock_bid_ask(raw_quote)
         stock_price = _D(str((bid_f + ask_f) / 2))
 
