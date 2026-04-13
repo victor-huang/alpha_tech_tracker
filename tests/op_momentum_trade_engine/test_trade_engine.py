@@ -2587,3 +2587,62 @@ class TestDoubleDown:
         )
         engine._schedule_dd_check_for_window(self._make_win())
         assert "W1" not in engine._dd_timers
+
+
+_MOCK_ENTRY_PRICE_PATH = (
+    "alpha_tech_tracker.op_momentum_strategy.mock_option_pricer.mock_entry_price"
+)
+_PLACE_WITH_FILL_ESCALATION_PATH = (
+    "alpha_tech_tracker.op_momentum_strategy.trade_engine._place_with_fill_escalation"
+)
+
+
+class TestPlaceEntryOptionOrderSimulateMode:
+    """_place_entry in mock mode must use mock_entry_price, not get_fair_price."""
+
+    # strike $90 call — gives non-zero intrinsic when stock > $90
+    _CALL_SYM = "NVDA260328C00090000"
+
+    def _make_engine(self):
+        client = _make_alpaca_client()
+        engine = OpMomentumTradeEngine(
+            alpaca_client=client, mock_trade_execution=True
+        )
+        engine._signal_engine = Mock()
+        engine._signal_engine.get_latest_bar.return_value = {"Close": 100.0}
+        engine._option_price_monitor = Mock()
+        return engine
+
+    def test_get_fair_price_not_called_in_mock_mode(self):
+        engine = self._make_engine()
+        engine._place_entry("NVDA", "BULLISH", self._CALL_SYM, 1, _D("12.00"))
+        engine._option_price_monitor.get_fair_price.assert_not_called()
+
+    def test_mock_entry_price_is_called_in_mock_mode(self):
+        engine = self._make_engine()
+        with patch(_MOCK_ENTRY_PRICE_PATH, return_value=_D("12.00")) as mock_fn:
+            engine._place_entry("NVDA", "BULLISH", self._CALL_SYM, 1, _D("12.00"))
+        mock_fn.assert_called_once()
+
+    def test_simulated_fill_mid_is_nonzero_in_mock_mode(self):
+        engine = self._make_engine()
+        result = engine._place_entry("NVDA", "BULLISH", self._CALL_SYM, 1, _D("12.00"))
+        assert result["simulated_fill_mid"] > _D("0")
+
+    def test_get_fair_price_called_in_live_mode(self):
+        client = _make_alpaca_client()
+        engine = OpMomentumTradeEngine(
+            alpaca_client=client, mock_trade_execution=False
+        )
+        engine._signal_engine = Mock()
+        engine._signal_engine.get_latest_bar.return_value = {"Close": 100.0}
+        engine._option_price_monitor = Mock()
+        engine._option_price_monitor.get_fair_price.return_value = _D("12.00")
+
+        with patch(
+            _PLACE_WITH_FILL_ESCALATION_PATH,
+            return_value={"order_id": "live-1"},
+        ):
+            engine._place_entry("NVDA", "BULLISH", self._CALL_SYM, 1, _D("12.00"))
+
+        engine._option_price_monitor.get_fair_price.assert_called_once()

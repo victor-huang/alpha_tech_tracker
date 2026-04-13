@@ -1331,7 +1331,7 @@ class OpMomentumTradeEngine:
         option_type_lower = option_type.lower()
 
         entry_mid = limit_price
-        if self._option_price_monitor:
+        if self._option_price_monitor and not self._mock_trade_execution:
             try:
                 latest_bar = self._signal_engine.get_latest_bar(ticker)
                 stock_price = _D(str(latest_bar["Close"])) if latest_bar is not None else limit_price

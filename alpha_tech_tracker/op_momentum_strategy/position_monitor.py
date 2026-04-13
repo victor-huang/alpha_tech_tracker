@@ -524,7 +524,7 @@ class PositionMonitor:
         )
         mid = None
         option_type_lower = "call" if pos.signal == "BULLISH" else "put"
-        if self._option_price_monitor:
+        if self._option_price_monitor and not self._mock_trade_execution:
             try:
                 current_bar = self._signal_engine.get_latest_bar(pos.ticker)
                 stock_price = _D(str(current_bar["Close"])) if current_bar is not None else pos.entry_stock_price

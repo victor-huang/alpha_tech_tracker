@@ -759,6 +759,45 @@ class TestMockOptionExitPricing:
         assert pos.simulated_exit_mid == _D("12.00")
 
 
+class TestOptionExitSkipsFairPriceInMockMode:
+    """Regression: option_price_monitor.get_fair_price() must not be called during
+    mock/simulate exits — it has no live option feed in replay mode and returns 0,
+    which previously caused simulated_exit_mid=0 for all options trades."""
+
+    _CALL_SYM = "NVDA260328C00090000"
+
+    def _make_monitor_with_opm(self, exit_stock_price=100.0):
+        from unittest.mock import Mock
+        client = _make_alpaca_client()
+        df = _build_history_df([100.0], ma20=95.0, ma50=95.0, ma200=90.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine, mock_trade_execution=True)
+        opm = Mock()
+        opm.get_fair_price.return_value = _D("0")
+        monitor._option_price_monitor = opm
+        pos = _make_active_position(signal="BULLISH")
+        pos.option_symbol = self._CALL_SYM
+        pos.entry_stock_price = _D("100")
+        pos.simulated_entry_mid = _D("12.00")
+        monitor.add_position(pos)
+        _set_latest_bar(engine, "NVDA", close=exit_stock_price, ma50=95.0)
+        monitor.close_all(reason="end_of_day")
+        return monitor, opm, pos
+
+    def test_get_fair_price_not_called_at_exit_in_mock_mode(self):
+        _, opm, _ = self._make_monitor_with_opm()
+        opm.get_fair_price.assert_not_called()
+
+    def test_simulated_exit_mid_is_nonzero_when_opm_attached(self):
+        _, _, pos = self._make_monitor_with_opm(exit_stock_price=102.0)
+        assert pos.simulated_exit_mid > _D("0")
+
+    def test_simulated_exit_mid_reflects_stock_move_not_opm_zero(self):
+        # stock rises $2 → call exit price should be higher than entry
+        _, _, pos = self._make_monitor_with_opm(exit_stock_price=102.0)
+        assert pos.simulated_exit_mid > pos.simulated_entry_mid
+
+
 class TestReentryWatcher:
     @pytest.fixture(autouse=True)
     def patch_sleep(self, monkeypatch):
