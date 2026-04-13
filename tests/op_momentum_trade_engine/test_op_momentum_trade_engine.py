@@ -120,3 +120,9 @@ class TestResolveIsPaper:
 
     def test_replay_end_without_start_is_not_paper(self):
         assert _resolve_is_paper(_args(replay_start=None, replay_end="2026-04-10")) is False
+
+    def test_live_flag_overrides_replay_date(self):
+        assert _resolve_is_paper(_args(live=True, replay_date="2026-04-01")) is False
+
+    def test_live_flag_overrides_replay_range(self):
+        assert _resolve_is_paper(_args(live=True, replay_start="2026-04-01", replay_end="2026-04-10")) is False

@@ -527,7 +527,9 @@ def _parse_windows(args) -> list:
 
 
 def _resolve_is_paper(args) -> bool:
-    """Return True only in replay mode; live runs always use the live account."""
+    """Return True only in replay mode (and --live not set); live runs always use the live account."""
+    if getattr(args, "live", False):
+        return False
     return bool(getattr(args, "replay_date", None)) or bool(
         getattr(args, "replay_start", None) and getattr(args, "replay_end", None)
     )
