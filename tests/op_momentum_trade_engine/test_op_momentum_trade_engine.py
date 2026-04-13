@@ -8,6 +8,7 @@ from alpha_tech_tracker.op_momentum_strategy.contract_selector import (
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine import (
     _build_contract_selector,
     _build_option_price_monitor,
+    _resolve_is_paper,
 )
 from alpha_tech_tracker.op_momentum_strategy.option_price_monitor import (
     OptionPriceMonitor,
@@ -24,6 +25,10 @@ def _args(**kwargs):
         "collect_option_prices": False,
         "option_price_interval": 300,
         "tickers": None,
+        "feed": "iex",
+        "replay_date": None,
+        "replay_start": None,
+        "replay_end": None,
     }
     defaults.update(kwargs)
     return Namespace(**defaults)
@@ -95,3 +100,23 @@ class TestBuildOptionPriceMonitor:
                 _args(collect_option_prices=True), client, None, selector
             )
         assert monitor._tickers == ["TSLA", "NVDA"]
+
+
+class TestResolveIsPaper:
+    def test_live_run_is_not_paper(self):
+        assert _resolve_is_paper(_args()) is False
+
+    def test_mock_execution_run_is_not_paper(self):
+        assert _resolve_is_paper(_args(mock_trade_execution=True)) is False
+
+    def test_replay_date_is_paper(self):
+        assert _resolve_is_paper(_args(replay_date="2026-04-01")) is True
+
+    def test_replay_range_is_paper(self):
+        assert _resolve_is_paper(_args(replay_start="2026-04-01", replay_end="2026-04-10")) is True
+
+    def test_replay_start_without_end_is_not_paper(self):
+        assert _resolve_is_paper(_args(replay_start="2026-04-01", replay_end=None)) is False
+
+    def test_replay_end_without_start_is_not_paper(self):
+        assert _resolve_is_paper(_args(replay_start=None, replay_end="2026-04-10")) is False
