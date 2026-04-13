@@ -103,26 +103,20 @@ class TestBuildOptionPriceMonitor:
 
 
 class TestResolveIsPaper:
-    def test_live_run_is_not_paper(self):
-        assert _resolve_is_paper(_args()) is False
+    def test_default_is_paper(self):
+        assert _resolve_is_paper(_args()) is True
 
-    def test_mock_execution_run_is_not_paper(self):
-        assert _resolve_is_paper(_args(mock_trade_execution=True)) is False
+    def test_live_flag_is_not_paper(self):
+        assert _resolve_is_paper(_args(live=True)) is False
 
-    def test_replay_date_is_paper(self):
+    def test_replay_without_live_is_paper(self):
         assert _resolve_is_paper(_args(replay_date="2026-04-01")) is True
 
-    def test_replay_range_is_paper(self):
+    def test_replay_range_without_live_is_paper(self):
         assert _resolve_is_paper(_args(replay_start="2026-04-01", replay_end="2026-04-10")) is True
 
-    def test_replay_start_without_end_is_not_paper(self):
-        assert _resolve_is_paper(_args(replay_start="2026-04-01", replay_end=None)) is False
-
-    def test_replay_end_without_start_is_not_paper(self):
-        assert _resolve_is_paper(_args(replay_start=None, replay_end="2026-04-10")) is False
-
-    def test_live_flag_overrides_replay_date(self):
+    def test_replay_with_live_flag_is_not_paper(self):
         assert _resolve_is_paper(_args(live=True, replay_date="2026-04-01")) is False
 
-    def test_live_flag_overrides_replay_range(self):
+    def test_replay_range_with_live_flag_is_not_paper(self):
         assert _resolve_is_paper(_args(live=True, replay_start="2026-04-01", replay_end="2026-04-10")) is False

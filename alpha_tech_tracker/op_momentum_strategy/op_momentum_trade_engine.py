@@ -527,12 +527,8 @@ def _parse_windows(args) -> list:
 
 
 def _resolve_is_paper(args) -> bool:
-    """Return True only in replay mode (and --live not set); live runs always use the live account."""
-    if getattr(args, "live", False):
-        return False
-    return bool(getattr(args, "replay_date", None)) or bool(
-        getattr(args, "replay_start", None) and getattr(args, "replay_end", None)
-    )
+    """Return True unless --live is set. --live is the sole control for paper vs live account."""
+    return not getattr(args, "live", False)
 
 
 def _build_option_price_monitor(args, client, tickers, contract_selector):
@@ -691,7 +687,7 @@ if __name__ == "__main__":
     )
 
     try:
-        is_paper = False
+        is_paper = _resolve_is_paper(args)
         client = build_execution_client(is_paper=is_paper)
         contract_selector = _build_contract_selector(args, client)
         engine = OpMomentumTradeEngine(
