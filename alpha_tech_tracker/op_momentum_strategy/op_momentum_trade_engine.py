@@ -534,6 +534,11 @@ def _resolve_is_paper(args) -> bool:
 def _build_option_price_monitor(args, client, tickers, contract_selector):
     if not args.collect_option_prices:
         return None
+    if not getattr(args, "live", False):
+        logger.warning(
+            "--collect-option-prices requires --live; option contract lookups will "
+            "fail with 401 on the paper account (paper account lacks options approval)"
+        )
     return OptionPriceMonitor(
         client=client,
         tickers=tickers or TICKERS,
