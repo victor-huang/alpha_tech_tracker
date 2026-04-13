@@ -196,3 +196,91 @@ Update `WEIGHTS` if the log was generated with different `--weights` flags.
 ```
 alpha_tech_tracker/op_momentum_strategy/audit_pnl.py
 ```
+
+---
+
+## Live Engine Replay Audit (audit_replay_pnl.py)
+
+### Purpose
+
+`audit_replay_pnl.py` audits **live trade engine replay logs** (from `op_momentum_trade_engine run --replay-start … --replay-end`). It parses the unstructured engine logs (not the formatted backtest tables) and independently verifies:
+
+1. **Per-position cap_pnl formula**:
+   - Options: `contracts × 100 × (exit_mid − entry_mid)` (always; PUT profits when stock drops)
+   - Stock BULLISH: `slot × (exit_mid − entry_mid) / entry_mid`
+   - Stock BEARISH: `slot × (entry_mid − exit_mid) / entry_mid`
+2. **Returned capital formula**: non-reentry = `slot + cap_pnl`; reentry = `cap_pnl only`
+3. **Range total** — sum of all positions matches the logged `Total cap P&L`
+
+### Key features
+
+- Handles all position types: primary, reversal, bearish/bullish re-entry, doubledown add-on
+- **Correct FIFO for DD add-ons**: DD add-on and primary can have the same window/ticker/is_reentry but different share counts (stocks) or contract counts (options). Matching is deferred to the `Capital returned` log line (which carries window label, is_reentry, and slot) and uses shares/contracts as tiebreakers. For options with identical contract counts, uses the logged `cap_pnl` to derive expected entry price.
+- **reentry_type preservation**: `Re-entry [TYPE]` line sets reentry_type before `Entering position` fires; the parser preserves it so BRE/BUE/reversal positions get the correct `is_reentry=True` key.
+
+### Known precision limits
+
+Stock cap_pnl is computed as `float(slot) / float(entry) × raw` while the engine uses full Decimal precision. For high-priced stocks with large share counts this produces up to ~$0.70 discrepancy per position (not a bug). Options are exact. The range total tolerance is $3.00 for this reason.
+
+### Usage
+
+```bash
+cd /Users/victorhuang/work/alpha_tech_tracker
+source ~/.pyenv/versions/alpha_tech_tracker/bin/activate
+export PYTHONPATH=/Users/victorhuang/work/alpha_tech_tracker
+
+# Quick summary
+python alpha_tech_tracker/op_momentum_strategy/audit_replay_pnl.py \
+    --log /tmp/replay_opts_2026_apr.txt
+
+# Per-day detail
+python alpha_tech_tracker/op_momentum_strategy/audit_replay_pnl.py \
+    --log /tmp/replay_stock_2026_apr.txt --verbose
+
+# Focus on a single day
+python alpha_tech_tracker/op_momentum_strategy/audit_replay_pnl.py \
+    --log /tmp/replay_opts_2025_mar.txt --date 2025-03-07
+```
+
+### Generating replay logs
+
+```bash
+source ~/.pyenv/versions/alpha_tech_tracker/bin/activate
+export PYTHONPATH=/Users/victorhuang/work/alpha_tech_tracker
+
+# Stock replay
+python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine run \
+    --log-level DEBUG --trade-type stock --collect-option-prices \
+    --window M1 10:00 3 --window A1 13:15 1 --window A2 15:00 1 \
+    --morning-split 100 --bearish-reentry --bullish-reentry --reversal \
+    --rank-weighted-sizing 60 40 --doubledown \
+    --top 2 --capital 10000 --mock-trade-execution \
+    --replay-start 2026-04-01 --replay-end 2026-04-10 \
+    2>&1 | tee /tmp/replay_stock.txt
+
+# Options replay (same flags, --trade-type options)
+python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine run \
+    --log-level DEBUG --trade-type options --collect-option-prices \
+    ... (same flags) \
+    2>&1 | tee /tmp/replay_opts.txt
+```
+
+### Audit results — 2026-04-01 → 2026-04-10
+
+Config: `--window M1 10:00 3 --window A1 13:15 1 --window A2 15:00 1 --morning-split 100 --bearish-reentry --bullish-reentry --reversal --rank-weighted-sizing 60 40 --doubledown --top 2 --capital 10000`
+
+| Mode | Days | Positions | Calc P&L | Logged P&L | Range diff | Result |
+|---|---|---|---|---|---|---|
+| Stock | 7 | 68 (42 primary / 10 reversal / 11 BUE / 5 DD) | +$886.66 | +$887.24 | −$0.58 | **✓ PASS** |
+| Options | 7 | 68 (same breakdown) | +$8,155.00 | +$8,155.00 | $0.00 | **✓ PASS** |
+
+Signal coverage: reversals and bullish re-entries fired on most days; no bearish re-entries in this window; DD fired on 3 days. Win rate ~37%.
+
+### Audit results — 2025-03-03 → 2025-03-14
+
+| Mode | Days | Positions | Calc P&L | Logged P&L | Range diff | Result |
+|---|---|---|---|---|---|---|
+| Stock | 10 | 89 (54 primary / 3 reversal / 15 BUE / 8 BRE / 9 DD) | +$1,509.83 | +$1,508.80 | +$1.03 | **✓ PASS** |
+| Options | 10 | 89 (same breakdown) | +$9,360.00 | +$9,360.00 | $0.00 | **✓ PASS** |
+
+Signal coverage: all re-entry types (reversal, BRE, BUE) and DD active. Win rate ~43% (stock) / 43% (options). Options produced 6× the dollar P&L of stocks on the same signals.
