@@ -314,7 +314,7 @@ def place_stock_order(
             mid.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
         )
     except Exception:
-        logger.warning("Could not fetch stock quote for %s, falling back to market", ticker)
+        logger.warning("Could not fetch stock quote for %s, falling back to market", ticker, exc_info=True)
         return _place_market()
 
     order = _place_limit(mid)
@@ -339,7 +339,7 @@ def place_stock_order(
             aggressive_price.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
         )
     except Exception:
-        logger.warning("Could not fetch stock quote for step2 %s, using market", ticker)
+        logger.warning("Could not fetch stock quote for step2 %s, using market", ticker, exc_info=True)
         return _place_market()
 
     order = _place_limit(aggressive_price)
