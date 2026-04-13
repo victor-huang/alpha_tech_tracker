@@ -212,11 +212,12 @@ def _place_with_fill_escalation(
     time.sleep(15)
     if _is_filled(order_id):
         logger.info("FILL_ESC step3 filled: %s", order_id)
-    else:
-        logger.warning(
-            "FILL_ESC MISS %s %s: all steps exhausted, order %s still unfilled — manual intervention may be required",
-            order_action, option_symbol, order_id,
-        )
+        return order
+    _cancel_safely(order_id)
+    logger.warning(
+        "FILL_ESC MISS %s %s: all steps exhausted, order %s cancelled — manual intervention may be required",
+        order_action, option_symbol, order_id,
+    )
     return order
 
 

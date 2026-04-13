@@ -100,6 +100,37 @@ class TestFillEscalationStep0:
         assert client.place_option_order.call_count == 4
 
 
+class TestFillEscalationMissCancellation:
+    """
+    When all escalation steps exhaust without a fill (FILL_ESC MISS),
+    the final unfilled step-3 order must be cancelled before returning.
+    """
+
+    def _run_all_unfilled(self, client):
+        client.order_status.return_value = {"status": "open"}
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            return _place_with_fill_escalation(
+                client=client,
+                ticker=_TICKER,
+                option_symbol=_SYMBOL,
+                option_type=_OPTION_TYPE,
+                contracts=_CONTRACTS,
+                order_action=_SELL,
+            )
+
+    def test_miss_cancels_step3_order(self):
+        client = _make_client()
+        self._run_all_unfilled(client)
+        # 3 orders placed (step1 mid, step2 bid, step3 final); 3 cancels expected
+        assert client.cancel_order.call_count == 3
+
+    def test_miss_cancel_uses_step3_order_id(self):
+        client = _make_client()
+        self._run_all_unfilled(client)
+        last_cancel_arg = client.cancel_order.call_args_list[-1].args[0]
+        assert last_cancel_arg == "ord-001"
+
+
 def _make_stock_client(bid=329.0, ask=330.0, order_status="open"):
     client = MagicMock()
     client.get_stock_quote.return_value = {
