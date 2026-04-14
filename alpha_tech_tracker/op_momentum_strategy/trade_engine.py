@@ -465,10 +465,12 @@ class OpMomentumTradeEngine:
         )
 
         try:
+            entry_order_action = "SELL_SHORT" if event.signal == "BEARISH" else "BUY_OPEN"
             if self._mock_trade_execution:
                 sim_mid = event.stock_price if is_replay_mode() else limit_price
                 logger.info(
-                    "SIMULATE BUY_OPEN stock %s shares=%d simulated_fill=%.2f (no order placed)",
+                    "SIMULATE %s stock %s shares=%d simulated_fill=%.2f (no order placed)",
+                    entry_order_action,
                     event.ticker,
                     shares,
                     sim_mid,
@@ -480,7 +482,8 @@ class OpMomentumTradeEngine:
                 }
             else:
                 logger.info(
-                    "Placing BUY_OPEN stock with fill escalation: %s %d shares",
+                    "Placing %s stock with fill escalation: %s %d shares",
+                    entry_order_action,
                     event.ticker,
                     shares,
                 )
@@ -488,7 +491,7 @@ class OpMomentumTradeEngine:
                     client=self._client,
                     ticker=event.ticker,
                     shares=shares,
-                    order_action="BUY_OPEN",
+                    order_action=entry_order_action,
                     signal_price=float(event.stock_price),
                     feed=self._alpaca_feed,
                 )

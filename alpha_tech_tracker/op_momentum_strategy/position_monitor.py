@@ -484,9 +484,14 @@ class PositionMonitor:
             except Exception:
                 logger.exception("Could not fetch exit stock quote for %s", pos.ticker)
 
+        is_short = pos.signal == "BEARISH"
+        close_order_action = "BUY_COVER" if is_short else "SELL_CLOSE"
+        close_side = "BUY" if is_short else "SELL"
+        close_label = "BUY TO COVER" if is_short else "SELL"
+
         mid_str = f" @ ~${float(mid):.2f}" if mid is not None else ""
         prefix = "[SIMULATE] " if self._mock_trade_execution else ""
-        _notify(f"{prefix}SELL {pos.ticker} x{pos.shares} shares{mid_str} reason={reason}")
+        _notify(f"{prefix}{close_label} {pos.ticker} x{pos.shares} shares{mid_str} reason={reason}")
 
         if self._mock_trade_execution:
             sim_mid = (
@@ -496,7 +501,8 @@ class PositionMonitor:
             )
             pos.simulated_exit_mid = sim_mid
             logger.info(
-                "SIMULATE SELL_CLOSE %s shares=%d simulated_fill=%.2f (no order placed)",
+                "SIMULATE %s %s shares=%d simulated_fill=%.2f (no order placed)",
+                close_order_action,
                 pos.ticker,
                 pos.shares,
                 sim_mid,
@@ -506,19 +512,21 @@ class PositionMonitor:
         try:
             if reason == "end_of_day":
                 logger.info(
-                    "EOD SELL_CLOSE stock market order: %s %d shares",
+                    "EOD %s stock market order: %s %d shares",
+                    close_order_action,
                     pos.ticker,
                     pos.shares,
                 )
                 order = self._client.place_stock_order(
                     symbol=pos.ticker,
                     quantity=pos.shares,
-                    side="SELL",
+                    side=close_side,
                     order_type="MARKET",
                 )
             else:
                 logger.info(
-                    "Placing SELL_CLOSE stock with fill escalation: %s %d shares",
+                    "Placing %s stock with fill escalation: %s %d shares",
+                    close_order_action,
                     pos.ticker,
                     pos.shares,
                 )
@@ -526,7 +534,7 @@ class PositionMonitor:
                     client=self._client,
                     ticker=pos.ticker,
                     shares=pos.shares,
-                    order_action="SELL_CLOSE",
+                    order_action=close_order_action,
                     feed=self._alpaca_feed,
                 )
             pos.exit_order_id = order.get("order_id")

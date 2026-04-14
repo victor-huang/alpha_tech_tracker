@@ -235,12 +235,16 @@ def place_stock_order(
       Step 1 (0-10s):   limit at mid — quote fetched fresh before placing
       Step 2 (10-20s):  cancel unfilled -> re-fetch quote -> limit at ask (buy) or bid (sell)
       Step 3 (20s+):    cancel unfilled -> market order
-    order_action: "BUY_OPEN" or "SELL_CLOSE"
+    order_action: "BUY_OPEN", "SELL_CLOSE", "SELL_SHORT", or "BUY_COVER"
+      BUY_OPEN   — buy to open a long position
+      SELL_CLOSE — sell to close a long position
+      SELL_SHORT — sell short to open a short position
+      BUY_COVER  — buy to cover a short position
     signal_price: the stock price at signal time (from streaming bars); used as fallback
       mid when the broker quote has a spread > 3% (stale IEX snapshot).
     Returns: {order_id, status, filled_qty, filled_avg_price}
     """
-    is_buy = order_action == "BUY_OPEN"
+    is_buy = order_action in ("BUY_OPEN", "BUY_COVER")
 
     side = "BUY" if is_buy else "SELL"
 
