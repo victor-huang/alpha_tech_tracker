@@ -902,6 +902,8 @@ class PositionMonitor:
             print(summary)
 
         def _trade_label(pos) -> str:
+            if pos.is_doubledown_addon:
+                return "[Doubledown]"
             if pos.reentry_type is None:
                 return f"[{pos.signal.capitalize()}]"
             if pos.reentry_type == "reversal":
