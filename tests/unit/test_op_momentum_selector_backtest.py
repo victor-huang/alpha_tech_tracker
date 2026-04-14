@@ -1,12 +1,11 @@
-from datetime import date, timedelta
-from pathlib import Path
-from unittest.mock import patch
+from datetime import date, datetime
 
 import pandas as pd
 import pytest
 import pytz
 
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector_backtest import (
+    _annotate_doubledown_addon,
     _apply_capital_flow,
 )
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import (
@@ -304,3 +303,166 @@ class TestStitchCache:
         assert result is not None
         assert result.index.is_monotonic_increasing
         assert not result.index.duplicated().any()
+
+
+# ---------------------------------------------------------------------------
+# _annotate_doubledown_addon
+# ---------------------------------------------------------------------------
+#
+# dd_bars = doubledown_start_min // 5
+# With doubledown_start_min=5 → dd_bars=1.
+# addon_bar = post_or.iloc[1]  (NOT iloc[0], which was the old off-by-one bug)
+#
+# Setup:
+#   OR close bar index: 09:45 (3-bar OR: 09:30, 09:35, 09:40 → OR closes at 09:45)
+#   post_or.iloc[0] → 09:45 close=50.0  (old wrong entry)
+#   post_or.iloc[1] → 09:50 close=55.0  (correct entry after fix)
+#
+# Winner exits at 09:55 with exit_price=60.0 (BULLISH).
+# Rank-2 stopout exits at 09:45 with bars_held=1 (≤ dd_bars=1) — capital freed.
+
+
+def _make_intraday_bars(date_str, times):
+    """One bar per (date, time) pair with distinct Close values for identification."""
+    index = [
+        ET.localize(datetime.strptime(f"{date_str} {t}", "%Y-%m-%d %H:%M"))
+        for t in times
+    ]
+    close_prices = [float(50 + i * 5) for i in range(len(times))]
+    rows = [
+        {"Open": 100.0, "High": 101.0, "Low": 99.0, "Close": c, "Volume": 1000}
+        for c in close_prices
+    ]
+    return pd.DataFrame(rows, index=pd.DatetimeIndex(index))
+
+
+_DD_DATE = date(2025, 1, 2)
+_DD_DATE_STR = "2025-01-02"
+# OR window: 09:30 start, 3 bars → OR closes at 09:45
+# post_or starts at 09:45
+# iloc[0]=09:45 (close=50), iloc[1]=09:50 (close=55), iloc[2]=09:55 (close=60)
+_DD_TIMES = ["09:45", "09:50", "09:55"]
+
+
+def _dd_winner_row(exit_price=60.0, bars_held=2):
+    return {
+        "date": _DD_DATE,
+        "window": "M1",
+        "rank": 1,
+        "ticker": "NVDA",
+        "signal": "BULLISH",
+        "entry_price": 48.0,
+        "exit_price": exit_price,
+        "exit_reason": "end_of_day",
+        "bars_held": bars_held,
+    }
+
+
+def _dd_stopout_row(bars_held=1):
+    return {
+        "date": _DD_DATE,
+        "window": "M1",
+        "rank": 2,
+        "ticker": "TSLA",
+        "signal": "BULLISH",
+        "entry_price": 48.0,
+        "exit_price": 45.0,
+        "exit_reason": "hard_stop",
+        "bars_held": bars_held,
+    }
+
+
+def _dd_bars_by_date():
+    df = _make_intraday_bars(_DD_DATE_STR, _DD_TIMES)
+    return {"NVDA": {_DD_DATE: df}}
+
+
+class TestAnnotateDoubledownAddon:
+    _WINDOW_OPENING_TIMES = {"M1": datetime.strptime("09:30", "%H:%M").time()}
+    _OPENING_BARS_BY_LABEL = {"M1": 3}
+
+    def test_addon_entry_uses_iloc_1_not_iloc_0(self):
+        # With doubledown_start_min=5: dd_bars=1 → addon_bar=post_or.iloc[1]
+        # post_or.iloc[0] close=50.0, post_or.iloc[1] close=55.0
+        rows = [_dd_winner_row(), _dd_stopout_row()]
+        _annotate_doubledown_addon(
+            rows,
+            _dd_bars_by_date(),
+            self._WINDOW_OPENING_TIMES,
+            self._OPENING_BARS_BY_LABEL,
+            doubledown_start_min=5,
+        )
+
+        winner = next(r for r in rows if r["rank"] == 1)
+        assert "dd_addon_entry" in winner
+        assert winner["dd_addon_entry"] == pytest.approx(55.0)
+
+    def test_addon_entry_is_not_or_close_bar(self):
+        # The OR-close bar (post_or.iloc[0]) has close=50.0.
+        # The fix ensures addon_entry != 50.0.
+        rows = [_dd_winner_row(), _dd_stopout_row()]
+        _annotate_doubledown_addon(
+            rows,
+            _dd_bars_by_date(),
+            self._WINDOW_OPENING_TIMES,
+            self._OPENING_BARS_BY_LABEL,
+            doubledown_start_min=5,
+        )
+
+        winner = next(r for r in rows if r["rank"] == 1)
+        assert winner.get("dd_addon_entry") != pytest.approx(50.0)
+
+    def test_no_addon_when_stopout_exited_after_dd_bars(self):
+        # Stopout bars_held=2 > dd_bars=1 → stopout is NOT eligible → no addon.
+        rows = [_dd_winner_row(), _dd_stopout_row(bars_held=2)]
+        _annotate_doubledown_addon(
+            rows,
+            _dd_bars_by_date(),
+            self._WINDOW_OPENING_TIMES,
+            self._OPENING_BARS_BY_LABEL,
+            doubledown_start_min=5,
+        )
+
+        winner = next(r for r in rows if r["rank"] == 1)
+        assert "dd_addon_entry" not in winner
+
+    def test_no_addon_when_winner_exits_before_dd_bar(self):
+        # Winner bars_held=0 < dd_bars=1 → winner already exited → no addon.
+        rows = [_dd_winner_row(bars_held=0), _dd_stopout_row()]
+        _annotate_doubledown_addon(
+            rows,
+            _dd_bars_by_date(),
+            self._WINDOW_OPENING_TIMES,
+            self._OPENING_BARS_BY_LABEL,
+            doubledown_start_min=5,
+        )
+
+        winner = next(r for r in rows if r["rank"] == 1)
+        assert "dd_addon_entry" not in winner
+
+    def test_addon_pnl_pct_is_nonnegative(self):
+        # BULLISH winner: addon_entry=55.0, exit_price=60.0 → raw_pct=(60-55)/55 > 0.
+        rows = [_dd_winner_row(exit_price=60.0), _dd_stopout_row()]
+        _annotate_doubledown_addon(
+            rows,
+            _dd_bars_by_date(),
+            self._WINDOW_OPENING_TIMES,
+            self._OPENING_BARS_BY_LABEL,
+            doubledown_start_min=5,
+        )
+
+        winner = next(r for r in rows if r["rank"] == 1)
+        assert winner["dd_addon_pnl_pct"] >= 0.0
+
+    def test_freed_ranks_contains_stopout_rank(self):
+        rows = [_dd_winner_row(), _dd_stopout_row()]
+        _annotate_doubledown_addon(
+            rows,
+            _dd_bars_by_date(),
+            self._WINDOW_OPENING_TIMES,
+            self._OPENING_BARS_BY_LABEL,
+            doubledown_start_min=5,
+        )
+
+        winner = next(r for r in rows if r["rank"] == 1)
+        assert winner["dd_freed_ranks"] == [2]

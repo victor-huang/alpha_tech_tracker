@@ -176,7 +176,7 @@ def fetch_alpaca_bars(
             df.index = df.index.tz_convert("America/New_York")
             df.columns = [c.capitalize() for c in df.columns]
             # Keep only regular market hours (9:30 AM – 4:00 PM ET)
-            df = df.between_time("09:30", "16:00")
+            df = df.between_time("09:30", "15:55")
             result[ticker] = df
         else:
             result[ticker] = pd.DataFrame()
@@ -1423,6 +1423,10 @@ def fetch_bars(
     cached_count = len(tickers) - len(to_fetch) - len(to_fetch_delta)
     if cached_count:
         print(f"  [cache] loaded {cached_count} tickers from cache")
+
+    for ticker in list(result.keys()):
+        if not result[ticker].empty:
+            result[ticker] = result[ticker].between_time("09:30", "15:55")
 
     return result
 

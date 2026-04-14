@@ -340,7 +340,7 @@ def _annotate_doubledown_addon(
 
     stop_reasons = {"hard_stop", "fallback_20pct"}
     # 0-indexed bar index at OR close + doubledown_start_min
-    dd_bars = doubledown_start_min // 5 - 1  # 15 min → 2, 50 min → 9
+    dd_bars = doubledown_start_min // 5  # 5 min → 1, 15 min → 3, 50 min → 10
 
     by_day_window: dict = {}
     for row in trade_rows:

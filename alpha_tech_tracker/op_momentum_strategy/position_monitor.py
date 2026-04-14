@@ -896,7 +896,7 @@ class PositionMonitor:
                 cap_pct_sign = "+" if cap_pct >= 0 else ""
                 summary += (
                     f"  │  cap: {cap_sign}${abs(float(total_cap_pnl)):.2f}"
-                    f" ({cap_pct_sign}{cap_pct:.2f}%)"
+                    f" ({cap_pct_sign}{cap_pct:.2f}%) - with fractional shares"
                 )
             print(f"  {'─' * (width - 2)}")
             print(summary)

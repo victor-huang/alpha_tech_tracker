@@ -400,6 +400,19 @@ def _make_date_bars(date_strs):
     return pd.DataFrame(rows, index=pd.DatetimeIndex(index))
 
 
+def _make_intraday_bars(date_str, times):
+    """One bar per (date, time) pair — for testing intraday time filtering."""
+    index = [
+        ET.localize(datetime.strptime(f"{date_str} {t}", "%Y-%m-%d %H:%M"))
+        for t in times
+    ]
+    rows = [
+        {"Open": 100.0, "High": 101.0, "Low": 99.0, "Close": 100.0, "Volume": 1000}
+        for _ in times
+    ]
+    return pd.DataFrame(rows, index=pd.DatetimeIndex(index))
+
+
 def _read_cache_file(path):
     df = pd.read_json(path, orient="split")
     df.index = pd.to_datetime(df.index, utc=True).tz_convert("America/New_York")
@@ -579,6 +592,33 @@ class TestFetchBarsCacheTrimming:
         assert date(2020, 1, 2) not in set(saved.index.date)
         assert self._START in set(saved.index.date)
         assert self._END in set(saved.index.date)
+
+    # --- between_time filter: 16:00 bar exclusion ---
+
+    def test_exact_cache_hit_excludes_1600_bar(self, tmp_path):
+        df_with_1600 = _make_intraday_bars(
+            str(self._START), ["09:30", "09:35", "15:55", "16:00"]
+        )
+        self._write_cache(tmp_path / self._cache_filename(), df_with_1600)
+
+        with patch(f"{_M}._CACHE_DIR", tmp_path), \
+             patch(f"{_M}._stitch_cache", return_value=None), \
+             patch(f"{_M}._partial_stitch_cache", return_value=(None, None)):
+            result = fetch_bars([self._TICKER], self._START, self._END, source="alpaca")
+
+        assert all(ts.hour != 16 for ts in result[self._TICKER].index)
+
+    def test_stitch_path_excludes_1600_bar(self, tmp_path):
+        df_with_1600 = _make_intraday_bars(
+            str(self._START), ["09:30", "09:35", "15:55", "16:00"]
+        )
+
+        with patch(f"{_M}._CACHE_DIR", tmp_path), \
+             patch(f"{_M}._stitch_cache", return_value=df_with_1600), \
+             patch(f"{_M}._partial_stitch_cache", return_value=(None, None)):
+            result = fetch_bars([self._TICKER], self._START, self._END, source="alpaca")
+
+        assert all(ts.hour != 16 for ts in result[self._TICKER].index)
 
 
 # ---------------------------------------------------------------------------

@@ -1,5 +1,4 @@
 import hashlib
-import json
 import logging
 import threading
 import time
@@ -154,33 +153,23 @@ class TickerSelector:
             ticker_dfs = self.fetch_bars()
 
         if is_replay_mode():
-            # In replay mode bars only cover up to yesterday, so today always
-            # produces no picks. Skip directly to the last trading day.
-            target = today - timedelta(days=1)
-            while target.weekday() >= 5:
-                target -= timedelta(days=1)
-            cache_path = self._selector_cache_path(target)
-            if cache_path.exists():
-                logger.info("Selector cache hit for %s (%s/%dbar)", target, self._opening_start_time, self._opening_bars)
-                with open(cache_path) as f:
-                    result = json.load(f)
-            else:
-                result = select_top_n(
-                    n=self._top_n,
-                    tickers=self._tickers,
-                    lookback_days=self._lookback_days,
-                    opening_bars=self._opening_bars,
-                    bearish_ma200=BEARISH_MA200,
-                    stop_pct=self._stop_pct,
-                    source="alpaca",
-                    target_date=target,
-                    ticker_dfs=ticker_dfs,
-                    opening_start_time=self._opening_start_time,
-                    regime_filter=self._regime_filter,
-                    regime_ma=self._regime_ma,
-                )
-                with open(cache_path, "w") as f:
-                    json.dump(result, f)
+            # In replay mode, recompute selector scores fresh using the replay
+            # date as target_date so the 60-day lookback matches the backtest.
+            logger.info("Replay mode: computing fresh selector scores for %s (%s/%dbar)", today, self._opening_start_time, self._opening_bars)
+            result = select_top_n(
+                n=self._top_n,
+                tickers=self._tickers,
+                lookback_days=self._lookback_days,
+                opening_bars=self._opening_bars,
+                bearish_ma200=BEARISH_MA200,
+                stop_pct=self._stop_pct,
+                source="alpaca",
+                target_date=today,
+                ticker_dfs=ticker_dfs,
+                opening_start_time=self._opening_start_time,
+                regime_filter=self._regime_filter,
+                regime_ma=self._regime_ma,
+            )
             picks = result["picks"]
         else:
             result = select_top_n(

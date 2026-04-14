@@ -658,7 +658,7 @@ class LiveSignalEngine:
         """Populate _history with bars up to (but not including) `replay_date`."""
         from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import fetch_bars
 
-        start = replay_date - timedelta(days=220)
+        start = replay_date - timedelta(days=90)
         end = replay_date - timedelta(days=1)
         logger.info(
             "Replay warmup: loading bars %s to %s for %d tickers",
