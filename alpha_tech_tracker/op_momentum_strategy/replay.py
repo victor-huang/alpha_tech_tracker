@@ -43,13 +43,14 @@ class LiveBarsSource(abc.ABC):
 class CsvLiveBarsSource(LiveBarsSource):
     """Loads 5-min bars from BarRecorder CSV files.
 
-    Expects files at: {base_dir}/{replay_date}/{ticker}_5min.csv
+    Expects files at: {base_dir}/{replay_date}/{feed}_{ticker}_5min.csv
     CSV schema: timestamp,open,high,low,close,volume
       - timestamps are naive ET strings (e.g. "2026-04-02 09:30:00")
     """
 
-    def __init__(self, base_dir: str):
+    def __init__(self, base_dir: str, feed: str = "iex"):
         self._base_dir = Path(base_dir)
+        self._feed = feed
 
     def load(
         self, tickers: List[str], replay_date: date
@@ -57,7 +58,7 @@ class CsvLiveBarsSource(LiveBarsSource):
         date_dir = self._base_dir / str(replay_date)
         result = {}
         for ticker in tickers:
-            csv_path = date_dir / f"{ticker}_5min.csv"
+            csv_path = date_dir / f"{self._feed}_{ticker}_5min.csv"
             if not csv_path.exists():
                 logger.warning(
                     "CsvLiveBarsSource: no file for %s at %s", ticker, csv_path

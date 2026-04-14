@@ -620,7 +620,7 @@ if __name__ == "__main__":
             from .replay import CsvLiveBarsSource
             from .config import EOD_EXIT_TIME
             replay_date = _date.fromisoformat(args.replay_date)
-            bars_source = CsvLiveBarsSource(args.live_data_dir) if args.live_data_dir else None
+            bars_source = CsvLiveBarsSource(args.live_data_dir, feed=args.feed) if args.live_data_dir else None
             engine.run_replay(
                 replay_date,
                 tickers_override=args.tickers,
@@ -633,7 +633,7 @@ if __name__ == "__main__":
             from .config import EOD_EXIT_TIME
             start_date = _date.fromisoformat(args.replay_start)
             end_date = _date.fromisoformat(args.replay_end)
-            bars_source = CsvLiveBarsSource(args.live_data_dir) if args.live_data_dir else None
+            bars_source = CsvLiveBarsSource(args.live_data_dir, feed=args.feed) if args.live_data_dir else None
             engine.run_replay_range(
                 start_date,
                 end_date,
