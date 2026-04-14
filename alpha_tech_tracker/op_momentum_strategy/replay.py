@@ -147,6 +147,7 @@ class BarReplayDriver:
     last_bar_time: Optional[datetime] = None
     bars_source: Optional[LiveBarsSource] = None
     exit_time: str = "15:55"
+    feed: str = "iex"
 
     def run(self):
         bars_by_ticker = self._fetch_session_bars()
@@ -190,12 +191,15 @@ class BarReplayDriver:
             )
             return self.bars_source.load(self.tickers, self.replay_date)
 
+        from alpaca.data.enums import DataFeed
+        alpaca_feed = DataFeed.IEX if self.feed == "iex" else DataFeed.SIP
         all_bars = fetch_bars(
             self.tickers,
             self.replay_date,
             self.replay_date,
             source="alpaca",
             allow_intraday=True,
+            feed=alpaca_feed,
         )
 
         result = {}

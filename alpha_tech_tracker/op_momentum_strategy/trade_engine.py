@@ -1825,6 +1825,7 @@ class OpMomentumTradeEngine:
             on_bar_injected=_on_bar,
             bars_source=bars_source,
             exit_time=replay_exit_time,
+            feed=self._alpaca_feed.value,
         )
         driver.run()
 
