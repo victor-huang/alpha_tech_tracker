@@ -1658,8 +1658,10 @@ class OpMomentumTradeEngine:
             label = pos.window_label
             if label in self._window_state:
                 self._window_state[label]["open_position_count"] += 1
-            if pos.trailing_arm_price is None:
-                self._window_primary_deployed.setdefault(label, set()).add(pos.ticker)
+            if pos.trailing_arm_price is None and pos.slot_capital is not None:
+                if label not in self._window_primary_deployed:
+                    self._window_primary_deployed[label] = _D("0")
+                self._window_primary_deployed[label] += pos.slot_capital
 
         self._signal_engine.start()
 

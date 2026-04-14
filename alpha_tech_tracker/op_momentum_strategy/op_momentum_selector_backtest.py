@@ -248,6 +248,13 @@ def _apply_capital_flow(
         # --- Sequential windows ---
         # available is recomputed per window from base + pnl_acc - active DDs so that
         # a DD that exits between two sequential windows is correctly recycled.
+        #
+        # Known BT/RP structural difference: first_group_pnl includes the TOTAL
+        # final P&L of all first-group (M1) positions, even those that close after
+        # the sequential window's OR open. The live engine (replay) correctly uses
+        # only realized P&L at the sequential window's drain time, plus cost basis
+        # for still-open slots. In practice the divergence is small because most M1
+        # trades close (via hard stop or trailing MA) before A1 kicks in at ~1:20 PM.
         base = portfolio + first_group_pnl
         pnl_acc = 0.0
         seq_pnl = 0.0
