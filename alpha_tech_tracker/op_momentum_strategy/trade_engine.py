@@ -27,6 +27,8 @@ from .config import (
     BEARISH_MA200,
     DAILY_MAX_LOSS_USD,
     EOD_EXIT_TIME,
+    WS_BARS_END_ET,
+    WS_BARS_START_ET,
     WS_RECONNECT_TIMEOUT_SECONDS,
     MAX_ACTIVE_SYMBOLS,
     MAX_LOSS_PCT,
@@ -1408,9 +1410,22 @@ class OpMomentumTradeEngine:
     def _check_ws_health(self, now) -> None:
         """Reconnect the WebSocket stream if no bar has been received for too long.
 
+        Only fires during the Alpaca extended-hours bar window (WS_BARS_START_ET to
+        WS_BARS_END_ET). Outside that window bars are not expected, so silence is
+        normal and reconnecting would just hit Alpaca's one-connection-per-key limit.
+
         Uses _stream_started_at as the baseline when no bar has ever arrived so
         the watchdog doesn't fire the instant the engine starts up.
         """
+        bars_start_h, bars_start_m = [int(x) for x in WS_BARS_START_ET.split(":")]
+        bars_end_h, bars_end_m = [int(x) for x in WS_BARS_END_ET.split(":")]
+        in_bars_window = (
+            (now.hour > bars_start_h or (now.hour == bars_start_h and now.minute >= bars_start_m))
+            and (now.hour < bars_end_h or (now.hour == bars_end_h and now.minute < bars_end_m))
+        )
+        if not in_bars_window:
+            return
+
         engine = self._signal_engine
         if engine is None:
             return

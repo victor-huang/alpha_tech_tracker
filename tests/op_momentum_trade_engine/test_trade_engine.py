@@ -2122,6 +2122,50 @@ class TestCheckWsHealth:
 
         engine._check_ws_health(now)  # must not raise
 
+    def test_no_reconnect_before_bars_window(self):
+        engine = self._make_engine(timeout=600)
+        now = ET.localize(datetime(2026, 4, 11, 2, 0))  # 2 AM ET — before 4 AM window
+        engine._signal_engine._stream_started_at = ET.localize(
+            datetime(2026, 4, 11, 1, 0)
+        )
+
+        engine._check_ws_health(now)
+
+        engine._signal_engine.reconnect.assert_not_called()
+
+    def test_no_reconnect_after_bars_window(self):
+        engine = self._make_engine(timeout=600)
+        now = ET.localize(datetime(2026, 4, 11, 21, 0))  # 9 PM ET — after 8 PM window
+        engine._signal_engine._last_bar_received_at = ET.localize(
+            datetime(2026, 4, 11, 19, 0)
+        )
+
+        engine._check_ws_health(now)
+
+        engine._signal_engine.reconnect.assert_not_called()
+
+    def test_reconnect_at_start_of_bars_window(self):
+        engine = self._make_engine(timeout=600)
+        now = ET.localize(datetime(2026, 4, 11, 4, 15))  # 4:15 AM ET — inside window
+        engine._signal_engine._stream_started_at = ET.localize(
+            datetime(2026, 4, 11, 3, 0)
+        )
+
+        engine._check_ws_health(now)
+
+        engine._signal_engine.reconnect.assert_called_once()
+
+    def test_no_reconnect_at_end_of_bars_window(self):
+        engine = self._make_engine(timeout=600)
+        now = ET.localize(datetime(2026, 4, 11, 20, 0))  # exactly 8 PM ET — outside window
+        engine._signal_engine._last_bar_received_at = ET.localize(
+            datetime(2026, 4, 11, 18, 0)
+        )
+
+        engine._check_ws_health(now)
+
+        engine._signal_engine.reconnect.assert_not_called()
+
 
 # ---------------------------------------------------------------------------
 # TestMarketHolidayGuard — run() exits early on weekends and NYSE holidays

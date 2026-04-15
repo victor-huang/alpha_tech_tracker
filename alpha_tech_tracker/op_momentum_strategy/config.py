@@ -30,6 +30,10 @@ STRIKE_PUT_OFFSET = _D("1.10")
 MAX_CAPITAL_PERCENTAGE_PER_SYMBOL_IN_WINDOW = _D("0.45")
 EOD_EXIT_TIME = "15:55"
 SESSION_END_TIME = "16:05"
+# Alpaca extended-hours bar feed: pre-market starts 4 AM ET, after-hours ends 8 PM ET.
+# The WebSocket watchdog only fires inside this window — bars are not expected outside it.
+WS_BARS_START_ET = "04:00"
+WS_BARS_END_ET = "20:00"
 MA_WARMUP_DAYS = 7
 ROLLING_LOOKBACK_DAYS = 30
 BEARISH_MA200 = False
