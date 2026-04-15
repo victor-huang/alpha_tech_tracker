@@ -1,5 +1,6 @@
 import hashlib
 import logging
+import signal
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -1676,17 +1677,32 @@ class OpMomentumTradeEngine:
             )
             t.start()
 
+        _summary_printed = threading.Event()
+
+        def _sigterm_handler(signum, frame):
+            if not _summary_printed.is_set():
+                logger.info("SIGTERM received — printing summary before shutdown")
+                self._monitor.print_summary()
+                _summary_printed.set()
+            raise SystemExit(0)
+
+        signal.signal(signal.SIGTERM, _sigterm_handler)
+
         monitor_thread = threading.Thread(
             target=self._monitor_loop, args=(all_tickers, session_date), daemon=True
         )
         monitor_thread.start()
         monitor_thread.join()
 
+        signal.signal(signal.SIGTERM, signal.SIG_DFL)
+
         self._signal_engine.stop()
         if self._option_price_monitor:
             self._option_price_monitor.stop()
         bar_recorder.close()
-        self._monitor.print_summary()
+        if not _summary_printed.is_set():
+            self._monitor.print_summary()
+            _summary_printed.set()
 
     def run_replay(
         self,

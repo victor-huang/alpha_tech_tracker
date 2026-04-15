@@ -873,7 +873,7 @@ class PositionMonitor:
                 return entry_price * _D(pos.shares)
             return entry_price * _D(pos.contracts) * _D("100")
 
-        def _print_totals(positions, get_entry, get_exit, width):
+        def _print_totals(positions, get_entry, get_exit, emit, width):
             total_pnl = _D("0")
             total_cost = _D("0")
             total_cap_pnl = _D("0")
@@ -912,8 +912,8 @@ class PositionMonitor:
                     f"  │  cap: {cap_sign}${abs(float(total_cap_pnl)):.2f}"
                     f" ({cap_pct_sign}{cap_pct:.2f}%) - with fractional shares"
                 )
-            print(f"  {'─' * (width - 2)}")
-            print(summary)
+            emit(f"  {'─' * (width - 2)}")
+            emit(summary)
 
         def _trade_label(pos) -> str:
             if pos.is_doubledown_addon:
@@ -928,16 +928,21 @@ class PositionMonitor:
                 return "[Bullish Cont.]"
             return f"[{pos.signal.capitalize()}]"
 
+        lines = []
+
+        def _emit(line=""):
+            lines.append(line)
+
         if has_sim:
             width = 132
-            print(f"\n{'=' * width}")
-            print("  DAILY TRADE SUMMARY  [SIMULATE MODE]")
-            print(f"{'=' * width}")
-            print(
+            _emit("=" * width)
+            _emit("  DAILY TRADE SUMMARY  [SIMULATE MODE]")
+            _emit("=" * width)
+            _emit(
                 f"  {'Ticker':<7} {'Signal':<16} {'Instrument':<26} {'Qty':>6}"
                 f"  {'Entry':>5} {'Exit':>5}  {'EntryMid':>9} {'ExitMid':>9} {'P&L':>10}  {'%P&L':>7}  Exit Reason"
             )
-            print(f"  {'─' * 130}")
+            _emit(f"  {'─' * 130}")
             for pos in self._positions:
                 entry_mid = pos.simulated_entry_mid
                 exit_mid = pos.simulated_exit_mid
@@ -963,7 +968,7 @@ class PositionMonitor:
                 else:
                     sym_str = pos.option_symbol
                     qty_str = str(pos.contracts)
-                print(
+                _emit(
                     f"  {pos.ticker:<7} {_trade_label(pos):<16} {sym_str:<26} "
                     f"{qty_str:>6}"
                     f"  {_fmt_time(pos.entry_time):>5} {_fmt_time(pos.exit_time):>5}"
@@ -974,19 +979,20 @@ class PositionMonitor:
                 self._positions,
                 lambda p: p.simulated_entry_mid,
                 lambda p: p.simulated_exit_mid,
+                _emit,
                 width,
             )
-            print(f"{'=' * width}\n")
+            _emit("=" * width)
         else:
             width = 132
-            print(f"\n{'=' * width}")
-            print("  DAILY TRADE SUMMARY")
-            print(f"{'=' * width}")
-            print(
+            _emit("=" * width)
+            _emit("  DAILY TRADE SUMMARY")
+            _emit("=" * width)
+            _emit(
                 f"  {'Ticker':<7} {'Signal':<16} {'Instrument':<26} {'Qty':>6}"
                 f"  {'Entry':>5} {'Exit':>5}  {'EntryFill':>9} {'ExitFill':>8} {'P&L':>10}  {'%P&L':>7}  Exit Reason"
             )
-            print(f"  {'─' * 130}")
+            _emit(f"  {'─' * 130}")
             for pos in self._positions:
                 entry_fill = pos.entry_fill_price
                 exit_fill = pos.exit_fill_price
@@ -1012,7 +1018,7 @@ class PositionMonitor:
                 else:
                     sym_str = pos.option_symbol
                     qty_str = str(pos.contracts)
-                print(
+                _emit(
                     f"  {pos.ticker:<7} {_trade_label(pos):<16} {sym_str:<26} "
                     f"{qty_str:>6}"
                     f"  {_fmt_time(pos.entry_time):>5} {_fmt_time(pos.exit_time):>5}"
@@ -1023,6 +1029,10 @@ class PositionMonitor:
                 self._positions,
                 lambda p: p.entry_fill_price,
                 lambda p: p.exit_fill_price,
+                _emit,
                 width,
             )
-            print(f"{'=' * width}\n")
+            _emit("=" * width)
+
+        for line in lines:
+            logger.info(line)

@@ -1,3 +1,4 @@
+import logging
 import pytest
 from unittest.mock import patch
 
@@ -485,7 +486,7 @@ class TestPositionMonitor:
 
 
 class TestPrintSummaryPnl:
-    def test_bullish_call_profit_when_exit_above_entry(self, capsys):
+    def test_bullish_call_profit_when_exit_above_entry(self, caplog):
         client = _make_alpaca_client()
         engine = _make_signal_engine_with_history("NVDA", pd.DataFrame())
         monitor = PositionMonitor(client, engine, mock_trade_execution=True)
@@ -493,12 +494,12 @@ class TestPrintSummaryPnl:
             _make_closed_position("BULLISH", entry_mid=13.86, exit_mid=14.21)
         )
 
-        monitor.print_summary()
+        with caplog.at_level(logging.INFO):
+            monitor.print_summary()
 
-        captured = capsys.readouterr().out
-        assert "+$35.00" in captured
+        assert "+$35.00" in caplog.text
 
-    def test_bullish_call_loss_when_exit_below_entry(self, capsys):
+    def test_bullish_call_loss_when_exit_below_entry(self, caplog):
         client = _make_alpaca_client()
         engine = _make_signal_engine_with_history("NVDA", pd.DataFrame())
         monitor = PositionMonitor(client, engine, mock_trade_execution=True)
@@ -506,12 +507,12 @@ class TestPrintSummaryPnl:
             _make_closed_position("BULLISH", entry_mid=14.21, exit_mid=13.86)
         )
 
-        monitor.print_summary()
+        with caplog.at_level(logging.INFO):
+            monitor.print_summary()
 
-        captured = capsys.readouterr().out
-        assert "-$35.00" in captured
+        assert "-$35.00" in caplog.text
 
-    def test_bearish_put_profit_when_exit_above_entry(self, capsys):
+    def test_bearish_put_profit_when_exit_above_entry(self, caplog):
         client = _make_alpaca_client()
         engine = _make_signal_engine_with_history("NVDA", pd.DataFrame())
         monitor = PositionMonitor(client, engine, mock_trade_execution=True)
@@ -519,12 +520,12 @@ class TestPrintSummaryPnl:
             _make_closed_position("BEARISH", entry_mid=13.72, exit_mid=21.35)
         )
 
-        monitor.print_summary()
+        with caplog.at_level(logging.INFO):
+            monitor.print_summary()
 
-        captured = capsys.readouterr().out
-        assert "+$763.00" in captured
+        assert "+$763.00" in caplog.text
 
-    def test_bearish_put_loss_when_exit_below_entry(self, capsys):
+    def test_bearish_put_loss_when_exit_below_entry(self, caplog):
         client = _make_alpaca_client()
         engine = _make_signal_engine_with_history("NVDA", pd.DataFrame())
         monitor = PositionMonitor(client, engine, mock_trade_execution=True)
@@ -532,10 +533,10 @@ class TestPrintSummaryPnl:
             _make_closed_position("BEARISH", entry_mid=21.35, exit_mid=13.72)
         )
 
-        monitor.print_summary()
+        with caplog.at_level(logging.INFO):
+            monitor.print_summary()
 
-        captured = capsys.readouterr().out
-        assert "-$763.00" in captured
+        assert "-$763.00" in caplog.text
 
 
 class TestStockClosePosition:
@@ -711,7 +712,7 @@ class TestStockClosePosition:
 
 
 class TestStockPrintSummaryPnl:
-    def test_stock_profit_uses_shares_not_contracts_multiplier(self, capsys):
+    def test_stock_profit_uses_shares_not_contracts_multiplier(self, caplog):
         client = _make_alpaca_client()
         engine = _make_signal_engine_with_history("NVDA", pd.DataFrame())
         monitor = PositionMonitor(client, engine, mock_trade_execution=True)
@@ -719,13 +720,13 @@ class TestStockPrintSummaryPnl:
             _make_closed_stock_position("BULLISH", entry_mid=100.0, exit_mid=102.0, shares=10)
         )
 
-        monitor.print_summary()
+        with caplog.at_level(logging.INFO):
+            monitor.print_summary()
 
-        captured = capsys.readouterr().out
         # P&L = (102 - 100) * 10 shares = +$20 (not * 100)
-        assert "+$20.00" in captured
+        assert "+$20.00" in caplog.text
 
-    def test_stock_loss_uses_shares_not_contracts_multiplier(self, capsys):
+    def test_stock_loss_uses_shares_not_contracts_multiplier(self, caplog):
         client = _make_alpaca_client()
         engine = _make_signal_engine_with_history("NVDA", pd.DataFrame())
         monitor = PositionMonitor(client, engine, mock_trade_execution=True)
@@ -733,12 +734,12 @@ class TestStockPrintSummaryPnl:
             _make_closed_stock_position("BULLISH", entry_mid=102.0, exit_mid=100.0, shares=10)
         )
 
-        monitor.print_summary()
+        with caplog.at_level(logging.INFO):
+            monitor.print_summary()
 
-        captured = capsys.readouterr().out
-        assert "-$20.00" in captured
+        assert "-$20.00" in caplog.text
 
-    def test_stock_summary_shows_shares_label_not_option_symbol(self, capsys):
+    def test_stock_summary_shows_shares_label_not_option_symbol(self, caplog):
         client = _make_alpaca_client()
         engine = _make_signal_engine_with_history("NVDA", pd.DataFrame())
         monitor = PositionMonitor(client, engine, mock_trade_execution=True)
@@ -746,11 +747,11 @@ class TestStockPrintSummaryPnl:
             _make_closed_stock_position("BULLISH", entry_mid=100.0, exit_mid=101.0, shares=5)
         )
 
-        monitor.print_summary()
+        with caplog.at_level(logging.INFO):
+            monitor.print_summary()
 
-        captured = capsys.readouterr().out
-        assert "[stock]" in captured
-        assert "5sh" in captured
+        assert "[stock]" in caplog.text
+        assert "5sh" in caplog.text
 
 
 class TestMockOptionExitPricing:
@@ -1370,14 +1371,14 @@ class TestPrintSummaryRefreshFills:
         monitor._positions.append(pos)
         return monitor, pos
 
-    def test_print_summary_calls_refresh_fill_prices_in_live_mode(self, capsys):
+    def test_print_summary_calls_refresh_fill_prices_in_live_mode(self, caplog):
         monitor, pos = self._make_monitor_with_closed_pos(
             entry_fill=8.50, exit_fill=4.20
         )
-        monitor.print_summary()
-        out = capsys.readouterr().out
-        assert "8.50" in out
-        assert "4.20" in out
+        with caplog.at_level(logging.INFO):
+            monitor.print_summary()
+        assert "8.50" in caplog.text
+        assert "4.20" in caplog.text
 
     def test_print_summary_skips_refresh_in_simulate_mode(self, capsys):
         closes = [100.0]
