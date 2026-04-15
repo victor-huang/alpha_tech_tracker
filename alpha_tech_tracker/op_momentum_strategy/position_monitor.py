@@ -34,6 +34,28 @@ def _get_option_price_monitor_type():
 
 logger = logging.getLogger(__name__)
 
+
+def _emit_raw(line: str):
+    """Write a line directly to stream handlers in the logger hierarchy, bypassing
+    the log formatter so summary tables are not cluttered with timestamps/level/module."""
+    lg: Optional[logging.Logger] = logging.getLogger(__name__)
+    visited: set = set()
+    while lg is not None:
+        for handler in lg.handlers:
+            if id(handler) in visited:
+                continue
+            visited.add(id(handler))
+            if hasattr(handler, "stream"):
+                handler.acquire()
+                try:
+                    handler.stream.write(line + "\n")
+                    handler.stream.flush()
+                finally:
+                    handler.release()
+        if not lg.propagate:
+            break
+        lg = lg.parent
+
 ET = pytz.timezone("America/New_York")
 
 _QUICK_EXIT_MAX_SECONDS = 480  # positions held < 8 min trigger entry-price-first sell
@@ -1040,4 +1062,4 @@ class PositionMonitor:
             _emit("=" * width)
 
         for line in lines:
-            logger.info(line)
+            _emit_raw(line)
