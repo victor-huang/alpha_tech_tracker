@@ -122,7 +122,7 @@ class AlpacaAPIClient(ExecutionClient):
             "raw_response": account,
         }
 
-    def get_stock_quote(self, symbols, feed: DataFeed = DataFeed.SIP):
+    def get_stock_quote(self, symbols, feed: DataFeed = DataFeed.IEX):
         if isinstance(symbols, str):
             symbols = [symbols]
 

@@ -469,7 +469,10 @@ class PositionMonitor:
                 mid = _D(str(latest_bar["Close"]))
         else:
             try:
-                raw_quote = self._client.get_stock_quote(pos.ticker)
+                raw_quote = self._client.get_stock_quote(
+                    pos.ticker,
+                    **({"feed": self._alpaca_feed} if self._alpaca_feed is not None else {})
+                )
                 bid_f, ask_f = _stock_bid_ask(raw_quote)
                 bid = _D(str(bid_f))
                 ask = _D(str(ask_f))
@@ -770,7 +773,10 @@ class PositionMonitor:
                     entry_price = p.entry_fill_price
                     if p.trade_type == "stock":
                         try:
-                            raw_quote = self._client.get_stock_quote(p.ticker)
+                            raw_quote = self._client.get_stock_quote(
+                                p.ticker,
+                                **({"feed": self._alpaca_feed} if self._alpaca_feed is not None else {})
+                            )
                             bid_f, ask_f = _stock_bid_ask(raw_quote)
                             current_mid = _D(str((bid_f + ask_f) / 2))
                         except Exception:
