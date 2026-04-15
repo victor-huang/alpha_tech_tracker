@@ -711,21 +711,16 @@ class TestStockClosePosition:
         assert call_args.kwargs.get("feed") == DataFeed.IEX
 
 
-    def test_entry_fill_price_passed_as_signal_price_on_close(self):
+    def test_latest_bar_close_passed_as_signal_price_on_close(self):
         client = _make_alpaca_client()
-        client.get_stock_quote.return_value = {
-            "QuoteResponse": {
-                "QuoteData": [{"All": {"bid": 99.0, "ask": 101.0, "bid_size": 1, "ask_size": 1, "last": None}}]
-            }
-        }
         client.place_stock_order.return_value = {"order_id": "stk-sig-1"}
         client.order_status.return_value = {"status": "filled", "filled_avg_price": 100.0}
 
         pos = _make_stock_position(signal="BULLISH", shares=10)
-        pos.entry_fill_price = _D("104.50")
         closes = [104.0]
         df = _build_history_df(closes, ma20=90.0, ma50=90.0, ma200=85.0)
         engine = _make_signal_engine_with_history("NVDA", df)
+        _set_latest_bar(engine, "NVDA", close=103.75, ma50=90.0)
         monitor = PositionMonitor(client, engine)
         monitor.add_position(pos)
 
@@ -737,22 +732,15 @@ class TestStockClosePosition:
 
         mock_place.assert_called_once()
         _, kwargs = mock_place.call_args
-        assert kwargs.get("signal_price") == 104.50
+        assert kwargs.get("signal_price") == 103.75
 
-    def test_entry_fill_price_none_passes_signal_price_none_on_close(self):
+    def test_signal_price_none_when_no_latest_bar_on_close(self):
         client = _make_alpaca_client()
-        client.get_stock_quote.return_value = {
-            "QuoteResponse": {
-                "QuoteData": [{"All": {"bid": 99.0, "ask": 101.0, "bid_size": 1, "ask_size": 1, "last": None}}]
-            }
-        }
         client.place_stock_order.return_value = {"order_id": "stk-sig-2"}
         client.order_status.return_value = {"status": "filled", "filled_avg_price": 100.0}
 
         pos = _make_stock_position(signal="BULLISH", shares=10)
-        pos.entry_fill_price = None
-        closes = [104.0]
-        df = _build_history_df(closes, ma20=90.0, ma50=90.0, ma200=85.0)
+        df = _build_history_df([], ma20=90.0, ma50=90.0, ma200=85.0)
         engine = _make_signal_engine_with_history("NVDA", df)
         monitor = PositionMonitor(client, engine)
         monitor.add_position(pos)
