@@ -310,30 +310,35 @@ def place_stock_order(
                 "Could not cancel order %s (may already be filled)", order_id
             )
 
-    try:
-        bid, ask, mid = _fetch_mid_bid_ask()
-        logger.info(
-            "STOCK FILL_ESC step1 %s %s: bid=%s ask=%s mid=%s",
-            order_action,
-            ticker,
-            bid,
-            ask,
-            mid.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
-        )
-    except Exception:
-        logger.warning("Could not fetch stock quote for %s, falling back to market", ticker, exc_info=True)
-        return _place_market()
+    for attempt in range(1, 4):
+        try:
+            bid, ask, mid = _fetch_mid_bid_ask()
+            logger.info(
+                "STOCK FILL_ESC step1 attempt=%d %s %s: bid=%s ask=%s mid=%s",
+                attempt,
+                order_action,
+                ticker,
+                bid,
+                ask,
+                mid.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
+            )
+        except Exception:
+            logger.warning(
+                "Could not fetch stock quote for step1 attempt=%d %s, falling back to market",
+                attempt, ticker, exc_info=True,
+            )
+            return _place_market()
 
-    order = _place_limit(mid)
-    order_id = order.get("order_id")
-    logger.info("STOCK FILL_ESC step1 order placed: id=%s", order_id)
+        order = _place_limit(mid)
+        order_id = order.get("order_id")
+        logger.info("STOCK FILL_ESC step1 attempt=%d order placed: id=%s", attempt, order_id)
 
-    time.sleep(10)
-    if _is_filled(order_id):
-        logger.info("STOCK FILL_ESC step1 filled: %s", order_id)
-        return order
+        time.sleep(5)
+        if _is_filled(order_id):
+            logger.info("STOCK FILL_ESC step1 attempt=%d filled: %s", attempt, order_id)
+            return order
 
-    _cancel_safely(order_id)
+        _cancel_safely(order_id)
     for attempt in range(1, 4):
         try:
             bid, ask, mid = _fetch_mid_bid_ask()
