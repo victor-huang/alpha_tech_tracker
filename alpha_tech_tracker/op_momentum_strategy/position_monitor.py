@@ -539,6 +539,7 @@ class PositionMonitor:
                     shares=pos.shares,
                     order_action=close_order_action,
                     feed=self._alpaca_feed,
+                    signal_price=float(pos.entry_fill_price) if pos.entry_fill_price is not None else None,
                 )
             pos.exit_order_id = order.get("order_id")
             logger.info("Stock close order placed: %s", pos.exit_order_id)
