@@ -334,31 +334,37 @@ def place_stock_order(
         return order
 
     _cancel_safely(order_id)
-    try:
-        bid, ask, mid = _fetch_mid_bid_ask()
-        aggressive_price = ask if is_buy else bid
-        logger.info(
-            "STOCK FILL_ESC step2 %s %s: bid=%s ask=%s aggressive_price=%s",
-            order_action,
-            ticker,
-            bid,
-            ask,
-            aggressive_price.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
-        )
-    except Exception:
-        logger.warning("Could not fetch stock quote for step2 %s, using market", ticker, exc_info=True)
-        return _place_market()
+    for attempt in range(1, 4):
+        try:
+            bid, ask, mid = _fetch_mid_bid_ask()
+            aggressive_price = ask if is_buy else bid
+            logger.info(
+                "STOCK FILL_ESC step2 attempt=%d %s %s: bid=%s ask=%s aggressive_price=%s",
+                attempt,
+                order_action,
+                ticker,
+                bid,
+                ask,
+                aggressive_price.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
+            )
+        except Exception:
+            logger.warning(
+                "Could not fetch stock quote for step2 attempt=%d %s, using market",
+                attempt, ticker, exc_info=True,
+            )
+            return _place_market()
 
-    order = _place_limit(aggressive_price)
-    order_id = order.get("order_id")
-    logger.info("STOCK FILL_ESC step2 order placed: id=%s", order_id)
+        order = _place_limit(aggressive_price)
+        order_id = order.get("order_id")
+        logger.info("STOCK FILL_ESC step2 attempt=%d order placed: id=%s", attempt, order_id)
 
-    time.sleep(10)
-    if _is_filled(order_id):
-        logger.info("STOCK FILL_ESC step2 filled: %s", order_id)
-        return order
+        time.sleep(10)
+        if _is_filled(order_id):
+            logger.info("STOCK FILL_ESC step2 attempt=%d filled: %s", attempt, order_id)
+            return order
 
-    _cancel_safely(order_id)
+        _cancel_safely(order_id)
+
     logger.info("STOCK FILL_ESC step3 %s %s: placing market order", order_action, ticker)
     order = _place_market()
     logger.info("STOCK FILL_ESC step3 market order placed: id=%s", order.get("order_id"))

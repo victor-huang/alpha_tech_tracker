@@ -256,6 +256,105 @@ class TestPlaceStockOrderStaleQuoteGuard:
         assert calls[-1].kwargs["order_type"] == "MARKET"
 
 
+class TestPlaceStockOrderStep2Loop:
+    """
+    Step 2 retries up to 3 times at ask (buy) / bid (sell) before falling
+    back to a market order at step 3.
+    """
+
+    def _run(self, client, order_action="BUY_OPEN", signal_price=None, filled_on_attempt=None):
+        attempt_count = [0]
+
+        def fake_order_status(order_id):
+            attempt_count[0] += 1
+            # Step 1 is always unfilled (first status check)
+            if attempt_count[0] == 1:
+                return {"status": "open"}
+            # Step 2 fills on the given attempt number (1-indexed within step 2)
+            step2_attempt = attempt_count[0] - 1
+            if filled_on_attempt is not None and step2_attempt == filled_on_attempt:
+                return {"status": "filled"}
+            return {"status": "open"}
+
+        client.order_status.side_effect = fake_order_status
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            return place_stock_order(
+                client=client,
+                ticker="FN",
+                shares=1,
+                order_action=order_action,
+                signal_price=signal_price,
+            )
+
+    def test_step2_all_attempts_exhausted_falls_back_to_market(self):
+        client = _make_stock_client(bid=329.0, ask=331.0)
+        self._run(client, filled_on_attempt=None)
+        last_call = client.place_stock_order.call_args_list[-1]
+        assert last_call.kwargs["order_type"] == "MARKET"
+
+    def test_step2_all_attempts_exhausted_places_exactly_five_orders(self):
+        # step1(1) + step2 attempts(3) + step3 market(1) = 5
+        client = _make_stock_client(bid=329.0, ask=331.0)
+        self._run(client, filled_on_attempt=None)
+        assert client.place_stock_order.call_count == 5
+
+    def test_step2_fills_on_first_attempt_returns_without_market(self):
+        client = _make_stock_client(bid=329.0, ask=331.0)
+        self._run(client, filled_on_attempt=1)
+        calls = client.place_stock_order.call_args_list
+        assert all(c.kwargs["order_type"] == "LIMIT" for c in calls)
+
+    def test_step2_fills_on_second_attempt_returns_without_market(self):
+        client = _make_stock_client(bid=329.0, ask=331.0)
+        self._run(client, filled_on_attempt=2)
+        calls = client.place_stock_order.call_args_list
+        assert all(c.kwargs["order_type"] == "LIMIT" for c in calls)
+
+    def test_step2_fills_on_third_attempt_returns_without_market(self):
+        client = _make_stock_client(bid=329.0, ask=331.0)
+        self._run(client, filled_on_attempt=3)
+        calls = client.place_stock_order.call_args_list
+        assert all(c.kwargs["order_type"] == "LIMIT" for c in calls)
+
+    def test_step2_buy_limit_price_is_ask(self):
+        client = _make_stock_client(bid=329.0, ask=331.0)
+        self._run(client, order_action="BUY_OPEN", filled_on_attempt=None)
+        step2_calls = client.place_stock_order.call_args_list[1:4]
+        for call in step2_calls:
+            assert call.kwargs["order_type"] == "LIMIT"
+            assert call.kwargs["limit_price"] == 331.0
+
+    def test_step2_sell_limit_price_is_bid(self):
+        client = _make_stock_client(bid=329.0, ask=331.0)
+        self._run(client, order_action="SELL_CLOSE", filled_on_attempt=None)
+        step2_calls = client.place_stock_order.call_args_list[1:4]
+        for call in step2_calls:
+            assert call.kwargs["order_type"] == "LIMIT"
+            assert call.kwargs["limit_price"] == 329.0
+
+    def test_step2_quote_fetch_failure_falls_back_to_market_immediately(self):
+        client = _make_stock_client(bid=329.0, ask=331.0)
+        call_count = [0]
+
+        def quote_side_effect(symbol, **kwargs):
+            call_count[0] += 1
+            if call_count[0] > 1:
+                raise RuntimeError("quote unavailable")
+            return {
+                "QuoteResponse": {
+                    "QuoteData": [{"All": {"bid": 329.0, "ask": 331.0, "lastTrade": 329.0}}]
+                }
+            }
+
+        client.get_stock_quote.side_effect = quote_side_effect
+        client.order_status.return_value = {"status": "open"}
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            place_stock_order(client=client, ticker="FN", shares=1, order_action="BUY_OPEN")
+
+        last_call = client.place_stock_order.call_args_list[-1]
+        assert last_call.kwargs["order_type"] == "MARKET"
+
+
 class TestPlaceStockOrderFeedForwarding:
     """
     When a feed is provided to place_stock_order(), it must be forwarded to
