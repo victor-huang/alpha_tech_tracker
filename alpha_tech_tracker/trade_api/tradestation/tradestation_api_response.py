@@ -1,34 +1,35 @@
 """
-Fixture response dicts mirroring real TradeStation v2 API responses.
+Fixture response dicts mirroring real TradeStation v3 API responses.
 Used by unit tests — do not import in production code.
 """
 
-accounts_response = [
-    {
-        "Alias": "My Account",
-        "Key": 123456,
-        "Name": "123456MSA",
-        "DisplayName": "123456MSA",
-        "Type": "M",
-        "TypeDescription": "Margin",
-        "Status": "A",
-        "StatusDescription": "Active",
-    }
-]
+accounts_response = {
+    "Accounts": [
+        {
+            "AccountID": "123456",
+            "Status": "Active",
+            "Alias": "My Account",
+            "Name": "123456MSA",
+            "DisplayName": "123456MSA",
+            "Type": "M",
+            "TypeDescription": "Margin",
+        }
+    ]
+}
 
-balances_response = [
-    {
-        "Alias": "My Account",
-        "Key": 123456,
-        "Name": "123456MSA",
-        "RealTimeBuyingPower": 50000.00,
-        "RealTimeEquity": 52000.00,
-        "BODNetCash": 48000.00,
-        "RealTimeOptionBuyingPower": 50000.00,
-        "DayTradingQualified": True,
-        "PatternDayTrader": False,
-    }
-]
+balances_response = {
+    "Balances": [
+        {
+            "AccountID": "123456",
+            "CashBalance": "48000",
+            "BuyingPower": "50000",
+            "Equity": "52000",
+            "RealTimeOptionBuyingPower": "50000",
+            "DayTradingQualified": True,
+            "PatternDayTrader": False,
+        }
+    ]
+}
 
 stock_quote_response = [
     {
@@ -54,110 +55,125 @@ option_quote_response = [
     }
 ]
 
+# v3 search results use display name format ("TSLA 250417C240"), not padded OCC.
+# ExpirationDate uses /Date(epoch_ms)/ format. OptionType is "Call"/"Put" (not "Calls"/"Puts").
 option_search_response = [
     {
-        "Name": "TSLA  250417C00240000",
+        "Name": "TSLA 250417C240",
         "Description": "TSLA Apr 17 2025 240 Call",
         "Category": "StockOption",
-        "ExpirationDate": "2025-04-17T00:00:00Z",
+        "ExpirationDate": "/Date(1744848000000)/",
         "ExpirationType": "W",
-        "OptionType": "Calls",
+        "OptionType": "Call",
         "StrikePrice": 240.0,
         "Root": "TSLA",
         "Underlying": "TSLA",
     },
     {
-        "Name": "TSLA  250417C00245000",
+        "Name": "TSLA 250417C245",
         "Description": "TSLA Apr 17 2025 245 Call",
         "Category": "StockOption",
-        "ExpirationDate": "2025-04-17T00:00:00Z",
+        "ExpirationDate": "/Date(1744848000000)/",
         "ExpirationType": "W",
-        "OptionType": "Calls",
+        "OptionType": "Call",
         "StrikePrice": 245.0,
         "Root": "TSLA",
         "Underlying": "TSLA",
     },
     {
-        "Name": "TSLA  250417P00240000",
+        "Name": "TSLA 250417P240",
         "Description": "TSLA Apr 17 2025 240 Put",
         "Category": "StockOption",
-        "ExpirationDate": "2025-04-17T00:00:00Z",
+        "ExpirationDate": "/Date(1744848000000)/",
         "ExpirationType": "W",
-        "OptionType": "Puts",
+        "OptionType": "Put",
         "StrikePrice": 240.0,
         "Root": "TSLA",
         "Underlying": "TSLA",
     },
 ]
 
+# v3 order placement wraps the result in {"Orders": [...]}.
 place_order_response = {
-    "OrderID": "207887821",
-    "Message": "Order submitted",
-    "OrderStatus": "Ok",
+    "Orders": [
+        {
+            "OrderID": "207887821",
+            "Error": "OK",
+            "Message": "Order submitted",
+        }
+    ]
 }
 
-orders_open_response = [
-    {
-        "AccountID": "123456",
-        "OrderID": 207887821,
-        "Symbol": "TSLA  250420C00240000",
-        "AssetType": "OP",
-        "Type": "Buy",
-        "Status": "OPN",
-        "StatusDescription": "Open",
-        "Duration": "DAY",
-        "Quantity": 1,
-        "ExecuteQuantity": 0,
-        "QuantityLeft": 1,
-        "FilledPrice": 0.0,
-        "LimitPrice": 10.50,
-        "TimeStamp": "2025-04-20T09:31:00Z",
-        "FilledCanceled": None,
-        "CommissionFee": 0.0,
-    }
-]
+# v3 order status responses wrap orders in {"Orders": [...]} and store
+# symbol/qty inside Legs[0] rather than at the top level.
+orders_open_response = {
+    "Orders": [
+        {
+            "AccountID": "123456",
+            "OrderID": "207887821",
+            "Status": "OPN",
+            "Duration": "DAY",
+            "LimitPrice": "10.50",
+            "FilledPrice": "0",
+            "OpenedDateTime": "2025-04-20T09:31:00Z",
+            "Legs": [
+                {
+                    "Symbol": "TSLA 250420C240",
+                    "QuantityOrdered": "1",
+                    "ExecQuantity": "0",
+                    "BuyOrSell": "Buy",
+                }
+            ],
+        }
+    ],
+    "Errors": [],
+}
 
-orders_filled_response = [
-    {
-        "AccountID": "123456",
-        "OrderID": 207887821,
-        "Symbol": "TSLA  250420C00240000",
-        "AssetType": "OP",
-        "Type": "Buy",
-        "Status": "FLL",
-        "StatusDescription": "Filled",
-        "Duration": "DAY",
-        "Quantity": 1,
-        "ExecuteQuantity": 1,
-        "QuantityLeft": 0,
-        "FilledPrice": 10.50,
-        "LimitPrice": 10.50,
-        "TimeStamp": "2025-04-20T09:31:00Z",
-        "FilledCanceled": "2025-04-20T09:31:05Z",
-        "CommissionFee": 0.65,
-    }
-]
+orders_filled_response = {
+    "Orders": [
+        {
+            "AccountID": "123456",
+            "OrderID": "207887821",
+            "Status": "FLL",
+            "Duration": "DAY",
+            "LimitPrice": "10.50",
+            "FilledPrice": "10.50",
+            "OpenedDateTime": "2025-04-20T09:31:00Z",
+            "Legs": [
+                {
+                    "Symbol": "TSLA 250420C240",
+                    "QuantityOrdered": "1",
+                    "ExecQuantity": "1",
+                    "BuyOrSell": "Buy",
+                }
+            ],
+        }
+    ],
+    "Errors": [],
+}
 
-orders_cancelled_response = [
-    {
-        "AccountID": "123456",
-        "OrderID": 207887821,
-        "Symbol": "TSLA  250420C00240000",
-        "AssetType": "OP",
-        "Type": "Buy",
-        "Status": "CAN",
-        "StatusDescription": "Canceled",
-        "Duration": "DAY",
-        "Quantity": 1,
-        "ExecuteQuantity": 0,
-        "QuantityLeft": 1,
-        "FilledPrice": 0.0,
-        "LimitPrice": 10.50,
-        "TimeStamp": "2025-04-20T09:31:00Z",
-        "FilledCanceled": "2025-04-20T09:32:00Z",
-        "CommissionFee": 0.0,
-    }
-]
+orders_cancelled_response = {
+    "Orders": [
+        {
+            "AccountID": "123456",
+            "OrderID": "207887821",
+            "Status": "CAN",
+            "Duration": "DAY",
+            "LimitPrice": "10.50",
+            "FilledPrice": "0",
+            "OpenedDateTime": "2025-04-20T09:31:00Z",
+            "Legs": [
+                {
+                    "Symbol": "TSLA 250420C240",
+                    "QuantityOrdered": "1",
+                    "ExecQuantity": "0",
+                    "BuyOrSell": "Buy",
+                }
+            ],
+        }
+    ],
+    "Errors": [],
+}
 
 cancel_order_response = {
     "OrderID": "207887821",

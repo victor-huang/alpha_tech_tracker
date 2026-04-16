@@ -1,44 +1,12 @@
-# TradeStation Client Implementation Plan
+# TradeStation Client Implementation
 
-**Goal:** Add `TradeStationAPIClient` as a third concrete `ExecutionClient` so the live
-trading engine can route stock and option orders through TradeStation. Follows the same
-pattern as `AlpacaAPIClient` (the newer design) — not the ETrade client. No changes to
-strategy logic.
+**Status:** Implemented and live-tested (2026-04-16)
 
-**Design reference:** `alpha_tech_tracker/trade_api/alpaca_client/client.py`
-- Delegate HTTP calls to a thin internal session object (no manual JSON parsing in methods)
-- Return rich normalized dicts: include `symbol`, `quantity`, `side`, `type`, `submitted_at`, `raw_response`
-- Raise typed `APIError` / `APIInvalidArgumentError` exceptions (same class names as Alpaca client)
-- No preview/confirm step before placing orders
+`TradeStationAPIClient` is a concrete `ExecutionClient` that routes stock and option
+orders through TradeStation. It follows the same design pattern as `AlpacaAPIClient` —
+normalized return dicts, typed exceptions, no preview/confirm step.
 
-API version used: **v2** (`https://api.tradestation.com/v2`)
-Auth: OAuth 2.0 Authorization Code flow via `requests_oauthlib.OAuth2Session`
-No new Python packages required — `requests_oauthlib` is already installed.
-
----
-
-## API Reference Summary
-
-| Purpose | Method | Path |
-|---|---|---|
-| List accounts | GET | `/v2/users/{user_id}/accounts` |
-| Account balances | GET | `/v2/accounts/{account_key}/balances` |
-| Stock/option quotes | GET | `/v2/data/quote/{symbols}` |
-| Options chain / search | GET | `/v2/data/symbols/search/{criteria}` |
-| Place order | POST | `/v2/orders` |
-| Account orders (status) | GET | `/v2/accounts/{account_key}/orders` |
-| Cancel order | DELETE | `/v2/orders/{order_id}` |
-
-Base URLs:
-- Live: `https://api.tradestation.com`
-- Simulation (paper): `https://sim-api.tradestation.com`
-
----
-
-## Files to Create / Modify
-
-### New files
-
+**Files:**
 ```
 alpha_tech_tracker/trade_api/tradestation/
 ├── __init__.py
@@ -46,438 +14,301 @@ alpha_tech_tracker/trade_api/tradestation/
 └── tradestation_api_response.py      # Fixture response dicts for unit tests
 
 alpha_tech_tracker/op_momentum_strategy/
-└── tradestation_auth.py              # Auth helper (mirrors etrade_auth.py)
-
-tests/trade_api/tradestation/
-├── __init__.py
-└── test_client.py
+└── tradestation_auth.py              # Auth helper CLI
 ```
-
-### Modified files
-
-- `alpha_tech_tracker/op_momentum_strategy/config.py` — new constants, `_load_config()` additions, `build_execution_client()` extension
-- `alpha_tech_tracker/op_momentum_strategy/config.json` — placeholder credentials section (already gitignored)
 
 ---
 
-## 1. Authentication
+## API Version Notes
 
-### OAuth 2.0 Flow
+The TradeStation REST API has two active versions. The client uses **both**:
 
-TradeStation uses Authorization Code flow. Unlike ETrade's OOB/console-paste approach,
-the callback is captured by a temporary local HTTP server on `localhost:8080`.
+| Version | Used for |
+|---|---|
+| `v2` (`/v2/...`) | Stock/option quotes, options chain search |
+| `v3` (`/v3/...`) | Everything else: accounts, orders, cancel, streaming |
 
-**Scopes required:** `openid offline_access MarketData ReadAccount Trade OptionSpreads`
+**Base URLs:**
+- Live: `https://api.tradestation.com`
+- Simulation: `https://sim-api.tradestation.com`
+
+The client stores both:
+```python
+self._base_url    = _BASE_URLS[environment] + "/v2"
+self._v3_base_url = _BASE_URLS[environment] + "/v3"
+```
+
+---
+
+## Correct Endpoint Reference
+
+| Method | HTTP | Path |
+|---|---|---|
+| List accounts | GET | `/v3/brokerage/accounts` |
+| Account balances | GET | `/v3/brokerage/accounts/{accountId}/balances` |
+| Stock/option quotes | GET | `/v2/data/quote/{symbols}` |
+| Options chain search | GET | `/v2/data/symbols/search/{criteria}` |
+| Option expirations | GET | `/v3/marketdata/options/expirations/{underlying}` |
+| Place order | POST | `/v3/orderexecution/orders` |
+| Account orders (status) | GET | `/v3/brokerage/accounts/{accountId}/orders` |
+| Cancel order | DELETE | `/v3/orderexecution/orders/{orderId}` |
+| Live bar stream | GET (chunked) | `/v3/marketdata/stream/barcharts/{symbol}` |
+| Historical bars | GET | `/v3/marketdata/barcharts/{symbol}` |
+
+> **Note:** The original plan used v2 for all endpoints. All order/account paths on v2
+> return 400/403. Only quotes and symbol search remain on v2.
+
+---
+
+## Authentication
+
+OAuth 2.0 Authorization Code flow via `requests_oauthlib.OAuth2Session`.
+
+**Scopes:** `openid offline_access profile MarketData ReadAccount Trade OptionSpreads`
 
 **Token lifetimes:**
-- Access token: **20 minutes** (auto-refreshed transparently by `OAuth2Session`)
-- Refresh token: **indefinite** — re-auth only needed if refresh token is manually revoked
+- Access token: 20 minutes (auto-refreshed transparently by `OAuth2Session`)
+- Refresh token: indefinite — re-auth only needed if manually revoked
 
-**Key URLs:**
-- Authorization redirect: `https://signin.tradestation.com/authorize`
-- Token exchange + refresh: `https://signin.tradestation.com/oauth/token`
+**One-time setup:**
+```bash
+python -m alpha_tech_tracker.op_momentum_strategy.tradestation_auth
+```
 
-### Token Storage in config.json
+**Verify stored session:**
+```bash
+python -m alpha_tech_tracker.op_momentum_strategy.tradestation_auth --verify
+```
+
+### `config.json` structure
 
 ```json
 {
   "execution_broker": "tradestation",
   "tradestation_credentials": {
     "client_id": "YOUR_CLIENT_ID",
-    "client_secret": "YOUR_CLIENT_SECRET",
-    "redirect_uri": "http://localhost:8080"
+    "client_secret": "YOUR_CLIENT_SECRET"
   },
   "tradestation": {
-    "account_key": "YOUR_ACCOUNT_KEY",
+    "account_key": "YOUR_ACCOUNT_ID",
     "environment": "live"
   },
   "tradestation_session": {
     "access_token": "...",
     "refresh_token": "...",
     "token_type": "Bearer",
-    "expires_at": 1712345678.0,
-    "scope": "openid offline_access MarketData ReadAccount Trade OptionSpreads"
+    "expires_at": 1234567890.0
   }
 }
 ```
 
-`account_key` is the numeric `Key` field returned by the accounts list endpoint (not the
-account name/number displayed in the UI). It is used as the path param for balances and
-orders endpoints, and as `AccountKey` in order submission.
+`account_key` is the numeric `AccountID` returned by the v3 accounts endpoint (e.g.
+`"12041669"`). This is the account's ID, not the display name.
 
 ---
 
-## 2. Option Symbol Format
+## Option Symbol Formats
 
-TradeStation uses OCC/OSI format but **space-pads the ticker to 6 characters** before
-the date portion:
+TradeStation uses **three distinct symbol formats** depending on context:
 
+### 1. OCC format (internal representation)
+Used throughout the trade engine and position tracking.
 ```
-TSLA  250420C00240000   (4-char ticker → 2 trailing spaces)
-SPY   250321C00520000   (3-char ticker → 3 trailing spaces)
-AAPL  250117C00200000   (4-char ticker → 2 trailing spaces)
+TSLA260417C00392500
+```
+Pattern: `{ticker}{YYMMDD}{C|P}{strike * 1000, zero-padded to 8 digits}`
+
+### 2. Padded quote format (v2 quote endpoint)
+Used for `get_option_quote_by_occ` and `get_option_quotes_by_occ_batch`.
+```
+TSLA  260417C00392500   (ticker left-padded to 6 chars)
 ```
 
-**Conversion rules:**
-- **Inbound** (API response → internal): strip all spaces → standard OCC `TSLA250420C00240000`
-- **Outbound** (internal OCC → API request): pad ticker with spaces to 6 chars, then append `YYMMDD{C|P}{8-digit strike}`
-
-Helper functions in `client.py`:
-```python
-def _occ_to_ts(occ_symbol: str) -> str:
-    """TSLA250420C00240000 → 'TSLA  250420C00240000'"""
-
-def _ts_to_occ(ts_symbol: str) -> str:
-    """'TSLA  250420C00240000' → 'TSLA250420C00240000'"""
+### 3. Display/order format (v2 search results + v3 order execution)
+Used for `get_options_contracts` name field AND `place_option_order` symbol body.
 ```
+TSLA 260417C392.5   (space after ticker, decimal strike)
+```
+
+### Conversion helpers in `client.py`
+
+| Function | Input | Output | Used by |
+|---|---|---|---|
+| `_occ_to_ts(occ)` | OCC | Padded quote format | `get_option_quote_by_occ`, `get_option_quotes_by_occ_batch` |
+| `_ts_to_occ(ts)` | Padded quote format | OCC | Quote response parsing |
+| `_occ_to_ts_order_symbol(occ)` | OCC | Display/order format | `place_option_order` |
+| `_ts_search_name_to_occ(name)` | Display/order format | OCC | `get_options_contracts`, `_normalize_order` |
 
 ---
 
-## 3. `TradeStationAPIClient` — Method Specification
+## Account Fields (v3)
 
-### Constructor
+v3 balances response uses different field names than v2:
 
-```python
-class TradeStationAPIClient(ExecutionClient):
-    def __init__(
-        self,
-        client_id=None,
-        client_secret=None,
-        redirect_uri="http://localhost:8080",
-        selected_account_key=None,
-        environment="live",   # "live" | "sim"
-    ):
+| v2 field (original plan) | v3 field (actual) | Maps to |
+|---|---|---|
+| `BODNetCash` | `CashBalance` | `cash` |
+| `RealTimeBuyingPower` | `BuyingPower` | `buying_power` |
+| `RealTimeEquity` | `Equity` | `equity`, `portfolio_value` |
+
+---
+
+## Order Placement (v3)
+
+### Request body
+
+v3 `/orderexecution/orders` uses `AccountID` and nested `TimeInForce`:
+
+```json
+{
+  "AccountID": "12041669",
+  "AssetType": "OP",
+  "Symbol": "TSLA 260417C392.5",
+  "Quantity": "1",
+  "OrderType": "Limit",
+  "LimitPrice": "1.00",
+  "TimeInForce": {"Duration": "DAY"},
+  "TradeAction": "BUYTOOPEN",
+  "Route": "Intelligent"
+}
 ```
 
-- `client_id` falls back to `os.environ.get("TS_CLIENT_ID")`
-- `client_secret` falls back to `os.environ.get("TS_CLIENT_SECRET")`
-- `environment` drives base URL: `"live"` → `api.tradestation.com`, `"sim"` → `sim-api.tradestation.com`
-- `self._session = None` — set by `restore_session()` or `authorize_session()`
-- `self._user_id = None` — captured from token response; needed for accounts endpoint
-- `self._account_key = selected_account_key` — lazily resolved if None
+Key differences from v2 (original plan):
+- `AccountKey` → `AccountID`
+- `Duration: "DAY"` (flat) → `TimeInForce: {"Duration": "DAY"}` (nested)
+- Symbol must be display/order format (`"TSLA 260417C392.5"`), not padded OCC
 
-### Status Normalization Map
+### Response shape
+
+v3 wraps the result in an `Orders` array:
+```json
+{
+  "Orders": [
+    {"OrderID": "1255310562", "Error": "OK", "Message": "..."}
+  ]
+}
+```
+
+The helper `_extract_v3_order(data)` unwraps `data["Orders"][0]`.
+
+For after-hours or rejected orders, `Error` will be `"FAILED"` but an `OrderID` is still
+returned. The order appears in the account order list with `Status: "REJ"`.
+
+### `TradeAction` mapping
+
+| `order_action` param | `TradeAction` in body |
+|---|---|
+| `BUY_OPEN` | `BUYTOOPEN` |
+| `BUY_CLOSE` | `BUYTOCLOSE` |
+| `SELL_OPEN` | `SELLTOOPEN` |
+| `SELL_CLOSE` | `SELLTOCLOSE` |
+
+---
+
+## Order Status (v3)
+
+`GET /v3/brokerage/accounts/{accountId}/orders` returns all orders for the session.
+The `_normalize_order` method reads from the nested `Legs` array:
+
+```json
+{
+  "OrderID": "1255310562",
+  "Status": "REJ",
+  "LimitPrice": "1",
+  "FilledPrice": "0",
+  "Duration": "DAY",
+  "OpenedDateTime": "2026-04-16T07:07:41Z",
+  "Legs": [
+    {
+      "Symbol": "TSLA 260417C392.5",
+      "QuantityOrdered": "1",
+      "ExecQuantity": "0",
+      "BuyOrSell": "Buy"
+    }
+  ]
+}
+```
+
+| Normalized field | Source |
+|---|---|
+| `symbol` | `Legs[0].Symbol` → converted to OCC via `_ts_search_name_to_occ` |
+| `quantity` | `Legs[0].QuantityOrdered` |
+| `filled_qty` | `Legs[0].ExecQuantity` |
+| `side` | `Legs[0].BuyOrSell` |
+| `limit_price` | `LimitPrice` (top-level) |
+| `filled_avg_price` | `FilledPrice` (top-level) |
+| `submitted_at` | `OpenedDateTime` |
+
+### Status code map
 
 ```python
 _TS_STATUS_MAP = {
-    "OPN": "open",
-    "ACK": "open",
-    "DON": "open",
-    "FPR": "open",           # partially filled, still open
-    "UCN": "open",           # cancel pending (treat as still open)
-    "LAT": "open",
-    "OUT": "open",
-    "FLL": "filled",
-    "FLP": "filled",         # partial fill then remainder canceled
-    "CAN": "canceled",
-    "REJ": "canceled",
-    "TSC": "canceled",
-    "BRO": "canceled",
-    "EXP": "expired",
+    "OPN": "open",   "ACK": "open",  "DON": "open",
+    "FPR": "open",   "UCN": "open",  "LAT": "open",
+    "OUT": "open",   "PLA": "open",
+    "FLL": "filled", "FLP": "filled",
+    "CAN": "canceled", "REJ": "canceled", "TSC": "canceled",
+    "BRO": "canceled", "EXP": "expired",
 }
 ```
 
-### `authorize_session(self) -> dict`
-
-1. Raise `RuntimeError` if `client_id` or `client_secret` is missing (same guard as ETrade)
-2. Build authorization URL with all required scopes
-3. Start `http.server.HTTPServer` on `localhost:8080` to capture the `?code=` callback
-4. Open browser via `webbrowser.open()`
-5. Wait for the callback (single request); extract `code` from query string
-6. Exchange code for tokens via POST to token URL
-7. Capture `userid` from token response; store as `self._user_id`
-8. Build `OAuth2Session` with auto-refresh configured (see `restore_session`)
-9. Return full token dict so caller can persist it
-
-### `restore_session(self, token: dict)`
-
-```python
-from requests_oauthlib import OAuth2Session
-
-self._session = OAuth2Session(
-    client_id=self._client_id,
-    token=token,
-    auto_refresh_url="https://signin.tradestation.com/oauth/token",
-    auto_refresh_kwargs={
-        "client_id": self._client_id,
-        "client_secret": self._client_secret,
-    },
-    token_updater=self._on_token_refresh,
-)
-```
-
-`_on_token_refresh(new_token)` persists the refreshed token by calling
-`_save_tradestation_session_tokens(new_token)` from `config.py`. This ensures the
-updated access token survives process restarts within the 20-minute window.
-
-### `verify_session(self) -> bool`
-
-- `GET /v2/users/{user_id}/accounts` — if 200, return True; otherwise False
-- Falls back to `GET /v2/data/quote/MSFT` if `_user_id` is not yet populated
-- Returns False on any exception
-
-### `get_accounts(self) -> dict`
-
-1. `GET /v2/accounts/{account_key}/balances`
-2. Parse response fields:
-   - `buying_power` ← `RealTimeBuyingPower`
-   - `cash` ← `BODNetCash`
-   - `portfolio_value` ← `RealTimeEquity`
-3. Return normalized dict matching Alpaca client shape:
-   ```python
-   {
-       "account_id": str,
-       "cash": float,
-       "buying_power": float,
-       "portfolio_value": float,
-       "equity": float,          # same as portfolio_value for TS
-       "raw_response": dict,     # full API response
-   }
-   ```
-
-If `_account_key` is None, first call `GET /v2/users/{user_id}/accounts`, use the first
-active account's `Key`, and cache it.
-
-### `get_stock_quote(self, symbols) -> dict`
-
-- `GET /v2/data/quote/{symbols}` (comma-separated if multiple)
-- Normalize response to the same nested shape the rest of the system expects
-  (matches `_stock_bid_ask()` in `models.py`):
-  ```python
-  {"QuoteResponse": {"QuoteData": [{"All": {"bid": float, "ask": float, ...}}]}}
-  ```
-- Response fields: `Bid`, `Ask`, `Last`, `Volume`
-
-### `get_option_quote_by_occ(self, occ_symbol: str) -> dict`
-
-- Convert OCC → TS padded symbol via `_occ_to_ts()`
-- `GET /v2/data/quote/{ts_symbol}`
-- Return `{"bid": float, "ask": float, "mid": (bid+ask)/2}`
-
-### `get_option_quotes_by_occ_batch(self, occ_symbols: list) -> dict`
-
-- Convert all OCC symbols to TS format; join with commas
-- Single `GET /v2/data/quote/{all_symbols}` — genuine batch, no loop
-- Parse `Quotes` array; key result by original OCC symbol (convert back via `_ts_to_occ()`)
-- Omit any symbols missing from the response (illiquid/expired); log a warning
-
-### `get_options_contracts(self, ...) -> list`
-
-Uses `GET /v2/data/symbols/search/{criteria}` with TradeStation's key=value criteria format.
-
-**Criteria encoding:**
-```
-R={ticker}&C=StockOption&OT={Call|Put|Both}&Stk=20
-```
-
-For specific expiry date: add `Edl={MM-DD-YYYY}&Edh={MM-DD-YYYY}` with same date as both bounds.
-For date range: add `Edl={start}&Edh={end}`.
-For strike range: add `Spl={low}&Sph={high}`.
-
-**Response normalization per contract:**
-```python
-{
-    "symbol": _ts_to_occ(item["Name"]),   # strip spaces
-    "expiration_date": "YYYY-MM-DD",       # parse from item["ExpirationDate"]
-    "strike_price": float(item["StrikePrice"]),
-    "option_type": "call" if item["OptionType"] == "Calls" else "put",
-    "contract_size": 100,
-}
-```
-
-Apply `strike_price_gte` / `strike_price_lte` filtering post-response if provided.
-
-### `place_option_order(self, ...) -> dict`
-
-- `POST /v2/orders` — **no preview/confirm step required**
-- Request body:
-  ```json
-  {
-    "AccountKey": "123456",
-    "AssetType": "OP",
-    "Symbol": "TSLA  250420C00240000",
-    "Quantity": "1",
-    "OrderType": "Limit",
-    "LimitPrice": "10.50",
-    "Duration": "DAY",
-    "TradeAction": "BUYTOOPEN",
-    "Route": "Intelligent"
-  }
-  ```
-- `TradeAction` mapping from `order_action` parameter:
-  - `"BUY_OPEN"` → `"BUYTOOPEN"`
-  - `"BUY_CLOSE"` → `"BUYTOCLOSE"`
-  - `"SELL_OPEN"` → `"SELLTOOPEN"`
-  - `"SELL_CLOSE"` → `"SELLTOCLOSE"`
-- `price_type` mapping: `"LIMIT"` → `"Limit"`, `"MARKET"` → `"Market"`
-- `SMART_MARKET`: fetch mid via `get_option_quote_by_occ()`, compute price at 90% of spread toward bid, use as `"Limit"` order
-- Raise `ValueError` if neither `_option_symbol_override` nor a valid OCC symbol is provided
-- Return normalized dict matching Alpaca client shape:
-  ```python
-  {
-      "order_id": str,
-      "symbol": str,
-      "quantity": float,
-      "filled_qty": float,
-      "side": str,              # "BUY" or "SELL"
-      "type": str,              # "Limit" or "Market"
-      "status": str,            # normalized via _TS_STATUS_MAP
-      "limit_price": float,
-      "filled_avg_price": float,
-      "submitted_at": str,      # TimeStamp from response
-      "raw_response": dict,
-  }
-  ```
-
-### `place_stock_order(self, ...) -> dict`
-
-- Same `POST /v2/orders` endpoint
-- `AssetType`: `"EQ"`, `Symbol`: plain ticker
-- `TradeAction`: `"BUY"` or `"SELL"` based on `side` parameter
-- `OrderType`: `"Limit"` or `"Market"`
-- Raise `APIInvalidArgumentError` if `order_type == "LIMIT"` and `limit_price` is None (same exception class as Alpaca client)
-- Return same normalized dict shape as `place_option_order`
-
-### `order_status(self, order_id: str) -> dict`
-
-- `GET /v2/accounts/{account_key}/orders` filtered by scanning for matching `OrderID`
-- Response fields per order: `OrderID`, `Status`, `ExecuteQuantity`, `FilledPrice`, `LimitPrice`, `TimeStamp`
-- Map `Status` through `_TS_STATUS_MAP`
-- Return same normalized dict shape as `place_option_order` / `place_stock_order`
-
-Note: the orders endpoint returns all orders for the day, not a single order by ID. Filter
-by `OrderID` field. If not found, return status `"open"` with zeroed numeric fields.
-
-### `cancel_order(self, order_id: str) -> dict`
-
-- `DELETE /v2/orders/{order_id}` — no request body
-- Return normalized dict matching Alpaca client shape:
-  ```python
-  {"order_id": order_id, "status": "canceled", "message": "Cancel request submitted"}
-  ```
-- Raise `APIError` on HTTP 4xx (e.g., already filled)
+`REJ` was added during live testing — orders rejected after hours have this status.
 
 ---
 
-## 4. `tradestation_auth.py`
+## Cancel Order (v3)
 
-Mirrors `etrade_auth.py`. CLI flags: `--verify`, `--sim`, `--account-key`.
+`DELETE /v3/orderexecution/orders/{orderId}`
 
-```
-Usage:
-    # Authorize and store tokens (opens browser, captured automatically)
-    python -m alpha_tech_tracker.op_momentum_strategy.tradestation_auth
-
-    # Check whether stored tokens are still valid
-    python -m alpha_tech_tracker.op_momentum_strategy.tradestation_auth --verify
-
-    # Use simulation environment
-    python -m alpha_tech_tracker.op_momentum_strategy.tradestation_auth --sim
-```
-
-**`_authorize(account_key, environment)`**
-- Instantiate `TradeStationAPIClient`, call `authorize_session()`
-- Call `_save_tradestation_session_tokens(token)` from `config.py`
-- Print confirmation with config file path
-
-**`_verify(account_key, environment)`**
-- Load stored `_TRADESTATION_SESSION_TOKENS` from config
-- Call `restore_session(token)`, then `verify_session()`
-- Return bool; exit with code 0/1
+If the order is already closed (rejected, filled, or cancelled), the API returns HTTP 400
+`"Not an open order."`. The client handles this gracefully — logs at INFO level and
+returns `{"status": "canceled"}` instead of raising.
 
 ---
 
-## 5. `config.py` Changes
+## Options Chain Search (v2)
 
-### New module-level variables
+`GET /v2/data/symbols/search/{criteria}`
 
-```python
-TRADESTATION_ACCOUNT_KEY = None
-TRADESTATION_ENVIRONMENT = "live"   # "live" | "sim"
-_TRADESTATION_SESSION_TOKENS: dict = {}
-```
+Criteria format: `R={ticker}&C=StockOption&OT={Call|Put|Both}&Stk={numStrikes}`
 
-Update `EXECUTION_BROKER` comment:
-```python
-EXECUTION_BROKER = "alpaca"   # "alpaca" | "etrade" | "tradestation"
-```
+For a specific expiry: `&Edl={MM-DD-YYYY}&Edh={MM-DD-YYYY}`
 
-### `_load_config()` additions
+**Known response quirks:**
 
-Add to the `global` declaration: `TRADESTATION_ACCOUNT_KEY, TRADESTATION_ENVIRONMENT`
+| Field | Format | Parse method |
+|---|---|---|
+| `Name` | `"TSLA 260417C342.5"` (display format) | `_ts_search_name_to_occ()` |
+| `ExpirationDate` | `"/Date(1776398400000)/"` (epoch ms) | `_parse_ts_date()` |
+| `OptionType` | `"Call"` or `"Put"` (not `"Calls"`/`"Puts"`) | Check for both spellings |
 
-After the ETrade block:
-```python
-# TradeStation account config
-ts = cfg.get("tradestation", {})
-if ts.get("account_key"):
-    TRADESTATION_ACCOUNT_KEY = str(ts["account_key"])
-if ts.get("environment"):
-    TRADESTATION_ENVIRONMENT = ts["environment"]
-
-# TradeStation stored session tokens
-_TRADESTATION_SESSION_TOKENS.clear()
-_TRADESTATION_SESSION_TOKENS.update(cfg.get("tradestation_session", {}))
-
-# TradeStation credentials → env vars
-ts_creds = cfg.get("tradestation_credentials", {})
-for cfg_key, env_key in (
-    ("client_id", "TS_CLIENT_ID"),
-    ("client_secret", "TS_CLIENT_SECRET"),
-):
-    if ts_creds.get(cfg_key) and not os.environ.get(env_key):
-        os.environ[env_key] = ts_creds[cfg_key]
-```
-
-### New `_save_tradestation_session_tokens(token: dict, config_file=_CONFIG_FILE)`
-
-Mirrors `_save_etrade_session_tokens()` but writes the full token dict (which includes
-`access_token`, `refresh_token`, `expires_at`, `token_type`, `scope`) to
-`cfg["tradestation_session"]`.
-
-### `build_execution_client()` extension
-
-Insert before the Alpaca fallback:
-```python
-if EXECUTION_BROKER == "tradestation":
-    from alpha_tech_tracker.trade_api.tradestation.client import TradeStationAPIClient
-    client = TradeStationAPIClient(
-        selected_account_key=TRADESTATION_ACCOUNT_KEY,
-        environment=TRADESTATION_ENVIRONMENT,
-    )
-    if _TRADESTATION_SESSION_TOKENS.get("access_token"):
-        client.restore_session(_TRADESTATION_SESSION_TOKENS)
-        if client.verify_session():
-            logger.info("TradeStation session restored from stored tokens")
-            return client
-        logger.warning(
-            "Stored TradeStation session expired — run tradestation_auth.py to renew"
-        )
-    client.authorize_session()
-    return client
-```
+The original plan assumed `OptionType == "Calls"` — the actual API returns `"Call"`. This
+caused all contracts to be silently filtered out. Fixed to accept `"Call"` or `"Calls"`.
 
 ---
 
-## 6. Test Plan
+## Bugs Found and Fixed During Live Testing (2026-04-16)
 
-All tests in `tests/trade_api/tradestation/test_client.py` are fully mocked.
+| # | Method | Bug | Root cause | Fix |
+|---|---|---|---|---|
+| 1 | `_get_account_key` | HTTP 403 | v2 path `/users/{user_id}/accounts` requires different auth scope | Switch to v3 `/brokerage/accounts`; use `AccountID` field (not `Key`) |
+| 2 | `get_accounts` | Wrong values returned | v2 field names (`BODNetCash`, `RealTimeBuyingPower`) don't exist in v3 | Use v3 fields: `CashBalance`, `BuyingPower`, `Equity` |
+| 3 | `get_options_contracts` | Always returned empty list | `OptionType == "Calls"` never matched; API returns `"Call"` | Accept `"Call"` or `"Calls"` |
+| 4 | `get_options_contracts` | Date parsing crash | `ExpirationDate` is `/Date(epoch_ms)/` not `YYYY-MM-DD` | New `_parse_ts_date()` helper parses epoch-ms JSON dates |
+| 5 | `get_options_contracts` | Wrong OCC symbols | `_ts_to_occ()` on display name `"TSLA 260417C342.5"` produces garbage | New `_ts_search_name_to_occ()` parses display name and re-encodes strike to OCC 8-digit format |
+| 6 | `order_status` | HTTP 400 unauthorized | v2 path `/accounts/{key}/orders` uses wrong account key format | Switch to v3 `/brokerage/accounts/{accountId}/orders` |
+| 7 | `_normalize_order` | Wrong symbol/qty/filled fields | v3 order records store symbol and quantities inside `Legs[0]`, not top-level | Read `Legs[0].Symbol`, `Legs[0].QuantityOrdered`, `Legs[0].ExecQuantity` |
+| 8 | `place_option_order` | HTTP 400 "Invalid symbol" | v3 order endpoint requires display format `"TSLA 260417C392.5"`, not padded OCC | New `_occ_to_ts_order_symbol()` converts OCC → display format |
+| 9 | `place_option_order` / `place_stock_order` | HTTP 400 "Missing duration" | v3 uses `TimeInForce: {Duration: "DAY"}` not flat `Duration: "DAY"` | Nest duration under `TimeInForce` object |
+| 10 | `place_option_order` / `place_stock_order` | Empty `order_id` returned | v3 response is `{"Orders": [{...}]}`, not a flat dict | New `_extract_v3_order()` unwraps `data["Orders"][0]` |
+| 11 | `cancel_order` | v2 path | v2 `/orders/{id}` returns 400 | Switch to v3 `/orderexecution/orders/{id}` |
+| 12 | `cancel_order` | Raises on already-closed orders | API returns 400 `"Not an open order."` for REJ/CAN orders | Catch this specific 400 and return `canceled` gracefully |
 
-### Fixture file: `tradestation_api_response.py`
+---
 
-Realistic response dicts for each endpoint:
-- `accounts_response` — array with one account (`Key`, `Name`, `Status`)
-- `balances_response` — array with `RealTimeBuyingPower`, `RealTimeEquity`, `BODNetCash`
-- `stock_quote_response` — `Quotes` array with `Bid`, `Ask`, `Last`, `Symbol`
-- `option_quote_response` — single option symbol quote
-- `option_search_response` — array of option symbol objects from symbol search
-- `place_order_response` — `{"OrderID": "207887821", "Message": "Order submitted", "OrderStatus": "Ok"}`
-- `orders_filled_response` — orders list with `Status: "FLL"`, `ExecuteQuantity`, `FilledPrice`
-- `orders_open_response` — `Status: "OPN"`
-- `orders_cancelled_response` — `Status: "CAN"`
-- `cancel_order_response` — `{"OrderID": "...", "Message": "Cancel request submitted", "OrderStatus": "Ok"}`
+## Testing
 
-### Helper functions
+All tests in `tests/trade_api/tradestation/test_client.py`.
 
 ```python
 def _make_client():
@@ -498,66 +329,25 @@ def _mock_response(data, status_code=200):
     return resp
 ```
 
-Note: unlike the ETrade client which uses `json.loads(response.text)`, the TS client
-uses `response.json()` — so mocks use `.json.return_value` not `.text`. This matches
-the cleaner Alpaca-style design where the session object handles HTTP and the client
-methods only deal with parsed data.
+Key mock targets:
+- `client._session.get` for all read endpoints
+- `client._session.post` for order placement
+- `client._session.delete` for cancel
 
-### Test Classes
+The fixture file `tradestation_api_response.py` contains realistic v3 response dicts for
+each endpoint. Update these if the API shape changes.
 
-| Class | Behaviors covered |
+### Test classes to cover
+
+| Class | Behaviors |
 |---|---|
-| `TestOccTsSymbolConversion` | `_occ_to_ts` and `_ts_to_occ` roundtrip; 3/4/5-char tickers; non-integer strikes |
-| `TestGetAccounts` | Buying power/cash/equity extraction; account key lazy-resolution; first-account fallback |
-| `TestGetStockQuote` | Single symbol nested shape; multiple comma-joined symbols; `Bid`/`Ask` field mapping |
-| `TestGetOptionQuoteByOcc` | OCC→TS conversion before URL; bid/ask/mid returned; non-integer strike |
-| `TestGetOptionQuotesByOccBatch` | Genuine batch (single HTTP call); result keyed by OCC; missing symbol omitted |
-| `TestGetOptionsContracts` | Criteria format for specific expiry; date range; strike range; `OptionType` filter; normalization of padded symbol; empty result |
-| `TestPlaceOptionOrder` | Single POST (no preview); `BUYTOOPEN`/`SELLTOCLOSE`/etc mapping; padded symbol in body; limit price; SMART_MARKET fetches quote first; missing symbol raises |
-| `TestPlaceStockOrder` | `BUY`/`SELL` mapping; limit price in body; market order omits limit; missing limit price raises |
-| `TestOrderStatus` | `FLL`→`filled`; `OPN`→`open`; `CAN`→`canceled`; filled qty and avg price extracted; order not found returns open |
-| `TestCancelOrder` | DELETE method used; normalized return dict; 4xx raises APIError |
-| `TestRestoreSession` | `OAuth2Session` created; auto-refresh URL configured; token_updater set |
-| `TestVerifySession` | 200→True; 401→False; no session→False; exception→False |
-| `TestAuthorizeSession` | Returns token dict; missing credentials raises RuntimeError |
-
-### Integration test stubs (marked, skipped without credentials)
-
-```python
-@pytest.mark.tradestation
-@pytest.mark.credentials
-@pytest.mark.integration
-class TestTradeStationIntegration:
-    def test_get_accounts_integration(self): ...
-    def test_get_stock_quote_integration(self): ...
-```
-
----
-
-## 7. Implementation Order
-
-1. `alpha_tech_tracker/trade_api/tradestation/__init__.py`
-2. `alpha_tech_tracker/trade_api/tradestation/client.py`
-3. `alpha_tech_tracker/trade_api/tradestation/tradestation_api_response.py`
-4. `tests/trade_api/tradestation/__init__.py`
-5. `tests/trade_api/tradestation/test_client.py`
-6. `alpha_tech_tracker/op_momentum_strategy/tradestation_auth.py`
-7. `alpha_tech_tracker/op_momentum_strategy/config.py` (extend)
-8. `alpha_tech_tracker/op_momentum_strategy/config.json` (add placeholder section)
-
----
-
-## 8. Open Questions
-
-- **`user_id` for accounts endpoint:** The v2 `/users/{user_id}/accounts` endpoint needs the
-  `userid` field from the token response. Need to confirm this is returned by
-  `signin.tradestation.com/oauth/token` in the same token exchange response, or whether
-  it requires a separate `/userinfo` call.
-
-- **`order_status` by ID:** The v2 API returns all orders for the day via
-  `/accounts/{key}/orders`, not a single order by ID. Filtering the list by `OrderID`
-  works but is inefficient for frequent polling. Check if v3 has a single-order endpoint.
-
-- **Simulation account key:** The `sim-api` environment may use a different `account_key`
-  than the live account. Confirm whether the same key works across environments or
-  whether a separate config field is needed.
+| `TestSymbolConversions` | All four conversion helpers; roundtrip OCC→display→OCC; non-integer strikes; 3/4/5-char tickers |
+| `TestGetAccounts` | v3 field names; account key lazy-resolution; first active account used |
+| `TestGetStockQuote` | Single/multi; nested shape matches `_stock_bid_ask()` format |
+| `TestGetOptionQuoteByOcc` | OCC→padded conversion before URL; bid/ask/mid |
+| `TestGetOptionQuotesByOccBatch` | Single HTTP call; keyed by OCC; missing symbols logged |
+| `TestGetOptionsContracts` | Criteria format; `_parse_ts_date()`; `_ts_search_name_to_occ()`; `OptionType` filter |
+| `TestPlaceOptionOrder` | v3 path; display symbol format; nested `TimeInForce`; `_extract_v3_order` unwrapping |
+| `TestPlaceStockOrder` | Same v3 path; EQ asset type; BUY/SELL mapping |
+| `TestOrderStatus` | v3 path; `Legs[0]` field extraction; all status codes |
+| `TestCancelOrder` | v3 path; graceful "not an open order" 400 handling |

@@ -36,6 +36,7 @@ _TS_STATUS_MAP = {
     "REJ": "canceled",
     "TSC": "canceled",
     "BRO": "canceled",
+    "REJ": "canceled",
     "EXP": "expired",
 }
 
@@ -79,6 +80,68 @@ def _ts_to_occ(ts_symbol: str) -> str:
     return ts_symbol.replace(" ", "")
 
 
+def _occ_to_ts_order_symbol(occ_symbol: str) -> str:
+    """Convert OCC symbol to the display format expected by v3 order execution.
+
+    The v3 /orderexecution/orders endpoint uses the search-result display format
+    (e.g. 'TSLA 260417C392.5') rather than the padded quote format.
+
+    e.g. 'TSLA260417C00392500' -> 'TSLA 260417C392.5'
+         'TSLA260417C00390000' -> 'TSLA 260417C390'
+    """
+    m = re.match(r"^([A-Z]+)(\d{6})([CP])(\d{8})$", occ_symbol)
+    if not m:
+        raise ValueError(f"Cannot parse OCC symbol: {occ_symbol!r}")
+    ticker, date_str, cp, strike_raw = m.groups()
+    strike = int(strike_raw) / 1000
+    strike_str = f"{strike:g}"  # removes trailing zeros: 392.5 -> '392.5', 390.0 -> '390'
+    return f"{ticker} {date_str}{cp}{strike_str}"
+
+
+def _ts_search_name_to_occ(name: str) -> str:
+    """Convert a TradeStation symbol-search Name to OCC format.
+
+    Search results use a display name like 'TSLA 260417C342.5' rather than
+    the padded quote format 'TSLA  260417C00342500'.  We need to re-encode
+    the decimal strike into the 8-digit OCC integer representation.
+
+    e.g. 'TSLA 260417C342.5' -> 'TSLA260417C00342500'
+    """
+    clean = name.replace(" ", "")
+    m = re.match(r"^([A-Z]+)(\d{6})([CP])([\d.]+)$", clean)
+    if not m:
+        raise ValueError(f"Cannot parse TS search name: {name!r}")
+    ticker, date_str, cp, strike_str = m.groups()
+    strike_int = round(float(strike_str) * 1000)
+    return f"{ticker}{date_str}{cp}{strike_int:08d}"
+
+
+def _parse_ts_date(date_str: str) -> str:
+    """Parse a TradeStation date value to YYYY-MM-DD string.
+
+    Handles both the legacy /Date(epoch_ms)/ JSON format and ISO strings.
+    """
+    from datetime import datetime as _dt
+    m = re.match(r"/Date\((\d+)\)/", date_str)
+    if m:
+        ms = int(m.group(1))
+        return _dt.utcfromtimestamp(ms / 1000).strftime("%Y-%m-%d")
+    return str(date_str)[:10]
+
+
+def _extract_v3_order(data: dict) -> dict:
+    """Extract the first order record from a v3 orderexecution response.
+
+    v3 wraps placement responses as {'Orders': [{...}]}.
+    Returns the inner order dict, or the raw data if the shape is unexpected.
+    """
+    if isinstance(data, dict) and "Orders" in data:
+        orders = data["Orders"]
+        if orders:
+            return orders[0]
+    return data
+
+
 class _CallbackHandler(BaseHTTPRequestHandler):
     """Minimal HTTP handler that captures the OAuth callback code."""
 
@@ -112,6 +175,7 @@ class TradeStationAPIClient(ExecutionClient):
         self._account_key = selected_account_key
         self._environment = environment
         self._base_url = _BASE_URLS.get(environment, _BASE_URLS["live"]) + "/v2"
+        self._v3_base_url = _BASE_URLS.get(environment, _BASE_URLS["live"]) + "/v3"
         self._session = None
         self._user_id = None
 
@@ -219,27 +283,39 @@ class TradeStationAPIClient(ExecutionClient):
     def _get_account_key(self) -> str:
         if self._account_key is not None:
             return str(self._account_key)
-        user_id = self._user_id or "me"
-        data = self._get(f"/users/{user_id}/accounts")
+        response = self._session.get(self._v3_base_url + "/brokerage/accounts")
+        data = self._parse(response)
         accounts = data if isinstance(data, list) else data.get("Accounts", [])
-        active = [a for a in accounts if a.get("Status") == "A"]
+        active = [a for a in accounts if a.get("Status") == "Active"]
         account = active[0] if active else accounts[0]
-        self._account_key = str(account["Key"])
+        self._account_key = str(account["AccountID"])
         return self._account_key
 
     def _normalize_order(self, raw: dict, order_id: str = None) -> dict:
         status_code = raw.get("Status", "OPN")
+        leg = raw.get("Legs", [{}])[0] if raw.get("Legs") else {}
+
+        raw_symbol = leg.get("Symbol") or raw.get("Symbol", "")
+        try:
+            symbol = _ts_search_name_to_occ(raw_symbol) if raw_symbol else ""
+        except ValueError:
+            symbol = raw_symbol
+
+        quantity = float(leg.get("QuantityOrdered") or raw.get("Quantity") or 0)
+        filled_qty = float(leg.get("ExecQuantity") or raw.get("ExecuteQuantity") or 0)
+        filled_price_raw = raw.get("FilledPrice") or raw.get("AverageFillPrice")
+
         return {
             "order_id": str(raw.get("OrderID", order_id or "")),
-            "symbol": _ts_to_occ(raw.get("Symbol", "")),
-            "quantity": float(raw.get("Quantity", 0)),
-            "filled_qty": float(raw.get("ExecuteQuantity", 0)),
-            "side": raw.get("Type", ""),
+            "symbol": symbol,
+            "quantity": quantity,
+            "filled_qty": filled_qty,
+            "side": leg.get("BuyOrSell", raw.get("Type", "")),
             "type": raw.get("Duration", "DAY"),
             "status": _TS_STATUS_MAP.get(status_code, "open"),
             "limit_price": float(raw["LimitPrice"]) if raw.get("LimitPrice") else None,
-            "filled_avg_price": float(raw["FilledPrice"]) if raw.get("FilledPrice") else None,
-            "submitted_at": raw.get("TimeStamp"),
+            "filled_avg_price": float(filled_price_raw) if filled_price_raw else None,
+            "submitted_at": raw.get("OpenedDateTime") or raw.get("TimeStamp"),
             "raw_response": raw,
         }
 
@@ -249,15 +325,18 @@ class TradeStationAPIClient(ExecutionClient):
 
     def get_accounts(self) -> dict:
         account_key = self._get_account_key()
-        data = self._get(f"/accounts/{account_key}/balances")
+        response = self._session.get(
+            self._v3_base_url + f"/brokerage/accounts/{account_key}/balances"
+        )
+        data = self._parse(response)
         balances = data if isinstance(data, list) else data.get("Balances", [])
         b = balances[0]
         return {
             "account_id": str(account_key),
-            "cash": float(b.get("BODNetCash", 0)),
-            "buying_power": float(b.get("RealTimeBuyingPower", 0)),
-            "portfolio_value": float(b.get("RealTimeEquity", 0)),
-            "equity": float(b.get("RealTimeEquity", 0)),
+            "cash": float(b.get("CashBalance", 0)),
+            "buying_power": float(b.get("BuyingPower", 0)),
+            "portfolio_value": float(b.get("Equity", 0)),
+            "equity": float(b.get("Equity", 0)),
             "raw_response": b,
         }
 
@@ -377,20 +456,23 @@ class TradeStationAPIClient(ExecutionClient):
                 continue
 
             raw_exp = item.get("ExpirationDate", "")
-            try:
-                exp_date = datetime.strptime(raw_exp[:10], "%Y-%m-%d").strftime("%Y-%m-%d")
-            except ValueError:
-                exp_date = raw_exp[:10]
+            exp_date = _parse_ts_date(raw_exp)
 
-            opt_type_raw = item.get("OptionType", "Calls")
-            opt_type = "call" if opt_type_raw == "Calls" else "put"
+            opt_type_raw = item.get("OptionType", "")
+            opt_type = "call" if opt_type_raw in ("Call", "Calls") else "put"
 
             if option_type and opt_type != option_type.lower():
                 continue
 
+            try:
+                occ_symbol = _ts_search_name_to_occ(item["Name"])
+            except ValueError:
+                logger.warning("Skipping unparseable contract name: %s", item.get("Name"))
+                continue
+
             contracts.append(
                 {
-                    "symbol": _ts_to_occ(item["Name"]),
+                    "symbol": occ_symbol,
                     "underlying_symbol": item.get("Root", underlying_symbol),
                     "expiration_date": exp_date,
                     "strike_price": strike,
@@ -424,7 +506,7 @@ class TradeStationAPIClient(ExecutionClient):
                 message="_option_symbol_override (OCC symbol) is required",
             )
 
-        ts_symbol = _occ_to_ts(occ_symbol)
+        ts_symbol = _occ_to_ts_order_symbol(occ_symbol)
         trade_action = _TRADE_ACTION_MAP.get(order_action, "BUYTOOPEN")
 
         if price_type.upper() == "SMART_MARKET":
@@ -437,12 +519,12 @@ class TradeStationAPIClient(ExecutionClient):
         order_type = "Limit" if price_type.upper() == "LIMIT" else "Market"
 
         body = {
-            "AccountKey": self._get_account_key(),
+            "AccountID": self._get_account_key(),
             "AssetType": "OP",
             "Symbol": ts_symbol,
             "Quantity": str(quantity),
             "OrderType": order_type,
-            "Duration": "DAY",
+            "TimeInForce": {"Duration": "DAY"},
             "TradeAction": trade_action,
             "Route": "Intelligent",
         }
@@ -454,10 +536,14 @@ class TradeStationAPIClient(ExecutionClient):
                 )
             body["LimitPrice"] = str(price)
 
-        data = self._post("/orders", json=body)
+        response = self._session.post(
+            self._v3_base_url + "/orderexecution/orders", json=body
+        )
+        data = self._parse(response)
+        order_data = _extract_v3_order(data)
 
         return {
-            "order_id": str(data.get("OrderID", "")),
+            "order_id": str(order_data.get("OrderID", "")),
             "symbol": occ_symbol,
             "quantity": float(quantity),
             "filled_qty": 0.0,
@@ -489,22 +575,26 @@ class TradeStationAPIClient(ExecutionClient):
             )
 
         body = {
-            "AccountKey": self._get_account_key(),
+            "AccountID": self._get_account_key(),
             "AssetType": "EQ",
             "Symbol": symbol.upper(),
             "Quantity": str(quantity),
             "OrderType": ts_order_type,
-            "Duration": time_in_force.upper(),
+            "TimeInForce": {"Duration": time_in_force.upper()},
             "TradeAction": trade_action,
             "Route": "Intelligent",
         }
         if ts_order_type == "Limit":
             body["LimitPrice"] = str(limit_price)
 
-        data = self._post("/orders", json=body)
+        response = self._session.post(
+            self._v3_base_url + "/orderexecution/orders", json=body
+        )
+        data = self._parse(response)
+        order_data = _extract_v3_order(data)
 
         return {
-            "order_id": str(data.get("OrderID", "")),
+            "order_id": str(order_data.get("OrderID", "")),
             "symbol": symbol.upper(),
             "quantity": float(quantity),
             "filled_qty": 0.0,
@@ -519,7 +609,11 @@ class TradeStationAPIClient(ExecutionClient):
 
     def order_status(self, order_id: str) -> dict:
         account_key = self._get_account_key()
-        data = self._get(f"/accounts/{account_key}/orders")
+        response = self._session.get(
+            self._v3_base_url + f"/brokerage/accounts/{account_key}/orders",
+            params={"pageSize": 200},
+        )
+        data = self._parse(response)
         orders = data if isinstance(data, list) else data.get("Orders", [])
 
         for order in orders:
@@ -542,7 +636,15 @@ class TradeStationAPIClient(ExecutionClient):
         }
 
     def cancel_order(self, order_id: str) -> dict:
-        data = self._delete(f"/orders/{order_id}")
+        response = self._session.delete(
+            self._v3_base_url + f"/orderexecution/orders/{order_id}"
+        )
+        if response.status_code == 400:
+            msg = response.json().get("Message", "")
+            if "not an open order" in msg.lower():
+                logger.info("Cancel skipped — order %s is already closed: %s", order_id, msg)
+                return {"order_id": order_id, "status": "canceled", "message": msg}
+        data = self._parse(response)
         return {
             "order_id": order_id,
             "status": "canceled",

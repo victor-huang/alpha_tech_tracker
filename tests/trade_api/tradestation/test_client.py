@@ -1,4 +1,3 @@
-import json
 import pytest
 from datetime import date
 from unittest.mock import MagicMock, patch
@@ -9,6 +8,9 @@ from alpha_tech_tracker.trade_api.tradestation.client import (
     APIInvalidArgumentError,
     _occ_to_ts,
     _ts_to_occ,
+    _occ_to_ts_order_symbol,
+    _ts_search_name_to_occ,
+    _parse_ts_date,
 )
 from alpha_tech_tracker.trade_api.tradestation.tradestation_api_response import (
     accounts_response,
@@ -70,6 +72,43 @@ class TestOccTsSymbolConversion:
             _occ_to_ts("bad-symbol")
 
 
+class TestOrderSymbolConversions:
+    def test_occ_to_order_symbol_whole_strike(self):
+        assert _occ_to_ts_order_symbol("TSLA260417C00390000") == "TSLA 260417C390"
+
+    def test_occ_to_order_symbol_decimal_strike(self):
+        assert _occ_to_ts_order_symbol("TSLA260417C00392500") == "TSLA 260417C392.5"
+
+    def test_occ_to_order_symbol_three_char_ticker(self):
+        assert _occ_to_ts_order_symbol("SPY260417C00520000") == "SPY 260417C520"
+
+    def test_occ_to_order_symbol_put(self):
+        assert _occ_to_ts_order_symbol("TSLA260417P00390000") == "TSLA 260417P390"
+
+    def test_ts_search_name_to_occ_whole_strike(self):
+        assert _ts_search_name_to_occ("TSLA 260417C390") == "TSLA260417C00390000"
+
+    def test_ts_search_name_to_occ_decimal_strike(self):
+        assert _ts_search_name_to_occ("TSLA 260417C392.5") == "TSLA260417C00392500"
+
+    def test_ts_search_name_to_occ_three_char_ticker(self):
+        assert _ts_search_name_to_occ("SPY 260417C520") == "SPY260417C00520000"
+
+    def test_ts_search_name_to_occ_roundtrip(self):
+        occ = "TSLA260417C00392500"
+        assert _ts_search_name_to_occ(_occ_to_ts_order_symbol(occ)) == occ
+
+    def test_parse_ts_date_epoch_ms(self):
+        # /Date(1744848000000)/ corresponds to 2025-04-17 UTC
+        assert _parse_ts_date("/Date(1744848000000)/") == "2025-04-17"
+
+    def test_parse_ts_date_iso_string(self):
+        assert _parse_ts_date("2025-04-17T00:00:00Z") == "2025-04-17"
+
+    def test_parse_ts_date_date_only(self):
+        assert _parse_ts_date("2025-04-17") == "2025-04-17"
+
+
 class TestGetAccounts:
     def test_returns_normalized_buying_power_cash_equity(self):
         client = _make_client()
@@ -89,7 +128,7 @@ class TestGetAccounts:
 
         result = client.get_accounts()
 
-        assert result["raw_response"] == balances_response[0]
+        assert result["raw_response"] == balances_response["Balances"][0]
 
     def test_resolves_account_key_when_not_set(self):
         client = _make_client()
@@ -107,10 +146,12 @@ class TestGetAccounts:
     def test_uses_first_active_account_when_no_key_given(self):
         client = _make_client()
         client._account_key = None
-        two_accounts = [
-            {"Key": 111, "Status": "X", "Name": "closed"},
-            {"Key": 222, "Status": "A", "Name": "active"},
-        ]
+        two_accounts = {
+            "Accounts": [
+                {"AccountID": "111", "Status": "Closed", "Name": "closed"},
+                {"AccountID": "222", "Status": "Active", "Name": "active"},
+            ]
+        }
         client._session.get.side_effect = [
             _mock_response(two_accounts),
             _mock_response(balances_response),
@@ -119,6 +160,16 @@ class TestGetAccounts:
         client.get_accounts()
 
         assert client._account_key == "222"
+
+    def test_get_accounts_uses_v3_balances_url(self):
+        client = _make_client()
+        client._session.get.return_value = _mock_response(balances_response)
+
+        client.get_accounts()
+
+        url = client._session.get.call_args[0][0]
+        assert "/v3/brokerage/accounts/" in url
+        assert "balances" in url
 
 
 class TestGetStockQuote:
@@ -271,21 +322,61 @@ class TestGetOptionsContracts:
         assert 240.0 not in strikes
 
     def test_padded_occ_symbol_normalized(self):
+        # Fixture uses display name format — _ts_search_name_to_occ parses it correctly.
         client = _make_client()
-        padded_response = [
+        display_name_response = [
             {
-                "Name": "TSLA  250417C00240000",
-                "ExpirationDate": "2025-04-17T00:00:00Z",
-                "OptionType": "Calls",
+                "Name": "TSLA 250417C240",
+                "ExpirationDate": "/Date(1744848000000)/",
+                "OptionType": "Call",
                 "StrikePrice": 240.0,
                 "Root": "TSLA",
             }
         ]
-        client._session.get.return_value = _mock_response(padded_response)
+        client._session.get.return_value = _mock_response(display_name_response)
 
         contracts = client.get_options_contracts(underlying_symbol="TSLA")
 
         assert contracts[0]["symbol"] == "TSLA250417C00240000"
+
+    def test_option_type_call_singular_accepted(self):
+        # API returns "Call" (not "Calls") — both must be accepted.
+        client = _make_client()
+        call_response = [
+            {
+                "Name": "TSLA 250417C240",
+                "ExpirationDate": "/Date(1744848000000)/",
+                "OptionType": "Call",
+                "StrikePrice": 240.0,
+                "Root": "TSLA",
+            }
+        ]
+        client._session.get.return_value = _mock_response(call_response)
+
+        contracts = client.get_options_contracts(
+            underlying_symbol="TSLA", option_type="call"
+        )
+
+        assert len(contracts) == 1
+        assert contracts[0]["option_type"] == "call"
+
+    def test_epoch_ms_expiry_date_parsed(self):
+        # /Date(1744848000000)/ must parse to 2025-04-17.
+        client = _make_client()
+        epoch_response = [
+            {
+                "Name": "TSLA 250417C240",
+                "ExpirationDate": "/Date(1744848000000)/",
+                "OptionType": "Call",
+                "StrikePrice": 240.0,
+                "Root": "TSLA",
+            }
+        ]
+        client._session.get.return_value = _mock_response(epoch_response)
+
+        contracts = client.get_options_contracts(underlying_symbol="TSLA")
+
+        assert contracts[0]["expiration_date"] == "2025-04-17"
 
     def test_date_range_query_includes_date_bounds_in_criteria(self):
         client = _make_client()
@@ -338,7 +429,8 @@ class TestPlaceOptionOrder:
 
         assert client._session.post.call_count == 1
 
-    def test_padded_symbol_sent_in_request_body(self):
+    def test_display_symbol_sent_in_order_body(self):
+        # v3 order endpoint requires display format "TSLA 250420C240", not padded OCC.
         client = _make_client()
         client._session.post.return_value = _mock_response(place_order_response)
 
@@ -349,7 +441,7 @@ class TestPlaceOptionOrder:
         )
 
         body = client._session.post.call_args[1]["json"]
-        assert body["Symbol"] == "TSLA  250420C00240000"
+        assert body["Symbol"] == "TSLA 250420C240"
 
     def test_buy_open_maps_to_buytoopen(self):
         client = _make_client()
@@ -391,6 +483,61 @@ class TestPlaceOptionOrder:
 
         body = client._session.post.call_args[1]["json"]
         assert body["AssetType"] == "OP"
+
+    def test_time_in_force_nested_object(self):
+        # v3 requires {"TimeInForce": {"Duration": "DAY"}}, not flat "Duration".
+        client = _make_client()
+        client._session.post.return_value = _mock_response(place_order_response)
+
+        client.place_option_order(
+            symbol="TSLA",
+            price=10.50,
+            _option_symbol_override="TSLA250420C00240000",
+        )
+
+        body = client._session.post.call_args[1]["json"]
+        assert body["TimeInForce"] == {"Duration": "DAY"}
+
+    def test_account_id_in_order_body(self):
+        # v3 uses "AccountID", not "AccountKey".
+        client = _make_client()
+        client._session.post.return_value = _mock_response(place_order_response)
+
+        client.place_option_order(
+            symbol="TSLA",
+            price=10.50,
+            _option_symbol_override="TSLA250420C00240000",
+        )
+
+        body = client._session.post.call_args[1]["json"]
+        assert body["AccountID"] == _ACCOUNT_KEY
+
+    def test_order_id_extracted_from_orders_wrapper(self):
+        # v3 response: {"Orders": [{"OrderID": "..."}]} — must unwrap before reading order_id.
+        client = _make_client()
+        wrapped_response = {"Orders": [{"OrderID": "999888777", "Error": "OK"}]}
+        client._session.post.return_value = _mock_response(wrapped_response)
+
+        result = client.place_option_order(
+            symbol="TSLA",
+            price=10.50,
+            _option_symbol_override="TSLA250420C00240000",
+        )
+
+        assert result["order_id"] == "999888777"
+
+    def test_uses_v3_orderexecution_url(self):
+        client = _make_client()
+        client._session.post.return_value = _mock_response(place_order_response)
+
+        client.place_option_order(
+            symbol="TSLA",
+            price=10.50,
+            _option_symbol_override="TSLA250420C00240000",
+        )
+
+        url = client._session.post.call_args[0][0]
+        assert "/v3/orderexecution/orders" in url
 
     def test_market_order_omits_limit_price_in_body(self):
         client = _make_client()
@@ -498,6 +645,34 @@ class TestPlaceStockOrder:
         assert "LimitPrice" not in body
         assert body["OrderType"] == "Market"
 
+    def test_time_in_force_nested_object(self):
+        # v3 requires {"TimeInForce": {"Duration": "DAY"}}, not flat "Duration".
+        client = _make_client()
+        client._session.post.return_value = _mock_response(place_order_response)
+
+        client.place_stock_order("TSLA", 10, order_type="MARKET")
+
+        body = client._session.post.call_args[1]["json"]
+        assert body["TimeInForce"] == {"Duration": "DAY"}
+
+    def test_account_id_in_order_body(self):
+        client = _make_client()
+        client._session.post.return_value = _mock_response(place_order_response)
+
+        client.place_stock_order("TSLA", 10, order_type="MARKET")
+
+        body = client._session.post.call_args[1]["json"]
+        assert body["AccountID"] == _ACCOUNT_KEY
+
+    def test_uses_v3_orderexecution_url(self):
+        client = _make_client()
+        client._session.post.return_value = _mock_response(place_order_response)
+
+        client.place_stock_order("TSLA", 10, order_type="MARKET")
+
+        url = client._session.post.call_args[0][0]
+        assert "/v3/orderexecution/orders" in url
+
     def test_limit_order_without_price_raises(self):
         client = _make_client()
 
@@ -541,12 +716,61 @@ class TestOrderStatus:
         assert result["filled_avg_price"] == 10.50
 
     def test_occ_symbol_normalized_in_result(self):
+        # Legs[0].Symbol is display format "TSLA 250420C240" — must be converted to OCC.
         client = _make_client()
         client._session.get.return_value = _mock_response(orders_filled_response)
 
         result = client.order_status("207887821")
 
         assert result["symbol"] == "TSLA250420C00240000"
+
+    def test_qty_and_filled_qty_from_legs(self):
+        # v3 stores QuantityOrdered and ExecQuantity inside Legs[0], not top-level.
+        client = _make_client()
+        client._session.get.return_value = _mock_response(orders_open_response)
+
+        result = client.order_status("207887821")
+
+        assert result["quantity"] == 1.0
+        assert result["filled_qty"] == 0.0
+
+    def test_uses_v3_brokerage_orders_url(self):
+        client = _make_client()
+        client._session.get.return_value = _mock_response(orders_open_response)
+
+        client.order_status("207887821")
+
+        url = client._session.get.call_args[0][0]
+        assert "/v3/brokerage/accounts/" in url
+        assert "/orders" in url
+
+    def test_rej_maps_to_canceled(self):
+        # REJ status (after-hours rejected orders) must map to "canceled".
+        client = _make_client()
+        rej_response = {
+            "Orders": [
+                {
+                    "OrderID": "207887821",
+                    "Status": "REJ",
+                    "LimitPrice": "1.00",
+                    "FilledPrice": "0",
+                    "OpenedDateTime": "2025-04-20T09:31:00Z",
+                    "Legs": [
+                        {
+                            "Symbol": "TSLA 250420C240",
+                            "QuantityOrdered": "1",
+                            "ExecQuantity": "0",
+                            "BuyOrSell": "Buy",
+                        }
+                    ],
+                }
+            ]
+        }
+        client._session.get.return_value = _mock_response(rej_response)
+
+        result = client.order_status("207887821")
+
+        assert result["status"] == "canceled"
 
     def test_order_not_found_returns_open(self):
         client = _make_client()
@@ -569,6 +793,15 @@ class TestCancelOrder:
         url = client._session.delete.call_args[0][0]
         assert "207887821" in url
 
+    def test_cancel_uses_v3_orderexecution_url(self):
+        client = _make_client()
+        client._session.delete.return_value = _mock_response(cancel_order_response)
+
+        client.cancel_order("207887821")
+
+        url = client._session.delete.call_args[0][0]
+        assert "/v3/orderexecution/orders/" in url
+
     def test_returns_normalized_cancel_dict(self):
         client = _make_client()
         client._session.delete.return_value = _mock_response(cancel_order_response)
@@ -578,6 +811,18 @@ class TestCancelOrder:
         assert result["order_id"] == "207887821"
         assert result["status"] == "canceled"
         assert "message" in result
+
+    def test_not_an_open_order_400_returns_canceled_gracefully(self):
+        # Already-closed orders return 400 "Not an open order." — must not raise.
+        client = _make_client()
+        client._session.delete.return_value = _mock_response(
+            {"Message": "Not an open order."}, status_code=400
+        )
+
+        result = client.cancel_order("207887821")
+
+        assert result["status"] == "canceled"
+        assert result["order_id"] == "207887821"
 
     def test_api_error_on_400_raises(self):
         client = _make_client()
