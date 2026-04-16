@@ -1234,6 +1234,40 @@ class TestGetWindowBudgetCapitalFlow:
         assert result == _D("9867")
         engine._client.get_accounts.assert_not_called()
 
+    def test_sequential_budget_reduced_by_open_reentry_capital(self):
+        """Regression: 2026-04-15 live session hit $51k peak exposure on $20k capital.
+
+        M1 deployed $12k (APP rank=0, 60%) + $8k (CRWV rank=1, 40%) = $20k.
+        Both primaries exited during M1, so _window_returned["M1"] = $20k.
+        APP immediately triggered a BUE re-entry and redeployed its $12k slot.
+        When A1 computed its sequential budget it saw $20k returned, but $12k of
+        that was already live in the APP BUE — so A1 over-deployed by $12k.
+        Fix: subtract open re-entry slot_capital from prior_returned.
+        """
+        engine = self._make_m1_a1_engine()
+        # Both M1 primaries exited — $12k + $8k returned
+        engine._window_returned["M1"] = _D("20000")
+        engine._window_primary_deployed["M1"] = _D("20000")
+        engine._window_state["M1"]["budget"] = _D("20000")
+
+        # APP BUE re-entry is still open, holding the $12k (rank=0, 60%) slot
+        app_bue = _make_active_position()
+        app_bue.window_label = "M1"
+        app_bue.is_closed = False
+        app_bue.trailing_arm_price = _D("245.00")  # BUE sets trailing_arm_price
+        app_bue.slot_capital = _D("12000")
+
+        mock_monitor = Mock()
+        mock_monitor._lock = threading.Lock()
+        mock_monitor._positions = [app_bue]
+        engine._monitor = mock_monitor
+
+        a1_win = next(w for w in engine._windows if w.label == "A1")
+        result = engine._get_window_budget(a1_win)
+
+        # returned=$20k minus APP BUE open=$12k → only $8k available for A1
+        assert result == _D("8000")
+
     def test_sequential_budget_not_inflated_when_option_slots_fully_deployed(self):
         """When all M1 option slots are filled, no phantom undeployed capital
         must flow to A1.  Prior to the bug fix, _window_primary_deployed was

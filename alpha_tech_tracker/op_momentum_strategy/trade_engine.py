@@ -1100,19 +1100,32 @@ class OpMomentumTradeEngine:
             prior_deployed = self._window_primary_deployed.get(prior_label, _D("0"))
 
         # Add slot_capital for still-open primary positions in the prior window.
-        # Re-entries (trailing_arm_price set) share the primary's capital slot; exclude them.
+        # Re-entries (trailing_arm_price set) share the primary's capital slot; include their
+        # capital in the open count but subtract it from prior_returned to avoid double-deployment:
+        # when a primary exits it adds slot_capital to _window_returned, but if a re-entry
+        # immediately redeploys that same capital, the next sequential window must not count it
+        # as available again.
         open_primary_capital = _D("0")
+        open_reentry_capital = _D("0")
         if self._monitor is not None:
             with self._monitor._lock:
                 for pos in self._monitor._positions:
-                    if (
-                        pos.window_label == prior_label
-                        and not pos.is_closed
-                        and pos.trailing_arm_price is None
-                        and pos.slot_capital is not None
-                    ):
+                    if pos.window_label != prior_label or pos.is_closed or pos.slot_capital is None:
+                        continue
+                    if pos.trailing_arm_price is None:
                         open_primary_capital += pos.slot_capital
+                    else:
+                        open_reentry_capital += pos.slot_capital
         prior_returned += open_primary_capital
+        if open_reentry_capital > 0:
+            logger.info(
+                "Sequential window [%s]: %.2f tied up in open re-entries in [%s],"
+                " reducing budget",
+                win.label,
+                float(open_reentry_capital),
+                prior_label,
+            )
+            prior_returned = max(_D("0"), prior_returned - open_reentry_capital)
 
         # Add undeployed capital: slots in the prior window that had no signal.
         # prior_deployed tracks the sum of slot_capital for all primary positions
