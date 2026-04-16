@@ -735,6 +735,7 @@ if __name__ == "__main__":
             alpaca_feed=DataFeed.IEX if args.feed == "iex" else DataFeed.SIP,
             enable_doubledown=args.doubledown,
             doubledown_start_min=args.doubledown_start_min,
+            record_tradestation_feed=args.record_tradestation_feed,
         )
         engine.run(tickers_override=args.tickers)
     finally:
