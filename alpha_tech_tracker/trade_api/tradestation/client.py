@@ -340,6 +340,48 @@ class TradeStationAPIClient(ExecutionClient):
             "raw_response": b,
         }
 
+    def get_historical_bars(
+        self,
+        symbol: str,
+        start_dt,
+        end_dt,
+        interval: int = 1,
+        unit: str = "Minute",
+    ) -> list:
+        """Fetch historical bars from TradeStation v3 /marketdata/barcharts/{symbol}.
+
+        Returns a list of _TSBar objects ordered oldest-first.
+
+        Args:
+            symbol:   Ticker symbol (e.g. "TSLA")
+            start_dt: tz-aware datetime — first bar open time to include.
+                      Shifted back by one interval internally because the API's
+                      firstdate param is exclusive (bars timestamped at close time).
+            end_dt:   tz-aware datetime — last bar close time to include.
+            interval: Bar width in units (default 1). Use 5 for 5-min bars.
+            unit:     "Minute" (default) or "Daily".
+        """
+        from datetime import timedelta
+        from alpha_tech_tracker.trade_api.tradestation.bar_stream import _TSBar
+
+        effective_start = start_dt - timedelta(minutes=interval)
+        params = {
+            "interval": interval,
+            "unit": unit,
+            "firstdate": effective_start.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "lastdate": end_dt.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "sessiontemplate": "Default",
+        }
+        url = self._v3_base_url + f"/marketdata/barcharts/{symbol}"
+        response = self._session.get(url, params=params)
+        data = self._parse(response)
+        bars_raw = data.get("Bars", []) if isinstance(data, dict) else []
+        return [
+            _TSBar.from_ts_dict(b, symbol)
+            for b in bars_raw
+            if b.get("Open")
+        ]
+
     def get_stock_quote(self, symbols) -> dict:
         if isinstance(symbols, list):
             symbols_str = ",".join(symbols)
