@@ -85,6 +85,7 @@ class ActivePosition:
     slot_capital: Optional[Decimal] = None
     last_evaluated_bar_time: Optional[datetime] = None
     is_doubledown_addon: bool = False
+    close_order_failed: bool = False
 
     def to_dict(self) -> dict:
         def _ser_dec(v):

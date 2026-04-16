@@ -755,6 +755,143 @@ class TestStockClosePosition:
         _, kwargs = mock_place.call_args
         assert kwargs.get("signal_price") is None
 
+    def test_close_all_with_callback_that_calls_get_all_positions_does_not_deadlock(self):
+        # Regression test: close_all previously held self._lock while calling
+        # _close_position, which triggered close_callback → get_all_positions →
+        # self._lock → permanent deadlock. The second position (MSTR equivalent)
+        # would never be closed.
+        import threading
+
+        client = _make_alpaca_client()
+        client.get_stock_quote.return_value = {
+            "QuoteResponse": {
+                "QuoteData": [{"All": {"bid": 99.0, "ask": 101.0, "bid_size": 1, "ask_size": 1, "last": None}}]
+            }
+        }
+        client.place_stock_order.return_value = {"order_id": "stk-dd-1"}
+        client.order_status.return_value = {"status": "filled", "filled_avg_price": 100.0}
+
+        df = _build_history_df([104.0], ma20=90.0, ma50=90.0, ma200=85.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+
+        closed_tickers = []
+
+        def close_callback(pos):
+            # Simulates _flush_session_state calling get_all_positions — this
+            # re-acquires self._lock and deadlocks if close_all still holds it.
+            monitor.get_all_positions()
+            closed_tickers.append(pos.ticker)
+
+        monitor = PositionMonitor(client, engine, close_callback=close_callback)
+
+        pos1 = _make_stock_position(signal="BULLISH", shares=10)
+        pos1.ticker = "APP"
+        pos2 = _make_stock_position(signal="BULLISH", shares=15)
+        pos2.ticker = "MSTR"
+        monitor.add_position(pos1)
+        monitor.add_position(pos2)
+
+        done = threading.Event()
+
+        def run():
+            monitor.close_all(reason="end_of_day")
+            done.set()
+
+        t = threading.Thread(target=run)
+        t.start()
+        completed = done.wait(timeout=5.0)
+
+        assert completed, "close_all deadlocked — second position was never closed"
+        assert pos1.is_closed is True
+        assert pos2.is_closed is True
+        assert set(closed_tickers) == {"APP", "MSTR"}
+
+
+class TestCloseOrderRetry:
+    @pytest.fixture(autouse=True)
+    def patch_sleep(self, monkeypatch):
+        monkeypatch.setattr(
+            "alpha_tech_tracker.op_momentum_strategy.order_executor.time.sleep",
+            lambda _: None,
+        )
+
+    def test_on_bar_retries_failed_stock_close_within_same_bar(self, caplog):
+        client = _make_alpaca_client()
+        client.get_stock_quote.return_value = {
+            "QuoteResponse": {
+                "QuoteData": [{"All": {"bid": 99.0, "ask": 101.0, "bid_size": 1, "ask_size": 1, "last": None}}]
+        }}
+        client.place_stock_order.side_effect = [Exception("network error"), {"order_id": "retry-1"}]
+        client.order_status.return_value = {"status": "filled", "filled_avg_price": 100.0}
+
+        pos = _make_stock_position(signal="BULLISH", shares=10)
+        pos.hard_stop_armed = True
+        df = _build_history_df([102.0], ma20=90.0, ma50=90.0, ma200=85.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine)
+        monitor.add_position(pos)
+
+        with patch("alpha_tech_tracker.op_momentum_strategy.position_monitor._notify"):
+            with caplog.at_level(logging.WARNING):
+                _set_latest_bar(engine, "NVDA", close=102.0, ma50=90.0)
+                monitor.on_bar("NVDA")
+
+        assert pos.is_closed is True
+        assert pos.close_order_failed is False
+        assert pos.exit_order_id == "retry-1"
+        assert client.place_stock_order.call_count == 2
+        assert any("Retrying failed close order" in r.message for r in caplog.records)
+
+    def test_on_bar_retries_failed_option_close_within_same_bar(self, caplog):
+        client = _make_alpaca_client()
+        client.get_option_quote_by_occ.return_value = _make_option_quote(bid=5.0, ask=5.5)
+        client.place_option_order.side_effect = [Exception("timeout"), {"order_id": "retry-opt-1"}]
+        client.order_status.return_value = {"status": "filled", "filled_avg_price": 5.25}
+
+        pos = _make_active_position(signal="BULLISH")
+        pos.hard_stop_armed = True
+        df = _build_history_df([102.0], ma20=90.0, ma50=90.0, ma200=85.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine)
+        monitor.add_position(pos)
+
+        with patch("alpha_tech_tracker.op_momentum_strategy.position_monitor._notify"):
+            with caplog.at_level(logging.WARNING):
+                _set_latest_bar(engine, "NVDA", close=102.0, ma50=90.0)
+                monitor.on_bar("NVDA")
+
+        assert pos.is_closed is True
+        assert pos.close_order_failed is False
+        assert pos.exit_order_id == "retry-opt-1"
+        assert client.place_option_order.call_count == 2
+        assert any("Retrying failed close order" in r.message for r in caplog.records)
+
+    def test_close_callback_not_called_again_on_retry(self):
+        client = _make_alpaca_client()
+        client.get_stock_quote.return_value = {
+            "QuoteResponse": {
+                "QuoteData": [{"All": {"bid": 99.0, "ask": 101.0, "bid_size": 1, "ask_size": 1, "last": None}}]
+        }}
+        client.place_stock_order.side_effect = [Exception("network error"), {"order_id": "retry-2"}]
+        client.order_status.return_value = {"status": "filled", "filled_avg_price": 100.0}
+
+        pos = _make_stock_position(signal="BULLISH", shares=10)
+        pos.hard_stop_armed = True
+        df = _build_history_df([102.0], ma20=90.0, ma50=90.0, ma200=85.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+
+        callback_calls = []
+        monitor = PositionMonitor(client, engine, close_callback=lambda p: callback_calls.append(p))
+        monitor.add_position(pos)
+
+        with patch("alpha_tech_tracker.op_momentum_strategy.position_monitor._notify"):
+            _set_latest_bar(engine, "NVDA", close=102.0, ma50=90.0)
+            monitor.on_bar("NVDA")
+            _set_latest_bar(engine, "NVDA", close=102.5, ma50=90.0)
+            monitor.on_bar("NVDA")
+
+        assert len(callback_calls) == 1
+
 
 class TestStockPrintSummaryPnl:
     def test_stock_profit_uses_shares_not_contracts_multiplier(self, caplog):
@@ -1564,8 +1701,8 @@ class TestEodMarketOrder:
 
         mock_esc.assert_called_once()
 
-    def test_close_all_does_not_hold_lock_between_positions(self):
-        """close_all() must release the lock after each close so on_bar can proceed."""
+    def test_close_all_does_not_hold_lock_during_api_calls(self):
+        """close_all() must not hold the lock during API calls so on_bar can proceed."""
         client = _make_alpaca_client()
         client.place_option_order.return_value = {"order_id": "eod-2"}
         client.get_option_quote_by_occ.return_value = _make_option_quote(bid=5.0, ask=5.5)
@@ -1580,23 +1717,23 @@ class TestEodMarketOrder:
         monitor.add_position(pos1)
         monitor.add_position(pos2)
 
-        lock_held_during_close = []
+        lock_held_during_api_call = []
 
-        original_close = monitor._close_position
+        original_get_quote = client.get_option_quote_by_occ.side_effect
 
-        def spy_close(pos, reason, **kwargs):
-            lock_held_during_close.append(monitor._lock.locked())
-            original_close(pos, reason, **kwargs)
+        def spy_get_quote(*args, **kwargs):
+            lock_held_during_api_call.append(monitor._lock.locked())
+            return _make_option_quote(bid=5.0, ask=5.5)
 
-        monitor._close_position = spy_close
+        client.get_option_quote_by_occ.side_effect = spy_get_quote
 
         with patch("alpha_tech_tracker.op_momentum_strategy.position_monitor._notify"):
             monitor.close_all(reason="end_of_day")
 
-        assert len(lock_held_during_close) == 2
-        assert all(lock_held_during_close), "lock should be held during each individual close"
         assert pos1.is_closed is True
         assert pos2.is_closed is True
+        assert len(lock_held_during_api_call) >= 1
+        assert not any(lock_held_during_api_call), "lock must not be held during API calls"
 
 
 class TestStockExitSms:

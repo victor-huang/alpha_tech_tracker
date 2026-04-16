@@ -179,6 +179,25 @@ class PositionMonitor:
             if self._close_callback:
                 self._close_callback(pos)
 
+        # Retry any positions whose close order failed on a previous bar.
+        # _close_callback is NOT re-invoked — capital was already returned on first close.
+        retry_failed = []
+        with self._lock:
+            for pos in self._positions:
+                if pos.ticker == ticker and pos.is_closed and pos.close_order_failed:
+                    retry_failed.append(pos)
+        for pos in retry_failed:
+            logger.warning(
+                "Retrying failed close order for %s %s reason=%s",
+                pos.ticker,
+                pos.signal,
+                pos.exit_reason,
+            )
+            if pos.trade_type == "stock":
+                self._close_stock_position(pos, pos.exit_reason)
+            else:
+                self._close_option_position(pos, pos.exit_reason)
+
         # Invoke re-entry callbacks outside the lock to avoid deadlock with add_position.
         # In replay mode call synchronously so the position exists for the next bar.
         for w in fired_watchers:
@@ -568,9 +587,12 @@ class PositionMonitor:
                     signal_price=exit_signal_price,
                 )
             pos.exit_order_id = order.get("order_id")
+            pos.close_order_failed = False
             logger.info("Stock close order placed: %s", pos.exit_order_id)
         except Exception:
             logger.exception("Failed to place stock close order for %s", pos.ticker)
+            pos.close_order_failed = True
+            _notify(f"CLOSE FAILED {pos.ticker} x{pos.shares} shares reason={reason} — close manually")
 
     def _close_option_position(self, pos: ActivePosition, reason: str, exit_stock_price_override=None):
         logger.info(
@@ -711,18 +733,30 @@ class PositionMonitor:
                     feed=self._alpaca_feed,
                 )
             pos.exit_order_id = order.get("order_id")
+            pos.close_order_failed = False
             logger.info("Close order placed: %s", pos.exit_order_id)
         except Exception:
             logger.exception("Failed to place close order for %s", pos.option_symbol)
+            pos.close_order_failed = True
+            _notify(f"CLOSE FAILED {pos.option_symbol} x{pos.contracts} reason={reason} — close manually")
 
     def close_all(self, reason: str = "end_of_day"):
+        to_close = []
         with self._lock:
-            open_positions = [p for p in self._positions if not p.is_closed]
-            self._reentry_watchers.clear()
-        for pos in open_positions:
-            with self._lock:
+            for pos in self._positions:
                 if not pos.is_closed:
-                    self._close_position(pos, reason)
+                    pos.is_closed = True
+                    pos.exit_reason = reason
+                    pos.exit_time = _now_et()
+                    to_close.append(pos)
+            self._reentry_watchers.clear()
+        for pos in to_close:
+            if pos.trade_type == "stock":
+                self._close_stock_position(pos, reason)
+            else:
+                self._close_option_position(pos, reason)
+            if self._close_callback:
+                self._close_callback(pos)
 
     def _fetch_option_mid(self, option_symbol: str) -> Optional[object]:
         try:
