@@ -311,6 +311,15 @@ def parse_args():
         "intrinsic value + cached time premium to compute entry/exit limit prices.",
     )
     parser.add_argument(
+        "--record-tradestation-feed",
+        action="store_true",
+        default=False,
+        dest="record_tradestation_feed",
+        help="Record TradeStation 1-min and 5-min bar streams in parallel with the "
+        "Alpaca feed. Writes CSVs to live_trade_market_data/{date}/tradestation_{ticker}_{timeframe}.csv. "
+        "Requires valid TradeStation session tokens in config.json.",
+    )
+    parser.add_argument(
         "--option-price-interval",
         type=int,
         default=300,
@@ -614,6 +623,7 @@ if __name__ == "__main__":
             alpaca_feed=DataFeed.IEX if args.feed == "iex" else DataFeed.SIP,
             enable_doubledown=args.doubledown,
             doubledown_start_min=args.doubledown_start_min,
+            record_tradestation_feed=args.record_tradestation_feed,
         )
         if args.replay_date:
             from datetime import date as _date

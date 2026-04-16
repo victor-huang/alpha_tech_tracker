@@ -266,6 +266,7 @@ class OpMomentumTradeEngine:
         alpaca_feed: DataFeed = DataFeed.SIP,
         enable_doubledown: bool = False,
         doubledown_start_min: int = 5,
+        record_tradestation_feed: bool = False,
     ):
         self._client = alpaca_client
         self._api_key = alpaca_client._api_key
@@ -302,6 +303,7 @@ class OpMomentumTradeEngine:
         self._alpaca_feed = alpaca_feed
         self._enable_doubledown = enable_doubledown
         self._doubledown_start_min = doubledown_start_min
+        self._record_tradestation_feed = record_tradestation_feed
         self._dd_timers: dict = {}
         self._dd_fired: set = set()
         self._monitor: PositionMonitor = None
@@ -1532,6 +1534,29 @@ class OpMomentumTradeEngine:
         first_win = self._windows[0]
         return config_picks[(first_win.opening_start, first_win.opening_bars)]
 
+    def _build_ts_bar_recorder(self, tickers: list):
+        from alpha_tech_tracker.op_momentum_strategy.config import (
+            _load_config,
+            _TRADESTATION_SESSION_TOKENS,
+            TRADESTATION_ENVIRONMENT,
+        )
+        from alpha_tech_tracker.op_momentum_strategy.record_ts_feed import TsBarRecorder
+        from alpha_tech_tracker.trade_api.tradestation.client import TradeStationAPIClient
+        try:
+            _load_config()
+            ts_client = TradeStationAPIClient(environment=TRADESTATION_ENVIRONMENT)
+            ts_client.restore_session(_TRADESTATION_SESSION_TOKENS)
+            if not ts_client.verify_session():
+                logger.warning(
+                    "TsBarRecorder: TradeStation session invalid — skipping TS feed recording. "
+                    "Run tradestation_auth.py to refresh tokens."
+                )
+                return None
+            return TsBarRecorder(ts_client, tickers)
+        except Exception:
+            logger.exception("TsBarRecorder: failed to initialize TS client — skipping TS feed recording")
+            return None
+
     def run(self, tickers_override: list = None):
         today = _now_et().date()
         if not self._mock_trade_execution:
@@ -1632,6 +1657,13 @@ class OpMomentumTradeEngine:
             )
 
         bar_recorder = BarRecorder(feed=self._alpaca_feed.value)
+
+        ts_bar_recorder = None
+        if self._record_tradestation_feed:
+            ts_bar_recorder = self._build_ts_bar_recorder(all_tickers)
+            if ts_bar_recorder is not None:
+                ts_bar_recorder.start()
+
         self._signal_engine = LiveSignalEngine(
             tickers=all_tickers,
             api_key=api_key,
@@ -1718,6 +1750,8 @@ class OpMomentumTradeEngine:
         self._signal_engine.stop()
         if self._option_price_monitor:
             self._option_price_monitor.stop()
+        if ts_bar_recorder is not None:
+            ts_bar_recorder.stop()
         bar_recorder.close()
         if not _summary_printed.is_set():
             self._monitor.print_summary()
