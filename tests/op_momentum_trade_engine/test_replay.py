@@ -1,5 +1,7 @@
+import csv
 import threading
 from datetime import date, datetime, timedelta
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
@@ -8,6 +10,7 @@ import pytz
 from alpha_tech_tracker.op_momentum_strategy.models import _FiveMinBar
 from alpha_tech_tracker.op_momentum_strategy.replay import (
     BarReplayDriver,
+    CsvLiveBarsSource,
     _now_et,
     clear_replay_clock,
     set_replay_clock,
@@ -295,6 +298,127 @@ class TestBarReplayDriverFetch:
         ):
             result = driver._fetch_session_bars()
         assert result["NVDA"] == []
+
+
+def _write_5min_csv(path: Path, rows: list):
+    """Write a BarRecorder-format 5-min CSV to path."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["timestamp", "open", "high", "low", "close", "volume"])
+        for row in rows:
+            writer.writerow(row)
+
+
+class TestCsvLiveBarsSourceTsFeed:
+    """Verify CsvLiveBarsSource reads TradeStation-recorded CSVs correctly."""
+
+    def test_loads_5min_bars_from_tradestation_csv(self, tmp_path):
+        session = date(2026, 4, 16)
+        csv_path = tmp_path / "2026-04-16" / "tradestation_TSLA_5min.csv"
+        _write_5min_csv(csv_path, [
+            ["2026-04-16 09:30:00", 100.0, 101.0, 99.0, 100.5, 500],
+            ["2026-04-16 09:35:00", 100.5, 102.0, 100.0, 101.5, 600],
+        ])
+
+        source = CsvLiveBarsSource(str(tmp_path), feed="tradestation")
+        result = source.load(["TSLA"], session)
+
+        assert len(result["TSLA"]) == 2
+        assert all(isinstance(b, _FiveMinBar) for b in result["TSLA"])
+
+    def test_bar_fields_parsed_correctly(self, tmp_path):
+        session = date(2026, 4, 16)
+        csv_path = tmp_path / "2026-04-16" / "tradestation_TSLA_5min.csv"
+        _write_5min_csv(csv_path, [
+            ["2026-04-16 09:30:00", 366.75, 366.84, 362.5, 364.37, 974501],
+        ])
+
+        source = CsvLiveBarsSource(str(tmp_path), feed="tradestation")
+        bar = source.load(["TSLA"], session)["TSLA"][0]
+
+        assert bar.symbol == "TSLA"
+        assert bar.open == 366.75
+        assert bar.high == 366.84
+        assert bar.low == 362.5
+        assert bar.close == 364.37
+        assert bar.volume == 974501.0
+
+    def test_timestamp_localized_to_et(self, tmp_path):
+        session = date(2026, 4, 16)
+        csv_path = tmp_path / "2026-04-16" / "tradestation_TSLA_5min.csv"
+        _write_5min_csv(csv_path, [
+            ["2026-04-16 09:30:00", 100.0, 101.0, 99.0, 100.5, 500],
+        ])
+
+        source = CsvLiveBarsSource(str(tmp_path), feed="tradestation")
+        bar = source.load(["TSLA"], session)["TSLA"][0]
+
+        assert bar.timestamp.tzinfo is not None
+        assert bar.timestamp == ET.localize(datetime(2026, 4, 16, 9, 30, 0))
+
+    def test_multiple_tickers_loaded_independently(self, tmp_path):
+        session = date(2026, 4, 16)
+        for ticker in ["TSLA", "META"]:
+            csv_path = tmp_path / "2026-04-16" / f"tradestation_{ticker}_5min.csv"
+            _write_5min_csv(csv_path, [
+                [f"2026-04-16 09:30:00", 100.0, 101.0, 99.0, 100.5, 500],
+                [f"2026-04-16 09:35:00", 100.5, 102.0, 100.0, 101.5, 600],
+            ])
+
+        source = CsvLiveBarsSource(str(tmp_path), feed="tradestation")
+        result = source.load(["TSLA", "META"], session)
+
+        assert len(result["TSLA"]) == 2
+        assert len(result["META"]) == 2
+
+    def test_missing_csv_returns_empty_list(self, tmp_path):
+        session = date(2026, 4, 16)
+        source = CsvLiveBarsSource(str(tmp_path), feed="tradestation")
+        result = source.load(["TSLA"], session)
+
+        assert result["TSLA"] == []
+
+    def test_bars_fed_into_replay_driver_in_order(self, tmp_path):
+        session = date(2026, 4, 16)
+        csv_path = tmp_path / "2026-04-16" / "tradestation_TSLA_5min.csv"
+        _write_5min_csv(csv_path, [
+            ["2026-04-16 09:40:00", 101.0, 102.0, 100.5, 101.5, 400],
+            ["2026-04-16 09:30:00", 100.0, 101.0, 99.0, 100.5, 500],
+            ["2026-04-16 09:35:00", 100.5, 102.0, 100.0, 101.5, 600],
+        ])
+
+        source = CsvLiveBarsSource(str(tmp_path), feed="tradestation")
+        injected = []
+        signal_engine = MagicMock()
+        signal_engine._process_five_min_bar.side_effect = injected.append
+
+        driver = BarReplayDriver(
+            tickers=["TSLA"],
+            replay_date=session,
+            signal_engine=signal_engine,
+            bars_source=source,
+            exit_time="16:05",
+        )
+        driver.run()
+
+        timestamps = [b.timestamp for b in injected]
+        assert timestamps == sorted(timestamps)
+        assert len(injected) == 3
+
+    def test_iex_and_tradestation_files_coexist_without_interference(self, tmp_path):
+        session = date(2026, 4, 16)
+        for feed in ["iex", "tradestation"]:
+            csv_path = tmp_path / "2026-04-16" / f"{feed}_TSLA_5min.csv"
+            _write_5min_csv(csv_path, [
+                ["2026-04-16 09:30:00", 100.0, 101.0, 99.0, 100.5, 500],
+            ])
+
+        iex_bars = CsvLiveBarsSource(str(tmp_path), feed="iex").load(["TSLA"], session)
+        ts_bars = CsvLiveBarsSource(str(tmp_path), feed="tradestation").load(["TSLA"], session)
+
+        assert len(iex_bars["TSLA"]) == 1
+        assert len(ts_bars["TSLA"]) == 1
 
 
 class TestReplayClockIntegrationWithEngine:
