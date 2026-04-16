@@ -1073,7 +1073,7 @@ class TestTickerSelectorReplayMode:
 
     @patch(_SELECT_TOP_N_PATH)
     @patch(_FETCH_BARS_PATH)
-    def test_live_mode_passes_allow_intraday_true(
+    def test_live_mode_uses_yesterday_as_bars_end(
         self, mock_fetch_bars, mock_select_top_n
     ):
         mock_fetch_bars.return_value = {}
@@ -1084,17 +1084,21 @@ class TestTickerSelectorReplayMode:
             "rolling_stats": {"NVDA": {}},
         }
         selector = TickerSelector(tickers=["NVDA"], top_n=1)
+        today = date(2026, 4, 15)
 
         with patch(
             "alpha_tech_tracker.op_momentum_strategy.trade_engine.is_replay_mode",
             return_value=False,
         ), patch(
-            "alpha_tech_tracker.op_momentum_strategy.trade_engine._safe_bars_end",
-            return_value=date(2026, 4, 7),
-        ):
+            "alpha_tech_tracker.op_momentum_strategy.trade_engine._now_et"
+        ) as mock_now_et:
+            mock_now_et.return_value = Mock()
+            mock_now_et.return_value.date.return_value = today
             selector.select()
 
-        assert mock_fetch_bars.call_args[1].get("allow_intraday") is True
+        call_args = mock_fetch_bars.call_args[0]
+        assert call_args[2] == today - timedelta(days=1)
+        assert not mock_fetch_bars.call_args[1].get("allow_intraday")
 
 
 # ---------------------------------------------------------------------------

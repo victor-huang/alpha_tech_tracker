@@ -15,7 +15,7 @@ from alpaca.data.enums import DataFeed
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import fetch_bars
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector import (
     ROLLING_LOOKBACK_DAYS,
-    _safe_bars_end,
+
     score_ticker,
     select_top_n,
 )
@@ -132,21 +132,12 @@ class TickerSelector:
         """Fetch and return bar data without running the selector. Can be passed to select()."""
         today = _now_et().date()
         fetch_start = today - timedelta(days=max(self._lookback_days, 30) + 5)
-        if is_replay_mode():
-            bars_end = today - timedelta(days=1)
-            return fetch_bars(
-                self._tickers,
-                fetch_start,
-                bars_end,
-                source="alpaca",
-                feed=self._alpaca_feed,
-            )
+        bars_end = today - timedelta(days=1)
         return fetch_bars(
             self._tickers,
             fetch_start,
-            _safe_bars_end(today),
+            bars_end,
             source="alpaca",
-            allow_intraday=True,
             feed=self._alpaca_feed,
         )
 
