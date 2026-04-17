@@ -922,6 +922,8 @@ class OpMomentumTradeEngine:
             entry = (
                 pos.simulated_entry_mid
                 if pos.simulated_entry_mid is not None
+                else pos.entry_fill_price
+                if pos.entry_fill_price is not None
                 else pos.entry_stock_price
             )
             exit_ = (
@@ -973,6 +975,8 @@ class OpMomentumTradeEngine:
         entry = (
             pos.simulated_entry_mid
             if pos.simulated_entry_mid is not None
+            else pos.entry_fill_price
+            if pos.entry_fill_price is not None
             else pos.entry_stock_price
         )
         exit_ = (
