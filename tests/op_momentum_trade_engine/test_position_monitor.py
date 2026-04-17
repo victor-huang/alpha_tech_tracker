@@ -1897,3 +1897,92 @@ class TestQuickExitEntryPrice:
         with patch(f"{self._MODULE}._now_et", return_value=now):
             result = _quick_exit_entry_price(pos)
         assert result is None
+
+
+class TestPollExitFillPrice:
+    """_poll_exit_fill_price sets pos.exit_fill_price from order_status before _close_callback fires."""
+
+    def _make_monitor(self, client):
+        df = _build_history_df([100.0], ma20=90.0, ma50=90.0, ma200=85.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        return PositionMonitor(client, engine)
+
+    def test_sets_exit_fill_price_when_order_status_returns_fill(self):
+        client = _make_alpaca_client()
+        client.order_status.return_value = {"status": "filled", "filled_avg_price": 102.50}
+        monitor = self._make_monitor(client)
+
+        pos = _make_stock_position(signal="BULLISH", shares=10)
+        pos.exit_order_id = "exit-poll-1"
+        monitor._poll_exit_fill_price(pos)
+
+        assert pos.exit_fill_price == _D("102.50")
+
+    def test_retries_when_fill_price_is_initially_none(self):
+        client = _make_alpaca_client()
+        client.order_status.side_effect = [
+            {"status": "open", "filled_avg_price": None},
+            {"status": "filled", "filled_avg_price": 98.75},
+        ]
+        monitor = self._make_monitor(client)
+
+        pos = _make_stock_position(signal="BULLISH", shares=10)
+        pos.exit_order_id = "exit-poll-2"
+        monitor._poll_exit_fill_price(pos, interval=0.0)
+
+        assert pos.exit_fill_price == _D("98.75")
+        assert client.order_status.call_count == 2
+
+    def test_returns_immediately_on_invalid_fill_price_without_sleeping(self):
+        client = _make_alpaca_client()
+        client.order_status.return_value = {"status": "filled", "filled_avg_price": "not-a-number"}
+        sleep_calls = []
+        monitor = self._make_monitor(client)
+
+        with patch("alpha_tech_tracker.op_momentum_strategy.position_monitor.time") as mock_time:
+            pos = _make_stock_position(signal="BULLISH", shares=10)
+            pos.exit_order_id = "exit-poll-3"
+            monitor._poll_exit_fill_price(pos)
+
+        mock_time.sleep.assert_not_called()
+        assert pos.exit_fill_price is None
+
+    def test_does_not_poll_when_no_exit_order_id(self):
+        client = _make_alpaca_client()
+        monitor = self._make_monitor(client)
+
+        pos = _make_stock_position(signal="BULLISH", shares=10)
+        pos.exit_order_id = None
+        monitor._poll_exit_fill_price(pos)
+
+        client.order_status.assert_not_called()
+        assert pos.exit_fill_price is None
+
+    def test_exit_fill_price_set_before_close_callback_fires(self):
+        """close_callback receives pos with exit_fill_price already populated."""
+        client = _make_alpaca_client()
+        client.place_stock_order.return_value = {"order_id": "exit-cb-1"}
+        client.order_status.return_value = {"status": "filled", "filled_avg_price": 105.0}
+        client.get_stock_quote.return_value = {
+            "QuoteResponse": {"QuoteData": [{"All": {"bid": 104.0, "ask": 106.0, "bid_size": 1, "ask_size": 1, "last": None}}]}
+        }
+
+        fill_at_callback = []
+
+        def on_close(pos):
+            fill_at_callback.append(pos.exit_fill_price)
+
+        df = _build_history_df([106.0], ma20=90.0, ma50=90.0, ma200=85.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine, close_callback=on_close)
+
+        pos = _make_stock_position(signal="BULLISH", shares=10)
+        pos.hard_stop_armed = True
+        monitor.add_position(pos)
+
+        with patch("alpha_tech_tracker.op_momentum_strategy.position_monitor._notify"):
+            _set_latest_bar(engine, "NVDA", close=87.0, ma50=90.0)
+            monitor.on_bar("NVDA")
+
+        assert len(fill_at_callback) == 1
+        assert fill_at_callback[0] == _D("105.0")

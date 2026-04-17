@@ -1,5 +1,6 @@
 import logging
 import threading
+import time
 from datetime import datetime
 from decimal import ROUND_HALF_UP
 from typing import Callable, Optional
@@ -589,6 +590,7 @@ class PositionMonitor:
             pos.exit_order_id = order.get("order_id")
             pos.close_order_failed = False
             logger.info("Stock close order placed: %s", pos.exit_order_id)
+            self._poll_exit_fill_price(pos)
         except Exception:
             logger.exception("Failed to place stock close order for %s", pos.ticker)
             pos.close_order_failed = True
@@ -735,6 +737,7 @@ class PositionMonitor:
             pos.exit_order_id = order.get("order_id")
             pos.close_order_failed = False
             logger.info("Close order placed: %s", pos.exit_order_id)
+            self._poll_exit_fill_price(pos)
         except Exception:
             logger.exception("Failed to place close order for %s", pos.option_symbol)
             pos.close_order_failed = True
@@ -764,6 +767,54 @@ class PositionMonitor:
             return _D(str(q["mid"]))
         except Exception:
             return None
+
+    def _poll_exit_fill_price(self, pos: ActivePosition, max_attempts: int = 5, interval: float = 2.0):
+        """Poll order status after placing an exit order to set pos.exit_fill_price.
+
+        Called synchronously before _close_callback fires so that sequential window
+        capital recycling uses the real exit fill price rather than returning slot_capital
+        with cap_pnl=0.  Limit orders that were confirmed filled by place_stock_order's
+        _is_filled check typically succeed on attempt 1 (no extra delay).  Market
+        orders may need 1-2 polls (filled_avg_price=None on the first response).
+        """
+        if not pos.exit_order_id:
+            return
+        for attempt in range(1, max_attempts + 1):
+            try:
+                status = self._client.order_status(pos.exit_order_id)
+            except Exception:
+                logger.warning(
+                    "order_status call failed for %s (attempt %d)", pos.exit_order_id, attempt,
+                )
+                if attempt < max_attempts:
+                    time.sleep(interval)
+                continue
+
+            fill_price_raw = status.get("filled_avg_price")
+            if fill_price_raw is None:
+                if attempt < max_attempts:
+                    time.sleep(interval)
+                continue
+
+            try:
+                pos.exit_fill_price = _D(str(fill_price_raw))
+                logger.info(
+                    "Exit fill confirmed: order=%s fill=%.4f (attempt %d)",
+                    pos.exit_order_id, float(pos.exit_fill_price), attempt,
+                )
+                return
+            except Exception:
+                logger.warning(
+                    "Invalid fill price %r for order %s — skipping poll",
+                    fill_price_raw, pos.exit_order_id,
+                )
+                return
+
+        logger.warning(
+            "Exit fill price not confirmed after %d attempts for %s — "
+            "capital returned at cost basis",
+            max_attempts, pos.exit_order_id,
+        )
 
     def _refresh_fill_prices(self, positions: list):
         for p in positions:
