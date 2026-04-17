@@ -950,6 +950,13 @@ class OpMomentumTradeEngine:
                 self._window_returned[pos.window_label] += returned
             with self._pnl_lock:
                 self._daily_realized_pnl += cap_pnl
+                logger.info(
+                    "Daily realized P&L updated: %.2f (added %.2f from %s [%s])",
+                    float(self._daily_realized_pnl),
+                    float(cap_pnl),
+                    pos.ticker,
+                    pos.window_label,
+                )
 
     def _is_circuit_breaker_tripped(self) -> bool:
         """Return True when daily realized losses exceed the configured threshold."""
@@ -1202,9 +1209,11 @@ class OpMomentumTradeEngine:
                 return
             if self._is_circuit_breaker_tripped():
                 logger.warning(
-                    "Daily max-loss circuit breaker tripped [%s], skipping %s",
+                    "Daily max-loss circuit breaker tripped [%s], skipping %s — realized_pnl=%.2f limit=%.2f",
                     window_label,
                     event.ticker,
+                    float(self._daily_realized_pnl),
+                    float(self._daily_max_loss_usd),
                 )
                 return
             if state["open_position_count"] >= self._top_n:
@@ -1290,7 +1299,10 @@ class OpMomentumTradeEngine:
         for rank, (score, ticker, event) in enumerate(scored):
             if self._is_circuit_breaker_tripped():
                 logger.warning(
-                    "Daily max-loss circuit breaker tripped, stopping drain [%s]", label
+                    "Daily max-loss circuit breaker tripped, stopping drain [%s] — realized_pnl=%.2f limit=%.2f",
+                    label,
+                    float(self._daily_realized_pnl),
+                    float(self._daily_max_loss_usd),
                 )
                 break
             with self._signal_lock:
