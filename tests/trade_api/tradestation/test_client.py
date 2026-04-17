@@ -4,7 +4,6 @@ from unittest.mock import MagicMock, patch
 
 from alpha_tech_tracker.trade_api.tradestation.client import (
     TradeStationAPIClient,
-    APIError,
     APIInvalidArgumentError,
     _occ_to_ts,
     _ts_to_occ,
@@ -207,6 +206,14 @@ class TestGetStockQuote:
 
         url = client._session.get.call_args[0][0]
         assert "TSLA,AAPL" in url
+
+    def test_feed_kwarg_ignored(self):
+        client = _make_client()
+        client._session.get.return_value = _mock_response(stock_quote_response)
+
+        result = client.get_stock_quote("TSLA", feed="iex")
+
+        assert result["QuoteResponse"]["QuoteData"][0]["All"]["bid"] == 245.10
 
 
 class TestGetOptionQuoteByOcc:
@@ -837,7 +844,7 @@ class TestCancelOrder:
 
 class TestRestoreSession:
     def test_creates_oauth2_session_from_token_dict(self):
-        from requests_oauthlib import OAuth2Session
+        pass
 
         client = TradeStationAPIClient(
             client_id="key",

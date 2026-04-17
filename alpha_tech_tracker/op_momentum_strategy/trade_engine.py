@@ -1,5 +1,6 @@
 import hashlib
 import logging
+import os
 import signal
 import threading
 import time
@@ -269,8 +270,8 @@ class OpMomentumTradeEngine:
         record_tradestation_feed: bool = False,
     ):
         self._client = alpaca_client
-        self._api_key = alpaca_client._api_key
-        self._secret_key = alpaca_client._secret_key
+        self._api_key = getattr(alpaca_client, "_api_key", None)
+        self._secret_key = getattr(alpaca_client, "_secret_key", None)
         self._stop_pct = _D(str(stop_pct))
         self._mock_trade_execution = mock_trade_execution
         self._trailing_ma = trailing_ma
@@ -1598,8 +1599,8 @@ class OpMomentumTradeEngine:
                     last_log = _now_et()
             logger.info("Pre-market reached — starting session %s", session_date)
 
-        api_key = self._api_key
-        secret_key = self._secret_key
+        api_key = self._api_key or os.environ.get("ALPACA_API_KEY")
+        secret_key = self._secret_key or os.environ.get("ALPACA_SECRET_KEY")
 
         logger.info("Alpaca data feed: %s", self._alpaca_feed.value.upper())
         all_tickers = tickers_override or TICKERS

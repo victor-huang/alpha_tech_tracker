@@ -382,7 +382,7 @@ class TradeStationAPIClient(ExecutionClient):
             if b.get("Open")
         ]
 
-    def get_stock_quote(self, symbols) -> dict:
+    def get_stock_quote(self, symbols, **_) -> dict:
         if isinstance(symbols, list):
             symbols_str = ",".join(symbols)
         else:

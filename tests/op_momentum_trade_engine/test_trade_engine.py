@@ -61,6 +61,31 @@ def _make_engine_with_mock_client():
     return engine
 
 
+class TestEngineInit:
+    def test_api_key_and_secret_read_from_alpaca_client(self):
+        client = _make_alpaca_client()
+        engine = OpMomentumTradeEngine(alpaca_client=client, mock_trade_execution=True)
+
+        assert engine._api_key == "test_key"
+        assert engine._secret_key == "test_secret"
+
+    def test_client_without_api_key_attrs_initialises_to_none(self):
+        client = _make_alpaca_client()
+        del client._api_key
+        del client._secret_key
+        engine = OpMomentumTradeEngine(alpaca_client=client, mock_trade_execution=True)
+
+        assert engine._api_key is None
+        assert engine._secret_key is None
+
+    def test_client_without_api_key_attrs_does_not_raise(self):
+        client = _make_alpaca_client()
+        del client._api_key
+        del client._secret_key
+
+        OpMomentumTradeEngine(alpaca_client=client, mock_trade_execution=True)
+
+
 class TestTickerSelector:
     @patch(_SELECT_TOP_N_PATH)
     @patch(_FETCH_BARS_PATH)
