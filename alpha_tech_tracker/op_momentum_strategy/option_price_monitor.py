@@ -298,6 +298,7 @@ class OptionPriceMonitor:
         option_symbol: str,
         option_type: str,
         stock_price: Decimal,
+        penny_pilot: bool = True,
     ) -> Decimal:
         """
         Return a fair limit price within bid/ask using the algorithm:
@@ -324,8 +325,9 @@ class OptionPriceMonitor:
 
         parsed = _parse_occ_symbol(option_symbol)
         if not parsed:
-            return _quantize_option_price(mid)
+            return _quantize_option_price(mid, penny_pilot=penny_pilot)
 
+        stock_price = stock_price.quantize(_D("0.01"), rounding=ROUND_HALF_UP)
         strike = parsed["strike"]
         if option_type == "call":
             intrinsic = max(_D("0"), stock_price - strike)
@@ -363,15 +365,15 @@ class OptionPriceMonitor:
                 intrinsic.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
                 fair.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
             )
-        fair = _quantize_option_price(fair)
+        fair = _quantize_option_price(fair, penny_pilot=penny_pilot)
         logger.info(
-            "get_fair_price %s: bid=%s ask=%s intrinsic=%s spread_pct=%s → fair=%s (%s)",
+            "get_fair_price %s: bid=%s ask=%s intrinsic=%s spread_pct=%s%% → fair=%s (%s)",
             option_symbol,
-            bid,
-            ask,
-            intrinsic,
-            spread_pct.quantize(_D("0.1"), rounding=ROUND_HALF_UP),
-            fair,
+            float(bid),
+            float(ask),
+            float(intrinsic.quantize(_D("0.01"), rounding=ROUND_HALF_UP)),
+            float(spread_pct.quantize(_D("0.1"), rounding=ROUND_HALF_UP)),
+            float(fair),
             reason,
         )
         return fair
@@ -428,26 +430,25 @@ class OptionPriceMonitor:
 # Helpers
 # ------------------------------------------------------------------
 
-def _quantize_option_price(price: Decimal) -> Decimal:
+def _quantize_option_price(price: Decimal, penny_pilot: bool = True) -> Decimal:
     """
     Round an option limit price to the exchange-standard tick increment.
 
-    All tickers in this strategy's pool (TSLA, NVDA, META, AMD, COIN, etc.)
-    participate in the CBOE Penny Pilot Program, which uses finer increments
-    than the standard non-pilot schedule:
+    Penny Pilot Program (penny_pilot=True, default — all strategy pool tickers):
+      < $3.00  → nearest $0.01
+      ≥ $3.00  → nearest $0.05
 
-      Penny Pilot (default — all pool tickers):
-        < $3.00  → nearest $0.01
-        ≥ $3.00  → nearest $0.05
+    Standard non-pilot schedule (penny_pilot=False):
+      < $3.00  → nearest $0.05
+      ≥ $3.00  → nearest $0.10
 
-      Non-pilot (standard, not used here):
-        < $3.00  → nearest $0.05
-        ≥ $3.00  → nearest $0.10
-
-    Using non-pilot increments on penny pilot names causes limit orders to be
-    placed at suboptimal price points, wasting $0.01–$0.05 per order.
+    Pool tickers (TSLA, NVDA, META, AMD, COIN, PLTR, RH*, etc.) are on Penny
+    Pilot.  Tickers not enrolled in the program must use penny_pilot=False.
     """
-    tick = _D("0.01") if price < _D("3") else _D("0.05")
+    if penny_pilot:
+        tick = _D("0.01") if price < _D("3") else _D("0.05")
+    else:
+        tick = _D("0.05") if price < _D("3") else _D("0.10")
     return (price / tick).to_integral_value(rounding=ROUND_HALF_UP) * tick
 
 

@@ -416,7 +416,7 @@ class TradeStationAPIClient(ExecutionClient):
         return formatted
 
     def get_option_quote_by_occ(self, occ_symbol: str) -> dict:
-        ts_symbol = _occ_to_ts(occ_symbol)
+        ts_symbol = _occ_to_ts_order_symbol(occ_symbol)
         data = self._get(f"/data/quote/{ts_symbol}")
         quotes = data if isinstance(data, list) else data.get("Quotes", [])
         q = quotes[0]
@@ -430,15 +430,25 @@ class TradeStationAPIClient(ExecutionClient):
     def get_option_quotes_by_occ_batch(self, occ_symbols: list) -> dict:
         if not occ_symbols:
             return {}
-        ts_symbols = [_occ_to_ts(s) for s in occ_symbols]
+        # Build display-format symbols and keep a reverse mapping back to OCC
+        ts_symbols = [_occ_to_ts_order_symbol(s) for s in occ_symbols]
+        ts_to_occ_map = {ts: occ for ts, occ in zip(ts_symbols, occ_symbols)}
+
         data = self._get(f"/data/quote/{','.join(ts_symbols)}")
         quotes = data if isinstance(data, list) else data.get("Quotes", [])
 
         result = {}
         for q in quotes:
-            occ = _ts_to_occ(q["Symbol"])
-            if occ not in occ_symbols:
-                logger.warning("Unexpected symbol in batch quote response: %s", occ)
+            raw_sym = q.get("Symbol", "")
+            occ = ts_to_occ_map.get(raw_sym)
+            if occ is None:
+                # Response may strip trailing .0 or reformat — try name-based parse
+                try:
+                    occ = _ts_search_name_to_occ(raw_sym)
+                except ValueError:
+                    pass
+            if occ is None or occ not in occ_symbols:
+                logger.warning("Unexpected symbol in batch quote response: %s", raw_sym)
                 continue
             bid = float(q.get("Bid", 0))
             ask = float(q.get("Ask", 0))

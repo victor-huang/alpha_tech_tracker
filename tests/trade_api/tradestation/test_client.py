@@ -220,22 +220,23 @@ class TestGetOptionQuoteByOcc:
         assert result["ask"] == 10.60
         assert result["mid"] == pytest.approx((10.20 + 10.60) / 2)
 
-    def test_occ_converted_to_padded_ts_symbol_in_url(self):
+    def test_occ_converted_to_display_symbol_in_url(self):
+        # v2 quote API requires display format "TSLA 250420C240", not padded OCC.
         client = _make_client()
         client._session.get.return_value = _mock_response(option_quote_response)
 
         client.get_option_quote_by_occ("TSLA250420C00240000")
 
         url = client._session.get.call_args[0][0]
-        assert "TSLA  250420C00240000" in url
+        assert "TSLA 250420C240" in url
 
 
 class TestGetOptionQuotesByOccBatch:
     def test_returns_dict_keyed_by_occ_symbol(self):
         client = _make_client()
         two_quotes = [
-            {"Symbol": "TSLA  250420C00240000", "Bid": 10.20, "Ask": 10.60},
-            {"Symbol": "TSLA  250420C00245000", "Bid": 8.00, "Ask": 8.40},
+            {"Symbol": "TSLA 250420C240", "Bid": 10.20, "Ask": 10.60},
+            {"Symbol": "TSLA 250420C245", "Bid": 8.00, "Ask": 8.40},
         ]
         client._session.get.return_value = _mock_response(two_quotes)
 
@@ -250,7 +251,7 @@ class TestGetOptionQuotesByOccBatch:
     def test_single_http_call_for_batch(self):
         client = _make_client()
         client._session.get.return_value = _mock_response([
-            {"Symbol": "TSLA  250420C00240000", "Bid": 10.20, "Ask": 10.60},
+            {"Symbol": "TSLA 250420C240", "Bid": 10.20, "Ask": 10.60},
         ])
 
         client.get_option_quotes_by_occ_batch(
@@ -262,7 +263,7 @@ class TestGetOptionQuotesByOccBatch:
     def test_missing_symbol_omitted_from_result(self):
         client = _make_client()
         client._session.get.return_value = _mock_response([
-            {"Symbol": "TSLA  250420C00240000", "Bid": 10.20, "Ask": 10.60},
+            {"Symbol": "TSLA 250420C240", "Bid": 10.20, "Ask": 10.60},
         ])
 
         result = client.get_option_quotes_by_occ_batch(

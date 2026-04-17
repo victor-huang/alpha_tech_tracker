@@ -21,6 +21,7 @@ def _place_with_fill_escalation(
     entry_fill_price: Optional[float] = None,
     get_fair_price_fn=None,
     feed=None,
+    penny_pilot: bool = True,
 ) -> dict:
     """
     Place a limit order and escalate if unfilled.
@@ -51,7 +52,7 @@ def _place_with_fill_escalation(
         return bid, ask, mid
 
     def _place_limit(price) -> dict:
-        rounded = _quantize_option_price(price)
+        rounded = _quantize_option_price(price, penny_pilot=penny_pilot)
         return client.place_option_order(
             symbol=ticker,
             option_key=None,
