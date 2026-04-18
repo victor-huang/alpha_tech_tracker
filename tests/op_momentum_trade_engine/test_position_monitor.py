@@ -1059,6 +1059,10 @@ class TestReentryWatcher:
             "alpha_tech_tracker.op_momentum_strategy.order_executor.time.sleep",
             lambda _: None,
         )
+        monkeypatch.setattr(
+            "alpha_tech_tracker.op_momentum_strategy.position_monitor.is_replay_mode",
+            lambda: True,
+        )
 
     def _make_bearish_pos(self, bars_held=0):
         pos = _make_active_position(
@@ -1191,10 +1195,6 @@ class TestReentryWatcher:
         _set_latest_bar(engine, "NVDA", close=106.0, ma50=110.0)
         monitor.on_bar("NVDA")
 
-        # Allow the callback thread to complete
-        import time
-        time.sleep(0.05)
-
         assert len(monitor._reentry_watchers) == 0
         assert len(fired) == 1
         w, trigger = fired[0]
@@ -1303,9 +1303,6 @@ class TestReentryWatcher:
         # Price crosses below OR low (95)
         _set_latest_bar(engine, "NVDA", close=94.5, ma50=110.0)
         monitor.on_bar("NVDA")
-
-        import time
-        time.sleep(0.05)
 
         assert len(monitor._reentry_watchers) == 0
         assert len(fired) == 1
@@ -1507,9 +1504,6 @@ class TestReentryWatcher:
             _set_latest_bar(engine, "NVDA", close=106.0, ma50=110.0)
             monitor.on_bar("NVDA")
 
-        import time
-        time.sleep(0.05)
-
         assert len(fired) == 1
         assert fired[0].reentry_type == "reversal"
         assert fired[0].window_label == "A1"
@@ -1526,8 +1520,6 @@ class TestReentryWatcher:
         ):
             _set_latest_bar(engine, "NVDA", close=94.0, ma50=110.0)
             monitor.on_bar("NVDA")
-
-        time.sleep(0.05)
 
         assert len(fired) == 2
         second_fired = [w for w in fired if w.reentry_type != "reversal" or w.window_label != "A1"]

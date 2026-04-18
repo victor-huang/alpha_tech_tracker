@@ -690,6 +690,7 @@ class TestEntryAlert:
         with patch(_OPTION_CONTRACT_SELECTOR_PATH, return_value="NVDA260404C00170000"), \
              patch(_POSITION_SIZER_PATH, return_value=(3, _D("8.50"))), \
              patch(_PLACE_ENTRY_PATH, return_value={"order_id": "live-1"}), \
+             patch(_POLL_ENTRY_FILL_PATH, return_value=(_D("8.50"), 3)), \
              patch(_NOTIFY_PATH) as mock_notify:
             engine._enter_position(_make_signal_event("NVDA"), rank=0)
 
