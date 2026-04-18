@@ -840,7 +840,9 @@ class TestCloseOrderRetry:
         assert pos.close_order_failed is False
         assert pos.exit_order_id == "retry-1"
         assert client.place_stock_order.call_count == 2
-        assert any("Retrying failed close order" in r.message for r in caplog.records)
+        # Step-1 failure is now caught inside the escalation function and the next
+        # attempt proceeds immediately — "placement failed" is logged there.
+        assert any("placement failed" in r.message for r in caplog.records)
 
     def test_on_bar_retries_failed_option_close_within_same_bar(self, caplog):
         client = _make_alpaca_client()
@@ -864,7 +866,9 @@ class TestCloseOrderRetry:
         assert pos.close_order_failed is False
         assert pos.exit_order_id == "retry-opt-1"
         assert client.place_option_order.call_count == 2
-        assert any("Retrying failed close order" in r.message for r in caplog.records)
+        # Step-1 failure is now caught inside the escalation function and step-2
+        # proceeds immediately — "placement failed" is logged there.
+        assert any("placement failed" in r.message for r in caplog.records)
 
     def test_close_callback_not_called_again_on_retry(self):
         client = _make_alpaca_client()

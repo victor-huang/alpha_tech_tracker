@@ -108,15 +108,22 @@ def _place_with_fill_escalation(
             order_action, option_symbol,
             step0_price.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
         )
-        order = _place_limit(step0_price)
-        order_id = order.get("order_id")
-        logger.info("FILL_ESC step0 order placed: id=%s", order_id)
-        time.sleep(20)
-        if _is_filled(order_id):
-            logger.info("FILL_ESC step0 filled at entry price: %s", order_id)
-            return order
-        _cancel_safely(order_id)
-        logger.info("FILL_ESC step0 unfilled, escalating: %s", option_symbol)
+        try:
+            order = _place_limit(step0_price)
+        except Exception:
+            logger.warning(
+                "FILL_ESC step0 %s %s: placement failed, escalating",
+                order_action, option_symbol, exc_info=True,
+            )
+        else:
+            order_id = order.get("order_id")
+            logger.info("FILL_ESC step0 order placed: id=%s", order_id)
+            time.sleep(20)
+            if _is_filled(order_id):
+                logger.info("FILL_ESC step0 filled at entry price: %s", order_id)
+                return order
+            _cancel_safely(order_id)
+            logger.info("FILL_ESC step0 unfilled, escalating: %s", option_symbol)
 
     # --- Step 0.5: limit at fair price (when monitor is active) ---
     fair = _get_fair_price()
@@ -126,21 +133,31 @@ def _place_with_fill_escalation(
             order_action, option_symbol,
             fair.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
         )
-        order = _place_limit(fair)
-        order_id = order.get("order_id")
-        logger.info("FILL_ESC step0.5 order placed: id=%s", order_id)
-        time.sleep(20)
-        if _is_filled(order_id):
-            logger.info("FILL_ESC step0.5 filled at fair price: %s", order_id)
-            return order
-        _cancel_safely(order_id)
-        logger.info("FILL_ESC step0.5 unfilled, escalating: %s", option_symbol)
+        try:
+            order = _place_limit(fair)
+        except Exception:
+            logger.warning(
+                "FILL_ESC step0.5 %s %s: placement failed, escalating",
+                order_action, option_symbol, exc_info=True,
+            )
+        else:
+            order_id = order.get("order_id")
+            logger.info("FILL_ESC step0.5 order placed: id=%s", order_id)
+            time.sleep(20)
+            if _is_filled(order_id):
+                logger.info("FILL_ESC step0.5 filled at fair price: %s", order_id)
+                return order
+            _cancel_safely(order_id)
+            logger.info("FILL_ESC step0.5 unfilled, escalating: %s", option_symbol)
 
     # --- Step 1: limit at mid ---
     try:
         bid, ask, mid = _fetch_mid_bid_ask()
     except Exception:
-        logger.warning("Could not fetch quote for %s at step1, skipping to step3", option_symbol)
+        logger.warning(
+            "Could not fetch quote for %s at step1, skipping to step3",
+            option_symbol, exc_info=True,
+        )
         bid, ask, mid = None, None, None
 
     if mid is not None:
@@ -149,14 +166,21 @@ def _place_with_fill_escalation(
             order_action, option_symbol, bid, ask,
             mid.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
         )
-        order = _place_limit(mid)
-        order_id = order.get("order_id")
-        logger.info("FILL_ESC step1 order placed: id=%s", order_id)
-        time.sleep(15)
-        if _is_filled(order_id):
-            logger.info("FILL_ESC step1 filled: %s", order_id)
-            return order
-        _cancel_safely(order_id)
+        try:
+            order = _place_limit(mid)
+        except Exception:
+            logger.warning(
+                "FILL_ESC step1 %s %s: placement failed, escalating",
+                order_action, option_symbol, exc_info=True,
+            )
+        else:
+            order_id = order.get("order_id")
+            logger.info("FILL_ESC step1 order placed: id=%s", order_id)
+            time.sleep(15)
+            if _is_filled(order_id):
+                logger.info("FILL_ESC step1 filled: %s", order_id)
+                return order
+            _cancel_safely(order_id)
 
     # --- Step 2: limit at mid ± (ask-bid)/4 ---
     try:
@@ -197,21 +221,31 @@ def _place_with_fill_escalation(
             logger.warning("Could not compute intrinsic floor for %s at step2", option_symbol)
 
     if step2_price is not None:
-        order = _place_limit(step2_price)
-        order_id = order.get("order_id")
-        logger.info("FILL_ESC step2 order placed: id=%s", order_id)
-        time.sleep(15)
-        if _is_filled(order_id):
-            logger.info("FILL_ESC step2 filled: %s", order_id)
-            return order
-        _cancel_safely(order_id)
+        try:
+            order = _place_limit(step2_price)
+        except Exception:
+            logger.warning(
+                "FILL_ESC step2 %s %s: placement failed, escalating",
+                order_action, option_symbol, exc_info=True,
+            )
+        else:
+            order_id = order.get("order_id")
+            logger.info("FILL_ESC step2 order placed: id=%s", order_id)
+            time.sleep(15)
+            if _is_filled(order_id):
+                logger.info("FILL_ESC step2 filled: %s", order_id)
+                return order
+            _cancel_safely(order_id)
 
     # --- Step 3 (final): limit at ask (buy) or max(bid, intrinsic) (sell) ---
     try:
         bid, ask, _ = _fetch_mid_bid_ask()
         step3_price = ask if is_buy else bid
     except Exception:
-        logger.warning("Could not fetch quote for %s at step3, using last known ask/bid", option_symbol)
+        logger.warning(
+            "Could not fetch quote for %s at step3, using last known ask/bid",
+            option_symbol, exc_info=True,
+        )
         step3_price = ask if (ask is not None) else bid
 
     if not is_buy and step3_price is not None:
@@ -234,14 +268,36 @@ def _place_with_fill_escalation(
                     )
                     step3_price = intrinsic
         except Exception:
-            logger.warning("Could not compute intrinsic floor for %s at step3", option_symbol)
+            logger.warning(
+                "Could not compute intrinsic floor for %s at step3",
+                option_symbol, exc_info=True,
+            )
 
     logger.info(
         "FILL_ESC step3 %s %s: final limit at %s",
         order_action, option_symbol,
         step3_price.quantize(_D("0.01"), rounding=ROUND_HALF_UP) if step3_price else "unknown",
     )
-    order = _place_limit(step3_price)
+    try:
+        order = _place_limit(step3_price)
+    except Exception:
+        logger.warning(
+            "FILL_ESC step3 %s %s: limit placement failed",
+            order_action, option_symbol, exc_info=True,
+        )
+        if not is_buy:
+            logger.warning(
+                "FILL_ESC step3 %s %s: falling back to market order after limit placement failure",
+                order_action, option_symbol,
+            )
+            market_order = _place_market()
+            logger.info("FILL_ESC market order placed: id=%s", market_order.get("order_id"))
+            return market_order
+        logger.warning(
+            "FILL_ESC MISS %s %s: all steps exhausted — manual intervention may be required",
+            order_action, option_symbol,
+        )
+        return {}
     order_id = order.get("order_id")
     logger.info("FILL_ESC step3 order placed: id=%s", order_id)
     time.sleep(60 if not is_buy else 15)
@@ -372,7 +428,15 @@ def place_stock_order(
             )
             return _place_market()
 
-        order = _place_limit(mid)
+        try:
+            order = _place_limit(mid)
+        except Exception:
+            logger.warning(
+                "STOCK FILL_ESC step1 attempt=%d %s %s: placement failed, escalating",
+                attempt, order_action, ticker, exc_info=True,
+            )
+            continue
+
         order_id = order.get("order_id")
         logger.info("STOCK FILL_ESC step1 attempt=%d order placed: id=%s", attempt, order_id)
 
@@ -402,7 +466,15 @@ def place_stock_order(
             )
             return _place_market()
 
-        order = _place_limit(aggressive_price)
+        try:
+            order = _place_limit(aggressive_price)
+        except Exception:
+            logger.warning(
+                "STOCK FILL_ESC step2 attempt=%d %s %s: placement failed, escalating",
+                attempt, order_action, ticker, exc_info=True,
+            )
+            continue
+
         order_id = order.get("order_id")
         logger.info("STOCK FILL_ESC step2 attempt=%d order placed: id=%s", attempt, order_id)
 
