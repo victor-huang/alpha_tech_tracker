@@ -95,9 +95,8 @@ class TestFillEscalationStep0:
     def test_step0_unfilled_then_normal_mid_escalation_places_three_total_orders(self):
         client = _make_client()
         self._run(client, entry_fill_price=5.0, step0_filled=False)
-        # step0 limit + step1 mid limit + step2 bid limit = 3 limit orders
-        # (no market order since step2 also returns unfilled and escalates to market=4th call)
-        assert client.place_option_order.call_count == 4
+        # step0 + step1 mid + step2 + step3 limit + step3 market fallback = 5 calls
+        assert client.place_option_order.call_count == 5
 
 
 class TestFillEscalationMissCancellation:
@@ -129,6 +128,182 @@ class TestFillEscalationMissCancellation:
         self._run_all_unfilled(client)
         last_cancel_arg = client.cancel_order.call_args_list[-1].args[0]
         assert last_cancel_arg == "ord-001"
+
+
+_PUT_SYMBOL = "COIN260418P00220000"
+_PUT_TYPE = "PUT"
+_PUT_TICKER = "COIN"
+
+
+def _make_option_client_with_stock(
+    opt_bid=10.50,
+    opt_ask=15.50,
+    stock_bid=207.0,
+    stock_ask=209.0,
+    order_status="open",
+):
+    """Client with both option and stock quotes for intrinsic-floor tests."""
+    client = MagicMock()
+    opt_mid = (opt_bid + opt_ask) / 2
+    client.get_option_quote_by_occ.return_value = {
+        "bid": opt_bid,
+        "ask": opt_ask,
+        "mid": opt_mid,
+    }
+    client.get_stock_quote.return_value = {
+        "QuoteResponse": {
+            "QuoteData": [{"All": {"bid": stock_bid, "ask": stock_ask, "lastTrade": stock_bid}}]
+        }
+    }
+    client.place_option_order.return_value = {"order_id": "ord-001", "status": order_status}
+    client.order_status.return_value = {"status": order_status}
+    return client
+
+
+class TestStep2IntrinsicFloorForSells:
+    """
+    On SELL_CLOSE, the step2 price (mid - spread/4) must be floored at intrinsic
+    value when the wide option spread would otherwise push the limit below exercise value.
+    PUT intrinsic = strike - stock_mid.
+    """
+
+    # COIN260418P00220000: strike=220, PUT
+    # stock_mid=208 → intrinsic=12.00
+    # opt: bid=10.50, ask=15.50 → mid=13.00, spread=5.00, quarter=1.25
+    # raw step2 = 13.00 - 1.25 = 11.75 < 12.00 → should be floored to 12.00
+
+    def _run_sell(self, client):
+        client.order_status.return_value = {"status": "open"}
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            return _place_with_fill_escalation(
+                client=client,
+                ticker=_PUT_TICKER,
+                option_symbol=_PUT_SYMBOL,
+                option_type=_PUT_TYPE,
+                contracts=1,
+                order_action="SELL_CLOSE",
+                feed=None,
+            )
+
+    def test_step2_price_floored_at_intrinsic_when_below(self):
+        client = _make_option_client_with_stock(
+            opt_bid=10.50, opt_ask=15.50, stock_bid=207.0, stock_ask=209.0
+        )
+        self._run_sell(client)
+        step2_call = client.place_option_order.call_args_list[1]
+        step2_price = step2_call.kwargs["price"]
+        # floor at intrinsic $12.00 (quantized to $0.05 tick) instead of raw $11.75
+        assert step2_price == 12.00
+
+    def test_step2_price_unchanged_when_above_intrinsic(self):
+        # stock drops to $194 → intrinsic = 220 - 194 = 26; step2 = 13 - 1.25 = 11.75 < 26
+        # Actually let's use a stock mid where intrinsic is lower than step2:
+        # stock_mid = 210 → intrinsic = 10; step2 = 11.75 > 10 → no floor
+        client = _make_option_client_with_stock(
+            opt_bid=10.50, opt_ask=15.50, stock_bid=210.0, stock_ask=210.0
+        )
+        self._run_sell(client)
+        step2_call = client.place_option_order.call_args_list[1]
+        step2_price = step2_call.kwargs["price"]
+        # step2 = 11.75 → quantized to $11.75 (≥$3, $0.05 tick → $11.75)
+        assert step2_price == 11.75
+
+    def test_step2_floor_skipped_for_buys(self):
+        # For BUY_OPEN, no intrinsic floor — get_stock_quote should not be called at step2
+        client = _make_option_client_with_stock()
+        client.order_status.return_value = {"status": "open"}
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            _place_with_fill_escalation(
+                client=client,
+                ticker=_PUT_TICKER,
+                option_symbol=_PUT_SYMBOL,
+                option_type=_PUT_TYPE,
+                contracts=1,
+                order_action="BUY_OPEN",
+                feed=None,
+            )
+        # get_stock_quote is only called at step3 (intrinsic floor) and step2 for sells
+        # For buys step3 does NOT call get_stock_quote either → call_count == 0
+        assert client.get_stock_quote.call_count == 0
+
+    def test_step2_floor_continues_gracefully_when_stock_quote_fails(self):
+        client = _make_option_client_with_stock()
+        client.get_stock_quote.side_effect = Exception("quote fetch failed")
+        # Should not raise; step2_price falls back to original value
+        self._run_sell(client)
+        step2_call = client.place_option_order.call_args_list[1]
+        # raw step2 price = 11.75 (no floor applied on exception)
+        assert step2_call.kwargs["price"] == 11.75
+
+
+class TestStep3MarketFallbackForSells:
+    """
+    After step3 limit times out on a SELL_CLOSE, a market order must be placed
+    to ensure the position is closed. BUY_OPEN should still log FILL_ESC MISS
+    and return without placing a market order.
+    """
+
+    def _run_sell_all_unfilled(self, client):
+        client.order_status.return_value = {"status": "open"}
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            return _place_with_fill_escalation(
+                client=client,
+                ticker=_PUT_TICKER,
+                option_symbol=_PUT_SYMBOL,
+                option_type=_PUT_TYPE,
+                contracts=1,
+                order_action="SELL_CLOSE",
+                feed=None,
+            )
+
+    def _run_buy_all_unfilled(self, client):
+        client.order_status.return_value = {"status": "open"}
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            return _place_with_fill_escalation(
+                client=client,
+                ticker=_PUT_TICKER,
+                option_symbol=_PUT_SYMBOL,
+                option_type=_PUT_TYPE,
+                contracts=1,
+                order_action="BUY_OPEN",
+                feed=None,
+            )
+
+    def test_sell_places_market_order_after_step3_timeout(self):
+        client = _make_option_client_with_stock()
+        self._run_sell_all_unfilled(client)
+        all_calls = client.place_option_order.call_args_list
+        last_call = all_calls[-1]
+        assert last_call.kwargs["price_type"] == "MARKET"
+
+    def test_sell_market_order_has_no_price(self):
+        client = _make_option_client_with_stock()
+        self._run_sell_all_unfilled(client)
+        last_call = client.place_option_order.call_args_list[-1]
+        assert last_call.kwargs["price"] is None
+
+    def test_sell_step3_limit_is_cancelled_before_market_order(self):
+        client = _make_option_client_with_stock()
+        # Track cancel and place calls in order
+        call_order = []
+        client.cancel_order.side_effect = lambda oid: call_order.append(("cancel", oid))
+        original_place = MagicMock(return_value={"order_id": "ord-001", "status": "open"})
+        client.place_option_order.side_effect = lambda **kw: call_order.append(
+            ("place", kw.get("price_type"))
+        ) or {"order_id": "ord-001", "status": "open"}
+
+        self._run_sell_all_unfilled(client)
+
+        # Last two events: cancel step3 limit then place market
+        assert call_order[-2][0] == "cancel"
+        assert call_order[-1] == ("place", "MARKET")
+
+    def test_buy_does_not_place_market_order_on_step3_miss(self):
+        client = _make_option_client_with_stock()
+        self._run_buy_all_unfilled(client)
+        all_calls = client.place_option_order.call_args_list
+        price_types = [c.kwargs["price_type"] for c in all_calls]
+        assert "MARKET" not in price_types
 
 
 def _make_stock_client(bid=329.0, ask=330.0, order_status="open"):

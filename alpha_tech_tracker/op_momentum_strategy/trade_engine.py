@@ -49,7 +49,7 @@ from .config import (
 )
 from .bar_recorder import BarRecorder
 from .contract_selector import MockContractSelector, ITMOptionContractSelector, _is_nyse_holiday
-from .models import ActivePosition, ReentryWatcher, SignalEvent, WindowConfig, _D
+from .models import ActivePosition, ReentryWatcher, SignalEvent, WindowConfig, _D, _stock_bid_ask
 from .option_price_monitor import OptionPriceMonitor
 from .order_executor import _place_with_fill_escalation, place_stock_order
 from .position_monitor import PositionMonitor
@@ -1461,9 +1461,17 @@ class OpMomentumTradeEngine:
         opm = self._option_price_monitor
         se = self._signal_engine
         option_type_lower = option_type.lower()
+        _entry_client = self._client
+        _entry_feed = self._alpaca_feed
         def _entry_fair_price_fn():
-            bar = se.get_latest_bar(ticker) if se else None
-            stock_price = _D(str(bar["Close"])) if bar is not None else None
+            try:
+                kwargs = {"feed": _entry_feed} if _entry_feed is not None else {}
+                raw_quote = _entry_client.get_stock_quote(ticker, **kwargs)
+                bid_f, ask_f = _stock_bid_ask(raw_quote)
+                stock_price = (_D(str(bid_f)) + _D(str(ask_f))) / _D("2")
+            except Exception:
+                bar = se.get_latest_bar(ticker) if se else None
+                stock_price = _D(str(bar["Close"])) if bar is not None else None
             return opm.get_fair_price(ticker, option_symbol, option_type_lower, stock_price)
         return _place_with_fill_escalation(
             client=self._client,

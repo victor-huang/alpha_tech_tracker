@@ -33,11 +33,11 @@ def _place_with_fill_escalation(
         OptionPriceMonitor. Skipped if no fn or fn returns None.
       Step 1   (15s): limit at mid.
       Step 2   (15s): limit at mid + (ask-bid)/4 [buy] or mid - (ask-bid)/4 [sell].
-        Slightly more aggressive than mid without jumping straight to the spread edge.
-      Step 3   (15s, final): limit at ask [buy] or max(bid, intrinsic) [sell]. No
-        market order fallback. The intrinsic floor prevents selling below exercise value
-        when the market maker's bid is temporarily depressed. Logs a FILL_ESC MISS
-        warning if the order is still unfilled after this step.
+        For sells, a live stock quote is fetched to compute intrinsic value; if the
+        computed step2_price falls below intrinsic it is floored at intrinsic.
+      Step 3   (15s buy / 60s sell, final): limit at ask [buy] or max(bid, intrinsic)
+        [sell]. After 60s unfilled on a sell, cancels and places a market order to
+        ensure the position is closed. Buys log a FILL_ESC MISS warning if unfilled.
 
     get_fair_price_fn: optional zero-argument callable that returns a Decimal
       fair price for the option. Called fresh at each step to get the latest value.
@@ -78,6 +78,18 @@ def _place_with_fill_escalation(
             logger.warning(
                 "Could not cancel order %s (may already be filled)", order_id
             )
+
+    def _place_market() -> dict:
+        return client.place_option_order(
+            symbol=ticker,
+            option_key=None,
+            price=None,
+            price_type="MARKET",
+            option_type=option_type,
+            order_action=order_action,
+            quantity=contracts,
+            _option_symbol_override=option_symbol,
+        )
 
     def _get_fair_price():
         if get_fair_price_fn is None:
@@ -162,6 +174,28 @@ def _place_with_fill_escalation(
         logger.warning("Could not fetch quote for %s at step2, skipping to step3", option_symbol)
         step2_price = None
 
+    if not is_buy and step2_price is not None:
+        try:
+            kwargs = {"feed": feed} if feed is not None else {}
+            raw_quote = client.get_stock_quote(ticker, **kwargs)
+            bid_f, ask_f = _stock_bid_ask(raw_quote)
+            stock_mid = (_D(str(bid_f)) + _D(str(ask_f))) / _D("2")
+            parsed = _parse_occ_symbol(option_symbol)
+            if parsed:
+                strike = parsed["strike"]
+                intrinsic = max(_D("0"), strike - stock_mid) if option_type.upper() == "PUT" \
+                    else max(_D("0"), stock_mid - strike)
+                if step2_price < intrinsic:
+                    logger.warning(
+                        "FILL_ESC step2 %s %s: step2_price=%s below intrinsic=%s — flooring at intrinsic",
+                        order_action, option_symbol,
+                        step2_price.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
+                        intrinsic.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
+                    )
+                    step2_price = intrinsic
+        except Exception:
+            logger.warning("Could not compute intrinsic floor for %s at step2", option_symbol)
+
     if step2_price is not None:
         order = _place_limit(step2_price)
         order_id = order.get("order_id")
@@ -210,11 +244,19 @@ def _place_with_fill_escalation(
     order = _place_limit(step3_price)
     order_id = order.get("order_id")
     logger.info("FILL_ESC step3 order placed: id=%s", order_id)
-    time.sleep(15)
+    time.sleep(60 if not is_buy else 15)
     if _is_filled(order_id):
         logger.info("FILL_ESC step3 filled: %s", order_id)
         return order
     _cancel_safely(order_id)
+    if not is_buy:
+        logger.warning(
+            "FILL_ESC step3 %s %s: limit unfilled after 60s — placing market order to close",
+            order_action, option_symbol,
+        )
+        market_order = _place_market()
+        logger.info("FILL_ESC market order placed: id=%s", market_order.get("order_id"))
+        return market_order
     logger.warning(
         "FILL_ESC MISS %s %s: all steps exhausted, order %s cancelled — manual intervention may be required",
         order_action, option_symbol, order_id,

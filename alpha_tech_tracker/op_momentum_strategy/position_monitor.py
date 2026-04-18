@@ -609,8 +609,14 @@ class PositionMonitor:
         option_type_lower = "call" if pos.signal == "BULLISH" else "put"
         if self._option_price_monitor and not self._mock_trade_execution:
             try:
-                current_bar = self._signal_engine.get_latest_bar(pos.ticker)
-                stock_price = _D(str(current_bar["Close"])) if current_bar is not None else pos.entry_stock_price
+                try:
+                    kwargs = {"feed": self._alpaca_feed} if self._alpaca_feed is not None else {}
+                    raw_quote = self._client.get_stock_quote(pos.ticker, **kwargs)
+                    bid_f, ask_f = _stock_bid_ask(raw_quote)
+                    stock_price = (_D(str(bid_f)) + _D(str(ask_f))) / _D("2")
+                except Exception:
+                    current_bar = self._signal_engine.get_latest_bar(pos.ticker)
+                    stock_price = _D(str(current_bar["Close"])) if current_bar is not None else pos.entry_stock_price
                 mid = self._option_price_monitor.get_fair_price(
                     pos.ticker, pos.option_symbol, option_type_lower, stock_price
                 )
@@ -711,6 +717,8 @@ class PositionMonitor:
                     )
                 opm = self._option_price_monitor
                 se = self._signal_engine
+                _esc_client = self._client
+                _esc_feed = self._alpaca_feed
                 if opm is not None:
                     def _exit_fair_price_fn(
                         _ticker=pos.ticker,
@@ -718,8 +726,14 @@ class PositionMonitor:
                         _otype=option_type_lower,
                         _entry_stock=pos.entry_stock_price,
                     ):
-                        bar = se.get_latest_bar(_ticker) if se else None
-                        stock_price = _D(str(bar["Close"])) if bar is not None else _D(str(_entry_stock))
+                        try:
+                            kwargs = {"feed": _esc_feed} if _esc_feed is not None else {}
+                            raw_quote = _esc_client.get_stock_quote(_ticker, **kwargs)
+                            bid_f, ask_f = _stock_bid_ask(raw_quote)
+                            stock_price = (_D(str(bid_f)) + _D(str(ask_f))) / _D("2")
+                        except Exception:
+                            bar = se.get_latest_bar(_ticker) if se else None
+                            stock_price = _D(str(bar["Close"])) if bar is not None else _D(str(_entry_stock))
                         return opm.get_fair_price(_ticker, _symbol, _otype, stock_price)
                 else:
                     _exit_fair_price_fn = None
