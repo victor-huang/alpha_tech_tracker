@@ -829,7 +829,9 @@ class OpMomentumTradeEngine:
             return
         delay = (dd_check_time - _now_et()).total_seconds()
         if delay <= 0:
-            logger.info("DD [%s]: check time already passed, skipping", win.label)
+            # Entry threads took longer than expected — fire immediately rather than skip.
+            logger.info("DD [%s]: check time already passed, firing immediately", win.label)
+            self._check_doubledown_for_window(win)
             return
         t = threading.Timer(delay, self._check_doubledown_for_window, args=(win,))
         t.daemon = True
@@ -955,6 +957,15 @@ class OpMomentumTradeEngine:
         if not success:
             with self._signal_lock:
                 self._window_state[label]["open_position_count"] -= 1
+            with self._returned_lock:
+                self._window_returned[label] = (
+                    self._window_returned.get(label, _D("0")) + freed_capital
+                )
+            logger.warning(
+                "DD [%s] entry failed — restored %.2f to _window_returned",
+                label,
+                float(freed_capital),
+            )
 
     def _rebuild_window_returned(self, positions: list) -> None:
         """Accumulate returned capital from a list of positions into _window_returned.
@@ -1413,6 +1424,15 @@ class OpMomentumTradeEngine:
         ]
         for t in threads:
             t.start()
+
+        # Wait for all entries to complete before scheduling DD so the check
+        # sees final survivor state in _monitor._positions. Covers worst-case
+        # fill escalation (~2 min). If threads finish early the join returns immediately.
+        # If they somehow exceed the timeout, _schedule_dd_check_for_window fires
+        # immediately (delay <= 0 path) rather than skipping.
+        _ENTRY_JOIN_TIMEOUT_S = 150
+        for t in threads:
+            t.join(timeout=_ENTRY_JOIN_TIMEOUT_S)
 
         self._schedule_dd_check_for_window(win)
 

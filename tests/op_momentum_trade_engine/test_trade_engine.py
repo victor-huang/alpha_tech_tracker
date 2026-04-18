@@ -2871,6 +2871,43 @@ class TestDoubleDown:
             engine._schedule_dd_check_for_window(self._make_win())
         assert "W1" not in engine._dd_timers
 
+    def test_dd_restores_window_returned_when_entry_fails(self):
+        engine = self._make_engine()
+        engine._window_returned["W1"] = _D("3800")
+        winner = self._make_open_pos(rank=0, slot_capital=6000, ticker="NVDA")
+        # entry=10, exit=9.5, contracts=4 → returned = 3800
+        stopout = self._make_stopout_pos(rank=1, slot_capital=4000, ticker="TSLA",
+                                          entry_mid=10.0, exit_mid=9.5, contracts=4)
+        engine._monitor._positions = [winner, stopout]
+        engine._signal_engine.get_latest_bar.return_value = self._make_latest_bar(close=290.0)
+
+        with patch.object(engine, "_enter_position", return_value=False), \
+             patch(_NOTIFY_PATH):
+            engine._check_doubledown_for_window(self._make_win())
+
+        # freed_capital was subtracted then restored — net change is zero
+        assert engine._window_returned["W1"] == _D("3800")
+
+    def test_schedule_dd_fires_immediately_when_time_already_passed(self):
+        engine = self._make_engine()
+        winner = self._make_open_pos(rank=0, slot_capital=6000, ticker="NVDA")
+        stopout = self._make_stopout_pos(rank=1, slot_capital=4000, ticker="TSLA")
+        engine._monitor._positions = [winner, stopout]
+        engine._signal_engine.get_latest_bar.return_value = self._make_latest_bar()
+
+        with patch(_IS_REPLAY_MODE_PATH, return_value=False), \
+             patch.object(engine, "_check_doubledown_for_window") as mock_check, \
+             patch(_NOTIFY_PATH):
+            # Patch _now_et to return a time after the DD check time
+            with patch(
+                "alpha_tech_tracker.op_momentum_strategy.trade_engine._now_et",
+                return_value=ET.localize(datetime(2026, 1, 2, 15, 0, 0)),
+            ):
+                engine._schedule_dd_check_for_window(self._make_win())
+
+        mock_check.assert_called_once()
+        assert "W1" not in engine._dd_timers
+
     def test_schedule_dd_skips_when_feature_disabled(self):
         client = _make_alpaca_client()
         engine = OpMomentumTradeEngine(

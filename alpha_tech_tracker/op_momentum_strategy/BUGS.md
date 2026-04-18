@@ -279,6 +279,64 @@ Document that changing `--capital` between restarts on the same trading day is u
 
 ---
 
+## Open: Capital Flow / Concurrency Issues
+
+From the 2026-04-18 audit (`docs/CAPITAL_FLOW_AUDIT.md`).
+
+---
+
+### BUG-012 (Medium): DD Failed Entry Leaks `_window_returned`
+
+**Status: Open**
+**Severity:** Medium — A1/A2 budget understated when a double-down entry fails
+
+#### What happened (risk scenario)
+
+In `_check_doubledown_for_window`, `_window_returned[label]` is decremented by `freed_capital` before the DD entry is attempted. If `_enter_position` returns `False` (contract error, order rejection), the decrement is never restored. The freed capital appears consumed but no position was entered.
+
+#### Fix needed
+
+Restore `_window_returned` on entry failure:
+
+```python
+success = self._enter_position(...)
+if not success:
+    with self._signal_lock:
+        self._window_state[label]["open_position_count"] -= 1
+    with self._returned_lock:
+        self._window_returned[label] = (
+            self._window_returned.get(label, _D("0")) + freed_capital
+        )
+```
+
+**Files:** `trade_engine.py` — `_check_doubledown_for_window()`
+
+---
+
+### BUG-013 (Low): `_window_state["budget"]` Written/Read Without Lock
+
+**Status: Open**
+**Severity:** Low — cosmetic inconsistency; safe due to timing but contrary to pattern
+
+All other `_window_state` fields are accessed under `_signal_lock`. The `["budget"]` key is set in `_drain_pending_signals_for_window` and read in `_get_window_budget` without the lock. Safe because M1 drain completes hours before A1 reads it, but should be made consistent.
+
+**Files:** `trade_engine.py` — `_drain_pending_signals_for_window()`, `_get_window_budget()`
+
+---
+
+### BUG-014 (Low): Entry Threads Not Joined Before DD Check — Slow Fills May Miss Survivor
+
+**Status: Open**
+**Severity:** Low — DD may skip or mis-target when fill escalation is slow
+
+Entry threads are started and `_schedule_dd_check_for_window` fires immediately (DD runs at OR close + `doubledown_start_min`). If an entry is still in `_poll_entry_fill` (step 3+ escalation, up to ~2 min) when DD checks `_monitor._positions`, the position is not yet tracked and won't be counted as a survivor.
+
+**Mitigation:** Increase `--doubledown-start` to 10+ minutes if escalation frequently hits step 3+.
+
+**Files:** `trade_engine.py` — `_drain_pending_signals_for_window()`, `_schedule_dd_check_for_window()`
+
+---
+
 ## Summary Table
 
 | ID | Bug | Session | Severity | Status |
@@ -294,3 +352,6 @@ Document that changing `--capital` between restarts on the same trading day is u
 | BUG-009 | No state flush on SIGTERM — checkpoint may be stale | Code review | Moderate | **Open** |
 | BUG-010 | `--top` decrease not enforced on restart | Code review | Low | **Won't Fix** |
 | BUG-011 | `--capital` change on restart corrupts normalization math | Code review | Low-Moderate | **Open** |
+| BUG-012 | DD failed entry leaks `_window_returned` | Capital flow audit | Medium | **Fixed** |
+| BUG-013 | `_window_state["budget"]` written/read without lock | Capital flow audit | Low | **Open** |
+| BUG-014 | Entry threads not joined before DD check — slow fills may miss survivor | Capital flow audit | Low | **Fixed** |
