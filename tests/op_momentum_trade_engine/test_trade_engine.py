@@ -1318,7 +1318,7 @@ class TestGetWindowBudgetCapitalFlow:
         # Must NOT be 10000 + 10000 = 20000 (the bug value when deployed was 0)
         assert result == _D("10000")
 
-    def test_sequential_budget_capped_at_configured_capital_after_multi_session_restart(self):
+    def test_sequential_budget_normalized_after_multi_session_restart(self):
         """Regression: 2026-04-17 live session deployed 2x capital after multiple engine restarts.
 
         Each restart calls _recover_session → _rebuild_window_returned, which sums
@@ -1326,17 +1326,18 @@ class TestGetWindowBudgetCapitalFlow:
         restarts each trading ~$10k in M1, _window_returned["M1"] held ~$21k and A1
         was allocated that inflated budget.
 
-        Fix: cap the sequential window budget at replay_capital (the --capital flag)
-        so that multi-session checkpoint accumulation never inflates the budget beyond
-        the user's configured limit.
+        Fix: when closed_primary_deployed > initial_capital, normalize to:
+            effective = prior_returned - closed_deployed + initial_capital
+                      = net_pnl_all_sessions + initial_capital
+        This preserves real M1 P&L while removing phantom capital from extra sessions.
         """
         engine = self._make_m1_a1_engine()
         engine._replay_capital = 10000.0  # --capital 10000
 
-        # Simulates checkpoint accumulated from 2 M1 sessions (~$10k each)
+        # 2 M1 sessions each deployed $10k → $20k closed_deployed
+        # Net P&L across both sessions: $21370 - $20000 = $1370
         engine._window_returned["M1"] = _D("21370")
-        engine._window_primary_deployed["M1"] = _D("20000")
-        engine._window_state["M1"]["budget"] = _D("10000")
+        engine._window_closed_primary_deployed["M1"] = _D("20000")  # 2 sessions × $10k
 
         mock_monitor = Mock()
         mock_monitor._lock = threading.Lock()
@@ -1346,16 +1347,36 @@ class TestGetWindowBudgetCapitalFlow:
         a1_win = next(w for w in engine._windows if w.label == "A1")
         result = engine._get_window_budget(a1_win)
 
-        assert result == _D("10000")
+        # effective = $21370 - $20000 + $10000 = $11370 (initial + net P&L)
+        assert result == _D("11370")
 
-    def test_sequential_budget_not_capped_when_no_replay_capital_configured(self):
-        """Without --capital, no cap is applied — live account buying_power governs."""
+    def test_sequential_budget_preserves_single_session_pnl(self):
+        """Single-session M1 gain flows to A1 without normalization."""
+        engine = self._make_m1_a1_engine()
+        engine._replay_capital = 10000.0
+
+        # One M1 session deployed $10k, returned $11k (+$1k profit)
+        engine._window_returned["M1"] = _D("11000")
+        engine._window_closed_primary_deployed["M1"] = _D("10000")  # exactly 1 session
+
+        mock_monitor = Mock()
+        mock_monitor._lock = threading.Lock()
+        mock_monitor._positions = []
+        engine._monitor = mock_monitor
+
+        a1_win = next(w for w in engine._windows if w.label == "A1")
+        result = engine._get_window_budget(a1_win)
+
+        # closed_deployed == initial → no normalization; A1 gets full $11k
+        assert result == _D("11000")
+
+    def test_sequential_budget_not_normalized_when_no_replay_capital_configured(self):
+        """Without --capital, no normalization — live account buying_power governs."""
         engine = self._make_m1_a1_engine()
         engine._replay_capital = None
 
         engine._window_returned["M1"] = _D("21370")
-        engine._window_primary_deployed["M1"] = _D("20000")
-        engine._window_state["M1"]["budget"] = _D("10000")
+        engine._window_closed_primary_deployed["M1"] = _D("20000")
 
         mock_monitor = Mock()
         mock_monitor._lock = threading.Lock()
@@ -1885,6 +1906,34 @@ class TestRebuildWindowReturned:
         engine._rebuild_window_returned([])
 
         assert engine._window_returned == {}
+
+    def test_primary_position_also_populates_closed_primary_deployed(self):
+        engine = self._make_engine()
+        pos = _make_checkpoint_position(
+            slot_capital=_D("6000"),
+            contracts=2,
+            simulated_entry_mid=_D("3.00"),
+            simulated_exit_mid=_D("5.00"),
+            trailing_arm_price=None,
+        )
+
+        engine._rebuild_window_returned([pos])
+
+        assert engine._window_closed_primary_deployed["M1"] == _D("6000")
+
+    def test_reentry_position_does_not_populate_closed_primary_deployed(self):
+        engine = self._make_engine()
+        pos = _make_checkpoint_position(
+            slot_capital=_D("6000"),
+            contracts=1,
+            simulated_entry_mid=_D("3.00"),
+            simulated_exit_mid=_D("4.00"),
+            trailing_arm_price=_D("121.00"),
+        )
+
+        engine._rebuild_window_returned([pos])
+
+        assert engine._window_closed_primary_deployed == {}
 
 
 # ---------------------------------------------------------------------------

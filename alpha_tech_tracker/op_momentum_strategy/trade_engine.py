@@ -315,6 +315,10 @@ class OpMomentumTradeEngine:
         self._returned_lock = threading.Lock()
         # Total primary slot_capital deployed per window (tracks undeployed capital).
         self._window_primary_deployed: dict = {}
+        # Sum of slot_capital for all CLOSED primary positions per window, accumulated
+        # via _rebuild_window_returned. Used to normalize multi-session checkpoint
+        # inflation in _get_window_budget.
+        self._window_closed_primary_deployed: dict = {}
         self._rolling_stats: dict = {}
         # Per-window rolling stats: {label: {ticker: stats_dict}}
         # Falls back to _rolling_stats when label not present (e.g. single-window or tests).
@@ -943,6 +947,9 @@ class OpMomentumTradeEngine:
             with self._returned_lock:
                 self._window_returned.setdefault(pos.window_label, _D("0"))
                 self._window_returned[pos.window_label] += returned
+                if not is_reentry:
+                    self._window_closed_primary_deployed.setdefault(pos.window_label, _D("0"))
+                    self._window_closed_primary_deployed[pos.window_label] += pos.slot_capital
             with self._pnl_lock:
                 self._daily_realized_pnl += cap_pnl
                 logger.info(
@@ -1155,16 +1162,27 @@ class OpMomentumTradeEngine:
 
         if prior_returned > 0:
             if self._replay_capital is not None:
-                capital_cap = _D(str(self._replay_capital))
-                if prior_returned > capital_cap:
+                with self._returned_lock:
+                    closed_deployed = self._window_closed_primary_deployed.get(prior_label, _D("0"))
+                initial = _D(str(self._replay_capital))
+                if closed_deployed > initial:
+                    # Multi-session restart: checkpoint accumulated slot_capital from more
+                    # than one M1 session. Normalize to: net_pnl_all_sessions + initial_capital.
+                    # Formula: prior_returned - closed_deployed + initial
+                    #        = (total_slot + total_pnl) - total_slot + initial
+                    #        = total_pnl + initial
+                    effective = prior_returned - closed_deployed + initial
                     logger.warning(
-                        "Sequential window [%s] raw budget %.2f exceeds configured capital %.2f"
-                        " — capping (likely multi-session checkpoint accumulation after restart)",
+                        "Sequential window [%s] normalizing budget: raw=%.2f"
+                        " closed_deployed=%.2f initial=%.2f → effective=%.2f"
+                        " (multi-session checkpoint accumulation)",
                         win.label,
                         float(prior_returned),
-                        float(capital_cap),
+                        float(closed_deployed),
+                        float(initial),
+                        float(effective),
                     )
-                    prior_returned = capital_cap
+                    prior_returned = effective
             logger.info(
                 "Sequential window [%s] budget from prior [%s]: %.2f",
                 win.label,
@@ -1652,6 +1670,7 @@ class OpMomentumTradeEngine:
 
         self._window_returned = {}
         self._window_primary_deployed = {}
+        self._window_closed_primary_deployed = {}
         self._rolling_stats_by_window = {}
         self._daily_realized_pnl = _D("0")
         self._dd_timers = {}
@@ -1831,6 +1850,7 @@ class OpMomentumTradeEngine:
 
         self._window_returned = {}
         self._window_primary_deployed = {}
+        self._window_closed_primary_deployed = {}
         self._rolling_stats_by_window = {}
         self._daily_realized_pnl = _D("0")
         self._dd_timers = {}
