@@ -588,6 +588,8 @@ if __name__ == "__main__":
         _fh = _make_log_handler(log_file)
         _fh.setFormatter(_fmt)
         _root.addHandler(_fh)
+        for _noisy in ("urllib3", "requests", "requests_oauthlib", "oauthlib"):
+            logging.getLogger(_noisy).setLevel(logging.WARNING)
         is_replay = bool(args.replay_date) or bool(args.replay_start and args.replay_end)
         mock_trade_execution = args.mock_trade_execution or is_replay
         is_paper = _resolve_is_paper(args)
@@ -695,6 +697,8 @@ if __name__ == "__main__":
     _fh = _make_log_handler(log_file)
     _fh.setFormatter(_fmt)
     _root.addHandler(_fh)
+    for _noisy in ("urllib3", "requests", "requests_oauthlib", "oauthlib"):
+        logging.getLogger(_noisy).setLevel(logging.WARNING)
     logger.info(
         "Daemon started — api_key_set=%s config_file=%s",
         bool(os.environ.get("ALPACA_API_KEY")),
