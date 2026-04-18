@@ -1986,3 +1986,43 @@ class TestPollExitFillPrice:
 
         assert len(fill_at_callback) == 1
         assert fill_at_callback[0] == _D("105.0")
+
+    def test_does_not_set_exit_fill_price_when_order_is_cancelled(self):
+        """FILL_ESC MISS: cancelled order returns filled_avg_price=0 — must not record as fill."""
+        client = _make_alpaca_client()
+        client.order_status.return_value = {"status": "canceled", "filled_avg_price": 0.0}
+        monitor = self._make_monitor(client)
+
+        pos = _make_stock_position(signal="BULLISH", shares=10)
+        pos.exit_order_id = "exit-cancelled-1"
+        monitor._poll_exit_fill_price(pos)
+
+        assert pos.exit_fill_price is None
+        assert client.order_status.call_count == 1
+
+    def test_does_not_set_exit_fill_price_when_order_is_rejected(self):
+        client = _make_alpaca_client()
+        client.order_status.return_value = {"status": "rejected", "filled_avg_price": 0.0}
+        monitor = self._make_monitor(client)
+
+        pos = _make_stock_position(signal="BULLISH", shares=10)
+        pos.exit_order_id = "exit-rejected-1"
+        monitor._poll_exit_fill_price(pos)
+
+        assert pos.exit_fill_price is None
+
+    def test_retries_when_fill_price_is_zero_but_order_not_cancelled(self):
+        """fill_price=0 on open order should retry, not record as fill."""
+        client = _make_alpaca_client()
+        client.order_status.side_effect = [
+            {"status": "open", "filled_avg_price": 0.0},
+            {"status": "filled", "filled_avg_price": 99.50},
+        ]
+        monitor = self._make_monitor(client)
+
+        pos = _make_stock_position(signal="BULLISH", shares=10)
+        pos.exit_order_id = "exit-zero-retry"
+        monitor._poll_exit_fill_price(pos, interval=0.0)
+
+        assert pos.exit_fill_price == _D("99.50")
+        assert client.order_status.call_count == 2

@@ -790,8 +790,18 @@ class PositionMonitor:
                     time.sleep(interval)
                 continue
 
+            order_status_val = status.get("status", "")
             fill_price_raw = status.get("filled_avg_price")
-            if fill_price_raw is None:
+
+            if order_status_val in ("canceled", "cancelled", "rejected"):
+                logger.warning(
+                    "FILL_MISS exit order %s was %s with no fill — %s may still be "
+                    "open at broker; manual intervention required",
+                    pos.exit_order_id, order_status_val, pos.ticker,
+                )
+                return
+
+            if fill_price_raw is None or fill_price_raw == 0:
                 if attempt < max_attempts:
                     time.sleep(interval)
                 continue
@@ -828,8 +838,12 @@ class PositionMonitor:
             if p.is_closed and p.exit_fill_price is None and p.exit_order_id:
                 try:
                     s = self._client.order_status(p.exit_order_id)
-                    if s.get("filled_avg_price") is not None:
-                        p.exit_fill_price = _D(str(s["filled_avg_price"]))
+                    filled_price = s.get("filled_avg_price")
+                    order_status_val = s.get("status", "")
+                    if (filled_price is not None
+                            and filled_price != 0
+                            and order_status_val not in ("canceled", "cancelled", "rejected")):
+                        p.exit_fill_price = _D(str(filled_price))
                 except Exception:
                     pass
 
