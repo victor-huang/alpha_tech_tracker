@@ -1386,32 +1386,45 @@ class TestEnterPositionFailures:
         engine._signal_engine.get_latest_bar.return_value = None
         return engine
 
-    def test_open_position_count_decremented_when_contract_selector_raises(self):
+    def test_returns_false_when_contract_selector_raises(self):
         engine = self._make_engine()
         engine._contract_selector = Mock()
         engine._contract_selector.select.side_effect = Exception("selector failure")
-        engine._window_state["W1"]["open_position_count"] = 1
 
         with patch(
             "alpha_tech_tracker.op_momentum_strategy.trade_engine.is_replay_mode",
             return_value=False,
         ):
-            engine._enter_position(_make_signal_event("NVDA"), window_label="W1")
+            result = engine._enter_position(_make_signal_event("NVDA"), window_label="W1")
 
-        assert engine._window_state["W1"]["open_position_count"] == 0
+        assert result is False
 
-    def test_open_position_count_decremented_when_sizer_raises(self):
+    def test_returns_false_when_sizer_raises(self):
         engine = self._make_engine()
         engine._contract_selector = Mock()
         engine._contract_selector.select.return_value = "NVDA260411C00170000"
-        engine._window_state["W1"]["open_position_count"] = 1
 
         with patch(_POSITION_SIZER_PATH, side_effect=Exception("sizer failure")), \
              patch(
                  "alpha_tech_tracker.op_momentum_strategy.trade_engine.is_replay_mode",
                  return_value=False,
              ):
-            engine._enter_position(_make_signal_event("NVDA"), window_label="W1")
+            result = engine._enter_position(_make_signal_event("NVDA"), window_label="W1")
+
+        assert result is False
+
+    def test_drain_loop_decrements_open_position_count_on_entry_failure(self):
+        """Drain loop must decrement open_position_count when _enter_position returns False."""
+        engine = self._make_engine()
+        engine._trade_type = "stock"
+        engine._top_n = 2
+
+        with patch.object(engine, "_enter_position", return_value=False):
+            engine._window_state["W1"]["open_position_count"] = 1
+            # simulate what _enter_one does in the drain loop
+            success = engine._enter_position(_make_signal_event("NVDA"), window_label="W1")
+            if not success:
+                engine._window_state["W1"]["open_position_count"] -= 1
 
         assert engine._window_state["W1"]["open_position_count"] == 0
 

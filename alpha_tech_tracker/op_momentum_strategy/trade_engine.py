@@ -393,7 +393,7 @@ class OpMomentumTradeEngine:
             entry_bar_time = latest_bar.name if latest_bar is not None else None
 
         if self._trade_type == "stock":
-            self._enter_stock_position(
+            return self._enter_stock_position(
                 event=event,
                 rank=rank,
                 window_label=window_label,
@@ -409,7 +409,7 @@ class OpMomentumTradeEngine:
                 reentry_type=reentry_type,
             )
         else:
-            self._enter_option_position(
+            return self._enter_option_position(
                 event=event,
                 rank=rank,
                 window_label=window_label,
@@ -448,9 +448,7 @@ class OpMomentumTradeEngine:
             )
         except Exception:
             logger.exception("Could not size stock position for %s", event.ticker)
-            with self._signal_lock:
-                self._window_state[window_label]["open_position_count"] -= 1
-            return
+            return False
 
         hard_stop = bull_hard_stop if event.signal == "BULLISH" else bear_hard_stop
         prefix = "[SIMULATE] " if self._mock_trade_execution else ""
@@ -494,9 +492,7 @@ class OpMomentumTradeEngine:
                 )
         except Exception:
             logger.exception("Failed to place stock entry order for %s", event.ticker)
-            with self._signal_lock:
-                self._window_state[window_label]["open_position_count"] -= 1
-            return
+            return False
 
         sim_entry_mid = (
             order.get("simulated_fill_mid") if self._mock_trade_execution else None
@@ -548,6 +544,7 @@ class OpMomentumTradeEngine:
             pos.entry_fill_price = self._poll_entry_fill(order.get("order_id", ""))
         self._monitor.add_position(pos)
         self._flush_session_state()
+        return True
 
     def _enter_option_position(
         self,
@@ -576,9 +573,7 @@ class OpMomentumTradeEngine:
             )
         except Exception:
             logger.exception("Could not select option contract for %s", event.ticker)
-            with self._signal_lock:
-                self._window_state[window_label]["open_position_count"] -= 1
-            return
+            return False
 
         try:
             sizer = PositionSizer(self._client)
@@ -589,9 +584,7 @@ class OpMomentumTradeEngine:
             )
         except Exception:
             logger.exception("Could not size position for %s", option_symbol)
-            with self._signal_lock:
-                self._window_state[window_label]["open_position_count"] -= 1
-            return
+            return False
 
         hard_stop = bull_hard_stop if event.signal == "BULLISH" else bear_hard_stop
         prefix = "[SIMULATE] " if self._mock_trade_execution else ""
@@ -611,9 +604,7 @@ class OpMomentumTradeEngine:
             )
         except Exception:
             logger.exception("Failed to place entry order for %s", option_symbol)
-            with self._signal_lock:
-                self._window_state[window_label]["open_position_count"] -= 1
-            return
+            return False
 
         sim_entry_mid = (
             order.get("simulated_fill_mid") if self._mock_trade_execution else None
@@ -663,6 +654,7 @@ class OpMomentumTradeEngine:
             pos.entry_fill_price = self._poll_entry_fill(order.get("order_id", ""))
         self._monitor.add_position(pos)
         self._flush_session_state()
+        return True
 
     def _poll_entry_fill(self, order_id: str, retries: int = 3, delay: float = 5.0) -> Optional[_D]:
         """Poll broker for entry fill price after a live order is placed.
@@ -899,7 +891,7 @@ class OpMomentumTradeEngine:
         with self._signal_lock:
             self._window_state[label]["open_position_count"] += 1
 
-        self._enter_position(
+        success = self._enter_position(
             event,
             rank=winner.rank,
             window_label=label,
@@ -909,6 +901,9 @@ class OpMomentumTradeEngine:
             reentry_type="doubledown",
             capital_weight_override=_D("1"),
         )
+        if not success:
+            with self._signal_lock:
+                self._window_state[label]["open_position_count"] -= 1
 
     def _rebuild_window_returned(self, positions: list) -> None:
         """Accumulate returned capital from a list of positions into _window_returned.
@@ -1228,9 +1223,12 @@ class OpMomentumTradeEngine:
 
         win = next(w for w in self._windows if w.label == window_label)
         window_budget = self._get_window_budget(win)
-        self._enter_position(
+        success = self._enter_position(
             event, rank=0, window_label=window_label, window_budget=window_budget
         )
+        if not success:
+            with self._signal_lock:
+                self._window_state[window_label]["open_position_count"] -= 1
 
     def _drain_pending_signals_for_window(self, win: WindowConfig):
         """Rank and enter all buffered signals for the given window. Safe to call from any thread."""
@@ -1296,6 +1294,9 @@ class OpMomentumTradeEngine:
         # Store budget so sequential windows can compute undeployed capital.
         if window_budget is not None:
             self._window_state[label]["budget"] = window_budget
+
+        # Collect top-N selections first (no fallback on failure).
+        selections = []
         for rank, (score, ticker, event) in enumerate(scored):
             if self._is_circuit_breaker_tripped():
                 logger.warning(
@@ -1317,9 +1318,25 @@ class OpMomentumTradeEngine:
                 score,
                 rank,
             )
-            self._enter_position(
+            selections.append((rank, event))
+
+        # Fire all selected entries in parallel — each thread is independent.
+        # On failure the thread decrements open_position_count and stops; no
+        # fallback to the next-ranked ticker.
+        def _enter_one(rank: int, event: SignalEvent):
+            success = self._enter_position(
                 event, rank=rank, window_label=label, window_budget=window_budget
             )
+            if not success:
+                with self._signal_lock:
+                    self._window_state[label]["open_position_count"] -= 1
+
+        threads = [
+            threading.Thread(target=_enter_one, args=(rank, event), daemon=True)
+            for rank, event in selections
+        ]
+        for t in threads:
+            t.start()
 
         self._schedule_dd_check_for_window(win)
 
