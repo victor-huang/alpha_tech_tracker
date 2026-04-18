@@ -1318,6 +1318,55 @@ class TestGetWindowBudgetCapitalFlow:
         # Must NOT be 10000 + 10000 = 20000 (the bug value when deployed was 0)
         assert result == _D("10000")
 
+    def test_sequential_budget_capped_at_configured_capital_after_multi_session_restart(self):
+        """Regression: 2026-04-17 live session deployed 2x capital after multiple engine restarts.
+
+        Each restart calls _recover_session → _rebuild_window_returned, which sums
+        ALL closed M1 positions from the checkpoint across all sessions. After 2+
+        restarts each trading ~$10k in M1, _window_returned["M1"] held ~$21k and A1
+        was allocated that inflated budget.
+
+        Fix: cap the sequential window budget at replay_capital (the --capital flag)
+        so that multi-session checkpoint accumulation never inflates the budget beyond
+        the user's configured limit.
+        """
+        engine = self._make_m1_a1_engine()
+        engine._replay_capital = 10000.0  # --capital 10000
+
+        # Simulates checkpoint accumulated from 2 M1 sessions (~$10k each)
+        engine._window_returned["M1"] = _D("21370")
+        engine._window_primary_deployed["M1"] = _D("20000")
+        engine._window_state["M1"]["budget"] = _D("10000")
+
+        mock_monitor = Mock()
+        mock_monitor._lock = threading.Lock()
+        mock_monitor._positions = []
+        engine._monitor = mock_monitor
+
+        a1_win = next(w for w in engine._windows if w.label == "A1")
+        result = engine._get_window_budget(a1_win)
+
+        assert result == _D("10000")
+
+    def test_sequential_budget_not_capped_when_no_replay_capital_configured(self):
+        """Without --capital, no cap is applied — live account buying_power governs."""
+        engine = self._make_m1_a1_engine()
+        engine._replay_capital = None
+
+        engine._window_returned["M1"] = _D("21370")
+        engine._window_primary_deployed["M1"] = _D("20000")
+        engine._window_state["M1"]["budget"] = _D("10000")
+
+        mock_monitor = Mock()
+        mock_monitor._lock = threading.Lock()
+        mock_monitor._positions = []
+        engine._monitor = mock_monitor
+
+        a1_win = next(w for w in engine._windows if w.label == "A1")
+        result = engine._get_window_budget(a1_win)
+
+        assert result == _D("21370")
+
 
 # ---------------------------------------------------------------------------
 # _drain_pending_signals_for_window — rank ordering + budget storage

@@ -1154,6 +1154,17 @@ class OpMomentumTradeEngine:
             )
 
         if prior_returned > 0:
+            if self._replay_capital is not None:
+                capital_cap = _D(str(self._replay_capital))
+                if prior_returned > capital_cap:
+                    logger.warning(
+                        "Sequential window [%s] raw budget %.2f exceeds configured capital %.2f"
+                        " — capping (likely multi-session checkpoint accumulation after restart)",
+                        win.label,
+                        float(prior_returned),
+                        float(capital_cap),
+                    )
+                    prior_returned = capital_cap
             logger.info(
                 "Sequential window [%s] budget from prior [%s]: %.2f",
                 win.label,
