@@ -31,15 +31,15 @@ class TestPositionSizer:
         assert contracts == expected_contracts
         assert limit_price == _D("8.50")
 
-    def test_minimum_one_contract_when_budget_is_tiny(self):
+    def test_raises_when_budget_too_small_for_one_contract(self):
         client = _make_alpaca_client()
         client.get_accounts.return_value = {"buying_power": 100.0}
         client.get_option_quote_by_occ.return_value = _make_option_quote(bid=50.00, ask=60.00)
 
+        import pytest
         sizer = PositionSizer(client)
-        contracts, _ = sizer.compute("NVDA260328C00730000")
-
-        assert contracts == 1
+        with pytest.raises(RuntimeError, match="Insufficient buying power"):
+            sizer.compute("NVDA260328C00730000")
 
     def test_returns_one_contract_and_ask_when_mid_is_zero(self):
         client = _make_alpaca_client()
@@ -54,17 +54,19 @@ class TestPositionSizer:
 
 
 class TestWindowBudgetSizing:
-    def test_window_budget_bypasses_get_accounts(self):
+    def test_window_budget_checks_buying_power_via_get_accounts(self):
         client = _make_alpaca_client()
+        client.get_accounts.return_value = {"buying_power": 50000.0}
         client.get_option_quote_by_occ.return_value = _make_option_quote(bid=8.00, ask=9.00)
 
         sizer = PositionSizer(client)
         sizer.compute("NVDA260328C00730000", window_budget=_D("20000"))
 
-        client.get_accounts.assert_not_called()
+        client.get_accounts.assert_called_once()
 
     def test_window_budget_computes_contracts_from_explicit_budget(self):
         client = _make_alpaca_client()
+        client.get_accounts.return_value = {"buying_power": 50000.0}
         client.get_option_quote_by_occ.return_value = _make_option_quote(bid=8.00, ask=9.00)
 
         sizer = PositionSizer(client)
@@ -81,6 +83,7 @@ class TestWindowBudgetSizing:
 
     def test_window_budget_combined_with_capital_weight(self):
         client = _make_alpaca_client()
+        client.get_accounts.return_value = {"buying_power": 50000.0}
         client.get_option_quote_by_occ.return_value = _make_option_quote(bid=8.00, ask=9.00)
         weight = _D("0.5")
 
@@ -104,6 +107,36 @@ class TestWindowBudgetSizing:
         sizer.compute("NVDA260328C00730000", window_budget=None)
 
         client.get_accounts.assert_called_once()
+
+    def test_raises_when_buying_power_insufficient_for_one_contract(self):
+        client = _make_alpaca_client()
+        client.get_accounts.return_value = {"buying_power": 500.0}
+        client.get_option_quote_by_occ.return_value = _make_option_quote(bid=8.00, ask=9.00)
+
+        sizer = PositionSizer(client)
+        import pytest
+        with pytest.raises(RuntimeError, match="Insufficient buying power"):
+            sizer.compute("NVDA260328C00730000", window_budget=_D("20000"))
+
+    def test_caps_contracts_at_buying_power_limit(self):
+        client = _make_alpaca_client()
+        client.get_accounts.return_value = {"buying_power": 1000.0}
+        client.get_option_quote_by_occ.return_value = _make_option_quote(bid=8.00, ask=9.00)
+
+        sizer = PositionSizer(client)
+        contracts, _ = sizer.compute("NVDA260328C00730000", window_budget=_D("20000"))
+
+        # budget=20000 → 23 contracts at $8.50; buying_power=1000 → max 1 contract at $850
+        assert contracts == 1
+
+    def test_mock_stock_price_skips_buying_power_check(self):
+        client = _make_alpaca_client()
+        sizer = PositionSizer(client)
+        contracts, _ = sizer.compute(
+            "NVDA260328C00090000", window_budget=_D("25000"), mock_stock_price=_D("100")
+        )
+
+        client.get_accounts.assert_not_called()
 
 
 class TestRankWeightedSizing:
@@ -152,15 +185,15 @@ class TestComputeStock:
         assert shares == expected_shares
         assert limit_price == _D("100.00")
 
-    def test_minimum_one_share_when_budget_is_tiny(self):
+    def test_raises_when_budget_too_small_for_one_share(self):
         client = _make_alpaca_client()
         client.get_accounts.return_value = {"buying_power": 1.0}
         client.get_stock_quote.return_value = _make_stock_quote(bid=500.00, ask=502.00)
 
+        import pytest
         sizer = PositionSizer(client)
-        shares, _ = sizer.compute_stock("TSLA", _D("501"))
-
-        assert shares == 1
+        with pytest.raises(RuntimeError, match="Insufficient buying power"):
+            sizer.compute_stock("TSLA", _D("501"))
 
     def test_returns_one_share_when_quote_and_stock_price_are_zero(self):
         client = _make_alpaca_client()
@@ -187,17 +220,28 @@ class TestComputeStock:
         assert shares == expected_shares
         assert limit_price == _D("100.00")
 
-    def test_window_budget_bypasses_get_accounts(self):
+    def test_window_budget_checks_buying_power_via_get_accounts(self):
         client = _make_alpaca_client()
+        client.get_accounts.return_value = {"buying_power": 50000.0}
         client.get_stock_quote.return_value = _make_stock_quote(bid=99.00, ask=101.00)
 
         sizer = PositionSizer(client)
         sizer.compute_stock("NVDA", _D("100"), window_budget=_D("20000"))
 
+        client.get_accounts.assert_called_once()
+
+    def test_window_budget_bypasses_get_accounts_in_mock_mode(self):
+        client = _make_alpaca_client()
+        client.get_stock_quote.return_value = _make_stock_quote(bid=99.00, ask=101.00)
+
+        sizer = PositionSizer(client)
+        sizer.compute_stock("NVDA", _D("100"), window_budget=_D("20000"), mock=True)
+
         client.get_accounts.assert_not_called()
 
     def test_window_budget_combined_with_capital_weight(self):
         client = _make_alpaca_client()
+        client.get_accounts.return_value = {"buying_power": 50000.0}
         client.get_stock_quote.return_value = _make_stock_quote(bid=99.00, ask=101.00)
         weight = _D("0.5")
 
@@ -214,6 +258,7 @@ class TestComputeStock:
 
     def test_no_options_multiplier_applied(self):
         client = _make_alpaca_client()
+        client.get_accounts.return_value = {"buying_power": 50000.0}
         client.get_stock_quote.return_value = _make_stock_quote(bid=99.00, ask=101.00)
 
         sizer = PositionSizer(client)
@@ -226,6 +271,26 @@ class TestComputeStock:
 
         assert shares_stock == shares_expected
         assert shares_stock != shares_would_be_with_multiplier
+
+    def test_raises_when_buying_power_insufficient_for_one_share(self):
+        client = _make_alpaca_client()
+        client.get_accounts.return_value = {"buying_power": 50.0}
+        client.get_stock_quote.return_value = _make_stock_quote(bid=99.00, ask=101.00)
+
+        import pytest
+        sizer = PositionSizer(client)
+        with pytest.raises(RuntimeError, match="Insufficient buying power"):
+            sizer.compute_stock("NVDA", _D("100"), window_budget=_D("20000"))
+
+    def test_caps_shares_at_buying_power_limit(self):
+        client = _make_alpaca_client()
+        client.get_accounts.return_value = {"buying_power": 250.0}
+        client.get_stock_quote.return_value = _make_stock_quote(bid=99.00, ask=101.00)
+
+        sizer = PositionSizer(client)
+        shares, _ = sizer.compute_stock("NVDA", _D("100"), window_budget=_D("20000"))
+
+        assert shares == 2
 
 
 class TestMockStockPriceCompute:

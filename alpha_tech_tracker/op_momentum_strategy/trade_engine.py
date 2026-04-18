@@ -448,7 +448,8 @@ class OpMomentumTradeEngine:
         try:
             sizer = PositionSizer(self._client)
             shares, limit_price = sizer.compute_stock(
-                event.ticker, event.stock_price, capital_weight, window_budget
+                event.ticker, event.stock_price, capital_weight, window_budget,
+                mock=self._mock_trade_execution,
             )
         except Exception:
             logger.exception("Could not size stock position for %s", event.ticker)
@@ -545,7 +546,23 @@ class OpMomentumTradeEngine:
             is_doubledown_addon=(reentry_type == "doubledown"),
         )
         if not self._mock_trade_execution:
-            pos.entry_fill_price = self._poll_entry_fill(order.get("order_id", ""))
+            fill_price, filled_qty = self._poll_entry_fill(order.get("order_id", ""))
+            pos.entry_fill_price = fill_price
+            if filled_qty is not None:
+                if filled_qty == 0:
+                    logger.error(
+                        "Entry order for %s stock filled 0 shares (rejected/missed) — discarding position",
+                        event.ticker,
+                    )
+                    return False
+                if filled_qty != shares:
+                    logger.warning(
+                        "Entry partial fill for %s stock: requested %d, filled %d — adjusting shares",
+                        event.ticker,
+                        shares,
+                        filled_qty,
+                    )
+                    pos.shares = filled_qty
         self._monitor.add_position(pos)
         self._flush_session_state()
         return True
@@ -655,32 +672,62 @@ class OpMomentumTradeEngine:
             is_doubledown_addon=(reentry_type == "doubledown"),
         )
         if not self._mock_trade_execution:
-            pos.entry_fill_price = self._poll_entry_fill(order.get("order_id", ""))
+            fill_price, filled_qty = self._poll_entry_fill(order.get("order_id", ""))
+            pos.entry_fill_price = fill_price
+            if filled_qty is not None:
+                if filled_qty == 0:
+                    logger.error(
+                        "Entry order for %s filled 0 contracts (rejected/missed) — discarding position",
+                        option_symbol,
+                    )
+                    return False
+                if filled_qty != contracts:
+                    logger.warning(
+                        "Entry partial fill for %s: requested %d, filled %d — adjusting contracts",
+                        option_symbol,
+                        contracts,
+                        filled_qty,
+                    )
+                    pos.contracts = filled_qty
         self._monitor.add_position(pos)
         self._flush_session_state()
         return True
 
-    def _poll_entry_fill(self, order_id: str, retries: int = 3, delay: float = 5.0) -> Optional[_D]:
-        """Poll broker for entry fill price after a live order is placed.
+    def _poll_entry_fill(self, order_id: str, retries: int = 3, delay: float = 5.0):
+        """Poll broker for entry fill price and quantity after a live order is placed.
 
         Called once per entry (live mode only) so that entry_fill_price is
         available from the very first monitoring bar, enabling quick-exit
         protection on positions held under 8 minutes.
 
-        Returns the fill price as Decimal, or None if unavailable after all retries.
+        Returns a (fill_price, filled_qty) tuple:
+          - fill_price: Decimal or None if unavailable after all retries
+          - filled_qty: int or None if unknown (order may still be open)
+
+        If the order is confirmed canceled with zero fills, returns (None, 0)
+        immediately without retrying.
         """
         for attempt in range(retries):
             try:
                 status = self._client.order_status(order_id)
                 fill = status.get("filled_avg_price")
+                raw_qty = status.get("filled_qty")
+                filled_qty = int(raw_qty) if raw_qty is not None else None
                 if fill is not None:
                     logger.info(
-                        "Entry fill confirmed %s: %.4f (attempt %d)",
+                        "Entry fill confirmed %s: price=%.4f qty=%s (attempt %d)",
                         order_id,
                         float(fill),
+                        filled_qty,
                         attempt + 1,
                     )
-                    return _D(str(fill))
+                    return _D(str(fill)), filled_qty
+                if status.get("status") == "canceled" and not filled_qty:
+                    logger.warning(
+                        "Entry order %s is canceled with 0 fills — entry failed",
+                        order_id,
+                    )
+                    return None, 0
             except Exception:
                 logger.warning(
                     "Could not fetch entry fill for %s (attempt %d/%d)",
@@ -694,7 +741,7 @@ class OpMomentumTradeEngine:
             retries,
             order_id,
         )
-        return None
+        return None, None
 
     def _enter_reentry(self, watcher: ReentryWatcher, trigger_price: _D):
         reentry_signal = "BEARISH" if watcher.reentry_type == "bearish_reentry" else "BULLISH"

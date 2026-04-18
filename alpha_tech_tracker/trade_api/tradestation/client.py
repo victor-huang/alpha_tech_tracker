@@ -3,6 +3,7 @@ import os
 import re
 import webbrowser
 from datetime import datetime
+from decimal import ROUND_HALF_UP, Decimal
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -140,6 +141,19 @@ def _extract_v3_order(data: dict) -> dict:
         if orders:
             return orders[0]
     return data
+
+
+def _ts_option_price_str(price: float) -> str:
+    """Round to TradeStation option tick and format without trailing zeros.
+
+    TradeStation enforces:
+      < $3.00  → $0.05 tick
+      ≥ $3.00  → $0.10 tick
+    """
+    d = Decimal(str(price))
+    tick = Decimal("0.05") if d < Decimal("3") else Decimal("0.10")
+    rounded = float((d / tick).to_integral_value(rounding=ROUND_HALF_UP) * tick)
+    return f"{rounded:g}"
 
 
 class _CallbackHandler(BaseHTTPRequestHandler):
@@ -565,7 +579,7 @@ class TradeStationAPIClient(ExecutionClient):
             quote = self.get_option_quote_by_occ(occ_symbol)
             bid, ask = quote["bid"], quote["ask"]
             mid = (bid + ask) / 2
-            price = round(bid + (mid - bid) * 0.1, 2)
+            price = float(Decimal(str(round(bid + (mid - bid) * 0.1, 2))))
             price_type = "LIMIT"
 
         order_type = "Limit" if price_type.upper() == "LIMIT" else "Market"
@@ -586,7 +600,7 @@ class TradeStationAPIClient(ExecutionClient):
                     code="MISSING_LIMIT_PRICE",
                     message="price is required for LIMIT orders",
                 )
-            body["LimitPrice"] = str(price)
+            body["LimitPrice"] = _ts_option_price_str(float(price))
 
         response = self._session.post(
             self._v3_base_url + "/orderexecution/orders", json=body
@@ -637,7 +651,7 @@ class TradeStationAPIClient(ExecutionClient):
             "Route": "Intelligent",
         }
         if ts_order_type == "Limit":
-            body["LimitPrice"] = str(limit_price)
+            body["LimitPrice"] = f"{float(limit_price):g}"
 
         response = self._session.post(
             self._v3_base_url + "/orderexecution/orders", json=body

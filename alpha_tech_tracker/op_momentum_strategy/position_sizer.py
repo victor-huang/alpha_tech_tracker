@@ -23,12 +23,14 @@ class PositionSizer:
         window_budget: Optional[Decimal] = None,
         mock_stock_price: Optional[Decimal] = None,
     ) -> tuple:
+        account_buying_power = None
+
         if window_budget is not None:
             budget = window_budget * capital_weight
         else:
             account = self._client.get_accounts()
-            buying_power = _D(account.get("buying_power", ACCOUNT_BUDGET))
-            budget = buying_power * MAX_CAPITAL_PERCENTAGE_PER_SYMBOL_IN_WINDOW * capital_weight
+            account_buying_power = _D(str(account.get("buying_power", ACCOUNT_BUDGET)))
+            budget = account_buying_power * MAX_CAPITAL_PERCENTAGE_PER_SYMBOL_IN_WINDOW * capital_weight
 
         ask = _D("0")
         if mock_stock_price is not None:
@@ -48,6 +50,37 @@ class PositionSizer:
 
         contracts = max(1, int(budget / (mid * _D("100"))))
         limit_price = mid.quantize(_D("0.01"), rounding=ROUND_HALF_UP)
+
+        if mock_stock_price is None:
+            if account_buying_power is None:
+                try:
+                    account = self._client.get_accounts()
+                    account_buying_power = _D(str(account.get("buying_power", 0)))
+                except Exception:
+                    logger.warning(
+                        "Could not fetch buying power for %s — skipping cap check",
+                        option_symbol,
+                    )
+            if account_buying_power is not None:
+                cost_per_contract = limit_price * _D("100")
+                max_by_bp = int(account_buying_power / cost_per_contract) if cost_per_contract > 0 else 0
+                if max_by_bp == 0:
+                    raise RuntimeError(
+                        "Insufficient buying power for %s: need $%.2f/contract, have $%.2f"
+                        % (option_symbol, float(cost_per_contract), float(account_buying_power))
+                    )
+                if max_by_bp < contracts:
+                    logger.warning(
+                        "%s: buying power cap: %d → %d contracts "
+                        "(buying_power=%s, cost_per_contract=%s)",
+                        option_symbol,
+                        contracts,
+                        max_by_bp,
+                        account_buying_power,
+                        cost_per_contract,
+                    )
+                    contracts = max_by_bp
+
         budget_source = "window_budget" if window_budget is not None else "account"
         logger.info(
             "%s: budget=%s (weight=%.2f, source=%s) mid=%s → %d contracts (cost=%s)",
@@ -67,13 +100,16 @@ class PositionSizer:
         stock_price: Decimal,
         capital_weight: Decimal = _D("1"),
         window_budget: Optional[Decimal] = None,
+        mock: bool = False,
     ) -> tuple:
+        account_buying_power = None
+
         if window_budget is not None:
             budget = window_budget * capital_weight
         else:
             account = self._client.get_accounts()
-            buying_power = _D(account.get("buying_power", ACCOUNT_BUDGET))
-            budget = buying_power * MAX_CAPITAL_PERCENTAGE_PER_SYMBOL_IN_WINDOW * capital_weight
+            account_buying_power = _D(str(account.get("buying_power", ACCOUNT_BUDGET)))
+            budget = account_buying_power * MAX_CAPITAL_PERCENTAGE_PER_SYMBOL_IN_WINDOW * capital_weight
 
         mid = _D(str(stock_price))
         limit_price = mid.quantize(_D("0.01"), rounding=ROUND_HALF_UP)
@@ -83,6 +119,36 @@ class PositionSizer:
             return 1, limit_price
 
         shares = max(1, int(budget / mid))
+
+        if not mock:
+            if account_buying_power is None:
+                try:
+                    account = self._client.get_accounts()
+                    account_buying_power = _D(str(account.get("buying_power", 0)))
+                except Exception:
+                    logger.warning(
+                        "Could not fetch buying power for %s stock — skipping cap check",
+                        ticker,
+                    )
+            if account_buying_power is not None and limit_price > 0:
+                max_by_bp = int(account_buying_power / limit_price)
+                if max_by_bp == 0:
+                    raise RuntimeError(
+                        "Insufficient buying power for %s stock: need $%.2f/share, have $%.2f"
+                        % (ticker, float(limit_price), float(account_buying_power))
+                    )
+                if max_by_bp < shares:
+                    logger.warning(
+                        "%s stock: buying power cap: %d → %d shares "
+                        "(buying_power=%s, price_per_share=%s)",
+                        ticker,
+                        shares,
+                        max_by_bp,
+                        account_buying_power,
+                        limit_price,
+                    )
+                    shares = max_by_bp
+
         budget_source = "window_budget" if window_budget is not None else "account"
         logger.info(
             "%s stock: budget=%s (weight=%.2f, source=%s) mid=%s → %d shares (cost=%s)",
