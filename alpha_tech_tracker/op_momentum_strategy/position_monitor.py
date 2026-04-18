@@ -768,7 +768,7 @@ class PositionMonitor:
         except Exception:
             return None
 
-    def _poll_exit_fill_price(self, pos: ActivePosition, max_attempts: int = 5, interval: float = 2.0):
+    def _poll_exit_fill_price(self, pos: ActivePosition, max_attempts: int = 3, interval: float = 5.0):
         """Poll order status after placing an exit order to set pos.exit_fill_price.
 
         Called synchronously before _close_callback fires so that sequential window
