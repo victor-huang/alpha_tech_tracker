@@ -1,3 +1,4 @@
+import pytest
 from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
@@ -284,6 +285,82 @@ class TestFillEscalationLoop:
         client = self._make_loop_client(fill_on=3)
         self._run(client, "BUY_OPEN")
         assert client.get_option_quote_by_occ.call_count == 3
+
+
+class TestTickRejectionRetry:
+    """
+    When an order is immediately REJ'd with a tick increment error, the loop
+    re-quantizes current_price to the required tick and retries once.
+
+    Confirmed production RejectReason format (2026-04-17):
+      "Price = 41.65000000 not rounded to a valid price increment [ 0.1 ]"
+    """
+
+    _TICK_REJ_MSG = (
+        "Price = 6.05000000 not rounded to a valid price increment [ 0.1 ]"
+    )
+
+    def _make_client(self, rej_then_fill=True):
+        client = MagicMock()
+        client.get_option_quote_by_occ.return_value = {"bid": 5.90, "ask": 6.20, "mid": 6.05}
+        client.place_option_order.return_value = {"order_id": "ord-001"}
+        if rej_then_fill:
+            # First order_status call → REJ with tick error; second → filled
+            client.order_status.side_effect = [
+                {"status": "canceled", "reject_reason": self._TICK_REJ_MSG},
+                {"status": "filled"},
+            ]
+        return client
+
+    def test_tick_rejection_triggers_retry_order(self):
+        client = self._make_client()
+        with patch("alpha_tech_tracker.op_momentum_strategy.order_executor.time.sleep", lambda _: None):
+            _place_with_fill_escalation(
+                client=client, ticker="APP", option_symbol="APP260418C00500000",
+                option_type="CALL", contracts=1, order_action="BUY_OPEN",
+            )
+        # Two orders placed: original ($0.05-rounded) + tick-retry ($0.10-rounded)
+        assert client.place_option_order.call_count == 2
+
+    def test_tick_retry_uses_required_increment(self):
+        client = self._make_client()
+        with patch("alpha_tech_tracker.op_momentum_strategy.order_executor.time.sleep", lambda _: None):
+            _place_with_fill_escalation(
+                client=client, ticker="APP", option_symbol="APP260418C00500000",
+                option_type="CALL", contracts=1, order_action="BUY_OPEN",
+            )
+        # Original attempt: mid=6.05 → penny_pilot rounds to $0.05 tick → 6.05
+        first_price = client.place_option_order.call_args_list[0][1]["price"]
+        # Retry: re-quantized to $0.10 tick → 6.10
+        retry_price = client.place_option_order.call_args_list[1][1]["price"]
+        assert first_price == pytest.approx(6.05)
+        assert retry_price == pytest.approx(6.10)
+
+    def test_tick_retry_fills_and_returns(self):
+        client = self._make_client(rej_then_fill=True)
+        with patch("alpha_tech_tracker.op_momentum_strategy.order_executor.time.sleep", lambda _: None):
+            result = _place_with_fill_escalation(
+                client=client, ticker="APP", option_symbol="APP260418C00500000",
+                option_type="CALL", contracts=1, order_action="BUY_OPEN",
+            )
+        assert result.get("order_id") == "ord-001"
+        assert client.order_status.call_count == 2
+
+    def test_non_tick_rejection_does_not_retry(self):
+        client = MagicMock()
+        client.get_option_quote_by_occ.return_value = {"bid": 5.90, "ask": 6.20, "mid": 6.05}
+        client.place_option_order.return_value = {"order_id": "ord-001"}
+        client.order_status.return_value = {
+            "status": "canceled",
+            "reject_reason": "You are long 0 contracts!",
+        }
+        with patch("alpha_tech_tracker.op_momentum_strategy.order_executor.time.sleep", lambda _: None):
+            _place_with_fill_escalation(
+                client=client, ticker="APP", option_symbol="APP260418C00500000",
+                option_type="CALL", contracts=1, order_action="BUY_OPEN",
+            )
+        # No tick retry — order just keeps escalating without doubling up
+        assert client.cancel_order.called
 
 
 _PUT_SYMBOL = "COIN260418P00220000"

@@ -1,7 +1,8 @@
 import logging
+import re
 import time
-from decimal import ROUND_HALF_UP
-from typing import Optional
+from decimal import ROUND_HALF_UP, Decimal
+from typing import Optional, Tuple
 
 from alpha_tech_tracker.trade_api.execution_client import ExecutionClient
 
@@ -9,6 +10,23 @@ from .models import _D, _stock_bid_ask
 from .option_price_monitor import _quantize_option_price
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_tick_from_reject_reason(message: str) -> Optional[Decimal]:
+    """Extract the required tick from a broker order-rejection message.
+
+    Confirmed TradeStation format (from production RejectReason, 2026-04-17):
+      "Price = 41.65000000 not rounded to a valid price increment [ 0.1 ]"
+
+    Returns a Decimal tick if found, else None.
+    """
+    m = re.search(r"price increment\s*\[\s*([\d.]+)\s*\]", message, re.IGNORECASE)
+    if m:
+        try:
+            return Decimal(m.group(1))
+        except Exception:
+            pass
+    return None
 
 
 def _place_with_fill_escalation(
@@ -71,16 +89,19 @@ def _place_with_fill_escalation(
             _option_symbol_override=option_symbol,
         )
 
-    def _is_filled(order_id: str) -> Optional[bool]:
+    def _check_fill(order_id: str) -> Tuple[Optional[bool], Optional[str]]:
+        """Return (is_filled, reject_reason). is_filled=None means unknown status."""
         try:
             status = client.order_status(order_id)
-            return status.get("status") == "filled"
         except Exception:
             logger.warning(
                 "order_status call failed for %s — fill status unknown, not cancelling",
                 order_id,
             )
-            return None
+            return None, None
+        if status.get("status") == "filled":
+            return True, None
+        return False, status.get("reject_reason")
 
     def _cancel_safely(order_id: str):
         try:
@@ -132,7 +153,7 @@ def _place_with_fill_escalation(
             order_id = order.get("order_id")
             logger.info("FILL_ESC step0 order placed: id=%s", order_id)
             time.sleep(20)
-            fill_status = _is_filled(order_id)
+            fill_status, _ = _check_fill(order_id)
             if fill_status:
                 logger.info("FILL_ESC step0 filled at entry price: %s", order_id)
                 return order
@@ -205,7 +226,7 @@ def _place_with_fill_escalation(
             order_id = order.get("order_id")
             logger.info("FILL_ESC loop step%d order placed: id=%s", step_num, order_id)
             time.sleep(5)
-            fill_status = _is_filled(order_id)
+            fill_status, reject_reason = _check_fill(order_id)
             if fill_status:
                 logger.info("FILL_ESC loop step%d filled: %s", step_num, order_id)
                 return order
@@ -215,7 +236,47 @@ def _place_with_fill_escalation(
                     step_num, order_action, option_symbol,
                 )
                 return order
-            _cancel_safely(order_id)
+            tick = _parse_tick_from_reject_reason(reject_reason) \
+                if isinstance(reject_reason, str) else None
+            if tick is not None:
+                adjusted = (current_price / tick).to_integral_value(rounding=ROUND_HALF_UP) * tick
+                logger.warning(
+                    "FILL_ESC loop step%d %s %s: tick rejection (required=%s),"
+                    " adjusting %s → %s, retrying",
+                    step_num, order_action, option_symbol, tick,
+                    current_price.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
+                    adjusted.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
+                )
+                current_price = adjusted
+                try:
+                    order = _place_limit(current_price)
+                except Exception:
+                    logger.warning(
+                        "FILL_ESC loop step%d %s %s: tick-retry placement failed",
+                        step_num, order_action, option_symbol, exc_info=True,
+                    )
+                else:
+                    order_id = order.get("order_id")
+                    logger.info(
+                        "FILL_ESC loop step%d tick-retry order placed: id=%s", step_num, order_id
+                    )
+                    time.sleep(5)
+                    fill_status, _ = _check_fill(order_id)
+                    if fill_status:
+                        logger.info(
+                            "FILL_ESC loop step%d tick-retry filled: %s", step_num, order_id
+                        )
+                        return order
+                    if fill_status is None:
+                        logger.warning(
+                            "FILL_ESC loop step%d %s %s: tick-retry fill status unknown"
+                            " — not cancelling, returning order",
+                            step_num, order_action, option_symbol,
+                        )
+                        return order
+                    _cancel_safely(order_id)
+            else:
+                _cancel_safely(order_id)
 
         if is_buy and current_price >= ask:
             logger.warning(
@@ -283,7 +344,7 @@ def _place_with_fill_escalation(
     order_id = order.get("order_id")
     logger.info("FILL_ESC step3 order placed: id=%s", order_id)
     time.sleep(60 if not is_buy else 15)
-    fill_status = _is_filled(order_id)
+    fill_status, _ = _check_fill(order_id)
     if fill_status:
         logger.info("FILL_ESC step3 filled: %s", order_id)
         return order

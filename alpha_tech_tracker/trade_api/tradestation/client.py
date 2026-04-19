@@ -3,7 +3,7 @@ import os
 import re
 import webbrowser
 from datetime import datetime
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import Decimal
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -144,22 +144,21 @@ def _extract_v3_order(data: dict) -> dict:
 
 
 def _parse_tick_from_error(message: str):
-    """Extract the required tick size from a TradeStation increment-error message.
+    """Extract the required tick size from a TradeStation tick-rejection message.
 
-    The exact message format is unconfirmed — no tick-rejection has been observed
-    in production logs yet (Friday 2026-04-17 orders failed with 403 Invalid Account
-    ID before reaching exchange validation).  Patterns tried cover common variants:
-      "must be in increments of 0.10"
-      "multiple of 0.10"
-      "0.10 increment"
+    Confirmed format from production RejectReason field (2026-04-17):
+      "Price = 41.65000000 not rounded to a valid price increment [ 0.1 ]"
+      "Price = 0.09000000 not rounded to a valid price increment [ 0.05 ]"
+
+    The tick appears inside square brackets at the end.  A secondary pattern
+    covers HTTP-level 400 messages which use a different phrasing.
 
     Returns a Decimal tick if one is found, else None.
-    When this returns None the caller re-raises so the full error is visible in logs.
     """
     patterns = [
+        r"price increment\s*\[\s*([\d.]+)\s*\]",
         r"increment[s]?\s+of\s+([\d.]+)",
         r"multiple\s+of\s+([\d.]+)",
-        r"([\d.]+)\s+increment",
     ]
     for pat in patterns:
         m = re.search(pat, message, re.IGNORECASE)
@@ -345,6 +344,7 @@ class TradeStationAPIClient(ExecutionClient):
             "limit_price": float(raw["LimitPrice"]) if raw.get("LimitPrice") else None,
             "filled_avg_price": float(filled_price_raw) if filled_price_raw else None,
             "submitted_at": raw.get("OpenedDateTime") or raw.get("TimeStamp"),
+            "reject_reason": raw.get("RejectReason"),
             "raw_response": raw,
         }
 
@@ -617,27 +617,10 @@ class TradeStationAPIClient(ExecutionClient):
                 )
             body["LimitPrice"] = f"{float(price):g}"
 
-        try:
-            response = self._session.post(
-                self._v3_base_url + "/orderexecution/orders", json=body
-            )
-            data = self._parse(response)
-        except APIInvalidArgumentError as exc:
-            tick = _parse_tick_from_error(exc.message)
-            if tick is None or price is None:
-                raise
-            d = Decimal(str(price))
-            adjusted = float((d / tick).to_integral_value(rounding=ROUND_HALF_UP) * tick)
-            logger.warning(
-                "TS tick error for %s — adjusting price %s → %s (tick=%s): %s",
-                occ_symbol, price, adjusted, tick, exc.message,
-            )
-            body["LimitPrice"] = f"{adjusted:g}"
-            response = self._session.post(
-                self._v3_base_url + "/orderexecution/orders", json=body
-            )
-            data = self._parse(response)
-
+        response = self._session.post(
+            self._v3_base_url + "/orderexecution/orders", json=body
+        )
+        data = self._parse(response)
         order_data = _extract_v3_order(data)
 
         return {

@@ -597,20 +597,27 @@ class TestPlaceOptionOrder:
 
 
 class TestParseTickFromError:
-    def test_increments_of_pattern(self):
+    def test_confirmed_production_format(self):
+        from decimal import Decimal
+        assert _parse_tick_from_error(
+            "Price = 41.65000000 not rounded to a valid price increment [ 0.1 ]"
+        ) == Decimal("0.1")
+
+    def test_five_cent_tick_in_brackets(self):
+        from decimal import Decimal
+        assert _parse_tick_from_error(
+            "Price = 0.09000000 not rounded to a valid price increment [ 0.05 ]"
+        ) == Decimal("0.05")
+
+    def test_increments_of_pattern_fallback(self):
         from decimal import Decimal
         assert _parse_tick_from_error("LimitPrice must be in increments of 0.10") \
             == Decimal("0.10")
 
-    def test_multiple_of_pattern(self):
+    def test_multiple_of_pattern_fallback(self):
         from decimal import Decimal
         assert _parse_tick_from_error("Price must be a multiple of 0.05") \
             == Decimal("0.05")
-
-    def test_trailing_increment_pattern(self):
-        from decimal import Decimal
-        assert _parse_tick_from_error("price step: 0.01 increment") \
-            == Decimal("0.01")
 
     def test_no_increment_in_message_returns_none(self):
         assert _parse_tick_from_error("Invalid symbol") is None
@@ -634,26 +641,22 @@ class TestPlaceOptionOrderTickRetry:
         body = client._session.post.call_args[1]["json"]
         assert body["LimitPrice"] == "75.85"
 
-    def test_retries_with_adjusted_price_on_increment_error(self):
+    def test_reject_reason_exposed_in_normalized_order(self):
+        # Tick rejection arrives as RejectReason on the order record (Status=REJ),
+        # not as a 400 HTTP error. Verify _normalize_order surfaces it.
         client = _make_client()
-        error_response = _mock_response(
-            {"Message": "LimitPrice must be in increments of 0.10"}, status_code=400
-        )
-        success_response = _mock_response(place_order_response)
-        client._session.post.side_effect = [error_response, success_response]
+        rej_order = {
+            "OrderID": "9999",
+            "Status": "REJ",
+            "LimitPrice": "41.65",
+            "RejectReason": "Price = 41.65000000 not rounded to a valid price increment [ 0.1 ]",
+            "Legs": [],
+        }
+        result = client._normalize_order(rej_order)
+        assert result["status"] == "canceled"
+        assert "0.1" in result["reject_reason"]
 
-        client.place_option_order(
-            symbol="TSLA",
-            price=75.85,
-            order_action="BUY_OPEN",
-            _option_symbol_override="TSLA250420C00240000",
-        )
-
-        assert client._session.post.call_count == 2
-        retry_body = client._session.post.call_args_list[1][1]["json"]
-        assert retry_body["LimitPrice"] == "75.9"
-
-    def test_non_increment_error_is_not_retried(self):
+    def test_non_tick_400_error_raises(self):
         client = _make_client()
         error_response = _mock_response(
             {"Message": "Account not authorized"}, status_code=400
@@ -667,8 +670,6 @@ class TestPlaceOptionOrderTickRetry:
                 order_action="BUY_OPEN",
                 _option_symbol_override="TSLA250420C00240000",
             )
-
-        assert client._session.post.call_count == 1
 
 
 class TestPlaceStockOrder:
