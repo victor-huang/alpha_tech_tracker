@@ -3,6 +3,7 @@ from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
 from alpha_tech_tracker.op_momentum_strategy.order_executor import (
+    _parse_tick_from_reject_reason,
     _place_with_fill_escalation,
     place_stock_order,
 )
@@ -287,6 +288,24 @@ class TestFillEscalationLoop:
         assert client.get_option_quote_by_occ.call_count == 3
 
 
+class TestParseTickFromRejectReason:
+    def test_confirmed_production_format(self):
+        msg = "Price = 41.65000000 not rounded to a valid price increment [ 0.1 ]"
+        assert _parse_tick_from_reject_reason(msg) == _D("0.1")
+
+    def test_five_cent_tick(self):
+        msg = "Price = 0.09000000 not rounded to a valid price increment [ 0.05 ]"
+        assert _parse_tick_from_reject_reason(msg) == _D("0.05")
+
+    def test_non_tick_message_returns_none(self):
+        assert _parse_tick_from_reject_reason("You are long 0 contracts!") is None
+
+    def test_buying_power_message_returns_none(self):
+        assert _parse_tick_from_reject_reason(
+            "ECL1000: This order requires $8,000 of Day Trade Buying Power"
+        ) is None
+
+
 class TestTickRejectionRetry:
     """
     When an order is immediately REJ'd with a tick increment error, the loop
@@ -361,6 +380,22 @@ class TestTickRejectionRetry:
             )
         # No tick retry — order just keeps escalating without doubling up
         assert client.cancel_order.called
+
+    def test_no_reject_reason_does_not_retry(self):
+        # Alpaca does not return reject_reason — order_status has no such key.
+        # Verify the isinstance guard prevents any retry attempt.
+        client = MagicMock()
+        client.get_option_quote_by_occ.return_value = {"bid": 5.90, "ask": 6.20, "mid": 6.05}
+        client.place_option_order.return_value = {"order_id": "ord-001"}
+        client.order_status.return_value = {"status": "canceled"}
+        with patch("alpha_tech_tracker.op_momentum_strategy.order_executor.time.sleep", lambda _: None):
+            _place_with_fill_escalation(
+                client=client, ticker="APP", option_symbol="APP260418C00500000",
+                option_type="CALL", contracts=1, order_action="BUY_OPEN",
+            )
+        assert client.cancel_order.called
+        # One place_option_order per order_status check — no retry doubling
+        assert client.place_option_order.call_count == client.order_status.call_count
 
 
 _PUT_SYMBOL = "COIN260418P00220000"
