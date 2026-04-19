@@ -465,6 +465,7 @@ def run_selector_backtest(
     feed: DataFeed = None,
     enable_doubledown: bool = False,
     doubledown_start_min: int = DOUBLEDOWN_START_MIN,
+    filter_flat_or: bool = True,
 ) -> tuple:
     """
     Walk each trading day in [eval_start, eval_end], apply rolling selector
@@ -532,6 +533,7 @@ def run_selector_backtest(
                 enable_bullish_reentry=enable_bullish_reentry,
                 bullish_reentry_max_bars=bullish_reentry_max_bars,
                 close_top_pct=win.get("close_top_pct", close_top_pct),
+                filter_flat_or=filter_flat_or,
             )
         all_window_results[label] = results_for_window
         print(f"  [{label}] {win['opening_start']} / {win['opening_bars']} bars — done")

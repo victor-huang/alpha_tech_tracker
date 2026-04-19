@@ -289,6 +289,7 @@ def compute_signals_with_backtest(
     enable_bullish_reentry: bool = False,
     bullish_reentry_max_bars: int = 5,
     close_top_pct: float = None,
+    filter_flat_or: bool = True,
 ) -> pd.DataFrame:
     opening_start_t = datetime.strptime(opening_start_time, "%H:%M").time()
 
@@ -312,6 +313,8 @@ def compute_signals_with_backtest(
         or_high = opening["High"].max()
         or_low = opening["Low"].min()
         or_range = or_high - or_low
+        if filter_flat_or and or_range == 0:
+            continue
         midpoint = (or_high + or_low) / 2
         bottom_30_threshold = or_low + 0.20 * or_range
 
@@ -375,7 +378,7 @@ def compute_signals_with_backtest(
         post_open = day_from_start.iloc[opening_bars:]
         bars_held = 0
         max_favorable_move = 0.0
-        hard_stop_armed = close_top_pct is not None  # pre-arm in close_top_pct mode
+        hard_stop_armed = close_top_pct is not None
         exit_price = fallback_price
         exit_reason = "fallback_20pct" if close_top_pct is None else "hard_stop"
         exit_bar_idx = -1  # index into post_open where the primary trade exited
@@ -419,7 +422,9 @@ def compute_signals_with_backtest(
                         )
                     else:
                         ma20_trailing_stop_hit = bar_close <= hard_stop_price
-                        ma20_exit_price, ma20_exit_reason = hard_stop_price, "hard_stop"
+                        ma20_exit_price, ma20_exit_reason = (
+                            hard_stop_price if bar["High"] >= hard_stop_price else bar["Open"]
+                        ), "hard_stop"
                 else:
                     hard_stop_hit = hard_stop_armed and bar_close <= hard_stop_price
                     ma20_trailing_stop_hit = (
@@ -430,7 +435,10 @@ def compute_signals_with_backtest(
                         and bar_close < bar_ma20
                     )
                     ma20_exit_price, ma20_exit_reason = (
-                        (hard_stop_price, "hard_stop")
+                        (
+                            hard_stop_price if bar["High"] >= hard_stop_price else bar["Open"],
+                            "hard_stop",
+                        )
                         if hard_stop_hit
                         else (bar_close, "trailing_stop_ma20")
                     )
@@ -452,7 +460,9 @@ def compute_signals_with_backtest(
                         )
                     else:
                         ma20_trailing_stop_hit = bar_close >= hard_stop_price
-                        ma20_exit_price, ma20_exit_reason = hard_stop_price, "hard_stop"
+                        ma20_exit_price, ma20_exit_reason = (
+                            hard_stop_price if bar["Low"] <= hard_stop_price else bar["Open"]
+                        ), "hard_stop"
                 else:
                     hard_stop_hit = hard_stop_armed and bar_close >= hard_stop_price
                     ma20_trailing_stop_hit = (
@@ -463,7 +473,10 @@ def compute_signals_with_backtest(
                         and bar_close > bar_ma20
                     )
                     ma20_exit_price, ma20_exit_reason = (
-                        (hard_stop_price, "hard_stop")
+                        (
+                            hard_stop_price if bar["Low"] <= hard_stop_price else bar["Open"],
+                            "hard_stop",
+                        )
                         if hard_stop_hit
                         else (bar_close, "trailing_stop_ma20")
                     )
@@ -481,7 +494,9 @@ def compute_signals_with_backtest(
                         fallback_price if bar["High"] >= fallback_price else bar_close
                     )
                 else:
-                    exit_price = fallback_price
+                    exit_price = (
+                        fallback_price if bar["Low"] <= fallback_price else bar["Open"]
+                    )
                 exit_reason = "fallback_20pct"
                 break
             elif ma20_trailing_stop_hit:
