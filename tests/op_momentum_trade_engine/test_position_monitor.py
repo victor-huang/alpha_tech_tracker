@@ -2043,7 +2043,8 @@ class TestPollExitFillPrice:
         pos.hard_stop_armed = True
         monitor.add_position(pos)
 
-        with patch("alpha_tech_tracker.op_momentum_strategy.position_monitor._notify"):
+        with patch("alpha_tech_tracker.op_momentum_strategy.position_monitor._notify"), \
+             patch("alpha_tech_tracker.op_momentum_strategy.order_executor.time.sleep", lambda _: None):
             _set_latest_bar(engine, "NVDA", close=87.0, ma50=90.0)
             monitor.on_bar("NVDA")
 

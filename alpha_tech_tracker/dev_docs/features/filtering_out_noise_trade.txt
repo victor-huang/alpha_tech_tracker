@@ -29,7 +29,7 @@ python alpha_tech_tracker/op_momentum_strategy/op_momentum_selector_backtest.py 
 
 ==To run the trade engine 
 
-python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine start \
+python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine run \
 --log-level DEBUG \
 --trade-type options \
 --collect-option-prices \
@@ -41,6 +41,7 @@ python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine start
 --top 2 --capital 5000 \
 --record-tradestation-feed \
 --feed iex \
+--market-data-source tradestation
 --live  
 
 
