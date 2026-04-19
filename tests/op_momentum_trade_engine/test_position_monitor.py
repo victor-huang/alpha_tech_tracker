@@ -1899,8 +1899,8 @@ class TestQuickExitEntryPrice:
         now = self._now()
         pos = self._make_pos(entry_fill_price=5.0, entry_time=now - timedelta(seconds=60))
         pos.entry_stock_price = _D("300.00")
-        # 0.3% move — within 0.5% tolerance
-        current_stock_price = _D("299.10")
+        # 0.1% move — within 0.3% tolerance
+        current_stock_price = _D("299.70")
         with patch(f"{self._MODULE}._now_et", return_value=now):
             result = _quick_exit_entry_price(pos, current_stock_price=current_stock_price)
         assert result == 5.0
@@ -1910,8 +1910,8 @@ class TestQuickExitEntryPrice:
         now = self._now()
         pos = self._make_pos(entry_fill_price=5.0, entry_time=now - timedelta(seconds=60))
         pos.entry_stock_price = _D("300.00")
-        # 1% move — exceeds 0.5% tolerance
-        current_stock_price = _D("297.00")
+        # 0.5% move — exceeds 0.3% tolerance
+        current_stock_price = _D("298.50")
         with patch(f"{self._MODULE}._now_et", return_value=now):
             result = _quick_exit_entry_price(pos, current_stock_price=current_stock_price)
         assert result is None
@@ -1921,8 +1921,8 @@ class TestQuickExitEntryPrice:
         now = self._now()
         pos = self._make_pos(entry_fill_price=5.0, entry_time=now - timedelta(seconds=60))
         pos.entry_stock_price = _D("300.00")
-        # exactly 0.5% move — at boundary (diff_pct == tolerance), still qualifies
-        current_stock_price = _D("298.50")
+        # exactly 0.3% move — at boundary (diff_pct == tolerance), still qualifies
+        current_stock_price = _D("299.10")
         with patch(f"{self._MODULE}._now_et", return_value=now):
             result = _quick_exit_entry_price(pos, current_stock_price=current_stock_price)
         assert result == 5.0

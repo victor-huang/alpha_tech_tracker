@@ -59,8 +59,8 @@ def _emit_raw(line: str):
 
 ET = pytz.timezone("America/New_York")
 
-_QUICK_EXIT_MAX_SECONDS = 300  # positions held < 5 min trigger entry-price-first sell
-_QUICK_EXIT_STOCK_TOLERANCE_PCT = _D("0.005")  # stock must be within 0.5% of entry price
+_QUICK_EXIT_MAX_SECONDS = 360  # positions held < 6 min trigger entry-price-first sell
+_QUICK_EXIT_STOCK_TOLERANCE_PCT = _D("0.003")  # stock must be within 0.3% of entry price
 
 
 def _quick_exit_entry_price(
