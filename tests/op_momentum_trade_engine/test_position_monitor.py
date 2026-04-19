@@ -2161,3 +2161,119 @@ class TestCloseAllEodStuckPositionSweep:
         monitor.close_all()
 
         assert client.place_option_order.call_count == 1
+
+
+class TestGapThroughExitOverride:
+    """
+    Verify that exit price overrides respect bar High/Low for gap-through scenarios.
+
+    When the exit bar gaps through the stop or fallback level — meaning the bar's
+    entire range was already past the trigger — the realistic fill is the bar Open,
+    not the theoretical stop level.
+    """
+
+    def _make_monitor(self, pos):
+        closes = [float(pos.entry_stock_price)]
+        df = _build_history_df(closes, ma20=80.0, ma50=80.0, ma200=75.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(_make_alpaca_client(), engine, mock_trade_execution=True)
+        monitor.add_position(pos)
+        return monitor, engine
+
+    def test_bull_hard_stop_normal_uses_stop_price(self):
+        # Bar High >= hard_stop_price: stock traded at the stop level → fill at stop
+        pos = _make_stock_position(signal="BULLISH", hard_stop_price=_D("103.5"))
+        pos.hard_stop_armed = True
+        monitor, engine = self._make_monitor(pos)
+
+        # close=103.0 triggers hard_stop; high=104.0 >= 103.5 → stop fill
+        _set_latest_bar(engine, "NVDA", close=103.0, ma50=80.0, high=104.0, low=102.5, open_=103.8)
+        monitor.on_bar("NVDA")
+
+        assert pos.is_closed is True
+        assert pos.exit_reason == "hard_stop"
+        assert pos.simulated_exit_mid == _D("103.50")
+
+    def test_bull_hard_stop_gap_down_uses_bar_open(self):
+        # Bar High < hard_stop_price: stock gapped down through stop → fill at open
+        pos = _make_stock_position(signal="BULLISH", hard_stop_price=_D("103.5"))
+        pos.hard_stop_armed = True
+        monitor, engine = self._make_monitor(pos)
+
+        # close=101.0 triggers hard_stop; high=103.0 < 103.5 → gap-down → open fill
+        _set_latest_bar(engine, "NVDA", close=101.0, ma50=80.0, high=103.0, low=100.5, open_=103.1)
+        monitor.on_bar("NVDA")
+
+        assert pos.is_closed is True
+        assert pos.exit_reason == "hard_stop"
+        assert pos.simulated_exit_mid == _D("103.10")
+
+    def test_bear_hard_stop_normal_uses_stop_price(self):
+        # Bar Low <= hard_stop_price: stock traded at the stop level → fill at stop
+        pos = _make_stock_position(
+            signal="BEARISH",
+            or_high=_D("100"), or_low=_D("90"),
+            hard_stop_price=_D("91.5"), fallback_price=_D("93"),
+        )
+        pos.hard_stop_armed = True
+        monitor, engine = self._make_monitor(pos)
+
+        # close=92.5 triggers hard_stop; low=91.0 <= 91.5 → stop fill
+        _set_latest_bar(engine, "NVDA", close=92.5, ma50=80.0, high=93.0, low=91.0, open_=91.2)
+        monitor.on_bar("NVDA")
+
+        assert pos.is_closed is True
+        assert pos.exit_reason == "hard_stop"
+        assert pos.simulated_exit_mid == _D("91.50")
+
+    def test_bear_hard_stop_gap_up_uses_bar_open(self):
+        # Bar Low > hard_stop_price: stock gapped up through stop → fill at open
+        pos = _make_stock_position(
+            signal="BEARISH",
+            or_high=_D("100"), or_low=_D("90"),
+            hard_stop_price=_D("91.5"), fallback_price=_D("93"),
+        )
+        pos.hard_stop_armed = True
+        monitor, engine = self._make_monitor(pos)
+
+        # close=93.0 triggers hard_stop; low=92.0 > 91.5 → gap-up → open fill
+        _set_latest_bar(engine, "NVDA", close=93.0, ma50=80.0, high=93.5, low=92.0, open_=92.0)
+        monitor.on_bar("NVDA")
+
+        assert pos.is_closed is True
+        assert pos.exit_reason == "hard_stop"
+        assert pos.simulated_exit_mid == _D("92.00")
+
+    def test_bear_fallback_normal_uses_fallback_price(self):
+        # Bar Low <= fallback_price: stock traded at the fallback level → fill at fallback
+        pos = _make_stock_position(
+            signal="BEARISH",
+            or_high=_D("100"), or_low=_D("90"),
+            hard_stop_price=_D("91.5"), fallback_price=_D("93"),
+        )
+        monitor, engine = self._make_monitor(pos)
+
+        # close=93.5 >= fallback 93 triggers fallback; low=92.5 <= 93 → fallback fill
+        _set_latest_bar(engine, "NVDA", close=93.5, ma50=80.0, high=94.0, low=92.5, open_=92.8)
+        monitor.on_bar("NVDA")
+
+        assert pos.is_closed is True
+        assert pos.exit_reason == "fallback_20pct"
+        assert pos.simulated_exit_mid == _D("93.00")
+
+    def test_bear_fallback_gap_up_uses_bar_open(self):
+        # Bar Low > fallback_price: stock gapped up through fallback → fill at open
+        pos = _make_stock_position(
+            signal="BEARISH",
+            or_high=_D("100"), or_low=_D("90"),
+            hard_stop_price=_D("91.5"), fallback_price=_D("93"),
+        )
+        monitor, engine = self._make_monitor(pos)
+
+        # close=95.0 >= fallback 93 triggers fallback; low=93.5 > 93 → gap-up → open fill
+        _set_latest_bar(engine, "NVDA", close=95.0, ma50=80.0, high=95.5, low=93.5, open_=93.6)
+        monitor.on_bar("NVDA")
+
+        assert pos.is_closed is True
+        assert pos.exit_reason == "fallback_20pct"
+        assert pos.simulated_exit_mid == _D("93.60")

@@ -147,6 +147,8 @@ class PositionMonitor:
         bar_time = latest.name
         close = _D(latest["Close"])
         high = _D(latest["High"])
+        low = _D(latest["Low"])
+        bar_open = _D(latest["Open"])
         ma20 = latest.get("MA20")
         ma20_val = _D(ma20) if ma20 is not None and not pd.isna(ma20) else None
         ma50 = latest.get("MA50")
@@ -159,7 +161,7 @@ class PositionMonitor:
                     continue
                 if pos.entry_bar_time is not None and bar_time == pos.entry_bar_time:
                     continue
-                close_intent = self._evaluate_stop(pos, close, high, ma20_val, ma50_val, bar_time)
+                close_intent = self._evaluate_stop(pos, close, high, low, bar_open, ma20_val, ma50_val, bar_time)
                 if close_intent is not None:
                     reason, override = close_intent
                     pos.is_closed = True
@@ -257,6 +259,8 @@ class PositionMonitor:
         pos: ActivePosition,
         close,
         high,
+        low,
+        bar_open,
         ma20: Optional[object],
         ma50: Optional[object],
         bar_time=None,
@@ -337,13 +341,14 @@ class PositionMonitor:
         if exit_reason:
             override = None
             if exit_reason == "hard_stop":
-                override = pos.hard_stop_price
+                if pos.signal == "BULLISH":
+                    override = pos.hard_stop_price if high >= pos.hard_stop_price else bar_open
+                else:
+                    override = pos.hard_stop_price if low <= pos.hard_stop_price else bar_open
             elif exit_reason == "fallback_20pct":
                 if pos.signal == "BEARISH":
-                    override = pos.fallback_price
+                    override = pos.fallback_price if low <= pos.fallback_price else bar_open
                 elif high >= pos.fallback_price:
-                    # Bar traded at/above fallback level before closing below it;
-                    # exit at fallback_price to match backtest stop-order simulation.
                     override = pos.fallback_price
             return (exit_reason, override)
         else:
