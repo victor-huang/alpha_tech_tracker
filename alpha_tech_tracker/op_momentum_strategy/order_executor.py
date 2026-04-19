@@ -377,10 +377,36 @@ def _place_with_fill_escalation(
             )
             step3_price = fair
 
+    if step3_price is None:
+        logger.warning(
+            "FILL_ESC step3 %s %s: no quote price available, placing market order",
+            order_action, option_symbol,
+        )
+        try:
+            order = client.place_option_order(
+                symbol=ticker,
+                option_key=None,
+                price=None,
+                price_type="MARKET",
+                option_type=option_type,
+                order_action=order_action,
+                quantity=contracts,
+                _option_symbol_override=option_symbol,
+            )
+        except Exception:
+            logger.warning(
+                "FILL_ESC %s %s: market order failed — manual intervention required",
+                order_action, option_symbol, exc_info=True,
+            )
+            return {}
+        order_id = order.get("order_id")
+        logger.info("FILL_ESC market fallback order placed: id=%s", order_id)
+        return order
+
     logger.info(
         "FILL_ESC step3 %s %s: final limit at %s",
         order_action, option_symbol,
-        step3_price.quantize(_D("0.01"), rounding=ROUND_HALF_UP) if step3_price else "unknown",
+        step3_price.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
     )
     try:
         order = _place_limit(step3_price)

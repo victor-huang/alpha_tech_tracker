@@ -1774,19 +1774,26 @@ class TestEscalationScenarios:
     # Scenario 7 — Quote fetch always fails (feed down)
     # -----------------------------------------------------------------------
 
-    def test_quote_fetch_always_fails_returns_miss_with_no_orders(self):
+    def test_quote_fetch_always_fails_places_market_order_fallback(self):
         """
         If every get_option_quote_by_occ call raises (e.g. IEX feed is down):
-        - The loop breaks immediately after step 1's quote fetch fails.
-        - Step3 also fails to fetch and _last_known_quote is still [None, None].
-        - _place_limit(None) raises → FILL_ESC MISS → return {}.
-        No orders are placed and no cancels are called.
+        - The loop breaks immediately after step1's quote fetch fails.
+        - Step3 also fails to fetch; _last_known_quote is still [None, None] → step3_price=None.
+        - A MARKET order (price=None) is placed as a last resort.
+        No limit orders are placed and no cancels are called.
         """
         client = MagicMock()
         client.get_option_quote_by_occ.side_effect = RuntimeError("feed down")
 
         result, placed, _ = self._run(client, "BUY_OPEN")
 
-        assert result == {}
-        assert len(placed) == 0
+        # _run's capture_place always returns {"order_id": "ord-001"}; one MARKET order placed
+        assert result == {"order_id": "ord-001"}
+        # placed tracks price arg; MARKET order has price=None
+        assert placed == [None]
         assert client.cancel_order.call_count == 0
+        market_calls = [
+            c for c in client.place_option_order.call_args_list
+            if c.kwargs.get("price_type") == "MARKET"
+        ]
+        assert len(market_calls) == 1

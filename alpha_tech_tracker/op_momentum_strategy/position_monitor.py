@@ -783,9 +783,13 @@ class PositionMonitor:
                 feed=self._alpaca_feed,
             )
             pos.exit_order_id = order.get("order_id")
-            pos.close_order_failed = False
-            logger.info("Close order placed: %s", pos.exit_order_id)
-            self._poll_exit_fill_price(pos)
+            if pos.exit_order_id is None:
+                pos.close_order_failed = True
+                _notify(f"CLOSE MISSED {pos.option_symbol} x{pos.contracts} reason={reason} — manual close required")
+            else:
+                pos.close_order_failed = False
+                logger.info("Close order placed: %s", pos.exit_order_id)
+                self._poll_exit_fill_price(pos)
         except Exception:
             logger.exception("Failed to place close order for %s", pos.option_symbol)
             pos.close_order_failed = True
