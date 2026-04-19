@@ -270,6 +270,7 @@ class OpMomentumTradeEngine:
         doubledown_start_min: int = 5,
         record_tradestation_feed: bool = False,
         market_data_client: Optional[MarketDataClient] = None,
+        force_run: bool = False,
     ):
         self._client = alpaca_client
         self._api_key = getattr(alpaca_client, "_api_key", None)
@@ -308,6 +309,7 @@ class OpMomentumTradeEngine:
         self._doubledown_start_min = doubledown_start_min
         self._record_tradestation_feed = record_tradestation_feed
         self._market_data_client = market_data_client
+        self._force_run = force_run
         self._dd_timers: dict = {}
         self._dd_fired: set = set()
         self._monitor: PositionMonitor = None
@@ -1710,21 +1712,23 @@ class OpMomentumTradeEngine:
                 logger.warning("Today is a NYSE holiday (%s) — market is closed, exiting", today)
                 return
 
-        # TEMP: market-hours gate disabled for off-hours integration testing.
-        # TODO: re-enable before going live.
         # Determine the trading session date. If started on Sunday or after market
         # close on a weekday, advance to the next trading day and sleep until
-        # pre-market rather than exiting.
+        # pre-market rather than exiting. --force-run bypasses this gate for
+        # off-hours integration testing.
         now_et = _now_et()
-        session_date = today
-        # end_h, end_m = [int(x) for x in SESSION_END_TIME.split(":")]
-        # after_close = now_et.hour > end_h or (now_et.hour == end_h and now_et.minute >= end_m)
-        # if today.weekday() == 6 or after_close:
-        #     session_date = _next_trading_day(today)
-        # else:
-        #     session_date = today
+        if self._force_run:
+            session_date = today
+            logger.warning("--force-run active: bypassing market-hours gate (session_date=%s)", session_date)
+        else:
+            end_h, end_m = [int(x) for x in SESSION_END_TIME.split(":")]
+            after_close = now_et.hour > end_h or (now_et.hour == end_h and now_et.minute >= end_m)
+            if today.weekday() == 6 or after_close:
+                session_date = _next_trading_day(today)
+            else:
+                session_date = today
 
-        if False and session_date != today:
+        if not self._force_run and session_date != today:
             premarket_dt = ET.localize(
                 datetime.combine(session_date, datetime.strptime(_PREMARKET_WAIT_TIME, "%H:%M").time())
             )

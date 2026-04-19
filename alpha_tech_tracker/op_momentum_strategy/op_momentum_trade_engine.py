@@ -170,6 +170,13 @@ def parse_args():
         help="Simulate order fills at mid bid/ask — no real orders placed",
     )
     parser.add_argument(
+        "--force-run",
+        action="store_true",
+        default=False,
+        help="Bypass the market-hours gate and run immediately regardless of day/time. "
+             "For off-hours integration testing only.",
+    )
+    parser.add_argument(
         "--tickers",
         nargs="+",
         default=None,
@@ -678,6 +685,7 @@ if __name__ == "__main__":
             doubledown_start_min=args.doubledown_start_min,
             record_tradestation_feed=args.record_tradestation_feed,
             market_data_client=_build_market_data_client(args),
+            force_run=args.force_run,
         )
         if args.replay_date:
             from datetime import date as _date
@@ -795,6 +803,7 @@ if __name__ == "__main__":
             doubledown_start_min=args.doubledown_start_min,
             record_tradestation_feed=args.record_tradestation_feed,
             market_data_client=_build_market_data_client(args),
+            force_run=args.force_run,
         )
         engine.run(tickers_override=args.tickers)
     finally:
