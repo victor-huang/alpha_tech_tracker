@@ -51,8 +51,6 @@ def _make_signal_engine_with_history(
 ) -> LiveSignalEngine:
     engine = LiveSignalEngine(
         tickers=[ticker],
-        api_key="k",
-        secret_key="s",
         opening_bars=3,
         on_signal=None,
     )

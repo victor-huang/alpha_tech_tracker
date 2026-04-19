@@ -22,7 +22,7 @@ Assertions cover: signal direction, OR levels, stop prices, contract selection,
 position sizing (contracts), entry/exit simulated fills, exit reason, and P&L.
 """
 
-import asyncio
+import asyncio  # noqa: F401 — kept for test_full_day_piping if needed
 import json
 import threading
 from datetime import date, datetime, timedelta
@@ -50,9 +50,6 @@ ET = pytz.timezone("America/New_York")
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
 
 _TODAY_PATH = "alpha_tech_tracker.op_momentum_strategy.contract_selector._today"
-_HIST_CLIENT_PATH = (
-    "alpha_tech_tracker.op_momentum_strategy.signal_engine.StockHistoricalDataClient"
-)
 _NOTIFY_TRADE_PATH = "alpha_tech_tracker.op_momentum_strategy.trade_engine._notify"
 _NOTIFY_MONITOR_PATH = (
     "alpha_tech_tracker.op_momentum_strategy.position_monitor._notify"
@@ -267,24 +264,10 @@ class TestLivePipingSimulation:
             bar.volume = b["volume"]
             one_min_bars.append(bar)
 
-        loop = asyncio.new_event_loop()
-        loop_thread = threading.Thread(target=loop.run_forever, daemon=True)
-        loop_thread.start()
+        for bar in one_min_bars:
+            signal_engine._on_bar(bar)
 
-        with patch(_HIST_CLIENT_PATH) as mock_hdc:
-            mock_hdc.return_value.get_stock_bars.side_effect = Exception(
-                "no catchup data"
-            )
-
-            for bar in one_min_bars:
-                asyncio.run_coroutine_threadsafe(
-                    signal_engine._handle_bar(bar), loop
-                ).result(timeout=5)
-
-            signal_received.wait(timeout=5)
-
-        loop.call_soon_threadsafe(loop.stop)
-        loop_thread.join(timeout=5)
+        signal_received.wait(timeout=5)
 
         assert len(captured) == 1
         event = captured[0]
@@ -343,22 +326,9 @@ class TestLivePipingFullDay:
             bar.volume = b["volume"]
             one_min_bars.append(bar)
 
-        loop = asyncio.new_event_loop()
-        loop_thread = threading.Thread(target=loop.run_forever, daemon=True)
-        loop_thread.start()
-
-        with patch(_HIST_CLIENT_PATH) as mock_hdc:
-            mock_hdc.return_value.get_stock_bars.side_effect = Exception(
-                "no catchup data"
-            )
-            for bar in one_min_bars:
-                asyncio.run_coroutine_threadsafe(
-                    signal_engine._handle_bar(bar), loop
-                ).result(timeout=5)
-            signal_received.wait(timeout=5)
-
-        loop.call_soon_threadsafe(loop.stop)
-        loop_thread.join(timeout=5)
+        for bar in one_min_bars:
+            signal_engine._on_bar(bar)
+        signal_received.wait(timeout=5)
 
         assert len(captured) == 1, "Expected exactly one signal from 1-min bar feed"
         event: SignalEvent = captured[0]

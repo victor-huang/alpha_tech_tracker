@@ -1,4 +1,3 @@
-import asyncio
 from datetime import date, datetime, timedelta
 from unittest.mock import Mock, patch
 
@@ -49,8 +48,6 @@ class TestLiveSignalEngine:
         fired_events = []
         engine = LiveSignalEngine(
             tickers=["NVDA"],
-            api_key="k",
-            secret_key="s",
             opening_bars=3,
             on_signal=fired_events.append,
         )
@@ -74,8 +71,6 @@ class TestLiveSignalEngine:
         fired_events = []
         engine = LiveSignalEngine(
             tickers=["NVDA"],
-            api_key="k",
-            secret_key="s",
             opening_bars=3,
             on_signal=fired_events.append,
         )
@@ -99,8 +94,6 @@ class TestLiveSignalEngine:
         fired_events = []
         engine = LiveSignalEngine(
             tickers=["NVDA"],
-            api_key="k",
-            secret_key="s",
             opening_bars=3,
             on_signal=fired_events.append,
         )
@@ -123,8 +116,6 @@ class TestLiveSignalEngine:
         fired_events = []
         engine = LiveSignalEngine(
             tickers=["NVDA"],
-            api_key="k",
-            secret_key="s",
             opening_bars=3,
             on_signal=fired_events.append,
         )
@@ -147,8 +138,6 @@ class TestLiveSignalEngine:
     def test_get_latest_bar_returns_none_when_no_history(self):
         engine = LiveSignalEngine(
             tickers=["NVDA"],
-            api_key="k",
-            secret_key="s",
             opening_bars=3,
         )
 
@@ -166,7 +155,7 @@ class TestLiveSignalEngine:
 
     def test_aggregate_bars_builds_correct_ohlcv(self):
         engine = LiveSignalEngine(
-            tickers=["AMD"], api_key="k", secret_key="s", opening_bars=3
+            tickers=["AMD"], opening_bars=3
         )
         period_start = ET.localize(datetime(2026, 3, 24, 9, 30))
         bars = _make_mock_bars(
@@ -193,8 +182,6 @@ class TestLiveSignalEngine:
         fired_events = []
         engine = LiveSignalEngine(
             tickers=["AMD"],
-            api_key="k",
-            secret_key="s",
             opening_bars=3,
             on_signal=fired_events.append,
         )
@@ -232,8 +219,6 @@ class TestLiveSignalEngine:
     def test_process_five_min_bar_calls_try_fire_signal_on_third_bar(self):
         engine = LiveSignalEngine(
             tickers=["AMD"],
-            api_key="k",
-            secret_key="s",
             opening_bars=3,
         )
         closes = [104.0, 105.0, 106.0]
@@ -281,8 +266,6 @@ class TestLiveSignalEngine:
         fired_events = []
         engine = LiveSignalEngine(
             tickers=["NVDA"],
-            api_key="k",
-            secret_key="s",
             opening_bars=3,
             on_signal=fired_events.append,
             regime_filter=True,
@@ -307,8 +290,6 @@ class TestLiveSignalEngine:
         fired_events = []
         engine = LiveSignalEngine(
             tickers=["NVDA"],
-            api_key="k",
-            secret_key="s",
             opening_bars=3,
             on_signal=fired_events.append,
             regime_filter=True,
@@ -333,8 +314,6 @@ class TestLiveSignalEngine:
         fired_events = []
         engine = LiveSignalEngine(
             tickers=["NVDA"],
-            api_key="k",
-            secret_key="s",
             opening_bars=3,
             on_signal=fired_events.append,
             regime_filter=True,
@@ -390,8 +369,6 @@ class TestMultiWindowSignalEngine:
     def _make_multi_window_engine(self, m1_callback=None, a1_callback=None):
         return LiveSignalEngine(
             tickers=["NVDA"],
-            api_key="k",
-            secret_key="s",
             windows=[
                 {
                     "label": "M1",
@@ -464,18 +441,33 @@ class TestMultiWindowSignalEngine:
 class TestCatchUpOpeningBarsForWindow:
     """Tests for _catch_up_opening_bars_for_window client-side bar preference."""
 
-    def _empty_alpaca_df(self):
-        """Return an empty multi-index DataFrame matching Alpaca's bar response schema."""
-        return pd.DataFrame(
-            columns=["open", "high", "low", "close", "volume"],
-            index=pd.MultiIndex.from_tuples([], names=["symbol", "timestamp"]),
+    def _empty_fetch_bars_result(self, ticker):
+        """Return an empty fetch_bars result dict (no bars available for ticker)."""
+        return {ticker: pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume"])}
+
+    def _make_fetch_bars_result(self, ticker, rows):
+        """Build a fetch_bars result dict. rows is list of (ts, O, H, L, C, V)."""
+        if not rows:
+            return self._empty_fetch_bars_result(ticker)
+        idx = [r[0] for r in rows]
+        df = pd.DataFrame(
+            {"Open": [r[1] for r in rows], "High": [r[2] for r in rows],
+             "Low": [r[3] for r in rows], "Close": [r[4] for r in rows],
+             "Volume": [r[5] for r in rows]},
+            index=pd.DatetimeIndex(idx),
         )
+        return {ticker: df}
+
+    def _set_mock_mdc(self, engine, fetch_bars_return=None):
+        """Attach a Mock market_data_client to engine and return it."""
+        mdc = Mock()
+        mdc.fetch_bars.return_value = fetch_bars_return or {}
+        engine._market_data_client = mdc
+        return mdc
 
     def _make_a1_engine(self, ticker="FN"):
         return LiveSignalEngine(
             tickers=[ticker],
-            api_key="k",
-            secret_key="s",
             windows=[
                 {
                     "label": "A1",
@@ -489,8 +481,6 @@ class TestCatchUpOpeningBarsForWindow:
     def _make_m1_engine(self, ticker="AMD"):
         return LiveSignalEngine(
             tickers=[ticker],
-            api_key="k",
-            secret_key="s",
             windows=[
                 {
                     "label": "M1",
@@ -524,10 +514,8 @@ class TestCatchUpOpeningBarsForWindow:
             engine._opening_buf["A1"]["FN"].append(bar)
             engine._signal_fired["A1"]["FN"] = True
 
-        with patch.object(engine, "_process_five_min_bar", side_effect=fake_process), \
-             patch(
-                 "alpha_tech_tracker.op_momentum_strategy.signal_engine.StockHistoricalDataClient"
-             ) as mock_alpaca:
+        mdc = self._set_mock_mdc(engine)
+        with patch.object(engine, "_process_five_min_bar", side_effect=fake_process):
             engine._catch_up_opening_bars_for_window(today, engine._windows[0])
 
         assert len(injected_bars) == 1
@@ -538,9 +526,9 @@ class TestCatchUpOpeningBarsForWindow:
         assert injected.high == 552.0
         assert injected.low == 549.5
         assert injected.close == 551.06
-        mock_alpaca.assert_not_called()
+        mdc.fetch_bars.assert_not_called()
 
-    def test_falls_back_to_alpaca_when_minute_buf_bars_list_is_empty(self):
+    def test_falls_back_to_fetch_bars_when_minute_buf_bars_list_is_empty(self):
         today = date(2026, 4, 6)
         engine = self._make_a1_engine("FN")
         or_start = ET.localize(
@@ -548,19 +536,12 @@ class TestCatchUpOpeningBarsForWindow:
         )
         engine._minute_buf["FN"] = {"period_start": or_start, "bars": []}
 
-        mock_alpaca_instance = Mock()
-        mock_alpaca_instance.get_stock_bars.return_value = Mock(df=self._empty_alpaca_df())
+        mdc = self._set_mock_mdc(engine, self._empty_fetch_bars_result("FN"))
+        engine._catch_up_opening_bars_for_window(today, engine._windows[0])
 
-        with patch(
-            "alpha_tech_tracker.op_momentum_strategy.signal_engine.StockHistoricalDataClient",
-            return_value=mock_alpaca_instance,
-        ) as mock_alpaca:
-            engine._catch_up_opening_bars_for_window(today, engine._windows[0])
+        mdc.fetch_bars.assert_called_once()
 
-        mock_alpaca.assert_called_once()
-        mock_alpaca_instance.get_stock_bars.assert_called_once()
-
-    def test_falls_back_to_alpaca_when_minute_buf_is_on_a_different_period(self):
+    def test_falls_back_to_fetch_bars_when_minute_buf_is_on_a_different_period(self):
         today = date(2026, 4, 6)
         engine = self._make_a1_engine("FN")
         or_start = ET.localize(
@@ -571,16 +552,10 @@ class TestCatchUpOpeningBarsForWindow:
             "bars": [self._make_1min_bar(550.0, 551.0, 549.0, 550.5)],
         }
 
-        mock_alpaca_instance = Mock()
-        mock_alpaca_instance.get_stock_bars.return_value = Mock(df=self._empty_alpaca_df())
+        mdc = self._set_mock_mdc(engine, self._empty_fetch_bars_result("FN"))
+        engine._catch_up_opening_bars_for_window(today, engine._windows[0])
 
-        with patch(
-            "alpha_tech_tracker.op_momentum_strategy.signal_engine.StockHistoricalDataClient",
-            return_value=mock_alpaca_instance,
-        ) as mock_alpaca:
-            engine._catch_up_opening_bars_for_window(today, engine._windows[0])
-
-        mock_alpaca.assert_called_once()
+        mdc.fetch_bars.assert_called_once()
 
     def test_bar_already_in_history_is_not_reprocessed(self):
         today = date(2026, 4, 6)
@@ -599,10 +574,8 @@ class TestCatchUpOpeningBarsForWindow:
             index=[or_start],
         )
 
-        with patch.object(engine, "_process_five_min_bar") as mock_process, \
-             patch(
-                 "alpha_tech_tracker.op_momentum_strategy.signal_engine.StockHistoricalDataClient"
-             ):
+        self._set_mock_mdc(engine)
+        with patch.object(engine, "_process_five_min_bar") as mock_process:
             engine._catch_up_opening_bars_for_window(today, engine._windows[0])
 
         mock_process.assert_not_called()
@@ -636,17 +609,11 @@ class TestCatchUpOpeningBarsForWindow:
             injected_bars.append(bar)
             engine._opening_buf["M1"]["AMD"].append(bar)
 
-        mock_alpaca_instance = Mock()
-        mock_alpaca_instance.get_stock_bars.return_value = Mock(df=self._empty_alpaca_df())
-
-        with patch.object(engine, "_process_five_min_bar", side_effect=fake_process), \
-             patch(
-                 "alpha_tech_tracker.op_momentum_strategy.signal_engine.StockHistoricalDataClient",
-                 return_value=mock_alpaca_instance,
-             ):
+        mdc = self._set_mock_mdc(engine, self._empty_fetch_bars_result("AMD"))
+        with patch.object(engine, "_process_five_min_bar", side_effect=fake_process):
             engine._catch_up_opening_bars_for_window(today, engine._windows[0])
 
-        # 09:40 real bar from minute_buf + 09:30 flat bar synthesized (no Alpaca data)
+        # 09:40 real bar from minute_buf + 09:30 flat bar synthesized (no fetch_bars data)
         # 09:35 is already in history so it is skipped (not re-injected)
         assert len(injected_bars) == 2
         timestamps = {b.timestamp for b in injected_bars}
@@ -655,7 +622,7 @@ class TestCatchUpOpeningBarsForWindow:
         flat_bars = [b for b in injected_bars if b.volume == 0.0]
         assert len(flat_bars) == 1
         assert flat_bars[0].timestamp == or_start
-        mock_alpaca_instance.get_stock_bars.assert_called_once()
+        mdc.fetch_bars.assert_called_once()
 
     def test_late_start_engine_gets_uncovered_recent_bar_from_alpaca(self):
         """Regression: engine starts late (e.g. 10:39 for a 10:25/3bar window).
@@ -665,8 +632,6 @@ class TestCatchUpOpeningBarsForWindow:
         today = date(2026, 4, 7)
         engine = LiveSignalEngine(
             tickers=["APP"],
-            api_key="k",
-            secret_key="s",
             windows=[
                 {
                     "label": "M1",
@@ -689,25 +654,13 @@ class TestCatchUpOpeningBarsForWindow:
             "bars": [self._make_1min_bar(403.0, 404.0, 402.0, 403.5)],
         }
 
-        def _make_alpaca_df(*period_starts):
-            """Build a minimal multi-index DataFrame like Alpaca returns."""
-            tuples = [(sym, ts) for sym in ["APP"] for ts in period_starts]
-            idx = pd.MultiIndex.from_tuples(tuples, names=["symbol", "timestamp"])
-            return pd.DataFrame(
-                {
-                    "open": [400.0] * len(tuples),
-                    "high": [401.0] * len(tuples),
-                    "low":  [399.0] * len(tuples),
-                    "close": [400.5] * len(tuples),
-                    "volume": [1000.0] * len(tuples),
-                },
-                index=idx,
-            )
-
-        # Alpaca returns 10:25 and 10:30 bars (the two older OR bars)
-        alpaca_df = _make_alpaca_df(bar_10_25, bar_10_30)
-        mock_alpaca_instance = Mock()
-        mock_alpaca_instance.get_stock_bars.return_value = Mock(df=alpaca_df)
+        # fetch_bars returns 10:25 and 10:30 bars (the two older OR bars)
+        fetch_df = pd.DataFrame(
+            {"Open": [400.0, 400.0], "High": [401.0, 401.0], "Low": [399.0, 399.0],
+             "Close": [400.5, 400.5], "Volume": [1000.0, 1000.0]},
+            index=pd.DatetimeIndex([bar_10_25, bar_10_30]),
+        )
+        mdc = self._set_mock_mdc(engine, {"APP": fetch_df})
 
         injected_bars = []
 
@@ -715,11 +668,7 @@ class TestCatchUpOpeningBarsForWindow:
             injected_bars.append(bar)
             engine._opening_buf["M1"]["APP"].append(bar)
 
-        with patch.object(engine, "_process_five_min_bar", side_effect=fake_process), \
-             patch(
-                 "alpha_tech_tracker.op_momentum_strategy.signal_engine.StockHistoricalDataClient",
-                 return_value=mock_alpaca_instance,
-             ):
+        with patch.object(engine, "_process_five_min_bar", side_effect=fake_process):
             engine._catch_up_opening_bars_for_window(today, engine._windows[0])
 
         injected_timestamps = {b.timestamp for b in injected_bars}
@@ -730,65 +679,35 @@ class TestCatchUpOpeningBarsForWindow:
         assert len(engine._opening_buf["M1"]["APP"]) == 3
 
 
-class TestCatchUpSingleTickerMultiIndex:
-    """Regression tests for single-ticker catchup crash.
+class TestCatchUpFetchBarsInjection:
+    """Tests for _catch_up_opening_bars_for_window fetch_bars-based injection.
 
-    When only one ticker needs API catchup, Alpaca returns a flat DatetimeIndex
-    instead of a (symbol, timestamp) MultiIndex.  The fix normalises the frame
-    with pd.concat before the per-ticker loop so .xs() works uniformly.
+    Verifies that bars returned by market_data_client.fetch_bars() are properly
+    injected as _FiveMinBar objects for single and multiple tickers.
     """
 
-    def _make_a1_engine(self, ticker="MU"):
+    def _make_a1_engine(self, tickers):
+        if isinstance(tickers, str):
+            tickers = [tickers]
         return LiveSignalEngine(
-            tickers=[ticker],
-            api_key="k",
-            secret_key="s",
-            windows=[
-                {
-                    "label": "A1",
-                    "opening_start": "13:15",
-                    "opening_bars": 1,
-                    "on_signal": None,
-                }
-            ],
+            tickers=tickers,
+            windows=[{"label": "A1", "opening_start": "13:15", "opening_bars": 1, "on_signal": None}],
         )
 
-    def _make_flat_alpaca_df(self, ticker, ts):
-        """Simulate what Alpaca returns when exactly one ticker is requested."""
-        idx = pd.DatetimeIndex([ts], name="timestamp")
-        return pd.DataFrame(
-            {"open": [408.0], "high": [409.0], "low": [407.5], "close": [408.5], "volume": [500.0]},
-            index=idx,
-        )
-
-    def test_single_ticker_flat_index_does_not_raise(self):
+    def test_single_ticker_bar_injected_from_fetch_bars(self):
         today = date(2026, 4, 9)
         engine = self._make_a1_engine("MU")
         or_start = ET.localize(
             datetime.combine(today, datetime.strptime("13:15", "%H:%M").time())
         )
-        flat_df = self._make_flat_alpaca_df("MU", or_start)
 
-        mock_alpaca_instance = Mock()
-        mock_alpaca_instance.get_stock_bars.return_value = Mock(df=flat_df)
-
-        with patch.object(engine, "_process_five_min_bar"), \
-             patch(
-                 "alpha_tech_tracker.op_momentum_strategy.signal_engine.StockHistoricalDataClient",
-                 return_value=mock_alpaca_instance,
-             ):
-            engine._catch_up_opening_bars_for_window(today, engine._windows[0])
-
-    def test_single_ticker_flat_index_injects_bar(self):
-        today = date(2026, 4, 9)
-        engine = self._make_a1_engine("MU")
-        or_start = ET.localize(
-            datetime.combine(today, datetime.strptime("13:15", "%H:%M").time())
+        fetch_df = pd.DataFrame(
+            {"Open": [408.0], "High": [409.0], "Low": [407.5], "Close": [408.5], "Volume": [500.0]},
+            index=pd.DatetimeIndex([or_start]),
         )
-        flat_df = self._make_flat_alpaca_df("MU", or_start)
-
-        mock_alpaca_instance = Mock()
-        mock_alpaca_instance.get_stock_bars.return_value = Mock(df=flat_df)
+        mdc = Mock()
+        mdc.fetch_bars.return_value = {"MU": fetch_df}
+        engine._market_data_client = mdc
 
         injected = []
 
@@ -796,11 +715,7 @@ class TestCatchUpSingleTickerMultiIndex:
             injected.append(bar)
             engine._opening_buf["A1"]["MU"].append(bar)
 
-        with patch.object(engine, "_process_five_min_bar", side_effect=fake_process), \
-             patch(
-                 "alpha_tech_tracker.op_momentum_strategy.signal_engine.StockHistoricalDataClient",
-                 return_value=mock_alpaca_instance,
-             ):
+        with patch.object(engine, "_process_five_min_bar", side_effect=fake_process):
             engine._catch_up_opening_bars_for_window(today, engine._windows[0])
 
         assert len(injected) == 1
@@ -808,28 +723,25 @@ class TestCatchUpSingleTickerMultiIndex:
         assert injected[0].open == 408.0
         assert injected[0].close == 408.5
 
-    def test_multi_ticker_multi_index_still_works(self):
-        """Existing multi-ticker path (MultiIndex) is unaffected by the fix."""
+    def test_multiple_tickers_both_injected_from_fetch_bars(self):
         today = date(2026, 4, 9)
-        engine = LiveSignalEngine(
-            tickers=["MU", "NVDA"],
-            api_key="k",
-            secret_key="s",
-            windows=[{"label": "A1", "opening_start": "13:15", "opening_bars": 1, "on_signal": None}],
-        )
+        engine = self._make_a1_engine(["MU", "NVDA"])
         or_start = ET.localize(
             datetime.combine(today, datetime.strptime("13:15", "%H:%M").time())
         )
-        tuples = [("MU", or_start), ("NVDA", or_start)]
-        idx = pd.MultiIndex.from_tuples(tuples, names=["symbol", "timestamp"])
-        multi_df = pd.DataFrame(
-            {"open": [408.0, 183.0], "high": [409.0, 184.0], "low": [407.0, 182.0],
-             "close": [408.5, 183.5], "volume": [500.0, 1000.0]},
-            index=idx,
-        )
 
-        mock_alpaca_instance = Mock()
-        mock_alpaca_instance.get_stock_bars.return_value = Mock(df=multi_df)
+        mdc = Mock()
+        mdc.fetch_bars.return_value = {
+            "MU": pd.DataFrame(
+                {"Open": [408.0], "High": [409.0], "Low": [407.0], "Close": [408.5], "Volume": [500.0]},
+                index=pd.DatetimeIndex([or_start]),
+            ),
+            "NVDA": pd.DataFrame(
+                {"Open": [183.0], "High": [184.0], "Low": [182.0], "Close": [183.5], "Volume": [1000.0]},
+                index=pd.DatetimeIndex([or_start]),
+            ),
+        }
+        engine._market_data_client = mdc
 
         injected = []
 
@@ -837,11 +749,7 @@ class TestCatchUpSingleTickerMultiIndex:
             injected.append(bar)
             engine._opening_buf["A1"][bar.symbol].append(bar)
 
-        with patch.object(engine, "_process_five_min_bar", side_effect=fake_process), \
-             patch(
-                 "alpha_tech_tracker.op_momentum_strategy.signal_engine.StockHistoricalDataClient",
-                 return_value=mock_alpaca_instance,
-             ):
+        with patch.object(engine, "_process_five_min_bar", side_effect=fake_process):
             engine._catch_up_opening_bars_for_window(today, engine._windows[0])
 
         symbols = {b.symbol for b in injected}
@@ -906,7 +814,7 @@ class TestFlatOrSignalGuard:
 
 class TestMakeFlatBar:
     def _make_engine_with_last_close(self, ticker, last_close):
-        engine = LiveSignalEngine(tickers=[ticker], api_key="k", secret_key="s")
+        engine = LiveSignalEngine(tickers=[ticker])
         engine._history[ticker] = _build_history_df(
             closes=[last_close] * 5,
             ma20=[last_close] * 5,
@@ -938,7 +846,7 @@ class TestMakeFlatBar:
         assert bar.timestamp == ts
 
     def test_returns_none_when_no_history(self):
-        engine = LiveSignalEngine(tickers=["ANAB"], api_key="k", secret_key="s")
+        engine = LiveSignalEngine(tickers=["ANAB"])
         ts = ET.localize(datetime(2026, 4, 10, 9, 35))
         assert engine._make_flat_bar("ANAB", ts) is None
 
@@ -947,8 +855,6 @@ class TestFillOrGapsWithFlatBars:
     def _make_m1_engine(self, ticker="ANAB", last_close=25.0):
         engine = LiveSignalEngine(
             tickers=[ticker],
-            api_key="k",
-            secret_key="s",
             windows=[{"label": "M1", "opening_start": "09:30", "opening_bars": 3, "on_signal": None}],
         )
         engine._history[ticker] = _build_history_df(
@@ -1033,8 +939,6 @@ class TestHandleBarGapFill:
         today = date(2026, 4, 10)
         engine = LiveSignalEngine(
             tickers=[ticker],
-            api_key="k",
-            secret_key="s",
             windows=[{"label": "M1", "opening_start": "09:30", "opening_bars": 3, "on_signal": None}],
         )
         engine._session_date = today
@@ -1057,7 +961,7 @@ class TestHandleBarGapFill:
         fake_now = ET.localize(datetime.combine(today, datetime.strptime("10:00", "%H:%M").time()))
         with patch(f"{_SE_MODULE}._now_et", return_value=fake_now), \
              patch.object(engine, "_process_five_min_bar", side_effect=capture_fn):
-            asyncio.run(engine._handle_bar(ws_bar))
+            engine._on_bar(ws_bar)
 
     def test_gap_of_one_period_emits_one_flat_bar(self):
         today = date(2026, 4, 10)
@@ -1145,8 +1049,6 @@ class TestCatchUpWithFlatBarFallback:
         today = date(2026, 4, 10)
         engine = LiveSignalEngine(
             tickers=[ticker],
-            api_key="k",
-            secret_key="s",
             windows=[{"label": "M1", "opening_start": "09:30", "opening_bars": 3, "on_signal": None}],
         )
         engine._history[ticker] = _build_history_df(
@@ -1157,13 +1059,13 @@ class TestCatchUpWithFlatBarFallback:
         )
         return engine
 
-    def _empty_alpaca_df(self):
-        return pd.DataFrame(
-            columns=["open", "high", "low", "close", "volume"],
-            index=pd.MultiIndex.from_tuples([], names=["symbol", "timestamp"]),
-        )
+    def _set_mock_mdc(self, engine, fetch_bars_return):
+        mdc = Mock()
+        mdc.fetch_bars.return_value = fetch_bars_return
+        engine._market_data_client = mdc
+        return mdc
 
-    def test_no_alpaca_data_synthesizes_three_flat_or_bars(self):
+    def test_no_fetch_bars_data_synthesizes_three_flat_or_bars(self):
         today = date(2026, 1, 15)
         engine = self._make_m1_engine("ANAB")
         injected = []
@@ -1173,21 +1075,16 @@ class TestCatchUpWithFlatBarFallback:
             engine._opening_buf["M1"]["ANAB"].append(bar)
             engine._signal_fired["M1"]["ANAB"] = len(engine._opening_buf["M1"]["ANAB"]) >= 3
 
-        mock_alpaca = Mock()
-        mock_alpaca.get_stock_bars.return_value = Mock(df=self._empty_alpaca_df())
+        self._set_mock_mdc(engine, {"ANAB": pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume"])})
 
-        with patch.object(engine, "_process_five_min_bar", side_effect=fake_process), \
-             patch(
-                 "alpha_tech_tracker.op_momentum_strategy.signal_engine.StockHistoricalDataClient",
-                 return_value=mock_alpaca,
-             ):
+        with patch.object(engine, "_process_five_min_bar", side_effect=fake_process):
             engine._catch_up_opening_bars_for_window(today, engine._windows[0])
 
         assert len(injected) == 3
         assert all(b.volume == 0.0 for b in injected)
         assert all(b.symbol == "ANAB" for b in injected)
 
-    def test_partial_alpaca_data_fills_remaining_slots_with_flat_bars(self):
+    def test_partial_fetch_bars_data_fills_remaining_slots_with_flat_bars(self):
         today = date(2026, 1, 15)
         engine = self._make_m1_engine("ANAB")
         or_start = ET.localize(datetime.combine(today, datetime.strptime("09:30", "%H:%M").time()))
@@ -1198,23 +1095,14 @@ class TestCatchUpWithFlatBarFallback:
             injected.append(bar)
             engine._opening_buf["M1"]["ANAB"].append(bar)
 
-        # Alpaca returns only 1 of the 3 OR bars
-        idx = pd.MultiIndex.from_tuples(
-            [("ANAB", or_start.astimezone(pytz.utc))],
-            names=["symbol", "timestamp"],
+        # fetch_bars returns only 1 of the 3 OR bars
+        fetch_df = pd.DataFrame(
+            {"Open": [26.0], "High": [27.0], "Low": [25.0], "Close": [26.5], "Volume": [500.0]},
+            index=pd.DatetimeIndex([or_start]),
         )
-        alpaca_df = pd.DataFrame(
-            [{"open": 26.0, "high": 27.0, "low": 25.0, "close": 26.5, "volume": 500.0}],
-            index=idx,
-        )
-        mock_alpaca = Mock()
-        mock_alpaca.get_stock_bars.return_value = Mock(df=alpaca_df)
+        self._set_mock_mdc(engine, {"ANAB": fetch_df})
 
-        with patch.object(engine, "_process_five_min_bar", side_effect=fake_process), \
-             patch(
-                 "alpha_tech_tracker.op_momentum_strategy.signal_engine.StockHistoricalDataClient",
-                 return_value=mock_alpaca,
-             ):
+        with patch.object(engine, "_process_five_min_bar", side_effect=fake_process):
             engine._catch_up_opening_bars_for_window(today, engine._windows[0])
 
         # 1 real bar + 2 flat bars = 3 total
@@ -1231,66 +1119,40 @@ class TestCatchUpWithFlatBarFallback:
 
 
 class TestWsWatchdog:
-    def _make_engine(self):
-        return LiveSignalEngine(
+    def _make_engine_with_mdc(self):
+        engine = LiveSignalEngine(
             tickers=["NVDA"],
-            api_key="k",
-            secret_key="s",
             opening_bars=3,
             on_signal=lambda e: None,
         )
+        mdc = Mock()
+        engine._market_data_client = mdc
+        return engine, mdc
 
-    def test_reconnect_stops_old_stream_and_starts_new_one(self):
-        engine = self._make_engine()
-        old_stream = Mock()
-        engine._stream = old_stream
-
-        new_stream = Mock()
-        with patch(
-            f"{_SE_MODULE}.StockDataStream", return_value=new_stream
-        ) as mock_cls, \
-             patch("threading.Thread") as mock_thread:
-            mock_thread.return_value = Mock()
-            engine.reconnect()
-
-        old_stream.stop.assert_called_once()
-        mock_cls.assert_called_once()
-        new_stream.subscribe_bars.assert_called_once()
-        mock_thread.return_value.start.assert_called_once()
+    def test_reconnect_delegates_to_market_data_client(self):
+        engine, mdc = self._make_engine_with_mdc()
+        engine.reconnect()
+        mdc.reconnect.assert_called_once()
 
     def test_reconnect_preserves_history(self):
-        engine = self._make_engine()
-        engine._stream = Mock()
+        engine, _ = self._make_engine_with_mdc()
         engine._history["NVDA"] = "sentinel_df"
-
-        with patch(f"{_SE_MODULE}.StockDataStream", return_value=Mock()), \
-             patch("threading.Thread") as mock_thread:
-            mock_thread.return_value = Mock()
-            engine.reconnect()
-
+        engine.reconnect()
         assert engine._history["NVDA"] == "sentinel_df"
 
     def test_reconnect_resets_last_bar_received_at(self):
-        engine = self._make_engine()
-        engine._stream = Mock()
+        engine, _ = self._make_engine_with_mdc()
         engine._last_bar_received_at = ET.localize(datetime(2026, 4, 11, 10, 0))
-
-        with patch(f"{_SE_MODULE}.StockDataStream", return_value=Mock()), \
-             patch("threading.Thread") as mock_thread:
-            mock_thread.return_value = Mock()
-            engine.reconnect()
-
+        engine.reconnect()
         assert engine._last_bar_received_at is None
 
     def test_stream_started_at_set_on_reconnect(self):
-        engine = self._make_engine()
-        engine._stream = Mock()
-
+        engine, _ = self._make_engine_with_mdc()
         now = ET.localize(datetime(2026, 4, 11, 10, 30))
-        with patch(f"{_SE_MODULE}.StockDataStream", return_value=Mock()), \
-             patch("threading.Thread") as mock_thread, \
-             patch(f"{_SE_MODULE}._now_et", return_value=now):
-            mock_thread.return_value = Mock()
+        with patch(f"{_SE_MODULE}._now_et", return_value=now):
             engine.reconnect()
-
         assert engine._stream_started_at == now
+
+    def test_reconnect_noop_when_no_market_data_client(self):
+        engine = LiveSignalEngine(tickers=["NVDA"], opening_bars=3, on_signal=None)
+        engine.reconnect()  # should not raise

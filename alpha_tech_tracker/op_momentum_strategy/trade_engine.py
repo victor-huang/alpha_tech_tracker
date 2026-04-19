@@ -21,6 +21,7 @@ from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector import (
     select_top_n,
 )
 from alpha_tech_tracker.trade_api.execution_client import ExecutionClient
+from alpha_tech_tracker.trade_api.market_data_client import MarketDataClient
 
 from .config import (
     ACCOUNT_BUDGET,
@@ -268,6 +269,7 @@ class OpMomentumTradeEngine:
         enable_doubledown: bool = False,
         doubledown_start_min: int = 5,
         record_tradestation_feed: bool = False,
+        market_data_client: Optional[MarketDataClient] = None,
     ):
         self._client = alpaca_client
         self._api_key = getattr(alpaca_client, "_api_key", None)
@@ -305,6 +307,7 @@ class OpMomentumTradeEngine:
         self._enable_doubledown = enable_doubledown
         self._doubledown_start_min = doubledown_start_min
         self._record_tradestation_feed = record_tradestation_feed
+        self._market_data_client = market_data_client
         self._dd_timers: dict = {}
         self._dd_fired: set = set()
         self._monitor: PositionMonitor = None
@@ -1741,7 +1744,7 @@ class OpMomentumTradeEngine:
         api_key = self._api_key or os.environ.get("ALPACA_API_KEY")
         secret_key = self._secret_key or os.environ.get("ALPACA_SECRET_KEY")
 
-        logger.info("Alpaca data feed: %s", self._alpaca_feed.value.upper())
+        logger.info("Market data feed: %s", self._alpaca_feed.value.upper())
         all_tickers = tickers_override or TICKERS
         first_window = self._windows[0]
 
@@ -1805,17 +1808,22 @@ class OpMomentumTradeEngine:
             if ts_bar_recorder is not None:
                 ts_bar_recorder.start()
 
+        market_data_client = self._market_data_client
+        if market_data_client is None:
+            from alpha_tech_tracker.trade_api.alpaca_client.market_data_client import (
+                AlpacaMarketDataClient,
+            )
+            market_data_client = AlpacaMarketDataClient(api_key, secret_key, self._alpaca_feed)
+
         self._signal_engine = LiveSignalEngine(
             tickers=all_tickers,
-            api_key=api_key,
-            secret_key=secret_key,
+            market_data_client=market_data_client,
             bearish_ma200=BEARISH_MA200,
             regime_filter=self._regime_filter,
             regime_ma=self._regime_ma,
             windows=engine_windows,
             bar_recorder=bar_recorder,
             or_bar_lookback=self._or_bar_lookback,
-            alpaca_feed=self._alpaca_feed,
         )
         try:
             account = self._client.get_accounts()
@@ -1922,7 +1930,7 @@ class OpMomentumTradeEngine:
         replay_open = ET.localize(datetime.combine(replay_date, _time(9, 30)))
         set_replay_clock(lambda: replay_open)
 
-        logger.info("Alpaca data feed: %s", self._alpaca_feed.value.upper())
+        logger.info("Market data feed: replay (cache)")
         all_tickers = tickers_override or TICKERS
         first_window = self._windows[0]
 
@@ -1966,14 +1974,11 @@ class OpMomentumTradeEngine:
 
         self._signal_engine = LiveSignalEngine(
             tickers=all_tickers,
-            api_key=self._api_key,
-            secret_key=self._secret_key,
             bearish_ma200=BEARISH_MA200,
             regime_filter=self._regime_filter,
             regime_ma=self._regime_ma,
             windows=engine_windows,
             or_bar_lookback=self._or_bar_lookback,
-            alpaca_feed=self._alpaca_feed,
         )
         self._signal_engine.start_replay(replay_date)
 

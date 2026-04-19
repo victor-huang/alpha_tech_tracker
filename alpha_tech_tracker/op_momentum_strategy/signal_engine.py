@@ -6,15 +6,10 @@ from typing import Optional
 import pandas as pd
 import pytz
 
-from alpaca.data.enums import DataFeed
-from alpaca.data.historical import StockHistoricalDataClient
-from alpaca.data.live import StockDataStream
-from alpaca.data.requests import StockBarsRequest
-from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
-
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import (
     build_bearish_regime_dates,
 )
+from alpha_tech_tracker.trade_api.market_data_client import MarketDataClient
 
 from .bar_recorder import BarRecorder
 from .config import (
@@ -48,8 +43,7 @@ class LiveSignalEngine:
     def __init__(
         self,
         tickers: list,
-        api_key: str,
-        secret_key: str,
+        market_data_client: Optional[MarketDataClient] = None,
         opening_bars: int = OPENING_BARS,
         bearish_ma200: bool = BEARISH_MA200,
         on_signal=None,
@@ -59,15 +53,13 @@ class LiveSignalEngine:
         windows: list = None,
         bar_recorder: BarRecorder = None,
         or_bar_lookback: int = 3,
-        alpaca_feed: DataFeed = DataFeed.SIP,
     ):
         self._tickers = tickers
         self._bearish_ma200 = bearish_ma200
         self._regime_filter = regime_filter
         self._regime_ma = regime_ma
         self._bearish_regime_dates: set = set()
-        self._api_key = api_key
-        self._secret_key = secret_key
+        self._market_data_client = market_data_client
 
         if windows:
             self._windows = [
@@ -105,76 +97,10 @@ class LiveSignalEngine:
         }
         self._or_bar_lookback = or_bar_lookback
         self._session_date = _now_et().date()
-        self._stream: StockDataStream = None
         self._lock = threading.Lock()
         self._bar_recorder = bar_recorder
         self._last_bar_received_at: Optional[datetime] = None
         self._stream_started_at: Optional[datetime] = None
-        self._alpaca_feed = alpaca_feed
-
-    def _warmup(self):
-        hist_client = StockHistoricalDataClient(self._api_key, self._secret_key)
-        now_et = datetime.now(ET)
-        market_open = now_et.replace(hour=9, minute=30, second=0, microsecond=0)
-        if now_et >= market_open:
-            end_dt = now_et
-        else:
-            prev = now_et.date() - timedelta(days=1)
-            while prev.weekday() >= 5:
-                prev -= timedelta(days=1)
-            end_dt = ET.localize(
-                datetime.combine(prev, datetime.strptime("16:00", "%H:%M").time())
-            )
-        start_dt = end_dt - timedelta(days=MA_WARMUP_DAYS)
-
-        logger.info(
-            "Fetching historical 5-min bars for %d tickers: %s to %s",
-            len(self._tickers),
-            start_dt.strftime("%Y-%m-%d %H:%M ET"),
-            end_dt.strftime("%Y-%m-%d %H:%M ET"),
-        )
-        request = StockBarsRequest(
-            symbol_or_symbols=self._tickers,
-            timeframe=TimeFrame(amount=5, unit=TimeFrameUnit.Minute),
-            start=start_dt,
-            end=end_dt,
-            feed=self._alpaca_feed,
-        )
-        bars = hist_client.get_stock_bars(request)
-        all_df = bars.df
-        logger.info("Historical fetch complete — processing bars per ticker")
-
-        for ticker in self._tickers:
-            try:
-                df = all_df.xs(ticker, level=0).copy()
-                df.index = df.index.tz_convert(ET)
-                df = df.between_time("09:30", "16:00")
-                df.columns = [c.capitalize() for c in df.columns]
-                df["MA20"] = df["Close"].rolling(20).mean()
-                df["MA50"] = df["Close"].rolling(50).mean()
-                df["MA200"] = df["Close"].rolling(200).mean()
-                self._history[ticker] = df
-                last_close = df["Close"].iloc[-1] if not df.empty else float("nan")
-                logger.info(
-                    "Warmed up %-6s — %d bars, last close=%.2f",
-                    ticker,
-                    len(df),
-                    last_close,
-                )
-            except KeyError:
-                self._history[ticker] = pd.DataFrame(
-                    columns=[
-                        "Open",
-                        "High",
-                        "Low",
-                        "Close",
-                        "Volume",
-                        "MA20",
-                        "MA50",
-                        "MA200",
-                    ]
-                )
-                logger.warning("No warmup data for %s", ticker)
 
     def _append_bar(self, ticker: str, bar) -> pd.Series:
         new_row = pd.Series(
@@ -472,31 +398,13 @@ class LiveSignalEngine:
                 )
             return
 
-        hist_client = StockHistoricalDataClient(self._api_key, self._secret_key)
-        request = StockBarsRequest(
-            symbol_or_symbols=tickers_need_api,
-            timeframe=TimeFrame(amount=5, unit=TimeFrameUnit.Minute),
-            start=or_start,
-            end=or_end,
-            feed=self._alpaca_feed,
-        )
-        try:
-            bars = hist_client.get_stock_bars(request)
-            all_df = bars.df
-            # Alpaca returns a flat DatetimeIndex when only one ticker is requested.
-            # Normalize to a (symbol, timestamp) MultiIndex so .xs() works uniformly.
-            if not isinstance(all_df.index, pd.MultiIndex) and len(tickers_need_api) == 1:
-                all_df = pd.concat({tickers_need_api[0]: all_df}, names=["symbol", "timestamp"])
-        except Exception:
-            logger.exception("Failed to fetch opening bar catchup data for [%s]", label)
-            return
+        bars_dict = self._market_data_client.fetch_bars(tickers_need_api, or_start, or_end)
 
         for ticker in tickers_need_api:
             if self._signal_fired[label].get(ticker):
                 continue
-            try:
-                tick_df = all_df.xs(ticker, level=0).copy()
-            except KeyError:
+            tick_df = bars_dict.get(ticker)
+            if tick_df is None or tick_df.empty:
                 logger.warning("No catchup data for %s [%s] — synthesizing flat bars", ticker, label)
                 self._fill_or_gaps_with_flat_bars(ticker, label, or_bar_period_starts, win)
                 logger.info(
@@ -506,8 +414,6 @@ class LiveSignalEngine:
                     win["opening_bars"],
                 )
                 continue
-            tick_df.index = tick_df.index.tz_convert(ET)
-            tick_df.columns = [c.capitalize() for c in tick_df.columns]
 
             for ts, row in tick_df.iterrows():
                 # Skip only bars that were actually served from _minute_buf in
@@ -542,7 +448,7 @@ class LiveSignalEngine:
                 win["opening_bars"],
             )
 
-    async def _handle_bar(self, bar):
+    def _on_bar(self, bar):
         ticker = bar.symbol
         if ticker not in self._tickers:
             return
@@ -711,7 +617,36 @@ class LiveSignalEngine:
 
     def start(self):
         logger.info("Warming up historical bars for %s", self._tickers)
-        self._warmup()
+        now_et = datetime.now(ET)
+        market_open = now_et.replace(hour=9, minute=30, second=0, microsecond=0)
+        if now_et >= market_open:
+            end_dt = now_et
+        else:
+            prev = now_et.date() - timedelta(days=1)
+            while prev.weekday() >= 5:
+                prev -= timedelta(days=1)
+            end_dt = ET.localize(
+                datetime.combine(prev, datetime.strptime("16:00", "%H:%M").time())
+            )
+        start_dt = end_dt - timedelta(days=MA_WARMUP_DAYS)
+
+        bars_dict = self._market_data_client.warmup(self._tickers, start_dt, end_dt)
+        for ticker in self._tickers:
+            df = bars_dict.get(ticker, pd.DataFrame())
+            if not df.empty:
+                df = df.copy()
+                df["MA20"] = df["Close"].rolling(20).mean()
+                df["MA50"] = df["Close"].rolling(50).mean()
+                df["MA200"] = df["Close"].rolling(200).mean()
+                last_close = df["Close"].iloc[-1]
+            else:
+                df = pd.DataFrame(
+                    columns=["Open", "High", "Low", "Close", "Volume", "MA20", "MA50", "MA200"]
+                )
+                last_close = float("nan")
+            self._history[ticker] = df
+            logger.info("Warmed up %-6s — %d bars, last close=%.2f", ticker, len(df), last_close)
+
         if self._regime_filter:
             today = _now_et().date()
             lookback_start = today - timedelta(days=self._regime_ma * 3 + 10)
@@ -723,16 +658,10 @@ class LiveSignalEngine:
                 self._regime_ma,
                 len(self._bearish_regime_dates),
             )
-        self._stream = StockDataStream(
-            self._api_key,
-            self._secret_key,
-            feed=self._alpaca_feed,
-            websocket_params={"ping_interval": 20, "ping_timeout": 40},
-        )
-        self._stream.subscribe_bars(self._handle_bar, *self._tickers)
+
+        self._market_data_client.subscribe_bars(self._on_bar, *self._tickers)
         logger.info("Starting live data stream for %s", self._tickers)
-        thread = threading.Thread(target=self._stream.run, daemon=True)
-        thread.start()
+        self._market_data_client.start()
         self._stream_started_at = _now_et()
 
     def reconnect(self):
@@ -741,24 +670,14 @@ class LiveSignalEngine:
         Called by the watchdog when no bars have been received for too long.
         The _history dict is preserved so signal state is not lost.
         """
+        if not self._market_data_client:
+            return
         logger.warning("WebSocket watchdog: reconnecting stream")
-        self.stop()
-        self._stream = StockDataStream(
-            self._api_key,
-            self._secret_key,
-            feed=self._alpaca_feed,
-            websocket_params={"ping_interval": 20, "ping_timeout": 40},
-        )
-        self._stream.subscribe_bars(self._handle_bar, *self._tickers)
-        thread = threading.Thread(target=self._stream.run, daemon=True)
-        thread.start()
+        self._market_data_client.reconnect()
         self._stream_started_at = _now_et()
         self._last_bar_received_at = None
-        logger.info("WebSocket stream reconnected for %s", self._tickers)
+        logger.info("Stream reconnected for %s", self._tickers)
 
     def stop(self):
-        if self._stream:
-            try:
-                self._stream.stop()
-            except AttributeError:
-                pass
+        if self._market_data_client:
+            self._market_data_client.stop()

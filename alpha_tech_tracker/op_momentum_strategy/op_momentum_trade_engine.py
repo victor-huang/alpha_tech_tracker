@@ -473,6 +473,14 @@ def parse_args():
         default="iex",
         help="Alpaca data feed: 'iex' (free tier, default) or 'sip' (consolidated, requires paid subscription).",
     )
+    parser.add_argument(
+        "--market-data-source",
+        choices=["alpaca", "tradestation"],
+        default="alpaca",
+        dest="market_data_source",
+        help="Market data source for live bar streaming and warmup (default: alpaca). "
+        "'tradestation' requires valid TradeStation session tokens in config.json.",
+    )
     args = parser.parse_args()
     if args.rank_weighted_sizing and len(args.rank_weighted_sizing) != args.top:
         parser.error(
@@ -538,6 +546,30 @@ def _parse_windows(args) -> list:
 def _resolve_is_paper(args) -> bool:
     """Return True unless --live is set. --live is the sole control for paper vs live account."""
     return not getattr(args, "live", False)
+
+
+def _build_market_data_client(args):
+    """Return a MarketDataClient based on --market-data-source, or None for default Alpaca."""
+    if getattr(args, "market_data_source", "alpaca") == "tradestation":
+        from alpha_tech_tracker.op_momentum_strategy.config import (
+            _load_config,
+            _TRADESTATION_SESSION_TOKENS,
+            TRADESTATION_ENVIRONMENT,
+        )
+        from alpha_tech_tracker.trade_api.tradestation.client import TradeStationAPIClient
+        from alpha_tech_tracker.trade_api.tradestation.market_data_client import (
+            TradeStationMarketDataClient,
+        )
+        _load_config()
+        ts_client = TradeStationAPIClient(environment=TRADESTATION_ENVIRONMENT)
+        ts_client.restore_session(_TRADESTATION_SESSION_TOKENS)
+        if not ts_client.verify_session():
+            raise RuntimeError(
+                "TradeStation session invalid — run tradestation_auth.py first"
+            )
+        logger.info("Market data source: TradeStation (env=%s)", TRADESTATION_ENVIRONMENT)
+        return TradeStationMarketDataClient(ts_client)
+    return None  # caller defaults to AlpacaMarketDataClient
 
 
 def _build_option_price_monitor(args, client, tickers, contract_selector):
@@ -626,6 +658,7 @@ if __name__ == "__main__":
             enable_doubledown=args.doubledown,
             doubledown_start_min=args.doubledown_start_min,
             record_tradestation_feed=args.record_tradestation_feed,
+            market_data_client=_build_market_data_client(args),
         )
         if args.replay_date:
             from datetime import date as _date
@@ -740,6 +773,7 @@ if __name__ == "__main__":
             enable_doubledown=args.doubledown,
             doubledown_start_min=args.doubledown_start_min,
             record_tradestation_feed=args.record_tradestation_feed,
+            market_data_client=_build_market_data_client(args),
         )
         engine.run(tickers_override=args.tickers)
     finally:
