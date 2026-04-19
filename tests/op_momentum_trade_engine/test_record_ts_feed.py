@@ -1,8 +1,12 @@
 from datetime import datetime
 from unittest.mock import MagicMock, patch
 
+import pytz
+
 from alpha_tech_tracker.op_momentum_strategy.record_ts_feed import TsBarRecorder
 from alpha_tech_tracker.trade_api.tradestation.bar_stream import _TSBar
+
+ET = pytz.timezone("America/New_York")
 
 
 def _make_ts_client():
@@ -51,6 +55,7 @@ class TestTsBarRecorderStart:
         recorder = TsBarRecorder(client, ["TSLA", "META"])
         recorder._stream_1min = MagicMock()
         recorder._stream_5min = MagicMock()
+        recorder._backfill_session = MagicMock()
 
         recorder.start()
 
@@ -62,6 +67,21 @@ class TestTsBarRecorderStart:
         )
         recorder._stream_1min.start_async.assert_called_once()
         recorder._stream_5min.start_async.assert_called_once()
+
+    def test_start_calls_backfill_before_stream_subscription(self):
+        client = _make_ts_client()
+        recorder = TsBarRecorder(client, ["TSLA"])
+        recorder._stream_1min = MagicMock()
+        recorder._stream_5min = MagicMock()
+        call_order = []
+        recorder._backfill_session = MagicMock(side_effect=lambda: call_order.append("backfill"))
+        recorder._stream_1min.subscribe_bars.side_effect = lambda *a: call_order.append("subscribe_1min")
+
+        recorder.start()
+
+        assert call_order[0] == "backfill"
+        assert "subscribe_1min" in call_order
+        assert call_order.index("backfill") < call_order.index("subscribe_1min")
 
 
 class TestTsBarRecorderStop:
@@ -118,4 +138,149 @@ class TestTsBarRecorderCallbacks:
         assert recorder._bar_recorder.record_1min.call_count == 1
         assert recorder._bar_recorder.record_5min.call_count == 1
 
+
+class TestBackfillSession:
+    def _make_recorder(self, tickers=None):
+        client = _make_ts_client()
+        recorder = TsBarRecorder(client, tickers or ["TSLA"])
+        recorder._bar_recorder = MagicMock()
+        return recorder
+
+    def _market_time(self, hour, minute):
+        """Return an ET-aware datetime for today at the given hour:minute."""
+        now_et = datetime.now(ET)
+        return ET.localize(
+            datetime(now_et.year, now_et.month, now_et.day, hour, minute)
+        )
+
+    def test_skips_when_called_before_market_open(self):
+        recorder = self._make_recorder()
+        before_open = self._market_time(9, 0)
+
+        with patch(
+            "alpha_tech_tracker.op_momentum_strategy.record_ts_feed.datetime"
+        ) as mock_dt:
+            mock_dt.now.return_value = before_open
+            mock_dt.combine = datetime.combine
+            mock_dt.min = datetime.min
+            recorder._backfill_session()
+
+        recorder._ts_client.get_historical_bars.assert_not_called()
+
+    def test_skips_when_called_exactly_at_market_open(self):
+        recorder = self._make_recorder()
+        at_open = self._market_time(9, 30)
+
+        with patch(
+            "alpha_tech_tracker.op_momentum_strategy.record_ts_feed.datetime"
+        ) as mock_dt:
+            mock_dt.now.return_value = at_open
+            mock_dt.combine = datetime.combine
+            mock_dt.min = datetime.min
+            recorder._backfill_session()
+
+        recorder._ts_client.get_historical_bars.assert_not_called()
+
+    def test_fetches_1min_and_5min_bars_for_each_ticker(self):
+        recorder = self._make_recorder(tickers=["TSLA", "META"])
+        during_session = self._market_time(10, 30)
+        recorder._ts_client.get_historical_bars.return_value = []
+
+        with patch(
+            "alpha_tech_tracker.op_momentum_strategy.record_ts_feed.datetime"
+        ) as mock_dt:
+            mock_dt.now.return_value = during_session
+            mock_dt.combine = datetime.combine
+            mock_dt.min = datetime.min
+            recorder._backfill_session()
+
+        assert recorder._ts_client.get_historical_bars.call_count == 4  # 2 tickers × 2 intervals
+
+    def test_fetches_both_intervals_per_ticker(self):
+        recorder = self._make_recorder(tickers=["TSLA"])
+        during_session = self._market_time(10, 30)
+        recorder._ts_client.get_historical_bars.return_value = []
+
+        with patch(
+            "alpha_tech_tracker.op_momentum_strategy.record_ts_feed.datetime"
+        ) as mock_dt:
+            mock_dt.now.return_value = during_session
+            mock_dt.combine = datetime.combine
+            mock_dt.min = datetime.min
+            recorder._backfill_session()
+
+        calls = recorder._ts_client.get_historical_bars.call_args_list
+        intervals_used = {c[1]["interval"] if c[1] else c[0][3] for c in calls}
+        assert 1 in intervals_used
+        assert 5 in intervals_used
+
+    def test_writes_returned_bars_to_1min_recorder(self):
+        recorder = self._make_recorder(tickers=["TSLA"])
+        during_session = self._market_time(10, 0)
+        bar1 = _make_bar(ts="2026-04-16T13:35:00Z")
+        bar2 = _make_bar(ts="2026-04-16T13:40:00Z")
+
+        def get_historical_bars(ticker, start, end, interval):
+            if interval == 1:
+                return [bar1, bar2]
+            return []
+
+        recorder._ts_client.get_historical_bars.side_effect = get_historical_bars
+
+        with patch(
+            "alpha_tech_tracker.op_momentum_strategy.record_ts_feed.datetime"
+        ) as mock_dt:
+            mock_dt.now.return_value = during_session
+            mock_dt.combine = datetime.combine
+            mock_dt.min = datetime.min
+            recorder._backfill_session()
+
+        assert recorder._bar_recorder.record_1min.call_count == 2
+
+    def test_writes_returned_bars_to_5min_recorder(self):
+        recorder = self._make_recorder(tickers=["TSLA"])
+        during_session = self._market_time(10, 0)
+        bar = _make_bar(ts="2026-04-16T13:35:00Z")
+
+        def get_historical_bars(ticker, start, end, interval):
+            if interval == 5:
+                return [bar]
+            return []
+
+        recorder._ts_client.get_historical_bars.side_effect = get_historical_bars
+
+        with patch(
+            "alpha_tech_tracker.op_momentum_strategy.record_ts_feed.datetime"
+        ) as mock_dt:
+            mock_dt.now.return_value = during_session
+            mock_dt.combine = datetime.combine
+            mock_dt.min = datetime.min
+            recorder._backfill_session()
+
+        recorder._bar_recorder.record_5min.assert_called_once()
+
+    def test_continues_other_tickers_when_one_fetch_fails(self):
+        recorder = self._make_recorder(tickers=["TSLA", "META"])
+        during_session = self._market_time(10, 0)
+
+        def get_historical_bars(ticker, start, end, interval):
+            if ticker == "TSLA":
+                raise RuntimeError("network error")
+            return []
+
+        recorder._ts_client.get_historical_bars.side_effect = get_historical_bars
+
+        with patch(
+            "alpha_tech_tracker.op_momentum_strategy.record_ts_feed.datetime"
+        ) as mock_dt:
+            mock_dt.now.return_value = during_session
+            mock_dt.combine = datetime.combine
+            mock_dt.min = datetime.min
+            recorder._backfill_session()
+
+        meta_calls = [
+            c for c in recorder._ts_client.get_historical_bars.call_args_list
+            if c[0][0] == "META"
+        ]
+        assert len(meta_calls) == 2  # 1min + 5min for META still attempted
 
