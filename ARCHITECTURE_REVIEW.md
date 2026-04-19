@@ -12,7 +12,7 @@ The system implements an intraday opening-range momentum strategy across two exe
 - **Live trade engine** (`op_momentum_strategy/trade_engine.py`) — WebSocket-driven, bar-by-bar, multi-window with session recovery
 - **Selector backtest** (`op_momentum_selector_backtest.py`) — batch simulation, same signal rules, sequential capital flow
 
-**Broker layer:** Alpaca is the default execution broker. Market data (bar streaming + historical warmup) is now abstracted behind `MarketDataClient` — Alpaca and TradeStation implementations both exist and are selectable at startup via `--market-data-source`. Order execution still calls `AlpacaAPIClient` directly — see Section 6.
+**Broker layer:** Both market data and order execution are abstracted and independently configurable. `MarketDataClient` (Alpaca or TradeStation) is selected via `--market-data-source`. `ExecutionClient` (Alpaca, TradeStation, or ETrade) is selected via `"execution_broker"` in `config.json`. Alpaca is the default for both.
 
 ---
 
@@ -160,19 +160,16 @@ op_momentum_selector_backtest.run_selector_backtest()
 
 All execution code currently calls `AlpacaAPIClient` directly. The `EXECUTION_BROKER` config flag and `TradeStationClient` exist but are not yet wired in.
 
-| Component | Alpaca coupling | Abstraction status |
-|---|---|---|
-| Market data (bar streaming + warmup) | `AlpacaMarketDataClient` (default) | Abstracted ✓ — `MarketDataClient` ABC; TS impl available |
-| Contract selection | `AlpacaAPIClient.get_options_contracts()` | Not abstracted |
-| Order placement / cancellation | `AlpacaAPIClient.place_{stock,option}_order()` | Not abstracted |
-| Order status / fill detection | `AlpacaAPIClient.order_status()` | Not abstracted |
-| Account info / buying power | `AlpacaAPIClient.get_accounts()` | Not abstracted |
-| Quote normalization | `get_price_from_quote()` dict format | Broker-agnostic ✓ |
+| Component | Abstraction status |
+|---|---|
+| Market data (bar streaming + warmup) | Abstracted ✓ — `MarketDataClient` ABC; Alpaca + TS impls |
+| Order placement / cancellation | Abstracted ✓ — `ExecutionClient` ABC; Alpaca, TS, ETrade impls |
+| Order status / fill detection | Abstracted ✓ — via `ExecutionClient` |
+| Account info / buying power | Abstracted ✓ — via `ExecutionClient` |
+| Contract selection / option quotes | Abstracted ✓ — via `ExecutionClient` |
+| Quote normalization | `get_price_from_quote()` dict format — broker-agnostic ✓ |
 
-**To swap execution broker** (dev_plan/broker_abstraction_phase1_refactor.md):
-1. Define `ExecutionClient` interface: `place_*_order`, `cancel_order`, `order_status`, `get_accounts`
-2. Implement for TradeStation (`TradeStationAPIClient` already exists)
-3. Inject into `OpMomentumTradeEngine`, `order_executor`, `PositionMonitor`
+Broker is selected via `"execution_broker"` in `config.json` → `build_execution_client()` in `config.py`.
 
 ---
 
@@ -207,33 +204,30 @@ State is checkpointed to `session_{date}.json` on EOD and on `_flush_session_sta
 
 ---
 
-## 9. Architecture — Current and Future State
+## 9. Architecture — Current State
 
-Market data is now fully abstracted. The remaining work is execution broker abstraction.
+Both market data and execution broker are fully abstracted and independently configurable.
 
-**Current state:**
 ```
 OpMomentumTradeEngine
-    ├── MarketDataClient (abstract) ✓ implemented
+    ├── MarketDataClient (abstract) ✓
     │   ├── warmup() / fetch_bars()
     │   ├── subscribe_bars() / start() / stop() / reconnect()
-    │   ├─ impl: AlpacaMarketDataClient   (default)
+    │   ├─ impl: AlpacaMarketDataClient        (default; --market-data-source alpaca)
     │   └─ impl: TradeStationMarketDataClient  (--market-data-source tradestation)
     │
-    └── AlpacaAPIClient (direct coupling — not yet abstracted)
+    └── ExecutionClient (abstract) ✓
         ├── place_stock_order() / place_option_order()
         ├── cancel_order() / order_status()
         ├── get_accounts()
         └── get_options_contracts() / get_option_quote*()
+        ├─ impl: AlpacaAPIClient        (config.json: "execution_broker": "alpaca")
+        ├─ impl: TradeStationAPIClient  (config.json: "execution_broker": "tradestation")
+        └─ impl: EtradeAPIClient        (config.json: "execution_broker": "etrade")
 ```
 
-**Target state (execution abstraction — dev_plan/broker_abstraction_phase1_refactor.md):**
-```
-    └── ExecutionClient (abstract)
-        ├── place_stock_order() / place_option_order()
-        ├── cancel_order() / order_status()
-        ├── get_accounts()
-        └── get_options_contracts() / get_option_quote*()
-        ├─ impl: AlpacaExecutionClient
-        └─ impl: TradeStationExecutionClient  (client exists, needs wiring)
-```
+`build_execution_client()` in `config.py` constructs the right client from `config.json`.
+Market data source and execution broker are independently selectable — e.g. TradeStation
+data + Alpaca execution, or full TradeStation for both. Multiple engine instances can run
+on the same host using separate working directories, each with its own `config.json`,
+`logs/`, PID file, and session state.
