@@ -186,7 +186,7 @@ def _save_tradestation_session_tokens(
     logger.info("TradeStation session tokens saved to %s", config_file)
 
 
-def build_execution_client(is_paper: bool = True):
+def build_execution_client(is_paper: bool = True, broker: str = None):
     """
     Construct and return an ExecutionClient based on EXECUTION_BROKER.
 
@@ -194,10 +194,12 @@ def build_execution_client(is_paper: bool = True):
     "etrade": returns EtradeAPIClient and calls authorize_session() to complete
               the OAuth flow (interactive — opens browser and prompts for token).
 
+    broker: optional override; if provided takes precedence over EXECUTION_BROKER.
     Call _load_config() before this function so EXECUTION_BROKER and ETrade
     account settings are populated.
     """
-    if EXECUTION_BROKER == "etrade":
+    effective_broker = broker if broker is not None else EXECUTION_BROKER
+    if effective_broker == "etrade":
         from alpha_tech_tracker.trade_api.etrade.client import EtradeAPIClient
         client = EtradeAPIClient(
             selected_account_id=ETRADE_ACCOUNT_ID,
@@ -217,7 +219,7 @@ def build_execution_client(is_paper: bool = True):
         client.authorize_session()
         return client
 
-    if EXECUTION_BROKER == "tradestation":
+    if effective_broker == "tradestation":
         from alpha_tech_tracker.trade_api.tradestation.client import TradeStationAPIClient
         client = TradeStationAPIClient(
             selected_account_key=TRADESTATION_ACCOUNT_KEY,

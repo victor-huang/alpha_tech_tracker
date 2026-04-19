@@ -481,6 +481,14 @@ def parse_args():
         help="Market data source for live bar streaming and warmup (default: alpaca). "
         "'tradestation' requires valid TradeStation session tokens in config.json.",
     )
+    parser.add_argument(
+        "--execution-broker",
+        choices=["alpaca", "tradestation", "etrade"],
+        default=None,
+        dest="execution_broker",
+        help="Execution broker for order placement (default: value from config.json, "
+        "fallback alpaca). Overrides 'execution_broker' in config.json when set.",
+    )
     args = parser.parse_args()
     if args.rank_weighted_sizing and len(args.rank_weighted_sizing) != args.top:
         parser.error(
@@ -625,7 +633,7 @@ if __name__ == "__main__":
         is_replay = bool(args.replay_date) or bool(args.replay_start and args.replay_end)
         mock_trade_execution = args.mock_trade_execution or is_replay
         is_paper = _resolve_is_paper(args)
-        client = build_execution_client(is_paper=is_paper)
+        client = build_execution_client(is_paper=is_paper, broker=args.execution_broker)
         contract_selector = _build_contract_selector(args, client)
         engine = OpMomentumTradeEngine(
             alpaca_client=client,
@@ -740,7 +748,7 @@ if __name__ == "__main__":
 
     try:
         is_paper = _resolve_is_paper(args)
-        client = build_execution_client(is_paper=is_paper)
+        client = build_execution_client(is_paper=is_paper, broker=args.execution_broker)
         contract_selector = _build_contract_selector(args, client)
         engine = OpMomentumTradeEngine(
             alpaca_client=client,
