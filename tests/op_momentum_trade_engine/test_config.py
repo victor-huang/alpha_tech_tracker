@@ -361,6 +361,43 @@ class TestBuildExecutionClient:
 
         mock_auth.assert_called_once()
 
+    def test_broker_param_overrides_global_execution_broker(self):
+        from alpha_tech_tracker.trade_api.etrade.client import EtradeAPIClient
+        config_module.EXECUTION_BROKER = "alpaca"
+
+        with patch.object(EtradeAPIClient, "authorize_session"):
+            client = build_execution_client(broker="etrade")
+
+        assert isinstance(client, EtradeAPIClient)
+
+    def test_broker_param_alpaca_overrides_global_tradestation(self):
+        from alpha_tech_tracker.trade_api.alpaca_client.client import AlpacaAPIClient
+        config_module.EXECUTION_BROKER = "tradestation"
+
+        client = build_execution_client(is_paper=True, broker="alpaca")
+
+        assert isinstance(client, AlpacaAPIClient)
+
+    def test_broker_param_none_falls_back_to_global_execution_broker(self):
+        from alpha_tech_tracker.trade_api.alpaca_client.client import AlpacaAPIClient
+        config_module.EXECUTION_BROKER = "alpaca"
+
+        client = build_execution_client(broker=None)
+
+        assert isinstance(client, AlpacaAPIClient)
+
+    def test_broker_param_tradestation_uses_stored_session(self):
+        from alpha_tech_tracker.trade_api.tradestation.client import TradeStationAPIClient
+        config_module.EXECUTION_BROKER = "alpaca"
+        config_module._TRADESTATION_SESSION_TOKENS.update({"access_token": "tok"})
+
+        with patch.object(TradeStationAPIClient, "restore_session"), \
+             patch.object(TradeStationAPIClient, "verify_session", return_value=True):
+            client = build_execution_client(broker="tradestation")
+
+        assert isinstance(client, TradeStationAPIClient)
+        config_module._TRADESTATION_SESSION_TOKENS.clear()
+
 
 class TestFmtOption:
     """Issue 3: _fmt_option must label the strike as strike price, not fill price."""

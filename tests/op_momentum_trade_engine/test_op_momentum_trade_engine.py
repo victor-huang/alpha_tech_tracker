@@ -7,6 +7,7 @@ from alpha_tech_tracker.op_momentum_strategy.contract_selector import (
 )
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine import (
     _build_contract_selector,
+    _build_market_data_client,
     _build_option_price_monitor,
     _resolve_is_paper,
 )
@@ -120,3 +121,41 @@ class TestResolveIsPaper:
 
     def test_replay_range_with_live_flag_is_not_paper(self):
         assert _resolve_is_paper(_args(live=True, replay_start="2026-04-01", replay_end="2026-04-10")) is False
+
+
+class TestBuildMarketDataClient:
+    def test_returns_none_for_alpaca_source(self):
+        result = _build_market_data_client(_args(market_data_source="alpaca"))
+        assert result is None
+
+    def test_returns_none_when_market_data_source_missing(self):
+        result = _build_market_data_client(_args())
+        assert result is None
+
+    def test_returns_tradestation_client_for_tradestation_source(self):
+        from alpha_tech_tracker.trade_api.tradestation.market_data_client import (
+            TradeStationMarketDataClient,
+        )
+        mock_ts_client = Mock()
+        with patch("alpha_tech_tracker.op_momentum_strategy.config._load_config"), \
+             patch(
+                 "alpha_tech_tracker.trade_api.tradestation.client.TradeStationAPIClient",
+                 return_value=mock_ts_client,
+             ):
+            mock_ts_client.verify_session.return_value = True
+            result = _build_market_data_client(_args(market_data_source="tradestation"))
+
+        assert isinstance(result, TradeStationMarketDataClient)
+        mock_ts_client.restore_session.assert_called_once()
+
+    def test_raises_when_tradestation_session_invalid(self):
+        import pytest
+        mock_ts_client = Mock()
+        with patch("alpha_tech_tracker.op_momentum_strategy.config._load_config"), \
+             patch(
+                 "alpha_tech_tracker.trade_api.tradestation.client.TradeStationAPIClient",
+                 return_value=mock_ts_client,
+             ):
+            mock_ts_client.verify_session.return_value = False
+            with pytest.raises(RuntimeError, match="TradeStation session invalid"):
+                _build_market_data_client(_args(market_data_source="tradestation"))
