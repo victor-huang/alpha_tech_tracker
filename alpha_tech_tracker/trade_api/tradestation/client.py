@@ -146,15 +146,28 @@ def _extract_v3_order(data: dict) -> dict:
 def _parse_tick_from_error(message: str):
     """Extract the required tick size from a TradeStation increment-error message.
 
-    TradeStation returns messages like "LimitPrice must be in increments of 0.10".
+    The exact message format is unconfirmed — no tick-rejection has been observed
+    in production logs yet (Friday 2026-04-17 orders failed with 403 Invalid Account
+    ID before reaching exchange validation).  Patterns tried cover common variants:
+      "must be in increments of 0.10"
+      "multiple of 0.10"
+      "0.10 increment"
+
     Returns a Decimal tick if one is found, else None.
+    When this returns None the caller re-raises so the full error is visible in logs.
     """
-    m = re.search(r"increment[s]?\s+of\s+([\d.]+)", message, re.IGNORECASE)
-    if m:
-        try:
-            return Decimal(m.group(1))
-        except Exception:
-            pass
+    patterns = [
+        r"increment[s]?\s+of\s+([\d.]+)",
+        r"multiple\s+of\s+([\d.]+)",
+        r"([\d.]+)\s+increment",
+    ]
+    for pat in patterns:
+        m = re.search(pat, message, re.IGNORECASE)
+        if m:
+            try:
+                return Decimal(m.group(1))
+            except Exception:
+                pass
     return None
 
 

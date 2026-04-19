@@ -597,19 +597,19 @@ class TestPlaceOptionOrder:
 
 
 class TestParseTickFromError:
-    def test_standard_increment_message(self):
+    def test_increments_of_pattern(self):
         from decimal import Decimal
         assert _parse_tick_from_error("LimitPrice must be in increments of 0.10") \
             == Decimal("0.10")
 
-    def test_five_cent_increment(self):
+    def test_multiple_of_pattern(self):
         from decimal import Decimal
-        assert _parse_tick_from_error("Price must be in increments of 0.05") \
+        assert _parse_tick_from_error("Price must be a multiple of 0.05") \
             == Decimal("0.05")
 
-    def test_one_cent_increment(self):
+    def test_trailing_increment_pattern(self):
         from decimal import Decimal
-        assert _parse_tick_from_error("must be in increments of 0.01") \
+        assert _parse_tick_from_error("price step: 0.01 increment") \
             == Decimal("0.01")
 
     def test_no_increment_in_message_returns_none(self):
