@@ -32,7 +32,7 @@ The same signal logic drives both **live trading** (`trade_engine.py`) and **bac
 |---|---|
 | `op_momentum_trade_engine.py` | CLI entrypoint + daemon (run/start/stop/status/restart), log rotation |
 | `trade_engine.py` | `OpMomentumTradeEngine` orchestrator + `TickerSelector` (top-N ranking) |
-| `signal_engine.py` | `LiveSignalEngine`: WebSocket bar aggregation, opening-range signal detection |
+| `signal_engine.py` | `LiveSignalEngine`: 5-min bar aggregation, opening-range signal detection; bar source injected via `MarketDataClient` |
 | `position_monitor.py` | `PositionMonitor`: intraday stop/exit loop (hard stop, trailing MA, EOD) |
 | `order_executor.py` | Alpaca order placement with limit→ask/bid escalation and market fallback |
 
@@ -401,11 +401,17 @@ python alpha_tech_tracker/op_momentum_strategy/op_momentum_selector_backtest.py 
   --window M2 09:30 1 --window A1 13:15 1 --window A2 15:00 1 \
   --morning-split 100 --compound
 
-# Live engine — foreground, paper, mock fills
+# Live engine — foreground, paper, mock fills (Alpaca market data, default)
 python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine run \
   --mock-trade-execution \
   --regime-filter --regime-ma 8 \
   --window M1 09:30 3 --morning-split 100
+
+# Live engine — TradeStation market data feed (run tradestation_auth.py first)
+python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine run \
+  --market-data-source tradestation \
+  --mock-trade-execution \
+  --window M1 09:30 3 --window A1 13:15 1 --window A2 15:00 1 --morning-split 100
 
 # Live engine — with option price monitor
 python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine run \

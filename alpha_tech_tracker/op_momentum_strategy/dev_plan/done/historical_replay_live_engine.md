@@ -19,9 +19,9 @@ any divergence between backtest logic and live-engine logic.
 ## How the Live Engine Ingests Bars (Current Architecture)
 
 ```
-Alpaca WebSocket
-    └── StockDataStream.subscribe_bars()
-            └── LiveSignalEngine._handle_bar(bar)        # async, per 1-min bar
+MarketDataClient (AlpacaMarketDataClient or TradeStationMarketDataClient)
+    └── subscribe_bars() / start()
+            └── LiveSignalEngine._on_bar(bar)            # sync, per 1-min bar
                     └── _aggregate_bars()                 # group into 5-min bars
                             └── _process_five_min_bar()  # update history + MAs
                                     └── _try_fire_signal() → on_signal callback
