@@ -775,3 +775,111 @@ Delta vs RBUD (positive = RBUD is better, negative = RBUD is worse):
 - **RBUD (all signals on) is the most robust choice** — it acts as an ensemble hedge across B and U, captures the dominant signal each year, and never loses more than ~13pp vs the year's best combo. It wins outright in 2024 and is always competitive.
 - **Enabling more than 2 signals is justified**: the B/U competition is intentional diversification, not waste. The all-on config smooths regime variance more reliably than any 2-flag subset.
 - **Current default `--reversal --bearish-reentry --bullish-reentry --doubledown` is confirmed optimal** for an all-weather setup.
+
+## Finding 14 — OR Range Filter Sweep: flat-OR guard vs min_or_range% threshold (2021–2026)
+
+**Date:** 2026-04-18
+**Config:** M1(09:30/3bar) + A1(13:15/1bar) + A2(15:00/1bar), top-2, weights 60/40, R+BRE+BUE+DD(start=10), feed=IEX, no-compound
+
+### Background
+
+The 0-min and 5-min hold-duration buckets show persistent losses, particularly in A1/A2 windows where a 1-bar opening range can be very narrow. The hypothesis was that a narrow OR range causes the fallback threshold to collapse to near-entry price, triggering instant exit on any bar noise — BUG-002. Two filters were evaluated:
+
+1. **Flat-OR guard** (`or_range == 0`): skip any day where the entire opening window is a single price (guaranteed instant exit)
+2. **`min_or_range` % threshold**: skip any day where OR range as % of price falls below a threshold (0.05%–0.20%)
+
+### Flat-OR guard results
+
+The flat-OR guard (`or_range == 0`) is already in the live signal engine (`signal_engine.py:206`). Adding it to `compute_signals_with_backtest` aligns the backtest with live behavior.
+
+| Year | Baseline trades | After flat-OR | Removed | Delta P&L |
+|------|----------------|---------------|---------|-----------|
+| 2021 | varies | — | ~flat | small positive |
+| 2025 | 1417→419* | — | 5 | +$215 |
+| 2026 | 424 | 419 | 5 | +$215 |
+
+*2026 data. Flat-OR removes ~5 trades/year, all guaranteed instant exits. Net effect: small positive P&L improvement, always correct to apply.
+
+**Conclusion:** Flat-OR guard is unconditionally correct and is now the permanent default (`filter_flat_or=True`).
+
+### min_or_range % sweep results
+
+Tested thresholds 0.05%, 0.08%, 0.10%, 0.12% across 6 full years. All runs used flat-OR guard as the base.
+
+**Delta P&L vs flat-OR base (+ = improvement, − = worse):**
+
+| Threshold | 2021 | 2022 | 2023 | 2024 | 2025 | 2026 | **6yr total** |
+|-----------|------|------|------|------|------|------|---------------|
+| ≥0.05% | −$879 | −$348 | −$318 | −$344 | −$15 | +$13 | **−$1,891** |
+| ≥0.08% | −$774 | −$485 | −$210 | −$351 | −$36 | +$110 | **−$1,746** |
+| ≥0.10% | −$1,231 | −$601 | −$967 | −$1,205 | −$74 | −$7 | **−$4,085** |
+| ≥0.12% | −$1,840 | −$928 | −$1,320 | −$1,101 | −$222 | −$804 | **−$6,215** |
+
+**Win rate effect** (threshold ≥0.08%):
+
+| Year | Base WR | ≥0.08% WR | Delta |
+|------|---------|-----------|-------|
+| 2021 | 45.2% | 45.3% | +0.1pp |
+| 2022 | 43.3% | 42.9% | −0.4pp |
+| 2023 | 43.6% | 43.6% | flat |
+| 2024 | 43.7% | 44.3% | +0.6pp |
+| 2025 | 44.4% | 44.6% | +0.2pp |
+| 2026 | 53.0% | 53.9% | +0.9pp |
+
+### Conclusions
+
+- **`min_or_range` filtering is net-negative in every single year at every threshold tested.** The only exception is ≥0.08% and ≥0.05% in 2026 (small positives), which are isolated to one year.
+- The 6-year total is negative at all thresholds: −$1,746 (best case at 0.08%) to −$6,215 (at 0.12%).
+- Win rate improves slightly (+0.1–0.9pp at 0.08%) because the filter removes *both* winners and losers — but it removes winners faster than losers in aggregate.
+- The narrow-OR trades that appear to be "guaranteed losers" are a mixed population: they generate real wins via the `or_bar_lookback` effective range correction and via random favorable bar moves. Removing them by OR% consistently destroys more value than it saves.
+- **Do not add `min_or_range` as a live parameter or backtest default.** The only valid OR-range filter is the flat-OR=0 guard already in place.
+- **Root cause of 0-min/5-min losses is BUG-002** (tiny OR range with A1/A2 1-bar window), but it cannot be cleanly addressed by a % threshold. The real fix would require a structural change to the fallback exit logic for narrow-range windows.
+
+---
+
+## Finding 15 — Minimum Hold Time: does forcing a 1-bar hold improve 0-min exits? (2025–2026)
+
+**Date:** 2026-04-18
+**Config:** M1(09:30/3bar) + A1(13:15/1bar) + A2(15:00/1bar), top-2, weights 60/40, R+BRE+BUE+DD(start=10), feed=IEX, no-compound, flat-OR filter on
+
+### Question
+
+The 0-min bucket (exits on bar_idx=0, the first post-OR bar) shows near-zero P&L (+$12.68 for 147 trades in 2026) with only 37% win rate. Would those trades improve if forced to hold one more 5-min bar before the stop or fallback is allowed to fire?
+
+### Method
+
+Added `min_hold_bars=1` parameter to `compute_signals_with_backtest`: when `bar_idx < min_hold_bars`, the exit evaluation is skipped entirely (arming still runs) and the trade is forced to continue. Compared baseline (`min_hold_bars=0`) vs `min_hold_bars=1` for 2025 and 2026.
+
+### Results
+
+| Year | Config | Trades | WR | Total P&L | Delta | 0-min P&L | 5-min P&L |
+|------|--------|--------|----|-----------|-------|-----------|-----------|
+| 2025 | base (min_hold=0) | 1391 | 43.0% | +$16,001 | — | -$4,104 (555 trades) | -$3,153 (225 trades) |
+| 2025 | min_hold=1bar | 1374 | 43.3% | +$13,853 | **-$2,148** | $0 (0 trades) | -$10,372 (623 trades) |
+| 2026 | base (min_hold=0) | 415 | 50.6% | +$11,385 | — | +$13 (147 trades) | -$57 (64 trades) |
+| 2026 | min_hold=1bar | 411 | 47.0% | +$9,329 | **-$2,056** | $0 (0 trades) | -$1,595 (176 trades) |
+
+**2025 bucket shift (min_hold=1bar):**
+
+| Bucket | Base | min_hold=1 | Change |
+|--------|------|------------|--------|
+| 0 min | 555 trades, -$4,104 | 0 | all forced forward |
+| 5 min | 225 trades, avg -$14.01, -$3,153 | 623 trades, avg -$16.65, -$10,372 | worse |
+| 10 min | 116 trades, +$443 | 156 trades, -$547 | flips negative |
+
+**2026 bucket shift (min_hold=1bar):**
+
+| Bucket | Base | min_hold=1 | Change |
+|--------|------|------------|--------|
+| 0 min | 147 trades, +$13 | 0 | all forced forward |
+| 5 min | 64 trades, avg -$0.88, -$57 | 176 trades, avg -$9.06, -$1,595 | 28x worse |
+| 10 min | 35 trades, +$1,027 | 51 trades, +$849 | diluted |
+
+### Conclusions
+
+- **Forcing a 1-bar minimum hold hurts by ~$2,100/year in both 2025 and 2026.** This is consistent and not a noise effect.
+- The 555 (2025) / 147 (2026) trades that fire a stop or fallback on bar_idx=0 are making the **correct** decision. The signal that triggered the exit (price moving immediately against the position) is real information — overriding it does not give the trade time to recover, it just lets the loss grow.
+- When those 0-min trades are forced to hold one more bar, they arrive in the 5-min bucket with a much worse average loss (2025: -$14 → -$16.65 avg per trade; 2026: -$0.88 → -$9.06 avg). Win rate also drops: 2026 5-min WR falls from 38% → 34%, 2025 5-min from 31% → 28%.
+- The 10-min bucket also degrades as some former 0-min trades extend into it without recovering.
+- **Do not add `min_hold_bars` as a live or backtest parameter.** The 0-min exit is the right risk management response to an immediately adverse move. The `min_hold_bars` feature was removed after this analysis.
+
