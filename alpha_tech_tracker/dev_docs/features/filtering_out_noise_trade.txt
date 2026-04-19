@@ -28,31 +28,21 @@ python alpha_tech_tracker/op_momentum_strategy/op_momentum_selector_backtest.py 
     --start 2026-01-01 --end 2026-04-10
 
 ==To run the trade engine 
-python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine start \
---log-level DEBUG \
---trade-type options \
---collect-option-prices \
---window M1 10:00 3 --window A1 14:10 1 --window A2 15:30 1 \
---morning-split 100 --bearish-reentry --bullish-reentry --reversal \
---rank-weighted-sizing 60 40 \
---doubledown \
---top 2 --capital 5000 \
---record-tradestation-feed \
---feed iex \
---live  
 
 python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine start \
 --log-level DEBUG \
 --trade-type options \
 --collect-option-prices \
---window A2 15:30 1 \
+--window M1 9:30 3 --window A1 14:10 1 --window A2 15:30 1 \
 --morning-split 100 --bearish-reentry --bullish-reentry --reversal \
 --rank-weighted-sizing 60 40 \
 --doubledown \
+--doubledown-start 10 \
 --top 2 --capital 5000 \
 --record-tradestation-feed \
 --feed iex \
 --live  
+
 
 
 
