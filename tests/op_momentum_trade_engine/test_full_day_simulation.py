@@ -37,6 +37,8 @@ from alpha_tech_tracker.op_momentum_strategy.models import _D, _FiveMinBar, Sign
 from alpha_tech_tracker.op_momentum_strategy.position_monitor import PositionMonitor
 from alpha_tech_tracker.op_momentum_strategy.trade_engine import OpMomentumTradeEngine
 
+from alpha_tech_tracker.trade_api.tradestation.client import TradeStationAPIClient
+
 from conftest import (
     _build_history_df,
     _make_alpaca_client,
@@ -417,3 +419,153 @@ class TestLivePipingFullDay:
             * Decimal("100")
         )
         assert pnl == _D(expected["pnl"])
+
+
+def _make_ts_client():
+    """Return a Mock scoped to TradeStationAPIClient's interface.
+
+    Using spec=TradeStationAPIClient ensures the engine cannot accidentally
+    call Alpaca-specific attributes (e.g. _option_data_client) through the
+    execution client — any such call will raise AttributeError immediately.
+    """
+    return Mock(spec=TradeStationAPIClient)
+
+
+class TestFullDaySimulationTradeStation:
+    """
+    Full signal → entry → monitor → exit pipeline with TradeStationAPIClient
+    as the execution broker.
+
+    The scenario and fixture are identical to TestFullDaySimulationNvdaBullish.
+    The distinction is that the execution client mock is spec-constrained to
+    TradeStationAPIClient, so any engine code that reaches for Alpaca-specific
+    attributes (e.g. _option_data_client) will fail immediately here — validating
+    the broker abstraction boundary.
+    """
+
+    @pytest.fixture(autouse=True)
+    def patch_notify(self):
+        with patch(_NOTIFY_TRADE_PATH), patch(_NOTIFY_MONITOR_PATH):
+            yield
+
+    def _run_scenario(self, fixture_name: str):
+        fx = _load_fixture(fixture_name)
+        ticker = fx["ticker"]
+        session_date = date.fromisoformat(fx["session_date"])
+        expected = fx["expected"]
+        mock_api = fx["mock_api"]
+        option_symbol = expected["option_symbol"]
+
+        history_df = _build_history_from_fixture(fx)
+        signal_engine = _make_signal_engine_with_history(ticker, history_df)
+
+        captured: list = []
+        signal_engine._windows[0]["on_signal"] = captured.append
+
+        for bar_dict in fx["opening_bars"]:
+            bar = _make_five_min_bar(ticker, bar_dict, session_date)
+            signal_engine._process_five_min_bar(bar)
+
+        assert len(captured) == 1, "Expected exactly one signal"
+        event: SignalEvent = captured[0]
+
+        client = _make_ts_client()
+        client.get_options_contracts.return_value = mock_api["option_contracts"]
+        client.get_accounts.return_value = {
+            "buying_power": mock_api["account_buying_power"]
+        }
+
+        entry_q = _make_option_quote(
+            mock_api["entry_quote"]["bid"], mock_api["entry_quote"]["ask"]
+        )
+        exit_q = _make_option_quote(
+            mock_api["exit_quote"]["bid"], mock_api["exit_quote"]["ask"]
+        )
+        client.get_option_quotes_by_occ_batch.return_value = {option_symbol: entry_q}
+        client.get_option_quote_by_occ.side_effect = [
+            entry_q,   # PositionSizer.compute()
+            entry_q,   # _place_entry() re-fetches for exact mid
+            exit_q,    # _close_position() exit mid
+        ]
+
+        engine = OpMomentumTradeEngine(
+            alpaca_client=client,
+            mock_trade_execution=True,
+        )
+        engine._signal_engine = signal_engine
+        monitor = PositionMonitor(client, signal_engine, mock_trade_execution=True)
+        engine._monitor = monitor
+
+        with patch(_TODAY_PATH, return_value=session_date):
+            engine._enter_position(event, rank=0)
+
+        assert len(monitor._positions) == 1
+        pos = monitor._positions[0]
+
+        for mon_bar in fx["monitoring_bars"]:
+            _set_latest_bar(
+                signal_engine,
+                ticker,
+                close=mon_bar["close"],
+                ma50=mon_bar["ma50"],
+                ma20=mon_bar["ma20"],
+            )
+            monitor.on_bar(ticker)
+            if mon_bar["expected_exit"] is not None:
+                break
+
+        return event, pos, expected, client
+
+    def test_signal_is_bullish(self):
+        event, pos, expected, _ = self._run_scenario("full_day_nvda_bullish.json")
+        assert event.signal == expected["signal"]
+        assert pos.signal == expected["signal"]
+
+    def test_opening_range_levels(self):
+        _, pos, expected, _ = self._run_scenario("full_day_nvda_bullish.json")
+        assert pos.or_high == _D(expected["or_high"])
+        assert pos.or_low == _D(expected["or_low"])
+
+    def test_stop_prices_computed_from_or(self):
+        _, pos, expected, _ = self._run_scenario("full_day_nvda_bullish.json")
+        assert pos.hard_stop_price == _D(expected["hard_stop_price"])
+        assert pos.fallback_price == _D(expected["fallback_price"])
+
+    def test_contract_selection(self):
+        _, pos, expected, _ = self._run_scenario("full_day_nvda_bullish.json")
+        assert pos.option_symbol == expected["option_symbol"]
+
+    def test_position_sizing(self):
+        _, pos, expected, _ = self._run_scenario("full_day_nvda_bullish.json")
+        assert pos.contracts == expected["contracts"]
+
+    def test_entry_simulated_fill(self):
+        _, pos, expected, _ = self._run_scenario("full_day_nvda_bullish.json")
+        assert pos.simulated_entry_mid == _D(expected["entry_mid"])
+
+    def test_position_closed_by_trailing_ma20(self):
+        _, pos, expected, _ = self._run_scenario("full_day_nvda_bullish.json")
+        assert pos.is_closed
+        assert pos.exit_reason == expected["exit_reason"]
+
+    def test_exit_simulated_fill(self):
+        _, pos, expected, _ = self._run_scenario("full_day_nvda_bullish.json")
+        assert pos.simulated_exit_mid == _D(expected["exit_mid"])
+
+    def test_pnl_matches_fixture(self):
+        _, pos, expected, _ = self._run_scenario("full_day_nvda_bullish.json")
+        pnl = (
+            (pos.simulated_exit_mid - pos.simulated_entry_mid)
+            * Decimal(pos.contracts)
+            * Decimal("100")
+        )
+        assert pnl == _D(expected["pnl"])
+
+    def test_quote_fetches_use_occ_format_symbol(self):
+        _, pos, expected, client = self._run_scenario("full_day_nvda_bullish.json")
+        occ_symbol = expected["option_symbol"]
+        calls = [c[0][0] for c in client.get_option_quote_by_occ.call_args_list]
+        assert all(c == occ_symbol for c in calls), (
+            f"Expected all get_option_quote_by_occ calls to use OCC symbol "
+            f"'{occ_symbol}', got: {calls}"
+        )
