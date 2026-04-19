@@ -192,6 +192,30 @@ def _place_with_fill_escalation(
         try:
             bid, ask, mid = _fetch_mid_bid_ask()
             current_half_spread = (ask - bid) / _D("2")
+            if current_half_spread <= _D("0"):
+                logger.warning(
+                    "FILL_ESC loop step%d %s %s: crossed quote bid=%s ask=%s,"
+                    " waiting up to 15s for normalization",
+                    step_num, order_action, option_symbol, bid, ask,
+                )
+                normalized = False
+                for _retry in range(3):
+                    time.sleep(5)
+                    try:
+                        bid, ask, mid = _fetch_mid_bid_ask()
+                        current_half_spread = (ask - bid) / _D("2")
+                        if current_half_spread > _D("0"):
+                            normalized = True
+                            break
+                    except Exception:
+                        pass
+                if not normalized:
+                    logger.warning(
+                        "FILL_ESC loop step%d %s %s: quote still crossed after 15s,"
+                        " falling to step3",
+                        step_num, order_action, option_symbol,
+                    )
+                    break
             if _anchor_half_spread[0] is None:
                 _anchor_half_spread[0] = current_half_spread
             if _last_placed_price[0] is not None:
