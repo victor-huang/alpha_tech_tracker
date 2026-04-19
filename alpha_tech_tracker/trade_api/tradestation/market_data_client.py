@@ -12,6 +12,28 @@ logger = logging.getLogger(__name__)
 ET = pytz.timezone("America/New_York")
 
 
+def _validate_open_timestamps(df: pd.DataFrame, ticker: str) -> None:
+    """Raise RuntimeError if any complete session's first bar is not at 09:30 ET.
+
+    A first bar at 09:35 means bars carry close-time timestamps, indicating
+    that _TSBar.from_ts_dict was called without the interval_minutes argument.
+    Skips sessions with fewer than 20 bars (incomplete or mid-day slices).
+    """
+    if df.empty:
+        return
+    for session_date, day_df in df.groupby(df.index.date):
+        if len(day_df) < 20:
+            continue
+        first_time = day_df.index[0].time()
+        if first_time.hour == 9 and first_time.minute != 30:
+            raise RuntimeError(
+                f"TradeStation bar data for {ticker} on {session_date} starts at "
+                f"{first_time.strftime('%H:%M')} instead of 09:30 — "
+                f"close-time timestamps detected. "
+                f"Ensure interval_minutes is passed to _TSBar.from_ts_dict at all call sites."
+            )
+
+
 def _ts_bars_to_df(bars: list) -> pd.DataFrame:
     """Convert a list of _TSBar objects to a DataFrame with ET index, market hours clipped."""
     if not bars:
@@ -69,12 +91,15 @@ class TradeStationMarketDataClient(MarketDataClient):
                     ticker, start_utc, end_utc, interval=5, unit="Minute"
                 )
                 df = _ts_bars_to_df(bars)
+                _validate_open_timestamps(df, ticker)
                 result[ticker] = df
                 last_close = df["Close"].iloc[-1] if not df.empty else float("nan")
                 logger.info(
                     "TS warmup %-6s — %d bars, last close=%.2f",
                     ticker, len(df), last_close,
                 )
+            except RuntimeError:
+                raise
             except Exception:
                 logger.exception("TS warmup failed for %s", ticker)
                 result[ticker] = pd.DataFrame(
@@ -91,7 +116,11 @@ class TradeStationMarketDataClient(MarketDataClient):
                 bars = self._ts_client.get_historical_bars(
                     ticker, start_utc, end_utc, interval=5, unit="Minute"
                 )
-                result[ticker] = _ts_bars_to_df(bars)
+                df = _ts_bars_to_df(bars)
+                _validate_open_timestamps(df, ticker)
+                result[ticker] = df
+            except RuntimeError:
+                raise
             except Exception:
                 logger.exception("TS fetch_bars failed for %s", ticker)
                 result[ticker] = pd.DataFrame(
