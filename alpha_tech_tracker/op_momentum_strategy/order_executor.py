@@ -49,6 +49,8 @@ def _place_with_fill_escalation(
         bid = _D(str(q["bid"]))
         ask = _D(str(q["ask"]))
         mid = _D(str(q["mid"]))
+        _last_known_quote[0] = bid
+        _last_known_quote[1] = ask
         return bid, ask, mid
 
     def _place_limit(price) -> dict:
@@ -64,12 +66,16 @@ def _place_with_fill_escalation(
             _option_symbol_override=option_symbol,
         )
 
-    def _is_filled(order_id: str) -> bool:
+    def _is_filled(order_id: str) -> Optional[bool]:
         try:
             status = client.order_status(order_id)
             return status.get("status") == "filled"
         except Exception:
-            return False
+            logger.warning(
+                "order_status call failed for %s — fill status unknown, not cancelling",
+                order_id,
+            )
+            return None
 
     def _cancel_safely(order_id: str):
         try:
@@ -100,6 +106,8 @@ def _place_with_fill_escalation(
             logger.warning("get_fair_price_fn failed for %s", option_symbol)
             return None
 
+    _last_known_quote = [None, None]  # [bid, ask] — updated after each successful fetch
+
     # --- Step 0: quick-exit entry-price protection ---
     if entry_fill_price is not None:
         step0_price = _D(str(entry_fill_price))
@@ -119,8 +127,15 @@ def _place_with_fill_escalation(
             order_id = order.get("order_id")
             logger.info("FILL_ESC step0 order placed: id=%s", order_id)
             time.sleep(20)
-            if _is_filled(order_id):
+            fill_status = _is_filled(order_id)
+            if fill_status:
                 logger.info("FILL_ESC step0 filled at entry price: %s", order_id)
+                return order
+            if fill_status is None:
+                logger.warning(
+                    "FILL_ESC step0 %s %s: fill status unknown — not cancelling, returning order",
+                    order_action, option_symbol,
+                )
                 return order
             _cancel_safely(order_id)
             logger.info("FILL_ESC step0 unfilled, escalating: %s", option_symbol)
@@ -144,8 +159,15 @@ def _place_with_fill_escalation(
             order_id = order.get("order_id")
             logger.info("FILL_ESC step0.5 order placed: id=%s", order_id)
             time.sleep(20)
-            if _is_filled(order_id):
+            fill_status = _is_filled(order_id)
+            if fill_status:
                 logger.info("FILL_ESC step0.5 filled at fair price: %s", order_id)
+                return order
+            if fill_status is None:
+                logger.warning(
+                    "FILL_ESC step0.5 %s %s: fill status unknown — not cancelling, returning order",
+                    order_action, option_symbol,
+                )
                 return order
             _cancel_safely(order_id)
             logger.info("FILL_ESC step0.5 unfilled, escalating: %s", option_symbol)
@@ -177,8 +199,15 @@ def _place_with_fill_escalation(
             order_id = order.get("order_id")
             logger.info("FILL_ESC step1 order placed: id=%s", order_id)
             time.sleep(15)
-            if _is_filled(order_id):
+            fill_status = _is_filled(order_id)
+            if fill_status:
                 logger.info("FILL_ESC step1 filled: %s", order_id)
+                return order
+            if fill_status is None:
+                logger.warning(
+                    "FILL_ESC step1 %s %s: fill status unknown — not cancelling, returning order",
+                    order_action, option_symbol,
+                )
                 return order
             _cancel_safely(order_id)
 
@@ -232,8 +261,15 @@ def _place_with_fill_escalation(
             order_id = order.get("order_id")
             logger.info("FILL_ESC step2 order placed: id=%s", order_id)
             time.sleep(15)
-            if _is_filled(order_id):
+            fill_status = _is_filled(order_id)
+            if fill_status:
                 logger.info("FILL_ESC step2 filled: %s", order_id)
+                return order
+            if fill_status is None:
+                logger.warning(
+                    "FILL_ESC step2 %s %s: fill status unknown — not cancelling, returning order",
+                    order_action, option_symbol,
+                )
                 return order
             _cancel_safely(order_id)
 
@@ -246,7 +282,8 @@ def _place_with_fill_escalation(
             "Could not fetch quote for %s at step3, using last known ask/bid",
             option_symbol, exc_info=True,
         )
-        step3_price = ask if (ask is not None) else bid
+        last_bid, last_ask = _last_known_quote
+        step3_price = last_ask if is_buy else last_bid
 
     if not is_buy and step3_price is not None:
         try:
@@ -301,8 +338,15 @@ def _place_with_fill_escalation(
     order_id = order.get("order_id")
     logger.info("FILL_ESC step3 order placed: id=%s", order_id)
     time.sleep(60 if not is_buy else 15)
-    if _is_filled(order_id):
+    fill_status = _is_filled(order_id)
+    if fill_status:
         logger.info("FILL_ESC step3 filled: %s", order_id)
+        return order
+    if fill_status is None:
+        logger.warning(
+            "FILL_ESC step3 %s %s: fill status unknown — not cancelling, returning order",
+            order_action, option_symbol,
+        )
         return order
     _cancel_safely(order_id)
     if not is_buy:
@@ -394,12 +438,16 @@ def place_stock_order(
             order_type="MARKET",
         )
 
-    def _is_filled(order_id: str) -> bool:
+    def _is_filled(order_id: str) -> Optional[bool]:
         try:
             status = client.order_status(order_id)
             return status.get("status") == "filled"
         except Exception:
-            return False
+            logger.warning(
+                "order_status call failed for %s — fill status unknown, not cancelling",
+                order_id,
+            )
+            return None
 
     def _cancel_safely(order_id: str):
         try:
@@ -441,10 +489,16 @@ def place_stock_order(
         logger.info("STOCK FILL_ESC step1 attempt=%d order placed: id=%s", attempt, order_id)
 
         time.sleep(5)
-        if _is_filled(order_id):
+        fill_status = _is_filled(order_id)
+        if fill_status:
             logger.info("STOCK FILL_ESC step1 attempt=%d filled: %s", attempt, order_id)
             return order
-
+        if fill_status is None:
+            logger.warning(
+                "STOCK FILL_ESC step1 attempt=%d %s %s: fill status unknown — not cancelling, returning order",
+                attempt, order_action, ticker,
+            )
+            return order
         _cancel_safely(order_id)
     for attempt in range(1, 4):
         try:
@@ -479,10 +533,16 @@ def place_stock_order(
         logger.info("STOCK FILL_ESC step2 attempt=%d order placed: id=%s", attempt, order_id)
 
         time.sleep(10)
-        if _is_filled(order_id):
+        fill_status = _is_filled(order_id)
+        if fill_status:
             logger.info("STOCK FILL_ESC step2 attempt=%d filled: %s", attempt, order_id)
             return order
-
+        if fill_status is None:
+            logger.warning(
+                "STOCK FILL_ESC step2 attempt=%d %s %s: fill status unknown — not cancelling, returning order",
+                attempt, order_action, ticker,
+            )
+            return order
         _cancel_safely(order_id)
 
     logger.info("STOCK FILL_ESC step3 %s %s: placing market order", order_action, ticker)

@@ -622,3 +622,148 @@ class TestPlaceStockOrderFeedForwarding:
                 order_action="BUY_OPEN",
             )
         client.get_stock_quote.assert_called_with("FN")
+
+
+class TestFillStatusUnknownDoesNotCancelOrder:
+    """
+    Fix 1: when order_status() raises an exception, _is_filled() returns None.
+    The escalation must not cancel the order (it may already be filled) and must
+    return immediately rather than escalating to the next step.
+    """
+
+    def test_option_status_error_does_not_cancel(self):
+        client = _make_client()
+        client.order_status.side_effect = RuntimeError("broker API error")
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            result = _place_with_fill_escalation(
+                client=client,
+                ticker=_TICKER,
+                option_symbol=_SYMBOL,
+                option_type=_OPTION_TYPE,
+                contracts=_CONTRACTS,
+                order_action=_SELL,
+            )
+        assert client.cancel_order.call_count == 0
+        assert result.get("order_id") == "ord-001"
+
+    def test_option_status_error_returns_after_first_step_without_escalating(self):
+        client = _make_client()
+        client.order_status.side_effect = RuntimeError("broker API error")
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            _place_with_fill_escalation(
+                client=client,
+                ticker=_TICKER,
+                option_symbol=_SYMBOL,
+                option_type=_OPTION_TYPE,
+                contracts=_CONTRACTS,
+                order_action=_SELL,
+            )
+        # Only step1 should be attempted; status error causes immediate return
+        assert client.place_option_order.call_count == 1
+
+    def test_option_step3_status_error_does_not_place_market_order(self):
+        client = _make_client()
+        call_count = [0]
+
+        def order_status_side_effect(order_id):
+            call_count[0] += 1
+            if call_count[0] < 3:
+                return {"status": "open"}
+            raise RuntimeError("API timeout at step3")
+
+        client.order_status.side_effect = order_status_side_effect
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            result = _place_with_fill_escalation(
+                client=client,
+                ticker=_TICKER,
+                option_symbol=_SYMBOL,
+                option_type=_OPTION_TYPE,
+                contracts=_CONTRACTS,
+                order_action=_SELL,
+            )
+        market_calls = [
+            c for c in client.place_option_order.call_args_list
+            if c.kwargs.get("price_type") == "MARKET"
+        ]
+        assert len(market_calls) == 0
+        assert result.get("order_id") == "ord-001"
+
+    def test_stock_status_error_does_not_cancel(self):
+        client = _make_stock_client()
+        client.order_status.side_effect = RuntimeError("broker API error")
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            place_stock_order(client=client, ticker="FN", shares=1, order_action="BUY_OPEN")
+        assert client.cancel_order.call_count == 0
+
+    def test_stock_status_error_returns_after_first_step(self):
+        client = _make_stock_client()
+        client.order_status.side_effect = RuntimeError("broker API error")
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            result = place_stock_order(
+                client=client, ticker="FN", shares=1, order_action="BUY_OPEN"
+            )
+        assert client.place_stock_order.call_count == 1
+        assert result.get("order_id") == "stock-ord-001"
+
+
+class TestStep3StaleQuoteFallback:
+    """
+    Fix 4: when the step-3 quote fetch fails, the escalation uses the last
+    successfully fetched bid/ask (stored in _last_known_quote) rather than
+    leaked Python locals which may be stale from an earlier step.
+    """
+
+    def test_step3_buy_uses_last_known_ask_when_quote_fails(self):
+        client = _make_client(bid=4.90, ask=5.10)
+        quote_call_count = [0]
+
+        def quote_side_effect(symbol):
+            quote_call_count[0] += 1
+            if quote_call_count[0] <= 2:
+                return {"bid": 4.90, "ask": 5.10, "mid": 5.00}
+            raise RuntimeError("quote unavailable at step3")
+
+        client.get_option_quote_by_occ.side_effect = quote_side_effect
+        client.order_status.return_value = {"status": "open"}
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            _place_with_fill_escalation(
+                client=client,
+                ticker=_TICKER,
+                option_symbol=_SYMBOL,
+                option_type=_OPTION_TYPE,
+                contracts=_CONTRACTS,
+                order_action="BUY_OPEN",
+            )
+        # step1(mid=5.00), step2(5.05), step3(last_known_ask=5.10)
+        step3_call = client.place_option_order.call_args_list[2]
+        assert step3_call.kwargs["price_type"] == "LIMIT"
+        assert step3_call.kwargs["price"] == 5.10
+
+    def test_step3_sell_uses_last_known_bid_when_quote_fails(self):
+        client = _make_option_client_with_stock(
+            opt_bid=4.90, opt_ask=5.10, stock_bid=270.0, stock_ask=270.0
+        )
+        quote_call_count = [0]
+
+        def quote_side_effect(symbol):
+            quote_call_count[0] += 1
+            if quote_call_count[0] <= 2:
+                return {"bid": 4.90, "ask": 5.10, "mid": 5.00}
+            raise RuntimeError("quote unavailable at step3")
+
+        client.get_option_quote_by_occ.side_effect = quote_side_effect
+        client.order_status.return_value = {"status": "open"}
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            _place_with_fill_escalation(
+                client=client,
+                ticker=_PUT_TICKER,
+                option_symbol=_PUT_SYMBOL,
+                option_type=_PUT_TYPE,
+                contracts=_CONTRACTS,
+                order_action="SELL_CLOSE",
+                feed=None,
+            )
+        # step1(mid=5.00), step2(4.95), step3(last_known_bid=4.90)
+        step3_call = client.place_option_order.call_args_list[2]
+        assert step3_call.kwargs["price_type"] == "LIMIT"
+        assert step3_call.kwargs["price"] == 4.90

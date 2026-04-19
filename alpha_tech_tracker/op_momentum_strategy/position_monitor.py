@@ -187,12 +187,25 @@ class PositionMonitor:
             for pos in self._positions:
                 if pos.ticker == ticker and pos.is_closed and pos.close_order_failed:
                     retry_failed.append(pos)
+        _MAX_CLOSE_RETRIES = 3
         for pos in retry_failed:
+            if pos.close_retry_count >= _MAX_CLOSE_RETRIES:
+                logger.warning(
+                    "CLOSE RETRY LIMIT reached for %s %s — manual intervention required",
+                    pos.ticker, pos.signal,
+                )
+                _notify(
+                    f"CLOSE FAILED {pos.ticker} {pos.signal} — {_MAX_CLOSE_RETRIES} retries exhausted, close manually"
+                )
+                continue
+            pos.close_retry_count += 1
             logger.warning(
-                "Retrying failed close order for %s %s reason=%s",
+                "Retrying failed close order for %s %s reason=%s (attempt %d/%d)",
                 pos.ticker,
                 pos.signal,
                 pos.exit_reason,
+                pos.close_retry_count,
+                _MAX_CLOSE_RETRIES,
             )
             if pos.trade_type == "stock":
                 self._close_stock_position(pos, pos.exit_reason)
@@ -774,6 +787,24 @@ class PositionMonitor:
                 self._close_option_position(pos, reason)
             if self._close_callback:
                 self._close_callback(pos)
+
+        stuck = []
+        with self._lock:
+            for pos in self._positions:
+                if pos.is_closed and pos.close_order_failed:
+                    stuck.append(pos)
+        for pos in stuck:
+            logger.warning(
+                "EOD sweep: force-closing stuck position %s %s (prior close order failed)",
+                pos.ticker, pos.signal,
+            )
+            _notify(
+                f"EOD force-close: {pos.ticker} {pos.signal} — prior close order had failed, placing market order now"
+            )
+            if pos.trade_type == "stock":
+                self._close_stock_position(pos, "end_of_day")
+            else:
+                self._close_option_position(pos, "end_of_day")
 
     def _fetch_option_mid(self, option_symbol: str) -> Optional[object]:
         try:

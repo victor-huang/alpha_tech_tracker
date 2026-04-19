@@ -2022,3 +2022,142 @@ class TestPollExitFillPrice:
 
         assert pos.exit_fill_price == _D("99.50")
         assert client.order_status.call_count == 2
+
+
+class TestCloseRetryLimit:
+    """
+    Fix 3: close_order_failed retries must be capped at _MAX_CLOSE_RETRIES (3).
+    After the limit is reached, subsequent on_bar() calls must not attempt
+    another close so the broker API is not spammed.
+    """
+
+    @pytest.fixture(autouse=True)
+    def patch_sleep(self, monkeypatch):
+        monkeypatch.setattr(
+            "alpha_tech_tracker.op_momentum_strategy.order_executor.time.sleep",
+            lambda _: None,
+        )
+
+    def _make_monitor_and_stuck_position(self):
+        client = _make_alpaca_client()
+        # Both quote and order placement must fail so close_order_failed stays True
+        # across retries (if place_option_order succeeded the flag would clear).
+        client.get_option_quote_by_occ.side_effect = RuntimeError("quote always fails")
+        client.place_option_order.side_effect = RuntimeError("order always fails")
+
+        closes = [104.0]
+        df = _build_history_df(closes, ma20=90.0, ma50=90.0, ma200=85.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+
+        monitor = PositionMonitor(client, engine)
+
+        pos = _make_active_position(signal="BULLISH")
+        pos.is_closed = True
+        pos.exit_reason = "hard_stop"
+        pos.close_order_failed = True
+        monitor._positions.append(pos)
+
+        return monitor, client, engine, pos
+
+    def test_retries_exactly_max_times(self):
+        monitor, client, engine, pos = self._make_monitor_and_stuck_position()
+
+        for i in range(5):
+            _set_latest_bar(engine, "NVDA", close=103.0, ma50=90.0)
+            monitor.on_bar("NVDA")
+
+        assert pos.close_retry_count == 3
+
+    def test_no_close_attempt_after_limit_reached(self):
+        monitor, client, engine, pos = self._make_monitor_and_stuck_position()
+
+        for i in range(5):
+            _set_latest_bar(engine, "NVDA", close=103.0, ma50=90.0)
+            monitor.on_bar("NVDA")
+
+        # Each retry reaches the market-order fallback exactly once (step3 limit fails,
+        # then place_option_order raises too). 3 retries → call_count == 3; bars 4-5 add 0.
+        assert client.place_option_order.call_count == 3
+
+
+class TestCloseAllEodStuckPositionSweep:
+    """
+    Fix 2: close_all() must force-close any position that previously failed
+    to close (is_closed=True, close_order_failed=True) via a market order.
+    Without this fix, those positions are skipped (they are already marked
+    closed) and left open at the broker overnight.
+    """
+
+    @pytest.fixture(autouse=True)
+    def patch_sleep(self, monkeypatch):
+        monkeypatch.setattr(
+            "alpha_tech_tracker.op_momentum_strategy.order_executor.time.sleep",
+            lambda _: None,
+        )
+
+    def _make_monitor(self, client):
+        closes = [104.0]
+        df = _build_history_df(closes, ma20=90.0, ma50=90.0, ma200=85.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        return PositionMonitor(client, engine)
+
+    def test_stuck_position_receives_eod_market_order(self):
+        client = _make_alpaca_client()
+        client.place_option_order.return_value = {"order_id": "eod-mkt-1"}
+        client.order_status.return_value = {"status": "filled", "filled_avg_price": 5.0}
+
+        monitor = self._make_monitor(client)
+
+        pos = _make_active_position(signal="BULLISH")
+        pos.is_closed = True
+        pos.exit_reason = "hard_stop"
+        pos.close_order_failed = True
+        monitor._positions.append(pos)
+
+        monitor.close_all()
+
+        market_calls = [
+            c for c in client.place_option_order.call_args_list
+            if c.kwargs.get("price_type") == "MARKET"
+        ]
+        assert len(market_calls) == 1
+
+    def test_normal_open_position_and_stuck_position_both_closed(self):
+        client = _make_alpaca_client()
+        client.place_option_order.return_value = {"order_id": "eod-1"}
+        client.order_status.return_value = {"status": "filled", "filled_avg_price": 5.0}
+
+        monitor = self._make_monitor(client)
+
+        open_pos = _make_active_position(signal="BEARISH")
+        monitor._positions.append(open_pos)
+
+        stuck_pos = _make_active_position(signal="BULLISH")
+        stuck_pos.is_closed = True
+        stuck_pos.exit_reason = "hard_stop"
+        stuck_pos.close_order_failed = True
+        monitor._positions.append(stuck_pos)
+
+        monitor.close_all()
+
+        # Both positions should have triggered a place_option_order call
+        assert client.place_option_order.call_count == 2
+        market_calls = [
+            c for c in client.place_option_order.call_args_list
+            if c.kwargs.get("price_type") == "MARKET"
+        ]
+        assert len(market_calls) == 2
+
+    def test_no_extra_close_when_no_stuck_positions(self):
+        client = _make_alpaca_client()
+        client.place_option_order.return_value = {"order_id": "eod-1"}
+        client.order_status.return_value = {"status": "filled", "filled_avg_price": 5.0}
+
+        monitor = self._make_monitor(client)
+
+        pos = _make_active_position(signal="BULLISH")
+        monitor._positions.append(pos)
+
+        monitor.close_all()
+
+        assert client.place_option_order.call_count == 1
