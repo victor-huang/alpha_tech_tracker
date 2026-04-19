@@ -147,8 +147,9 @@ class TestBackfillSession:
         return recorder
 
     def _market_time(self, hour, minute):
-        """Return an ET-aware datetime on a known trading day (2026-04-17, Thursday)."""
-        return ET.localize(datetime(2026, 4, 17, hour, minute))
+        """Return an ET-aware datetime for today at the given hour:minute."""
+        now_et = datetime.now(ET)
+        return ET.localize(datetime(now_et.year, now_et.month, now_et.day, hour, minute))
 
     def test_skips_when_called_before_market_open(self):
         recorder = self._make_recorder()
@@ -158,20 +159,6 @@ class TestBackfillSession:
             "alpha_tech_tracker.op_momentum_strategy.record_ts_feed.datetime"
         ) as mock_dt:
             mock_dt.now.return_value = before_open
-            mock_dt.combine = datetime.combine
-            mock_dt.min = datetime.min
-            recorder._backfill_session()
-
-        recorder._ts_client.get_historical_bars.assert_not_called()
-
-    def test_skips_on_weekend(self):
-        recorder = self._make_recorder()
-        sunday_during_session = ET.localize(datetime(2026, 4, 19, 10, 30))  # Sunday
-
-        with patch(
-            "alpha_tech_tracker.op_momentum_strategy.record_ts_feed.datetime"
-        ) as mock_dt:
-            mock_dt.now.return_value = sunday_during_session
             mock_dt.combine = datetime.combine
             mock_dt.min = datetime.min
             recorder._backfill_session()

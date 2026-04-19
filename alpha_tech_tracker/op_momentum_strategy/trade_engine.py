@@ -1710,18 +1710,21 @@ class OpMomentumTradeEngine:
                 logger.warning("Today is a NYSE holiday (%s) — market is closed, exiting", today)
                 return
 
+        # TEMP: market-hours gate disabled for off-hours integration testing.
+        # TODO: re-enable before going live.
         # Determine the trading session date. If started on Sunday or after market
         # close on a weekday, advance to the next trading day and sleep until
         # pre-market rather than exiting.
         now_et = _now_et()
-        end_h, end_m = [int(x) for x in SESSION_END_TIME.split(":")]
-        after_close = now_et.hour > end_h or (now_et.hour == end_h and now_et.minute >= end_m)
-        if today.weekday() == 6 or after_close:
-            session_date = _next_trading_day(today)
-        else:
-            session_date = today
+        session_date = today
+        # end_h, end_m = [int(x) for x in SESSION_END_TIME.split(":")]
+        # after_close = now_et.hour > end_h or (now_et.hour == end_h and now_et.minute >= end_m)
+        # if today.weekday() == 6 or after_close:
+        #     session_date = _next_trading_day(today)
+        # else:
+        #     session_date = today
 
-        if session_date != today:
+        if False and session_date != today:
             premarket_dt = ET.localize(
                 datetime.combine(session_date, datetime.strptime(_PREMARKET_WAIT_TIME, "%H:%M").time())
             )
@@ -1804,9 +1807,14 @@ class OpMomentumTradeEngine:
 
         ts_bar_recorder = None
         if self._record_tradestation_feed:
-            ts_bar_recorder = self._build_ts_bar_recorder(all_tickers)
-            if ts_bar_recorder is not None:
-                ts_bar_recorder.start()
+            if session_date.weekday() >= 5 or _is_nyse_holiday(session_date):
+                logger.info(
+                    "--record-tradestation-feed skipped: market closed today (%s)", session_date
+                )
+            else:
+                ts_bar_recorder = self._build_ts_bar_recorder(all_tickers)
+                if ts_bar_recorder is not None:
+                    ts_bar_recorder.start()
 
         market_data_client = self._market_data_client
         if market_data_client is None:
