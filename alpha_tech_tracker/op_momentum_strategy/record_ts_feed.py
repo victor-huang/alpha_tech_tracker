@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import pytz
 
 from alpha_tech_tracker.op_momentum_strategy.bar_recorder import BarRecorder
+from alpha_tech_tracker.op_momentum_strategy.contract_selector import _is_nyse_holiday
 from alpha_tech_tracker.trade_api.tradestation.bar_stream import TradeStationBarStream
 
 logger = logging.getLogger(__name__)
@@ -42,10 +43,13 @@ class TsBarRecorder:
     def _backfill_session(self):
         """Fetch today's bars from 9:30 ET to now via REST and write to CSV.
 
-        Skipped when called before market open (nothing to backfill).
+        Skipped when called before market open or on non-trading days (weekends/holidays).
         """
         now_et = datetime.now(ET)
         session_date = now_et.date()
+        if session_date.weekday() >= 5 or _is_nyse_holiday(session_date):
+            logger.info("TsBarRecorder: skipping backfill — market closed today (%s)", session_date)
+            return
         market_open_et = ET.localize(
             datetime.combine(session_date, datetime.min.time()).replace(hour=9, minute=30)
         )
