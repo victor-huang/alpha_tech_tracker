@@ -86,12 +86,16 @@ def _place_with_fill_escalation(
             price_type="LIMIT",
             option_type=option_type,
             order_action=order_action,
-            quantity=contracts,
+            quantity=_contracts_remaining[0],
             _option_symbol_override=option_symbol,
         )
 
-    def _check_fill(order_id: str) -> Tuple[Optional[bool], Optional[str]]:
-        """Return (is_filled, reject_reason). is_filled=None means unknown status."""
+    def _check_fill(order_id: str) -> Tuple[Optional[bool], Optional[str], int]:
+        """Return (is_filled, reject_reason, filled_qty).
+
+        is_filled=None means status is unknown.
+        filled_qty is the number of contracts confirmed filled so far (0 if unknown or unfilled).
+        """
         try:
             status = client.order_status(order_id)
         except Exception:
@@ -99,10 +103,14 @@ def _place_with_fill_escalation(
                 "order_status call failed for %s — fill status unknown, not cancelling",
                 order_id,
             )
-            return None, None
+            return None, None, 0
+        try:
+            filled_qty = int(status.get("filled_qty") or 0)
+        except (TypeError, ValueError):
+            filled_qty = 0
         if status.get("status") == "filled":
-            return True, None
-        return False, status.get("reject_reason")
+            return True, None, filled_qty
+        return False, status.get("reject_reason"), filled_qty
 
     def _cancel_safely(order_id: str):
         try:
@@ -145,6 +153,7 @@ def _place_with_fill_escalation(
     _our_price_streak = [0]            # consecutive iterations where the quote side we drive
                                        # (bid for BUY, ask for SELL) ≈ last placed price;
                                        # streak >= 2 → use anchor half_spread, not compressed current
+    _contracts_remaining = [contracts] # decremented on each confirmed partial fill
 
     # --- Step 0: quick-exit entry-price protection ---
     if entry_fill_price is not None:
@@ -165,7 +174,7 @@ def _place_with_fill_escalation(
             order_id = order.get("order_id")
             logger.info("FILL_ESC step0 order placed: id=%s", order_id)
             time.sleep(20)
-            fill_status, _ = _check_fill(order_id)
+            fill_status, _, filled_qty = _check_fill(order_id)
             if fill_status:
                 logger.info("FILL_ESC step0 filled at entry price: %s", order_id)
                 return order
@@ -176,7 +185,16 @@ def _place_with_fill_escalation(
                 )
                 return order
             _cancel_safely(order_id)
-            logger.info("FILL_ESC step0 unfilled, escalating: %s", option_symbol)
+            if filled_qty > 0:
+                _contracts_remaining[0] -= min(filled_qty, _contracts_remaining[0])
+                logger.info(
+                    "FILL_ESC step0 %s %s: partial fill %d contracts, %d remaining, escalating",
+                    order_action, option_symbol, filled_qty, _contracts_remaining[0],
+                )
+                if _contracts_remaining[0] == 0:
+                    return order
+            else:
+                logger.info("FILL_ESC step0 unfilled, escalating: %s", option_symbol)
 
     # --- Steps 1-N: escalating limit loop ---
     # Each iteration refreshes the option quote and calls get_fair_price_fn
@@ -284,7 +302,7 @@ def _place_with_fill_escalation(
                 "FILL_ESC loop step%d order placed: id=%s (wait=%ds)", step_num, order_id, wait
             )
             time.sleep(wait)
-            fill_status, reject_reason = _check_fill(order_id)
+            fill_status, reject_reason, filled_qty = _check_fill(order_id)
             if fill_status:
                 logger.info("FILL_ESC loop step%d filled: %s", step_num, order_id)
                 return order
@@ -294,6 +312,17 @@ def _place_with_fill_escalation(
                     step_num, order_action, option_symbol,
                 )
                 return order
+            if filled_qty > 0:
+                _contracts_remaining[0] -= min(filled_qty, _contracts_remaining[0])
+                logger.info(
+                    "FILL_ESC loop step%d %s %s: partial fill %d contracts, %d remaining",
+                    step_num, order_action, option_symbol, filled_qty, _contracts_remaining[0],
+                )
+                _cancel_safely(order_id)
+                if _contracts_remaining[0] == 0:
+                    return order
+                current_price = None
+                continue
             tick = _parse_tick_from_reject_reason(reject_reason) \
                 if isinstance(reject_reason, str) else None
             if tick is not None:
@@ -322,7 +351,7 @@ def _place_with_fill_escalation(
                         step_num, order_id, wait,
                     )
                     time.sleep(wait)
-                    fill_status, _ = _check_fill(order_id)
+                    fill_status, _, filled_qty = _check_fill(order_id)
                     if fill_status:
                         logger.info(
                             "FILL_ESC loop step%d tick-retry filled: %s", step_num, order_id
@@ -335,6 +364,19 @@ def _place_with_fill_escalation(
                             step_num, order_action, option_symbol,
                         )
                         return order
+                    if filled_qty > 0:
+                        _contracts_remaining[0] -= min(filled_qty, _contracts_remaining[0])
+                        logger.info(
+                            "FILL_ESC loop step%d tick-retry %s %s: partial fill %d contracts,"
+                            " %d remaining",
+                            step_num, order_action, option_symbol,
+                            filled_qty, _contracts_remaining[0],
+                        )
+                        _cancel_safely(order_id)
+                        if _contracts_remaining[0] == 0:
+                            return order
+                        current_price = None
+                        continue
                     _cancel_safely(order_id)
             else:
                 _cancel_safely(order_id)
@@ -390,7 +432,7 @@ def _place_with_fill_escalation(
                 price_type="MARKET",
                 option_type=option_type,
                 order_action=order_action,
-                quantity=contracts,
+                quantity=_contracts_remaining[0],
                 _option_symbol_override=option_symbol,
             )
         except Exception:
@@ -423,7 +465,7 @@ def _place_with_fill_escalation(
     order_id = order.get("order_id")
     logger.info("FILL_ESC step3 order placed: id=%s", order_id)
     time.sleep(60 if not is_buy else 30)
-    fill_status, reject_reason = _check_fill(order_id)
+    fill_status, reject_reason, filled_qty = _check_fill(order_id)
     if fill_status:
         logger.info("FILL_ESC step3 filled: %s", order_id)
         return order
@@ -431,6 +473,22 @@ def _place_with_fill_escalation(
         logger.warning(
             "FILL_ESC step3 %s %s: fill status unknown — not cancelling, returning order",
             order_action, option_symbol,
+        )
+        return order
+    if filled_qty > 0:
+        _contracts_remaining[0] -= min(filled_qty, _contracts_remaining[0])
+        logger.warning(
+            "FILL_ESC step3 %s %s: partial fill %d contracts, %d still open"
+            " — manual close required",
+            order_action, option_symbol, filled_qty, _contracts_remaining[0],
+        )
+        _cancel_safely(order_id)
+        if _contracts_remaining[0] == 0:
+            return order
+        logger.warning(
+            "FILL_ESC MISS %s %s: %d contracts still open after partial fill"
+            " — manual intervention required",
+            order_action, option_symbol, _contracts_remaining[0],
         )
         return order
     _cancel_safely(order_id)
@@ -456,7 +514,7 @@ def _place_with_fill_escalation(
             order_id = order.get("order_id")
             logger.info("FILL_ESC step3 tick-retry order placed: id=%s", order_id)
             time.sleep(60 if not is_buy else 30)
-            fill_status, _ = _check_fill(order_id)
+            fill_status, _, filled_qty = _check_fill(order_id)
             if fill_status:
                 logger.info("FILL_ESC step3 tick-retry filled: %s", order_id)
                 return order
@@ -467,7 +525,18 @@ def _place_with_fill_escalation(
                     order_action, option_symbol,
                 )
                 return order
-            _cancel_safely(order_id)
+            if filled_qty > 0:
+                _contracts_remaining[0] -= min(filled_qty, _contracts_remaining[0])
+                logger.warning(
+                    "FILL_ESC step3 tick-retry %s %s: partial fill %d contracts,"
+                    " %d still open — manual close required",
+                    order_action, option_symbol, filled_qty, _contracts_remaining[0],
+                )
+                _cancel_safely(order_id)
+                if _contracts_remaining[0] == 0:
+                    return order
+            else:
+                _cancel_safely(order_id)
     logger.warning(
         "FILL_ESC MISS %s %s: all steps exhausted, order %s cancelled — manual intervention required",
         order_action, option_symbol, order_id,

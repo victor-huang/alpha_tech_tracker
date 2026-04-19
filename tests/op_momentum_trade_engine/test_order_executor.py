@@ -1797,3 +1797,187 @@ class TestEscalationScenarios:
             if c.kwargs.get("price_type") == "MARKET"
         ]
         assert len(market_calls) == 1
+
+
+class TestPartialFillHandling:
+    """
+    Partial fill handling: when order_status returns filled_qty > 0 but status != "filled",
+    the escalation must cancel the remainder, reduce _contracts_remaining, and continue
+    for the unfilled portion.
+
+    Scenarios:
+      1. Loop partial fill — remainder continues at fresh market price
+      2. All remaining filled on second order — terminates immediately
+      3. Second-order quantity uses remaining count, not original
+      4. Step3 partial fill — logs warning, returns order, does not raise
+      5. Step0 partial fill — reduces remaining, falls through to loop
+    """
+
+    def _run(self, client, order_action, contracts=10):
+        """Run escalation capturing placed (price, qty) pairs and return result."""
+        placed = []
+
+        def capture_place(**kw):
+            placed.append((kw.get("price"), kw.get("quantity")))
+            order_num = len(placed)
+            return {"order_id": f"ord-{order_num:03d}"}
+
+        client.place_option_order.side_effect = capture_place
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            result = _place_with_fill_escalation(
+                client=client,
+                ticker=_TICKER,
+                option_symbol=_SYMBOL,
+                option_type=_OPTION_TYPE,
+                contracts=contracts,
+                order_action=order_action,
+            )
+        return result, placed
+
+    def test_loop_partial_fill_continues_with_remaining_contracts(self):
+        """
+        10 contracts, step1 fills 7 → cancel remainder → loop continues for 3.
+        Step2 fills all 3 → done.
+
+        quote: bid=4.90, ask=5.10, mid=5.00
+        First order: placed at 5.00 (mid), qty=10, partial fill qty=7
+        Second order: placed at 5.00 (fresh mid after reset), qty=3, full fill
+        """
+        client = MagicMock()
+        client.get_option_quote_by_occ.return_value = {"bid": 4.90, "ask": 5.10, "mid": 5.00}
+        status_calls = [0]
+
+        def order_status(order_id):
+            status_calls[0] += 1
+            if order_id == "ord-001":
+                return {"status": "open", "filled_qty": 7}
+            return {"status": "filled", "filled_qty": 3}
+
+        client.order_status.side_effect = order_status
+
+        result, placed = self._run(client, "BUY_OPEN", contracts=10)
+
+        assert result == {"order_id": "ord-002"}
+        assert len(placed) == 2
+        _, qty1 = placed[0]
+        _, qty2 = placed[1]
+        assert qty1 == 10
+        assert qty2 == 3   # only the remaining 3
+        assert client.cancel_order.call_args_list[0].args[0] == "ord-001"
+
+    def test_loop_partial_fill_resets_price_to_fresh_market(self):
+        """
+        After a partial fill the next order starts at mid, not the escalated price.
+        Even if the loop had escalated to 5.05 before the partial fill, the reset
+        brings current_price back to None → re-initialised from mid=5.00.
+        """
+        client = MagicMock()
+        client.get_option_quote_by_occ.return_value = {"bid": 4.90, "ask": 5.10, "mid": 5.00}
+        status_calls = [0]
+
+        def order_status(order_id):
+            status_calls[0] += 1
+            if order_id == "ord-001":
+                return {"status": "open", "filled_qty": 5}
+            return {"status": "filled", "filled_qty": 5}
+
+        client.order_status.side_effect = order_status
+
+        result, placed = self._run(client, "BUY_OPEN", contracts=10)
+
+        price1, _ = placed[0]
+        price2, _ = placed[1]
+        assert price1 == pytest.approx(5.00)   # mid on first iteration
+        assert price2 == pytest.approx(5.00)   # reset to mid after partial fill
+
+    def test_loop_partial_fill_zero_remaining_returns_immediately(self):
+        """
+        If filled_qty exactly equals contracts_remaining the loop returns without
+        placing another order.
+        """
+        client = MagicMock()
+        client.get_option_quote_by_occ.return_value = {"bid": 4.90, "ask": 5.10, "mid": 5.00}
+
+        def order_status(order_id):
+            return {"status": "open", "filled_qty": 10}   # full amount "partial"
+
+        client.order_status.side_effect = order_status
+
+        result, placed = self._run(client, "BUY_OPEN", contracts=10)
+
+        assert len(placed) == 1
+        assert result == {"order_id": "ord-001"}
+
+    def test_step3_partial_fill_returns_order_and_logs_warning(self, caplog):
+        """
+        At step3 a partial fill (7/10) must:
+        - Cancel the remainder
+        - Log a MISS warning about the 3 still-open contracts
+        - Return the order dict (not {})
+        So position_monitor knows something filled and won't retry the full position.
+        """
+        import logging
+        client = MagicMock()
+        # Loop quote fetch always fails → falls straight to step3
+        quote_calls = [0]
+
+        def get_quote(sym):
+            quote_calls[0] += 1
+            if quote_calls[0] == 1:
+                raise RuntimeError("feed down")   # loop fetch fails → step3
+            return {"bid": 4.90, "ask": 5.10, "mid": 5.00}   # step3 quote fetch succeeds
+
+        client.get_option_quote_by_occ.side_effect = get_quote
+
+        def order_status(order_id):
+            return {"status": "open", "filled_qty": 7}   # partial at step3
+
+        client.order_status.side_effect = order_status
+
+        with caplog.at_level(logging.WARNING, logger="alpha_tech_tracker"):
+            result, placed = self._run(client, "BUY_OPEN", contracts=10)
+
+        assert result.get("order_id") is not None   # not {}
+        assert any("still open" in r.message for r in caplog.records)
+
+    def test_step0_partial_fill_continues_to_loop_with_remainder(self):
+        """
+        Step0 (quick-exit) partially fills 2 of 5 contracts → cancel remainder →
+        loop picks up for the remaining 3.
+        """
+        client = MagicMock()
+        client.get_option_quote_by_occ.return_value = {"bid": 4.90, "ask": 5.10, "mid": 5.00}
+        status_calls = [0]
+
+        def order_status(order_id):
+            status_calls[0] += 1
+            if order_id == "ord-001":   # step0
+                return {"status": "open", "filled_qty": 2}
+            return {"status": "filled", "filled_qty": 3}   # loop fills remainder
+
+        client.order_status.side_effect = order_status
+
+        placed = []
+
+        def capture_place(**kw):
+            placed.append((kw.get("price"), kw.get("quantity")))
+            return {"order_id": f"ord-{len(placed):03d}"}
+
+        client.place_option_order.side_effect = capture_place
+
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            result = _place_with_fill_escalation(
+                client=client,
+                ticker=_TICKER,
+                option_symbol=_SYMBOL,
+                option_type=_OPTION_TYPE,
+                contracts=5,
+                order_action="SELL_CLOSE",
+                entry_fill_price=5.00,   # triggers step0
+            )
+
+        assert len(placed) >= 2
+        _, qty0 = placed[0]   # step0
+        _, qty1 = placed[1]   # first loop order
+        assert qty0 == 5      # step0 uses full original count
+        assert qty1 == 3      # loop uses remaining after partial step0 fill
