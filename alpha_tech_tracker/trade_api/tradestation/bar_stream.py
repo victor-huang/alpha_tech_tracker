@@ -2,7 +2,7 @@ import json
 import logging
 import threading
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 logger = logging.getLogger(__name__)
 
@@ -21,16 +21,21 @@ class _TSBar:
     volume: float
 
     @classmethod
-    def from_ts_dict(cls, d: dict, symbol: str) -> "_TSBar":
+    def from_ts_dict(cls, d: dict, symbol: str, interval_minutes: int = 1) -> "_TSBar":
         """Parse a TradeStation bar dict (stream or historical) into a _TSBar.
 
         Handles both ISO TimeStamp strings and Epoch integer (milliseconds).
+
+        TradeStation timestamps bars at their CLOSE time. This method normalizes
+        to open-time convention (subtracting interval_minutes) so that _TSBar
+        timestamps are consistent with Alpaca and the rest of the codebase.
         """
         raw_ts = d.get("TimeStamp") or d.get("Epoch")
         if isinstance(raw_ts, (int, float)):
             ts = datetime.fromtimestamp(raw_ts / 1000, tz=timezone.utc)
         else:
             ts = datetime.fromisoformat(raw_ts.replace("Z", "+00:00"))
+        ts = ts - timedelta(minutes=interval_minutes)
         return cls(
             symbol=symbol,
             timestamp=ts,
@@ -102,7 +107,7 @@ class TradeStationBarStream:
                     if frame.get("BarStatus") != "Closed":
                         continue
                     try:
-                        bar = _TSBar.from_ts_dict(frame, symbol)
+                        bar = _TSBar.from_ts_dict(frame, symbol, interval_minutes=self._interval)
                     except (KeyError, ValueError):
                         logger.warning(
                             "TS stream: malformed bar [%s]: %s", symbol, frame

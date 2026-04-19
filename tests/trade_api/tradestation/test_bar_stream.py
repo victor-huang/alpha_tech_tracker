@@ -62,24 +62,33 @@ def _bar_line(
 # ---------------------------------------------------------------------------
 
 class TestTSBar:
-    def test_from_ts_dict_iso_timestamp(self):
+    def test_from_ts_dict_iso_timestamp_normalized_to_open_time(self):
+        # TS close-timestamp 13:31 for a 1-min bar → open time 13:30
         d = {"Open": "100", "High": "101", "Low": "99", "Close": "100.5",
              "TotalVolume": "500", "TimeStamp": "2026-04-15T13:31:00Z"}
-        bar = _TSBar.from_ts_dict(d, "TSLA")
-        assert bar.timestamp == datetime(2026, 4, 15, 13, 31, tzinfo=timezone.utc)
+        bar = _TSBar.from_ts_dict(d, "TSLA", interval_minutes=1)
+        assert bar.timestamp == datetime(2026, 4, 15, 13, 30, tzinfo=timezone.utc)
 
-    def test_from_ts_dict_epoch_ms(self):
-        # 1776259860000 ms = 2026-04-15T13:31:00Z
+    def test_from_ts_dict_5min_bar_normalized_to_open_time(self):
+        # TS close-timestamp 13:35 for a 5-min bar → open time 13:30
+        d = {"Open": "100", "High": "101", "Low": "99", "Close": "100.5",
+             "TotalVolume": "500", "TimeStamp": "2026-04-15T13:35:00Z"}
+        bar = _TSBar.from_ts_dict(d, "TSLA", interval_minutes=5)
+        assert bar.timestamp == datetime(2026, 4, 15, 13, 30, tzinfo=timezone.utc)
+
+    def test_from_ts_dict_epoch_ms_normalized_to_open_time(self):
+        # 1776259860000 ms = 2026-04-15T13:31:00Z (TS close time for 1-min bar)
+        # normalized open time = 13:30
         d = {"Open": "100", "High": "101", "Low": "99", "Close": "100.5",
              "TotalVolume": "500", "Epoch": 1776259860000}
-        bar = _TSBar.from_ts_dict(d, "TSLA")
-        assert bar.timestamp == datetime(2026, 4, 15, 13, 31, tzinfo=timezone.utc)
+        bar = _TSBar.from_ts_dict(d, "TSLA", interval_minutes=1)
+        assert bar.timestamp == datetime(2026, 4, 15, 13, 30, tzinfo=timezone.utc)
 
     def test_from_ts_dict_numeric_fields_coerced_to_float(self):
         d = {"Open": "366.75", "High": "366.84", "Low": "362.5",
              "Close": "364.37", "TotalVolume": "974501",
              "TimeStamp": "2026-04-15T13:31:00Z"}
-        bar = _TSBar.from_ts_dict(d, "TSLA")
+        bar = _TSBar.from_ts_dict(d, "TSLA", interval_minutes=1)
         assert bar.open == 366.75
         assert bar.high == 366.84
         assert bar.low == 362.5
@@ -89,13 +98,13 @@ class TestTSBar:
     def test_from_ts_dict_symbol_stored(self):
         d = {"Open": "100", "High": "101", "Low": "99", "Close": "100.5",
              "TotalVolume": "500", "TimeStamp": "2026-04-15T13:31:00Z"}
-        bar = _TSBar.from_ts_dict(d, "META")
+        bar = _TSBar.from_ts_dict(d, "META", interval_minutes=1)
         assert bar.symbol == "META"
 
     def test_from_ts_dict_missing_volume_defaults_zero(self):
         d = {"Open": "100", "High": "101", "Low": "99", "Close": "100.5",
              "TimeStamp": "2026-04-15T13:31:00Z"}
-        bar = _TSBar.from_ts_dict(d, "TSLA")
+        bar = _TSBar.from_ts_dict(d, "TSLA", interval_minutes=1)
         assert bar.volume == 0.0
 
 
@@ -192,6 +201,34 @@ class TestGetHistoricalBars:
 
         assert len(bars) == 1
 
+    def test_1min_bar_timestamp_normalized_to_open_time(self):
+        client = _make_client()
+        # TS returns close-timestamp 13:31 for a 1-min bar (13:30-13:31 period)
+        self._mock_bars_response(client, [self._bar_dict("2026-04-15T13:31:00Z")])
+
+        bars = client.get_historical_bars(
+            "TSLA",
+            datetime(2026, 4, 15, 13, 30, tzinfo=timezone.utc),
+            datetime(2026, 4, 15, 14, 0, tzinfo=timezone.utc),
+            interval=1,
+        )
+
+        assert bars[0].timestamp == datetime(2026, 4, 15, 13, 30, tzinfo=timezone.utc)
+
+    def test_5min_bar_timestamp_normalized_to_open_time(self):
+        client = _make_client()
+        # TS returns close-timestamp 13:35 for a 5-min bar (13:30-13:35 period)
+        self._mock_bars_response(client, [self._bar_dict("2026-04-15T13:35:00Z")])
+
+        bars = client.get_historical_bars(
+            "TSLA",
+            datetime(2026, 4, 15, 13, 30, tzinfo=timezone.utc),
+            datetime(2026, 4, 15, 14, 0, tzinfo=timezone.utc),
+            interval=5,
+        )
+
+        assert bars[0].timestamp == datetime(2026, 4, 15, 13, 30, tzinfo=timezone.utc)
+
     def test_empty_bars_response_returns_empty_list(self):
         client = _make_client()
         self._mock_bars_response(client, [])
@@ -273,10 +310,10 @@ class TestTradeStationBarStream:
 
     def test_callback_receives_ts_bar_with_correct_fields(self):
         client = _make_client()
-        stream = TradeStationBarStream(client)
+        stream = TradeStationBarStream(client)  # default interval=1
         client._session.get.return_value = _mock_stream_response(
             [_bar_line(
-                status="Closed", ts="2026-01-01T14:30:00Z",
+                status="Closed", ts="2026-01-01T14:30:00Z",  # TS close time
                 o="100", h="101", lo="99", c="100.5", vol="500",
             )],
             stop_event=stream._stop_event,
@@ -293,6 +330,22 @@ class TestTradeStationBarStream:
         assert bar.low == 99.0
         assert bar.close == 100.5
         assert bar.volume == 500.0
+        # TS close-time 14:30 normalized to open-time 14:29 for a 1-min bar
+        assert bar.timestamp == datetime(2026, 1, 1, 14, 29, tzinfo=timezone.utc)
+
+    def test_5min_stream_callback_normalizes_to_open_time(self):
+        client = _make_client()
+        stream = TradeStationBarStream(client, interval=5, unit="Minute")
+        client._session.get.return_value = _mock_stream_response(
+            [_bar_line(status="Closed", ts="2026-01-01T14:35:00Z")],
+            stop_event=stream._stop_event,
+        )
+        callback = MagicMock()
+        stream.subscribe_bars(callback, "TSLA")
+        stream._stream_ticker("TSLA")
+
+        bar = callback.call_args[0][0]
+        # TS close-time 14:35 normalized to open-time 14:30 for a 5-min bar
         assert bar.timestamp == datetime(2026, 1, 1, 14, 30, tzinfo=timezone.utc)
 
     def test_only_closed_bars_trigger_callback_mixed_stream(self):

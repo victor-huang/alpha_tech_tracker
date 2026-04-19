@@ -385,7 +385,7 @@ class TradeStationAPIClient(ExecutionClient):
             symbol:   Ticker symbol (e.g. "TSLA")
             start_dt: tz-aware datetime — first bar open time to include.
                       Shifted back by one interval internally because the API's
-                      firstdate param is exclusive (bars timestamped at close time).
+                      firstdate param is exclusive.
             end_dt:   tz-aware datetime — last bar close time to include.
             interval: Bar width in units (default 1). Use 5 for 5-min bars.
             unit:     "Minute" (default) or "Daily".
@@ -406,7 +406,7 @@ class TradeStationAPIClient(ExecutionClient):
         data = self._parse(response)
         bars_raw = data.get("Bars", []) if isinstance(data, dict) else []
         return [
-            _TSBar.from_ts_dict(b, symbol)
+            _TSBar.from_ts_dict(b, symbol, interval_minutes=interval)
             for b in bars_raw
             if b.get("Open")
         ]
