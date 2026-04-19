@@ -717,21 +717,37 @@ class PositionMonitor:
 
         try:
             option_type = "CALL" if pos.signal == "BULLISH" else "PUT"
+
+            opm = self._option_price_monitor
+            se = self._signal_engine
+            _esc_client = self._client
+            _esc_feed = self._alpaca_feed
+            if opm is not None:
+                def _exit_fair_price_fn(
+                    _ticker=pos.ticker,
+                    _symbol=pos.option_symbol,
+                    _otype=option_type_lower,
+                    _entry_stock=pos.entry_stock_price,
+                ):
+                    try:
+                        kwargs = {"feed": _esc_feed} if _esc_feed is not None else {}
+                        raw_quote = _esc_client.get_stock_quote(_ticker, **kwargs)
+                        bid_f, ask_f = _stock_bid_ask(raw_quote)
+                        stock_price = (_D(str(bid_f)) + _D(str(ask_f))) / _D("2")
+                    except Exception:
+                        bar = se.get_latest_bar(_ticker) if se else None
+                        stock_price = _D(str(bar["Close"])) if bar is not None else _D(str(_entry_stock))
+                    return opm.get_fair_price(_ticker, _symbol, _otype, stock_price)
+            else:
+                _exit_fair_price_fn = None
+
             if reason == "end_of_day":
                 logger.info(
-                    "EOD SELL_CLOSE market order: %s %d contracts",
+                    "EOD SELL_CLOSE with fill escalation: %s %d contracts",
                     pos.option_symbol,
                     pos.contracts,
                 )
-                order = self._client.place_option_order(
-                    symbol=pos.ticker,
-                    option_key=None,
-                    price_type="MARKET",
-                    option_type=option_type,
-                    order_action="SELL_CLOSE",
-                    quantity=pos.contracts,
-                    _option_symbol_override=pos.option_symbol,
-                )
+                quick_exit_fill_price = None
             else:
                 latest_bar = self._signal_engine.get_latest_bar(pos.ticker)
                 current_stock_price = (
@@ -755,39 +771,17 @@ class PositionMonitor:
                         pos.option_symbol,
                         pos.contracts,
                     )
-                opm = self._option_price_monitor
-                se = self._signal_engine
-                _esc_client = self._client
-                _esc_feed = self._alpaca_feed
-                if opm is not None:
-                    def _exit_fair_price_fn(
-                        _ticker=pos.ticker,
-                        _symbol=pos.option_symbol,
-                        _otype=option_type_lower,
-                        _entry_stock=pos.entry_stock_price,
-                    ):
-                        try:
-                            kwargs = {"feed": _esc_feed} if _esc_feed is not None else {}
-                            raw_quote = _esc_client.get_stock_quote(_ticker, **kwargs)
-                            bid_f, ask_f = _stock_bid_ask(raw_quote)
-                            stock_price = (_D(str(bid_f)) + _D(str(ask_f))) / _D("2")
-                        except Exception:
-                            bar = se.get_latest_bar(_ticker) if se else None
-                            stock_price = _D(str(bar["Close"])) if bar is not None else _D(str(_entry_stock))
-                        return opm.get_fair_price(_ticker, _symbol, _otype, stock_price)
-                else:
-                    _exit_fair_price_fn = None
-                order = _place_with_fill_escalation(
-                    client=self._client,
-                    ticker=pos.ticker,
-                    option_symbol=pos.option_symbol,
-                    option_type=option_type,
-                    contracts=pos.contracts,
-                    order_action="SELL_CLOSE",
-                    entry_fill_price=quick_exit_fill_price,
-                    get_fair_price_fn=_exit_fair_price_fn,
-                    feed=self._alpaca_feed,
-                )
+            order = _place_with_fill_escalation(
+                client=self._client,
+                ticker=pos.ticker,
+                option_symbol=pos.option_symbol,
+                option_type=option_type,
+                contracts=pos.contracts,
+                order_action="SELL_CLOSE",
+                entry_fill_price=quick_exit_fill_price,
+                get_fair_price_fn=_exit_fair_price_fn,
+                feed=self._alpaca_feed,
+            )
             pos.exit_order_id = order.get("order_id")
             pos.close_order_failed = False
             logger.info("Close order placed: %s", pos.exit_order_id)

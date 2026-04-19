@@ -1631,12 +1631,13 @@ class TestExitSmsPrices:
 
 
 class TestEodMarketOrder:
-    """Issue 4: EOD close must place a direct market order, not fill escalation."""
+    """EOD option close uses fill escalation (limit first, market fallback); stock EOD is still market."""
 
-    def test_eod_option_close_places_market_order(self):
+    def test_eod_option_close_uses_fill_escalation(self):
         client = _make_alpaca_client()
-        client.place_option_order.return_value = {"order_id": "eod-market-1"}
+        client.place_option_order.return_value = {"order_id": "eod-1"}
         client.get_option_quote_by_occ.return_value = _make_option_quote(bid=5.0, ask=5.5)
+        client.order_status.return_value = {"status": "filled"}
 
         closes = [100.0]
         df = _build_history_df(closes, ma20=90.0, ma50=90.0, ma200=85.0)
@@ -1646,12 +1647,37 @@ class TestEodMarketOrder:
         pos = _make_active_position(signal="BULLISH")
         monitor.add_position(pos)
 
-        with patch("alpha_tech_tracker.op_momentum_strategy.position_monitor._notify"):
+        with patch("alpha_tech_tracker.op_momentum_strategy.position_monitor._notify"), \
+             patch("alpha_tech_tracker.op_momentum_strategy.order_executor.time.sleep", lambda _: None):
             monitor.close_all(reason="end_of_day")
 
-        call_kwargs = client.place_option_order.call_args[1]
-        assert call_kwargs["price_type"] == "MARKET"
-        assert call_kwargs["_option_symbol_override"] == "NVDA260328C00900000"
+        first_call = client.place_option_order.call_args_list[0]
+        assert first_call.kwargs["price_type"] == "LIMIT"
+        assert first_call.kwargs["_option_symbol_override"] == "NVDA260328C00900000"
+
+    def test_eod_option_close_no_quick_exit_protection(self):
+        # EOD close must not use entry_fill_price (step-0 quick-exit protection)
+        client = _make_alpaca_client()
+        client.place_option_order.return_value = {"order_id": "eod-1"}
+        client.get_option_quote_by_occ.return_value = _make_option_quote(bid=5.0, ask=5.5)
+        client.order_status.return_value = {"status": "filled"}
+
+        closes = [100.0]
+        df = _build_history_df(closes, ma20=90.0, ma50=90.0, ma200=85.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine)
+
+        pos = _make_active_position(signal="BULLISH")
+        pos.option_fill_price = 4.80  # entry fill price — must NOT be tried at EOD
+        monitor.add_position(pos)
+
+        with patch("alpha_tech_tracker.op_momentum_strategy.position_monitor._notify"), \
+             patch("alpha_tech_tracker.op_momentum_strategy.order_executor.time.sleep", lambda _: None):
+            monitor.close_all(reason="end_of_day")
+
+        # First limit order should be at mid (5.25), not at entry fill price (4.80)
+        first_price = client.place_option_order.call_args_list[0].kwargs["price"]
+        assert first_price != 4.80
 
     def test_eod_stock_close_places_market_order(self):
         client = _make_alpaca_client()
@@ -1702,6 +1728,7 @@ class TestEodMarketOrder:
         client = _make_alpaca_client()
         client.place_option_order.return_value = {"order_id": "eod-2"}
         client.get_option_quote_by_occ.return_value = _make_option_quote(bid=5.0, ask=5.5)
+        client.order_status.return_value = {"status": "filled"}
 
         closes = [100.0]
         df = _build_history_df(closes, ma20=90.0, ma50=90.0, ma200=85.0)
@@ -1715,15 +1742,14 @@ class TestEodMarketOrder:
 
         lock_held_during_api_call = []
 
-        original_get_quote = client.get_option_quote_by_occ.side_effect
-
         def spy_get_quote(*args, **kwargs):
             lock_held_during_api_call.append(monitor._lock.locked())
             return _make_option_quote(bid=5.0, ask=5.5)
 
         client.get_option_quote_by_occ.side_effect = spy_get_quote
 
-        with patch("alpha_tech_tracker.op_momentum_strategy.position_monitor._notify"):
+        with patch("alpha_tech_tracker.op_momentum_strategy.position_monitor._notify"), \
+             patch("alpha_tech_tracker.op_momentum_strategy.order_executor.time.sleep", lambda _: None):
             monitor.close_all(reason="end_of_day")
 
         assert pos1.is_closed is True
