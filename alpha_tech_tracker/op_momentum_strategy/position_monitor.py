@@ -1,7 +1,7 @@
 import logging
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import ROUND_HALF_UP
 from typing import Callable, Optional
 
@@ -1166,10 +1166,15 @@ class PositionMonitor:
                 else:
                     sym_str = pos.option_symbol
                     qty_str = str(pos.contracts)
+                exit_display_time = (
+                    pos.exit_time + timedelta(minutes=5)
+                    if pos.exit_time is not None and pos.exit_reason != "end_of_day"
+                    else pos.exit_time
+                )
                 _emit(
                     f"  {pos.ticker:<7} {_trade_label(pos):<16} {sym_str:<26} "
                     f"{qty_str:>6}"
-                    f"  {_fmt_time(pos.entry_time):>5} {_fmt_time(pos.exit_time):>5}"
+                    f"  {_fmt_time(pos.entry_time):>5} {_fmt_time(exit_display_time):>5}"
                     f"  {entry_str:>9} {exit_str:>9} {pnl_str:>10}  {pnl_pct_str:>7}"
                     f"  {pos.exit_reason or 'open'}"
                 )

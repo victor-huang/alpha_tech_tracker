@@ -742,11 +742,14 @@ def run_selector_backtest(
                 combined_pnl_pct = (
                     primary_pnl_pct + rev_pnl_pct + br_pnl_pct + bru_pnl_pct
                 )
+                _h, _m = map(int, win["opening_start"].split(":"))
+                _or_close_min = _h * 60 + _m + win["opening_bars"] * 5
                 trade_rows.append(
                     {
                         "date": d,
                         "window": label,
                         "rank": rank,
+                        "or_close_min": _or_close_min,
                         "pnl_pct": round(combined_pnl_pct, 3),
                         "success": combined_pnl_pct > 0,
                         # cap_pnl, window_capital, skipped filled in by _apply_capital_flow
@@ -925,6 +928,7 @@ def _print_reentry_subrow(
     print(
         f"  {'':12} {blank_win}{'':5} {'':6} "
         f"{label:<9} {'':>5}  "
+        f"{'':>5} {'':>5}  "
         f"{ep:>7.2f} {row[exit_price_key]:>7.2f} "
         f"{pnl_str:>7} {pct_str:>7}  {result:<6}  {row[exit_reason_key]}"
     )
@@ -938,14 +942,28 @@ def _print_daily_table(
     weights: list = None,
     multi_window: bool = False,
 ):
+    def _fmt_bar_time(minutes: int) -> str:
+        return f"{minutes // 60:02d}:{minutes % 60:02d}"
+
+    def _entry_exit_times(row) -> tuple:
+        or_close = row.get("or_close_min")
+        if or_close is None:
+            return "—", "—"
+        entry_str = _fmt_bar_time(or_close)
+        if row.get("exit_reason") == "end_of_day":
+            exit_str = "16:00"
+        else:
+            exit_str = _fmt_bar_time(or_close + (row.get("bars_held", 0) + 1) * 5)
+        return entry_str, exit_str
+
     weights = weights or _parse_weights(None, n)
     active_rows = [r for r in trade_rows if not r.get("skipped")]
-    sep = "\u2501" * 98
+    sep = "\u2501" * 110
     win_col = f"{'Win':<5} " if multi_window else ""
     print(f"\n{sep}")
     print(
         f"  {'Date':<12} {win_col}{'Rank':<5} {'Ticker':<6} {'Signal':<9} {'Score':>5}  "
-        f"{'Entry':>7} {'Exit':>7} {'P&L$':>7} {'P&L%':>7}  {'Result':<6}  Exit Reason"
+        f"{'In':>5} {'Out':>5}  {'Entry':>7} {'Exit':>7} {'P&L$':>7} {'P&L%':>7}  {'Result':<6}  Exit Reason"
     )
     print(sep)
 
@@ -987,7 +1005,7 @@ def _print_daily_table(
 
         if multi_window and row_window != current_window:
             if current_window is not None:
-                print(f"  {'·' * 96}")
+                print(f"  {'·' * 108}")
             current_window = row_window
 
         pnl = row["pnl"]
@@ -996,10 +1014,12 @@ def _print_daily_table(
         pnl_str = f"+${abs(pnl):.2f}" if pnl >= 0 else f"-${abs(pnl):.2f}"
         pnl_pct_str = f"+{abs(pnl_pct):.2f}%" if pnl_pct >= 0 else f"{pnl_pct:.2f}%"
         win_str = f"{row_window:<5} " if multi_window else ""
+        t_in, t_out = _entry_exit_times(row)
 
         print(
             f"  {str(row_date):<12} {win_str}{row['rank']:<5} {row['ticker']:<6} "
             f"{row['signal']:<9} {row['score']:>5.2f}  "
+            f"{t_in:>5} {t_out:>5}  "
             f"{row['entry_price']:>7.2f} {row['exit_price']:>7.2f} "
             f"{pnl_str:>7} {pnl_pct_str:>7}  {result:<6}  {row['exit_reason']}"
         )
@@ -1105,10 +1125,10 @@ def _print_day_summary(
     win_pad = "      " if multi_window else ""
     print(
         f"  {'':12} {win_pad}{'':5} {'':6} {'':9} {'':5}  "
-        f"{'':>7} {'':>7} {pnl_str:>7} {avg_pct_str:>7}  "
+        f"{'':>5} {'':>5}  {'':>7} {'':>7} {pnl_str:>7} {avg_pct_str:>7}  "
         f"{wins}W/{losses}L  │  cap: {cap_pnl_str} ({day_ret_str})  portfolio: ${portfolio:.2f}"
     )
-    print(f"  {'─' * 96}")
+    print(f"  {'─' * 108}")
 
 
 def _stats_from_trades(trade_rows: list) -> dict:
