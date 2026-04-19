@@ -10,7 +10,7 @@ from alpha_tech_tracker.trade_api.tradestation.client import (
     _occ_to_ts_order_symbol,
     _ts_search_name_to_occ,
     _parse_ts_date,
-    _ts_option_price_str,
+    _parse_tick_from_error,
 )
 from alpha_tech_tracker.trade_api.tradestation.tradestation_api_response import (
     accounts_response,
@@ -596,24 +596,31 @@ class TestPlaceOptionOrder:
         assert body["OrderType"] == "Limit"
 
 
-class TestTsOptionPriceStr:
-    def test_price_above_three_snapped_to_ten_cent_tick(self):
-        # 75.85 is on a $0.05 tick but not a $0.10 tick — TS rejects it
-        assert _ts_option_price_str(75.85) == "75.9"
+class TestParseTickFromError:
+    def test_standard_increment_message(self):
+        from decimal import Decimal
+        assert _parse_tick_from_error("LimitPrice must be in increments of 0.10") \
+            == Decimal("0.10")
 
-    def test_price_already_on_ten_cent_tick_unchanged(self):
-        assert _ts_option_price_str(10.50) == "10.5"
+    def test_five_cent_increment(self):
+        from decimal import Decimal
+        assert _parse_tick_from_error("Price must be in increments of 0.05") \
+            == Decimal("0.05")
 
-    def test_price_below_three_snapped_to_five_cent_tick(self):
-        assert _ts_option_price_str(2.87) == "2.85"
+    def test_one_cent_increment(self):
+        from decimal import Decimal
+        assert _parse_tick_from_error("must be in increments of 0.01") \
+            == Decimal("0.01")
 
-    def test_no_trailing_zeros_for_whole_dollar_price(self):
-        assert _ts_option_price_str(245.0) == "245"
+    def test_no_increment_in_message_returns_none(self):
+        assert _parse_tick_from_error("Invalid symbol") is None
 
-    def test_no_trailing_zeros_for_single_decimal(self):
-        assert _ts_option_price_str(3.40) == "3.4"
+    def test_unrelated_number_does_not_match(self):
+        assert _parse_tick_from_error("Order rejected for account 12345") is None
 
-    def test_option_limit_price_body_uses_quantized_value(self):
+
+class TestPlaceOptionOrderTickRetry:
+    def test_price_sent_as_is_without_client_rounding(self):
         client = _make_client()
         client._session.post.return_value = _mock_response(place_order_response)
 
@@ -625,7 +632,43 @@ class TestTsOptionPriceStr:
         )
 
         body = client._session.post.call_args[1]["json"]
-        assert body["LimitPrice"] == "75.9"
+        assert body["LimitPrice"] == "75.85"
+
+    def test_retries_with_adjusted_price_on_increment_error(self):
+        client = _make_client()
+        error_response = _mock_response(
+            {"Message": "LimitPrice must be in increments of 0.10"}, status_code=400
+        )
+        success_response = _mock_response(place_order_response)
+        client._session.post.side_effect = [error_response, success_response]
+
+        client.place_option_order(
+            symbol="TSLA",
+            price=75.85,
+            order_action="BUY_OPEN",
+            _option_symbol_override="TSLA250420C00240000",
+        )
+
+        assert client._session.post.call_count == 2
+        retry_body = client._session.post.call_args_list[1][1]["json"]
+        assert retry_body["LimitPrice"] == "75.9"
+
+    def test_non_increment_error_is_not_retried(self):
+        client = _make_client()
+        error_response = _mock_response(
+            {"Message": "Account not authorized"}, status_code=400
+        )
+        client._session.post.return_value = error_response
+
+        with pytest.raises(APIInvalidArgumentError):
+            client.place_option_order(
+                symbol="TSLA",
+                price=75.85,
+                order_action="BUY_OPEN",
+                _option_symbol_override="TSLA250420C00240000",
+            )
+
+        assert client._session.post.call_count == 1
 
 
 class TestPlaceStockOrder:

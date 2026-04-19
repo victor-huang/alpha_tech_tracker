@@ -143,17 +143,19 @@ def _extract_v3_order(data: dict) -> dict:
     return data
 
 
-def _ts_option_price_str(price: float) -> str:
-    """Round to TradeStation option tick and format without trailing zeros.
+def _parse_tick_from_error(message: str):
+    """Extract the required tick size from a TradeStation increment-error message.
 
-    TradeStation enforces:
-      < $3.00  → $0.05 tick
-      ≥ $3.00  → $0.10 tick
+    TradeStation returns messages like "LimitPrice must be in increments of 0.10".
+    Returns a Decimal tick if one is found, else None.
     """
-    d = Decimal(str(price))
-    tick = Decimal("0.05") if d < Decimal("3") else Decimal("0.10")
-    rounded = float((d / tick).to_integral_value(rounding=ROUND_HALF_UP) * tick)
-    return f"{rounded:g}"
+    m = re.search(r"increment[s]?\s+of\s+([\d.]+)", message, re.IGNORECASE)
+    if m:
+        try:
+            return Decimal(m.group(1))
+        except Exception:
+            pass
+    return None
 
 
 class _CallbackHandler(BaseHTTPRequestHandler):
@@ -600,12 +602,29 @@ class TradeStationAPIClient(ExecutionClient):
                     code="MISSING_LIMIT_PRICE",
                     message="price is required for LIMIT orders",
                 )
-            body["LimitPrice"] = _ts_option_price_str(float(price))
+            body["LimitPrice"] = f"{float(price):g}"
 
-        response = self._session.post(
-            self._v3_base_url + "/orderexecution/orders", json=body
-        )
-        data = self._parse(response)
+        try:
+            response = self._session.post(
+                self._v3_base_url + "/orderexecution/orders", json=body
+            )
+            data = self._parse(response)
+        except APIInvalidArgumentError as exc:
+            tick = _parse_tick_from_error(exc.message)
+            if tick is None or price is None:
+                raise
+            d = Decimal(str(price))
+            adjusted = float((d / tick).to_integral_value(rounding=ROUND_HALF_UP) * tick)
+            logger.warning(
+                "TS tick error for %s — adjusting price %s → %s (tick=%s): %s",
+                occ_symbol, price, adjusted, tick, exc.message,
+            )
+            body["LimitPrice"] = f"{adjusted:g}"
+            response = self._session.post(
+                self._v3_base_url + "/orderexecution/orders", json=body
+            )
+            data = self._parse(response)
+
         order_data = _extract_v3_order(data)
 
         return {
