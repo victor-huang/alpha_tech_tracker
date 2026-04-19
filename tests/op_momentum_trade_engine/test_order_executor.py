@@ -1,9 +1,12 @@
+from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
 from alpha_tech_tracker.op_momentum_strategy.order_executor import (
     _place_with_fill_escalation,
     place_stock_order,
 )
+
+_D = Decimal
 
 _MODULE = "alpha_tech_tracker.op_momentum_strategy.order_executor"
 
@@ -61,14 +64,14 @@ class TestFillEscalationStep0:
     def test_without_entry_fill_price_skips_step0(self):
         client = _make_client()
         self._run(client, entry_fill_price=None)
-        # No step-0: step1(mid) + step2(ask/bid) + step3(final) = 3 order_status calls
-        assert client.order_status.call_count == 3
+        # No step-0: loop runs 11 steps (mid→bid in 0.01 decrements) + step3 = 12 status checks
+        assert client.order_status.call_count == 12
 
     def test_with_entry_fill_price_places_step0_order_first(self):
         client = _make_client()
         self._run(client, entry_fill_price=5.0, step0_filled=False)
-        # step0 + step1(mid) + step2(ask/bid) + step3(final) = 4 order_status checks
-        assert client.order_status.call_count == 4
+        # step0 + 11 loop steps + step3 = 13 status checks
+        assert client.order_status.call_count == 13
 
     def test_step0_filled_returns_immediately_without_further_orders(self):
         client = _make_client()
@@ -92,11 +95,11 @@ class TestFillEscalationStep0:
         # cancel_order should have been called at least once (step0 cancel)
         assert client.cancel_order.call_count >= 1
 
-    def test_step0_unfilled_then_normal_mid_escalation_places_three_total_orders(self):
+    def test_step0_unfilled_then_loop_then_step3_market(self):
         client = _make_client()
         self._run(client, entry_fill_price=5.0, step0_filled=False)
-        # step0 + step1 mid + step2 + step3 limit + step3 market fallback = 5 calls
-        assert client.place_option_order.call_count == 5
+        # step0(1) + loop 11 steps + step3 limit + step3 market fallback = 14 calls
+        assert client.place_option_order.call_count == 14
 
 
 class TestFillEscalationMissCancellation:
@@ -120,14 +123,167 @@ class TestFillEscalationMissCancellation:
     def test_miss_cancels_step3_order(self):
         client = _make_client()
         self._run_all_unfilled(client)
-        # 3 orders placed (step1 mid, step2 bid, step3 final); 3 cancels expected
-        assert client.cancel_order.call_count == 3
+        # loop(11) + step3(1) = 12 cancels
+        assert client.cancel_order.call_count == 12
 
     def test_miss_cancel_uses_step3_order_id(self):
         client = _make_client()
         self._run_all_unfilled(client)
         last_cancel_arg = client.cancel_order.call_args_list[-1].args[0]
         assert last_cancel_arg == "ord-001"
+
+
+class TestFillEscalationLoop:
+    """
+    The escalating limit loop (steps 1-N):
+    - BUY:  starts at min(fair_price, mid); +0.25×half_spread below mid, +0.10× above mid
+    - SELL: starts at max(fair_price, mid); -0.25×half_spread above mid, -0.10× below mid
+    - Option quote and get_fair_price_fn are refreshed at the start of each iteration.
+    """
+
+    # Wide spread: bid=4.00, ask=8.00 → mid=6.00, half_spread=2.00
+    # Fast increment (below mid): 0.25×2=0.50
+    # Slow increment (above/at mid): 0.10×2=0.20
+    _BID = 4.00
+    _ASK = 8.00
+
+    def _make_loop_client(self, fill_on=None):
+        client = MagicMock()
+        mid = (self._BID + self._ASK) / 2
+        client.get_option_quote_by_occ.return_value = {
+            "bid": self._BID, "ask": self._ASK, "mid": mid
+        }
+        client.place_option_order.return_value = {"order_id": "ord-001", "status": "open"}
+        status_count = [0]
+
+        def order_status(_order_id):
+            status_count[0] += 1
+            if fill_on is not None and status_count[0] == fill_on:
+                return {"status": "filled"}
+            return {"status": "open"}
+
+        client.order_status.side_effect = order_status
+        return client
+
+    def _run(self, client, order_action, get_fair_price_fn=None):
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            return _place_with_fill_escalation(
+                client=client,
+                ticker=_TICKER,
+                option_symbol=_SYMBOL,
+                option_type=_OPTION_TYPE,
+                contracts=1,
+                order_action=order_action,
+                get_fair_price_fn=get_fair_price_fn,
+            )
+
+    def _limit_prices(self, client):
+        return [
+            c.kwargs["price"]
+            for c in client.place_option_order.call_args_list
+            if c.kwargs.get("price_type") == "LIMIT"
+        ]
+
+    # --- BUY: start price ---
+
+    def test_buy_without_fair_price_fn_starts_at_mid(self):
+        client = self._make_loop_client(fill_on=1)
+        self._run(client, "BUY_OPEN")
+        assert self._limit_prices(client)[0] == 6.00
+
+    def test_buy_with_fair_below_mid_starts_at_fair(self):
+        client = self._make_loop_client(fill_on=1)
+        fair_fn = MagicMock(return_value=_D("4.50"))
+        self._run(client, "BUY_OPEN", get_fair_price_fn=fair_fn)
+        assert self._limit_prices(client)[0] == 4.50
+
+    def test_buy_with_fair_above_mid_starts_at_mid(self):
+        client = self._make_loop_client(fill_on=1)
+        fair_fn = MagicMock(return_value=_D("7.00"))
+        self._run(client, "BUY_OPEN", get_fair_price_fn=fair_fn)
+        assert self._limit_prices(client)[0] == 6.00
+
+    # --- BUY: escalation rate ---
+
+    def test_buy_escalates_fast_below_mid_then_slow_above(self):
+        # fair=4.50 → start=4.50; +0.50 while < mid=6.00, +0.20 once at/above mid
+        # step1: 4.50  step2: 5.00  step3: 5.50  step4: 6.00  step5: 6.20 (filled)
+        client = self._make_loop_client(fill_on=5)
+        fair_fn = MagicMock(return_value=_D("4.50"))
+        self._run(client, "BUY_OPEN", get_fair_price_fn=fair_fn)
+        prices = self._limit_prices(client)
+        assert prices[0] == 4.50   # start at fair
+        assert prices[1] == 5.00   # +0.50 (fast, below mid)
+        assert prices[2] == 5.50   # +0.50 (fast, below mid)
+        assert prices[3] == 6.00   # +0.50 (fast, 5.50 < 6.00 → still fast)
+        assert prices[4] == 6.20   # +0.20 (slow, 6.00 is at mid → not < mid)
+
+    def test_buy_fills_on_first_step_returns_immediately(self):
+        client = self._make_loop_client(fill_on=1)
+        result = self._run(client, "BUY_OPEN")
+        assert len(self._limit_prices(client)) == 1
+        assert result.get("order_id") == "ord-001"
+
+    # --- SELL: start price ---
+
+    def test_sell_without_fair_price_fn_starts_at_mid(self):
+        client = self._make_loop_client(fill_on=1)
+        self._run(client, "SELL_CLOSE")
+        assert self._limit_prices(client)[0] == 6.00
+
+    def test_sell_with_fair_below_mid_starts_at_mid(self):
+        # max(fair=4.50, mid=6.00) = 6.00
+        client = self._make_loop_client(fill_on=1)
+        fair_fn = MagicMock(return_value=_D("4.50"))
+        self._run(client, "SELL_CLOSE", get_fair_price_fn=fair_fn)
+        assert self._limit_prices(client)[0] == 6.00
+
+    def test_sell_with_fair_above_mid_starts_at_fair(self):
+        # max(fair=7.00, mid=6.00) = 7.00
+        client = self._make_loop_client(fill_on=1)
+        fair_fn = MagicMock(return_value=_D("7.00"))
+        self._run(client, "SELL_CLOSE", get_fair_price_fn=fair_fn)
+        assert self._limit_prices(client)[0] == 7.00
+
+    # --- SELL: escalation rate ---
+
+    def test_sell_decrements_slow_when_at_or_below_mid(self):
+        # fair=5.00 → start=max(5.00, 6.00)=6.00 (at mid); -0.20 per step (slow)
+        # step1: 6.00  step2: 5.80  step3: 5.60 (filled)
+        client = self._make_loop_client(fill_on=3)
+        fair_fn = MagicMock(return_value=_D("5.00"))
+        self._run(client, "SELL_CLOSE", get_fair_price_fn=fair_fn)
+        prices = self._limit_prices(client)
+        assert prices[0] == 6.00   # start at mid (fair < mid)
+        assert prices[1] == 5.80   # -0.20 (slow: 6.00 not > 6.00)
+        assert prices[2] == 5.60   # -0.20
+
+    def test_sell_fills_on_first_step_returns_immediately(self):
+        client = self._make_loop_client(fill_on=1)
+        result = self._run(client, "SELL_CLOSE")
+        assert len(self._limit_prices(client)) == 1
+        assert result.get("order_id") == "ord-001"
+
+    # --- edge cases ---
+
+    def test_fair_price_zero_treated_as_none_buy_starts_at_mid(self):
+        client = self._make_loop_client(fill_on=1)
+        fair_fn = MagicMock(return_value=_D("0"))
+        self._run(client, "BUY_OPEN", get_fair_price_fn=fair_fn)
+        assert self._limit_prices(client)[0] == 6.00
+
+    def test_fair_price_fn_called_each_loop_iteration(self):
+        # fill on step 3 → fn called exactly 3 times (one per iteration)
+        client = self._make_loop_client(fill_on=3)
+        fair_fn = MagicMock(return_value=_D("5.00"))
+        self._run(client, "BUY_OPEN", get_fair_price_fn=fair_fn)
+        assert fair_fn.call_count == 3
+
+    def test_option_quote_refreshed_each_loop_iteration(self):
+        # fill on step 3 → get_option_quote_by_occ called 3 times (no step3 fallback)
+        client = self._make_loop_client(fill_on=3)
+        self._run(client, "BUY_OPEN")
+        assert client.get_option_quote_by_occ.call_count == 3
 
 
 _PUT_SYMBOL = "COIN260418P00220000"
@@ -160,19 +316,15 @@ def _make_option_client_with_stock(
     return client
 
 
-class TestStep2IntrinsicFloorForSells:
+class TestSellFloorBehavior:
     """
-    On SELL_CLOSE, the step2 price (mid - spread/4) must be floored at intrinsic
-    value when the wide option spread would otherwise push the limit below exercise value.
-    PUT intrinsic = strike - stock_mid.
+    On SELL_CLOSE, the escalation loop floor is max(bid, fair_price).
+    Without get_fair_price_fn the floor falls back to bid.
+    The floor is enforced via get_fair_price_fn (OptionPriceMonitor); no raw
+    stock quote is fetched directly by the escalation loop.
     """
 
-    # COIN260418P00220000: strike=220, PUT
-    # stock_mid=208 → intrinsic=12.00
-    # opt: bid=10.50, ask=15.50 → mid=13.00, spread=5.00, quarter=1.25
-    # raw step2 = 13.00 - 1.25 = 11.75 < 12.00 → should be floored to 12.00
-
-    def _run_sell(self, client):
+    def _run_sell(self, client, get_fair_price_fn=None):
         client.order_status.return_value = {"status": "open"}
         with patch(f"{_MODULE}.time.sleep", lambda _: None):
             return _place_with_fill_escalation(
@@ -183,33 +335,39 @@ class TestStep2IntrinsicFloorForSells:
                 contracts=1,
                 order_action="SELL_CLOSE",
                 feed=None,
+                get_fair_price_fn=get_fair_price_fn,
             )
 
-    def test_step2_price_floored_at_intrinsic_when_below(self):
-        client = _make_option_client_with_stock(
-            opt_bid=10.50, opt_ask=15.50, stock_bid=207.0, stock_ask=209.0
-        )
-        self._run_sell(client)
-        step2_call = client.place_option_order.call_args_list[1]
-        step2_price = step2_call.kwargs["price"]
-        # floor at intrinsic $12.00 (quantized to $0.05 tick) instead of raw $11.75
-        assert step2_price == 12.00
+    def _limit_prices(self, client):
+        return [
+            c.kwargs["price"]
+            for c in client.place_option_order.call_args_list
+            if c.kwargs.get("price_type") == "LIMIT"
+        ]
 
-    def test_step2_price_unchanged_when_above_intrinsic(self):
-        # stock drops to $194 → intrinsic = 220 - 194 = 26; step2 = 13 - 1.25 = 11.75 < 26
-        # Actually let's use a stock mid where intrinsic is lower than step2:
-        # stock_mid = 210 → intrinsic = 10; step2 = 11.75 > 10 → no floor
-        client = _make_option_client_with_stock(
-            opt_bid=10.50, opt_ask=15.50, stock_bid=210.0, stock_ask=210.0
-        )
+    def test_without_fair_price_fn_floor_is_bid(self):
+        # No get_fair_price_fn → floor=bid=10.50; no stock quote ever fetched.
+        client = _make_option_client_with_stock(opt_bid=10.50, opt_ask=15.50)
         self._run_sell(client)
-        step2_call = client.place_option_order.call_args_list[1]
-        step2_price = step2_call.kwargs["price"]
-        # step2 = 11.75 → quantized to $11.75 (≥$3, $0.05 tick → $11.75)
-        assert step2_price == 11.75
+        assert all(p >= 10.50 for p in self._limit_prices(client))
+        assert client.get_stock_quote.call_count == 0
 
-    def test_step2_floor_skipped_for_buys(self):
-        # For BUY_OPEN, no intrinsic floor — get_stock_quote should not be called at step2
+    def test_with_fair_price_fn_floor_is_max_bid_fair(self):
+        # fair_price=12.00 > bid=10.50 → floor=12.00; no loop price should go below 12.00
+        client = _make_option_client_with_stock(opt_bid=10.50, opt_ask=15.50)
+        fair_fn = MagicMock(return_value=_D("12.00"))
+        self._run_sell(client, get_fair_price_fn=fair_fn)
+        assert all(p >= 12.00 for p in self._limit_prices(client))
+
+    def test_with_fair_price_fn_failure_falls_back_to_bid_floor(self):
+        # get_fair_price_fn raises → treated as no fair → floor=bid
+        client = _make_option_client_with_stock(opt_bid=10.50, opt_ask=15.50)
+        fair_fn = MagicMock(side_effect=RuntimeError("monitor unavailable"))
+        self._run_sell(client, get_fair_price_fn=fair_fn)
+        assert all(p >= 10.50 for p in self._limit_prices(client))
+
+    def test_no_stock_quote_fetched_for_buys_without_fair_price_fn(self):
+        # BUY_OPEN without get_fair_price_fn never calls get_stock_quote
         client = _make_option_client_with_stock()
         client.order_status.return_value = {"status": "open"}
         with patch(f"{_MODULE}.time.sleep", lambda _: None):
@@ -222,18 +380,7 @@ class TestStep2IntrinsicFloorForSells:
                 order_action="BUY_OPEN",
                 feed=None,
             )
-        # get_stock_quote is only called at step3 (intrinsic floor) and step2 for sells
-        # For buys step3 does NOT call get_stock_quote either → call_count == 0
         assert client.get_stock_quote.call_count == 0
-
-    def test_step2_floor_continues_gracefully_when_stock_quote_fails(self):
-        client = _make_option_client_with_stock()
-        client.get_stock_quote.side_effect = Exception("quote fetch failed")
-        # Should not raise; step2_price falls back to original value
-        self._run_sell(client)
-        step2_call = client.place_option_order.call_args_list[1]
-        # raw step2 price = 11.75 (no floor applied on exception)
-        assert step2_call.kwargs["price"] == 11.75
 
 
 class TestStep3MarketFallbackForSells:

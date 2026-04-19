@@ -6,7 +6,7 @@ from typing import Optional
 from alpha_tech_tracker.trade_api.execution_client import ExecutionClient
 
 from .models import _D, _stock_bid_ask
-from .option_price_monitor import _parse_occ_symbol, _quantize_option_price
+from .option_price_monitor import _quantize_option_price
 
 logger = logging.getLogger(__name__)
 
@@ -29,18 +29,23 @@ def _place_with_fill_escalation(
     Escalation ladder:
       Step 0   (20s, quick-exit only): limit at entry_fill_price — protects against
         selling at a loss when the position was just opened.
-      Step 0.5 (20s, when get_fair_price_fn is provided): limit at fair price from
-        OptionPriceMonitor. Skipped if no fn or fn returns None.
-      Step 1   (15s): limit at mid.
-      Step 2   (15s): limit at mid + (ask-bid)/4 [buy] or mid - (ask-bid)/4 [sell].
-        For sells, a live stock quote is fetched to compute intrinsic value; if the
-        computed step2_price falls below intrinsic it is floored at intrinsic.
-      Step 3   (15s buy / 60s sell, final): limit at ask [buy] or max(bid, intrinsic)
-        [sell]. After 60s unfilled on a sell, cancels and places a market order to
-        ensure the position is closed. Buys log a FILL_ESC MISS warning if unfilled.
+      Steps 1-N (5s each, escalating loop): refreshes option quote and calls
+        get_fair_price_fn at the start of each iteration.
+        BUY: starts at min(fair_price, mid); increments by 0.25×half_spread while
+          below mid, then 0.10×half_spread once above mid; caps at ask. Loop exits
+          when ask is reached unfilled.
+        SELL: starts at max(fair_price, mid); decrements by 0.25×half_spread while
+          above mid, then 0.10×half_spread once below mid; floors at
+          max(bid, fair_price). Loop exits when floor is reached unfilled.
+        Falls through to step 3 if the option quote fetch fails.
+      Step 3   (15s buy / 60s sell, final fallback): limit at ask [buy] or
+        max(bid, fair_price) [sell]. After 60s unfilled on a sell, cancels and
+        places a market order to ensure the position is closed. Buys log a
+        FILL_ESC MISS warning if unfilled.
 
     get_fair_price_fn: optional zero-argument callable that returns a Decimal
-      fair price for the option. Called fresh at each step to get the latest value.
+      fair price for the option. Called fresh at each loop iteration; internally
+      fetches a fresh stock quote and calls OptionPriceMonitor.get_fair_price().
     """
     is_buy = order_action == "BUY_OPEN"
 
@@ -140,140 +145,94 @@ def _place_with_fill_escalation(
             _cancel_safely(order_id)
             logger.info("FILL_ESC step0 unfilled, escalating: %s", option_symbol)
 
-    # --- Step 0.5: limit at fair price (when monitor is active) ---
-    fair = _get_fair_price()
-    if fair is not None:
-        logger.info(
-            "FILL_ESC step0.5 %s %s: limit at fair_price=%s",
-            order_action, option_symbol,
-            fair.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
-        )
+    # --- Steps 1-N: escalating limit loop ---
+    # Each iteration refreshes the option quote and calls get_fair_price_fn
+    # (which internally fetches a fresh stock price).
+    # BUY:  start=min(fair,mid), escalate toward ask.
+    # SELL: start=max(fair,mid), descend toward max(bid,fair) floor.
+    current_price = None
+    step_num = 0
+
+    while True:
+        step_num += 1
+
         try:
-            order = _place_limit(fair)
+            bid, ask, mid = _fetch_mid_bid_ask()
+            half_spread = (ask - bid) / _D("2")
         except Exception:
             logger.warning(
-                "FILL_ESC step0.5 %s %s: placement failed, escalating",
-                order_action, option_symbol, exc_info=True,
+                "FILL_ESC loop step%d %s %s: quote fetch failed, falling to step3",
+                step_num, order_action, option_symbol, exc_info=True,
             )
+            break
+
+        fair = _get_fair_price()
+        if fair is not None and fair <= _D("0"):
+            fair = None
+
+        if current_price is None:
+            current_price = min(fair, mid) if (is_buy and fair is not None) \
+                else (max(fair, mid) if (not is_buy and fair is not None) else mid)
         else:
-            order_id = order.get("order_id")
-            logger.info("FILL_ESC step0.5 order placed: id=%s", order_id)
-            time.sleep(20)
-            fill_status = _is_filled(order_id)
-            if fill_status:
-                logger.info("FILL_ESC step0.5 filled at fair price: %s", order_id)
-                return order
-            if fill_status is None:
-                logger.warning(
-                    "FILL_ESC step0.5 %s %s: fill status unknown — not cancelling, returning order",
-                    order_action, option_symbol,
-                )
-                return order
-            _cancel_safely(order_id)
-            logger.info("FILL_ESC step0.5 unfilled, escalating: %s", option_symbol)
+            if is_buy:
+                increment = _D("0.25") * half_spread if current_price < mid \
+                    else _D("0.10") * half_spread
+                current_price = min(current_price + increment, ask)
+            else:
+                sell_floor = max(bid, fair) if fair is not None else bid
+                decrement = _D("0.25") * half_spread if current_price > mid \
+                    else _D("0.10") * half_spread
+                current_price = max(current_price - decrement, sell_floor)
 
-    # --- Step 1: limit at mid ---
-    try:
-        bid, ask, mid = _fetch_mid_bid_ask()
-    except Exception:
-        logger.warning(
-            "Could not fetch quote for %s at step1, skipping to step3",
-            option_symbol, exc_info=True,
-        )
-        bid, ask, mid = None, None, None
-
-    if mid is not None:
         logger.info(
-            "FILL_ESC step1 %s %s: bid=%s ask=%s mid=%s → limit at mid",
-            order_action, option_symbol, bid, ask,
+            "FILL_ESC loop step%d %s %s: bid=%s ask=%s mid=%s fair=%s → limit at %s",
+            step_num, order_action, option_symbol,
+            bid.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
+            ask.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
             mid.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
+            fair.quantize(_D("0.01"), rounding=ROUND_HALF_UP) if fair is not None else "n/a",
+            current_price.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
         )
+
         try:
-            order = _place_limit(mid)
+            order = _place_limit(current_price)
         except Exception:
             logger.warning(
-                "FILL_ESC step1 %s %s: placement failed, escalating",
-                order_action, option_symbol, exc_info=True,
+                "FILL_ESC loop step%d %s %s: placement failed, escalating",
+                step_num, order_action, option_symbol, exc_info=True,
             )
         else:
             order_id = order.get("order_id")
-            logger.info("FILL_ESC step1 order placed: id=%s", order_id)
-            time.sleep(15)
+            logger.info("FILL_ESC loop step%d order placed: id=%s", step_num, order_id)
+            time.sleep(5)
             fill_status = _is_filled(order_id)
             if fill_status:
-                logger.info("FILL_ESC step1 filled: %s", order_id)
+                logger.info("FILL_ESC loop step%d filled: %s", step_num, order_id)
                 return order
             if fill_status is None:
                 logger.warning(
-                    "FILL_ESC step1 %s %s: fill status unknown — not cancelling, returning order",
-                    order_action, option_symbol,
+                    "FILL_ESC loop step%d %s %s: fill status unknown — not cancelling, returning order",
+                    step_num, order_action, option_symbol,
                 )
                 return order
             _cancel_safely(order_id)
 
-    # --- Step 2: limit at mid ± (ask-bid)/4 ---
-    try:
-        bid, ask, mid = _fetch_mid_bid_ask()
-        quarter_spread = (ask - bid) / _D("4")
-        step2_price = (mid + quarter_spread) if is_buy else (mid - quarter_spread)
-        logger.info(
-            "FILL_ESC step2 %s %s: bid=%s ask=%s mid=%s spread/4=%s → limit at %s",
-            order_action, option_symbol, bid, ask,
-            mid.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
-            quarter_spread.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
-            step2_price.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
-        )
-    except Exception:
-        logger.warning("Could not fetch quote for %s at step2, skipping to step3", option_symbol)
-        step2_price = None
-
-    if not is_buy and step2_price is not None:
-        try:
-            kwargs = {"feed": feed} if feed is not None else {}
-            raw_quote = client.get_stock_quote(ticker, **kwargs)
-            bid_f, ask_f = _stock_bid_ask(raw_quote)
-            stock_mid = (_D(str(bid_f)) + _D(str(ask_f))) / _D("2")
-            parsed = _parse_occ_symbol(option_symbol)
-            if parsed:
-                strike = parsed["strike"]
-                intrinsic = max(_D("0"), strike - stock_mid) if option_type.upper() == "PUT" \
-                    else max(_D("0"), stock_mid - strike)
-                if step2_price < intrinsic:
-                    logger.warning(
-                        "FILL_ESC step2 %s %s: step2_price=%s below intrinsic=%s — flooring at intrinsic",
-                        order_action, option_symbol,
-                        step2_price.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
-                        intrinsic.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
-                    )
-                    step2_price = intrinsic
-        except Exception:
-            logger.warning("Could not compute intrinsic floor for %s at step2", option_symbol)
-
-    if step2_price is not None:
-        try:
-            order = _place_limit(step2_price)
-        except Exception:
+        if is_buy and current_price >= ask:
             logger.warning(
-                "FILL_ESC step2 %s %s: placement failed, escalating",
-                order_action, option_symbol, exc_info=True,
+                "FILL_ESC loop %s %s: reached ask price after step%d, escalating to step3",
+                order_action, option_symbol, step_num,
             )
-        else:
-            order_id = order.get("order_id")
-            logger.info("FILL_ESC step2 order placed: id=%s", order_id)
-            time.sleep(15)
-            fill_status = _is_filled(order_id)
-            if fill_status:
-                logger.info("FILL_ESC step2 filled: %s", order_id)
-                return order
-            if fill_status is None:
+            break
+        if not is_buy:
+            sell_floor = max(bid, fair) if fair is not None else bid
+            if current_price <= sell_floor:
                 logger.warning(
-                    "FILL_ESC step2 %s %s: fill status unknown — not cancelling, returning order",
-                    order_action, option_symbol,
+                    "FILL_ESC loop %s %s: reached floor after step%d, escalating to step3",
+                    order_action, option_symbol, step_num,
                 )
-                return order
-            _cancel_safely(order_id)
+                break
 
-    # --- Step 3 (final): limit at ask (buy) or max(bid, intrinsic) (sell) ---
+    # --- Step 3 (final): limit at ask (buy) or max(bid, fair_price) (sell) ---
     try:
         bid, ask, _ = _fetch_mid_bid_ask()
         step3_price = ask if is_buy else bid
@@ -286,29 +245,15 @@ def _place_with_fill_escalation(
         step3_price = last_ask if is_buy else last_bid
 
     if not is_buy and step3_price is not None:
-        try:
-            kwargs = {"feed": feed} if feed is not None else {}
-            raw_quote = client.get_stock_quote(ticker, **kwargs)
-            bid_f, ask_f = _stock_bid_ask(raw_quote)
-            stock_mid = (_D(str(bid_f)) + _D(str(ask_f))) / _D("2")
-            parsed = _parse_occ_symbol(option_symbol)
-            if parsed:
-                strike = parsed["strike"]
-                intrinsic = max(_D("0"), strike - stock_mid) if option_type.upper() == "PUT" \
-                    else max(_D("0"), stock_mid - strike)
-                if intrinsic > step3_price:
-                    logger.warning(
-                        "FILL_ESC step3 %s %s: bid=%s is below intrinsic=%s — flooring at intrinsic",
-                        order_action, option_symbol,
-                        step3_price.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
-                        intrinsic.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
-                    )
-                    step3_price = intrinsic
-        except Exception:
+        fair = _get_fair_price()
+        if fair is not None and fair > _D("0") and fair > step3_price:
             logger.warning(
-                "Could not compute intrinsic floor for %s at step3",
-                option_symbol, exc_info=True,
+                "FILL_ESC step3 %s %s: bid=%s is below fair_price=%s — flooring at fair_price",
+                order_action, option_symbol,
+                step3_price.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
+                fair.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
             )
+            step3_price = fair
 
     logger.info(
         "FILL_ESC step3 %s %s: final limit at %s",
