@@ -218,32 +218,20 @@ In `_recover_session()`, for each recovered position with a non-null `exit_order
 
 ---
 
-### BUG-009 (Open): No State Flush on SIGTERM / Ctrl+C — Checkpoint May Be Stale
+### BUG-009 (Moderate): No State Flush on SIGTERM / Ctrl+C — Checkpoint May Be Stale
 
-**Status: Open**
+**Status: Fixed**
 **Severity:** Moderate — on planned stops, state written at last checkpoint interval may be behind by up to 30s
 
 #### What happened (risk scenario)
 
-`op_momentum_trade_engine.py` sends SIGTERM to the daemon PID on `stop`. No SIGTERM handler calls `_flush_session_state()` before the process exits. The checkpoint file may be missing the last 30s of state (filled orders, new positions). On the next startup, `_recover_session()` works from a stale file.
+`op_momentum_trade_engine.py` sends SIGTERM to the daemon PID on `stop`. The SIGTERM handler in `run()` printed a summary but did not call `_flush_session_state()` before exiting. The checkpoint file could be missing the last ~30s of state (filled orders, new positions). On the next startup, `_recover_session()` works from a stale file.
 
-#### Fix needed
+#### Fix
 
-Add a SIGTERM handler in `OpMomentumTradeEngine` that calls `_flush_session_state()` before `sys.exit(0)`:
+Added `self._flush_session_state()` to `_sigterm_handler` in `run()` before `raise SystemExit(0)`. `_flush_session_state` is already a no-op in mock/replay mode, so no guard needed.
 
-```python
-import signal
-
-def _handle_sigterm(self, signum, frame):
-    logger.info("SIGTERM received — flushing session state before exit")
-    self._flush_session_state()
-    sys.exit(0)
-
-# in __init__ or run():
-signal.signal(signal.SIGTERM, self._handle_sigterm)
-```
-
-**Files:** `trade_engine.py`, `op_momentum_trade_engine.py`
+**Files:** `trade_engine.py` — `run()` → `_sigterm_handler`
 
 ---
 
@@ -351,7 +339,7 @@ Entry threads are started and `_schedule_dd_check_for_window` fires immediately 
 | BUG-006 | Sequential window budget inflates 2× after multi-restart | 2026-04-17 | Critical | **Fixed** |
 | BUG-007 | Sequential entry blocked rank-2 for ~65s | 2026-04-17 | Moderate | **Fixed** |
 | BUG-008 | Exit order not checked on recovery — broker-closed pos re-opened | Code review | High | **Open** |
-| BUG-009 | No state flush on SIGTERM — checkpoint may be stale | Code review | Moderate | **Open** |
+| BUG-009 | No state flush on SIGTERM — checkpoint may be stale | Code review | Moderate | **Fixed** |
 | BUG-010 | `--top` decrease not enforced on restart | Code review | Low | **Won't Fix** |
 | BUG-011 | `--capital` change on restart corrupts normalization math | Code review | Low-Moderate | **Open** |
 | BUG-012 | DD failed entry leaks `_window_returned` | Capital flow audit | Medium | **Fixed** |

@@ -1876,6 +1876,7 @@ class OpMomentumTradeEngine:
                 logger.info("SIGTERM received — printing summary before shutdown")
                 self._monitor.print_summary()
                 _summary_printed.set()
+            self._flush_session_state()
             raise SystemExit(0)
 
         signal.signal(signal.SIGTERM, _sigterm_handler)
