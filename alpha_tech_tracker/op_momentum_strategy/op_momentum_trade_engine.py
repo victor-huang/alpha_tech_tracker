@@ -438,7 +438,18 @@ def parse_args():
         help=(
             "Directory of recorded live-session bar CSVs. When combined with "
             "--replay-date or --replay-start/--replay-end, feeds real intraday data instead of "
-            "Alpaca historical cache. Expects {dir}/{date}/{ticker}_5min.csv (CsvLiveBarsSource format)."
+            "Alpaca historical cache. Expects {dir}/{date}/{feed}_{ticker}_5min.csv (CsvLiveBarsSource format)."
+        ),
+    )
+    parser.add_argument(
+        "--live-data-feed",
+        choices=["iex", "sip", "tradestation"],
+        default=None,
+        dest="live_data_feed",
+        help=(
+            "Feed prefix used to locate CSV files under --live-data-dir "
+            "(e.g. 'tradestation' → tradestation_{ticker}_5min.csv). "
+            "Defaults to the value of --feed when not set."
         ),
     )
     parser.add_argument(
@@ -673,7 +684,8 @@ if __name__ == "__main__":
             from .replay import CsvLiveBarsSource
             from .config import EOD_EXIT_TIME
             replay_date = _date.fromisoformat(args.replay_date)
-            bars_source = CsvLiveBarsSource(args.live_data_dir, feed=args.feed) if args.live_data_dir else None
+            csv_feed = args.live_data_feed or args.feed
+            bars_source = CsvLiveBarsSource(args.live_data_dir, feed=csv_feed) if args.live_data_dir else None
             engine.run_replay(
                 replay_date,
                 tickers_override=args.tickers,
@@ -686,7 +698,8 @@ if __name__ == "__main__":
             from .config import EOD_EXIT_TIME
             start_date = _date.fromisoformat(args.replay_start)
             end_date = _date.fromisoformat(args.replay_end)
-            bars_source = CsvLiveBarsSource(args.live_data_dir, feed=args.feed) if args.live_data_dir else None
+            csv_feed = args.live_data_feed or args.feed
+            bars_source = CsvLiveBarsSource(args.live_data_dir, feed=csv_feed) if args.live_data_dir else None
             engine.run_replay_range(
                 start_date,
                 end_date,

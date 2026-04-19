@@ -560,10 +560,12 @@ class LiveSignalEngine:
             return None
         return df.iloc[-1]
 
-    def _warmup_from_cache(self, replay_date):
-        """Populate _history with bars up to (but not including) `replay_date`."""
-        from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import fetch_bars
+    def _warmup_from_cache(self, replay_date, market_data_client=None):
+        """Populate _history with bars up to (but not including) `replay_date`.
 
+        When market_data_client is provided (e.g. TradeStationMarketDataClient),
+        its fetch_bars() is used instead of the Alpaca cache.
+        """
         start = replay_date - timedelta(days=90)
         end = replay_date - timedelta(days=1)
         logger.info(
@@ -572,7 +574,13 @@ class LiveSignalEngine:
             end,
             len(self._tickers),
         )
-        bars_dict = fetch_bars(self._tickers, start, end, source="alpaca")
+        if market_data_client is not None and hasattr(market_data_client, "fetch_bars"):
+            start_dt = ET.localize(datetime.combine(start, datetime.min.time()).replace(hour=9, minute=30))
+            end_dt = ET.localize(datetime.combine(end, datetime.min.time()).replace(hour=16, minute=0))
+            bars_dict = market_data_client.fetch_bars(self._tickers, start_dt, end_dt)
+        else:
+            from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import fetch_bars
+            bars_dict = fetch_bars(self._tickers, start, end, source="alpaca")
         # _stitch_cache may return a wider file (e.g. 2020–2026) that covers the
         # requested range.  Clip to strictly before replay_date so MA calculations
         # are not influenced by future bars.
@@ -600,10 +608,10 @@ class LiveSignalEngine:
                 df["Close"].iloc[-1],
             )
 
-    def start_replay(self, replay_date):
+    def start_replay(self, replay_date, market_data_client=None):
         """Initialise for replay mode: warmup from cache + regime filter. No WebSocket."""
         self._session_date = replay_date
-        self._warmup_from_cache(replay_date)
+        self._warmup_from_cache(replay_date, market_data_client=market_data_client)
         if self._regime_filter:
             lookback_start = replay_date - timedelta(days=self._regime_ma * 3 + 10)
             self._bearish_regime_dates = build_bearish_regime_dates(

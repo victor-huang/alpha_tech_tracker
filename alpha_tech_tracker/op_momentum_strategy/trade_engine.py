@@ -1980,7 +1980,7 @@ class OpMomentumTradeEngine:
             windows=engine_windows,
             or_bar_lookback=self._or_bar_lookback,
         )
-        self._signal_engine.start_replay(replay_date)
+        self._signal_engine.start_replay(replay_date, market_data_client=self._market_data_client)
 
         initial_capital = self._replay_capital or float(ACCOUNT_BUDGET)
 
