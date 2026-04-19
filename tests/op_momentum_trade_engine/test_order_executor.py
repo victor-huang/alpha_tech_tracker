@@ -97,11 +97,11 @@ class TestFillEscalationStep0:
         # cancel_order should have been called at least once (step0 cancel)
         assert client.cancel_order.call_count >= 1
 
-    def test_step0_unfilled_then_loop_then_step3_market(self):
+    def test_step0_unfilled_then_loop_then_step3_miss(self):
         client = _make_client()
         self._run(client, entry_fill_price=5.0, step0_filled=False)
-        # step0(1) + loop 11 steps + step3 limit + step3 market fallback = 14 calls
-        assert client.place_option_order.call_count == 14
+        # step0(1) + loop 11 steps + step3 limit = 13 calls; no market order fallback
+        assert client.place_option_order.call_count == 13
 
 
 class TestFillEscalationMissCancellation:
@@ -398,6 +398,256 @@ class TestTickRejectionRetry:
         assert client.place_option_order.call_count == client.order_status.call_count
 
 
+class TestAnchorHalfSpread:
+    """
+    Two related protections for illiquid / fast-moving options on the BUY side:
+
+    1. Compressed spread: when our unfilled limit shows up as the new best bid,
+       the loop uses the original (anchored) half_spread so increments stay meaningful.
+
+    2. Rising market re-anchor: when the underlying rips higher and fair/mid rises
+       above current_price, the loop jumps current_price up to min(fair, mid) before
+       incrementing — mirrors the SELL-side floor (max(bid, fair)) already in place.
+    """
+
+    def test_compressed_quote_uses_anchor_spread_for_increment(self):
+        client = MagicMock()
+        quote_calls = [0]
+
+        def quote_side_effect(symbol):
+            quote_calls[0] += 1
+            if quote_calls[0] == 1:
+                return {"bid": 4.90, "ask": 5.10, "mid": 5.00}  # original spread = $0.20
+            return {"bid": 5.00, "ask": 5.10, "mid": 5.05}      # compressed: our order is now bid
+
+        client.get_option_quote_by_occ.side_effect = quote_side_effect
+        client.place_option_order.return_value = {"order_id": "ord-001"}
+        client.order_status.side_effect = [
+            {"status": "open"},    # step 1 unfilled
+            {"status": "filled"},  # step 2 filled
+        ]
+
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            _place_with_fill_escalation(
+                client=client,
+                ticker=_TICKER,
+                option_symbol=_SYMBOL,
+                option_type=_OPTION_TYPE,
+                contracts=_CONTRACTS,
+                order_action="BUY_OPEN",
+            )
+
+        step1_price = client.place_option_order.call_args_list[0].kwargs["price"]
+        step2_price = client.place_option_order.call_args_list[1].kwargs["price"]
+        # Anchor half_spread=0.10 → increment = 0.25 × 0.10 = 0.025 → step2 > step1.
+        # Without anchor (compressed half_spread=0.05) → increment = 0.0125
+        # → quantizes back to the same price as step1 (no progress).
+        assert step2_price > step1_price
+
+    def test_buy_bid_at_our_price_streak_uses_anchor_spread(self):
+        # BUY streak: our limit buy shows up as new best bid each iteration,
+        # while ask widens (current_half_spread > anchor).
+        # streak >= 2 → use anchor so we don't chase the apparently-wide spread.
+        client = MagicMock()
+        placed_prices = []
+
+        def place_side_effect(**kw):
+            placed_prices.append(Decimal(str(kw.get("price", 0))))
+            return {"order_id": "ord-001"}
+
+        def quote_side_effect(symbol):
+            if not placed_prices:
+                # Step 1: original tight spread; anchor = 0.10
+                return {"bid": 4.90, "ask": 5.10, "mid": 5.00}
+            # Subsequent steps: bid rises to our last placed price,
+            # but ask shoots up (genuinely wider current spread).
+            last = float(placed_prices[-1])
+            return {"bid": last, "ask": last + 0.60, "mid": last + 0.30}
+
+        client.get_option_quote_by_occ.side_effect = quote_side_effect
+        client.place_option_order.side_effect = place_side_effect
+        client.order_status.side_effect = [
+            {"status": "open"},    # step 1 unfilled
+            {"status": "open"},    # step 2 unfilled (streak = 1)
+            {"status": "filled"},  # step 3 filled (streak = 2 → anchor fires)
+        ]
+
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            result = _place_with_fill_escalation(
+                client=client,
+                ticker=_TICKER,
+                option_symbol=_SYMBOL,
+                option_type=_OPTION_TYPE,
+                contracts=_CONTRACTS,
+                order_action="BUY_OPEN",
+            )
+
+        assert result.get("order_id") == "ord-001"
+        # Prices must be strictly increasing — streak must not stall escalation
+        assert placed_prices[1] > placed_prices[0]
+        assert placed_prices[2] > placed_prices[1]
+
+    def test_sell_ask_at_our_price_streak_uses_anchor_spread(self):
+        # SELL streak: our limit sell shows up as new best ask each iteration,
+        # while bid drops (current_half_spread > anchor).
+        # streak >= 2 → use anchor so we don't use artificially wide spread.
+        client = MagicMock()
+        placed_prices = []
+
+        def place_side_effect(**kw):
+            placed_prices.append(Decimal(str(kw.get("price", 0))))
+            return {"order_id": "ord-001"}
+
+        def quote_side_effect(symbol):
+            if not placed_prices:
+                return {"bid": 4.90, "ask": 5.10, "mid": 5.00}
+            # ask falls to our last placed price; bid drops (wider current spread)
+            last = float(placed_prices[-1])
+            return {"bid": last - 0.60, "ask": last, "mid": last - 0.30}
+
+        client.get_option_quote_by_occ.side_effect = quote_side_effect
+        client.place_option_order.side_effect = place_side_effect
+        client.order_status.side_effect = [
+            {"status": "open"},    # step 1 unfilled
+            {"status": "open"},    # step 2 unfilled (streak = 1)
+            {"status": "filled"},  # step 3 filled (streak = 2 → anchor fires)
+        ]
+
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            result = _place_with_fill_escalation(
+                client=client,
+                ticker=_PUT_TICKER,
+                option_symbol=_PUT_SYMBOL,
+                option_type=_PUT_TYPE,
+                contracts=_CONTRACTS,
+                order_action="SELL_CLOSE",
+            )
+
+        assert result.get("order_id") == "ord-001"
+        # Prices must be strictly decreasing — streak must not stall escalation
+        assert placed_prices[1] < placed_prices[0]
+        assert placed_prices[2] < placed_prices[1]
+
+    def test_bid_away_from_our_price_resets_streak(self):
+        client = MagicMock()
+        quote_calls = [0]
+
+        def quote_side_effect(symbol):
+            quote_calls[0] += 1
+            if quote_calls[0] <= 2:
+                return {"bid": 4.90, "ask": 5.10, "mid": 5.00}
+            # bid moved independently — streak must reset
+            return {"bid": 4.70, "ask": 5.10, "mid": 4.90}
+
+        client.get_option_quote_by_occ.side_effect = quote_side_effect
+        client.place_option_order.return_value = {"order_id": "ord-001"}
+        client.order_status.side_effect = [
+            {"status": "open"},
+            {"status": "open"},
+            {"status": "filled"},
+        ]
+
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            _place_with_fill_escalation(
+                client=client,
+                ticker=_TICKER,
+                option_symbol=_SYMBOL,
+                option_type=_OPTION_TYPE,
+                contracts=_CONTRACTS,
+                order_action="BUY_OPEN",
+            )
+
+        # Should complete without error — streak reset, uses max(anchor, current)
+        assert client.place_option_order.call_count == 3
+
+    def test_rising_market_reanchors_to_fair_price(self):
+        client = MagicMock()
+        quote_calls = [0]
+
+        def quote_side_effect(symbol):
+            quote_calls[0] += 1
+            if quote_calls[0] == 1:
+                return {"bid": 5.00, "ask": 5.40, "mid": 5.20}  # original
+            return {"bid": 5.40, "ask": 5.80, "mid": 5.60}       # market ripped up
+
+        client.get_option_quote_by_occ.side_effect = quote_side_effect
+        client.place_option_order.return_value = {"order_id": "ord-001"}
+        client.order_status.side_effect = [
+            {"status": "open"},    # step 1 unfilled
+            {"status": "filled"},  # step 2 filled
+        ]
+
+        # fair_price follows the risen stock: starts at 5.10 (step1), rises to 5.50 (step2)
+        fair_calls = [0]
+
+        def fair_price_fn():
+            fair_calls[0] += 1
+            return _D("5.10") if fair_calls[0] == 1 else _D("5.50")
+
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            _place_with_fill_escalation(
+                client=client,
+                ticker=_TICKER,
+                option_symbol=_SYMBOL,
+                option_type=_OPTION_TYPE,
+                contracts=_CONTRACTS,
+                order_action="BUY_OPEN",
+                get_fair_price_fn=fair_price_fn,
+            )
+
+        step1_price = client.place_option_order.call_args_list[0].kwargs["price"]
+        step2_price = client.place_option_order.call_args_list[1].kwargs["price"]
+        # Step 1: current_price = min(fair=5.10, mid=5.20) = 5.10
+        assert step1_price == pytest.approx(5.10)
+        # Step 2: re-anchor to max(5.10, min(fair=5.50, mid=5.60)) = max(5.10, 5.50) = 5.50
+        # then increment → 5.50 + step → quantized above 5.50
+        # Without re-anchor: 5.10 + small_increment → still around 5.10, far behind market
+        assert step2_price > 5.40
+
+    def test_falling_market_reanchors_sell_price_down(self):
+        client = MagicMock()
+        quote_calls = [0]
+
+        def quote_side_effect(symbol):
+            quote_calls[0] += 1
+            if quote_calls[0] == 1:
+                return {"bid": 4.00, "ask": 6.00, "mid": 5.00}  # original
+            return {"bid": 2.50, "ask": 4.00, "mid": 3.25}       # market dropped hard
+
+        client.get_option_quote_by_occ.side_effect = quote_side_effect
+        client.place_option_order.return_value = {"order_id": "ord-001"}
+        client.order_status.side_effect = [
+            {"status": "open"},    # step 1 unfilled
+            {"status": "filled"},  # step 2 filled
+        ]
+
+        fair_calls = [0]
+
+        def fair_price_fn():
+            fair_calls[0] += 1
+            return _D("4.80") if fair_calls[0] == 1 else _D("2.80")
+
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            _place_with_fill_escalation(
+                client=client,
+                ticker=_PUT_TICKER,
+                option_symbol=_PUT_SYMBOL,
+                option_type=_PUT_TYPE,
+                contracts=_CONTRACTS,
+                order_action="SELL_CLOSE",
+                get_fair_price_fn=fair_price_fn,
+            )
+
+        step1_price = client.place_option_order.call_args_list[0].kwargs["price"]
+        step2_price = client.place_option_order.call_args_list[1].kwargs["price"]
+        # Step 1: max(fair=4.80, mid=5.00) = 5.00
+        assert step1_price == pytest.approx(5.00)
+        # Step 2: re-anchor to min(5.00, max(fair=2.80, mid=3.25)) = min(5.00, 3.25) = 3.25
+        # then decrement → well below original step1 price, tracking the market
+        # Without re-anchor: 5.00 - small_decrement ≈ 4.75, far above the new mid of 3.25
+        assert step2_price < 4.00
+
+
 _PUT_SYMBOL = "COIN260418P00220000"
 _PUT_TYPE = "PUT"
 _PUT_TICKER = "COIN"
@@ -495,11 +745,11 @@ class TestSellFloorBehavior:
         assert client.get_stock_quote.call_count == 0
 
 
-class TestStep3MarketFallbackForSells:
+class TestStep3NoMarketFallback:
     """
-    After step3 limit times out on a SELL_CLOSE, a market order must be placed
-    to ensure the position is closed. BUY_OPEN should still log FILL_ESC MISS
-    and return without placing a market order.
+    After step3 limit times out on either BUY_OPEN or SELL_CLOSE, the engine
+    logs FILL_ESC MISS and returns without placing a market order — manual
+    intervention is required for both sides.
     """
 
     def _run_sell_all_unfilled(self, client):
@@ -528,40 +778,30 @@ class TestStep3MarketFallbackForSells:
                 feed=None,
             )
 
-    def test_sell_places_market_order_after_step3_timeout(self):
+    def test_sell_does_not_place_market_order_on_step3_miss(self):
         client = _make_option_client_with_stock()
         self._run_sell_all_unfilled(client)
-        all_calls = client.place_option_order.call_args_list
-        last_call = all_calls[-1]
-        assert last_call.kwargs["price_type"] == "MARKET"
+        price_types = [c.kwargs["price_type"] for c in client.place_option_order.call_args_list]
+        assert "MARKET" not in price_types
 
-    def test_sell_market_order_has_no_price(self):
+    def test_sell_step3_limit_is_cancelled_on_miss(self):
         client = _make_option_client_with_stock()
-        self._run_sell_all_unfilled(client)
-        last_call = client.place_option_order.call_args_list[-1]
-        assert last_call.kwargs["price"] is None
-
-    def test_sell_step3_limit_is_cancelled_before_market_order(self):
-        client = _make_option_client_with_stock()
-        # Track cancel and place calls in order
         call_order = []
         client.cancel_order.side_effect = lambda oid: call_order.append(("cancel", oid))
-        original_place = MagicMock(return_value={"order_id": "ord-001", "status": "open"})
         client.place_option_order.side_effect = lambda **kw: call_order.append(
             ("place", kw.get("price_type"))
         ) or {"order_id": "ord-001", "status": "open"}
 
         self._run_sell_all_unfilled(client)
 
-        # Last two events: cancel step3 limit then place market
-        assert call_order[-2][0] == "cancel"
-        assert call_order[-1] == ("place", "MARKET")
+        # Step3 limit must be cancelled; no market order placed after
+        assert any(event[0] == "cancel" for event in call_order)
+        assert call_order[-1][0] == "cancel"
 
     def test_buy_does_not_place_market_order_on_step3_miss(self):
         client = _make_option_client_with_stock()
         self._run_buy_all_unfilled(client)
-        all_calls = client.place_option_order.call_args_list
-        price_types = [c.kwargs["price_type"] for c in all_calls]
+        price_types = [c.kwargs["price_type"] for c in client.place_option_order.call_args_list]
         assert "MARKET" not in price_types
 
 
@@ -1026,3 +1266,145 @@ class TestStep3StaleQuoteFallback:
         step3_call = client.place_option_order.call_args_list[2]
         assert step3_call.kwargs["price_type"] == "LIMIT"
         assert step3_call.kwargs["price"] == 4.90
+
+
+class TestStep3TickRejection:
+    """
+    When the step3 limit is rejected with a tick-increment error, the escalation
+    re-quantizes the price to the required tick and retries once. A non-tick
+    rejection (e.g. buying power) must not trigger the retry.
+    """
+
+    _TICK_REJECT = (
+        "Price = 5.10000000 not rounded to a valid price increment [ 0.1 ]"
+    )
+
+    def _run_buy_loop_fails_immediately(self, client):
+        """Force the loop to skip straight to step3 by making the first quote fetch raise."""
+        quote_calls = [0]
+        original = client.get_option_quote_by_occ.side_effect
+
+        def quote_side_effect(symbol):
+            quote_calls[0] += 1
+            if quote_calls[0] == 1:
+                raise RuntimeError("quote unavailable in loop")
+            return {"bid": 4.90, "ask": 5.10, "mid": 5.00}
+
+        client.get_option_quote_by_occ.side_effect = quote_side_effect
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            return _place_with_fill_escalation(
+                client=client,
+                ticker=_TICKER,
+                option_symbol=_SYMBOL,
+                option_type=_OPTION_TYPE,
+                contracts=_CONTRACTS,
+                order_action="BUY_OPEN",
+            )
+
+    def test_tick_rejection_triggers_step3_retry(self):
+        client = _make_client()
+        client.order_status.side_effect = [
+            {"status": "open", "reject_reason": self._TICK_REJECT},
+            {"status": "filled"},
+        ]
+        self._run_buy_loop_fails_immediately(client)
+        assert client.place_option_order.call_count == 2
+
+    def test_tick_retry_places_limit_order(self):
+        client = _make_client()
+        client.order_status.side_effect = [
+            {"status": "open", "reject_reason": self._TICK_REJECT},
+            {"status": "filled"},
+        ]
+        self._run_buy_loop_fails_immediately(client)
+        retry_call = client.place_option_order.call_args_list[1]
+        assert retry_call.kwargs["price_type"] == "LIMIT"
+
+    def test_tick_retry_fills_and_returns(self):
+        client = _make_client()
+        client.order_status.side_effect = [
+            {"status": "open", "reject_reason": self._TICK_REJECT},
+            {"status": "filled"},
+        ]
+        result = self._run_buy_loop_fails_immediately(client)
+        assert result.get("order_id") == "ord-001"
+
+    def test_non_tick_rejection_does_not_retry(self):
+        client = _make_client()
+        client.order_status.return_value = {
+            "status": "open",
+            "reject_reason": "Insufficient buying power",
+        }
+        self._run_buy_loop_fails_immediately(client)
+        assert client.place_option_order.call_count == 1
+
+
+class TestAdaptiveWait:
+    """
+    Loop wait scales 3–10s based on how far current_price is from the limit:
+      BUY:  more patience near mid (far from ask), less patience near ask.
+      SELL: more patience near mid (far from bid/floor), less patience near floor.
+
+    At the very first step, current_price = mid, so distance-to-limit = half_spread
+    and ratio = 1.0 → maximum wait = 10s.
+    As the price escalates (BUY) or descends (SELL) toward the limit, ratio → 0 → 3s.
+    """
+
+    def _capture_sleeps(self, client, order_action, get_fair_price_fn=None):
+        sleeps = []
+        with patch(f"{_MODULE}.time.sleep", side_effect=lambda t: sleeps.append(t)):
+            _place_with_fill_escalation(
+                client=client,
+                ticker=_TICKER,
+                option_symbol=_SYMBOL,
+                option_type=_OPTION_TYPE,
+                contracts=_CONTRACTS,
+                order_action=order_action,
+                get_fair_price_fn=get_fair_price_fn,
+            )
+        return sleeps
+
+    def test_buy_first_sleep_is_max_when_starting_at_mid(self):
+        # bid=4.90, ask=5.10, half_spread=0.10
+        # start=mid=5.00; ratio=(5.10-5.00)/0.10=1.0 → wait=10s
+        client = _make_client(bid=4.90, ask=5.10)
+        client.order_status.side_effect = [{"status": "filled"}]
+        sleeps = self._capture_sleeps(client, "BUY_OPEN")
+        assert sleeps[0] == 10
+
+    def test_buy_sleeps_decrease_monotonically_toward_ask(self):
+        # Wide spread bid=4.00 ask=8.00: price escalates from mid=6.00 to ask over ~11 steps.
+        # Each successive loop wait must be ≤ the previous.
+        client = MagicMock()
+        client.get_option_quote_by_occ.return_value = {"bid": 4.00, "ask": 8.00, "mid": 6.00}
+        client.place_option_order.return_value = {"order_id": "ord-001"}
+        client.order_status.return_value = {"status": "open"}
+
+        sleeps = self._capture_sleeps(client, "BUY_OPEN")
+        # Exclude step3 sleep (30s for buy)
+        loop_sleeps = [s for s in sleeps if s != 30]
+        assert loop_sleeps[0] == 10
+        assert loop_sleeps[-1] == 3
+        assert loop_sleeps == sorted(loop_sleeps, reverse=True)
+
+    def test_sell_first_sleep_is_max_when_starting_at_mid(self):
+        # bid=4.90, ask=5.10, half_spread=0.10
+        # start=mid=5.00; ratio=(5.00-4.90)/0.10=1.0 → wait=10s
+        client = _make_client(bid=4.90, ask=5.10)
+        client.order_status.side_effect = [{"status": "filled"}]
+        sleeps = self._capture_sleeps(client, "SELL_CLOSE")
+        assert sleeps[0] == 10
+
+    def test_sell_sleeps_decrease_monotonically_toward_floor(self):
+        # Wide spread bid=4.00 ask=8.00: price descends from mid=6.00 to floor=bid over ~11 steps.
+        client = MagicMock()
+        client.get_option_quote_by_occ.return_value = {"bid": 4.00, "ask": 8.00, "mid": 6.00}
+        client.place_option_order.return_value = {"order_id": "ord-001"}
+        client.order_status.return_value = {"status": "open"}
+
+        sleeps = self._capture_sleeps(client, "SELL_CLOSE")
+        # Exclude step3 sleep (60s for sell)
+        loop_sleeps = [s for s in sleeps if s != 60]
+        assert loop_sleeps[0] == 10
+        assert loop_sleeps[-1] == 3
+        assert loop_sleeps == sorted(loop_sleeps, reverse=True)

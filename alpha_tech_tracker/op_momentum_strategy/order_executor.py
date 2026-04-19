@@ -47,8 +47,9 @@ def _place_with_fill_escalation(
     Escalation ladder:
       Step 0   (20s, quick-exit only): limit at entry_fill_price — protects against
         selling at a loss when the position was just opened.
-      Steps 1-N (5s each, escalating loop): refreshes option quote and calls
-        get_fair_price_fn at the start of each iteration.
+      Steps 1-N (adaptive wait, escalating loop): refreshes option quote and calls
+        get_fair_price_fn at the start of each iteration. Wait scales 3–10s:
+        more patience at conservative prices (near mid), less near the limit (ask/floor).
         BUY: starts at min(fair_price, mid); increments by 0.25×half_spread while
           below mid, then 0.10×half_spread once above mid; caps at ask. Loop exits
           when ask is reached unfilled.
@@ -56,10 +57,10 @@ def _place_with_fill_escalation(
           above mid, then 0.10×half_spread once below mid; floors at
           max(bid, fair_price). Loop exits when floor is reached unfilled.
         Falls through to step 3 if the option quote fetch fails.
-      Step 3   (15s buy / 60s sell, final fallback): limit at ask [buy] or
-        max(bid, fair_price) [sell]. After 60s unfilled on a sell, cancels and
-        places a market order to ensure the position is closed. Buys log a
-        FILL_ESC MISS warning if unfilled.
+      Step 3   (30s buy / 60s sell, final fallback): limit at ask [buy] or
+        max(bid, fair_price) [sell]. If unfilled after the timeout, cancels and
+        logs FILL_ESC MISS — no market order fallback. Manual intervention
+        required for both buys and sells.
 
     get_fair_price_fn: optional zero-argument callable that returns a Decimal
       fair price for the option. Called fresh at each loop iteration; internally
@@ -111,18 +112,6 @@ def _place_with_fill_escalation(
                 "Could not cancel order %s (may already be filled)", order_id
             )
 
-    def _place_market() -> dict:
-        return client.place_option_order(
-            symbol=ticker,
-            option_key=None,
-            price=None,
-            price_type="MARKET",
-            option_type=option_type,
-            order_action=order_action,
-            quantity=contracts,
-            _option_symbol_override=option_symbol,
-        )
-
     def _get_fair_price():
         if get_fair_price_fn is None:
             return None
@@ -132,7 +121,30 @@ def _place_with_fill_escalation(
             logger.warning("get_fair_price_fn failed for %s", option_symbol)
             return None
 
-    _last_known_quote = [None, None]  # [bid, ask] — updated after each successful fetch
+    def _adaptive_wait(price: Decimal, bid: Decimal, ask: Decimal, spread: Decimal) -> int:
+        """
+        Return a wait time (seconds) that scales with how far price is from the limit.
+
+        BUY:  distance = ask - price  (large when price is near mid, small near ask)
+        SELL: distance = price - bid  (large when price is near mid, small near floor)
+
+        Range: 3s (at the limit/floor) → 10s (at mid, best-value price).
+        """
+        if spread <= _D("0"):
+            return 5
+        if is_buy:
+            ratio = (ask - price) / spread
+        else:
+            ratio = (price - bid) / spread
+        ratio = float(max(_D("0"), min(_D("1"), ratio)))
+        return max(3, round(3 + 7 * ratio))
+
+    _last_known_quote = [None, None]   # [bid, ask] — updated after each successful fetch
+    _anchor_half_spread = [None]       # set on first successful quote; used as minimum increment size
+    _last_placed_price = [None]        # last quantized limit price placed in the loop
+    _our_price_streak = [0]            # consecutive iterations where the quote side we drive
+                                       # (bid for BUY, ask for SELL) ≈ last placed price;
+                                       # streak >= 2 → use anchor half_spread, not compressed current
 
     # --- Step 0: quick-exit entry-price protection ---
     if entry_fill_price is not None:
@@ -179,7 +191,17 @@ def _place_with_fill_escalation(
 
         try:
             bid, ask, mid = _fetch_mid_bid_ask()
-            half_spread = (ask - bid) / _D("2")
+            current_half_spread = (ask - bid) / _D("2")
+            if _anchor_half_spread[0] is None:
+                _anchor_half_spread[0] = current_half_spread
+            if _last_placed_price[0] is not None:
+                driven_side = bid if is_buy else ask
+                if abs(driven_side - _last_placed_price[0]) <= _D("0.05"):
+                    _our_price_streak[0] += 1
+                else:
+                    _our_price_streak[0] = 0
+            half_spread = _anchor_half_spread[0] if _our_price_streak[0] >= 2 \
+                else max(_anchor_half_spread[0], current_half_spread)
         except Exception:
             logger.warning(
                 "FILL_ESC loop step%d %s %s: quote fetch failed, falling to step3",
@@ -196,11 +218,19 @@ def _place_with_fill_escalation(
                 else (max(fair, mid) if (not is_buy and fair is not None) else mid)
         else:
             if is_buy:
+                # Re-anchor upward if fair/mid has risen above current_price (rising market).
+                # Mirrors the SELL floor: max(bid, fair) used every iteration on the sell side.
+                anchor = min(fair, mid) if fair is not None else mid
+                current_price = max(current_price, anchor)
                 increment = _D("0.25") * half_spread if current_price < mid \
                     else _D("0.10") * half_spread
                 current_price = min(current_price + increment, ask)
             else:
                 sell_floor = max(bid, fair) if fair is not None else bid
+                # Re-anchor downward if fair/mid has fallen below current_price (falling market).
+                # Mirrors the BUY re-anchor: max(current_price, min(fair, mid)) for rising market.
+                anchor = max(fair, mid) if fair is not None else mid
+                current_price = min(current_price, anchor)
                 decrement = _D("0.25") * half_spread if current_price > mid \
                     else _D("0.10") * half_spread
                 current_price = max(current_price - decrement, sell_floor)
@@ -216,6 +246,7 @@ def _place_with_fill_escalation(
         )
 
         try:
+            _last_placed_price[0] = _quantize_option_price(current_price, penny_pilot=penny_pilot)
             order = _place_limit(current_price)
         except Exception:
             logger.warning(
@@ -224,8 +255,11 @@ def _place_with_fill_escalation(
             )
         else:
             order_id = order.get("order_id")
-            logger.info("FILL_ESC loop step%d order placed: id=%s", step_num, order_id)
-            time.sleep(5)
+            wait = _adaptive_wait(current_price, bid, ask, half_spread)
+            logger.info(
+                "FILL_ESC loop step%d order placed: id=%s (wait=%ds)", step_num, order_id, wait
+            )
+            time.sleep(wait)
             fill_status, reject_reason = _check_fill(order_id)
             if fill_status:
                 logger.info("FILL_ESC loop step%d filled: %s", step_num, order_id)
@@ -249,6 +283,7 @@ def _place_with_fill_escalation(
                 )
                 current_price = adjusted
                 try:
+                    _last_placed_price[0] = _quantize_option_price(current_price, penny_pilot=penny_pilot)
                     order = _place_limit(current_price)
                 except Exception:
                     logger.warning(
@@ -257,10 +292,12 @@ def _place_with_fill_escalation(
                     )
                 else:
                     order_id = order.get("order_id")
+                    wait = _adaptive_wait(current_price, bid, ask, half_spread)
                     logger.info(
-                        "FILL_ESC loop step%d tick-retry order placed: id=%s", step_num, order_id
+                        "FILL_ESC loop step%d tick-retry order placed: id=%s (wait=%ds)",
+                        step_num, order_id, wait,
                     )
-                    time.sleep(5)
+                    time.sleep(wait)
                     fill_status, _ = _check_fill(order_id)
                     if fill_status:
                         logger.info(
@@ -328,23 +365,15 @@ def _place_with_fill_escalation(
             "FILL_ESC step3 %s %s: limit placement failed",
             order_action, option_symbol, exc_info=True,
         )
-        if not is_buy:
-            logger.warning(
-                "FILL_ESC step3 %s %s: falling back to market order after limit placement failure",
-                order_action, option_symbol,
-            )
-            market_order = _place_market()
-            logger.info("FILL_ESC market order placed: id=%s", market_order.get("order_id"))
-            return market_order
         logger.warning(
-            "FILL_ESC MISS %s %s: all steps exhausted — manual intervention may be required",
+            "FILL_ESC MISS %s %s: all steps exhausted — manual intervention required",
             order_action, option_symbol,
         )
         return {}
     order_id = order.get("order_id")
     logger.info("FILL_ESC step3 order placed: id=%s", order_id)
-    time.sleep(60 if not is_buy else 15)
-    fill_status, _ = _check_fill(order_id)
+    time.sleep(60 if not is_buy else 30)
+    fill_status, reject_reason = _check_fill(order_id)
     if fill_status:
         logger.info("FILL_ESC step3 filled: %s", order_id)
         return order
@@ -355,16 +384,42 @@ def _place_with_fill_escalation(
         )
         return order
     _cancel_safely(order_id)
-    if not is_buy:
+    tick = _parse_tick_from_reject_reason(reject_reason) \
+        if isinstance(reject_reason, str) else None
+    if tick is not None:
+        adjusted = (step3_price / tick).to_integral_value(rounding=ROUND_HALF_UP) * tick
         logger.warning(
-            "FILL_ESC step3 %s %s: limit unfilled after 60s — placing market order to close",
-            order_action, option_symbol,
+            "FILL_ESC step3 %s %s: tick rejection (required=%s),"
+            " adjusting %s → %s, retrying",
+            order_action, option_symbol, tick,
+            step3_price.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
+            adjusted.quantize(_D("0.01"), rounding=ROUND_HALF_UP),
         )
-        market_order = _place_market()
-        logger.info("FILL_ESC market order placed: id=%s", market_order.get("order_id"))
-        return market_order
+        try:
+            order = _place_limit(adjusted)
+        except Exception:
+            logger.warning(
+                "FILL_ESC step3 %s %s: tick-retry placement failed",
+                order_action, option_symbol, exc_info=True,
+            )
+        else:
+            order_id = order.get("order_id")
+            logger.info("FILL_ESC step3 tick-retry order placed: id=%s", order_id)
+            time.sleep(60 if not is_buy else 30)
+            fill_status, _ = _check_fill(order_id)
+            if fill_status:
+                logger.info("FILL_ESC step3 tick-retry filled: %s", order_id)
+                return order
+            if fill_status is None:
+                logger.warning(
+                    "FILL_ESC step3 %s %s: tick-retry fill status unknown"
+                    " — not cancelling, returning order",
+                    order_action, option_symbol,
+                )
+                return order
+            _cancel_safely(order_id)
     logger.warning(
-        "FILL_ESC MISS %s %s: all steps exhausted, order %s cancelled — manual intervention may be required",
+        "FILL_ESC MISS %s %s: all steps exhausted, order %s cancelled — manual intervention required",
         order_action, option_symbol, order_id,
     )
     return order
