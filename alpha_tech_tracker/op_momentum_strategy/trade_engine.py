@@ -1204,7 +1204,8 @@ class OpMomentumTradeEngine:
         # Add undeployed capital: slots in the prior window that had no signal.
         # prior_deployed tracks the sum of slot_capital for all primary positions
         # (open + closed). Any budget not deployed flows forward to this window.
-        prior_budget = self._window_state.get(prior_label, {}).get("budget")
+        with self._signal_lock:
+            prior_budget = self._window_state.get(prior_label, {}).get("budget")
         if prior_budget is not None and prior_deployed < prior_budget:
             undeployed = prior_budget - prior_deployed
             prior_returned += undeployed
@@ -1380,7 +1381,8 @@ class OpMomentumTradeEngine:
         window_budget = self._get_window_budget(win)
         # Store budget so sequential windows can compute undeployed capital.
         if window_budget is not None:
-            self._window_state[label]["budget"] = window_budget
+            with self._signal_lock:
+                self._window_state[label]["budget"] = window_budget
 
         # Collect top-N selections first (no fallback on failure).
         selections = []

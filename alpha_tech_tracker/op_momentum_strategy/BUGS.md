@@ -315,10 +315,12 @@ if not success:
 
 ### BUG-013 (Low): `_window_state["budget"]` Written/Read Without Lock
 
-**Status: Open**
+**Status: Fixed**
 **Severity:** Low — cosmetic inconsistency; safe due to timing but contrary to pattern
 
 All other `_window_state` fields are accessed under `_signal_lock`. The `["budget"]` key is set in `_drain_pending_signals_for_window` and read in `_get_window_budget` without the lock. Safe because M1 drain completes hours before A1 reads it, but should be made consistent.
+
+**Fix:** Wrapped the write in `_drain_pending_signals_for_window` and the read in `_get_window_budget` in `_signal_lock` blocks.
 
 **Files:** `trade_engine.py` — `_drain_pending_signals_for_window()`, `_get_window_budget()`
 
@@ -353,5 +355,5 @@ Entry threads are started and `_schedule_dd_check_for_window` fires immediately 
 | BUG-010 | `--top` decrease not enforced on restart | Code review | Low | **Won't Fix** |
 | BUG-011 | `--capital` change on restart corrupts normalization math | Code review | Low-Moderate | **Open** |
 | BUG-012 | DD failed entry leaks `_window_returned` | Capital flow audit | Medium | **Fixed** |
-| BUG-013 | `_window_state["budget"]` written/read without lock | Capital flow audit | Low | **Open** |
+| BUG-013 | `_window_state["budget"]` written/read without lock | Capital flow audit | Low | **Fixed** |
 | BUG-014 | Entry threads not joined before DD check — slow fills may miss survivor | Capital flow audit | Low | **Fixed** |
