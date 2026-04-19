@@ -1860,7 +1860,7 @@ class TestQuickExitEntryPrice:
     def test_returns_entry_fill_price_when_held_under_threshold(self):
         from datetime import timedelta
         now = self._now()
-        pos = self._make_pos(entry_fill_price=5.0, entry_time=now - timedelta(seconds=300))
+        pos = self._make_pos(entry_fill_price=5.0, entry_time=now - timedelta(seconds=_QUICK_EXIT_MAX_SECONDS - 1))
         with patch(f"{self._MODULE}._now_et", return_value=now):
             result = _quick_exit_entry_price(pos)
         assert result == 5.0
@@ -1893,6 +1893,47 @@ class TestQuickExitEntryPrice:
         with patch(f"{self._MODULE}._now_et", return_value=now):
             result = _quick_exit_entry_price(pos)
         assert result is None
+
+    def test_returns_entry_fill_price_when_stock_within_tolerance(self):
+        from datetime import timedelta
+        now = self._now()
+        pos = self._make_pos(entry_fill_price=5.0, entry_time=now - timedelta(seconds=60))
+        pos.entry_stock_price = _D("300.00")
+        # 0.3% move — within 0.5% tolerance
+        current_stock_price = _D("299.10")
+        with patch(f"{self._MODULE}._now_et", return_value=now):
+            result = _quick_exit_entry_price(pos, current_stock_price=current_stock_price)
+        assert result == 5.0
+
+    def test_returns_none_when_stock_moved_beyond_tolerance(self):
+        from datetime import timedelta
+        now = self._now()
+        pos = self._make_pos(entry_fill_price=5.0, entry_time=now - timedelta(seconds=60))
+        pos.entry_stock_price = _D("300.00")
+        # 1% move — exceeds 0.5% tolerance
+        current_stock_price = _D("297.00")
+        with patch(f"{self._MODULE}._now_et", return_value=now):
+            result = _quick_exit_entry_price(pos, current_stock_price=current_stock_price)
+        assert result is None
+
+    def test_returns_fill_price_exactly_at_tolerance_boundary(self):
+        from datetime import timedelta
+        now = self._now()
+        pos = self._make_pos(entry_fill_price=5.0, entry_time=now - timedelta(seconds=60))
+        pos.entry_stock_price = _D("300.00")
+        # exactly 0.5% move — at boundary (diff_pct == tolerance), still qualifies
+        current_stock_price = _D("298.50")
+        with patch(f"{self._MODULE}._now_et", return_value=now):
+            result = _quick_exit_entry_price(pos, current_stock_price=current_stock_price)
+        assert result == 5.0
+
+    def test_skips_stock_check_when_current_stock_price_not_provided(self):
+        from datetime import timedelta
+        now = self._now()
+        pos = self._make_pos(entry_fill_price=5.0, entry_time=now - timedelta(seconds=60))
+        with patch(f"{self._MODULE}._now_et", return_value=now):
+            result = _quick_exit_entry_price(pos, current_stock_price=None)
+        assert result == 5.0
 
 
 class TestPollExitFillPrice:

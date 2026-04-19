@@ -59,24 +59,39 @@ def _emit_raw(line: str):
 
 ET = pytz.timezone("America/New_York")
 
-_QUICK_EXIT_MAX_SECONDS = 480  # positions held < 8 min trigger entry-price-first sell
+_QUICK_EXIT_MAX_SECONDS = 300  # positions held < 5 min trigger entry-price-first sell
+_QUICK_EXIT_STOCK_TOLERANCE_PCT = _D("0.005")  # stock must be within 0.5% of entry price
 
 
-def _quick_exit_entry_price(pos: ActivePosition) -> "Optional[float]":
+def _quick_exit_entry_price(
+    pos: ActivePosition,
+    current_stock_price=None,
+) -> "Optional[float]":
     """
-    Return pos.entry_fill_price (as float) when the position was opened recently
-    and qualifies for a quick-exit: try selling at the entry fill price first so
-    we avoid locking in a loss on a position that never had time to develop.
+    Return pos.entry_fill_price (as float) when the position qualifies for a
+    quick-exit: try selling at the entry fill price first to avoid locking in a
+    loss on a position that never had time to develop.
 
-    Returns None if the position has been held too long, entry_time is unknown,
-    or entry_fill_price was not recorded.
+    Both conditions must hold:
+      1. Position has been held less than _QUICK_EXIT_MAX_SECONDS (5 min).
+      2. current_stock_price is within _QUICK_EXIT_STOCK_TOLERANCE_PCT (0.5%) of
+         pos.entry_stock_price — if the stock has already moved away, the option
+         market value is no longer near entry_fill_price and step 0 would waste
+         20 seconds on a limit that won't fill.
+
+    Returns None if any condition fails, entry_time is unknown, or
+    entry_fill_price was not recorded.
     """
     if pos.entry_fill_price is None or pos.entry_time is None:
         return None
     elapsed = (_now_et() - pos.entry_time).total_seconds()
-    if elapsed < _QUICK_EXIT_MAX_SECONDS:
-        return float(pos.entry_fill_price)
-    return None
+    if elapsed >= _QUICK_EXIT_MAX_SECONDS:
+        return None
+    if current_stock_price is not None:
+        diff_pct = abs(current_stock_price - pos.entry_stock_price) / pos.entry_stock_price
+        if diff_pct > _QUICK_EXIT_STOCK_TOLERANCE_PCT:
+            return None
+    return float(pos.entry_fill_price)
 
 
 class PositionMonitor:
@@ -718,14 +733,21 @@ class PositionMonitor:
                     _option_symbol_override=pos.option_symbol,
                 )
             else:
-                quick_exit_fill_price = _quick_exit_entry_price(pos)
+                latest_bar = self._signal_engine.get_latest_bar(pos.ticker)
+                current_stock_price = (
+                    _D(str(latest_bar["Close"])) if latest_bar is not None else None
+                )
+                quick_exit_fill_price = _quick_exit_entry_price(
+                    pos, current_stock_price=current_stock_price
+                )
                 if quick_exit_fill_price is not None:
                     logger.info(
                         "Placing SELL_CLOSE quick-exit: %s %d contracts"
-                        " (held < %ds, will try entry_fill_price first)",
+                        " (held < %ds, stock within %.1f%% of entry, will try entry_fill_price first)",
                         pos.option_symbol,
                         pos.contracts,
                         _QUICK_EXIT_MAX_SECONDS,
+                        float(_QUICK_EXIT_STOCK_TOLERANCE_PCT * 100),
                     )
                 else:
                     logger.info(
