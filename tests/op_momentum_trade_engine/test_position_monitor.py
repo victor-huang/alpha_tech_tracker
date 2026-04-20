@@ -1613,6 +1613,7 @@ class TestExitSmsPrices:
         client = _make_alpaca_client()
         client.place_option_order.return_value = {"order_id": "eod-1"}
         client.get_option_quote_by_occ.return_value = _make_option_quote(bid=6.00, ask=6.40)
+        client.order_status.return_value = {"status": "filled"}
 
         closes = [100.0]
         df = _build_history_df(closes, ma20=90.0, ma50=90.0, ma200=85.0)

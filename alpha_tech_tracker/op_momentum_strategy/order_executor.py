@@ -40,7 +40,7 @@ def _place_with_fill_escalation(
     get_fair_price_fn=None,
     feed=None,
     penny_pilot: bool = True,
-) -> dict:
+) -> Tuple[dict, int]:
     """
     Place a limit order and escalate if unfilled.
 
@@ -154,6 +154,7 @@ def _place_with_fill_escalation(
                                        # (bid for BUY, ask for SELL) ≈ last placed price;
                                        # streak >= 2 → use anchor half_spread, not compressed current
     _contracts_remaining = [contracts] # decremented on each confirmed partial fill
+    _confirmed_filled = [0]            # running total of contracts confirmed filled; returned to caller
 
     # --- Step 0: quick-exit entry-price protection ---
     if entry_fill_price is not None:
@@ -177,22 +178,26 @@ def _place_with_fill_escalation(
             fill_status, _, filled_qty = _check_fill(order_id)
             if fill_status:
                 logger.info("FILL_ESC step0 filled at entry price: %s", order_id)
-                return order
+                _confirmed_filled[0] += _contracts_remaining[0]
+                return order, _confirmed_filled[0]
             if fill_status is None:
                 logger.warning(
                     "FILL_ESC step0 %s %s: fill status unknown — not cancelling, returning order",
                     order_action, option_symbol,
                 )
-                return order
+                _confirmed_filled[0] += _contracts_remaining[0]
+                return order, _confirmed_filled[0]
             _cancel_safely(order_id)
             if filled_qty > 0:
-                _contracts_remaining[0] -= min(filled_qty, _contracts_remaining[0])
+                partial = min(filled_qty, _contracts_remaining[0])
+                _confirmed_filled[0] += partial
+                _contracts_remaining[0] -= partial
                 logger.info(
                     "FILL_ESC step0 %s %s: partial fill %d contracts, %d remaining, escalating",
-                    order_action, option_symbol, filled_qty, _contracts_remaining[0],
+                    order_action, option_symbol, partial, _contracts_remaining[0],
                 )
                 if _contracts_remaining[0] == 0:
-                    return order
+                    return order, _confirmed_filled[0]
             else:
                 logger.info("FILL_ESC step0 unfilled, escalating: %s", option_symbol)
 
@@ -305,22 +310,26 @@ def _place_with_fill_escalation(
             fill_status, reject_reason, filled_qty = _check_fill(order_id)
             if fill_status:
                 logger.info("FILL_ESC loop step%d filled: %s", step_num, order_id)
-                return order
+                _confirmed_filled[0] += _contracts_remaining[0]
+                return order, _confirmed_filled[0]
             if fill_status is None:
                 logger.warning(
                     "FILL_ESC loop step%d %s %s: fill status unknown — not cancelling, returning order",
                     step_num, order_action, option_symbol,
                 )
-                return order
+                _confirmed_filled[0] += _contracts_remaining[0]
+                return order, _confirmed_filled[0]
             if filled_qty > 0:
-                _contracts_remaining[0] -= min(filled_qty, _contracts_remaining[0])
+                partial = min(filled_qty, _contracts_remaining[0])
+                _confirmed_filled[0] += partial
+                _contracts_remaining[0] -= partial
                 logger.info(
                     "FILL_ESC loop step%d %s %s: partial fill %d contracts, %d remaining",
-                    step_num, order_action, option_symbol, filled_qty, _contracts_remaining[0],
+                    step_num, order_action, option_symbol, partial, _contracts_remaining[0],
                 )
                 _cancel_safely(order_id)
                 if _contracts_remaining[0] == 0:
-                    return order
+                    return order, _confirmed_filled[0]
                 current_price = None
                 continue
             tick = _parse_tick_from_reject_reason(reject_reason) \
@@ -356,25 +365,29 @@ def _place_with_fill_escalation(
                         logger.info(
                             "FILL_ESC loop step%d tick-retry filled: %s", step_num, order_id
                         )
-                        return order
+                        _confirmed_filled[0] += _contracts_remaining[0]
+                        return order, _confirmed_filled[0]
                     if fill_status is None:
                         logger.warning(
                             "FILL_ESC loop step%d %s %s: tick-retry fill status unknown"
                             " — not cancelling, returning order",
                             step_num, order_action, option_symbol,
                         )
-                        return order
+                        _confirmed_filled[0] += _contracts_remaining[0]
+                        return order, _confirmed_filled[0]
                     if filled_qty > 0:
-                        _contracts_remaining[0] -= min(filled_qty, _contracts_remaining[0])
+                        partial = min(filled_qty, _contracts_remaining[0])
+                        _confirmed_filled[0] += partial
+                        _contracts_remaining[0] -= partial
                         logger.info(
                             "FILL_ESC loop step%d tick-retry %s %s: partial fill %d contracts,"
                             " %d remaining",
                             step_num, order_action, option_symbol,
-                            filled_qty, _contracts_remaining[0],
+                            partial, _contracts_remaining[0],
                         )
                         _cancel_safely(order_id)
                         if _contracts_remaining[0] == 0:
-                            return order
+                            return order, _confirmed_filled[0]
                         current_price = None
                         continue
                     _cancel_safely(order_id)
@@ -440,10 +453,11 @@ def _place_with_fill_escalation(
                 "FILL_ESC %s %s: market order failed — manual intervention required",
                 order_action, option_symbol, exc_info=True,
             )
-            return {}
+            return {}, 0
         order_id = order.get("order_id")
         logger.info("FILL_ESC market fallback order placed: id=%s", order_id)
-        return order
+        _confirmed_filled[0] += _contracts_remaining[0]
+        return order, _confirmed_filled[0]
 
     logger.info(
         "FILL_ESC step3 %s %s: final limit at %s",
@@ -461,36 +475,40 @@ def _place_with_fill_escalation(
             "FILL_ESC MISS %s %s: all steps exhausted — manual intervention required",
             order_action, option_symbol,
         )
-        return {}
+        return {}, 0
     order_id = order.get("order_id")
     logger.info("FILL_ESC step3 order placed: id=%s", order_id)
     time.sleep(60 if not is_buy else 30)
     fill_status, reject_reason, filled_qty = _check_fill(order_id)
     if fill_status:
         logger.info("FILL_ESC step3 filled: %s", order_id)
-        return order
+        _confirmed_filled[0] += _contracts_remaining[0]
+        return order, _confirmed_filled[0]
     if fill_status is None:
         logger.warning(
             "FILL_ESC step3 %s %s: fill status unknown — not cancelling, returning order",
             order_action, option_symbol,
         )
-        return order
+        _confirmed_filled[0] += _contracts_remaining[0]
+        return order, _confirmed_filled[0]
     if filled_qty > 0:
-        _contracts_remaining[0] -= min(filled_qty, _contracts_remaining[0])
+        partial = min(filled_qty, _contracts_remaining[0])
+        _confirmed_filled[0] += partial
+        _contracts_remaining[0] -= partial
         logger.warning(
             "FILL_ESC step3 %s %s: partial fill %d contracts, %d still open"
             " — manual close required",
-            order_action, option_symbol, filled_qty, _contracts_remaining[0],
+            order_action, option_symbol, partial, _contracts_remaining[0],
         )
         _cancel_safely(order_id)
         if _contracts_remaining[0] == 0:
-            return order
+            return order, _confirmed_filled[0]
         logger.warning(
             "FILL_ESC MISS %s %s: %d contracts still open after partial fill"
             " — manual intervention required",
             order_action, option_symbol, _contracts_remaining[0],
         )
-        return order
+        return order, _confirmed_filled[0]
     _cancel_safely(order_id)
     tick = _parse_tick_from_reject_reason(reject_reason) \
         if isinstance(reject_reason, str) else None
@@ -517,31 +535,35 @@ def _place_with_fill_escalation(
             fill_status, _, filled_qty = _check_fill(order_id)
             if fill_status:
                 logger.info("FILL_ESC step3 tick-retry filled: %s", order_id)
-                return order
+                _confirmed_filled[0] += _contracts_remaining[0]
+                return order, _confirmed_filled[0]
             if fill_status is None:
                 logger.warning(
                     "FILL_ESC step3 %s %s: tick-retry fill status unknown"
                     " — not cancelling, returning order",
                     order_action, option_symbol,
                 )
-                return order
+                _confirmed_filled[0] += _contracts_remaining[0]
+                return order, _confirmed_filled[0]
             if filled_qty > 0:
-                _contracts_remaining[0] -= min(filled_qty, _contracts_remaining[0])
+                partial = min(filled_qty, _contracts_remaining[0])
+                _confirmed_filled[0] += partial
+                _contracts_remaining[0] -= partial
                 logger.warning(
                     "FILL_ESC step3 tick-retry %s %s: partial fill %d contracts,"
                     " %d still open — manual close required",
-                    order_action, option_symbol, filled_qty, _contracts_remaining[0],
+                    order_action, option_symbol, partial, _contracts_remaining[0],
                 )
                 _cancel_safely(order_id)
                 if _contracts_remaining[0] == 0:
-                    return order
+                    return order, _confirmed_filled[0]
             else:
                 _cancel_safely(order_id)
     logger.warning(
         "FILL_ESC MISS %s %s: all steps exhausted, order %s cancelled — manual intervention required",
         order_action, option_symbol, order_id,
     )
-    return order
+    return order, _confirmed_filled[0]
 
 
 def place_option_order_in_tranches(
@@ -573,7 +595,7 @@ def place_option_order_in_tranches(
         filled_so_far — total contracts confirmed filled across all tranches
     """
     if contracts <= tranche_size:
-        order = _place_with_fill_escalation(
+        order, confirmed_filled = _place_with_fill_escalation(
             client=client,
             ticker=ticker,
             option_symbol=option_symbol,
@@ -585,7 +607,7 @@ def place_option_order_in_tranches(
             feed=feed,
             penny_pilot=penny_pilot,
         )
-        return order, (contracts if order.get("order_id") else 0)
+        return order, confirmed_filled
 
     total_tranches = -(-contracts // tranche_size)   # ceiling division
     remaining = contracts
@@ -601,7 +623,7 @@ def place_option_order_in_tranches(
             tranche_num, total_tranches, order_action, option_symbol,
             batch, remaining, contracts,
         )
-        order = _place_with_fill_escalation(
+        order, confirmed_filled = _place_with_fill_escalation(
             client=client,
             ticker=ticker,
             option_symbol=option_symbol,
@@ -614,15 +636,15 @@ def place_option_order_in_tranches(
             penny_pilot=penny_pilot,
         )
         last_order = order
-        if not order.get("order_id"):
+        if confirmed_filled == 0:
             logger.warning(
                 "TRANCHE %d/%d %s %s: MISS — stopping, %d/%d contracts filled",
                 tranche_num, total_tranches, order_action, option_symbol,
                 filled_so_far, contracts,
             )
             break
-        filled_so_far += batch
-        remaining -= batch
+        filled_so_far += confirmed_filled
+        remaining -= confirmed_filled
 
     return last_order, filled_so_far
 

@@ -53,7 +53,7 @@ class TestFillEscalationStep0:
         client.order_status.side_effect = fake_order_status
 
         with patch(f"{_MODULE}.time.sleep", lambda _: None):
-            result = _place_with_fill_escalation(
+            result, _ = _place_with_fill_escalation(
                 client=client,
                 ticker=_TICKER,
                 option_symbol=_SYMBOL,
@@ -114,7 +114,7 @@ class TestFillEscalationMissCancellation:
     def _run_all_unfilled(self, client):
         client.order_status.return_value = {"status": "open"}
         with patch(f"{_MODULE}.time.sleep", lambda _: None):
-            return _place_with_fill_escalation(
+            order, _ = _place_with_fill_escalation(
                 client=client,
                 ticker=_TICKER,
                 option_symbol=_SYMBOL,
@@ -122,6 +122,7 @@ class TestFillEscalationMissCancellation:
                 contracts=_CONTRACTS,
                 order_action=_SELL,
             )
+        return order
 
     def test_miss_cancels_step3_order(self):
         client = _make_client()
@@ -170,7 +171,7 @@ class TestFillEscalationLoop:
 
     def _run(self, client, order_action, get_fair_price_fn=None):
         with patch(f"{_MODULE}.time.sleep", lambda _: None):
-            return _place_with_fill_escalation(
+            order, _ = _place_with_fill_escalation(
                 client=client,
                 ticker=_TICKER,
                 option_symbol=_SYMBOL,
@@ -179,6 +180,7 @@ class TestFillEscalationLoop:
                 order_action=order_action,
                 get_fair_price_fn=get_fair_price_fn,
             )
+        return order
 
     def _limit_prices(self, client):
         return [
@@ -359,7 +361,7 @@ class TestTickRejectionRetry:
     def test_tick_retry_fills_and_returns(self):
         client = self._make_client(rej_then_fill=True)
         with patch("alpha_tech_tracker.op_momentum_strategy.order_executor.time.sleep", lambda _: None):
-            result = _place_with_fill_escalation(
+            result, _ = _place_with_fill_escalation(
                 client=client, ticker="APP", option_symbol="APP260418C00500000",
                 option_type="CALL", contracts=1, order_action="BUY_OPEN",
             )
@@ -474,7 +476,7 @@ class TestAnchorHalfSpread:
         ]
 
         with patch(f"{_MODULE}.time.sleep", lambda _: None):
-            result = _place_with_fill_escalation(
+            result, _ = _place_with_fill_escalation(
                 client=client,
                 ticker=_TICKER,
                 option_symbol=_SYMBOL,
@@ -515,7 +517,7 @@ class TestAnchorHalfSpread:
         ]
 
         with patch(f"{_MODULE}.time.sleep", lambda _: None):
-            result = _place_with_fill_escalation(
+            result, _ = _place_with_fill_escalation(
                 client=client,
                 ticker=_PUT_TICKER,
                 option_symbol=_PUT_SYMBOL,
@@ -690,7 +692,7 @@ class TestSellFloorBehavior:
     def _run_sell(self, client, get_fair_price_fn=None):
         client.order_status.return_value = {"status": "open"}
         with patch(f"{_MODULE}.time.sleep", lambda _: None):
-            return _place_with_fill_escalation(
+            _place_with_fill_escalation(
                 client=client,
                 ticker=_PUT_TICKER,
                 option_symbol=_PUT_SYMBOL,
@@ -756,7 +758,7 @@ class TestStep3NoMarketFallback:
     def _run_sell_all_unfilled(self, client):
         client.order_status.return_value = {"status": "open"}
         with patch(f"{_MODULE}.time.sleep", lambda _: None):
-            return _place_with_fill_escalation(
+            _place_with_fill_escalation(
                 client=client,
                 ticker=_PUT_TICKER,
                 option_symbol=_PUT_SYMBOL,
@@ -769,7 +771,7 @@ class TestStep3NoMarketFallback:
     def _run_buy_all_unfilled(self, client):
         client.order_status.return_value = {"status": "open"}
         with patch(f"{_MODULE}.time.sleep", lambda _: None):
-            return _place_with_fill_escalation(
+            _place_with_fill_escalation(
                 client=client,
                 ticker=_PUT_TICKER,
                 option_symbol=_PUT_SYMBOL,
@@ -1135,7 +1137,7 @@ class TestFillStatusUnknownDoesNotCancelOrder:
         client = _make_client()
         client.order_status.side_effect = RuntimeError("broker API error")
         with patch(f"{_MODULE}.time.sleep", lambda _: None):
-            result = _place_with_fill_escalation(
+            result, _ = _place_with_fill_escalation(
                 client=client,
                 ticker=_TICKER,
                 option_symbol=_SYMBOL,
@@ -1173,7 +1175,7 @@ class TestFillStatusUnknownDoesNotCancelOrder:
 
         client.order_status.side_effect = order_status_side_effect
         with patch(f"{_MODULE}.time.sleep", lambda _: None):
-            result = _place_with_fill_escalation(
+            result, _ = _place_with_fill_escalation(
                 client=client,
                 ticker=_TICKER,
                 option_symbol=_SYMBOL,
@@ -1293,7 +1295,7 @@ class TestStep3TickRejection:
 
         client.get_option_quote_by_occ.side_effect = quote_side_effect
         with patch(f"{_MODULE}.time.sleep", lambda _: None):
-            return _place_with_fill_escalation(
+            order, _ = _place_with_fill_escalation(
                 client=client,
                 ticker=_TICKER,
                 option_symbol=_SYMBOL,
@@ -1301,6 +1303,7 @@ class TestStep3TickRejection:
                 contracts=_CONTRACTS,
                 order_action="BUY_OPEN",
             )
+        return order
 
     def test_tick_rejection_triggers_step3_retry(self):
         client = _make_client()
@@ -1352,7 +1355,7 @@ class TestCrossedQuoteGuard:
     def _run(self, client, order_action="BUY_OPEN"):
         sleeps = []
         with patch(f"{_MODULE}.time.sleep", side_effect=lambda t: sleeps.append(t)):
-            result = _place_with_fill_escalation(
+            result, _ = _place_with_fill_escalation(
                 client=client,
                 ticker=_TICKER,
                 option_symbol=_SYMBOL,
@@ -1555,7 +1558,7 @@ class TestEscalationScenarios:
         client.place_option_order.side_effect = capture_place
         sleeps = []
         with patch(f"{_MODULE}.time.sleep", side_effect=lambda t: sleeps.append(t)):
-            result = _place_with_fill_escalation(
+            result, _ = _place_with_fill_escalation(
                 client=client,
                 ticker=_TICKER,
                 option_symbol=_SYMBOL,
@@ -1815,7 +1818,7 @@ class TestPartialFillHandling:
     """
 
     def _run(self, client, order_action, contracts=10):
-        """Run escalation capturing placed (price, qty) pairs and return result."""
+        """Run escalation capturing placed (price, qty) pairs and return (result, placed, confirmed_filled)."""
         placed = []
 
         def capture_place(**kw):
@@ -1825,7 +1828,7 @@ class TestPartialFillHandling:
 
         client.place_option_order.side_effect = capture_place
         with patch(f"{_MODULE}.time.sleep", lambda _: None):
-            result = _place_with_fill_escalation(
+            result, confirmed_filled = _place_with_fill_escalation(
                 client=client,
                 ticker=_TICKER,
                 option_symbol=_SYMBOL,
@@ -1833,7 +1836,7 @@ class TestPartialFillHandling:
                 contracts=contracts,
                 order_action=order_action,
             )
-        return result, placed
+        return result, placed, confirmed_filled
 
     def test_loop_partial_fill_continues_with_remaining_contracts(self):
         """
@@ -1856,9 +1859,10 @@ class TestPartialFillHandling:
 
         client.order_status.side_effect = order_status
 
-        result, placed = self._run(client, "BUY_OPEN", contracts=10)
+        result, placed, confirmed_filled = self._run(client, "BUY_OPEN", contracts=10)
 
         assert result == {"order_id": "ord-002"}
+        assert confirmed_filled == 10   # 7 partial + 3 full = all 10 confirmed
         assert len(placed) == 2
         _, qty1 = placed[0]
         _, qty2 = placed[1]
@@ -1884,8 +1888,9 @@ class TestPartialFillHandling:
 
         client.order_status.side_effect = order_status
 
-        result, placed = self._run(client, "BUY_OPEN", contracts=10)
+        result, placed, confirmed_filled = self._run(client, "BUY_OPEN", contracts=10)
 
+        assert confirmed_filled == 10   # 5 partial + 5 full = all 10 confirmed
         price1, _ = placed[0]
         price2, _ = placed[1]
         assert price1 == pytest.approx(5.00)   # mid on first iteration
@@ -1904,10 +1909,11 @@ class TestPartialFillHandling:
 
         client.order_status.side_effect = order_status
 
-        result, placed = self._run(client, "BUY_OPEN", contracts=10)
+        result, placed, confirmed_filled = self._run(client, "BUY_OPEN", contracts=10)
 
         assert len(placed) == 1
         assert result == {"order_id": "ord-001"}
+        assert confirmed_filled == 10   # all 10 filled "as partial" in one shot
 
     def test_step3_partial_fill_returns_order_and_logs_warning(self, caplog):
         """
@@ -1936,9 +1942,10 @@ class TestPartialFillHandling:
         client.order_status.side_effect = order_status
 
         with caplog.at_level(logging.WARNING, logger="alpha_tech_tracker"):
-            result, placed = self._run(client, "BUY_OPEN", contracts=10)
+            result, placed, confirmed_filled = self._run(client, "BUY_OPEN", contracts=10)
 
         assert result.get("order_id") is not None   # not {}
+        assert confirmed_filled == 7   # only the 7 that actually filled — not 10
         assert any("still open" in r.message for r in caplog.records)
 
     def test_step0_partial_fill_continues_to_loop_with_remainder(self):
@@ -1967,7 +1974,7 @@ class TestPartialFillHandling:
         client.place_option_order.side_effect = capture_place
 
         with patch(f"{_MODULE}.time.sleep", lambda _: None):
-            result = _place_with_fill_escalation(
+            result, confirmed_filled = _place_with_fill_escalation(
                 client=client,
                 ticker=_TICKER,
                 option_symbol=_SYMBOL,
@@ -1982,6 +1989,7 @@ class TestPartialFillHandling:
         _, qty1 = placed[1]   # first loop order
         assert qty0 == 5      # step0 uses full original count
         assert qty1 == 3      # loop uses remaining after partial step0 fill
+        assert confirmed_filled == 5   # 2 (step0 partial) + 3 (loop full) = all 5
 
 
 _TRANCHE_MODULE = "alpha_tech_tracker.op_momentum_strategy.order_executor"
@@ -2003,11 +2011,11 @@ class TestTrancheFilling:
 
     _INNER = f"{_TRANCHE_MODULE}._place_with_fill_escalation"
 
-    def _filled_order(self, order_id="ord-001"):
-        return {"order_id": order_id}
+    def _filled_order(self, order_id="ord-001", confirmed=5):
+        return ({"order_id": order_id}, confirmed)
 
     def _miss_order(self):
-        return {}
+        return ({}, 0)
 
     def test_no_tranche_when_contracts_at_or_below_size(self):
         """contracts=5, tranche_size=5 → single _place_with_fill_escalation call."""
@@ -2026,7 +2034,7 @@ class TestTrancheFilling:
         assert mock_inner.call_count == 1
         assert mock_inner.call_args.kwargs["contracts"] == 5
         assert filled == 5
-        assert order == self._filled_order()
+        assert order == {"order_id": "ord-001"}
 
     def test_two_tranches_both_fill_returns_total_filled(self):
         """contracts=10, tranche_size=5 → two calls, both fill → filled_so_far=10."""
@@ -2069,10 +2077,10 @@ class TestTrancheFilling:
             )
         assert mock_inner.call_count == 2
         assert filled == 5
-        assert order == self._miss_order()
+        assert order == {}
 
     def test_tranche1_misses_immediately_stops_with_zero_filled(self):
-        """contracts=10, tranche 1 MISSes → filled_so_far=0, last_order={}."""
+        """contracts=10, tranche 1 MISSes (confirmed_filled=0) → filled_so_far=0, last_order={}."""
         client = _make_client()
         with patch(self._INNER, return_value=self._miss_order()) as mock_inner, \
              patch(f"{_TRANCHE_MODULE}.time.sleep", lambda _: None):
