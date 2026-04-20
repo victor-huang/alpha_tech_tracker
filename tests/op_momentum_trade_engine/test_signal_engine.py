@@ -1156,3 +1156,63 @@ class TestWsWatchdog:
     def test_reconnect_noop_when_no_market_data_client(self):
         engine = LiveSignalEngine(tickers=["NVDA"], opening_bars=3, on_signal=None)
         engine.reconnect()  # should not raise
+
+
+# ---------------------------------------------------------------------------
+# TestLiveWarmupUsesAPI — live mode calls market_data_client.warmup(), not cache
+# ---------------------------------------------------------------------------
+
+
+_BACKTEST_FETCH_BARS = "alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest.fetch_bars"
+
+
+class TestLiveWarmupUsesAPI:
+    def _make_engine_with_mdc(self, tickers=None):
+        tickers = tickers or ["APP", "CRDO"]
+        engine = LiveSignalEngine(tickers=tickers, opening_bars=3, on_signal=lambda e: None)
+        mdc = Mock()
+        mdc.warmup.return_value = {t: pd.DataFrame(
+            columns=["Open", "High", "Low", "Close", "Volume"]
+        ) for t in tickers}
+        engine._market_data_client = mdc
+        return engine, mdc
+
+    def test_start_calls_warmup_on_market_data_client(self):
+        engine, mdc = self._make_engine_with_mdc()
+        engine.start()
+        mdc.warmup.assert_called_once()
+
+    def test_start_does_not_call_cached_fetch_bars(self):
+        engine, mdc = self._make_engine_with_mdc()
+        with patch(_BACKTEST_FETCH_BARS) as mock_fetch:
+            engine.start()
+        mock_fetch.assert_not_called()
+
+    def test_start_calls_subscribe_bars_for_live_stream(self):
+        engine, mdc = self._make_engine_with_mdc()
+        engine.start()
+        mdc.subscribe_bars.assert_called_once_with(engine._on_bar, "APP", "CRDO")
+
+    def test_replay_warmup_without_client_uses_cached_fetch_bars(self):
+        engine = LiveSignalEngine(tickers=["APP"], opening_bars=3, on_signal=None)
+        replay_date = date(2026, 3, 5)
+        with patch(_BACKTEST_FETCH_BARS) as mock_fetch:
+            mock_fetch.return_value = {"APP": pd.DataFrame(
+                columns=["Open", "High", "Low", "Close", "Volume"]
+            )}
+            engine._warmup_from_cache(replay_date, market_data_client=None)
+        mock_fetch.assert_called_once()
+        _, args, kwargs = mock_fetch.mock_calls[0]
+        assert kwargs.get("source") == "alpaca" or args[3] == "alpaca"
+
+    def test_replay_warmup_with_client_calls_client_fetch_bars_directly(self):
+        engine = LiveSignalEngine(tickers=["APP"], opening_bars=3, on_signal=None)
+        replay_date = date(2026, 3, 5)
+        mdc = Mock()
+        mdc.fetch_bars.return_value = {"APP": pd.DataFrame(
+            columns=["Open", "High", "Low", "Close", "Volume"]
+        )}
+        with patch(_BACKTEST_FETCH_BARS) as mock_cached_fetch:
+            engine._warmup_from_cache(replay_date, market_data_client=mdc)
+        mdc.fetch_bars.assert_called_once()
+        mock_cached_fetch.assert_not_called()
