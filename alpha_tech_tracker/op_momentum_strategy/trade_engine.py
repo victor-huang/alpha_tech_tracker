@@ -1756,7 +1756,16 @@ class OpMomentumTradeEngine:
         api_key = self._api_key or os.environ.get("ALPACA_API_KEY")
         secret_key = self._secret_key or os.environ.get("ALPACA_SECRET_KEY")
 
-        logger.info("Market data feed: %s", self._alpaca_feed.value.upper())
+        live_source = (
+            type(self._market_data_client).__name__
+            if self._market_data_client is not None
+            else f"alpaca/{self._alpaca_feed.value.upper()}"
+        )
+        logger.info(
+            "Market data source: %s (live/warmup) | alpaca/%s (selector backtest cache)",
+            live_source,
+            self._alpaca_feed.value.upper(),
+        )
         all_tickers = tickers_override or TICKERS
         first_window = self._windows[0]
 
