@@ -86,13 +86,15 @@ class TradeStationBarStream:
     def _stream_ticker(self, symbol: str):
         url = self._stream_url(symbol)
         params = {"interval": self._interval, "unit": self._unit}
+        backoff = 5
         while not self._stop_event.is_set():
             try:
                 logger.info("TS stream: connecting [%s]", symbol)
                 resp = self._session.get(
-                    url, params=params, stream=True, timeout=30
+                    url, params=params, stream=True, timeout=(10, 90)
                 )
                 resp.raise_for_status()
+                backoff = 5
                 for raw_line in resp.iter_lines():
                     if self._stop_event.is_set():
                         break
@@ -118,9 +120,10 @@ class TradeStationBarStream:
             except Exception:
                 if not self._stop_event.is_set():
                     logger.exception(
-                        "TS stream: error [%s] — reconnecting in 5s", symbol
+                        "TS stream: error [%s] — reconnecting in %ds", symbol, backoff
                     )
-                    self._stop_event.wait(5)
+                    self._stop_event.wait(backoff)
+                    backoff = min(backoff * 2, 60)
 
     def start_async(self):
         """Start one daemon thread per ticker and return immediately."""

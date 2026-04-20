@@ -426,3 +426,79 @@ class TestTradeStationBarStream:
 
         url = client._session.get.call_args[0][0]
         assert url == _SIM_STREAM_URL.format(symbol="TSLA")
+
+    def test_get_request_uses_split_connect_and_read_timeout(self):
+        client = _make_client()
+        stream = TradeStationBarStream(client)
+        client._session.get.return_value = _mock_stream_response(
+            [], stop_event=stream._stop_event
+        )
+        stream.subscribe_bars(MagicMock(), "TSLA")
+        stream._stream_ticker("TSLA")
+
+        _, kwargs = client._session.get.call_args
+        assert kwargs["timeout"] == (10, 90)
+
+    def test_backoff_doubles_on_repeated_connection_errors(self, monkeypatch):
+        client = _make_client()
+        stream = TradeStationBarStream(client)
+        client._session.get.side_effect = ConnectionError("network error")
+
+        wait_calls = []
+
+        def fake_wait(secs):
+            wait_calls.append(secs)
+            if len(wait_calls) >= 3:
+                stream._stop_event.set()
+
+        monkeypatch.setattr(stream._stop_event, "wait", fake_wait)
+        stream._stream_ticker("TSLA")
+
+        assert wait_calls == [5, 10, 20]
+
+    def test_backoff_capped_at_sixty_seconds(self, monkeypatch):
+        client = _make_client()
+        stream = TradeStationBarStream(client)
+        client._session.get.side_effect = ConnectionError("network error")
+
+        wait_calls = []
+
+        def fake_wait(secs):
+            wait_calls.append(secs)
+            if len(wait_calls) >= 6:
+                stream._stop_event.set()
+
+        monkeypatch.setattr(stream._stop_event, "wait", fake_wait)
+        stream._stream_ticker("TSLA")
+
+        assert wait_calls == [5, 10, 20, 40, 60, 60]
+
+    def test_backoff_resets_to_five_after_successful_connection(self, monkeypatch):
+        client = _make_client()
+        stream = TradeStationBarStream(client)
+
+        wait_calls = []
+
+        def fake_wait(secs):
+            wait_calls.append(secs)
+            if len(wait_calls) >= 2:
+                stream._stop_event.set()
+
+        monkeypatch.setattr(stream._stop_event, "wait", fake_wait)
+
+        call_count = [0]
+
+        def get_side_effect(*args, **kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                raise ConnectionError("first error")
+            if call_count[0] == 2:
+                return _mock_stream_response([], stop_event=None)
+            raise ConnectionError("second error")
+
+        client._session.get.side_effect = get_side_effect
+        stream.subscribe_bars(MagicMock(), "TSLA")
+        stream._stream_ticker("TSLA")
+
+        assert wait_calls[0] == 5
+        assert wait_calls[1] == 5
