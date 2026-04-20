@@ -48,8 +48,8 @@ from .config import (  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
-_PID_FILE = os.path.expanduser("~/.op_momentum_daemon.pid")
 _LOG_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "logs")
+_PID_FILE = os.path.join(_LOG_DIR, "op_momentum.pid")
 
 
 def _dated_log_file() -> str:
