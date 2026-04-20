@@ -5,7 +5,7 @@ import threading
 import pandas as pd
 import pytz
 import yfinance as yf
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time as _time, timedelta
 from pathlib import Path
 
 from alpaca.data.enums import DataFeed
@@ -1322,6 +1322,14 @@ def _partial_stitch_cache(
     return combined, covered_end
 
 
+def _fetch_ts_bars(market_data_client, tickers: list, start_date: date, end_date: date) -> dict:
+    """Fetch 5-min bars from a TradeStation market data client for the given date range."""
+    _ET = pytz.timezone("America/New_York")
+    start_dt = _ET.localize(datetime.combine(start_date, _time(9, 30)))
+    end_dt = _ET.localize(datetime.combine(end_date, _time(16, 0)))
+    return market_data_client.fetch_bars(tickers, start_dt, end_dt)
+
+
 def fetch_bars(
     tickers: list,
     start_date: date,
@@ -1329,6 +1337,7 @@ def fetch_bars(
     source: str = "alpaca",
     allow_intraday: bool = False,
     feed: DataFeed = None,
+    market_data_client=None,
 ) -> dict:
     end_date_only = _to_date(end_date)
     cacheable = _is_cacheable(end_date_only)
@@ -1388,6 +1397,8 @@ def fetch_bars(
             )
             if source == "yfinance":
                 delta_fetched = fetch_yfinance_bars(delta_tickers, delta_start, end_date)
+            elif source == "tradestation" and market_data_client is not None:
+                delta_fetched = _fetch_ts_bars(market_data_client, delta_tickers, delta_start, end_date_only)
             else:
                 delta_fetched = fetch_alpaca_bars(
                     delta_tickers, delta_start, end_date, allow_intraday=allow_intraday,
@@ -1422,6 +1433,8 @@ def fetch_bars(
             )
         if source == "yfinance":
             fetched = fetch_yfinance_bars(to_fetch, start_date, end_date)
+        elif source == "tradestation" and market_data_client is not None:
+            fetched = _fetch_ts_bars(market_data_client, to_fetch, start_date, end_date_only)
         else:
             fetched = fetch_alpaca_bars(
                 to_fetch, start_date, end_date, allow_intraday=allow_intraday, feed=feed,

@@ -104,6 +104,7 @@ class TickerSelector:
         regime_filter: bool = False,
         regime_ma: int = 8,
         alpaca_feed: DataFeed = DataFeed.SIP,
+        market_data_client=None,
     ):
         self._tickers = tickers
         self._top_n = top_n
@@ -114,6 +115,7 @@ class TickerSelector:
         self._regime_filter = regime_filter
         self._regime_ma = regime_ma
         self._alpaca_feed = alpaca_feed
+        self._market_data_client = market_data_client
         self.rolling_stats: dict = {}
 
     def _selector_cache_path(self, target_date: date) -> Path:
@@ -135,6 +137,14 @@ class TickerSelector:
         today = _now_et().date()
         fetch_start = today - timedelta(days=max(self._lookback_days, 30) + 5)
         bars_end = today - timedelta(days=1)
+        if self._market_data_client is not None:
+            return fetch_bars(
+                self._tickers,
+                fetch_start,
+                bars_end,
+                source="tradestation",
+                market_data_client=self._market_data_client,
+            )
         return fetch_bars(
             self._tickers,
             fetch_start,
@@ -148,6 +158,8 @@ class TickerSelector:
         if ticker_dfs is None:
             ticker_dfs = self.fetch_bars()
 
+        source = "tradestation" if self._market_data_client is not None else "alpaca"
+
         if is_replay_mode():
             # In replay mode, recompute selector scores fresh using the replay
             # date as target_date so the 60-day lookback matches the backtest.
@@ -159,7 +171,7 @@ class TickerSelector:
                 opening_bars=self._opening_bars,
                 bearish_ma200=BEARISH_MA200,
                 stop_pct=self._stop_pct,
-                source="alpaca",
+                source=source,
                 target_date=today,
                 ticker_dfs=ticker_dfs,
                 opening_start_time=self._opening_start_time,
@@ -175,7 +187,7 @@ class TickerSelector:
                 opening_bars=self._opening_bars,
                 bearish_ma200=BEARISH_MA200,
                 stop_pct=self._stop_pct,
-                source="alpaca",
+                source=source,
                 target_date=today,
                 ticker_dfs=ticker_dfs,
                 opening_start_time=self._opening_start_time,
@@ -200,7 +212,7 @@ class TickerSelector:
                     opening_bars=self._opening_bars,
                     bearish_ma200=BEARISH_MA200,
                     stop_pct=self._stop_pct,
-                    source="alpaca",
+                    source=source,
                     target_date=prev_day,
                     ticker_dfs=ticker_dfs,
                     opening_start_time=self._opening_start_time,
@@ -1655,6 +1667,7 @@ class OpMomentumTradeEngine:
                     regime_filter=self._regime_filter,
                     regime_ma=self._regime_ma,
                     alpaca_feed=self._alpaca_feed,
+                    market_data_client=self._market_data_client,
                 )
                 if first_config_key is None:
                     first_config_key = config_key
