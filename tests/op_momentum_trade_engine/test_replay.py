@@ -299,6 +299,65 @@ class TestBarReplayDriverFetch:
             result = driver._fetch_session_bars()
         assert result["NVDA"] == []
 
+    def test_fetch_session_bars_uses_cached_fetch_bars_when_market_data_client_set(self):
+        replay_date = date(2026, 3, 5)
+        market_data_client = MagicMock()
+        driver = BarReplayDriver(
+            tickers=["APP", "CRDO"],
+            replay_date=replay_date,
+            signal_engine=MagicMock(),
+            market_data_client=market_data_client,
+        )
+        with patch(
+            "alpha_tech_tracker.op_momentum_strategy.replay.fetch_bars",
+            return_value={"APP": pd.DataFrame(), "CRDO": pd.DataFrame()},
+        ) as mock_fetch:
+            driver._fetch_session_bars()
+
+        mock_fetch.assert_called_once_with(
+            ["APP", "CRDO"],
+            replay_date,
+            replay_date,
+            source="tradestation",
+            market_data_client=market_data_client,
+        )
+
+    def test_fetch_session_bars_does_not_call_client_fetch_bars_directly(self):
+        replay_date = date(2026, 3, 5)
+        market_data_client = MagicMock()
+        driver = BarReplayDriver(
+            tickers=["APP"],
+            replay_date=replay_date,
+            signal_engine=MagicMock(),
+            market_data_client=market_data_client,
+        )
+        with patch(
+            "alpha_tech_tracker.op_momentum_strategy.replay.fetch_bars",
+            return_value={"APP": pd.DataFrame()},
+        ):
+            driver._fetch_session_bars()
+
+        market_data_client.fetch_bars.assert_not_called()
+
+    def test_fetch_session_bars_passes_replay_date_as_both_start_and_end(self):
+        replay_date = date(2026, 4, 8)
+        market_data_client = MagicMock()
+        driver = BarReplayDriver(
+            tickers=["FN"],
+            replay_date=replay_date,
+            signal_engine=MagicMock(),
+            market_data_client=market_data_client,
+        )
+        with patch(
+            "alpha_tech_tracker.op_momentum_strategy.replay.fetch_bars",
+            return_value={"FN": pd.DataFrame()},
+        ) as mock_fetch:
+            driver._fetch_session_bars()
+
+        _, args, kwargs = mock_fetch.mock_calls[0]
+        assert args[1] == replay_date
+        assert args[2] == replay_date
+
 
 def _write_5min_csv(path: Path, rows: list):
     """Write a BarRecorder-format 5-min CSV to path."""
