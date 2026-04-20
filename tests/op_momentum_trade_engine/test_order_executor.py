@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 from alpha_tech_tracker.op_momentum_strategy.order_executor import (
     _parse_tick_from_reject_reason,
     _place_with_fill_escalation,
+    place_option_order_in_tranches,
     place_stock_order,
 )
 
@@ -1981,3 +1982,127 @@ class TestPartialFillHandling:
         _, qty1 = placed[1]   # first loop order
         assert qty0 == 5      # step0 uses full original count
         assert qty1 == 3      # loop uses remaining after partial step0 fill
+
+
+_TRANCHE_MODULE = "alpha_tech_tracker.op_momentum_strategy.order_executor"
+
+
+class TestTrancheFilling:
+    """
+    place_option_order_in_tranches() slices large orders into sequential
+    batches of at most tranche_size contracts, each going through the full
+    escalation policy.
+
+    Scenarios:
+      1. contracts <= tranche_size — single escalation call, identical to no-tranche
+      2. 2 tranches both fill — filled_so_far == contracts, last order returned
+      3. Tranche 1 fills, tranche 2 MISSes — filled_so_far == tranche_size, stop
+      4. Tranche 1 MISSes immediately — filled_so_far == 0, last_order == {}
+      5. entry_fill_price forwarded only to first tranche
+    """
+
+    _INNER = f"{_TRANCHE_MODULE}._place_with_fill_escalation"
+
+    def _filled_order(self, order_id="ord-001"):
+        return {"order_id": order_id}
+
+    def _miss_order(self):
+        return {}
+
+    def test_no_tranche_when_contracts_at_or_below_size(self):
+        """contracts=5, tranche_size=5 → single _place_with_fill_escalation call."""
+        client = _make_client()
+        with patch(self._INNER, return_value=self._filled_order()) as mock_inner, \
+             patch(f"{_TRANCHE_MODULE}.time.sleep", lambda _: None):
+            order, filled = place_option_order_in_tranches(
+                client=client,
+                ticker=_TICKER,
+                option_symbol=_SYMBOL,
+                option_type=_OPTION_TYPE,
+                contracts=5,
+                order_action=_SELL,
+                tranche_size=5,
+            )
+        assert mock_inner.call_count == 1
+        assert mock_inner.call_args.kwargs["contracts"] == 5
+        assert filled == 5
+        assert order == self._filled_order()
+
+    def test_two_tranches_both_fill_returns_total_filled(self):
+        """contracts=10, tranche_size=5 → two calls, both fill → filled_so_far=10."""
+        client = _make_client()
+        with patch(self._INNER, return_value=self._filled_order()) as mock_inner, \
+             patch(f"{_TRANCHE_MODULE}.time.sleep", lambda _: None):
+            order, filled = place_option_order_in_tranches(
+                client=client,
+                ticker=_TICKER,
+                option_symbol=_SYMBOL,
+                option_type=_OPTION_TYPE,
+                contracts=10,
+                order_action="BUY_OPEN",
+                tranche_size=5,
+            )
+        assert mock_inner.call_count == 2
+        assert mock_inner.call_args_list[0].kwargs["contracts"] == 5
+        assert mock_inner.call_args_list[1].kwargs["contracts"] == 5
+        assert filled == 10
+
+    def test_tranche1_fills_tranche2_misses_stops_early(self):
+        """contracts=10, tranche_size=5, tranche 2 MISSes → filled_so_far=5."""
+        client = _make_client()
+        call_num = [0]
+
+        def side_effect(**kw):
+            call_num[0] += 1
+            return self._filled_order() if call_num[0] == 1 else self._miss_order()
+
+        with patch(self._INNER, side_effect=side_effect) as mock_inner, \
+             patch(f"{_TRANCHE_MODULE}.time.sleep", lambda _: None):
+            order, filled = place_option_order_in_tranches(
+                client=client,
+                ticker=_TICKER,
+                option_symbol=_SYMBOL,
+                option_type=_OPTION_TYPE,
+                contracts=10,
+                order_action="BUY_OPEN",
+                tranche_size=5,
+            )
+        assert mock_inner.call_count == 2
+        assert filled == 5
+        assert order == self._miss_order()
+
+    def test_tranche1_misses_immediately_stops_with_zero_filled(self):
+        """contracts=10, tranche 1 MISSes → filled_so_far=0, last_order={}."""
+        client = _make_client()
+        with patch(self._INNER, return_value=self._miss_order()) as mock_inner, \
+             patch(f"{_TRANCHE_MODULE}.time.sleep", lambda _: None):
+            order, filled = place_option_order_in_tranches(
+                client=client,
+                ticker=_TICKER,
+                option_symbol=_SYMBOL,
+                option_type=_OPTION_TYPE,
+                contracts=10,
+                order_action="BUY_OPEN",
+                tranche_size=5,
+            )
+        assert mock_inner.call_count == 1
+        assert filled == 0
+        assert order == {}
+
+    def test_entry_fill_price_forwarded_only_to_first_tranche(self):
+        """entry_fill_price must be passed to tranche 1 and None to tranche 2+."""
+        client = _make_client()
+        with patch(self._INNER, return_value=self._filled_order()) as mock_inner, \
+             patch(f"{_TRANCHE_MODULE}.time.sleep", lambda _: None):
+            place_option_order_in_tranches(
+                client=client,
+                ticker=_TICKER,
+                option_symbol=_SYMBOL,
+                option_type=_OPTION_TYPE,
+                contracts=10,
+                order_action=_SELL,
+                tranche_size=5,
+                entry_fill_price=5.00,
+            )
+        assert mock_inner.call_args_list[0].kwargs["entry_fill_price"] == 5.00
+        assert mock_inner.call_args_list[1].kwargs["entry_fill_price"] is None

@@ -18,7 +18,7 @@ from .config import (
     _fmt_option,
 )
 from .models import ActivePosition, ReentryWatcher, _D, _stock_bid_ask
-from .order_executor import _place_with_fill_escalation, place_stock_order
+from .order_executor import place_option_order_in_tranches, place_stock_order
 from .replay import _now_et, is_replay_mode
 
 # Imported lazily to avoid circular imports — OptionPriceMonitor imports from contract_selector
@@ -771,7 +771,8 @@ class PositionMonitor:
                         pos.option_symbol,
                         pos.contracts,
                     )
-            order = _place_with_fill_escalation(
+            original_contracts = pos.contracts
+            last_order, filled = place_option_order_in_tranches(
                 client=self._client,
                 ticker=pos.ticker,
                 option_symbol=pos.option_symbol,
@@ -782,10 +783,21 @@ class PositionMonitor:
                 get_fair_price_fn=_exit_fair_price_fn,
                 feed=self._alpaca_feed,
             )
-            pos.exit_order_id = order.get("order_id")
-            if pos.exit_order_id is None:
+            pos.contracts -= filled
+            pos.exit_order_id = last_order.get("order_id")
+            if pos.contracts > 0:
                 pos.close_order_failed = True
-                _notify(f"CLOSE MISSED {pos.option_symbol} x{pos.contracts} reason={reason} — manual close required")
+                if filled > 0:
+                    _notify(
+                        f"CLOSE PARTIAL {pos.option_symbol}:"
+                        f" {filled}/{original_contracts} contracts closed,"
+                        f" {pos.contracts} still open reason={reason} — retry pending"
+                    )
+                else:
+                    _notify(
+                        f"CLOSE MISSED {pos.option_symbol} x{original_contracts}"
+                        f" reason={reason} — manual close required"
+                    )
             else:
                 pos.close_order_failed = False
                 logger.info("Close order placed: %s", pos.exit_order_id)

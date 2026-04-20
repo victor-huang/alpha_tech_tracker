@@ -52,7 +52,7 @@ from .bar_recorder import BarRecorder
 from .contract_selector import MockContractSelector, ITMOptionContractSelector, _is_nyse_holiday
 from .models import ActivePosition, ReentryWatcher, SignalEvent, WindowConfig, _D, _stock_bid_ask
 from .option_price_monitor import OptionPriceMonitor
-from .order_executor import _place_with_fill_escalation, place_stock_order
+from .order_executor import place_option_order_in_tranches, place_stock_order
 from .position_monitor import PositionMonitor
 from .position_sizer import PositionSizer
 from .replay import BarReplayDriver, LiveBarsSource, _now_et, is_replay_mode, set_replay_clock, clear_replay_clock
@@ -677,23 +677,26 @@ class OpMomentumTradeEngine:
             is_doubledown_addon=(reentry_type == "doubledown"),
         )
         if not self._mock_trade_execution:
-            fill_price, filled_qty = self._poll_entry_fill(order.get("order_id", ""))
+            fill_price, polled_qty = self._poll_entry_fill(order.get("order_id", ""))
             pos.entry_fill_price = fill_price
-            if filled_qty is not None:
-                if filled_qty == 0:
+            # contracts_filled is set by _place_entry when tranching; it carries
+            # the total across all tranches. Fall back to polled_qty for single orders.
+            total_filled = order.get("contracts_filled", polled_qty)
+            if total_filled is not None:
+                if total_filled == 0:
                     logger.error(
                         "Entry order for %s filled 0 contracts (rejected/missed) — discarding position",
                         option_symbol,
                     )
                     return False
-                if filled_qty != contracts:
+                if total_filled != contracts:
                     logger.warning(
                         "Entry partial fill for %s: requested %d, filled %d — adjusting contracts",
                         option_symbol,
                         contracts,
-                        filled_qty,
+                        total_filled,
                     )
-                    pos.contracts = filled_qty
+                    pos.contracts = total_filled
         self._monitor.add_position(pos)
         self._flush_session_state()
         return True
@@ -1547,7 +1550,7 @@ class OpMomentumTradeEngine:
                 bar = se.get_latest_bar(ticker) if se else None
                 stock_price = _D(str(bar["Close"])) if bar is not None else None
             return opm.get_fair_price(ticker, option_symbol, option_type_lower, stock_price)
-        return _place_with_fill_escalation(
+        last_order, filled = place_option_order_in_tranches(
             client=self._client,
             ticker=ticker,
             option_symbol=option_symbol,
@@ -1557,6 +1560,8 @@ class OpMomentumTradeEngine:
             get_fair_price_fn=_entry_fair_price_fn if opm else None,
             feed=self._alpaca_feed,
         )
+        last_order["contracts_filled"] = filled
+        return last_order
 
     def _check_ws_health(self, now) -> None:
         """Reconnect the WebSocket stream if no bar has been received for too long.

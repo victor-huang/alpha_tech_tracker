@@ -1699,7 +1699,7 @@ class TestEodMarketOrder:
         assert call_kwargs["symbol"] == "NVDA"
 
     def test_intraday_stop_still_uses_fill_escalation(self):
-        """Non-EOD exits must still go through _place_with_fill_escalation."""
+        """Non-EOD exits must still go through place_option_order_in_tranches."""
         client = _make_alpaca_client()
         client.order_status.return_value = {"status": "filled", "filled_avg_price": 5.0}
         client.get_option_quote_by_occ.return_value = _make_option_quote(bid=5.0, ask=5.5)
@@ -1714,8 +1714,8 @@ class TestEodMarketOrder:
         monitor.add_position(pos)
 
         with patch(
-            "alpha_tech_tracker.op_momentum_strategy.position_monitor._place_with_fill_escalation",
-            return_value={"order_id": "esc-1"},
+            "alpha_tech_tracker.op_momentum_strategy.position_monitor.place_option_order_in_tranches",
+            return_value=({"order_id": "esc-1"}, 3),
         ) as mock_esc, \
              patch("alpha_tech_tracker.op_momentum_strategy.position_monitor._notify"):
             _set_latest_bar(engine, "NVDA", close=103.0, ma50=90.0)

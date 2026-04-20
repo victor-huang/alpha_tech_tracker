@@ -544,6 +544,89 @@ def _place_with_fill_escalation(
     return order
 
 
+def place_option_order_in_tranches(
+    client: ExecutionClient,
+    ticker: str,
+    option_symbol: str,
+    option_type: str,
+    contracts: int,
+    order_action: str,
+    tranche_size: int = 5,
+    entry_fill_price: Optional[float] = None,
+    get_fair_price_fn=None,
+    feed=None,
+    penny_pilot: bool = True,
+) -> Tuple[dict, int]:
+    """
+    Fill `contracts` option contracts by sending sequential tranches of at most
+    `tranche_size` through the standard limit-escalation policy.
+
+    Each tranche starts fresh from the current market mid so later tranches adapt
+    to price movements between fills.  Stops on the first MISS; contracts filled
+    in prior tranches remain open at the broker.
+
+    entry_fill_price (quick-exit protection) is forwarded to the first tranche only.
+
+    Returns:
+        (last_order, filled_so_far)
+        last_order    — order dict from the last attempted tranche ({} on MISS)
+        filled_so_far — total contracts confirmed filled across all tranches
+    """
+    if contracts <= tranche_size:
+        order = _place_with_fill_escalation(
+            client=client,
+            ticker=ticker,
+            option_symbol=option_symbol,
+            option_type=option_type,
+            contracts=contracts,
+            order_action=order_action,
+            entry_fill_price=entry_fill_price,
+            get_fair_price_fn=get_fair_price_fn,
+            feed=feed,
+            penny_pilot=penny_pilot,
+        )
+        return order, (contracts if order.get("order_id") else 0)
+
+    total_tranches = -(-contracts // tranche_size)   # ceiling division
+    remaining = contracts
+    filled_so_far = 0
+    last_order: dict = {}
+    tranche_num = 0
+
+    while remaining > 0:
+        tranche_num += 1
+        batch = min(remaining, tranche_size)
+        logger.info(
+            "TRANCHE %d/%d %s %s: placing %d contracts (%d of %d remaining)",
+            tranche_num, total_tranches, order_action, option_symbol,
+            batch, remaining, contracts,
+        )
+        order = _place_with_fill_escalation(
+            client=client,
+            ticker=ticker,
+            option_symbol=option_symbol,
+            option_type=option_type,
+            contracts=batch,
+            order_action=order_action,
+            entry_fill_price=entry_fill_price if tranche_num == 1 else None,
+            get_fair_price_fn=get_fair_price_fn,
+            feed=feed,
+            penny_pilot=penny_pilot,
+        )
+        last_order = order
+        if not order.get("order_id"):
+            logger.warning(
+                "TRANCHE %d/%d %s %s: MISS — stopping, %d/%d contracts filled",
+                tranche_num, total_tranches, order_action, option_symbol,
+                filled_so_far, contracts,
+            )
+            break
+        filled_so_far += batch
+        remaining -= batch
+
+    return last_order, filled_so_far
+
+
 def place_stock_order(
     client: ExecutionClient,
     ticker: str,

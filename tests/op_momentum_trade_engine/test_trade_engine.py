@@ -2921,7 +2921,7 @@ _MOCK_ENTRY_PRICE_PATH = (
     "alpha_tech_tracker.op_momentum_strategy.mock_option_pricer.mock_entry_price"
 )
 _PLACE_WITH_FILL_ESCALATION_PATH = (
-    "alpha_tech_tracker.op_momentum_strategy.trade_engine._place_with_fill_escalation"
+    "alpha_tech_tracker.op_momentum_strategy.trade_engine.place_option_order_in_tranches"
 )
 
 
@@ -2969,7 +2969,7 @@ class TestPlaceEntryOptionOrderSimulateMode:
 
         with patch(
             _PLACE_WITH_FILL_ESCALATION_PATH,
-            return_value={"order_id": "live-1"},
+            return_value=({"order_id": "live-1"}, 1),
         ):
             engine._place_entry("NVDA", "BULLISH", self._CALL_SYM, 1, _D("12.00"))
 
