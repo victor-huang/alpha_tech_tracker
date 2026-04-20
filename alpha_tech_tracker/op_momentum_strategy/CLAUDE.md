@@ -432,6 +432,55 @@ python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine stop
 python alpha_tech_tracker/op_momentum_strategy/op_momentum_selector.py \
   --date 2026-03-17 --regime-filter --regime-ma 8
 
+# ── Replay engine: market data source variants ──────────────────────────────
+
+# 1. Alpaca cache (default) — fetches historical 5-min bars from Alpaca IEX cache
+#    Warmup + intraday bars both come from Alpaca. Fast; no live recording needed.
+python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine run \
+  --replay-date 2026-04-17 \
+  --window M1 09:30 3 --morning-split 100 \
+  --feed iex --full-day
+
+# 2. TradeStation API — fetches historical bars from TS REST API for both warmup and intraday.
+#    Requires a valid TS session (run tradestation_auth.py first).
+#    Produces identical signals to Alpaca cache; warmup bar count differs (~4,758 vs ~5,148)
+#    because TS returns market-hours-only bars.
+python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine run \
+  --replay-date 2026-04-17 \
+  --market-data-source tradestation \
+  --window M1 09:30 3 --morning-split 100 \
+  --full-day
+
+# 3. Alpaca recorded live CSV — replays bars captured by the live bar recorder (iex feed).
+#    Files expected at: live_trade_market_data/{YYYY-MM-DD}/iex_{TICKER}_5min.csv
+#    Warmup still comes from Alpaca cache; only intraday bars come from CSV.
+#    Results match Alpaca cache when the recording covers the full session.
+python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine run \
+  --replay-date 2026-04-17 \
+  --live-data-dir alpha_tech_tracker/op_momentum_strategy/live_trade_market_data \
+  --live-data-feed iex \
+  --window M1 09:30 3 --morning-split 100 \
+  --feed iex --full-day
+
+# 4. TradeStation recorded live CSV — replays bars captured from the TS feed.
+#    Files expected at: live_trade_market_data/{YYYY-MM-DD}/tradestation_{TICKER}_5min.csv
+#    WARNING: TS live recordings before _backfill_session() was added may be missing
+#    the opening bars (9:30–~10:00), causing the OR window to shift and wrong picks.
+#    Verify bar counts look complete (should be ~66 bars for a full day) before trusting results.
+python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine run \
+  --replay-date 2026-04-17 \
+  --live-data-dir alpha_tech_tracker/op_momentum_strategy/live_trade_market_data \
+  --live-data-feed tradestation \
+  --window M1 09:30 3 --morning-split 100 \
+  --full-day
+
+# ── Replay data source comparison findings (2026-04-17) ─────────────────────
+# Source                 | Bars  | Picks        | P&L
+# Alpaca cache           | 1,273 | RH, MSTR     | +$797,480  ← ground truth
+# Alpaca live CSV        | 1,160 | RH, MSTR     | +$797,480  ← matches (full recording)
+# TradeStation API       | 1,273 | RH, MSTR     | +$797,480  ← matches (complete REST data)
+# TradeStation live CSV  | 1,121 | SNDK, APP    | -$24,045   ← wrong (recording missed 9:30 open)
+
 # Run tests
 PYTHONPATH=/Users/victorhuang/work/alpha_tech_tracker \
   python -m pytest tests/op_momentum_trade_engine/ -v
