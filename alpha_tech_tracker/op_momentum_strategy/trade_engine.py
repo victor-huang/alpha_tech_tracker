@@ -2065,6 +2065,7 @@ class OpMomentumTradeEngine:
             bars_source=bars_source,
             exit_time=replay_exit_time,
             feed=self._alpaca_feed.value,
+            market_data_client=self._market_data_client if bars_source is None else None,
         )
         driver.run()
 

@@ -149,6 +149,7 @@ class BarReplayDriver:
     bars_source: Optional[LiveBarsSource] = None
     exit_time: str = "15:55"
     feed: str = "iex"
+    market_data_client: Optional[object] = None  # MarketDataClient ABC
 
     def run(self):
         bars_by_ticker = self._fetch_session_bars()
@@ -181,8 +182,10 @@ class BarReplayDriver:
     def _fetch_session_bars(self) -> dict:
         """Return {ticker: [_FiveMinBar, ...]} for `replay_date` only.
 
-        Delegates to `bars_source.load()` when a source is provided,
-        otherwise falls back to the Alpaca cache via fetch_bars.
+        Priority order:
+        1. `bars_source.load()` — explicit CSV/custom source
+        2. `market_data_client.fetch_bars()` — configured market data source (e.g. TradeStation)
+        3. Alpaca cache via `fetch_bars()` — default fallback
         """
         if self.bars_source is not None:
             logger.info(
@@ -191,6 +194,23 @@ class BarReplayDriver:
                 type(self.bars_source).__name__,
             )
             return self.bars_source.load(self.tickers, self.replay_date)
+
+        if self.market_data_client is not None:
+            logger.info(
+                "Replay %s — loading bars from %s",
+                self.replay_date,
+                type(self.market_data_client).__name__,
+            )
+            session_start = ET.localize(
+                datetime.combine(self.replay_date, _time(9, 30))
+            )
+            session_end = ET.localize(
+                datetime.combine(self.replay_date, _time(16, 0))
+            )
+            all_bars = self.market_data_client.fetch_bars(
+                self.tickers, session_start, session_end
+            )
+            return self._df_dict_to_five_min_bars(all_bars)
 
         from alpaca.data.enums import DataFeed
         alpaca_feed = DataFeed.IEX if self.feed == "iex" else DataFeed.SIP
@@ -202,7 +222,10 @@ class BarReplayDriver:
             allow_intraday=True,
             feed=alpaca_feed,
         )
+        return self._df_dict_to_five_min_bars(all_bars)
 
+    def _df_dict_to_five_min_bars(self, all_bars: dict) -> dict:
+        """Convert {ticker: DataFrame} to {ticker: [_FiveMinBar, ...]} for replay_date."""
         result = {}
         for ticker, df in all_bars.items():
             if df.empty:
@@ -223,7 +246,6 @@ class BarReplayDriver:
                     )
                 )
             result[ticker] = bars
-
         return result
 
     def _build_timeline(self, bars_by_ticker: dict) -> list:
