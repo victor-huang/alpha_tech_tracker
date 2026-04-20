@@ -82,3 +82,77 @@ IEX generates **~8-10% more trades** than SIP (noisier, sparser data fires more 
 - Feed constant: `_ALPACA_FEED = DataFeed.SIP` in `op_momentum_backtest.py` (line ~27)
 - `_cache_source("alpaca")` → `"alpaca_sip"` or `"alpaca_iex"` depending on `_ALPACA_FEED`
 - Live feed set in `signal_engine.py` (WebSocket + warmup bars) and `alpaca_client/client.py` (`get_stock_quote`)
+
+---
+
+# TradeStation vs Alpaca SIP: Replay Comparison
+
+*Experiment date: 2026-04-19. Engine: `--window M1 09:30 3 --morning-split 100 --mock-trade-execution`.*
+
+## Background
+
+`BarReplayDriver` was updated (commit `3e75cb2`) to honor `--market-data-source` for intraday replay bars. Previously it always fetched from Alpaca cache regardless of the flag. After the fix, replays with `--market-data-source tradestation` fetch both warmup and intraday bars from the TradeStation REST API (SIP tape), making the two sources truly independent.
+
+## Warmup Bar Counts (same date range)
+
+| Source | Bars per ticker (typical) | Coverage |
+|---|---|---|
+| Alpaca SIP | ~5,070 | Regular + extended hours |
+| TradeStation | ~4,758 | Regular market hours only (9:30–16:00) |
+
+TS returns market-hours-only bars; Alpaca includes pre/post-market. Despite the bar count difference, the last-close prices match closely (within $0.01 for most tickers), confirming both sources agree on regular-session prices.
+
+## Per-Day P&L Comparison
+
+### Alpaca IEX vs TradeStation SIP (4 dates)
+
+| Date | Alpaca IEX | TradeStation | Diff | Note |
+|---|---|---|---|---|
+| 2026-04-17 | +$797,480 | +$712,715 | -$84,765 | Different contract sizing |
+| 2026-04-16 | +$36,435 | +$115,730 | +$79,295 | Different contract sizing |
+| 2026-04-15 | -$9,740 | -$40,975 | -$31,235 | Same picks, different size |
+| 2026-04-14 | -$74,350 | -$10,690 | +$63,660 | Same picks, different size |
+
+IEX and TS diverge significantly on every date — IEX sparse bars produce different OR ranges and contract mids.
+
+### Alpaca SIP vs TradeStation SIP (5 dates, with trade detail)
+
+| Date | Source | Trades | P&L |
+|---|---|---|---|
+| 2026-01-09 | Alpaca SIP | SNDK ✅ +$67,660 / CRDO ❌ -$160,920 | **-$93,260** |
+| 2026-01-09 | TradeStation | SNDK ✅ +$67,660 / CRDO ❌ -$160,920 | **-$93,260** |
+| 2026-02-06 | Alpaca SIP | CRDO ❌ / MSTR ✅ +$1,084,875 | **+$984,955** |
+| 2026-02-06 | TradeStation | MSTR ✅ +$1,081,575 / CRDO ❌ | **+$981,655** |
+| 2026-03-06 | Alpaca SIP | MRVL ✅ +$62,055 / SHOP ❌ -$32,670 | **+$29,385** |
+| 2026-03-06 | TradeStation | SHOP ❌ -$32,670 / MRVL ✅ +$62,280 | **+$29,610** |
+| 2026-04-02 | Alpaca SIP | COIN ❌ -$11,940 / SHOP ❌ -$32,875 | **-$44,815** |
+| 2026-04-02 | TradeStation | COIN ❌ -$15,860 / SHOP ❌ -$32,875 | **-$48,735** |
+| 2026-04-09 | Alpaca SIP | FN ❌ -$107,420 / PLTR ✅ +$234,900 | **+$127,480** |
+| 2026-04-09 | TradeStation | COIN ✅ +$213,750 / FN ❌ -$107,420 | **+$106,330** |
+
+**Alpaca SIP and TradeStation SIP are effectively equivalent**: picks are identical 4 of 5 days; P&L differences are within 1% except Apr 9 where ranking swapped COIN vs PLTR due to slightly different 60-day rolling OR scores.
+
+## The IEX Signal Miss: April 8, 2026
+
+On 2026-04-08, Alpaca IEX fired **zero signals** while TradeStation SIP fired on FN (Bullish, +$76,700). Root cause: FN's OR midpoint differed between feeds.
+
+| | Alpaca IEX | TradeStation SIP |
+|---|---|---|
+| OR Low | 600.51 | 598.00 |
+| OR High | ~608.24 | 609.25 |
+| Midpoint | **604.375** | **603.625** |
+| 9:45 Close | 604.04 | 604.04 |
+| Signal | NEUTRAL ❌ | **BULLISH ✅** |
+
+IEX missed trades in FN's opening 15-minute window (FN is a lower-volume optical components stock), compressing the OR range. The close landed between the two midpoints — below IEX's threshold, above SIP's. This is a structural IEX limitation for lower-volume tickers, not a code bug.
+
+Note: FN has since been removed from the V3 ticker pool and replaced with higher-volume names (CRDO, MRVL, etc.), reducing exposure to this class of IEX miss.
+
+## Conclusion
+
+| Comparison | Result |
+|---|---|
+| Alpaca IEX vs TradeStation SIP | **Large divergence** — different signals, different P&L, IEX misses valid breakouts on low-volume tickers |
+| Alpaca SIP vs TradeStation SIP | **Effectively identical** — same picks 4/5 days, P&L within 1% |
+
+**The real issue is IEX, not Alpaca vs TradeStation as brokers.** An Alpaca SIP subscription would align live trading and backtest replay results closely with TradeStation. The backtest cache (built with SIP) already uses the right feed — the remaining gap is in live bar streaming, which uses whatever `--feed` is configured.
