@@ -197,18 +197,15 @@ class BarReplayDriver:
 
         if self.market_data_client is not None:
             logger.info(
-                "Replay %s — loading bars from %s",
+                "Replay %s — loading bars from TradeStation cache (API fallback on miss)",
                 self.replay_date,
-                type(self.market_data_client).__name__,
             )
-            session_start = ET.localize(
-                datetime.combine(self.replay_date, _time(9, 30))
-            )
-            session_end = ET.localize(
-                datetime.combine(self.replay_date, _time(16, 0))
-            )
-            all_bars = self.market_data_client.fetch_bars(
-                self.tickers, session_start, session_end
+            all_bars = fetch_bars(
+                self.tickers,
+                self.replay_date,
+                self.replay_date,
+                source="tradestation",
+                market_data_client=self.market_data_client,
             )
             return self._df_dict_to_five_min_bars(all_bars)
 
