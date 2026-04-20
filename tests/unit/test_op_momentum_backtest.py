@@ -1,6 +1,6 @@
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pytest
@@ -1170,3 +1170,97 @@ class TestFetchBarsUnlinkFileNotFound:
              patch(f"{_M}._partial_stitch_cache", return_value=(None, None)), \
              patch(f"{_M}.fetch_alpaca_bars", return_value={}):
             fetch_bars([self._TICKER], self._START, self._END, source=self._SOURCE)
+
+
+# ---------------------------------------------------------------------------
+# fetch_bars — TradeStation source + market_data_client caching
+# ---------------------------------------------------------------------------
+
+class TestFetchBarsTradeStation:
+    _START = date(2026, 3, 1)
+    _END = date(2026, 3, 31)
+    _TICKER = "NVDA"
+
+    def _make_client(self, df=None):
+        client = MagicMock()
+        if df is None:
+            df = _make_date_bars([str(self._START), str(self._END)])
+        client.fetch_bars.return_value = {self._TICKER: df}
+        return client
+
+    def test_calls_market_data_client_on_cache_miss(self, tmp_path):
+        client = self._make_client()
+        with patch(f"{_M}._CACHE_DIR", tmp_path), \
+             patch(f"{_M}._stitch_cache", return_value=None), \
+             patch(f"{_M}._partial_stitch_cache", return_value=(None, None)):
+            fetch_bars([self._TICKER], self._START, self._END,
+                       source="tradestation", market_data_client=client)
+
+        client.fetch_bars.assert_called_once()
+
+    def test_caches_result_under_tradestation_key(self, tmp_path):
+        client = self._make_client()
+        with patch(f"{_M}._CACHE_DIR", tmp_path), \
+             patch(f"{_M}._stitch_cache", return_value=None), \
+             patch(f"{_M}._partial_stitch_cache", return_value=(None, None)):
+            fetch_bars([self._TICKER], self._START, self._END,
+                       source="tradestation", market_data_client=client)
+
+        cache_file = tmp_path / f"tradestation_5min_{self._TICKER}_{self._START}_{self._END}.json"
+        assert cache_file.exists()
+
+    def test_returns_cached_data_without_calling_client(self, tmp_path):
+        df = _make_date_bars([str(self._START), str(self._END)])
+        cache_file = tmp_path / f"tradestation_5min_{self._TICKER}_{self._START}_{self._END}.json"
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        df.to_json(cache_file, orient="split", date_format="iso")
+
+        client = self._make_client()
+        with patch(f"{_M}._CACHE_DIR", tmp_path), \
+             patch(f"{_M}._stitch_cache", return_value=None), \
+             patch(f"{_M}._partial_stitch_cache", return_value=(None, None)):
+            result = fetch_bars([self._TICKER], self._START, self._END,
+                                source="tradestation", market_data_client=client)
+
+        client.fetch_bars.assert_not_called()
+        assert not result[self._TICKER].empty
+
+    def test_delta_fetches_from_tradestation_client(self, tmp_path):
+        partial_end = date(2026, 3, 20)
+        partial_df = _make_date_bars([str(self._START), str(partial_end)])
+        tail_df = _make_date_bars([str(self._END)])
+        client = MagicMock()
+        client.fetch_bars.return_value = {self._TICKER: tail_df}
+
+        with patch(f"{_M}._CACHE_DIR", tmp_path), \
+             patch(f"{_M}._stitch_cache", return_value=None), \
+             patch(f"{_M}._partial_stitch_cache", return_value=(partial_df, partial_end)):
+            result = fetch_bars([self._TICKER], self._START, self._END,
+                                source="tradestation", market_data_client=client)
+
+        client.fetch_bars.assert_called_once()
+        assert not result[self._TICKER].empty
+
+    def test_client_receives_et_datetime_range(self, tmp_path):
+        client = self._make_client()
+        with patch(f"{_M}._CACHE_DIR", tmp_path), \
+             patch(f"{_M}._stitch_cache", return_value=None), \
+             patch(f"{_M}._partial_stitch_cache", return_value=(None, None)):
+            fetch_bars([self._TICKER], self._START, self._END,
+                       source="tradestation", market_data_client=client)
+
+        _, start_dt, end_dt = client.fetch_bars.call_args[0]
+        assert start_dt.tzinfo is not None
+        assert start_dt.hour == 9 and start_dt.minute == 30
+        assert end_dt.hour == 16 and end_dt.minute == 0
+
+    def test_does_not_call_fetch_alpaca_bars_when_tradestation_source(self, tmp_path):
+        client = self._make_client()
+        with patch(f"{_M}._CACHE_DIR", tmp_path), \
+             patch(f"{_M}._stitch_cache", return_value=None), \
+             patch(f"{_M}._partial_stitch_cache", return_value=(None, None)), \
+             patch(f"{_M}.fetch_alpaca_bars") as mock_alpaca:
+            fetch_bars([self._TICKER], self._START, self._END,
+                       source="tradestation", market_data_client=client)
+
+        mock_alpaca.assert_not_called()

@@ -1128,6 +1128,106 @@ class TestTickerSelectorReplayMode:
 
 
 # ---------------------------------------------------------------------------
+# TickerSelector — market_data_client (TradeStation caching)
+# ---------------------------------------------------------------------------
+
+_FETCH_BARS_BACKTEST_PATH = "alpha_tech_tracker.op_momentum_strategy.trade_engine.fetch_bars"
+
+
+def _make_select_top_n_result(tickers=None):
+    tickers = tickers or ["NVDA"]
+    return {
+        "picks": [{"ticker": t, "score": 1.0, "ev_trade": 0.5, "signal": "BULLISH"} for t in tickers],
+        "no_signal": [],
+        "negative_ev": [],
+        "rolling_stats": {t: {} for t in tickers},
+    }
+
+
+class TestTickerSelectorMarketDataClient:
+    @patch(_SELECT_TOP_N_PATH)
+    @patch(_FETCH_BARS_PATH)
+    def test_fetch_bars_uses_tradestation_source_when_client_set(
+        self, mock_fetch_bars, mock_select_top_n
+    ):
+        mock_fetch_bars.return_value = {}
+        mock_select_top_n.return_value = _make_select_top_n_result()
+        client = Mock()
+        selector = TickerSelector(tickers=["NVDA"], top_n=1, market_data_client=client)
+        selector.select()
+
+        call_kwargs = mock_fetch_bars.call_args[1]
+        assert call_kwargs.get("source") == "tradestation"
+        assert call_kwargs.get("market_data_client") is client
+
+    @patch(_SELECT_TOP_N_PATH)
+    @patch(_FETCH_BARS_PATH)
+    def test_fetch_bars_uses_alpaca_source_when_no_client(
+        self, mock_fetch_bars, mock_select_top_n
+    ):
+        mock_fetch_bars.return_value = {}
+        mock_select_top_n.return_value = _make_select_top_n_result()
+        selector = TickerSelector(tickers=["NVDA"], top_n=1)
+        selector.select()
+
+        call_kwargs = mock_fetch_bars.call_args[1]
+        assert call_kwargs.get("source") == "alpaca"
+        assert call_kwargs.get("market_data_client") is None
+
+    @patch(_SELECT_TOP_N_PATH)
+    @patch(_FETCH_BARS_PATH)
+    def test_select_passes_tradestation_source_to_select_top_n(
+        self, mock_fetch_bars, mock_select_top_n
+    ):
+        mock_fetch_bars.return_value = {}
+        mock_select_top_n.return_value = _make_select_top_n_result()
+        client = Mock()
+        selector = TickerSelector(tickers=["NVDA"], top_n=1, market_data_client=client)
+        selector.select()
+
+        assert mock_select_top_n.call_args[1]["source"] == "tradestation"
+
+    @patch(_SELECT_TOP_N_PATH)
+    @patch(_FETCH_BARS_PATH)
+    def test_select_passes_alpaca_source_to_select_top_n_when_no_client(
+        self, mock_fetch_bars, mock_select_top_n
+    ):
+        mock_fetch_bars.return_value = {}
+        mock_select_top_n.return_value = _make_select_top_n_result()
+        selector = TickerSelector(tickers=["NVDA"], top_n=1)
+        selector.select()
+
+        assert mock_select_top_n.call_args[1]["source"] == "alpaca"
+
+    @patch(_SELECT_TOP_N_PATH)
+    @patch(_FETCH_BARS_PATH)
+    def test_tradestation_source_used_in_fallback_select_top_n_call(
+        self, mock_fetch_bars, mock_select_top_n
+    ):
+        mock_fetch_bars.return_value = {}
+        mock_select_top_n.side_effect = [
+            {"picks": [], "no_signal": [], "negative_ev": [], "rolling_stats": {}},
+            _make_select_top_n_result(),
+        ]
+        client = Mock()
+        selector = TickerSelector(tickers=["NVDA"], top_n=1, market_data_client=client)
+
+        with patch(
+            "alpha_tech_tracker.op_momentum_strategy.trade_engine.is_replay_mode",
+            return_value=False,
+        ), patch(
+            "alpha_tech_tracker.op_momentum_strategy.trade_engine._now_et"
+        ) as mock_now_et:
+            mock_now_et.return_value = Mock()
+            mock_now_et.return_value.date.return_value = date(2026, 4, 15)
+            selector.select()
+
+        assert mock_select_top_n.call_count == 2
+        for call in mock_select_top_n.call_args_list:
+            assert call[1]["source"] == "tradestation"
+
+
+# ---------------------------------------------------------------------------
 # _on_position_closed — options formula
 # ---------------------------------------------------------------------------
 
