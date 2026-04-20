@@ -327,6 +327,93 @@ Entry threads are started and `_schedule_dd_check_for_window` fires immediately 
 
 ---
 
+## Capital Allocation Review 2026-04-19
+
+From code review of `trade_engine.py`, `order_executor.py`, and `position_monitor.py` focused on capital allocation and fill escalation interaction.
+
+---
+
+### BUG-015 (Medium): Cross-Window Ticker Double-Exposure — No Uniqueness Check Across Windows
+
+**Status: Open**
+**Severity:** Medium — two active option positions on the same underlying, doubling delta exposure
+
+#### What happened (risk scenario)
+
+A losing M1 position is held open past 3:05 PM (EOD close at 3:55 PM). A2 fires at 3:05 PM and independently scores the same ticker. A2's `_on_signal_for_window` and `_drain_pending_signals_for_window` both gate only on the per-window `open_position_count`. Neither checks `_monitor._positions` for the ticker across windows. A2 enters a new position on the same ticker, creating two simultaneous option positions on the same underlying.
+
+The sequential budget logic at `_get_window_budget` (line 1196-1213) adds M1's still-open `slot_capital` to A2's available budget — so A2 has capital to spend. But the double entry concentrates delta risk unexpectedly.
+
+#### Root cause
+
+`_on_signal_for_window:1322` and `_drain_pending_signals_for_window:1419` check:
+```python
+if state["open_position_count"] >= self._top_n:
+```
+`state` is per-window (`self._window_state[window_label]`). There is no query of `_monitor._positions` for ticker uniqueness across windows before entering.
+
+#### Fix needed
+
+Before incrementing `open_position_count` in both functions, check for an existing open position on that ticker across all windows:
+
+```python
+with self._monitor._lock:
+    already_open = any(
+        p.ticker == ticker and not p.is_closed
+        for p in self._monitor._positions
+    )
+if already_open:
+    logger.info("Skipping %s [%s]: already open in another window", ticker, label)
+    continue  # or return in _on_signal_for_window
+```
+
+**Files:** `trade_engine.py` — `_on_signal_for_window()`, `_drain_pending_signals_for_window()`
+
+---
+
+### BUG-016 (Low-Medium): Partial Entry Fill Does Not Adjust `slot_capital` — Sequential Budget Overstated
+
+**Status: Open**
+**Severity:** Low-Medium — sequential window A1/A2 receives inflated budget when prior window had a partial fill entry
+
+#### What happened (risk scenario)
+
+`slot_capital` is set before the entry order is placed (line 651-652):
+```python
+slot_capital = window_budget * capital_weight  # e.g., $5,000 for 10 contracts
+```
+
+If the entry escalation partially fills (e.g., 5 of 10 contracts), line 711 adjusts:
+```python
+pos.contracts = total_filled  # 5
+```
+But `pos.slot_capital` remains at $5,000 — the intended spend, not actual spend.
+
+When A1 computes its sequential budget (`_get_window_budget` lines 1202-1212), it reads `pos.slot_capital` for all still-open M1 positions and adds it to `prior_returned`. A1 sees $5,000 tied up in M1 even though only ~$2,500 of broker capital was consumed (5 contracts × ~$50 each). A1's budget is inflated by the unfilled portion.
+
+#### Root cause
+
+`slot_capital` is computed from the intended spend and never reconciled against `confirmed_filled` after `_poll_entry_fill` returns.
+
+#### Fix needed
+
+After adjusting `pos.contracts` on partial fill, scale `slot_capital` proportionally:
+
+```python
+if total_filled != contracts:
+    pos.contracts = total_filled
+    if pos.slot_capital is not None:
+        pos.slot_capital = (
+            pos.slot_capital * _D(str(total_filled)) / _D(str(contracts))
+        )
+```
+
+**Practical frequency:** Low — the 4-phase escalation policy makes partial entry fills uncommon.
+
+**Files:** `trade_engine.py` — `_enter_option_position()`
+
+---
+
 ## Summary Table
 
 | ID | Bug | Session | Severity | Status |
@@ -345,3 +432,5 @@ Entry threads are started and `_schedule_dd_check_for_window` fires immediately 
 | BUG-012 | DD failed entry leaks `_window_returned` | Capital flow audit | Medium | **Fixed** |
 | BUG-013 | `_window_state["budget"]` written/read without lock | Capital flow audit | Low | **Fixed** |
 | BUG-014 | Entry threads not joined before DD check — slow fills may miss survivor | Capital flow audit | Low | **Fixed** |
+| BUG-015 | Cross-window ticker double-exposure — no uniqueness check across windows | Capital alloc review | Medium | **Open** |
+| BUG-016 | Partial entry fill does not adjust `slot_capital` — sequential budget overstated | Capital alloc review | Low-Medium | **Open** |

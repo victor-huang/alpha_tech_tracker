@@ -60,23 +60,23 @@ PYTHONPATH=/home/ec2-user/alpha_tech_tracker_stock_engine python -m alpha_tech_t
 --live
 
 see the logs:
-tail -f ../alpha_tech_tracker_stock_engine/logs/op_momentum_2026-04-20.log ./logs/op_momentum_2026-04-20.log
+tail -f ./alpha_tech_tracker_stock_engine/logs/op_momentum_2026-04-20.log ./logs/op_momentum_2026-04-20.log
 
 
 --------------
-python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine start \
+python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine run \
 --log-level DEBUG \
 --trade-type options \
 --collect-option-prices \
---window M1 9:30 3 \
+--window M1 9:30 3 --window A1 13:15 1 --window A2 15:00 1 \
 --morning-split 100 --bearish-reentry --bullish-reentry --reversal \
 --rank-weighted-sizing 60 40 \
 --doubledown \
 --doubledown-start 10 \
+--mock-trade-execution \
 --top 2 --capital 10000 \
---record-tradestation-feed \
---replay-date 2026-04-08
-
+--market-data-source tradestation \
+--replay-date 2026-04-17
 
 
 
