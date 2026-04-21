@@ -772,6 +772,7 @@ class PositionMonitor:
                         pos.contracts,
                     )
             original_contracts = pos.contracts
+            pos.closed_contracts = pos.contracts
             last_order, filled = place_option_order_in_tranches(
                 client=self._client,
                 ticker=pos.ticker,
@@ -1063,6 +1064,9 @@ class PositionMonitor:
         def _fmt_time(dt: Optional[datetime]) -> str:
             return dt.strftime("%H:%M") if dt else "—"
 
+        def _effective_contracts(pos) -> int:
+            return pos.closed_contracts if pos.closed_contracts > 0 else pos.contracts
+
         def _position_pnl(pos, entry_price, exit_price):
             if entry_price is None or exit_price is None:
                 return None
@@ -1072,14 +1076,14 @@ class PositionMonitor:
                 raw = exit_price - entry_price
             if pos.trade_type == "stock":
                 return raw * _D(pos.shares)
-            return raw * _D(pos.contracts) * _D("100")
+            return raw * _D(_effective_contracts(pos)) * _D("100")
 
         def _position_cost(pos, entry_price):
             if entry_price is None:
                 return None
             if pos.trade_type == "stock":
                 return entry_price * _D(pos.shares)
-            return entry_price * _D(pos.contracts) * _D("100")
+            return entry_price * _D(_effective_contracts(pos)) * _D("100")
 
         def _print_totals(positions, get_entry, get_exit, emit, width):
             total_pnl = _D("0")
@@ -1104,7 +1108,7 @@ class PositionMonitor:
                         if pos.trade_type == "stock":
                             total_cap_pnl += pos.slot_capital / entry * raw
                         else:
-                            total_cap_pnl += _D(pos.contracts) * _D("100") * raw
+                            total_cap_pnl += _D(_effective_contracts(pos)) * _D("100") * raw
                         has_cap = True
             if not has_any:
                 return
@@ -1156,7 +1160,7 @@ class PositionMonitor:
                 exit_mid = pos.simulated_exit_mid
                 pnl = _position_pnl(pos, entry_mid, exit_mid)
                 if pnl is not None:
-                    pnl_str = f"+${pnl:.2f}" if pnl >= 0 else f"-${abs(pnl):.2f}"
+                    pnl_str = f"+${abs(pnl):.2f}" if pnl >= 0 else f"-${abs(pnl):.2f}"
                     entry_str = f"${entry_mid:.2f}"
                     exit_str = f"${exit_mid:.2f}"
                     if pos.trade_type == "stock" and pos.signal == "BEARISH":
@@ -1175,7 +1179,7 @@ class PositionMonitor:
                     qty_str = f"{pos.shares}sh"
                 else:
                     sym_str = pos.option_symbol
-                    qty_str = str(pos.contracts)
+                    qty_str = str(_effective_contracts(pos))
                 exit_display_time = (
                     pos.exit_time + timedelta(minutes=5)
                     if pos.exit_time is not None and pos.exit_reason != "end_of_day"
@@ -1211,7 +1215,7 @@ class PositionMonitor:
                 exit_fill = pos.exit_fill_price
                 pnl = _position_pnl(pos, entry_fill, exit_fill)
                 if pnl is not None:
-                    pnl_str = f"+${pnl:.2f}" if pnl >= 0 else f"-${abs(pnl):.2f}"
+                    pnl_str = f"+${abs(pnl):.2f}" if pnl >= 0 else f"-${abs(pnl):.2f}"
                     entry_str = f"${entry_fill:.2f}"
                     exit_str = f"${exit_fill:.2f}"
                     if pos.trade_type == "stock" and pos.signal == "BEARISH":
@@ -1230,7 +1234,7 @@ class PositionMonitor:
                     qty_str = f"{pos.shares}sh"
                 else:
                     sym_str = pos.option_symbol
-                    qty_str = str(pos.contracts)
+                    qty_str = str(_effective_contracts(pos))
                 _emit(
                     f"  {pos.ticker:<7} {_trade_label(pos):<16} {sym_str:<26} "
                     f"{qty_str:>6}"

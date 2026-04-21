@@ -1,4 +1,7 @@
 import json
+import threading
+import tempfile
+import os
 from unittest.mock import MagicMock, patch
 
 import alpha_tech_tracker.op_momentum_strategy.config as config_module
@@ -8,6 +11,7 @@ from alpha_tech_tracker.op_momentum_strategy.config import (
     _load_config,
     _fmt_option,
     _save_etrade_session_tokens,
+    _save_tradestation_session_tokens,
     build_execution_client,
     disable_notifications,
     enable_notifications,
@@ -429,3 +433,54 @@ class TestFmtOption:
 
     def test_unrecognised_symbol_returned_unchanged(self):
         assert _fmt_option("bad-symbol") == "bad-symbol"
+
+
+class TestSaveTradeStationSessionTokens:
+    def test_persists_token_to_config_file(self, tmp_path):
+        config_file = str(tmp_path / "config.json")
+        token = {"access_token": "abc", "refresh_token": "xyz"}
+
+        _save_tradestation_session_tokens(token, config_file=config_file)
+
+        with open(config_file) as f:
+            saved = json.load(f)
+        assert saved["tradestation_session"] == token
+
+    def test_merges_with_existing_config_keys(self, tmp_path):
+        config_file = str(tmp_path / "config.json")
+        with open(config_file, "w") as f:
+            json.dump({"execution_broker": "tradestation"}, f)
+        token = {"access_token": "new"}
+
+        _save_tradestation_session_tokens(token, config_file=config_file)
+
+        with open(config_file) as f:
+            saved = json.load(f)
+        assert saved["execution_broker"] == "tradestation"
+        assert saved["tradestation_session"] == token
+
+    def test_concurrent_writes_do_not_raise(self, tmp_path):
+        # BUG-2: concurrent token_updater callbacks from multiple TS stream threads
+        # caused a FileNotFoundError on os.replace() due to race on the .tmp file.
+        config_file = str(tmp_path / "config.json")
+        errors = []
+
+        def write_token(i):
+            try:
+                _save_tradestation_session_tokens(
+                    {"access_token": f"tok{i}"},
+                    config_file=config_file,
+                )
+            except Exception as exc:
+                errors.append(exc)
+
+        threads = [threading.Thread(target=write_token, args=(i,)) for i in range(20)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        assert errors == [], f"Concurrent writes raised: {errors}"
+        with open(config_file) as f:
+            saved = json.load(f)
+        assert "tradestation_session" in saved

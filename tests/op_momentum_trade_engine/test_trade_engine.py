@@ -2632,6 +2632,60 @@ class TestComputePositionReturnedCapital:
         assert engine._compute_position_returned_capital(pos) == _D("0")
 
 
+class TestRebuildWindowReturnedClosedContracts:
+    """BUG-1: cap_pnl must use closed_contracts when pos.contracts is zeroed after live close."""
+
+    def _make_engine(self):
+        return OpMomentumTradeEngine(
+            alpaca_client=_make_alpaca_client(), mock_trade_execution=False
+        )
+
+    def test_cap_pnl_uses_closed_contracts_when_pos_contracts_is_zero(self):
+        engine = self._make_engine()
+        pos = _make_active_position(signal="BULLISH")
+        pos.slot_capital = _D("4000")
+        pos.window_label = "M1"
+        pos.entry_fill_price = _D("10")
+        pos.exit_fill_price = _D("12")
+        pos.closed_contracts = 4
+        pos.contracts = 0  # zeroed after live close
+
+        engine._rebuild_window_returned([pos])
+
+        # cap_pnl = 4 * 100 * (12 - 10) = 800; returned = 4000 + 800 = 4800
+        assert engine._window_returned["M1"] == _D("4800")
+
+    def test_cap_pnl_is_zero_when_both_contracts_and_closed_contracts_are_zero(self):
+        engine = self._make_engine()
+        pos = _make_active_position(signal="BULLISH")
+        pos.slot_capital = _D("4000")
+        pos.window_label = "M1"
+        pos.entry_fill_price = _D("10")
+        pos.exit_fill_price = _D("12")
+        pos.closed_contracts = 0
+        pos.contracts = 0
+
+        engine._rebuild_window_returned([pos])
+
+        # no contracts to multiply — returned equals slot_capital only
+        assert engine._window_returned["M1"] == _D("4000")
+
+    def test_falls_back_to_contracts_when_closed_contracts_not_set(self):
+        engine = self._make_engine()
+        pos = _make_active_position(signal="BULLISH")
+        pos.slot_capital = _D("4000")
+        pos.window_label = "M1"
+        pos.entry_fill_price = _D("10")
+        pos.exit_fill_price = _D("12")
+        pos.closed_contracts = 0  # default — not yet set (open position)
+        pos.contracts = 4
+
+        engine._rebuild_window_returned([pos])
+
+        # falls back to pos.contracts = 4
+        assert engine._window_returned["M1"] == _D("4800")
+
+
 class TestDoubleDown:
     def _make_engine(self, **kwargs):
         client = _make_alpaca_client()

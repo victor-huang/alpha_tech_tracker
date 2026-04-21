@@ -538,6 +538,77 @@ class TestPrintSummaryPnl:
 
         assert "-$763.00" in caplog.text
 
+    def test_live_summary_qty_uses_closed_contracts_when_contracts_zeroed(self, caplog):
+        # BUG-1: after live close, pos.contracts becomes 0; summary must use closed_contracts
+        client = _make_alpaca_client()
+        engine = _make_signal_engine_with_history("NVDA", pd.DataFrame())
+        monitor = PositionMonitor(client, engine, mock_trade_execution=False)
+        pos = _make_active_position(signal="BULLISH")
+        pos.is_closed = True
+        pos.exit_reason = "hard_stop"
+        pos.entry_fill_price = _D("10.00")
+        pos.exit_fill_price = _D("12.00")
+        pos.closed_contracts = 3
+        pos.contracts = 0  # zeroed by _close_option_position
+        monitor.add_position(pos)
+
+        with caplog.at_level(logging.INFO):
+            monitor.print_summary()
+
+        assert "  3" in caplog.text
+
+    def test_live_summary_pnl_uses_closed_contracts_for_dollar_amount(self, caplog):
+        # BUG-1: P&L = (12 - 10) * 3 contracts * 100 = +$600, not $0
+        client = _make_alpaca_client()
+        engine = _make_signal_engine_with_history("NVDA", pd.DataFrame())
+        monitor = PositionMonitor(client, engine, mock_trade_execution=False)
+        pos = _make_active_position(signal="BULLISH")
+        pos.is_closed = True
+        pos.exit_reason = "hard_stop"
+        pos.entry_fill_price = _D("10.00")
+        pos.exit_fill_price = _D("12.00")
+        pos.closed_contracts = 3
+        pos.contracts = 0
+        monitor.add_position(pos)
+
+        with caplog.at_level(logging.INFO):
+            monitor.print_summary()
+
+        assert "+$600.00" in caplog.text
+
+    def test_live_summary_pnl_loss_uses_closed_contracts(self, caplog):
+        # BUG-1: P&L = (8 - 10) * 2 contracts * 100 = -$400, not $0
+        client = _make_alpaca_client()
+        engine = _make_signal_engine_with_history("NVDA", pd.DataFrame())
+        monitor = PositionMonitor(client, engine, mock_trade_execution=False)
+        pos = _make_active_position(signal="BULLISH")
+        pos.is_closed = True
+        pos.exit_reason = "hard_stop"
+        pos.entry_fill_price = _D("10.00")
+        pos.exit_fill_price = _D("8.00")
+        pos.closed_contracts = 2
+        pos.contracts = 0
+        monitor.add_position(pos)
+
+        with caplog.at_level(logging.INFO):
+            monitor.print_summary()
+
+        assert "-$400.00" in caplog.text
+
+    def test_negative_zero_pnl_formats_as_positive_zero(self, caplog):
+        # BUG-3: a near-zero loss rounds to -0.00 in Decimal; must display "+$0.00" not "+$-0.00"
+        client = _make_alpaca_client()
+        engine = _make_signal_engine_with_history("NVDA", pd.DataFrame())
+        monitor = PositionMonitor(client, engine, mock_trade_execution=True)
+        pos = _make_closed_position("BULLISH", entry_mid=10.001, exit_mid=10.000)
+        pos.contracts = 1
+        monitor.add_position(pos)
+
+        with caplog.at_level(logging.INFO):
+            monitor.print_summary()
+
+        assert "+$-" not in caplog.text
+
 
 class TestStockClosePosition:
     @pytest.fixture(autouse=True)

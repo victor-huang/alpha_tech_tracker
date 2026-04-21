@@ -1013,10 +1013,11 @@ class OpMomentumTradeEngine:
                     raw = entry - exit_
                 else:
                     raw = exit_ - entry
+                effective_contracts = pos.closed_contracts if pos.closed_contracts > 0 else pos.contracts
                 if pos.trade_type == "stock":
                     cap_pnl = pos.slot_capital / entry * raw
                 else:
-                    cap_pnl = _D(pos.contracts) * _D("100") * raw
+                    cap_pnl = _D(effective_contracts) * _D("100") * raw
             else:
                 cap_pnl = _D("0")
 
@@ -1076,10 +1077,11 @@ class OpMomentumTradeEngine:
                 raw = entry - exit_
             else:
                 raw = exit_ - entry
+            effective_contracts = pos.closed_contracts if pos.closed_contracts > 0 else pos.contracts
             cap_pnl = (
                 pos.slot_capital / entry * raw
                 if pos.trade_type == "stock"
-                else _D(pos.contracts) * _D("100") * raw
+                else _D(effective_contracts) * _D("100") * raw
             )
         else:
             cap_pnl = _D("0")

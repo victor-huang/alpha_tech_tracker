@@ -2,6 +2,7 @@ import json
 import logging
 import os
 import re
+import threading
 from datetime import datetime
 
 import requests
@@ -11,6 +12,8 @@ from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector import DEFAULT
 from .models import _D
 
 logger = logging.getLogger(__name__)
+
+_config_write_lock = threading.Lock()
 
 TICKERS = DEFAULT_TICKERS
 EXECUTION_BROKER = "alpaca"   # "alpaca" | "etrade" | "tradestation"
@@ -174,15 +177,16 @@ def _save_tradestation_session_tokens(
     config_file: str = _CONFIG_FILE,
 ):
     """Persist TradeStation OAuth 2.0 token dict to config.json."""
-    cfg = {}
-    if os.path.exists(config_file):
-        with open(config_file) as f:
-            cfg = json.load(f)
-    cfg["tradestation_session"] = token
-    tmp = config_file + ".tmp"
-    with open(tmp, "w") as f:
-        json.dump(cfg, f, indent=2)
-    os.replace(tmp, config_file)
+    with _config_write_lock:
+        cfg = {}
+        if os.path.exists(config_file):
+            with open(config_file) as f:
+                cfg = json.load(f)
+        cfg["tradestation_session"] = token
+        tmp = config_file + ".tmp"
+        with open(tmp, "w") as f:
+            json.dump(cfg, f, indent=2)
+        os.replace(tmp, config_file)
     logger.info("TradeStation session tokens saved to %s", config_file)
 
 
