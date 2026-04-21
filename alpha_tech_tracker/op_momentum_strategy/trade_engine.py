@@ -308,6 +308,7 @@ class OpMomentumTradeEngine:
         self._trade_type = trade_type
         self._option_price_monitor = option_price_monitor
         self._contract_selector = contract_selector if contract_selector is not None else ITMOptionContractSelector(alpaca_client)
+        self._contract_selector_overridden = contract_selector is not None
         self._enable_reversal = enable_reversal
         self._reversal_max_bars = reversal_max_bars
         self._enable_bearish_reentry = enable_bearish_reentry
@@ -603,7 +604,7 @@ class OpMomentumTradeEngine:
         reentry_type: Optional[str] = None,
     ):
         try:
-            if is_replay_mode():
+            if is_replay_mode() and not self._contract_selector_overridden:
                 ref_date = getattr(self._signal_engine, "_session_date", None)
                 selector = MockContractSelector(ref_date or date.today())
             else:

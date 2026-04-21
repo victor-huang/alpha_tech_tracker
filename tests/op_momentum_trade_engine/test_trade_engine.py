@@ -1014,16 +1014,13 @@ class TestContractSelectorInjection:
         engine = self._make_engine(contract_selector=custom_selector)
 
         with patch(_POSITION_SIZER_PATH, return_value=(3, _D("8.50"))), \
-             patch(_PLACE_ENTRY_PATH, return_value={"order_id": "sim-1", "simulated_fill_mid": _D("8.50")}), \
-             patch("alpha_tech_tracker.op_momentum_strategy.trade_engine.is_replay_mode", return_value=False):
+             patch(_PLACE_ENTRY_PATH, return_value={"order_id": "sim-1", "simulated_fill_mid": _D("8.50")}):
             engine._enter_position(_make_signal_event("NVDA"))
 
         custom_selector.select.assert_called_once_with("NVDA", "BULLISH", _D("105"))
 
-    def test_replay_mode_uses_mock_selector_regardless_of_injected_selector(self):
-        custom_selector = Mock()
-        custom_selector.select.return_value = "NVDA260411C00170000"
-        engine = self._make_engine(contract_selector=custom_selector)
+    def test_replay_mode_uses_mock_selector_by_default(self):
+        engine = self._make_engine()
 
         with patch(_POSITION_SIZER_PATH, return_value=(3, _D("8.50"))), \
              patch(_PLACE_ENTRY_PATH, return_value={"order_id": "sim-1", "simulated_fill_mid": _D("8.50")}), \
@@ -1032,8 +1029,19 @@ class TestContractSelectorInjection:
                    return_value="NVDA260411C00170000") as mock_select:
             engine._enter_position(_make_signal_event("NVDA"))
 
-        custom_selector.select.assert_not_called()
         mock_select.assert_called_once()
+
+    def test_replay_mode_uses_injected_selector_when_overridden(self):
+        custom_selector = Mock()
+        custom_selector.select.return_value = "NVDA260411C00170000"
+        engine = self._make_engine(contract_selector=custom_selector)
+
+        with patch(_POSITION_SIZER_PATH, return_value=(3, _D("8.50"))), \
+             patch(_PLACE_ENTRY_PATH, return_value={"order_id": "sim-1", "simulated_fill_mid": _D("8.50")}), \
+             patch("alpha_tech_tracker.op_momentum_strategy.trade_engine.is_replay_mode", return_value=True):
+            engine._enter_position(_make_signal_event("NVDA"))
+
+        custom_selector.select.assert_called_once_with("NVDA", "BULLISH", _D("105"))
 
 
 # ---------------------------------------------------------------------------
