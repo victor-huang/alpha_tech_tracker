@@ -74,10 +74,12 @@ def _make_mock_bars(ticker, highs, lows):
 
 
 def _build_history_df(closes, ma20, ma50, ma200):
-    today = datetime.now(ET).date()
+    # Use yesterday so that history timestamps never collide with today's live
+    # OR bars injected through _on_bar in tests.
+    yesterday = datetime.now(ET).date() - timedelta(days=1)
     timestamps = [
         ET.localize(
-            datetime.combine(today, datetime.min.time())
+            datetime.combine(yesterday, datetime.min.time())
             + timedelta(hours=9, minutes=30 + i * 5)
         )
         for i in range(len(closes))

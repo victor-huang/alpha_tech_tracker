@@ -506,6 +506,12 @@ class LiveSignalEngine:
             period_start = ts.replace(second=0, microsecond=0) - timedelta(
                 minutes=ts.minute % 5
             )
+            # Skip 1-min bars whose 5-min period is already fully covered by the
+            # warmup history (e.g. barsback bars overlapping with the REST fetch).
+            hist_df = self._history.get(ticker)
+            if hist_df is not None and not hist_df.empty and period_start in hist_df.index:
+                return
+
             mbuf = self._minute_buf.setdefault(
                 ticker, {"period_start": None, "bars": []}
             )

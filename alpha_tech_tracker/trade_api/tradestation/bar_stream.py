@@ -64,11 +64,12 @@ class TradeStationBarStream:
         stream.run()
     """
 
-    def __init__(self, ts_client, interval: int = 1, unit: str = "Minute"):
+    def __init__(self, ts_client, interval: int = 1, unit: str = "Minute", barsback: int = 0):
         self._session = ts_client._session
         self._environment = ts_client._environment
         self._interval = interval
         self._unit = unit
+        self._barsback = barsback
         self._tickers: list = []
         self._callback = None
         self._stop_event = threading.Event()
@@ -86,6 +87,8 @@ class TradeStationBarStream:
     def _stream_ticker(self, symbol: str):
         url = self._stream_url(symbol)
         params = {"interval": self._interval, "unit": self._unit}
+        if self._barsback > 0:
+            params["barsback"] = self._barsback
         backoff = 5
         while not self._stop_event.is_set():
             try:

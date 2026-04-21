@@ -1216,3 +1216,78 @@ class TestLiveWarmupUsesAPI:
             engine._warmup_from_cache(replay_date, market_data_client=mdc)
         mdc.fetch_bars.assert_called_once()
         mock_cached_fetch.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# TestOnBarWarmupPeriodGuard — _on_bar drops 1-min bars whose 5-min period
+# is already covered by the warmup history (prevents barsback duplicates)
+# ---------------------------------------------------------------------------
+
+class TestOnBarWarmupPeriodGuard:
+    def _make_1min_bar(self, ticker, ts):
+        bar = Mock()
+        bar.symbol = ticker
+        bar.timestamp = ts
+        bar.open = 100.0
+        bar.high = 101.0
+        bar.low = 99.0
+        bar.close = 100.5
+        bar.volume = 500.0
+        return bar
+
+    def test_1min_bar_in_warmup_covered_period_is_dropped(self):
+        engine = LiveSignalEngine(tickers=["APP"], opening_bars=3, on_signal=None)
+        covered_ts = ET.localize(datetime(2026, 4, 21, 9, 30))
+        engine._history["APP"] = pd.DataFrame(
+            [{"Open": 100.0, "High": 101.0, "Low": 99.0, "Close": 100.5, "Volume": 500}],
+            index=[covered_ts],
+        )
+        # 9:31 falls inside the 9:30 5-min period which is already in history
+        bar_ts = ET.localize(datetime(2026, 4, 21, 9, 31))
+        bar = self._make_1min_bar("APP", bar_ts)
+
+        with patch(
+            "alpha_tech_tracker.op_momentum_strategy.signal_engine._now_et",
+            return_value=ET.localize(datetime(2026, 4, 21, 9, 31)),
+        ):
+            engine._on_bar(bar)
+
+        # _minute_buf is pre-populated for all tickers in __init__; verify
+        # the guard returned early without adding the bar to the buffer.
+        buf = engine._minute_buf.get("APP")
+        assert buf is not None
+        assert buf["bars"] == []
+        assert buf["period_start"] is None
+
+    def test_1min_bar_in_new_period_is_processed(self):
+        engine = LiveSignalEngine(tickers=["APP"], opening_bars=3, on_signal=None)
+        covered_ts = ET.localize(datetime(2026, 4, 21, 9, 30))
+        engine._history["APP"] = pd.DataFrame(
+            [{"Open": 100.0, "High": 101.0, "Low": 99.0, "Close": 100.5, "Volume": 500}],
+            index=[covered_ts],
+        )
+        # 9:35 is in the 9:35 period — not covered by warmup
+        bar_ts = ET.localize(datetime(2026, 4, 21, 9, 35))
+        bar = self._make_1min_bar("APP", bar_ts)
+
+        with patch(
+            "alpha_tech_tracker.op_momentum_strategy.signal_engine._now_et",
+            return_value=ET.localize(datetime(2026, 4, 21, 9, 35)),
+        ):
+            engine._on_bar(bar)
+
+        assert engine._minute_buf["APP"]["bars"] != []
+
+    def test_1min_bar_processed_when_no_history_exists(self):
+        engine = LiveSignalEngine(tickers=["APP"], opening_bars=3, on_signal=None)
+        bar_ts = ET.localize(datetime(2026, 4, 21, 9, 30))
+        bar = self._make_1min_bar("APP", bar_ts)
+
+        with patch(
+            "alpha_tech_tracker.op_momentum_strategy.signal_engine._now_et",
+            return_value=ET.localize(datetime(2026, 4, 21, 9, 30)),
+        ):
+            engine._on_bar(bar)
+
+        assert engine._minute_buf["APP"]["bars"] != []
+

@@ -427,6 +427,30 @@ class TestTradeStationBarStream:
         url = client._session.get.call_args[0][0]
         assert url == _SIM_STREAM_URL.format(symbol="TSLA")
 
+    def test_barsback_included_in_params_when_set(self):
+        client = _make_client()
+        stream = TradeStationBarStream(client, barsback=5)
+        client._session.get.return_value = _mock_stream_response(
+            [], stop_event=stream._stop_event
+        )
+        stream.subscribe_bars(MagicMock(), "TSLA")
+        stream._stream_ticker("TSLA")
+
+        params = client._session.get.call_args[1]["params"]
+        assert params["barsback"] == 5
+
+    def test_barsback_omitted_from_params_when_zero(self):
+        client = _make_client()
+        stream = TradeStationBarStream(client, barsback=0)
+        client._session.get.return_value = _mock_stream_response(
+            [], stop_event=stream._stop_event
+        )
+        stream.subscribe_bars(MagicMock(), "TSLA")
+        stream._stream_ticker("TSLA")
+
+        params = client._session.get.call_args[1]["params"]
+        assert "barsback" not in params
+
     def test_get_request_uses_split_connect_and_read_timeout(self):
         client = _make_client()
         stream = TradeStationBarStream(client)

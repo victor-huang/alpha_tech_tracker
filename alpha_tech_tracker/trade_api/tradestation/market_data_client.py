@@ -79,7 +79,7 @@ class TradeStationMarketDataClient(MarketDataClient):
 
     def warmup(self, tickers: list, start_dt, end_dt) -> dict:
         logger.info(
-            "TradeStation warmup: fetching 1-min bars for %d tickers: %s to %s",
+            "TradeStation warmup: fetching 5-min bars for %d tickers: %s to %s",
             len(tickers),
             start_dt.strftime("%Y-%m-%d %H:%M ET"),
             end_dt.strftime("%Y-%m-%d %H:%M ET"),
@@ -136,7 +136,7 @@ class TradeStationMarketDataClient(MarketDataClient):
         self._tickers = list(tickers)
 
     def start(self):
-        self._stream = TradeStationBarStream(self._ts_client, interval=1, unit="Minute")
+        self._stream = TradeStationBarStream(self._ts_client, interval=1, unit="Minute", barsback=5)
         self._stream.subscribe_bars(self._callback, *self._tickers)
         logger.info(
             "TradeStation: starting live 1-min stream for %s", self._tickers
