@@ -29,6 +29,7 @@ from .config import (
     BEARISH_MA200,
     DAILY_MAX_LOSS_USD,
     EOD_EXIT_TIME,
+    ALPACA_IEX_WS_BARS_START_ET,
     TS_WS_BARS_START_ET,
     WS_BARS_END_ET,
     WS_BARS_START_ET,
@@ -323,7 +324,12 @@ class OpMomentumTradeEngine:
         self._doubledown_start_min = doubledown_start_min
         self._record_tradestation_feed = record_tradestation_feed
         self._market_data_client = market_data_client
-        self._ws_bars_start_et = TS_WS_BARS_START_ET if market_data_client is not None else WS_BARS_START_ET
+        if market_data_client is not None:
+            self._ws_bars_start_et = TS_WS_BARS_START_ET
+        elif alpaca_feed == DataFeed.IEX:
+            self._ws_bars_start_et = ALPACA_IEX_WS_BARS_START_ET
+        else:
+            self._ws_bars_start_et = WS_BARS_START_ET
         self._force_run = force_run
         self._dd_timers: dict = {}
         self._dd_fired: set = set()

@@ -124,6 +124,8 @@ class AlpacaMarketDataClient(MarketDataClient):
     def reconnect(self):
         logger.warning("Alpaca: reconnecting stream")
         self.stop()
+        if self._thread is not None:
+            self._thread.join(timeout=5)
         self._stream = StockDataStream(
             self._api_key,
             self._secret_key,

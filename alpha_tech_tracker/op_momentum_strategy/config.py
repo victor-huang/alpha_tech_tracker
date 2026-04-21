@@ -41,6 +41,11 @@ WS_BARS_END_ET = "20:00"
 # Use this as the watchdog start when TS is the market data source to suppress
 # the 33 spurious pre-market reconnects that fire every 10 min before open.
 TS_WS_BARS_START_ET = "09:30"
+# Alpaca IEX feed only emits regular-hours bars (9:30–16:00 ET).
+# Same pre-market reconnect problem as TS — IEX has no pre-market data.
+# Use this when the engine runs with feed=IEX (the live default).
+# WS_BARS_START_ET ("04:00") is kept for SIP which does have extended-hours bars.
+ALPACA_IEX_WS_BARS_START_ET = "09:25"
 MA_WARMUP_DAYS = 7
 ROLLING_LOOKBACK_DAYS = 30
 BEARISH_MA200 = False
