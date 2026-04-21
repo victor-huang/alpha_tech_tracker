@@ -2486,6 +2486,60 @@ class TestCheckWsHealth:
 
         engine._signal_engine.reconnect.assert_not_called()
 
+    def test_alpaca_engine_reconnects_at_8am_pre_market(self):
+        # Alpaca window starts at 4:00 AM — 8 AM is inside, so stale stream triggers reconnect
+        engine = self._make_engine(timeout=600)
+        now = ET.localize(datetime(2026, 4, 11, 8, 0))
+        engine._signal_engine._stream_started_at = ET.localize(
+            datetime(2026, 4, 11, 4, 0)
+        )
+
+        engine._check_ws_health(now)
+
+        engine._signal_engine.reconnect.assert_called_once()
+
+    def test_tradestation_engine_no_reconnect_before_market_open(self):
+        # TS window starts at 9:30 AM — 8 AM is before window, so watchdog stays silent
+        client = _make_alpaca_client()
+        market_data_client = Mock()
+        engine = OpMomentumTradeEngine(
+            alpaca_client=client,
+            mock_trade_execution=True,
+            market_data_client=market_data_client,
+        )
+        engine._ws_reconnect_timeout = 600
+        engine._signal_engine = Mock()
+        engine._signal_engine._last_bar_received_at = None
+        engine._signal_engine._stream_started_at = ET.localize(
+            datetime(2026, 4, 11, 4, 0)
+        )
+        now = ET.localize(datetime(2026, 4, 11, 8, 0))
+
+        engine._check_ws_health(now)
+
+        engine._signal_engine.reconnect.assert_not_called()
+
+    def test_tradestation_engine_reconnects_after_market_open(self):
+        # TS window starts at 9:30 AM — 10 AM is inside window with stale stream
+        client = _make_alpaca_client()
+        market_data_client = Mock()
+        engine = OpMomentumTradeEngine(
+            alpaca_client=client,
+            mock_trade_execution=True,
+            market_data_client=market_data_client,
+        )
+        engine._ws_reconnect_timeout = 600
+        engine._signal_engine = Mock()
+        engine._signal_engine._last_bar_received_at = ET.localize(
+            datetime(2026, 4, 11, 9, 30)
+        )
+        engine._signal_engine._stream_started_at = None
+        now = ET.localize(datetime(2026, 4, 11, 10, 30))
+
+        engine._check_ws_health(now)
+
+        engine._signal_engine.reconnect.assert_called_once()
+
 
 # ---------------------------------------------------------------------------
 # TestMarketHolidayGuard — run() exits early on weekends and NYSE holidays

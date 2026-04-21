@@ -1,7 +1,5 @@
 import json
 import threading
-import tempfile
-import os
 from unittest.mock import MagicMock, patch
 
 import alpha_tech_tracker.op_momentum_strategy.config as config_module

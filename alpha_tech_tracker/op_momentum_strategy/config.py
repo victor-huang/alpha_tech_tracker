@@ -37,6 +37,10 @@ SESSION_END_TIME = "16:05"
 # The WebSocket watchdog only fires inside this window — bars are not expected outside it.
 WS_BARS_START_ET = "04:00"
 WS_BARS_END_ET = "20:00"
+# TradeStation only emits regular-hours bars (9:30–16:00 ET).
+# Use this as the watchdog start when TS is the market data source to suppress
+# the 33 spurious pre-market reconnects that fire every 10 min before open.
+TS_WS_BARS_START_ET = "09:30"
 MA_WARMUP_DAYS = 7
 ROLLING_LOOKBACK_DAYS = 30
 BEARISH_MA200 = False

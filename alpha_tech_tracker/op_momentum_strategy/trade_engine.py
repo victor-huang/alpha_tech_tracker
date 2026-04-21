@@ -29,6 +29,7 @@ from .config import (
     BEARISH_MA200,
     DAILY_MAX_LOSS_USD,
     EOD_EXIT_TIME,
+    TS_WS_BARS_START_ET,
     WS_BARS_END_ET,
     WS_BARS_START_ET,
     WS_RECONNECT_TIMEOUT_SECONDS,
@@ -321,6 +322,7 @@ class OpMomentumTradeEngine:
         self._doubledown_start_min = doubledown_start_min
         self._record_tradestation_feed = record_tradestation_feed
         self._market_data_client = market_data_client
+        self._ws_bars_start_et = TS_WS_BARS_START_ET if market_data_client is not None else WS_BARS_START_ET
         self._force_run = force_run
         self._dd_timers: dict = {}
         self._dd_fired: set = set()
@@ -1580,14 +1582,15 @@ class OpMomentumTradeEngine:
     def _check_ws_health(self, now) -> None:
         """Reconnect the WebSocket stream if no bar has been received for too long.
 
-        Only fires during the Alpaca extended-hours bar window (WS_BARS_START_ET to
-        WS_BARS_END_ET). Outside that window bars are not expected, so silence is
-        normal and reconnecting would just hit Alpaca's one-connection-per-key limit.
+        Only fires within the expected bar window (_ws_bars_start_et to WS_BARS_END_ET).
+        For Alpaca, that window starts at 4:00 AM ET (extended hours). For TradeStation,
+        it starts at 9:30 AM ET to suppress the spurious pre-market reconnects that fire
+        every 10 min before open (TS only emits regular-hours bars).
 
         Uses _stream_started_at as the baseline when no bar has ever arrived so
         the watchdog doesn't fire the instant the engine starts up.
         """
-        bars_start_h, bars_start_m = [int(x) for x in WS_BARS_START_ET.split(":")]
+        bars_start_h, bars_start_m = [int(x) for x in self._ws_bars_start_et.split(":")]
         bars_end_h, bars_end_m = [int(x) for x in WS_BARS_END_ET.split(":")]
         in_bars_window = (
             (now.hour > bars_start_h or (now.hour == bars_start_h and now.minute >= bars_start_m))
