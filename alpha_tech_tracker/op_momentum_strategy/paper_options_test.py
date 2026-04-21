@@ -169,7 +169,7 @@ def run_test(ticker: str, broker: str, is_live: bool, strike: int = None, expiry
                     from .option_price_monitor import OptionPriceMonitor
                     monitor = OptionPriceMonitor(client, [ticker])
                     option_type = "call" if _re.search(r"\d{6}C", occ_symbol) else "put"
-                    fair = monitor.get_fair_price(ticker, occ_symbol, option_type, Decimal(str(stock_mid)), penny_pilot=penny_pilot)
+                    fair = monitor.get_fair_price(ticker, occ_symbol, option_type, Decimal(str(stock_mid)))
                     print(f"  fair price: {float(fair):.2f}")
                 except Exception as e:
                     print(f"  fair price error: {e}")
@@ -247,7 +247,7 @@ def run_test(ticker: str, broker: str, is_live: bool, strike: int = None, expiry
                     from .option_price_monitor import OptionPriceMonitor
                     monitor = OptionPriceMonitor(client, [ticker])
                     _otype = "call" if _re.search(r"\d{6}C", occ_symbol) else "put"
-                    fair = monitor.get_fair_price(ticker, occ_symbol, _otype, Decimal(str(stock_mid)), penny_pilot=penny_pilot)
+                    fair = monitor.get_fair_price(ticker, occ_symbol, _otype, Decimal(str(stock_mid)))
                     buy_price = float(fair)
                     print(f"  Using fair price as limit: {buy_price:.2f}  (bid={last_bid:.2f} ask={last_ask:.2f} mid={last_mid:.2f})")
                 except Exception as e:

@@ -7,7 +7,7 @@ from typing import Optional, Tuple
 from alpha_tech_tracker.trade_api.execution_client import ExecutionClient
 
 from .models import _D, _stock_bid_ask
-from .option_price_monitor import _quantize_option_price
+from .option_price_monitor import _quantize_option_price, ticker_is_penny_pilot
 
 logger = logging.getLogger(__name__)
 
@@ -577,7 +577,6 @@ def place_option_order_in_tranches(
     entry_fill_price: Optional[float] = None,
     get_fair_price_fn=None,
     feed=None,
-    penny_pilot: bool = True,
 ) -> Tuple[dict, int]:
     """
     Fill `contracts` option contracts by sending sequential tranches of at most
@@ -594,6 +593,7 @@ def place_option_order_in_tranches(
         last_order    — order dict from the last attempted tranche ({} on MISS)
         filled_so_far — total contracts confirmed filled across all tranches
     """
+    penny_pilot = ticker_is_penny_pilot(ticker)
     if contracts <= tranche_size:
         order, confirmed_filled = _place_with_fill_escalation(
             client=client,

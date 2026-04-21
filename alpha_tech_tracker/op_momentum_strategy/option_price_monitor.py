@@ -298,7 +298,6 @@ class OptionPriceMonitor:
         option_symbol: str,
         option_type: str,
         stock_price: Decimal,
-        penny_pilot: bool = True,
     ) -> Decimal:
         """
         Return a fair limit price within bid/ask using the algorithm:
@@ -323,6 +322,7 @@ class OptionPriceMonitor:
         if mid <= _D("0"):
             return _D("0")
 
+        penny_pilot = ticker_is_penny_pilot(ticker)
         parsed = _parse_occ_symbol(option_symbol)
         if not parsed:
             return _quantize_option_price(mid, penny_pilot=penny_pilot)
@@ -430,11 +430,21 @@ class OptionPriceMonitor:
 # Helpers
 # ------------------------------------------------------------------
 
+# Tickers confirmed NOT on the CBOE Penny Pilot Program.
+# Options for these use $0.05 ticks below $3 and $0.10 ticks at $3+.
+# Add a ticker here when live orders show tick-rejection with required=0.1.
+_NON_PENNY_PILOT_TICKERS: frozenset = frozenset({"CRDO"})
+
+
+def ticker_is_penny_pilot(ticker: str) -> bool:
+    return ticker not in _NON_PENNY_PILOT_TICKERS
+
+
 def _quantize_option_price(price: Decimal, penny_pilot: bool = True) -> Decimal:
     """
     Round an option limit price to the exchange-standard tick increment.
 
-    Penny Pilot Program (penny_pilot=True, default — all strategy pool tickers):
+    Penny Pilot Program (penny_pilot=True, default — most pool tickers):
       < $3.00  → nearest $0.01
       ≥ $3.00  → nearest $0.05
 
@@ -442,8 +452,8 @@ def _quantize_option_price(price: Decimal, penny_pilot: bool = True) -> Decimal:
       < $3.00  → nearest $0.05
       ≥ $3.00  → nearest $0.10
 
-    Pool tickers (TSLA, NVDA, META, AMD, COIN, PLTR, RH*, etc.) are on Penny
-    Pilot.  Tickers not enrolled in the program must use penny_pilot=False.
+    Use ticker_is_penny_pilot(ticker) to resolve the flag from a ticker symbol.
+    Tickers not on the Pilot are listed in _NON_PENNY_PILOT_TICKERS.
     """
     if penny_pilot:
         tick = _D("0.01") if price < _D("3") else _D("0.05")

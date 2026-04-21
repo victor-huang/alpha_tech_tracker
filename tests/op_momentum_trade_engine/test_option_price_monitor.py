@@ -12,6 +12,7 @@ from alpha_tech_tracker.op_momentum_strategy.option_price_monitor import (
     _is_third_friday,
     _parse_occ_symbol,
     _quantize_option_price,
+    ticker_is_penny_pilot,
 )
 
 from conftest import _D, _make_alpaca_client, _make_option_quote
@@ -385,6 +386,21 @@ class TestQuantizeOptionPrice:
 
     def test_price_already_on_tick_is_unchanged(self):
         assert _quantize_option_price(_D("15.50")) == _D("15.50")
+
+
+class TestTickerIsPennyPilot:
+    def test_crdo_is_not_penny_pilot(self):
+        assert ticker_is_penny_pilot("CRDO") is False
+
+    def test_standard_pool_tickers_are_penny_pilot(self):
+        for ticker in ("TSLA", "META", "COIN", "PLTR", "MRVL", "CRWV"):
+            assert ticker_is_penny_pilot(ticker) is True
+
+    def test_non_pilot_uses_10_cent_tick_above_3(self):
+        assert _quantize_option_price(_D("20.65"), penny_pilot=False) == _D("20.70")
+
+    def test_non_pilot_uses_5_cent_tick_below_3(self):
+        assert _quantize_option_price(_D("2.63"), penny_pilot=False) == _D("2.65")
 
 
 class TestGetFairPriceQuantization:
