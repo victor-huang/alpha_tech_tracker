@@ -25,7 +25,10 @@ def _validate_open_timestamps(df: pd.DataFrame, ticker: str) -> None:
         if len(day_df) < 20:
             continue
         first_time = day_df.index[0].time()
-        if first_time.hour == 9 and first_time.minute != 30:
+        # 09:35 is the canonical close-timestamp fingerprint for 5-min bars
+        # (the bar that opened at 09:30 carries close-time 09:35).
+        # First bars at 09:40+ are legitimate delayed opens, not a timestamp bug.
+        if first_time.hour == 9 and first_time.minute == 35:
             raise RuntimeError(
                 f"TradeStation bar data for {ticker} on {session_date} starts at "
                 f"{first_time.strftime('%H:%M')} instead of 09:30 — "
