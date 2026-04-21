@@ -29,6 +29,7 @@ def _make_active_position(
     or_low=_D("95"),
     hard_stop_price=_D("103.5"),
     fallback_price=_D("103.0"),
+    contracts=3,
 ):
     or_range = or_high - or_low
     return ActivePosition(
@@ -36,7 +37,7 @@ def _make_active_position(
         signal=signal,
         option_symbol="NVDA260328C00900000",
         entry_order_id="order-123",
-        contracts=3,
+        contracts=contracts,
         entry_stock_price=_D("104"),
         or_high=or_high,
         or_low=or_low,

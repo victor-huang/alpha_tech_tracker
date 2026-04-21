@@ -573,7 +573,7 @@ def place_option_order_in_tranches(
     option_type: str,
     contracts: int,
     order_action: str,
-    tranche_size: int = 5,
+    tranche_size: int = 2,
     entry_fill_price: Optional[float] = None,
     get_fair_price_fn=None,
     feed=None,

@@ -921,7 +921,7 @@ class TestCloseOrderRetry:
         client.place_option_order.side_effect = [Exception("timeout"), {"order_id": "retry-opt-1"}]
         client.order_status.return_value = {"status": "filled", "filled_avg_price": 5.25}
 
-        pos = _make_active_position(signal="BULLISH")
+        pos = _make_active_position(signal="BULLISH", contracts=1)
         pos.hard_stop_armed = True
         df = _build_history_df([102.0], ma20=90.0, ma50=90.0, ma200=85.0)
         engine = _make_signal_engine_with_history("NVDA", df)
@@ -2260,7 +2260,7 @@ class TestCloseAllEodStuckPositionSweep:
             c for c in client.place_option_order.call_args_list
             if c.kwargs.get("price_type") == "MARKET"
         ]
-        assert len(market_calls) == 1
+        assert len(market_calls) == 2  # 3 contracts / tranche_size=2 → 2 tranches
 
     def test_normal_open_position_and_stuck_position_both_closed(self):
         client = _make_alpaca_client()
@@ -2280,13 +2280,13 @@ class TestCloseAllEodStuckPositionSweep:
 
         monitor.close_all()
 
-        # Both positions should have triggered a place_option_order call
-        assert client.place_option_order.call_count == 2
+        # 2 positions × 2 tranches each (3 contracts / tranche_size=2)
+        assert client.place_option_order.call_count == 4
         market_calls = [
             c for c in client.place_option_order.call_args_list
             if c.kwargs.get("price_type") == "MARKET"
         ]
-        assert len(market_calls) == 2
+        assert len(market_calls) == 4
 
     def test_no_extra_close_when_no_stuck_positions(self):
         client = _make_alpaca_client()
@@ -2300,7 +2300,7 @@ class TestCloseAllEodStuckPositionSweep:
 
         monitor.close_all()
 
-        assert client.place_option_order.call_count == 1
+        assert client.place_option_order.call_count == 2  # 3 contracts / tranche_size=2 → 2 tranches
 
 
 class TestGapThroughExitOverride:
