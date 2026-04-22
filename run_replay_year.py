@@ -19,7 +19,6 @@ import argparse
 import os
 import re
 import subprocess
-import sys
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, timedelta
@@ -139,7 +138,7 @@ def _parse_pnl(output: str):
 
 # ── Run one replay ───────────────────────────────────────────────────────────────
 
-def run_replay(d: date, log_dir: str, force: bool = False):
+def run_replay(d: date, log_dir: str, force: bool = False, live_data_extra: list = None):
     log_path = os.path.join(log_dir, f"replay_{d.isoformat()}.log")
     if not force and os.path.exists(log_path):
         with open(log_path) as f:
@@ -147,7 +146,7 @@ def run_replay(d: date, log_dir: str, force: bool = False):
         cap_pnl, cap_pct = _parse_pnl(content)
         return d, cap_pnl, cap_pct, log_path, True
 
-    cmd = BASE_CMD + ["--replay-date", d.isoformat()]
+    cmd = BASE_CMD + ["--replay-date", d.isoformat()] + (live_data_extra or [])
     full_env = {**os.environ, "PYTHONPATH": PYTHONPATH}
     result = subprocess.run(cmd, capture_output=True, text=True, env=full_env)
     combined = result.stdout + result.stderr
@@ -319,6 +318,8 @@ def main():
     parser.add_argument("--start", help="Start date YYYY-MM-DD")
     parser.add_argument("--end", help="End date YYYY-MM-DD")
     parser.add_argument("--force", action="store_true", help="Re-run even if log exists")
+    parser.add_argument("--live-data-dir", help="Path to live BarRecorder CSV dir (enables --live-data-dir on each replay)")
+    parser.add_argument("--live-data-feed", default="iex", help="Feed label for live CSV files: iex or tradestation (default: iex)")
     args = parser.parse_args()
 
     if args.year:
@@ -337,8 +338,14 @@ def main():
     os.makedirs(log_dir, exist_ok=True)
     days = trading_days(start, end)
 
+    live_data_extra = []
+    if args.live_data_dir:
+        live_data_extra = ["--live-data-dir", args.live_data_dir, "--live-data-feed", args.live_data_feed]
+
     print(f"Replay config: options | M1+A1+A2 | bearish/bullish-reentry | reversal | "
           f"doubledown | rank-weighted 60/40 | top-2 | $10k")
+    if live_data_extra:
+        print(f"Live data dir : {args.live_data_dir}  (feed: {args.live_data_feed})")
     print(f"Period: {label}  |  {len(days)} trading days  |  logs → {log_dir}")
 
     # Partition into warmup (one per month) and remainder
@@ -368,7 +375,7 @@ def main():
                 sign = "+" if pnl >= 0 else ""
                 print(f"  skip {d}  {sign}${pnl:,.2f} [cached]", flush=True)
                 continue
-        d2, pnl, pct, _, cached = run_replay(d, log_dir, args.force)
+        d2, pnl, pct, _, cached = run_replay(d, log_dir, args.force, live_data_extra)
         results[d2] = (pnl, pct)
         sign = "+" if pnl >= 0 else ""
         tag = " [cached]" if cached else ""
@@ -377,7 +384,7 @@ def main():
     print(f"\n── Phase 2: {len(remaining)} remaining days ({PARALLELISM} parallel) ──")
     completed = 0
     with ThreadPoolExecutor(max_workers=PARALLELISM) as pool:
-        futures = {pool.submit(run_replay, d, log_dir, args.force): d for d in remaining}
+        futures = {pool.submit(run_replay, d, log_dir, args.force, live_data_extra): d for d in remaining}
         for fut in as_completed(futures):
             d, pnl, pct, _, cached = fut.result()
             results[d] = (pnl, pct)
