@@ -652,7 +652,9 @@ if __name__ == "__main__":
         mock_trade_execution = args.mock_trade_execution or is_replay
         is_paper = _resolve_is_paper(args)
         client = build_execution_client(is_paper=is_paper, broker=args.execution_broker)
-        contract_selector = _build_contract_selector(args, client)
+        # In replay mode, pass None so OpMomentumTradeEngine uses MockContractSelector
+        # (which builds synthetic ITM symbols without API calls using the session date).
+        contract_selector = None if is_replay else _build_contract_selector(args, client)
         engine = OpMomentumTradeEngine(
             alpaca_client=client,
             is_paper=is_paper,

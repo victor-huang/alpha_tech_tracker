@@ -13,6 +13,8 @@ from alpha_tech_tracker.op_momentum_strategy.contract_selector import (
     _strike_increment,
 )
 
+from alpha_tech_tracker.op_momentum_strategy.option_price_monitor import _parse_occ_symbol
+
 from conftest import _D, _make_alpaca_client, _make_option_quote
 
 _TODAY_PATH = "alpha_tech_tracker.op_momentum_strategy.contract_selector._today"
@@ -555,3 +557,61 @@ class TestMockContractSelector:
         symbol = selector.select("PLTR", "BEARISH", 80.0)
         assert symbol.startswith("PLTR")
         assert "P" in symbol
+
+
+class TestMockContractSelectorITMInvariant:
+    """MockContractSelector must always produce ITM contracts so mock_entry_price
+    never encounters an OTM symbol (intrinsic is always positive at entry).
+
+    ITM definition:
+      call: strike < stock_price   (you can buy at a discount)
+      put:  strike > stock_price   (you can sell at a premium)
+    """
+
+    _REF_DATE = date(2026, 3, 23)
+
+    def _strike(self, symbol: str) -> float:
+        return float(_parse_occ_symbol(symbol)["strike"])
+
+    def test_bullish_call_strike_is_below_stock_price(self):
+        symbol = MockContractSelector(self._REF_DATE).select("NVDA", "BULLISH", 100.0)
+        assert self._strike(symbol) < 100.0
+
+    def test_bearish_put_strike_is_above_stock_price(self):
+        symbol = MockContractSelector(self._REF_DATE).select("NVDA", "BEARISH", 100.0)
+        assert self._strike(symbol) > 100.0
+
+    def test_call_itm_for_high_price_stock(self):
+        # stock=$467 (SNDK-range), increment=$10 → strike=$420 < $467
+        symbol = MockContractSelector(self._REF_DATE).select("SNDK", "BULLISH", 467.0)
+        assert self._strike(symbol) < 467.0
+
+    def test_put_itm_for_high_price_stock(self):
+        # stock=$467, increment=$10 → strike=$520 > $467
+        symbol = MockContractSelector(self._REF_DATE).select("SNDK", "BEARISH", 467.0)
+        assert self._strike(symbol) > 467.0
+
+    def test_call_itm_for_low_price_stock(self):
+        # stock=$30 (APP-range), increment=$1 → strike=$27 < $30
+        symbol = MockContractSelector(self._REF_DATE).select("APP", "BULLISH", 30.0)
+        assert self._strike(symbol) < 30.0
+
+    def test_put_itm_for_low_price_stock(self):
+        # stock=$30, increment=$1 → strike=$33 > $30
+        symbol = MockContractSelector(self._REF_DATE).select("APP", "BEARISH", 30.0)
+        assert self._strike(symbol) > 30.0
+
+    def test_call_intrinsic_is_approximately_10pct_of_stock(self):
+        # strike = floor(stock * 0.90 / incr) * incr, so intrinsic ≈ stock * 0.10
+        stock = 300.0
+        symbol = MockContractSelector(self._REF_DATE).select("CLS", "BULLISH", stock)
+        intrinsic = stock - self._strike(symbol)
+        assert intrinsic >= stock * 0.08  # at least 8% (flooring can reduce it slightly)
+        assert intrinsic <= stock * 0.12  # at most 12%
+
+    def test_put_intrinsic_is_approximately_10pct_of_stock(self):
+        stock = 300.0
+        symbol = MockContractSelector(self._REF_DATE).select("CLS", "BEARISH", stock)
+        intrinsic = self._strike(symbol) - stock
+        assert intrinsic >= stock * 0.08
+        assert intrinsic <= stock * 0.12

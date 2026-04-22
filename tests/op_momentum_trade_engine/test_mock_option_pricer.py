@@ -1,4 +1,6 @@
+import logging
 from unittest.mock import patch
+
 
 from alpha_tech_tracker.op_momentum_strategy.mock_option_pricer import (
     mock_entry_price,
@@ -41,19 +43,6 @@ class TestMockEntryPrice:
             price = mock_entry_price(_D("101"), _CALL_SYM, "call")
         assert price == _D("13.20")
 
-    def test_otm_call_returns_minimum_price(self):
-        # stock=$85, strike=$90 → OTM → uses floor intrinsic=0.01 → 0.01*1.20=$0.012 → $0.00
-        # actually floor is 0.01 → 0.01*1.20=0.012 → quantize to $0.05 tick = $0.00 rounds to $0.00?
-        # Hmm, 0.012 < 0.025 → rounds down to $0.00... but we have max($0.01, price) in exit
-        # In entry, let's check: price = 0.01 * 1.20 = 0.012 → quantize to $0.05 = $0.00
-        # Actually we should clamp to at least $0.05 for OTM
-        # Let me check what the actual result is
-        with patch(_DATE_PATH) as m:
-            m.today.return_value = __import__("datetime").date(2026, 4, 1)
-            m.side_effect = __import__("datetime").date
-            price = mock_entry_price(_D("85"), _CALL_SYM, "call")
-        assert price >= _D("0")
-
     def test_custom_time_premium_ratio(self):
         # stock=$100, strike=$90 → intrinsic=$10, ratio=0.10 → price=$11
         with patch(_DATE_PATH) as m:
@@ -64,6 +53,52 @@ class TestMockEntryPrice:
 
     def test_invalid_occ_symbol_returns_zero(self):
         price = mock_entry_price(_D("100"), "INVALID", "call")
+        assert price == _D("0")
+
+
+class TestMockEntryPriceOTM:
+    """OTM contracts should never reach mock_entry_price when MockContractSelector is used.
+    These tests verify that the error path is guarded correctly.
+    """
+
+    def test_otm_call_returns_zero(self):
+        # stock=$85 < strike=$90 → OTM call → returns $0 (trade skipped)
+        with patch(_DATE_PATH) as m:
+            m.today.return_value = __import__("datetime").date(2026, 4, 1)
+            m.side_effect = __import__("datetime").date
+            price = mock_entry_price(_D("85"), _CALL_SYM)
+        assert price == _D("0")
+
+    def test_otm_put_returns_zero(self):
+        # stock=$115 > strike=$110 → OTM put → returns $0
+        with patch(_DATE_PATH) as m:
+            m.today.return_value = __import__("datetime").date(2026, 4, 1)
+            m.side_effect = __import__("datetime").date
+            price = mock_entry_price(_D("115"), _PUT_SYM)
+        assert price == _D("0")
+
+    def test_otm_call_logs_error(self, caplog):
+        with patch(_DATE_PATH) as m:
+            m.today.return_value = __import__("datetime").date(2026, 4, 1)
+            m.side_effect = __import__("datetime").date
+            with caplog.at_level(logging.ERROR):
+                mock_entry_price(_D("85"), _CALL_SYM)
+        assert "OTM contract at entry" in caplog.text
+
+    def test_otm_put_logs_error(self, caplog):
+        with patch(_DATE_PATH) as m:
+            m.today.return_value = __import__("datetime").date(2026, 4, 1)
+            m.side_effect = __import__("datetime").date
+            with caplog.at_level(logging.ERROR):
+                mock_entry_price(_D("115"), _PUT_SYM)
+        assert "OTM contract at entry" in caplog.text
+
+    def test_atm_call_returns_zero(self):
+        # stock exactly at strike → intrinsic=0 → treated as OTM
+        with patch(_DATE_PATH) as m:
+            m.today.return_value = __import__("datetime").date(2026, 4, 1)
+            m.side_effect = __import__("datetime").date
+            price = mock_entry_price(_D("90"), _CALL_SYM)
         assert price == _D("0")
 
 

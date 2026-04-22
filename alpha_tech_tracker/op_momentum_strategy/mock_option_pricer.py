@@ -25,6 +25,9 @@ def mock_entry_price(
     """
     Estimate option entry price for mock/replay execution.
 
+    Assumes the contract is deep ITM (as always produced by MockContractSelector:
+    ~10% ITM call/put), so intrinsic is always positive.
+
     Formula:
         intrinsic = max(0, stock - strike)   # call
                   = max(0, strike - stock)   # put
@@ -43,8 +46,12 @@ def mock_entry_price(
 
     iv = _intrinsic(stock_price, parsed["strike"], parsed["option_type"])
     if iv <= _D("0"):
-        # OTM: minimal placeholder so sizing still works
-        iv = _D("0.01")
+        logger.error(
+            "mock_entry_price: OTM contract at entry — stock=%s strike=%s %s %s; "
+            "MockContractSelector should always produce ITM contracts",
+            stock_price, parsed["strike"], parsed["option_type"], option_symbol,
+        )
+        return _D("0")
 
     price = iv * (1 + time_premium_ratio)
     result = _quantize_option_price(price)
