@@ -165,14 +165,24 @@ Two-role module at `option_price_monitor.py`:
 - Algorithm: liquid spread (≤15%) + bid ≥ intrinsic → use mid; stale bid or wide spread → `intrinsic + median_time_value_from_cache`; no cache → 20% of spread; always clamp to [bid, ask]
 
 **Tick size — `_quantize_option_price()` (Penny Pilot Program)**:
-All tickers in the pool (TSLA, NVDA, META, AMD, COIN, PLTR, etc.) are on the CBOE Penny Pilot Program. The correct tick increments are:
+Most pool tickers are on the CBOE Penny Pilot Program, but not all. Non-pilot tickers require $0.10 ticks at ≥$3 — placing $0.05-increment orders causes exchange rejections and escalation latency.
 
-| Price | Penny Pilot (pool tickers) | Standard non-pilot |
+| Price | Penny Pilot | Standard non-pilot |
 |---|---|---|
 | < $3.00 | $0.01 | $0.05 |
 | ≥ $3.00 | $0.05 | $0.10 |
 
-Using non-pilot increments causes limit orders to be placed at suboptimal price points ($0.01–$0.05 off per order). Do not change `_quantize_option_price()` to use $0.10 ticks.
+`ticker_is_penny_pilot(ticker)` resolves the flag; non-pilot tickers are listed in `_NON_PENNY_PILOT_TICKERS` in `option_price_monitor.py`.
+
+**Confirmed non-Penny-Pilot** (source: CBOE Penny Tick Type Report 2026-04-22 + live evidence):
+- `CRDO` — absent from CBOE list; confirmed 2026-04-20 (4 live rejections, `required=0.1`)
+- `RH` — absent from CBOE list; confirmed 2026-04-21 (6 live rejections)
+- `FN` — absent from CBOE list; confirmed 2026-04-21 (2 live rejections)
+- `CLS` — absent from CBOE list; Celestica has liquid options but is not enrolled
+
+All other V3 pool tickers (`SNDK`, `APP`, `SHOP`, `CVNA`, `AMD`, `META`, `EXPE`, `MU`, `PLTR`, `COIN`, `MSTR`, `CRWV`, `MRVL`) are confirmed Penny Pilot per CBOE 2026-04-22 report.
+
+When adding a new pool ticker, verify its Penny Pilot status before the first live session. If live fills show `required=0.1` tick rejections, add the ticker to `_NON_PENNY_PILOT_TICKERS`.
 
 ---
 
@@ -550,9 +560,11 @@ real bug found in this codebase (see `retrospects/RETRO_APRIL_2026.md` for full 
   arrive? Missing bars must be synthesized as flat bars to keep MA series continuous.
 
 ### External constants
-- Option tick sizes differ by program — pool tickers use **Penny Pilot** ($0.01/<$3,
-  $0.05/≥$3), not the non-pilot schedule ($0.05/$0.10). Verify before placing limits.
-- When adding a new ticker: confirm Penny Pilot enrollment before assuming tick size.
+- Option tick sizes differ by program — most pool tickers use **Penny Pilot** ($0.01/<$3,
+  $0.05/≥$3), but `CRDO`, `RH`, `FN`, and `CLS` are confirmed non-pilot ($0.05/$0.10).
+  Add non-pilot tickers to `_NON_PENNY_PILOT_TICKERS` in `option_price_monitor.py`.
+- When adding a new ticker: verify against the CBOE Penny Tick Type Report before live
+  trading. Live fills showing `required=0.1` tick rejections also confirm non-pilot status.
 
 ---
 
