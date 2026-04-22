@@ -1030,7 +1030,7 @@ class OpMomentumTradeEngine:
             else:
                 cap_pnl = _D("0")
 
-            is_reentry = pos.trailing_arm_price is not None
+            is_reentry = pos.trailing_arm_price is not None or pos.is_doubledown_addon
             returned = cap_pnl if is_reentry else pos.slot_capital + cap_pnl
             with self._returned_lock:
                 self._window_returned.setdefault(pos.window_label, _D("0"))

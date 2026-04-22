@@ -583,6 +583,41 @@ class TestOnPositionClosed:
         expected = _D("5000") + cap_pnl_primary + cap_pnl_reentry
         assert engine._window_returned["M1"] == expected
 
+    def test_dd_addon_adds_only_cap_pnl_not_slot_capital(self):
+        engine = self._make_engine()
+        pos = self._make_closed_stock_pos("BULLISH", entry=100, exit_=110, slot_capital=6000)
+        pos.is_doubledown_addon = True
+
+        engine._on_position_closed(pos)
+
+        # DD add-on is treated as re-entry: only cap_pnl returned, slot_capital not added
+        cap_pnl = _D("6000") / _D("100") * _D("10")
+        assert engine._window_returned["M1"] == cap_pnl
+        assert engine._window_closed_primary_deployed.get("M1", _D("0")) == _D("0")
+
+    def test_dd_addon_does_not_inflate_closed_primary_deployed(self):
+        """Reproduces the 2026-04-21 A1 undersizing bug.
+
+        M1 had: MRVL primary ($6k) + RH primary ($4k) + RH DD add-on ($6k).
+        Before the fix, DD add-on's $6k was added to closed_primary_deployed,
+        making it $16k > initial $10k and triggering the multi-session
+        normalization incorrectly.
+        """
+        engine = self._make_engine()
+        engine._replay_capital = 10000
+
+        mrvl_primary = self._make_closed_stock_pos("BULLISH", entry=152, exit_=151, slot_capital=6000)
+        rh_primary = self._make_closed_stock_pos("BULLISH", entry=145, exit_=144, slot_capital=4000)
+        rh_dd = self._make_closed_stock_pos("BULLISH", entry=146, exit_=145, slot_capital=6000)
+        rh_dd.is_doubledown_addon = True
+
+        engine._on_position_closed(mrvl_primary)
+        engine._on_position_closed(rh_primary)
+        engine._on_position_closed(rh_dd)
+
+        # DD add-on must not count toward closed_primary_deployed
+        assert engine._window_closed_primary_deployed["M1"] == _D("10000")
+
     def test_skips_position_with_no_slot_capital(self):
         engine = self._make_engine()
         pos = _make_active_position()
