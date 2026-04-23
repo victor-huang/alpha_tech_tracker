@@ -115,6 +115,7 @@ class PositionMonitor:
         re_entry_callback=None,
         initial_capital: Optional[float] = None,
         close_callback: Optional[Callable] = None,
+        exit_retry_callback: Optional[Callable] = None,
         alpaca_feed=None,
     ):
         self._client = alpaca_client
@@ -133,6 +134,7 @@ class PositionMonitor:
         self._re_entry_callback = re_entry_callback
         self._initial_capital = initial_capital
         self._close_callback = close_callback
+        self._exit_retry_callback = exit_retry_callback
         self._alpaca_feed = alpaca_feed
         self._positions: list = []
         self._reentry_watchers: list = []
@@ -228,6 +230,12 @@ class PositionMonitor:
                 self._close_stock_position(pos, pos.exit_reason)
             else:
                 self._close_option_position(pos, pos.exit_reason)
+            if (
+                self._exit_retry_callback
+                and not pos.close_order_failed
+                and pos.exit_fill_price is not None
+            ):
+                self._exit_retry_callback(pos)
 
         # Invoke re-entry callbacks outside the lock to avoid deadlock with add_position.
         # In replay mode call synchronously so the position exists for the next bar.

@@ -580,6 +580,9 @@ class OpMomentumTradeEngine:
                         "Entry order for %s stock filled 0 shares (rejected/missed) — discarding position",
                         event.ticker,
                     )
+                    _notify(
+                        f"ENTRY MISSED {event.ticker} stock — 0 shares filled, manual entry required"
+                    )
                     return False
                 if filled_qty != shares:
                     logger.warning(
@@ -708,6 +711,9 @@ class OpMomentumTradeEngine:
                     logger.error(
                         "Entry order for %s filled 0 contracts (rejected/missed) — discarding position",
                         option_symbol,
+                    )
+                    _notify(
+                        f"ENTRY MISSED {option_symbol} — 0 contracts filled, manual entry required"
                     )
                     return False
                 if total_filled != contracts:
@@ -1112,6 +1118,47 @@ class OpMomentumTradeEngine:
         )
         self._flush_session_state()
 
+    def _on_exit_fill_corrected(self, pos: ActivePosition) -> None:
+        """Apply the cap_pnl delta when a FILL_ESC MISS retry later confirms the exit fill.
+
+        _on_position_closed fired earlier with exit_fill_price=None, so cap_pnl=0 was
+        recorded. Now that pos.exit_fill_price is confirmed, add the actual cap_pnl to
+        _window_returned and _daily_realized_pnl. slot_capital was already returned.
+        """
+        entry = (
+            pos.simulated_entry_mid
+            if pos.simulated_entry_mid is not None
+            else pos.entry_fill_price
+            if pos.entry_fill_price is not None
+            else pos.entry_stock_price
+        )
+        if not entry or entry <= 0 or pos.exit_fill_price is None:
+            return
+        exit_ = pos.exit_fill_price
+        if pos.trade_type == "stock" and pos.signal == "BEARISH":
+            raw = entry - exit_
+        else:
+            raw = exit_ - entry
+        effective_contracts = pos.closed_contracts if pos.closed_contracts > 0 else pos.contracts
+        if pos.trade_type == "stock":
+            cap_pnl = pos.slot_capital / entry * raw
+        else:
+            cap_pnl = _D(effective_contracts) * _D("100") * raw
+        with self._returned_lock:
+            self._window_returned[pos.window_label] = (
+                self._window_returned.get(pos.window_label, _D("0")) + cap_pnl
+            )
+        with self._pnl_lock:
+            self._daily_realized_pnl += cap_pnl
+        logger.info(
+            "Exit fill correction [%s] %s: cap_pnl=%.2f applied after retry fill (exit=%.2f)",
+            pos.window_label,
+            pos.ticker,
+            float(cap_pnl),
+            float(exit_),
+        )
+        self._flush_session_state()
+
     def _flush_session_state(self) -> None:
         """Checkpoint all positions to disk. Skipped in mock/replay mode."""
         if self._mock_trade_execution:
@@ -1261,7 +1308,7 @@ class OpMomentumTradeEngine:
                     # Formula: prior_returned - closed_deployed + initial
                     #        = (total_slot + total_pnl) - total_slot + initial
                     #        = total_pnl + initial
-                    effective = prior_returned - closed_deployed + initial
+                    effective = max(prior_returned - closed_deployed + initial, _D("0"))
                     logger.warning(
                         "Sequential window [%s] normalizing budget: raw=%.2f"
                         " closed_deployed=%.2f initial=%.2f → effective=%.2f"
@@ -1901,6 +1948,7 @@ class OpMomentumTradeEngine:
             re_entry_callback=self._enter_reentry,
             initial_capital=initial_capital,
             close_callback=self._on_position_closed,
+            exit_retry_callback=self._on_exit_fill_corrected,
             alpaca_feed=self._alpaca_feed,
         )
 
@@ -2051,6 +2099,7 @@ class OpMomentumTradeEngine:
             re_entry_callback=self._enter_reentry,
             initial_capital=initial_capital,
             close_callback=self._on_position_closed,
+            exit_retry_callback=self._on_exit_fill_corrected,
             alpaca_feed=self._alpaca_feed,
         )
 

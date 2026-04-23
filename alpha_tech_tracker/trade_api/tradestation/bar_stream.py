@@ -1,5 +1,6 @@
 import json
 import logging
+import random
 import threading
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -122,10 +123,11 @@ class TradeStationBarStream:
                         self._callback(bar)
             except Exception:
                 if not self._stop_event.is_set():
+                    jitter = random.uniform(0, backoff * 0.2)
                     logger.exception(
-                        "TS stream: error [%s] — reconnecting in %ds", symbol, backoff
+                        "TS stream: error [%s] — reconnecting in %.1fs", symbol, backoff + jitter
                     )
-                    self._stop_event.wait(backoff)
+                    self._stop_event.wait(backoff + jitter)
                     backoff = min(backoff * 2, 60)
 
     def start_async(self):

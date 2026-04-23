@@ -684,8 +684,8 @@ def place_stock_order(
         bid_f, ask_f = _stock_bid_ask(raw_quote)
         bid = _D(str(bid_f))
         ask = _D(str(ask_f))
-        if is_buy and ask == _D("0"):
-            raise ValueError(f"ask=0 for {ticker} — cannot compute limit price for buy")
+        if ask == _D("0"):
+            raise ValueError(f"ask=0 for {ticker} — stale quote, cannot compute mid price")
         if not is_buy and bid == _D("0"):
             raise ValueError(f"bid=0 for {ticker} — cannot compute limit price for sell")
         mid = (bid + ask) / _D("2")

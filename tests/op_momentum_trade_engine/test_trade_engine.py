@@ -3267,3 +3267,207 @@ class TestPlaceEntryOptionOrderSimulateMode:
             engine._place_entry("NVDA", "BULLISH", self._CALL_SYM, 1, _D("12.00"))
 
         engine._option_price_monitor.get_fair_price.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# _on_exit_fill_corrected — cap_pnl delta applied after FILL_ESC MISS retry
+# ---------------------------------------------------------------------------
+
+class TestOnExitFillCorrected:
+    def _make_engine(self):
+        client = _make_alpaca_client()
+        return OpMomentumTradeEngine(alpaca_client=client, mock_trade_execution=True)
+
+    def _make_option_pos(self, signal, entry_fill, exit_fill, contracts, slot_capital):
+        pos = _make_active_position(signal=signal)
+        pos.trade_type = "options"
+        pos.entry_fill_price = _D(str(entry_fill))
+        pos.exit_fill_price = _D(str(exit_fill))
+        pos.contracts = contracts
+        pos.slot_capital = _D(str(slot_capital))
+        pos.trailing_arm_price = None
+        pos.window_label = "A1"
+        return pos
+
+    def _make_stock_pos(self, signal, entry_fill, exit_fill, slot_capital):
+        pos = _make_active_position(signal=signal)
+        pos.trade_type = "stock"
+        pos.entry_fill_price = _D(str(entry_fill))
+        pos.exit_fill_price = _D(str(exit_fill))
+        pos.slot_capital = _D(str(slot_capital))
+        pos.trailing_arm_price = None
+        pos.window_label = "A1"
+        return pos
+
+    def test_bullish_option_adds_cap_pnl_to_window_returned(self):
+        engine = self._make_engine()
+        pos = self._make_option_pos("BULLISH", entry_fill=8.00, exit_fill=10.00, contracts=2, slot_capital=2000)
+
+        engine._on_exit_fill_corrected(pos)
+
+        # cap_pnl = 2 * 100 * (10.00 - 8.00) = 400
+        assert engine._window_returned["A1"] == _D("400")
+
+    def test_bullish_option_adds_cap_pnl_to_daily_realized_pnl(self):
+        engine = self._make_engine()
+        pos = self._make_option_pos("BULLISH", entry_fill=8.00, exit_fill=10.00, contracts=2, slot_capital=2000)
+
+        engine._on_exit_fill_corrected(pos)
+
+        assert engine._daily_realized_pnl == _D("400")
+
+    def test_bearish_option_loss_adds_negative_cap_pnl(self):
+        engine = self._make_engine()
+        pos = self._make_option_pos("BEARISH", entry_fill=6.00, exit_fill=4.00, contracts=3, slot_capital=1500)
+
+        engine._on_exit_fill_corrected(pos)
+
+        # cap_pnl = 3 * 100 * (4.00 - 6.00) = -600 (loss: exit < entry for PUT)
+        assert engine._window_returned["A1"] == _D("-600")
+
+    def test_bullish_stock_adds_correct_cap_pnl(self):
+        engine = self._make_engine()
+        pos = self._make_stock_pos("BULLISH", entry_fill=100, exit_fill=110, slot_capital=5000)
+
+        engine._on_exit_fill_corrected(pos)
+
+        # cap_pnl = 5000/100 * 10 = 500
+        assert engine._window_returned["A1"] == _D("500")
+
+    def test_bearish_stock_direction_correct(self):
+        engine = self._make_engine()
+        pos = self._make_stock_pos("BEARISH", entry_fill=200, exit_fill=185, slot_capital=4000)
+
+        engine._on_exit_fill_corrected(pos)
+
+        # cap_pnl = 4000/200 * (200 - 185) = 4000/200 * 15 = 300
+        assert engine._window_returned["A1"] == _D("300")
+
+    def test_skips_when_exit_fill_price_is_none(self):
+        engine = self._make_engine()
+        pos = self._make_option_pos("BULLISH", entry_fill=8.00, exit_fill=10.00, contracts=2, slot_capital=2000)
+        pos.exit_fill_price = None
+
+        engine._on_exit_fill_corrected(pos)
+
+        assert engine._window_returned == {}
+        assert engine._daily_realized_pnl == _D("0")
+
+    def test_skips_when_entry_is_zero(self):
+        engine = self._make_engine()
+        pos = self._make_option_pos("BULLISH", entry_fill=0, exit_fill=10.00, contracts=2, slot_capital=2000)
+
+        engine._on_exit_fill_corrected(pos)
+
+        assert engine._window_returned == {}
+
+    def test_correction_accumulates_with_existing_window_returned(self):
+        engine = self._make_engine()
+        engine._window_returned["A1"] = _D("1000")
+        pos = self._make_option_pos("BULLISH", entry_fill=5.00, exit_fill=7.00, contracts=1, slot_capital=500)
+
+        engine._on_exit_fill_corrected(pos)
+
+        # cap_pnl = 1 * 100 * 2.00 = 200; 1000 + 200 = 1200
+        assert engine._window_returned["A1"] == _D("1200")
+
+
+# ---------------------------------------------------------------------------
+# ENTRY MISSED notification — _notify called when entry fills 0 contracts/shares
+# ---------------------------------------------------------------------------
+
+class TestEntryMissedNotification:
+    def _make_live_engine(self, trade_type="options"):
+        client = _make_alpaca_client()
+        engine = OpMomentumTradeEngine(
+            alpaca_client=client,
+            mock_trade_execution=False,
+            trade_type=trade_type,
+        )
+        engine._monitor = Mock()
+        engine._signal_engine = Mock()
+        engine._signal_engine.get_latest_bar.return_value = None
+        engine._window_state["W1"] = {
+            "pending_signals": {},
+            "collection_deadline": datetime.now(ET) - timedelta(minutes=1),
+            "open_position_count": 0,
+            "capital_fraction": 1.0,
+        }
+        return engine
+
+    def test_option_entry_missed_sends_notify(self):
+        engine = self._make_live_engine(trade_type="options")
+
+        with patch(_OPTION_CONTRACT_SELECTOR_PATH, return_value="NVDA260404C00170000"), \
+             patch(_POSITION_SIZER_PATH, return_value=(2, _D("8.50"))), \
+             patch(_PLACE_ENTRY_PATH, return_value={"order_id": "rej-opt-1"}), \
+             patch(_POLL_ENTRY_FILL_PATH, return_value=(None, 0)), \
+             patch(_NOTIFY_PATH) as mock_notify:
+            engine._enter_position(_make_signal_event("NVDA"), rank=0)
+
+        notify_messages = [call[0][0] for call in mock_notify.call_args_list]
+        assert any("ENTRY MISSED" in msg for msg in notify_messages)
+
+    def test_option_entry_missed_message_includes_symbol(self):
+        engine = self._make_live_engine(trade_type="options")
+
+        with patch(_OPTION_CONTRACT_SELECTOR_PATH, return_value="NVDA260404C00170000"), \
+             patch(_POSITION_SIZER_PATH, return_value=(2, _D("8.50"))), \
+             patch(_PLACE_ENTRY_PATH, return_value={"order_id": "rej-opt-2"}), \
+             patch(_POLL_ENTRY_FILL_PATH, return_value=(None, 0)), \
+             patch(_NOTIFY_PATH) as mock_notify:
+            engine._enter_position(_make_signal_event("NVDA"), rank=0)
+
+        notify_messages = [call[0][0] for call in mock_notify.call_args_list]
+        missed_msgs = [m for m in notify_messages if "ENTRY MISSED" in m]
+        assert missed_msgs and "NVDA260404C00170000" in missed_msgs[0]
+
+    def test_option_entry_missed_returns_false(self):
+        engine = self._make_live_engine(trade_type="options")
+
+        with patch(_OPTION_CONTRACT_SELECTOR_PATH, return_value="NVDA260404C00170000"), \
+             patch(_POSITION_SIZER_PATH, return_value=(2, _D("8.50"))), \
+             patch(_PLACE_ENTRY_PATH, return_value={"order_id": "rej-opt-3"}), \
+             patch(_POLL_ENTRY_FILL_PATH, return_value=(None, 0)), \
+             patch(_NOTIFY_PATH):
+            result = engine._enter_position(_make_signal_event("NVDA"), rank=0)
+
+        assert result is False
+        engine._monitor.add_position.assert_not_called()
+
+    def test_stock_entry_missed_sends_notify(self):
+        engine = self._make_live_engine(trade_type="stock")
+
+        with patch(_COMPUTE_STOCK_PATH, return_value=(10, _D("100.00"))), \
+             patch(_PLACE_STOCK_ORDER_PATH, return_value={"order_id": "rej-stk-1"}), \
+             patch(_POLL_ENTRY_FILL_PATH, return_value=(None, 0)), \
+             patch(_NOTIFY_PATH) as mock_notify:
+            engine._enter_position(_make_signal_event("NVDA"), rank=0)
+
+        notify_messages = [call[0][0] for call in mock_notify.call_args_list]
+        assert any("ENTRY MISSED" in msg for msg in notify_messages)
+
+    def test_stock_entry_missed_message_includes_ticker(self):
+        engine = self._make_live_engine(trade_type="stock")
+
+        with patch(_COMPUTE_STOCK_PATH, return_value=(10, _D("100.00"))), \
+             patch(_PLACE_STOCK_ORDER_PATH, return_value={"order_id": "rej-stk-2"}), \
+             patch(_POLL_ENTRY_FILL_PATH, return_value=(None, 0)), \
+             patch(_NOTIFY_PATH) as mock_notify:
+            engine._enter_position(_make_signal_event("NVDA"), rank=0)
+
+        notify_messages = [call[0][0] for call in mock_notify.call_args_list]
+        missed_msgs = [m for m in notify_messages if "ENTRY MISSED" in m]
+        assert missed_msgs and "NVDA" in missed_msgs[0]
+
+    def test_stock_entry_missed_returns_false(self):
+        engine = self._make_live_engine(trade_type="stock")
+
+        with patch(_COMPUTE_STOCK_PATH, return_value=(10, _D("100.00"))), \
+             patch(_PLACE_STOCK_ORDER_PATH, return_value={"order_id": "rej-stk-3"}), \
+             patch(_POLL_ENTRY_FILL_PATH, return_value=(None, 0)), \
+             patch(_NOTIFY_PATH):
+            result = engine._enter_position(_make_signal_event("NVDA"), rank=0)
+
+        assert result is False
+        engine._monitor.add_position.assert_not_called()

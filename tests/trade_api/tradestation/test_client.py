@@ -995,3 +995,47 @@ class TestAuthorizeSession:
 
         with pytest.raises(RuntimeError, match="credentials are missing"):
             client.authorize_session()
+
+
+# ---------------------------------------------------------------------------
+# _build_session — HTTPAdapter connection pool size
+# ---------------------------------------------------------------------------
+
+class TestBuildSessionHttpAdapter:
+    def test_mounts_http_adapter_on_https_prefix(self):
+        from unittest.mock import MagicMock, patch
+        from requests.adapters import HTTPAdapter
+
+        client = TradeStationAPIClient(
+            client_id="test_id",
+            client_secret="test_secret",
+            environment="sim",
+        )
+        token = {"access_token": "tok", "token_type": "Bearer", "expires_at": 9999999999}
+        mock_session = MagicMock()
+
+        with patch("alpha_tech_tracker.trade_api.tradestation.client.OAuth2Session", return_value=mock_session), \
+             patch("alpha_tech_tracker.op_momentum_strategy.config._save_tradestation_session_tokens"):
+            client._build_session(token)
+
+        url_prefix, adapter = mock_session.mount.call_args[0]
+        assert url_prefix == "https://"
+        assert isinstance(adapter, HTTPAdapter)
+
+    def test_http_adapter_pool_size_is_30(self):
+        from unittest.mock import MagicMock, patch
+
+        client = TradeStationAPIClient(
+            client_id="test_id",
+            client_secret="test_secret",
+            environment="sim",
+        )
+        token = {"access_token": "tok", "token_type": "Bearer", "expires_at": 9999999999}
+        mock_session = MagicMock()
+
+        with patch("alpha_tech_tracker.trade_api.tradestation.client.OAuth2Session", return_value=mock_session), \
+             patch("alpha_tech_tracker.op_momentum_strategy.config._save_tradestation_session_tokens"), \
+             patch("requests.adapters.HTTPAdapter") as mock_adapter_cls:
+            client._build_session(token)
+
+        mock_adapter_cls.assert_called_once_with(pool_connections=30, pool_maxsize=30)

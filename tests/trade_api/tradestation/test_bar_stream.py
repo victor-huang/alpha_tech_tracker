@@ -467,6 +467,7 @@ class TestTradeStationBarStream:
         client = _make_client()
         stream = TradeStationBarStream(client)
         client._session.get.side_effect = ConnectionError("network error")
+        monkeypatch.setattr("alpha_tech_tracker.trade_api.tradestation.bar_stream.random.uniform", lambda *_: 0)
 
         wait_calls = []
 
@@ -484,6 +485,7 @@ class TestTradeStationBarStream:
         client = _make_client()
         stream = TradeStationBarStream(client)
         client._session.get.side_effect = ConnectionError("network error")
+        monkeypatch.setattr("alpha_tech_tracker.trade_api.tradestation.bar_stream.random.uniform", lambda *_: 0)
 
         wait_calls = []
 
@@ -500,6 +502,7 @@ class TestTradeStationBarStream:
     def test_backoff_resets_to_five_after_successful_connection(self, monkeypatch):
         client = _make_client()
         stream = TradeStationBarStream(client)
+        monkeypatch.setattr("alpha_tech_tracker.trade_api.tradestation.bar_stream.random.uniform", lambda *_: 0)
 
         wait_calls = []
 
@@ -526,3 +529,89 @@ class TestTradeStationBarStream:
 
         assert wait_calls[0] == 5
         assert wait_calls[1] == 5
+
+
+# ---------------------------------------------------------------------------
+# Reconnect jitter — wait time includes backoff + random offset
+# ---------------------------------------------------------------------------
+
+class TestStreamReconnectJitter:
+    def test_reconnect_wait_includes_jitter(self, monkeypatch):
+        client = _make_client()
+        stream = TradeStationBarStream(client)
+        monkeypatch.setattr(
+            "alpha_tech_tracker.trade_api.tradestation.bar_stream.random.uniform",
+            lambda lo, hi: 1.0,
+        )
+
+        wait_calls = []
+
+        def fake_wait(secs):
+            wait_calls.append(secs)
+            stream._stop_event.set()
+
+        monkeypatch.setattr(stream._stop_event, "wait", fake_wait)
+        client._session.get.side_effect = ConnectionError("simulated error")
+
+        stream._stream_ticker("TSLA")
+
+        # backoff=5, jitter=1.0 → wait(6.0)
+        assert len(wait_calls) == 1
+        assert wait_calls[0] == 6.0
+
+    def test_jitter_is_bounded_by_twenty_percent_of_backoff(self, monkeypatch):
+        """random.uniform is called with (0, backoff * 0.2) — verify the upper bound."""
+        client = _make_client()
+        stream = TradeStationBarStream(client)
+
+        uniform_calls = []
+        monkeypatch.setattr(
+            "alpha_tech_tracker.trade_api.tradestation.bar_stream.random.uniform",
+            lambda lo, hi: uniform_calls.append((lo, hi)) or 0,
+        )
+
+        def fake_wait(_):
+            stream._stop_event.set()
+
+        monkeypatch.setattr(stream._stop_event, "wait", fake_wait)
+        client._session.get.side_effect = ConnectionError("error")
+
+        stream._stream_ticker("TSLA")
+
+        assert uniform_calls[0] == (0, 5 * 0.2)
+
+    def test_different_tickers_receive_different_jitter(self, monkeypatch):
+        """Concurrent reconnects from different tickers get independently random jitter."""
+        import random as stdlib_random
+
+        client = _make_client()
+        stream = TradeStationBarStream(client)
+
+        jitter_values = []
+        original_uniform = stdlib_random.uniform
+
+        def counting_uniform(lo, hi):
+            val = original_uniform(lo, hi)
+            jitter_values.append(val)
+            return val
+
+        monkeypatch.setattr(
+            "alpha_tech_tracker.trade_api.tradestation.bar_stream.random.uniform",
+            counting_uniform,
+        )
+
+        wait_calls = []
+
+        def fake_wait(secs):
+            wait_calls.append(secs)
+            if len(wait_calls) >= 2:
+                stream._stop_event.set()
+
+        monkeypatch.setattr(stream._stop_event, "wait", fake_wait)
+        client._session.get.side_effect = ConnectionError("error")
+
+        stream._stream_ticker("TSLA")
+
+        # Each wait gets its own jitter sample; two retries → two samples
+        assert len(jitter_values) == 2
+        assert all(0 <= j <= 5 * 0.2 for j in jitter_values)

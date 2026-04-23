@@ -266,6 +266,8 @@ class TradeStationAPIClient(ExecutionClient):
             return False
 
     def _build_session(self, token: dict):
+        from requests.adapters import HTTPAdapter
+
         from alpha_tech_tracker.op_momentum_strategy.config import (
             _save_tradestation_session_tokens,
         )
@@ -280,6 +282,8 @@ class TradeStationAPIClient(ExecutionClient):
             },
             token_updater=_save_tradestation_session_tokens,
         )
+        adapter = HTTPAdapter(pool_connections=30, pool_maxsize=30)
+        self._session.mount("https://", adapter)
 
     # ------------------------------------------------------------------
     # Internal helpers

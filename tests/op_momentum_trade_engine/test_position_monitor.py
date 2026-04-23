@@ -2417,3 +2417,138 @@ class TestGapThroughExitOverride:
         assert pos.is_closed is True
         assert pos.exit_reason == "fallback_20pct"
         assert pos.simulated_exit_mid == _D("93.60")
+
+
+# ---------------------------------------------------------------------------
+# exit_retry_callback — fires after FILL_ESC MISS retry confirms fill
+# ---------------------------------------------------------------------------
+
+class TestExitRetryCallback:
+    """exit_retry_callback is called once when a retry close order succeeds and
+    exit_fill_price is confirmed. It must NOT fire when close_callback first fires
+    (exit_fill_price=None at that point) and must NOT fire if the retry still fails."""
+
+    @pytest.fixture(autouse=True)
+    def patch_sleep(self, monkeypatch):
+        monkeypatch.setattr(
+            "alpha_tech_tracker.op_momentum_strategy.order_executor.time.sleep",
+            lambda _: None,
+        )
+
+    def _make_monitor_with_failed_stock_position(self, exit_retry_callback=None):
+        client = _make_alpaca_client()
+        client.get_stock_quote.return_value = {
+            "QuoteResponse": {
+                "QuoteData": [{"All": {"bid": 99.0, "ask": 101.0, "bid_size": 1, "ask_size": 1, "last": None}}]
+            }
+        }
+        client.place_stock_order.return_value = {"order_id": "retry-stk-1"}
+        client.order_status.return_value = {"status": "filled", "filled_avg_price": 100.0}
+
+        df = _build_history_df([100.0], ma20=90.0, ma50=90.0, ma200=85.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(
+            client, engine, exit_retry_callback=exit_retry_callback
+        )
+
+        pos = _make_stock_position(signal="BULLISH", shares=10)
+        pos.is_closed = True
+        pos.exit_reason = "hard_stop"
+        pos.close_order_failed = True
+        monitor._positions.append(pos)
+
+        return monitor, engine, pos
+
+    def _make_monitor_with_failed_option_position(self, exit_retry_callback=None):
+        client = _make_alpaca_client()
+        client.get_option_quote_by_occ.return_value = _make_option_quote(bid=5.0, ask=5.5)
+        client.place_option_order.return_value = {"order_id": "retry-opt-1"}
+        client.order_status.return_value = {"status": "filled", "filled_avg_price": 5.25}
+
+        df = _build_history_df([100.0], ma20=90.0, ma50=90.0, ma200=85.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(
+            client, engine, exit_retry_callback=exit_retry_callback
+        )
+
+        pos = _make_active_position(signal="BULLISH", contracts=2)
+        pos.is_closed = True
+        pos.exit_reason = "hard_stop"
+        pos.close_order_failed = True
+        monitor._positions.append(pos)
+
+        return monitor, engine, pos
+
+    def test_callback_called_after_successful_stock_retry(self):
+        callback_calls = []
+        monitor, engine, pos = self._make_monitor_with_failed_stock_position(
+            exit_retry_callback=callback_calls.append
+        )
+
+        with patch("alpha_tech_tracker.op_momentum_strategy.position_monitor._notify"):
+            _set_latest_bar(engine, "NVDA", close=103.0, ma50=90.0)
+            monitor.on_bar("NVDA")
+
+        assert len(callback_calls) == 1
+        assert callback_calls[0] is pos
+
+    def test_callback_called_after_successful_option_retry(self):
+        callback_calls = []
+        monitor, engine, pos = self._make_monitor_with_failed_option_position(
+            exit_retry_callback=callback_calls.append
+        )
+
+        with patch("alpha_tech_tracker.op_momentum_strategy.position_monitor._notify"):
+            _set_latest_bar(engine, "NVDA", close=103.0, ma50=90.0)
+            monitor.on_bar("NVDA")
+
+        assert len(callback_calls) == 1
+        assert callback_calls[0] is pos
+
+    def test_callback_receives_position_with_exit_fill_price_set(self):
+        captured = []
+        monitor, engine, pos = self._make_monitor_with_failed_stock_position(
+            exit_retry_callback=lambda p: captured.append(p.exit_fill_price)
+        )
+
+        with patch("alpha_tech_tracker.op_momentum_strategy.position_monitor._notify"):
+            _set_latest_bar(engine, "NVDA", close=103.0, ma50=90.0)
+            monitor.on_bar("NVDA")
+
+        assert captured[0] == _D("100.0")
+
+    def test_callback_not_called_when_retry_still_fails(self):
+        client = _make_alpaca_client()
+        client.get_option_quote_by_occ.side_effect = RuntimeError("quote unavailable")
+        client.place_option_order.side_effect = RuntimeError("order rejected")
+
+        df = _build_history_df([100.0], ma20=90.0, ma50=90.0, ma200=85.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+
+        callback_calls = []
+        monitor = PositionMonitor(
+            client, engine, exit_retry_callback=callback_calls.append
+        )
+
+        pos = _make_active_position(signal="BULLISH", contracts=2)
+        pos.is_closed = True
+        pos.exit_reason = "hard_stop"
+        pos.close_order_failed = True
+        monitor._positions.append(pos)
+
+        with patch("alpha_tech_tracker.op_momentum_strategy.position_monitor._notify"):
+            _set_latest_bar(engine, "NVDA", close=103.0, ma50=90.0)
+            monitor.on_bar("NVDA")
+
+        assert callback_calls == []
+
+    def test_no_callback_registered_does_not_raise(self):
+        monitor, engine, pos = self._make_monitor_with_failed_stock_position(
+            exit_retry_callback=None
+        )
+
+        with patch("alpha_tech_tracker.op_momentum_strategy.position_monitor._notify"):
+            _set_latest_bar(engine, "NVDA", close=103.0, ma50=90.0)
+            monitor.on_bar("NVDA")
+
+        assert pos.close_order_failed is False
