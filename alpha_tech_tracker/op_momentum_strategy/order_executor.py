@@ -12,6 +12,11 @@ from .option_price_monitor import _quantize_option_price, ticker_is_penny_pilot
 logger = logging.getLogger(__name__)
 
 
+def _is_insufficient_buying_power(exc: Exception) -> bool:
+    """Return True if the exception is an Alpaca 'insufficient options buying power' error."""
+    return "40310000" in str(exc) or "insufficient options buying power" in str(exc).lower()
+
+
 def _parse_tick_from_reject_reason(message: str) -> Optional[Decimal]:
     """Extract the required tick from a broker order-rejection message.
 
@@ -295,7 +300,14 @@ def _place_with_fill_escalation(
         try:
             _last_placed_price[0] = _quantize_option_price(current_price, penny_pilot=penny_pilot)
             order = _place_limit(current_price)
-        except Exception:
+        except Exception as exc:
+            if _is_insufficient_buying_power(exc):
+                logger.warning(
+                    "FILL_ESC loop step%d %s %s: insufficient options buying power"
+                    " — aborting escalation",
+                    step_num, order_action, option_symbol,
+                )
+                return {}, 0
             logger.warning(
                 "FILL_ESC loop step%d %s %s: placement failed, escalating",
                 step_num, order_action, option_symbol, exc_info=True,
@@ -347,7 +359,14 @@ def _place_with_fill_escalation(
                 try:
                     _last_placed_price[0] = _quantize_option_price(current_price, penny_pilot=penny_pilot)
                     order = _place_limit(current_price)
-                except Exception:
+                except Exception as exc:
+                    if _is_insufficient_buying_power(exc):
+                        logger.warning(
+                            "FILL_ESC loop step%d %s %s: insufficient options buying power"
+                            " — aborting escalation",
+                            step_num, order_action, option_symbol,
+                        )
+                        return {}, 0
                     logger.warning(
                         "FILL_ESC loop step%d %s %s: tick-retry placement failed",
                         step_num, order_action, option_symbol, exc_info=True,
@@ -466,7 +485,13 @@ def _place_with_fill_escalation(
     )
     try:
         order = _place_limit(step3_price)
-    except Exception:
+    except Exception as exc:
+        if _is_insufficient_buying_power(exc):
+            logger.warning(
+                "FILL_ESC step3 %s %s: insufficient options buying power — aborting",
+                order_action, option_symbol,
+            )
+            return {}, 0
         logger.warning(
             "FILL_ESC step3 %s %s: limit placement failed",
             order_action, option_symbol, exc_info=True,

@@ -3,6 +3,7 @@ from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
 from alpha_tech_tracker.op_momentum_strategy.order_executor import (
+    _is_insufficient_buying_power,
     _parse_tick_from_reject_reason,
     _place_with_fill_escalation,
     place_option_order_in_tranches,
@@ -307,6 +308,141 @@ class TestParseTickFromRejectReason:
         assert _parse_tick_from_reject_reason(
             "ECL1000: This order requires $8,000 of Day Trade Buying Power"
         ) is None
+
+
+class TestIsInsufficientBuyingPower:
+    def test_alpaca_error_code_40310000_detected(self):
+        assert _is_insufficient_buying_power(Exception('{"code":40310000,"message":"insufficient options buying power"}'))
+
+    def test_insufficient_buying_power_message_lowercase(self):
+        assert _is_insufficient_buying_power(Exception("insufficient options buying power"))
+
+    def test_insufficient_buying_power_message_mixed_case(self):
+        assert _is_insufficient_buying_power(Exception("Insufficient Options Buying Power"))
+
+    def test_unrelated_exception_returns_false(self):
+        assert not _is_insufficient_buying_power(Exception("order rejected: invalid symbol"))
+
+    def test_generic_placement_failure_returns_false(self):
+        assert not _is_insufficient_buying_power(Exception("connection timeout"))
+
+
+class TestInsufficientBuyingPowerAbort:
+    """
+    When place_option_order raises an Alpaca 40310000 error, the escalation
+    must abort immediately and return ({}, 0) — no further placement attempts.
+    """
+
+    _BP_ERROR = Exception('{"code":40310000,"message":"insufficient options buying power","options_buying_power":"10009.89"}')
+
+    def _make_client_with_bp_error(self, fail_on_call=1):
+        client = MagicMock()
+        client.get_option_quote_by_occ.return_value = {"bid": 4.90, "ask": 5.10, "mid": 5.00}
+        call_count = [0]
+
+        def place_order_side_effect(**kwargs):
+            call_count[0] += 1
+            if call_count[0] >= fail_on_call:
+                raise self._BP_ERROR
+            return {"order_id": "ord-001"}
+
+        client.place_option_order.side_effect = place_order_side_effect
+        client.order_status.return_value = {"status": "open"}
+        return client
+
+    def test_loop_step1_bp_error_returns_empty_order_and_zero_filled(self):
+        client = self._make_client_with_bp_error(fail_on_call=1)
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            order, filled = _place_with_fill_escalation(
+                client=client,
+                ticker=_TICKER,
+                option_symbol=_SYMBOL,
+                option_type=_OPTION_TYPE,
+                contracts=_CONTRACTS,
+                order_action="BUY_OPEN",
+            )
+        assert order == {}
+        assert filled == 0
+
+    def test_loop_step1_bp_error_stops_after_one_placement_attempt(self):
+        client = self._make_client_with_bp_error(fail_on_call=1)
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            _place_with_fill_escalation(
+                client=client,
+                ticker=_TICKER,
+                option_symbol=_SYMBOL,
+                option_type=_OPTION_TYPE,
+                contracts=_CONTRACTS,
+                order_action="BUY_OPEN",
+            )
+        assert client.place_option_order.call_count == 1
+
+    def test_loop_step1_bp_error_does_not_check_fill_status(self):
+        client = self._make_client_with_bp_error(fail_on_call=1)
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            _place_with_fill_escalation(
+                client=client,
+                ticker=_TICKER,
+                option_symbol=_SYMBOL,
+                option_type=_OPTION_TYPE,
+                contracts=_CONTRACTS,
+                order_action="BUY_OPEN",
+            )
+        client.order_status.assert_not_called()
+
+    def test_tick_retry_bp_error_aborts_escalation(self):
+        """40310000 on the tick-retry path also aborts immediately."""
+        client = MagicMock()
+        client.get_option_quote_by_occ.return_value = {"bid": 5.90, "ask": 6.20, "mid": 6.05}
+        call_count = [0]
+        _TICK_REJ_MSG = "Price = 6.05000000 not rounded to a valid price increment [ 0.1 ]"
+
+        def place_order_side_effect(**kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                return {"order_id": "ord-001"}
+            raise self._BP_ERROR
+
+        client.place_option_order.side_effect = place_order_side_effect
+        client.order_status.return_value = {"status": "canceled", "reject_reason": _TICK_REJ_MSG}
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            order, filled = _place_with_fill_escalation(
+                client=client,
+                ticker="APP",
+                option_symbol="APP260418C00500000",
+                option_type="CALL",
+                contracts=1,
+                order_action="BUY_OPEN",
+            )
+        assert order == {}
+        assert filled == 0
+        assert client.place_option_order.call_count == 2
+
+    def test_step3_bp_error_aborts_escalation(self):
+        """40310000 at the step3 final limit also aborts and returns ({}, 0)."""
+        client = MagicMock()
+        client.get_option_quote_by_occ.return_value = {"bid": 4.90, "ask": 5.10, "mid": 5.00}
+        call_count = [0]
+
+        def place_order_side_effect(**kwargs):
+            call_count[0] += 1
+            if call_count[0] < 12:
+                return {"order_id": "ord-001"}
+            raise self._BP_ERROR
+
+        client.place_option_order.side_effect = place_order_side_effect
+        client.order_status.return_value = {"status": "open"}
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            order, filled = _place_with_fill_escalation(
+                client=client,
+                ticker=_TICKER,
+                option_symbol=_SYMBOL,
+                option_type=_OPTION_TYPE,
+                contracts=_CONTRACTS,
+                order_action=_SELL,
+            )
+        assert order == {}
+        assert filled == 0
 
 
 class TestTickRejectionRetry:
