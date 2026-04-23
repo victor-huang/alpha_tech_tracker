@@ -11,6 +11,7 @@ from alpha_tech_tracker.op_momentum_strategy.contract_selector import (
     _is_nyse_holiday,
     _next_friday,
     _strike_increment,
+    _strike_offsets,
 )
 
 from alpha_tech_tracker.op_momentum_strategy.option_price_monitor import _parse_occ_symbol
@@ -91,21 +92,21 @@ class TestITMOptionContractSelector:
     def test_bullish_signal_selects_call_with_lower_strike(self, _, __):
         client = _make_alpaca_client()
         client.get_options_contracts.return_value = [
-            {"symbol": "NVDA260328C00730000", "strike_price": 730.0, "expiration_date": "2026-03-27"},
-            {"symbol": "NVDA260328C00740000", "strike_price": 740.0, "expiration_date": "2026-03-27"},
+            {"symbol": "NVDA260328C00760000", "strike_price": 760.0, "expiration_date": "2026-03-27"},
+            {"symbol": "NVDA260328C00770000", "strike_price": 770.0, "expiration_date": "2026-03-27"},
         ]
 
         selector = ITMOptionContractSelector(client)
         symbol = selector.select("NVDA", "BULLISH", 820.0)
 
-        # stock=$820, incr=$10, target=floor(820*0.90/10)*10=730, radius=50
-        assert symbol == "NVDA260328C00730000"
+        # stock=$820 (>$600 → 5% ITM), incr=$10, target=floor(820*0.95/10)*10=770, radius=50
+        assert symbol == "NVDA260328C00770000"
         client.get_options_contracts.assert_called_once_with(
             underlying_symbol="NVDA",
             expiration_date=date(2026, 3, 27),
             option_type="call",
-            strike_price_gte="680",
-            strike_price_lte="780",
+            strike_price_gte="720",
+            strike_price_lte="820",
             limit=50,
         )
 
@@ -143,20 +144,20 @@ class TestITMOptionContractSelector:
     def test_friday_uses_todays_expiry_without_calling_next_friday(self, _):
         client = _make_alpaca_client()
         client.get_options_contracts.return_value = [
-            {"symbol": "NVDA260327C00730000", "strike_price": 730.0, "expiration_date": "2026-03-27"},
+            {"symbol": "NVDA260327C00770000", "strike_price": 770.0, "expiration_date": "2026-03-27"},
         ]
 
         selector = ITMOptionContractSelector(client)
         symbol = selector.select("NVDA", "BULLISH", 820.0)
 
-        # stock=$820, incr=$10, target=730, radius=50 → narrow range [680, 780]
-        assert symbol == "NVDA260327C00730000"
+        # stock=$820 (>$600 → 5% ITM), incr=$10, target=770, radius=50 → narrow range [720, 820]
+        assert symbol == "NVDA260327C00770000"
         client.get_options_contracts.assert_called_once_with(
             underlying_symbol="NVDA",
             expiration_date=date(2026, 3, 27),
             option_type="call",
-            strike_price_gte="680",
-            strike_price_lte="780",
+            strike_price_gte="720",
+            strike_price_lte="820",
             limit=50,
         )
 
@@ -236,26 +237,29 @@ class TestITMOptionContractSelector:
     @patch(_NEXT_FRIDAY_PATH, return_value=date(2026, 4, 10))
     def test_narrow_search_finds_target_strike_on_sparse_chain(self, _, __):
         """Reproduce the 2026-04-08 SNDK bug: broad ±20% search returned K=745 (OTM)
-        because the first page of results didn't include the target K=850.
-        Narrow search [800, 900] is centered on the target and finds it directly."""
+        because the first page of results didn't include the target.
+        Narrow search is centered on the target and finds it directly.
+        (stock=$777 >$600 → 5% ITM: raw=816, target=810, range=[760,860])"""
         client = _make_alpaca_client()
-        # stock=$777, incr=$10, target=850 (777*1.10=854.7 → rounds to 850), radius=50
-        # narrow range [800, 900] contains the target
+        # stock=$777 (>$600 → 5% ITM), incr=$10
+        # raw = quantize(777*1.05, 10, ROUND_HALF_UP) = quantize(815.85, ones) = 816
+        # target = -(-(816) // 10) * 10 = -(-81) * 10 = 810 (Decimal // truncates toward zero)
+        # radius=50, narrow range [760, 860] contains the target
         client.get_options_contracts.return_value = [
-            {"symbol": "SNDK260410P00840000", "strike_price": 840.0, "expiration_date": "2026-04-10"},
-            {"symbol": "SNDK260410P00850000", "strike_price": 850.0, "expiration_date": "2026-04-10"},
+            {"symbol": "SNDK260410P00810000", "strike_price": 810.0, "expiration_date": "2026-04-10"},
+            {"symbol": "SNDK260410P00820000", "strike_price": 820.0, "expiration_date": "2026-04-10"},
         ]
 
         selector = ITMOptionContractSelector(client)
         symbol = selector.select("SNDK", "BEARISH", 777.0)
 
-        assert symbol == "SNDK260410P00850000"
+        assert symbol == "SNDK260410P00810000"
         client.get_options_contracts.assert_called_once_with(
             underlying_symbol="SNDK",
             expiration_date=date(2026, 4, 10),
             option_type="put",
-            strike_price_gte="800",
-            strike_price_lte="900",
+            strike_price_gte="760",
+            strike_price_lte="860",
             limit=50,
         )
 
@@ -315,6 +319,95 @@ class TestITMOptionContractSelector:
         assert call_args.kwargs["strike_price_lte"] == "135"
         assert call_args.kwargs["limit"] == 50
         assert symbol == "COIN260328P00110000"
+
+
+# ---------------------------------------------------------------------------
+# _strike_offsets — 5% ITM for stock > $600, 10% ITM otherwise
+# ---------------------------------------------------------------------------
+
+class TestStrikeOffsets:
+    def test_standard_price_uses_10pct_itm(self):
+        call_offset, put_offset = _strike_offsets(600)
+        assert call_offset == _D("0.90")
+        assert put_offset == _D("1.10")
+
+    def test_high_price_uses_5pct_itm(self):
+        call_offset, put_offset = _strike_offsets(601)
+        assert call_offset == _D("0.95")
+        assert put_offset == _D("1.05")
+
+    def test_boundary_600_uses_standard_offsets(self):
+        call_offset, put_offset = _strike_offsets(600)
+        assert call_offset == _D("0.90")
+        assert put_offset == _D("1.10")
+
+    def test_boundary_600_01_uses_reduced_offsets(self):
+        call_offset, put_offset = _strike_offsets("600.01")
+        assert call_offset == _D("0.95")
+        assert put_offset == _D("1.05")
+
+
+# ---------------------------------------------------------------------------
+# ITMOptionContractSelector — high-price stock uses 5% ITM strike
+# ---------------------------------------------------------------------------
+
+class TestITMOptionContractSelectorHighPrice:
+    @patch(_TODAY_PATH, return_value=date(2026, 3, 23))
+    @patch(_NEXT_FRIDAY_PATH, return_value=date(2026, 3, 27))
+    def test_bullish_high_price_stock_uses_5pct_itm_strike(self, _, __):
+        client = _make_alpaca_client()
+        client.get_options_contracts.return_value = [
+            {"symbol": "META260327C00760000", "strike_price": 760.0, "expiration_date": "2026-03-27"},
+        ]
+
+        selector = ITMOptionContractSelector(client)
+        # stock=$800 (>$600), incr=$10, target=floor(800*0.95/10)*10=760
+        symbol = selector.select("META", "BULLISH", 800.0)
+
+        assert symbol == "META260327C00760000"
+        call_args = client.get_options_contracts.call_args
+        # target=760, radius=50 → [710, 810]
+        assert call_args.kwargs["strike_price_gte"] == "710"
+        assert call_args.kwargs["strike_price_lte"] == "810"
+
+    @patch(_TODAY_PATH, return_value=date(2026, 3, 23))
+    @patch(_NEXT_FRIDAY_PATH, return_value=date(2026, 3, 27))
+    def test_bearish_high_price_stock_uses_5pct_itm_strike(self, _, __):
+        client = _make_alpaca_client()
+        client.get_options_contracts.return_value = [
+            {"symbol": "META260327P00840000", "strike_price": 840.0, "expiration_date": "2026-03-27"},
+        ]
+
+        selector = ITMOptionContractSelector(client)
+        # stock=$800 (>$600), incr=$10, target=ceil(800*1.05/10)*10=840
+        symbol = selector.select("META", "BEARISH", 800.0)
+
+        assert symbol == "META260327P00840000"
+        call_args = client.get_options_contracts.call_args
+        # target=840, radius=50 → [790, 890]
+        assert call_args.kwargs["strike_price_gte"] == "790"
+        assert call_args.kwargs["strike_price_lte"] == "890"
+
+    @patch(_TODAY_PATH, return_value=date(2026, 3, 23))
+    @patch(_NEXT_FRIDAY_PATH, return_value=date(2026, 3, 27))
+    def test_standard_price_stock_still_uses_10pct_itm_strike(self, _, __):
+        client = _make_alpaca_client()
+        client.get_options_contracts.return_value = [
+            {"symbol": "NVDA260327C00730000", "strike_price": 730.0, "expiration_date": "2026-03-27"},
+        ]
+
+        selector = ITMOptionContractSelector(client)
+        # stock=$500 (≤$600 → standard 10% ITM), incr=$10 (500 > 200), target=450, radius=50
+        client.get_options_contracts.return_value = [
+            {"symbol": "CRWD260327C00450000", "strike_price": 450.0, "expiration_date": "2026-03-27"},
+        ]
+        symbol = selector.select("CRWD", "BULLISH", 500.0)
+
+        assert symbol == "CRWD260327C00450000"
+        call_args = client.get_options_contracts.call_args
+        # target=450, radius=50 → [400, 500]
+        assert call_args.kwargs["strike_price_gte"] == "400"
+        assert call_args.kwargs["strike_price_lte"] == "500"
 
 
 def _make_contracts(strike_prices, option_type="call", expiry="2026-03-27"):

@@ -613,5 +613,7 @@ class TestStreamReconnectJitter:
         stream._stream_ticker("TSLA")
 
         # Each wait gets its own jitter sample; two retries → two samples
+        # backoff is 5 on the first retry and 10 on the second, so upper bounds differ
         assert len(jitter_values) == 2
-        assert all(0 <= j <= 5 * 0.2 for j in jitter_values)
+        assert 0 <= jitter_values[0] <= 5 * 0.2
+        assert 0 <= jitter_values[1] <= 10 * 0.2

@@ -76,6 +76,17 @@ def _strike_increment(price) -> object:
     return _D("10")
 
 
+def _strike_offsets(stock_price) -> tuple:
+    """Return (call_offset, put_offset) based on stock price.
+
+    High-price stocks (>$600) use 5% ITM to avoid excessive premium cost.
+    All others use the standard 10% ITM configured in config.py.
+    """
+    if _D(str(stock_price)) > _D("600"):
+        return _D("0.95"), _D("1.05")
+    return STRIKE_CALL_OFFSET, STRIKE_PUT_OFFSET
+
+
 def _fetch_contracts_with_expiry_fallback(
     client: ExecutionClient,
     ticker: str,
@@ -136,14 +147,15 @@ class ITMOptionContractSelector:
     def select(self, ticker: str, signal: str, stock_price: float) -> str:
         stock_price = _D(stock_price)
         incr = _strike_increment(stock_price)
+        call_offset, put_offset = _strike_offsets(stock_price)
         if signal == "BULLISH":
-            raw = (stock_price * STRIKE_CALL_OFFSET).quantize(
+            raw = (stock_price * call_offset).quantize(
                 incr, rounding=ROUND_HALF_UP
             )
             target_strike = (raw // incr) * incr
             option_type = "call"
         else:
-            raw = (stock_price * STRIKE_PUT_OFFSET).quantize(
+            raw = (stock_price * put_offset).quantize(
                 incr, rounding=ROUND_HALF_UP
             )
             target_strike = -(-raw // incr) * incr
