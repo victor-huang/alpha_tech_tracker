@@ -1,35 +1,43 @@
 ---
-description: 'SCP live market data from EC2, TGZ + untar locally, then 3-way replay comparison: live CSV vs API cache vs backtest (stock trading)'
+description: 'SCP live market data from EC2 (stock or options engine), TGZ + untar locally, then 3-way replay comparison: live CSV vs API cache vs backtest'
 ---
 
 # Replay Comparison — Live CSV vs API Cache vs Backtest
 
 Compare three sources for the same trading date to understand P&L and trade differences.
 
-## Step 1 — Resolve the date and feed
+## Step 1 — Resolve the date, feed, and engine
 
-Parse `$ARGUMENTS` for two values:
+Parse `$ARGUMENTS` for three values:
 - **DATE** — required, format `YYYY-MM-DD`. If omitted, ask the user — do not guess.
 - **FEED** — optional, either `iex` or `sip`. Default: `iex`.
+- **ENGINE** — optional, either `stock` or `options`. Default: `stock`.
 
 Accepted argument formats:
-- `2026-04-13` → DATE=2026-04-13, FEED=iex
-- `2026-04-13 sip` → DATE=2026-04-13, FEED=sip
-- `2026-04-13 --feed sip` → DATE=2026-04-13, FEED=sip
+- `2026-04-13` → DATE=2026-04-13, FEED=iex, ENGINE=stock
+- `2026-04-13 sip` → DATE=2026-04-13, FEED=sip, ENGINE=stock
+- `2026-04-13 --feed sip` → DATE=2026-04-13, FEED=sip, ENGINE=stock
+- `2026-04-13 options` → DATE=2026-04-13, FEED=iex, ENGINE=options
+- `2026-04-13 --engine options` → DATE=2026-04-13, FEED=iex, ENGINE=options
+- `2026-04-13 sip options` → DATE=2026-04-13, FEED=sip, ENGINE=options
 
 Set:
 - `DATE` = YYYY-MM-DD
 - `FEED` = `iex` (or `sip` if specified)
+- `ENGINE` = `stock` or `options`
 - `EC2_HOST` = `ec2-user@ec2-3-133-120-51.us-east-2.compute.amazonaws.com`
 - `EC2_KEY` = `~/.ssh/trade-sys.pem`
-- `EC2_LIVE_DATA_ROOT` = `/home/ec2-user/alpha_tech_tracker/alpha_tech_tracker/op_momentum_strategy/live_trade_market_data`
+- If ENGINE=stock:
+  - `EC2_LIVE_DATA_ROOT` = `/home/ec2-user/alpha_tech_tracker_stock_engine/alpha_tech_tracker/op_momentum_strategy/live_trade_market_data`
+- If ENGINE=options:
+  - `EC2_LIVE_DATA_ROOT` = `/home/ec2-user/alpha_tech_tracker/alpha_tech_tracker/op_momentum_strategy/live_trade_market_data`
 - `LOCAL_LIVE_DATA_ROOT` = `alpha_tech_tracker/op_momentum_strategy/live_trade_market_data`
-- `TGZ_FILE` = `live_trade_market_data_${DATE}.tgz`
+- `TGZ_FILE` = `live_trade_market_data_${ENGINE}_${DATE}.tgz`
 - `LOG_DIR` = `logs/replay`
-- `LOG_LIVE` = `${LOG_DIR}/compare_live_${DATE}.log`
-- `LOG_API` = `${LOG_DIR}/compare_api_${DATE}.log`
+- `LOG_LIVE` = `${LOG_DIR}/compare_live_${ENGINE}_${DATE}.log`
+- `LOG_API` = `${LOG_DIR}/compare_api_${ENGINE}_${DATE}.log`
 
-Report the resolved DATE and FEED before proceeding.
+Report the resolved DATE, FEED, and ENGINE before proceeding.
 
 ## Step 2 — Create TGZ on EC2 (date folder only)
 
