@@ -231,3 +231,81 @@ If the primary entry exited via `hard_stop` on bar_idx=0 or bar_idx=1, suppress 
 
 **M4 — Accept as normal variance**
 All-loss weeks occur 3–4 times per year (2025: 3 weeks; 2026 YTD through W17: 1 week). The strategy recovers within 1–2 weeks in 4 of 6 historical cases. Per-day losses on primary entries in W17 were individually small (−0.11% to −0.50%); BRU add-ons pushed two days to −1.07% and −1.29%. Accepting the regime as variance without structural changes remains a valid option pending backtest evidence for M1–M3.
+
+---
+
+## Loss Streak Frequency & Circuit Breaker Analysis
+
+**Date analyzed:** 2026-04-24
+**Config:** M1(09:30/3bar), top-1, R+BRE+BUE+DD(start=5), feed=IEX, no-compound, 2021–2026 YTD
+**Script:** `analyze_loss_streaks.py`
+
+### All-Loss Week Frequency (full 6-year dataset)
+
+| Week | W/L | Cap P&L | Following week |
+|------|-----|---------|----------------|
+| 2021-W03 | 0W/4L | −$251 | ❌ continued |
+| 2021-W40 | 0W/5L | −$395 | ✅ bounce |
+| 2022-W15 | 0W/4L | −$425 | ❌ continued |
+| 2022-W42 | 0W/5L | −$675 | ✅ bounce |
+| 2023-W08 | 0W/4L | −$960 | ✅ bounce |
+| 2023-W50 | 0W/5L | −$472 | ❌ continued |
+| 2024-W03 | 0W/4L | −$221 | ✅ bounce |
+| 2024-W10 | 0W/5L | −$654 | ❌ continued |
+| 2024-W44 | 0W/5L | −$727 | ✅ bounce |
+| 2026-W17 | 0W/4L | −$328 | — |
+
+- **10 all-loss weeks across 6 years = 1.7/year** (background doc said 3–4/year — that was based on a shorter 2025-only sample)
+- **Recovery: 5 bounced / 4 continued** — essentially coin-flip, not a systematic pattern
+- **Near-all-loss weeks (1W/3+L): 50/277 = 18%** — almost 1 in 5 weeks
+
+### Key Finding: Losses Are Not Autocorrelated
+
+Conditional loss probability is flat regardless of streak length:
+
+| Streak | Occurrences | P(lose next day) |
+|--------|-------------|-----------------|
+| Unconditional | 1,331 | 50.3% |
+| After 1 loss | 668 | 48.1% |
+| After 2 losses | 320 | 48.8% |
+| After 3 losses | 155 | 49.0% |
+| After 4 losses | 75 | 49.3% |
+| After 5 losses | 37 | 48.6% |
+
+Each day is an independent ~50/50 outcome. A loss streak does not increase the probability of the next day also being a loss.
+
+### Circuit Breaker Simulations — All Hurt
+
+| Strategy | 6yr P&L | vs Baseline | Days skipped |
+|----------|---------|-------------|--------------|
+| Baseline | +$61,069 | — | 28 (no-signal days) |
+| Pause 1d after 3 consecutive losses | +$58,234 | −$2,836 | 113 |
+| Pause 2d after 3 consecutive losses | +$51,751 | −$9,318 | 185 |
+| Pause 1d after 2 consecutive losses | +$49,805 | −$11,264 | 209 |
+| Weekly loss cap 4% ($400/week) | +$55,793 | −$5,276 | 100 |
+| Weekly loss cap 3% ($300/week) | +$48,052 | −$13,017 | 180 |
+| Weekly loss cap 2% ($200/week) | +$45,189 | −$15,880 | 262 |
+
+**Why circuit breakers fail:** Because outcomes are independent (~50/50), skipped days are equally likely to be winners or losers. Skipping sacrifices positive EV on each missed trade. The "least bad" option (pause 1d after 3 losses, −$2,836) still costs 4.6% of 6-year P&L.
+
+### Day-of-Week Loss Rate
+
+| Day | Loss rate |
+|-----|-----------|
+| Monday | 48.7% |
+| Tuesday | 52.3% |
+| Wednesday | 51.6% |
+| Thursday | 50.9% |
+| Friday | 47.1% |
+
+No meaningful intraday-of-week pattern. Friday is slightly better, Tuesday slightly worse, but the spread is too small to act on.
+
+### Conclusion: Right Tool for the Job
+
+Circuit breakers are the wrong tool because they address sequence (when to trade) rather than quality (which trades to take). The right interventions target entry quality:
+
+- **M1b (implemented)** — detects QQQ runaway rally regime before entry; +18.5pp over 6 years
+- **M2 (pending)** — filter ambiguous OR closes (35–65% zone); same-day quality signal
+- **M3 (pending)** — suppress BRU after fast hard stop; directly cuts double-loss amplification without reducing primary trade count
+
+Update to background section: all-loss weeks occur **~1.7/year** (not 3–4/year). The 2025 sample had an anomalously high rate; the full 6-year average is lower.
