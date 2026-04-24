@@ -2219,6 +2219,22 @@ class TestCloseRetryLimit:
         # then place_option_order raises too). 3 retries → call_count == 3; bars 4-5 add 0.
         assert client.place_option_order.call_count == 3
 
+    def test_manual_intervention_alert_sent_only_once(self):
+        monitor, client, engine, pos = self._make_monitor_and_stuck_position()
+
+        with patch(
+            "alpha_tech_tracker.op_momentum_strategy.position_monitor._notify"
+        ) as mock_notify:
+            for i in range(6):
+                _set_latest_bar(engine, "NVDA", close=103.0, ma50=90.0)
+                monitor.on_bar("NVDA")
+
+        retry_limit_alerts = [
+            c for c in mock_notify.call_args_list
+            if "retries exhausted" in str(c)
+        ]
+        assert len(retry_limit_alerts) == 1
+
 
 class TestCloseAllEodStuckPositionSweep:
     """

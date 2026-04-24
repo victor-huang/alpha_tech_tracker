@@ -209,13 +209,15 @@ class PositionMonitor:
         _MAX_CLOSE_RETRIES = 3
         for pos in retry_failed:
             if pos.close_retry_count >= _MAX_CLOSE_RETRIES:
-                logger.warning(
-                    "CLOSE RETRY LIMIT reached for %s %s — manual intervention required",
-                    pos.ticker, pos.signal,
-                )
-                _notify(
-                    f"CLOSE FAILED {pos.ticker} {pos.signal} — {_MAX_CLOSE_RETRIES} retries exhausted, close manually"
-                )
+                if not pos.close_alert_sent:
+                    pos.close_alert_sent = True
+                    logger.warning(
+                        "CLOSE RETRY LIMIT reached for %s %s — manual intervention required",
+                        pos.ticker, pos.signal,
+                    )
+                    _notify(
+                        f"CLOSE FAILED {pos.ticker} {pos.signal} — {_MAX_CLOSE_RETRIES} retries exhausted, close manually"
+                    )
                 continue
             pos.close_retry_count += 1
             logger.warning(

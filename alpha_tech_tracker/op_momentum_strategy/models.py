@@ -88,6 +88,7 @@ class ActivePosition:
     close_order_failed: bool = False
     close_retry_count: int = 0
     closed_contracts: int = 0
+    close_alert_sent: bool = False
 
     def to_dict(self) -> dict:
         def _ser_dec(v):
