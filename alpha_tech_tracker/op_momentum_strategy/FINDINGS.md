@@ -883,3 +883,15 @@ Added `min_hold_bars=1` parameter to `compute_signals_with_backtest`: when `bar_
 - The 10-min bucket also degrades as some former 0-min trades extend into it without recovering.
 - **Do not add `min_hold_bars` as a live or backtest parameter.** The 0-min exit is the right risk management response to an immediately adverse move. The `min_hold_bars` feature was removed after this analysis.
 
+---
+
+## Finding 16 — Consecutive Losing Day/Week Analysis: Intraday Conditions That Cause Drawdowns (2025–2026)
+
+**Date:** 2026-04-23
+**Config analyzed:** M1(09:30/3bar), top-1, weights 100%, R+BRE+BUE+DD(start=5), feed=IEX, no-compound
+**Trigger:** 2026-W17 (Apr 20–23) went 0W/4L (−$533, −5.33%)
+
+Full analysis moved to [`engine_configuration_weakness_hunt.md`](engine_configuration_weakness_hunt.md) — Weakness 1.
+
+**Summary:** Three intraday QQQ failure modes drive all-loss weeks: (A) macro-micro contradiction — QQQ's 9:45 bar opposes the individual stock signal direction; (B) morning mean-reversion trap — OR closes at an extreme but QQQ reverses within 1–2 bars; (C) low-volume flat OR — OR range collapses below 0.30% with no directional information. BRU amplifies both Type A and Type B by re-entering into the same reversal that caused the primary hard stop. When QQQ macro-micro contradiction rate hits 40–50% in a week, losses are near-certain.
+
