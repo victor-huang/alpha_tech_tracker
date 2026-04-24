@@ -5,6 +5,7 @@ from datetime import date, datetime, timedelta
 from alpaca.data.enums import DataFeed
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import (
     build_bearish_regime_dates,
+    build_qqq_extended_dates,
     build_qqq_or_alignment,
     compute_signals_with_backtest,
     fetch_bars,
@@ -469,6 +470,9 @@ def run_selector_backtest(
     filter_flat_or: bool = True,
     qqq_align_filter: bool = False,
     qqq_align_threshold: float = 0.50,
+    qqq_extend_days: int = 0,
+    qqq_extend_pct: float = 0.05,
+    qqq_extend_max_dd: float = 0.0,
 ) -> tuple:
     """
     Walk each trading day in [eval_start, eval_end], apply rolling selector
@@ -511,6 +515,19 @@ def run_selector_backtest(
                     source, feed, qqq_align_threshold,
                 )
             qqq_align_by_window[win["label"]] = built_configs[key]
+
+        # Gate: if extend_days is set, only apply alignment filter on days where QQQ
+        # has risen too much too fast. Intersection narrows the skip sets so that on
+        # normal trending days the filter stays off.
+        if qqq_extend_days > 0:
+            extend_dates = build_qqq_extended_dates(
+                fetch_start, eval_end,
+                qqq_extend_days, qqq_extend_pct, qqq_extend_max_dd,
+                source, feed,
+            )
+            for label in qqq_align_by_window:
+                sb, sr = qqq_align_by_window[label]
+                qqq_align_by_window[label] = (sb & extend_dates, sr & extend_dates)
 
     print(f"Pre-computing MA columns for {len(tickers)} tickers...")
     for ticker in tickers:
@@ -1711,6 +1728,32 @@ def _parse_args():
         "BULL skipped if QQQ OR_cpos <= this value; BEAR skipped if QQQ OR_cpos > this value.",
     )
     parser.add_argument(
+        "--qqq-extend-days",
+        type=int,
+        default=0,
+        dest="qqq_extend_days",
+        help="Gate the QQQ align filter to only fire when QQQ has risen too much too fast. "
+        "N = rolling window of prior trading-day closes (e.g. 5). "
+        "0 = disabled (filter fires on all days). Requires --qqq-align-filter.",
+    )
+    parser.add_argument(
+        "--qqq-extend-pct",
+        type=float,
+        default=0.05,
+        dest="qqq_extend_pct",
+        help="Cumulative return threshold for the overextension gate (default: 0.05 = 5%%). "
+        "Filter only activates if QQQ's N-day prior return exceeds this value.",
+    )
+    parser.add_argument(
+        "--qqq-extend-max-dd",
+        type=float,
+        default=0.0,
+        dest="qqq_extend_max_dd",
+        help="Max single-day drawdown allowed in the N-day window (default: 0.0 = disabled). "
+        "If any day in the window closed down more than this fraction, the date is not "
+        "considered overextended (there was consolidation). E.g. 0.01 = 1%% pullback allowed.",
+    )
+    parser.add_argument(
         "--weights",
         nargs="+",
         type=int,
@@ -1922,9 +1965,19 @@ if __name__ == "__main__":
     print(
         f"  Regime filter: {'QQQ MA' + str(args.regime_ma) if args.regime_filter else 'off'}"
     )
-    print(
-        f"  QQQ align    : {'on (threshold=' + str(args.qqq_align_threshold) + ')' if args.qqq_align_filter else 'off'}"
-    )
+    if args.qqq_align_filter:
+        if args.qqq_extend_days > 0:
+            extend_desc = (
+                f"threshold={args.qqq_align_threshold}, "
+                f"gate={args.qqq_extend_days}d>{args.qqq_extend_pct * 100:.0f}%"
+            )
+            if args.qqq_extend_max_dd > 0:
+                extend_desc += f" max-dd={args.qqq_extend_max_dd * 100:.0f}%"
+        else:
+            extend_desc = f"threshold={args.qqq_align_threshold} (fires every day)"
+        print(f"  QQQ align    : on ({extend_desc})")
+    else:
+        print(f"  QQQ align    : off")
     print(
         f"  Reversal     : {'on (max bars_held=' + str(args.reversal_max_bars) + ')' if args.reversal else 'off'}"
     )
@@ -1999,6 +2052,9 @@ if __name__ == "__main__":
         doubledown_start_min=args.doubledown_start_min,
         qqq_align_filter=args.qqq_align_filter,
         qqq_align_threshold=args.qqq_align_threshold,
+        qqq_extend_days=args.qqq_extend_days,
+        qqq_extend_pct=args.qqq_extend_pct,
+        qqq_extend_max_dd=args.qqq_extend_max_dd,
     )
 
     skip_log = _apply_capital_flow(

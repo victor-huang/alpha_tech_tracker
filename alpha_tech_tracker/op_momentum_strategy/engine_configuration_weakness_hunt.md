@@ -202,6 +202,27 @@ All are hypotheses. Each requires a multi-year backtest sweep before adoption.
 
 **Why it fails:** In strong bull years (2021–2023) the strategy's best trade days often begin with QQQ gapping down or sitting in its lower OR half before reversing up. The filter skips those entries and misses major winners, wiping out any gain from avoided Type A days. The filter helps modestly in 2025 (at 0.25–0.30) and 2026 YTD (at 0.50+) but not enough to offset the 2021–2023 damage. Root cause is symmetric to the disqualified `--regime-filter`: a morning macro contradiction does not reliably predict individual stock direction over the full session.
 
+**M1b — QQQ overextension gate (gated alignment filter) — VALIDATED +18.5pp**
+Gate the M1 alignment filter to only activate on days where QQQ has risen too much too fast (runaway rally regime). Implemented as `--qqq-align-filter --qqq-align-threshold 0.50 --qqq-extend-days N --qqq-extend-pct P --qqq-extend-max-dd D`. Uses prior-day closes only — no lookahead bias.
+
+Swept N ∈ {3,5,7} × P ∈ {0.03,0.05,0.07} × max_dd ∈ {0.0,0.01} across all 6 years:
+
+| Config            | 2021   | 2022   | 2023   | 2024   | 2025   | 2026ytd | 6yr Sum | vs BL   |
+|-------------------|--------|--------|--------|--------|--------|---------|---------|---------|
+| baseline          | +88.8% | +123.4%| +199.9%| +45.3% | +64.6% | +88.5%  | +610.7% | —       |
+| **5d>7% dd≤1%**   | +88.8% | +143.3%| +199.9%| +45.3% | +63.3% | +88.5%  | +629.2% | **+18.5pp** |
+| 5d>7% no dd guard | +88.8% | +137.1%| +199.9%| +45.3% | +63.3% | +88.5%  | +623.0% | +12.3pp |
+| 7d>5% no dd guard | +79.6% | +154.1%| +201.6%| +46.0% | +58.8% | +83.0%  | +623.0% | +12.3pp |
+| 3d>3% no dd guard | +90.5% | +117.7%| +220.1%| +51.9% | +59.1% | +82.8%  | +622.1% | +11.4pp |
+
+**Best config: `--qqq-extend-days 5 --qqq-extend-pct 0.07 --qqq-extend-max-dd 0.01`**
+- Fires on **8 days across 6 years**: 2022 (Mar 22/23, Jun 3, Jun 27, Jul 22 — FOMC/bear-market bounces), 2025 (Apr 29, May 14/15 — post-tariff-deal surge)
+- Zero impact on 2021, 2023, 2024, 2026 — all unchanged from baseline
+- Gain concentrated in 2022 (+19.9pp) where bear-year oversold bounces are correctly skipped
+- The `max_dd=1%` consolidation guard adds +6pp: excludes days where a mid-rally pullback had already begun absorbing the extension
+
+**Scope note:** The filter targets the general "runaway bounce" class, not every individual bad week. The W17 2026 losing week (Apr 20–23) is NOT protected — QQQ's 5-day return before Apr 20 was ~5%, below the 7% gate.
+
 **M2 — OR conviction threshold (targets Type C)**
 Require OR_cpos to be outside the 35–65% zone before the signal fires. Ambiguous closes indicate no genuine directional breakout. Different from the OR range filter (Finding 14), which filters on *how wide* the OR was; this filters on *where within the OR* the close landed.
 

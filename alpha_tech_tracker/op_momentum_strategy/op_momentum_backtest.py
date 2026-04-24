@@ -1609,6 +1609,59 @@ def build_qqq_or_alignment(
     return skip_bull, skip_bear
 
 
+def build_qqq_extended_dates(
+    start_date: date,
+    end_date: date,
+    extend_days: int,
+    extend_pct: float,
+    max_dd: float = 0.0,
+    source: str = "alpaca",
+    feed: DataFeed = None,
+) -> set:
+    """Return dates where QQQ has risen too much too fast without consolidation.
+
+    A signal date D is included when all of the following hold using prior-day closes:
+    - N-day cumulative return = close[D-1] / close[D-1-N] - 1 > extend_pct
+    - (if max_dd > 0) no single trading day in that N-day window closed down more than max_dd
+
+    Uses prior-day closes only — fully settled before 9:45 AM signal time, no lookahead.
+    Used to gate --qqq-align-filter so it only fires during runaway rallies.
+    """
+    fetch_start = start_date - timedelta(days=extend_days * 3 + 10)
+    qqq_daily = fetch_daily_bars(
+        ["QQQ"], fetch_start, end_date, source=source, feed=feed
+    ).get("QQQ", pd.DataFrame())
+    if qqq_daily.empty:
+        return set()
+
+    closes = qqq_daily["Close"]
+    trading_dates = closes.index.tolist()
+
+    extended = set()
+    for i, signal_date in enumerate(trading_dates):
+        if signal_date < start_date:
+            continue
+        window_end_idx = i - 1
+        window_start_idx = i - 1 - extend_days
+        if window_start_idx < 0:
+            continue
+        window_end_close = closes.iloc[window_end_idx]
+        window_start_close = closes.iloc[window_start_idx]
+        if window_start_close <= 0:
+            continue
+        cumulative_return = (window_end_close / window_start_close) - 1.0
+        if cumulative_return <= extend_pct:
+            continue
+        if max_dd > 0:
+            window_closes = closes.iloc[window_start_idx: window_end_idx + 1]
+            daily_returns = window_closes.pct_change().dropna()
+            if (daily_returns < -max_dd).any():
+                continue
+        extended.add(signal_date)
+
+    return extended
+
+
 def run_backtest(
     tickers: list,
     start_date: date,
