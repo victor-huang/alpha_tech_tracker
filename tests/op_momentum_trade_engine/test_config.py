@@ -1,4 +1,5 @@
 import json
+import sys
 import threading
 from unittest.mock import MagicMock, patch
 
@@ -14,6 +15,7 @@ from alpha_tech_tracker.op_momentum_strategy.config import (
     disable_notifications,
     enable_notifications,
 )
+from alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine import parse_args
 
 _REQUESTS_POST_PATH = "alpha_tech_tracker.op_momentum_strategy.config.requests"
 
@@ -112,6 +114,40 @@ class TestNotify:
 
         mock_sms.assert_called_once_with("should send again")
         mock_telegram.assert_called_once_with("should send again")
+
+
+_BASE_ARGV = ["run", "--window", "M1", "09:30", "3", "--morning-split", "100"]
+
+
+class TestNoNotifyFlag:
+    def setup_method(self):
+        enable_notifications()
+
+    def teardown_method(self, _):
+        enable_notifications()
+
+    def test_no_notify_flag_parsed_as_true(self):
+        with patch.object(sys, "argv", ["prog"] + _BASE_ARGV + ["--no-notify"]):
+            args = parse_args()
+        assert args.no_notify is True
+
+    def test_no_notify_absent_defaults_to_false(self):
+        with patch.object(sys, "argv", ["prog"] + _BASE_ARGV):
+            args = parse_args()
+        assert args.no_notify is False
+
+    def test_no_notify_flag_disables_both_sms_and_telegram(self):
+        with patch.object(sys, "argv", ["prog"] + _BASE_ARGV + ["--no-notify"]):
+            args = parse_args()
+        if args.no_notify:
+            disable_notifications()
+
+        with patch("alpha_tech_tracker.op_momentum_strategy.config._send_sms") as mock_sms, \
+             patch("alpha_tech_tracker.op_momentum_strategy.config._send_telegram") as mock_telegram:
+            _notify("should be suppressed")
+
+        mock_sms.assert_not_called()
+        mock_telegram.assert_not_called()
 
 
 class TestLoadConfigTelegram:
