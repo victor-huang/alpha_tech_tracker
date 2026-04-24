@@ -788,7 +788,13 @@ def place_stock_order(
 
         try:
             order = _place_limit(mid)
-        except Exception:
+        except Exception as exc:
+            if _is_insufficient_buying_power(exc):
+                logger.warning(
+                    "STOCK FILL_ESC step1 attempt=%d %s %s: 40310000 — aborting",
+                    attempt, order_action, ticker,
+                )
+                raise
             logger.warning(
                 "STOCK FILL_ESC step1 attempt=%d %s %s: placement failed, escalating",
                 attempt, order_action, ticker, exc_info=True,
@@ -832,7 +838,13 @@ def place_stock_order(
 
         try:
             order = _place_limit(aggressive_price)
-        except Exception:
+        except Exception as exc:
+            if _is_insufficient_buying_power(exc):
+                logger.warning(
+                    "STOCK FILL_ESC step2 attempt=%d %s %s: 40310000 — aborting",
+                    attempt, order_action, ticker,
+                )
+                raise
             logger.warning(
                 "STOCK FILL_ESC step2 attempt=%d %s %s: placement failed, escalating",
                 attempt, order_action, ticker, exc_info=True,

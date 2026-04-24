@@ -1228,6 +1228,77 @@ class TestPlaceStockOrderStep2Loop:
         assert last_call.kwargs["order_type"] == "MARKET"
 
 
+class TestPlaceStockOrder40310000Abort:
+    """
+    When Alpaca returns error 40310000 (insufficient buying power or qty)
+    on a stock placement, the escalation must abort immediately without
+    burning through all remaining step 1 / step 2 retries.
+    """
+
+    _40310000_ERROR = Exception(
+        '{"available":"24","code":40310000,"existing_qty":"24",'
+        '"message":"insufficient qty available for order (requested: 26, available: 24)",'
+        '"symbol":"MU"}'
+    )
+
+    def test_step1_40310000_raises_immediately(self):
+        client = _make_stock_client(bid=473.0, ask=484.49)
+        client.place_stock_order.side_effect = self._40310000_ERROR
+
+        with patch(f"{_MODULE}.time.sleep", lambda _: None), \
+             pytest.raises(Exception, match="40310000"):
+            place_stock_order(
+                client=client, ticker="MU", shares=26, order_action="BUY_OPEN"
+            )
+
+    def test_step1_40310000_places_only_one_order(self):
+        client = _make_stock_client(bid=473.0, ask=484.49)
+        client.place_stock_order.side_effect = self._40310000_ERROR
+
+        with patch(f"{_MODULE}.time.sleep", lambda _: None), \
+             pytest.raises(Exception):
+            place_stock_order(
+                client=client, ticker="MU", shares=26, order_action="BUY_OPEN"
+            )
+
+        assert client.place_stock_order.call_count == 1
+
+    def test_step2_40310000_raises_immediately_after_step1_exhausted(self):
+        client = _make_stock_client(bid=473.0, ask=484.49)
+        call_count = [0]
+
+        def side_effect(**kwargs):
+            call_count[0] += 1
+            if call_count[0] <= 3:
+                return {"order_id": f"ord-step1-{call_count[0]}", "status": "open"}
+            raise self._40310000_ERROR
+
+        client.place_stock_order.side_effect = side_effect
+        client.order_status.return_value = {"status": "open"}
+
+        with patch(f"{_MODULE}.time.sleep", lambda _: None), \
+             pytest.raises(Exception, match="40310000"):
+            place_stock_order(
+                client=client, ticker="MU", shares=26, order_action="BUY_OPEN"
+            )
+
+        assert client.place_stock_order.call_count == 4  # 3 step1 + 1 step2
+
+    def test_non_40310000_step1_failure_still_escalates(self):
+        client = _make_stock_client(bid=473.0, ask=484.49)
+        client.place_stock_order.side_effect = Exception("network timeout")
+        client.order_status.return_value = {"status": "open"}
+
+        with patch(f"{_MODULE}.time.sleep", lambda _: None), \
+             pytest.raises(Exception):
+            place_stock_order(
+                client=client, ticker="MU", shares=26, order_action="BUY_OPEN"
+            )
+
+        # Non-40310000: all 3 step1 + all 3 step2 + market = 7 attempts
+        assert client.place_stock_order.call_count == 7
+
+
 class TestPlaceStockOrderFeedForwarding:
     """
     When a feed is provided to place_stock_order(), it must be forwarded to
