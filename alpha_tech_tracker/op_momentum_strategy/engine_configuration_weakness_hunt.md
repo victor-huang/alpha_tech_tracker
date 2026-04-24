@@ -183,8 +183,24 @@ The current config (R + BRE + BUE + DD) is exposed to these conditions by design
 
 All are hypotheses. Each requires a multi-year backtest sweep before adoption.
 
-**M1 — QQQ intraday alignment filter (targets Type A)**
-Skip BULLISH entries when QQQ's 9:45 close is below QQQ's own OR midpoint. Skip BEARISH entries when QQQ's 9:45 close is above QQQ's own OR midpoint. This uses only same-day intraday data (OR + 9:45 bar) — no lookahead bias. Distinct from the disqualified `--regime-filter` which used QQQ's prior-day close.
+**M1 — QQQ intraday alignment filter (targets Type A) — DISQUALIFIED**
+~~Skip BULLISH entries when QQQ's 9:45 close is below QQQ's own OR midpoint.~~ Implemented as `--qqq-align-filter --qqq-align-threshold T` and swept over T ∈ {0.25, 0.30, 0.35, 0.40, 0.45, 0.50, 0.55, 0.60, 0.65, 0.70} across all 6 years (2021–2026 YTD). No threshold produced a net-positive result over the full period.
+
+| Threshold | 2021   | 2022   | 2023   | 2024   | 2025   | 2026ytd | 6yr Sum | vs BL   |
+|-----------|--------|--------|--------|--------|--------|---------|---------|---------|
+| baseline  | +88.8% | +123.4%| +199.9%| +45.3% | +64.6% | +88.5%  | +610.7% | —       |
+| 0.25      | +60.6% | +108.6%| +163.9%| +37.5% | +103.8%| +66.0%  | +540.6% | −70pp   |
+| 0.30      | +55.9% | +97.0% | +155.0%| +35.6% | +117.3%| +65.2%  | +526.0% | −85pp   |
+| 0.35      | +56.8% | +96.3% | +149.5%| +33.1% | +100.5%| +66.5%  | +502.7% | −108pp  |
+| 0.40      | +60.9% | +84.2% | +137.8%| +40.7% | +80.7% | +78.6%  | +482.9% | −128pp  |
+| 0.45      | +64.8% | +86.9% | +140.9%| +47.3% | +59.0% | +78.6%  | +477.5% | −133pp  |
+| 0.50      | +71.1% | +97.7% | +134.8%| +51.9% | +56.8% | +95.8%  | +508.1% | −103pp  |
+| 0.55      | +78.6% | +92.2% | +113.7%| +23.6% | +49.3% | +92.7%  | +450.1% | −161pp  |
+| 0.60      | +71.0% | +76.2% | +88.8% | +14.7% | +59.5% | +94.3%  | +404.5% | −206pp  |
+| 0.65      | +74.8% | +71.5% | +83.7% | +3.5%  | +68.7% | +90.8%  | +392.9% | −218pp  |
+| 0.70      | +63.8% | +71.9% | +104.7%| +15.6% | +88.6% | +99.3%  | +443.9% | −167pp  |
+
+**Why it fails:** In strong bull years (2021–2023) the strategy's best trade days often begin with QQQ gapping down or sitting in its lower OR half before reversing up. The filter skips those entries and misses major winners, wiping out any gain from avoided Type A days. The filter helps modestly in 2025 (at 0.25–0.30) and 2026 YTD (at 0.50+) but not enough to offset the 2021–2023 damage. Root cause is symmetric to the disqualified `--regime-filter`: a morning macro contradiction does not reliably predict individual stock direction over the full session.
 
 **M2 — OR conviction threshold (targets Type C)**
 Require OR_cpos to be outside the 35–65% zone before the signal fires. Ambiguous closes indicate no genuine directional breakout. Different from the OR range filter (Finding 14), which filters on *how wide* the OR was; this filters on *where within the OR* the close landed.
