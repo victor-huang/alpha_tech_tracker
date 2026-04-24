@@ -24,6 +24,7 @@ from .config import (
     _CONFIG_FILE,
     _load_config,
     build_execution_client,
+    disable_notifications,
 )
 from .models import WindowConfig
 from .op_momentum_selector import ROLLING_LOOKBACK_DAYS as _DEFAULT_LOOKBACK_DAYS
@@ -168,6 +169,13 @@ def parse_args():
         action="store_true",
         default=False,
         help="Simulate order fills at mid bid/ask — no real orders placed",
+    )
+    parser.add_argument(
+        "--no-notify",
+        action="store_true",
+        default=False,
+        dest="no_notify",
+        help="Suppress all SMS and Telegram notifications for this session",
     )
     parser.add_argument(
         "--force-run",
@@ -635,6 +643,9 @@ def _build_contract_selector(args, client):
 if __name__ == "__main__":
     args = parse_args()
     _load_config()
+
+    if args.no_notify:
+        disable_notifications()
 
     log_file = args.log_file or _dated_log_file()
     os.makedirs(os.path.dirname(os.path.abspath(log_file)), exist_ok=True)
