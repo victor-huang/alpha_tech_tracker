@@ -290,6 +290,8 @@ def compute_signals_with_backtest(
     bullish_reentry_max_bars: int = 5,
     close_top_pct: float = None,
     filter_flat_or: bool = True,
+    qqq_align_skip_bull: set = None,
+    qqq_align_skip_bear: set = None,
 ) -> pd.DataFrame:
     opening_start_t = datetime.strptime(opening_start_time, "%H:%M").time()
 
@@ -355,6 +357,11 @@ def compute_signals_with_backtest(
             and date_ in bearish_regime_dates
             and signal == "BULLISH"
         ):
+            continue
+
+        if qqq_align_skip_bull and date_ in qqq_align_skip_bull and signal == "BULLISH":
+            continue
+        if qqq_align_skip_bear and date_ in qqq_align_skip_bear and signal == "BEARISH":
             continue
 
         # Hard stop: bull exits if price drops back below the stop level after first crossing above it.
@@ -1549,6 +1556,57 @@ def build_bearish_regime_dates(
     bearish = qqq_df[qqq_df["Close"] < qqq_df["regime_ma"]]
     next_bday = pd.tseries.offsets.BDay(1)
     return {(pd.Timestamp(d) + next_bday).date() for d in bearish.index}
+
+
+def build_qqq_or_alignment(
+    start_date: date,
+    end_date: date,
+    opening_bars: int,
+    opening_start_time: str,
+    source: str = "alpaca",
+    feed: DataFeed = None,
+    threshold: float = 0.50,
+) -> tuple:
+    """Return (skip_bull_dates, skip_bear_dates) for the QQQ intraday alignment filter.
+
+    For each trading day, computes QQQ's OR close position:
+        OR_cpos = (OR_close - OR_low) / (OR_high - OR_low)
+
+    skip_bull_dates: days where QQQ OR_cpos <= threshold (QQQ macro bearish — skip BULLISH entry)
+    skip_bear_dates: days where QQQ OR_cpos >  threshold (QQQ macro bullish — skip BEARISH entry)
+
+    Uses the same OR window (opening_bars, opening_start_time) as the individual stock signal.
+    Only uses data settled at signal time (~9:45 AM ET) — no lookahead bias.
+    """
+    qqq_bars = fetch_bars(["QQQ"], start_date, end_date, source=source, feed=feed).get(
+        "QQQ", pd.DataFrame()
+    )
+    if qqq_bars.empty:
+        return set(), set()
+
+    opening_start_t = datetime.strptime(opening_start_time, "%H:%M").time()
+    skip_bull = set()
+    skip_bear = set()
+
+    for date_, day_df in qqq_bars.groupby(qqq_bars.index.date):
+        day_from_start = day_df[day_df.index.time >= opening_start_t]
+        opening = day_from_start.head(opening_bars)
+        if len(opening) < opening_bars:
+            continue
+        or_high = float(opening["High"].max())
+        or_low = float(opening["Low"].min())
+        or_range = or_high - or_low
+        if or_range == 0:
+            continue
+        or_close = float(opening.iloc[-1]["Close"])
+        or_cpos = (or_close - or_low) / or_range
+
+        if or_cpos <= threshold:
+            skip_bull.add(date_)
+        else:
+            skip_bear.add(date_)
+
+    return skip_bull, skip_bear
 
 
 def run_backtest(

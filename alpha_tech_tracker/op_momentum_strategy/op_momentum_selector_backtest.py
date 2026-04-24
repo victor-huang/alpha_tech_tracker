@@ -5,6 +5,7 @@ from datetime import date, datetime, timedelta
 from alpaca.data.enums import DataFeed
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import (
     build_bearish_regime_dates,
+    build_qqq_or_alignment,
     compute_signals_with_backtest,
     fetch_bars,
     fetch_daily_bars,
@@ -466,6 +467,8 @@ def run_selector_backtest(
     enable_doubledown: bool = False,
     doubledown_start_min: int = DOUBLEDOWN_START_MIN,
     filter_flat_or: bool = True,
+    qqq_align_filter: bool = False,
+    qqq_align_threshold: float = 0.50,
 ) -> tuple:
     """
     Walk each trading day in [eval_start, eval_end], apply rolling selector
@@ -495,6 +498,20 @@ def run_selector_backtest(
         else None
     )
 
+    # Build per-window QQQ alignment skip sets (one pair per window opening config).
+    qqq_align_by_window = {}
+    if qqq_align_filter:
+        built_configs = {}
+        for win in windows:
+            key = (win["opening_bars"], win["opening_start"])
+            if key not in built_configs:
+                built_configs[key] = build_qqq_or_alignment(
+                    fetch_start, eval_end,
+                    win["opening_bars"], win["opening_start"],
+                    source, feed, qqq_align_threshold,
+                )
+            qqq_align_by_window[win["label"]] = built_configs[key]
+
     print(f"Pre-computing MA columns for {len(tickers)} tickers...")
     for ticker in tickers:
         df = all_bars.get(ticker, pd.DataFrame())
@@ -515,6 +532,7 @@ def run_selector_backtest(
             if df.empty:
                 results_for_window[ticker] = pd.DataFrame()
                 continue
+            _qqq_sb, _qqq_sr = qqq_align_by_window.get(label, (None, None))
             results_for_window[ticker] = compute_signals_with_backtest(
                 df,
                 win["opening_bars"],
@@ -534,6 +552,8 @@ def run_selector_backtest(
                 bullish_reentry_max_bars=bullish_reentry_max_bars,
                 close_top_pct=win.get("close_top_pct", close_top_pct),
                 filter_flat_or=filter_flat_or,
+                qqq_align_skip_bull=_qqq_sb,
+                qqq_align_skip_bear=_qqq_sr,
             )
         all_window_results[label] = results_for_window
         print(f"  [{label}] {win['opening_start']} / {win['opening_bars']} bars — done")
@@ -1674,6 +1694,23 @@ def _parse_args():
         help="N-day MA period for QQQ regime filter (default: 5).",
     )
     parser.add_argument(
+        "--qqq-align-filter",
+        action="store_true",
+        default=False,
+        dest="qqq_align_filter",
+        help="Skip entries where QQQ's OR close position contradicts the signal direction. "
+        "BULLISH skipped when QQQ OR_cpos <= threshold; BEARISH skipped when QQQ OR_cpos > threshold. "
+        "Uses same OR window as the individual stock — no lookahead bias. Default: off.",
+    )
+    parser.add_argument(
+        "--qqq-align-threshold",
+        type=float,
+        default=0.50,
+        dest="qqq_align_threshold",
+        help="QQQ OR close position threshold for alignment filter (default: 0.50). "
+        "BULL skipped if QQQ OR_cpos <= this value; BEAR skipped if QQQ OR_cpos > this value.",
+    )
+    parser.add_argument(
         "--weights",
         nargs="+",
         type=int,
@@ -1886,6 +1923,9 @@ if __name__ == "__main__":
         f"  Regime filter: {'QQQ MA' + str(args.regime_ma) if args.regime_filter else 'off'}"
     )
     print(
+        f"  QQQ align    : {'on (threshold=' + str(args.qqq_align_threshold) + ')' if args.qqq_align_filter else 'off'}"
+    )
+    print(
         f"  Reversal     : {'on (max bars_held=' + str(args.reversal_max_bars) + ')' if args.reversal else 'off'}"
     )
     print(
@@ -1957,6 +1997,8 @@ if __name__ == "__main__":
         feed=alpaca_feed,
         enable_doubledown=args.doubledown,
         doubledown_start_min=args.doubledown_start_min,
+        qqq_align_filter=args.qqq_align_filter,
+        qqq_align_threshold=args.qqq_align_threshold,
     )
 
     skip_log = _apply_capital_flow(
