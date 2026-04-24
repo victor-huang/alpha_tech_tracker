@@ -4,7 +4,7 @@ import os
 import threading
 from datetime import date
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 from .models import ActivePosition
 
@@ -17,7 +17,11 @@ def _state_path(session_date: date) -> Path:
     return STATE_DIR / f"session_{session_date}.json"
 
 
-def save(positions: List[ActivePosition], session_date: date) -> None:
+def save(
+    positions: List[ActivePosition],
+    session_date: date,
+    metadata: Optional[dict] = None,
+) -> None:
     """Write all positions (open + closed) to a dated checkpoint file.
 
     Uses a tmp-then-rename atomic write so readers never see a partial file.
@@ -30,6 +34,8 @@ def save(positions: List[ActivePosition], session_date: date) -> None:
             "date": str(session_date),
             "positions": [p.to_dict() for p in positions],
         }
+        if metadata:
+            data["metadata"] = metadata
         tmp = path.with_suffix(f".{os.getpid()}_{threading.get_ident()}.tmp")
         tmp.write_text(json.dumps(data, indent=2))
         tmp.replace(path)
@@ -59,3 +65,28 @@ def load(session_date: date) -> List[ActivePosition]:
     except Exception:
         logger.exception("session_state.load failed — returning empty list")
         return []
+
+
+def load_metadata(session_date: date) -> dict:
+    """Read metadata from today's checkpoint file. Returns {} on any error."""
+    path = _state_path(session_date)
+    try:
+        if not path.exists():
+            return {}
+        data = json.loads(path.read_text())
+        if data.get("date") != str(session_date):
+            return {}
+        return data.get("metadata", {})
+    except Exception:
+        logger.exception("session_state.load_metadata failed")
+        return {}
+
+
+def delete(session_date: date) -> None:
+    """Delete the checkpoint file for the given date. Swallows all errors."""
+    path = _state_path(session_date)
+    try:
+        path.unlink(missing_ok=True)
+        logger.info("session_state.delete: removed checkpoint %s", path)
+    except Exception:
+        logger.exception("session_state.delete failed")

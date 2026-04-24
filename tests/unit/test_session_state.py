@@ -217,3 +217,111 @@ class TestSessionStateLoad:
         assert len(open_ones) == 1
         assert len(closed_ones) == 1
         assert closed_ones[0].exit_reason == "hard_stop"
+
+
+# ---------------------------------------------------------------------------
+# TestSessionStateSaveMetadata
+# ---------------------------------------------------------------------------
+
+
+class TestSessionStateSaveMetadata:
+    def test_save_without_metadata_omits_metadata_key(self, tmp_path):
+        with patch(f"{_MODULE}.STATE_DIR", tmp_path):
+            session_state.save([_make_position()], _SESSION_DATE)
+
+        data = json.loads((tmp_path / "session_2026-04-11.json").read_text())
+        assert "metadata" not in data
+
+    def test_save_with_empty_dict_omits_metadata_key(self, tmp_path):
+        with patch(f"{_MODULE}.STATE_DIR", tmp_path):
+            session_state.save([_make_position()], _SESSION_DATE, metadata={})
+
+        data = json.loads((tmp_path / "session_2026-04-11.json").read_text())
+        assert "metadata" not in data
+
+    def test_save_with_metadata_writes_metadata_to_json(self, tmp_path):
+        with patch(f"{_MODULE}.STATE_DIR", tmp_path):
+            session_state.save(
+                [_make_position()],
+                _SESSION_DATE,
+                metadata={"initial_capital": "10000.00"},
+            )
+
+        data = json.loads((tmp_path / "session_2026-04-11.json").read_text())
+        assert data["metadata"] == {"initial_capital": "10000.00"}
+
+
+# ---------------------------------------------------------------------------
+# TestSessionStateLoadMetadata
+# ---------------------------------------------------------------------------
+
+
+class TestSessionStateLoadMetadata:
+    def test_returns_empty_when_no_file(self, tmp_path):
+        with patch(f"{_MODULE}.STATE_DIR", tmp_path):
+            result = session_state.load_metadata(_SESSION_DATE)
+
+        assert result == {}
+
+    def test_returns_empty_for_wrong_date(self, tmp_path):
+        data = {"date": "2026-04-10", "positions": [], "metadata": {"initial_capital": "10000"}}
+        (tmp_path / "session_2026-04-11.json").write_text(json.dumps(data))
+
+        with patch(f"{_MODULE}.STATE_DIR", tmp_path):
+            result = session_state.load_metadata(_SESSION_DATE)
+
+        assert result == {}
+
+    def test_returns_empty_when_no_metadata_key(self, tmp_path):
+        with patch(f"{_MODULE}.STATE_DIR", tmp_path):
+            session_state.save([_make_position()], _SESSION_DATE)
+            result = session_state.load_metadata(_SESSION_DATE)
+
+        assert result == {}
+
+    def test_returns_stored_metadata(self, tmp_path):
+        with patch(f"{_MODULE}.STATE_DIR", tmp_path):
+            session_state.save(
+                [_make_position()],
+                _SESSION_DATE,
+                metadata={"initial_capital": "20000.00"},
+            )
+            result = session_state.load_metadata(_SESSION_DATE)
+
+        assert result == {"initial_capital": "20000.00"}
+
+    def test_returns_empty_on_parse_error(self, tmp_path, caplog):
+        (tmp_path / "session_2026-04-11.json").write_text("not json {{{")
+
+        with patch(f"{_MODULE}.STATE_DIR", tmp_path):
+            result = session_state.load_metadata(_SESSION_DATE)
+
+        assert result == {}
+        assert "session_state.load_metadata failed" in caplog.text
+
+
+# ---------------------------------------------------------------------------
+# TestSessionStateDelete
+# ---------------------------------------------------------------------------
+
+
+class TestSessionStateDelete:
+    def test_delete_removes_existing_file(self, tmp_path):
+        with patch(f"{_MODULE}.STATE_DIR", tmp_path):
+            session_state.save([_make_position()], _SESSION_DATE)
+            assert (tmp_path / "session_2026-04-11.json").exists()
+
+            session_state.delete(_SESSION_DATE)
+
+        assert not (tmp_path / "session_2026-04-11.json").exists()
+
+    def test_delete_is_noop_when_file_does_not_exist(self, tmp_path):
+        with patch(f"{_MODULE}.STATE_DIR", tmp_path):
+            session_state.delete(_SESSION_DATE)  # must not raise
+
+    def test_delete_swallows_exception_and_logs(self, tmp_path, caplog):
+        with patch(f"{_MODULE}.STATE_DIR", tmp_path), \
+             patch.object(Path, "unlink", side_effect=OSError("permission denied")):
+            session_state.delete(_SESSION_DATE)
+
+        assert "session_state.delete failed" in caplog.text

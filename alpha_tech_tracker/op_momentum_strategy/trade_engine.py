@@ -58,7 +58,7 @@ from .order_executor import place_option_order_in_tranches, place_stock_order
 from .position_monitor import PositionMonitor
 from .position_sizer import PositionSizer
 from .replay import BarReplayDriver, LiveBarsSource, _now_et, is_replay_mode, set_replay_clock, clear_replay_clock
-from .session_state import save as _save_session, load as _load_session
+from .session_state import save as _save_session, load as _load_session, load_metadata as _load_session_metadata, delete as _delete_session
 from .signal_engine import LiveSignalEngine
 
 logger = logging.getLogger(__name__)
@@ -285,6 +285,7 @@ class OpMomentumTradeEngine:
         record_tradestation_feed: bool = False,
         market_data_client: Optional[MarketDataClient] = None,
         force_run: bool = False,
+        reset_session: bool = False,
     ):
         self._client = alpaca_client
         self._api_key = getattr(alpaca_client, "_api_key", None)
@@ -317,6 +318,7 @@ class OpMomentumTradeEngine:
         self._enable_bullish_reentry = enable_bullish_reentry
         self._bullish_reentry_max_bars = bullish_reentry_max_bars
         self._replay_capital = replay_capital
+        self._initial_capital: Optional[_D] = None
         self._or_bar_lookback = or_bar_lookback
         self._ws_reconnect_timeout = ws_reconnect_timeout
         self._alpaca_feed = alpaca_feed
@@ -331,6 +333,7 @@ class OpMomentumTradeEngine:
         else:
             self._ws_bars_start_et = WS_BARS_START_ET
         self._force_run = force_run
+        self._reset_session = reset_session
         self._dd_timers: dict = {}
         self._dd_fired: set = set()
         self._monitor: PositionMonitor = None
@@ -1164,7 +1167,10 @@ class OpMomentumTradeEngine:
         if self._mock_trade_execution:
             return
         try:
-            _save_session(self._monitor.get_all_positions(), _now_et().date())
+            metadata = None
+            if self._initial_capital is not None:
+                metadata = {"initial_capital": str(self._initial_capital)}
+            _save_session(self._monitor.get_all_positions(), _now_et().date(), metadata=metadata)
         except Exception:
             logger.exception("Failed to flush session state")
 
@@ -1178,6 +1184,19 @@ class OpMomentumTradeEngine:
         """
         if self._mock_trade_execution:
             return []
+
+        if self._reset_session:
+            _delete_session(session_date)
+            logger.warning("Session reset requested — checkpoint cleared, starting fresh")
+            return []
+
+        metadata = _load_session_metadata(session_date)
+        if metadata and "initial_capital" in metadata:
+            self._initial_capital = _D(metadata["initial_capital"])
+            logger.info(
+                "Restored _initial_capital=%.2f from checkpoint",
+                float(self._initial_capital),
+            )
 
         all_saved = _load_session(session_date)
         if not all_saved:
@@ -1246,19 +1265,43 @@ class OpMomentumTradeEngine:
                 return _D(str(self._replay_capital))
             return None
 
-        # Capital already returned from closed prior-window positions
+        # Capital tied up in open re-entries in the prior window (must be excluded —
+        # reentry positions redeploy the primary's returned slot_capital so it is not
+        # available for the next sequential window until the reentry closes).
+        open_reentry_capital = _D("0")
+        if self._monitor is not None:
+            with self._monitor._lock:
+                for pos in self._monitor._positions:
+                    if pos.window_label != prior_label or pos.is_closed or pos.slot_capital is None:
+                        continue
+                    if pos.trailing_arm_price is not None:
+                        open_reentry_capital += pos.slot_capital
+
+        if self._initial_capital is not None:
+            # Correct formula: initial M1 budget + all realized P&L today − capital
+            # currently locked in open re-entries.  initial_capital already accounts
+            # for open primary positions at cost, so open_primary_capital need not be
+            # added separately.
+            with self._pnl_lock:
+                daily_pnl = self._daily_realized_pnl
+            budget = max(self._initial_capital + daily_pnl - open_reentry_capital, _D("0"))
+            logger.info(
+                "Sequential window [%s] budget: %.2f"
+                " (initial=%.2f pnl=%.2f reentry=%.2f)",
+                win.label,
+                float(budget),
+                float(self._initial_capital),
+                float(daily_pnl),
+                float(open_reentry_capital),
+            )
+            return budget
+
+        # Fallback path (no checkpoint found — should not occur in normal operation)
         with self._returned_lock:
             prior_returned = self._window_returned.get(prior_label, _D("0"))
             prior_deployed = self._window_primary_deployed.get(prior_label, _D("0"))
 
-        # Add slot_capital for still-open primary positions in the prior window.
-        # Re-entries (trailing_arm_price set) share the primary's capital slot; include their
-        # capital in the open count but subtract it from prior_returned to avoid double-deployment:
-        # when a primary exits it adds slot_capital to _window_returned, but if a re-entry
-        # immediately redeploys that same capital, the next sequential window must not count it
-        # as available again.
         open_primary_capital = _D("0")
-        open_reentry_capital = _D("0")
         if self._monitor is not None:
             with self._monitor._lock:
                 for pos in self._monitor._positions:
@@ -1266,8 +1309,6 @@ class OpMomentumTradeEngine:
                         continue
                     if pos.trailing_arm_price is None:
                         open_primary_capital += pos.slot_capital
-                    else:
-                        open_reentry_capital += pos.slot_capital
         prior_returned += open_primary_capital
         if open_reentry_capital > 0:
             logger.info(
@@ -1279,9 +1320,6 @@ class OpMomentumTradeEngine:
             )
             prior_returned = max(_D("0"), prior_returned - open_reentry_capital)
 
-        # Add undeployed capital: slots in the prior window that had no signal.
-        # prior_deployed tracks the sum of slot_capital for all primary positions
-        # (open + closed). Any budget not deployed flows forward to this window.
         with self._signal_lock:
             prior_budget = self._window_state.get(prior_label, {}).get("budget")
         if prior_budget is not None and prior_deployed < prior_budget:
@@ -1298,28 +1336,6 @@ class OpMomentumTradeEngine:
             )
 
         if prior_returned > 0:
-            if self._replay_capital is not None:
-                with self._returned_lock:
-                    closed_deployed = self._window_closed_primary_deployed.get(prior_label, _D("0"))
-                initial = _D(str(self._replay_capital))
-                if closed_deployed > initial:
-                    # Multi-session restart: checkpoint accumulated slot_capital from more
-                    # than one M1 session. Normalize to: net_pnl_all_sessions + initial_capital.
-                    # Formula: prior_returned - closed_deployed + initial
-                    #        = (total_slot + total_pnl) - total_slot + initial
-                    #        = total_pnl + initial
-                    effective = max(prior_returned - closed_deployed + initial, _D("0"))
-                    logger.warning(
-                        "Sequential window [%s] normalizing budget: raw=%.2f"
-                        " closed_deployed=%.2f initial=%.2f → effective=%.2f"
-                        " (multi-session checkpoint accumulation)",
-                        win.label,
-                        float(prior_returned),
-                        float(closed_deployed),
-                        float(initial),
-                        float(effective),
-                    )
-                    prior_returned = effective
             logger.info(
                 "Sequential window [%s] budget from prior [%s]: %.2f",
                 win.label,
@@ -1328,7 +1344,6 @@ class OpMomentumTradeEngine:
             )
             return prior_returned
 
-        # Fallback: prior window had no positions
         logger.info(
             "Sequential window [%s]: no prior [%s] capital, using fallback",
             win.label,
@@ -1956,6 +1971,16 @@ class OpMomentumTradeEngine:
             self._option_price_monitor.start()
 
         recovered = self._recover_session(session_date)
+        if self._initial_capital is None:
+            first_nonsq = next((w for w in self._windows if not w.is_sequential), None)
+            frac = _D(str(first_nonsq.capital_fraction)) if first_nonsq else _D("1")
+            self._initial_capital = _D(str(initial_capital)) * frac
+            logger.info(
+                "Initialized _initial_capital=%.2f (capital=%.2f fraction=%s)",
+                float(self._initial_capital),
+                initial_capital,
+                frac,
+            )
         for pos in recovered:
             self._monitor.add_position(pos)
             label = pos.window_label

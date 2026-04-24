@@ -1465,23 +1465,15 @@ class TestGetWindowBudgetCapitalFlow:
     def test_sequential_budget_normalized_after_multi_session_restart(self):
         """Regression: 2026-04-17 live session deployed 2x capital after multiple engine restarts.
 
-        Each restart calls _recover_session → _rebuild_window_returned, which sums
-        ALL closed M1 positions from the checkpoint across all sessions. After 2+
-        restarts each trading ~$10k in M1, _window_returned["M1"] held ~$21k and A1
-        was allocated that inflated budget.
-
-        Fix: when closed_primary_deployed > initial_capital, normalize to:
-            effective = prior_returned - closed_deployed + initial_capital
-                      = net_pnl_all_sessions + initial_capital
-        This preserves real M1 P&L while removing phantom capital from extra sessions.
+        Fix: use initial_capital + daily_realized_pnl − open_reentry_capital.
+        This is inflation-free across restarts because daily_pnl only accumulates
+        cap_pnl (never slot_capital), and initial_capital is fixed at session-1 value.
         """
         engine = self._make_m1_a1_engine()
-        engine._replay_capital = 10000.0  # --capital 10000
-
-        # 2 M1 sessions each deployed $10k → $20k closed_deployed
-        # Net P&L across both sessions: $21370 - $20000 = $1370
-        engine._window_returned["M1"] = _D("21370")
-        engine._window_closed_primary_deployed["M1"] = _D("20000")  # 2 sessions × $10k
+        engine._replay_capital = 10000.0
+        engine._initial_capital = _D("10000")
+        # Net P&L across 2 M1 sessions
+        engine._daily_realized_pnl = _D("1370")
 
         mock_monitor = Mock()
         mock_monitor._lock = threading.Lock()
@@ -1491,17 +1483,15 @@ class TestGetWindowBudgetCapitalFlow:
         a1_win = next(w for w in engine._windows if w.label == "A1")
         result = engine._get_window_budget(a1_win)
 
-        # effective = $21370 - $20000 + $10000 = $11370 (initial + net P&L)
+        # budget = $10000 + $1370 − $0 = $11370
         assert result == _D("11370")
 
     def test_sequential_budget_preserves_single_session_pnl(self):
-        """Single-session M1 gain flows to A1 without normalization."""
+        """Single-session M1 gain flows correctly to A1."""
         engine = self._make_m1_a1_engine()
         engine._replay_capital = 10000.0
-
-        # One M1 session deployed $10k, returned $11k (+$1k profit)
-        engine._window_returned["M1"] = _D("11000")
-        engine._window_closed_primary_deployed["M1"] = _D("10000")  # exactly 1 session
+        engine._initial_capital = _D("10000")
+        engine._daily_realized_pnl = _D("1000")
 
         mock_monitor = Mock()
         mock_monitor._lock = threading.Lock()
@@ -1511,13 +1501,14 @@ class TestGetWindowBudgetCapitalFlow:
         a1_win = next(w for w in engine._windows if w.label == "A1")
         result = engine._get_window_budget(a1_win)
 
-        # closed_deployed == initial → no normalization; A1 gets full $11k
+        # budget = $10000 + $1000 − $0 = $11000
         assert result == _D("11000")
 
     def test_sequential_budget_not_normalized_when_no_replay_capital_configured(self):
-        """Without --capital, no normalization — live account buying_power governs."""
+        """Without initial_capital (no checkpoint, no --capital), fallback uses accumulated returns."""
         engine = self._make_m1_a1_engine()
         engine._replay_capital = None
+        # _initial_capital left as None to exercise the fallback path
 
         engine._window_returned["M1"] = _D("21370")
         engine._window_closed_primary_deployed["M1"] = _D("20000")
@@ -2009,6 +2000,8 @@ class TestPollEntryFill:
 
 _SAVE_SESSION_PATH = "alpha_tech_tracker.op_momentum_strategy.trade_engine._save_session"
 _LOAD_SESSION_PATH = "alpha_tech_tracker.op_momentum_strategy.trade_engine._load_session"
+_LOAD_SESSION_METADATA_PATH = "alpha_tech_tracker.op_momentum_strategy.trade_engine._load_session_metadata"
+_DELETE_SESSION_PATH = "alpha_tech_tracker.op_momentum_strategy.trade_engine._delete_session"
 _FLUSH_PATH = "alpha_tech_tracker.op_momentum_strategy.trade_engine.OpMomentumTradeEngine._flush_session_state"
 
 
@@ -2152,7 +2145,24 @@ class TestFlushSessionState:
             mock_now.return_value.date.return_value = date(2026, 4, 11)
             engine._flush_session_state()
 
-        mock_save.assert_called_once_with([pos], date(2026, 4, 11))
+        mock_save.assert_called_once_with([pos], date(2026, 4, 11), metadata=None)
+
+    def test_flush_includes_initial_capital_in_metadata(self):
+        client = _make_alpaca_client()
+        engine = OpMomentumTradeEngine(alpaca_client=client, mock_trade_execution=False)
+        engine._initial_capital = _D("20000")
+        pos = _make_checkpoint_position()
+        engine._monitor = Mock()
+        engine._monitor.get_all_positions.return_value = [pos]
+
+        with patch(_SAVE_SESSION_PATH) as mock_save, \
+             patch("alpha_tech_tracker.op_momentum_strategy.trade_engine._now_et") as mock_now:
+            mock_now.return_value.date.return_value = date(2026, 4, 11)
+            engine._flush_session_state()
+
+        mock_save.assert_called_once_with(
+            [pos], date(2026, 4, 11), metadata={"initial_capital": "20000"}
+        )
 
     def test_flush_exception_does_not_propagate(self):
         client = _make_alpaca_client()
@@ -2317,6 +2327,59 @@ class TestRecoverSession:
         for p in recovered:
             if p.trailing_arm_price is None:
                 engine._window_primary_deployed.setdefault(p.window_label, set()).add(p.ticker)
+
+    def test_restores_initial_capital_from_checkpoint_metadata(self):
+        engine = self._make_live_engine()
+
+        with patch(_LOAD_SESSION_PATH, return_value=[]), \
+             patch(_LOAD_SESSION_METADATA_PATH, return_value={"initial_capital": "20000.00"}):
+            engine._recover_session(date(2026, 4, 11))
+
+        assert engine._initial_capital == _D("20000.00")
+
+    def test_initial_capital_not_set_when_metadata_missing(self):
+        engine = self._make_live_engine()
+
+        with patch(_LOAD_SESSION_PATH, return_value=[]), \
+             patch(_LOAD_SESSION_METADATA_PATH, return_value={}):
+            engine._recover_session(date(2026, 4, 11))
+
+        assert engine._initial_capital is None
+
+    def test_reset_session_deletes_checkpoint_and_returns_empty(self):
+        client = _make_alpaca_client()
+        engine = OpMomentumTradeEngine(
+            alpaca_client=client, mock_trade_execution=False, reset_session=True
+        )
+        engine._returned_lock = __import__("threading").Lock()
+        engine._window_returned = {}
+        engine._window_state = {"M1": {"open_position_count": 0, "capital_fraction": 1.0}}
+        engine._window_primary_deployed = {}
+
+        with patch(_DELETE_SESSION_PATH) as mock_delete, \
+             patch(_LOAD_SESSION_PATH) as mock_load:
+            result = engine._recover_session(date(2026, 4, 11))
+
+        mock_delete.assert_called_once_with(date(2026, 4, 11))
+        mock_load.assert_not_called()
+        assert result == []
+
+    def test_reset_session_does_not_restore_initial_capital(self):
+        client = _make_alpaca_client()
+        engine = OpMomentumTradeEngine(
+            alpaca_client=client, mock_trade_execution=False, reset_session=True
+        )
+        engine._returned_lock = __import__("threading").Lock()
+        engine._window_returned = {}
+        engine._window_state = {"M1": {"open_position_count": 0, "capital_fraction": 1.0}}
+        engine._window_primary_deployed = {}
+
+        with patch(_DELETE_SESSION_PATH), \
+             patch(_LOAD_SESSION_METADATA_PATH) as mock_meta:
+            engine._recover_session(date(2026, 4, 11))
+
+        mock_meta.assert_not_called()
+        assert engine._initial_capital is None
 
 
 # ---------------------------------------------------------------------------

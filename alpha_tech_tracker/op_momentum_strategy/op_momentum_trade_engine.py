@@ -507,6 +507,15 @@ def parse_args():
         help="Execution broker for order placement (default: value from config.json, "
         "fallback alpaca). Overrides 'execution_broker' in config.json when set.",
     )
+    parser.add_argument(
+        "--reset-session",
+        action="store_true",
+        default=False,
+        dest="reset_session",
+        help="Delete today's session checkpoint before starting, ignoring any saved positions "
+        "and capital state from prior runs today. Use this to restart the engine fresh "
+        "after manually closing positions or when the prior session state is corrupt.",
+    )
     args = parser.parse_args()
     if args.rank_weighted_sizing and len(args.rank_weighted_sizing) != args.top:
         parser.error(
@@ -688,6 +697,7 @@ if __name__ == "__main__":
             record_tradestation_feed=args.record_tradestation_feed,
             market_data_client=_build_market_data_client(args),
             force_run=args.force_run,
+            reset_session=args.reset_session,
         )
         if args.replay_date:
             from datetime import date as _date
@@ -806,6 +816,7 @@ if __name__ == "__main__":
             record_tradestation_feed=args.record_tradestation_feed,
             market_data_client=_build_market_data_client(args),
             force_run=args.force_run,
+            reset_session=args.reset_session,
         )
         engine.run(tickers_override=args.tickers)
     finally:
