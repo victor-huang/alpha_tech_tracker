@@ -735,6 +735,27 @@ class TradeStationAPIClient(ExecutionClient):
             "raw_response": {},
         }
 
+    def get_open_positions(self) -> dict:
+        account_key = self._get_account_key()
+        response = self._session.get(
+            self._v3_base_url + f"/brokerage/accounts/{account_key}/positions"
+        )
+        try:
+            data = self._parse(response)
+        except Exception:
+            logger.warning("get_open_positions: failed to parse response")
+            return {}
+        positions_list = data.get("Positions", []) if isinstance(data, dict) else []
+        result = {}
+        for p in positions_list:
+            qty = float(p.get("Quantity", 0))
+            if qty == 0:
+                continue
+            ts_symbol = p.get("Symbol", "")
+            occ = _ts_to_occ(ts_symbol)
+            result[occ] = {"qty": qty}
+        return result
+
     def cancel_order(self, order_id: str) -> dict:
         response = self._session.delete(
             self._v3_base_url + f"/orderexecution/orders/{order_id}"

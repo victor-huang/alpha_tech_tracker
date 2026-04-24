@@ -2236,6 +2236,112 @@ class TestCloseRetryLimit:
         assert len(retry_limit_alerts) == 1
 
 
+class TestReconcileStuckPositions:
+    """
+    _reconcile_stuck_positions() checks the broker for open positions and resolves
+    stuck (close_order_failed) positions that the user has manually closed.
+    """
+
+    def _make_monitor_with_stuck_option(self):
+        client = _make_alpaca_client()
+        client.get_option_quote_by_occ.return_value = {"bid": 4.80, "ask": 5.20, "mid": 5.00}
+
+        df = _build_history_df([104.0], ma20=90.0, ma50=90.0, ma200=85.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine)
+
+        pos = _make_active_position(signal="BULLISH")
+        pos.is_closed = True
+        pos.exit_reason = "hard_stop"
+        pos.close_order_failed = True
+        pos.close_alert_sent = True
+        pos.entry_fill_price = _D("3.50")
+        pos.slot_capital = _D("5000")
+        monitor._positions.append(pos)
+        return monitor, client, pos
+
+    def test_no_action_when_no_stuck_positions(self):
+        client = _make_alpaca_client()
+        df = _build_history_df([104.0], ma20=90.0, ma50=90.0, ma200=85.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine)
+
+        monitor._reconcile_stuck_positions()
+
+        client.get_open_positions.assert_not_called()
+
+    def test_no_action_when_position_still_open_at_broker(self):
+        monitor, client, pos = self._make_monitor_with_stuck_option()
+        client.get_open_positions.return_value = {pos.option_symbol: {"qty": 2.0}}
+
+        monitor._reconcile_stuck_positions()
+
+        assert pos.close_order_failed is True
+        assert pos.exit_fill_price is None
+
+    def test_clears_close_order_failed_when_broker_confirms_closed(self):
+        monitor, client, pos = self._make_monitor_with_stuck_option()
+        client.get_open_positions.return_value = {}
+
+        monitor._reconcile_stuck_positions()
+
+        assert pos.close_order_failed is False
+
+    def test_sets_exit_fill_price_from_option_mid(self):
+        monitor, client, pos = self._make_monitor_with_stuck_option()
+        client.get_open_positions.return_value = {}
+
+        monitor._reconcile_stuck_positions()
+
+        assert pos.exit_fill_price == _D("5.00")
+
+    def test_fires_exit_retry_callback_with_confirmed_fill(self):
+        monitor, client, pos = self._make_monitor_with_stuck_option()
+        client.get_open_positions.return_value = {}
+
+        callback_positions = []
+        monitor._exit_retry_callback = callback_positions.append
+
+        monitor._reconcile_stuck_positions()
+
+        assert len(callback_positions) == 1
+        assert callback_positions[0] is pos
+
+    def test_no_callback_when_mid_unavailable(self):
+        monitor, client, pos = self._make_monitor_with_stuck_option()
+        client.get_open_positions.return_value = {}
+        client.get_option_quote_by_occ.side_effect = RuntimeError("quote unavailable")
+
+        callback_called = []
+        monitor._exit_retry_callback = lambda p: callback_called.append(p)
+
+        monitor._reconcile_stuck_positions()
+
+        assert pos.close_order_failed is False
+        assert pos.exit_fill_price is None
+        assert callback_called == []
+
+    def test_sends_notify_when_manually_closed(self):
+        monitor, client, pos = self._make_monitor_with_stuck_option()
+        client.get_open_positions.return_value = {}
+
+        with patch(
+            "alpha_tech_tracker.op_momentum_strategy.position_monitor._notify"
+        ) as mock_notify:
+            monitor._reconcile_stuck_positions()
+
+        assert mock_notify.call_count == 1
+        assert "RECONCILED" in mock_notify.call_args[0][0]
+
+    def test_graceful_when_broker_fetch_fails(self):
+        monitor, client, pos = self._make_monitor_with_stuck_option()
+        client.get_open_positions.side_effect = RuntimeError("network error")
+
+        monitor._reconcile_stuck_positions()
+
+        assert pos.close_order_failed is True
+
+
 class TestCloseAllEodStuckPositionSweep:
     """
     Fix 2: close_all() must force-close any position that previously failed

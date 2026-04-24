@@ -136,3 +136,13 @@ class ExecutionClient(ABC):
         Cancel a pending order.
         Returns: {order_id, status: "cancelled", message}
         """
+
+    @abstractmethod
+    def get_open_positions(self) -> dict:
+        """
+        Return all currently open positions keyed by symbol.
+        Options use OCC format (e.g. "NVDA260418C00120000").
+        Stocks use the ticker symbol (e.g. "MU").
+        Each value: {"qty": float}
+        Returns empty dict on error.
+        """

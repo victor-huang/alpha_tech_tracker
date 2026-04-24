@@ -1704,6 +1704,7 @@ class OpMomentumTradeEngine:
             if eod_triggered:
                 if now.hour > end_h or (now.hour == end_h and now.minute >= end_m):
                     logger.info("Session end: all fills confirmed, shutting down")
+                    self._monitor.stop()
                     break
                 self._monitor._refresh_fill_prices(self._monitor._positions)
                 time.sleep(30)
@@ -1969,6 +1970,9 @@ class OpMomentumTradeEngine:
 
         if self._option_price_monitor:
             self._option_price_monitor.start()
+
+        if not self._mock_trade_execution:
+            self._monitor.start_reconciliation_thread()
 
         recovered = self._recover_session(session_date)
         if self._initial_capital is None:

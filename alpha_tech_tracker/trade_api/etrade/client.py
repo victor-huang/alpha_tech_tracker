@@ -695,6 +695,25 @@ class EtradeAPIClient(ExecutionClient):
             "raw_response": data,
         }
 
+    def get_open_positions(self) -> dict:
+        url = (
+            f"{self._base_url()}/v1/accounts/{self._selected_account_id}/portfolio.json"
+        )
+        try:
+            data = self._parse_response(self._session.get(url))
+        except Exception:
+            logger.warning("get_open_positions: ETrade portfolio call failed", exc_info=True)
+            return {}
+        result = {}
+        for account in data.get("PortfolioResponse", {}).get("AccountPortfolio", []):
+            for pos in account.get("Position", []):
+                product = pos.get("Product", {})
+                symbol = product.get("symbol") or product.get("Symbol", "")
+                qty = float(pos.get("quantity", pos.get("Quantity", 0)))
+                if symbol and qty != 0:
+                    result[symbol] = {"qty": qty}
+        return result
+
     # ------------------------------------------------------------------
     # Legacy methods (kept for backward compatibility)
     # ------------------------------------------------------------------

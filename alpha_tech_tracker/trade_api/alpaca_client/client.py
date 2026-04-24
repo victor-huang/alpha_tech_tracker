@@ -416,6 +416,10 @@ class AlpacaAPIClient(ExecutionClient):
             "raw_response": order,
         }
 
+    def get_open_positions(self) -> dict:
+        positions = self._trading_client.get_all_positions()
+        return {p.symbol: {"qty": float(p.qty or 0)} for p in positions}
+
     def cancel_order(self, order_id):
         try:
             self._trading_client.cancel_order_by_id(order_id)

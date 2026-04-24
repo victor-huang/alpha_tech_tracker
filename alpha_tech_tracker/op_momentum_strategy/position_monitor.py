@@ -139,6 +139,7 @@ class PositionMonitor:
         self._positions: list = []
         self._reentry_watchers: list = []
         self._lock = threading.Lock()
+        self._stop_event = threading.Event()
 
     def add_position(self, position: ActivePosition):
         with self._lock:
@@ -853,6 +854,87 @@ class PositionMonitor:
                 self._close_stock_position(pos, "end_of_day")
             else:
                 self._close_option_position(pos, "end_of_day")
+
+    def start_reconciliation_thread(self):
+        """Start the background thread that reconciles stuck positions against the broker.
+
+        Only meaningful in live (non-mock, non-replay) mode. Safe to call multiple times —
+        a second call is a no-op if the thread is already running.
+        """
+        t = threading.Thread(
+            target=self._reconciliation_loop,
+            daemon=True,
+            name="stuck-position-reconciler",
+        )
+        t.start()
+        logger.info("Stuck-position reconciliation thread started (interval=5 min)")
+
+    def stop(self):
+        """Signal the reconciliation thread to exit on its next wakeup."""
+        self._stop_event.set()
+
+    def _reconciliation_loop(self):
+        """Wake every 5 minutes and reconcile any stuck positions against the broker."""
+        _INTERVAL_SECONDS = 300
+        while not self._stop_event.wait(timeout=_INTERVAL_SECONDS):
+            if is_replay_mode():
+                continue
+            try:
+                self._reconcile_stuck_positions()
+            except Exception:
+                logger.exception("Reconciliation loop error")
+
+    def _reconcile_stuck_positions(self):
+        """Check broker open positions and resolve any stuck (close_order_failed) positions.
+
+        For each position marked close_order_failed, queries the broker to see whether
+        the position is still open. If the broker shows it as closed (manually closed by
+        the user), sets exit_fill_price from the current option mid (best estimate),
+        clears close_order_failed, and fires exit_retry_callback so _on_exit_fill_corrected
+        updates daily P&L.
+        """
+        with self._lock:
+            stuck = [
+                p for p in self._positions
+                if p.is_closed and p.close_order_failed
+            ]
+        if not stuck:
+            return
+
+        logger.info("Reconciling %d stuck position(s) against broker", len(stuck))
+        try:
+            open_positions = self._client.get_open_positions()
+        except Exception:
+            logger.warning("Could not fetch open positions for reconciliation", exc_info=True)
+            return
+
+        for pos in stuck:
+            lookup_symbol = pos.option_symbol if pos.trade_type != "stock" else pos.ticker
+            if lookup_symbol in open_positions:
+                continue
+
+            # Position is no longer open at the broker — manually closed.
+            mid = self._fetch_option_mid(pos.option_symbol) if pos.trade_type != "stock" else None
+            with self._lock:
+                if mid is not None:
+                    pos.exit_fill_price = mid
+                pos.close_order_failed = False
+
+            if mid is not None:
+                msg = (
+                    f"RECONCILED {pos.option_symbol} x{pos.contracts}"
+                    f" — manually closed at broker, exit price estimated at mid ${float(mid):.2f}"
+                )
+            else:
+                msg = (
+                    f"RECONCILED {pos.option_symbol} x{pos.contracts}"
+                    f" — manually closed at broker, exit price unknown"
+                )
+            logger.info(msg)
+            _notify(msg)
+
+            if self._exit_retry_callback and pos.exit_fill_price is not None:
+                self._exit_retry_callback(pos)
 
     def _fetch_option_mid(self, option_symbol: str) -> Optional[object]:
         try:
