@@ -2,6 +2,16 @@ from abc import ABC, abstractmethod
 from typing import Optional
 
 
+class InsufficientFundsError(Exception):
+    """Raised by ExecutionClient implementations when the broker rejects an order
+    due to insufficient buying power, account balance, or position-level quantity
+    constraints (e.g. short-sale locate limits).
+
+    order_executor catches this to abort fill escalation immediately — retrying
+    the same order will never resolve an account-level funding constraint.
+    """
+
+
 class ExecutionClient(ABC):
     """
     Abstract interface for broker execution: account management, quotes, and order

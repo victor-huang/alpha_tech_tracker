@@ -9,7 +9,7 @@ from urllib.parse import parse_qs, urlparse
 
 from requests_oauthlib import OAuth2Session
 
-from alpha_tech_tracker.trade_api.execution_client import ExecutionClient
+from alpha_tech_tracker.trade_api.execution_client import ExecutionClient, InsufficientFundsError
 
 logger = logging.getLogger("trade_api.tradestation")
 
@@ -168,6 +168,11 @@ def _parse_tick_from_error(message: str):
             except Exception:
                 pass
     return None
+
+
+def _is_ts_insufficient_funds(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return "insufficient" in msg and ("buying power" in msg or "funds" in msg or "balance" in msg)
 
 
 class _CallbackHandler(BaseHTTPRequestHandler):
@@ -621,10 +626,15 @@ class TradeStationAPIClient(ExecutionClient):
                 )
             body["LimitPrice"] = f"{float(price):g}"
 
-        response = self._session.post(
-            self._v3_base_url + "/orderexecution/orders", json=body
-        )
-        data = self._parse(response)
+        try:
+            response = self._session.post(
+                self._v3_base_url + "/orderexecution/orders", json=body
+            )
+            data = self._parse(response)
+        except APIError as exc:
+            if _is_ts_insufficient_funds(exc):
+                raise InsufficientFundsError(str(exc)) from exc
+            raise
         order_data = _extract_v3_order(data)
 
         return {
@@ -672,10 +682,15 @@ class TradeStationAPIClient(ExecutionClient):
         if ts_order_type == "Limit":
             body["LimitPrice"] = f"{float(limit_price):g}"
 
-        response = self._session.post(
-            self._v3_base_url + "/orderexecution/orders", json=body
-        )
-        data = self._parse(response)
+        try:
+            response = self._session.post(
+                self._v3_base_url + "/orderexecution/orders", json=body
+            )
+            data = self._parse(response)
+        except APIError as exc:
+            if _is_ts_insufficient_funds(exc):
+                raise InsufficientFundsError(str(exc)) from exc
+            raise
         order_data = _extract_v3_order(data)
 
         return {

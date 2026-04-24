@@ -15,7 +15,7 @@ from alpaca.trading.enums import OrderSide, TimeInForce
 from alpaca.data.enums import DataFeed
 from alpaca.data.requests import StockLatestQuoteRequest, OptionLatestQuoteRequest, OptionLatestTradeRequest
 
-from alpha_tech_tracker.trade_api.execution_client import ExecutionClient
+from alpha_tech_tracker.trade_api.execution_client import ExecutionClient, InsufficientFundsError
 
 logger = logging.getLogger("trade_api.alpaca")
 
@@ -308,7 +308,12 @@ class AlpacaAPIClient(ExecutionClient):
                 message=f"Unsupported order type: {order_type}",
             )
 
-        order = self._trading_client.submit_order(order_data=order_data)
+        try:
+            order = self._trading_client.submit_order(order_data=order_data)
+        except Exception as exc:
+            if "40310000" in str(exc):
+                raise InsufficientFundsError(str(exc)) from exc
+            raise
 
         return {
             "order_id": str(order.id),
@@ -387,7 +392,12 @@ class AlpacaAPIClient(ExecutionClient):
                 message=f"Unsupported price type: {price_type}",
             )
 
-        order = self._trading_client.submit_order(order_data=order_data)
+        try:
+            order = self._trading_client.submit_order(order_data=order_data)
+        except Exception as exc:
+            if "40310000" in str(exc):
+                raise InsufficientFundsError(str(exc)) from exc
+            raise
 
         return {
             "order_id": str(order.id),

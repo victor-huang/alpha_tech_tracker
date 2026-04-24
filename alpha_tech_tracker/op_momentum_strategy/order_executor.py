@@ -4,17 +4,12 @@ import time
 from decimal import ROUND_HALF_UP, Decimal
 from typing import Optional, Tuple
 
-from alpha_tech_tracker.trade_api.execution_client import ExecutionClient
+from alpha_tech_tracker.trade_api.execution_client import ExecutionClient, InsufficientFundsError
 
 from .models import _D, _stock_bid_ask
 from .option_price_monitor import _quantize_option_price, ticker_is_penny_pilot
 
 logger = logging.getLogger(__name__)
-
-
-def _is_insufficient_buying_power(exc: Exception) -> bool:
-    """Return True if the exception is an Alpaca 'insufficient options buying power' error."""
-    return "40310000" in str(exc) or "insufficient options buying power" in str(exc).lower()
 
 
 def _parse_tick_from_reject_reason(message: str) -> Optional[Decimal]:
@@ -301,7 +296,7 @@ def _place_with_fill_escalation(
             _last_placed_price[0] = _quantize_option_price(current_price, penny_pilot=penny_pilot)
             order = _place_limit(current_price)
         except Exception as exc:
-            if _is_insufficient_buying_power(exc):
+            if isinstance(exc, InsufficientFundsError):
                 logger.warning(
                     "FILL_ESC loop step%d %s %s: insufficient options buying power"
                     " — aborting escalation",
@@ -360,7 +355,7 @@ def _place_with_fill_escalation(
                     _last_placed_price[0] = _quantize_option_price(current_price, penny_pilot=penny_pilot)
                     order = _place_limit(current_price)
                 except Exception as exc:
-                    if _is_insufficient_buying_power(exc):
+                    if isinstance(exc, InsufficientFundsError):
                         logger.warning(
                             "FILL_ESC loop step%d %s %s: insufficient options buying power"
                             " — aborting escalation",
@@ -486,7 +481,7 @@ def _place_with_fill_escalation(
     try:
         order = _place_limit(step3_price)
     except Exception as exc:
-        if _is_insufficient_buying_power(exc):
+        if isinstance(exc, InsufficientFundsError):
             logger.warning(
                 "FILL_ESC step3 %s %s: insufficient options buying power — aborting",
                 order_action, option_symbol,
@@ -789,9 +784,9 @@ def place_stock_order(
         try:
             order = _place_limit(mid)
         except Exception as exc:
-            if _is_insufficient_buying_power(exc):
+            if isinstance(exc, InsufficientFundsError):
                 logger.warning(
-                    "STOCK FILL_ESC step1 attempt=%d %s %s: 40310000 — aborting",
+                    "STOCK FILL_ESC step1 attempt=%d %s %s: insufficient funds — aborting",
                     attempt, order_action, ticker,
                 )
                 raise
@@ -839,9 +834,9 @@ def place_stock_order(
         try:
             order = _place_limit(aggressive_price)
         except Exception as exc:
-            if _is_insufficient_buying_power(exc):
+            if isinstance(exc, InsufficientFundsError):
                 logger.warning(
-                    "STOCK FILL_ESC step2 attempt=%d %s %s: 40310000 — aborting",
+                    "STOCK FILL_ESC step2 attempt=%d %s %s: insufficient funds — aborting",
                     attempt, order_action, ticker,
                 )
                 raise

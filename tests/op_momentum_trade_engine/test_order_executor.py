@@ -3,12 +3,12 @@ from decimal import Decimal
 from unittest.mock import MagicMock, patch
 
 from alpha_tech_tracker.op_momentum_strategy.order_executor import (
-    _is_insufficient_buying_power,
     _parse_tick_from_reject_reason,
     _place_with_fill_escalation,
     place_option_order_in_tranches,
     place_stock_order,
 )
+from alpha_tech_tracker.trade_api.execution_client import InsufficientFundsError
 
 _D = Decimal
 
@@ -310,21 +310,45 @@ class TestParseTickFromRejectReason:
         ) is None
 
 
-class TestIsInsufficientBuyingPower:
-    def test_alpaca_error_code_40310000_detected(self):
-        assert _is_insufficient_buying_power(Exception('{"code":40310000,"message":"insufficient options buying power"}'))
+class TestAlpacaInsufficientFundsConversion:
+    """AlpacaAPIClient re-raises Alpaca 40310000 errors as InsufficientFundsError."""
 
-    def test_insufficient_buying_power_message_lowercase(self):
-        assert _is_insufficient_buying_power(Exception("insufficient options buying power"))
+    def _make_alpaca_client(self):
+        from alpha_tech_tracker.trade_api.alpaca_client.client import AlpacaAPIClient
+        client = AlpacaAPIClient.__new__(AlpacaAPIClient)
+        from unittest.mock import MagicMock
+        client._trading_client = MagicMock()
+        return client
 
-    def test_insufficient_buying_power_message_mixed_case(self):
-        assert _is_insufficient_buying_power(Exception("Insufficient Options Buying Power"))
+    def test_place_option_order_40310000_raises_insufficient_funds_error(self):
+        client = self._make_alpaca_client()
+        client._trading_client.submit_order.side_effect = Exception(
+            '{"code":40310000,"message":"insufficient options buying power"}'
+        )
+        with pytest.raises(InsufficientFundsError):
+            client.place_option_order(
+                symbol="NVDA",
+                price=3.50,
+                price_type="LIMIT",
+                order_action="BUY_OPEN",
+                quantity=1,
+                _option_symbol_override="NVDA260418C00120000",
+            )
 
-    def test_unrelated_exception_returns_false(self):
-        assert not _is_insufficient_buying_power(Exception("order rejected: invalid symbol"))
+    def test_place_stock_order_40310000_raises_insufficient_funds_error(self):
+        client = self._make_alpaca_client()
+        client._trading_client.submit_order.side_effect = Exception(
+            '{"code":40310000,"message":"insufficient qty available for order"}'
+        )
+        with pytest.raises(InsufficientFundsError):
+            client.place_stock_order(symbol="MU", quantity=26, side="BUY", order_type="LIMIT", limit_price=100.0)
 
-    def test_generic_placement_failure_returns_false(self):
-        assert not _is_insufficient_buying_power(Exception("connection timeout"))
+    def test_non_40310000_error_is_not_converted(self):
+        client = self._make_alpaca_client()
+        client._trading_client.submit_order.side_effect = Exception("network timeout")
+        with pytest.raises(Exception, match="network timeout"):
+            client.place_stock_order(symbol="MU", quantity=1, side="BUY", order_type="LIMIT", limit_price=100.0)
+        assert not isinstance(Exception("network timeout"), InsufficientFundsError)
 
 
 class TestInsufficientBuyingPowerAbort:
@@ -333,7 +357,7 @@ class TestInsufficientBuyingPowerAbort:
     must abort immediately and return ({}, 0) — no further placement attempts.
     """
 
-    _BP_ERROR = Exception('{"code":40310000,"message":"insufficient options buying power","options_buying_power":"10009.89"}')
+    _BP_ERROR = InsufficientFundsError("insufficient options buying power")
 
     def _make_client_with_bp_error(self, fail_on_call=1):
         client = MagicMock()
@@ -1228,42 +1252,40 @@ class TestPlaceStockOrderStep2Loop:
         assert last_call.kwargs["order_type"] == "MARKET"
 
 
-class TestPlaceStockOrder40310000Abort:
+class TestPlaceStockOrderInsufficientFundsAbort:
     """
-    When Alpaca returns error 40310000 (insufficient buying power or qty)
-    on a stock placement, the escalation must abort immediately without
-    burning through all remaining step 1 / step 2 retries.
+    When the broker client raises InsufficientFundsError on a stock placement,
+    the escalation must abort immediately without burning through all remaining
+    step 1 / step 2 retries.
     """
 
-    _40310000_ERROR = Exception(
-        '{"available":"24","code":40310000,"existing_qty":"24",'
-        '"message":"insufficient qty available for order (requested: 26, available: 24)",'
-        '"symbol":"MU"}'
+    _INSUF_ERROR = InsufficientFundsError(
+        "insufficient qty available for order (requested: 26, available: 24)"
     )
 
-    def test_step1_40310000_raises_immediately(self):
+    def test_step1_insufficient_funds_raises_immediately(self):
         client = _make_stock_client(bid=473.0, ask=484.49)
-        client.place_stock_order.side_effect = self._40310000_ERROR
+        client.place_stock_order.side_effect = self._INSUF_ERROR
 
         with patch(f"{_MODULE}.time.sleep", lambda _: None), \
-             pytest.raises(Exception, match="40310000"):
+             pytest.raises(InsufficientFundsError):
             place_stock_order(
                 client=client, ticker="MU", shares=26, order_action="BUY_OPEN"
             )
 
-    def test_step1_40310000_places_only_one_order(self):
+    def test_step1_insufficient_funds_places_only_one_order(self):
         client = _make_stock_client(bid=473.0, ask=484.49)
-        client.place_stock_order.side_effect = self._40310000_ERROR
+        client.place_stock_order.side_effect = self._INSUF_ERROR
 
         with patch(f"{_MODULE}.time.sleep", lambda _: None), \
-             pytest.raises(Exception):
+             pytest.raises(InsufficientFundsError):
             place_stock_order(
                 client=client, ticker="MU", shares=26, order_action="BUY_OPEN"
             )
 
         assert client.place_stock_order.call_count == 1
 
-    def test_step2_40310000_raises_immediately_after_step1_exhausted(self):
+    def test_step2_insufficient_funds_raises_immediately_after_step1_exhausted(self):
         client = _make_stock_client(bid=473.0, ask=484.49)
         call_count = [0]
 
@@ -1271,20 +1293,20 @@ class TestPlaceStockOrder40310000Abort:
             call_count[0] += 1
             if call_count[0] <= 3:
                 return {"order_id": f"ord-step1-{call_count[0]}", "status": "open"}
-            raise self._40310000_ERROR
+            raise self._INSUF_ERROR
 
         client.place_stock_order.side_effect = side_effect
         client.order_status.return_value = {"status": "open"}
 
         with patch(f"{_MODULE}.time.sleep", lambda _: None), \
-             pytest.raises(Exception, match="40310000"):
+             pytest.raises(InsufficientFundsError):
             place_stock_order(
                 client=client, ticker="MU", shares=26, order_action="BUY_OPEN"
             )
 
         assert client.place_stock_order.call_count == 4  # 3 step1 + 1 step2
 
-    def test_non_40310000_step1_failure_still_escalates(self):
+    def test_non_insufficient_funds_step1_failure_still_escalates(self):
         client = _make_stock_client(bid=473.0, ask=484.49)
         client.place_stock_order.side_effect = Exception("network timeout")
         client.order_status.return_value = {"status": "open"}
