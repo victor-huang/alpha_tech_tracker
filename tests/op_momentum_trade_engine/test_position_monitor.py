@@ -2438,6 +2438,36 @@ class TestReconcileStuckPositions:
 
         assert pos.close_order_failed is True
 
+    def test_sets_close_order_reconciled_when_broker_confirms_closed(self):
+        monitor, client, pos = self._make_monitor_with_stuck_option()
+        client.get_open_positions.return_value = {}
+
+        monitor._reconcile_stuck_positions()
+
+        assert pos.close_order_reconciled is True
+
+    def test_reconciled_position_skipped_by_retry_loop(self):
+        """Retry loop in on_bar must not re-open close_order_failed after reconciliation."""
+        client = _make_alpaca_client()
+        client.get_option_quote_by_occ.side_effect = RuntimeError("quote unavailable")
+        client.place_option_order.side_effect = RuntimeError("order unavailable")
+        df = _build_history_df([104.0], ma20=90.0, ma50=90.0, ma200=85.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine)
+
+        pos = _make_active_position(signal="BULLISH")
+        pos.is_closed = True
+        pos.exit_reason = "hard_stop"
+        pos.close_order_failed = True
+        pos.close_order_reconciled = True
+        monitor._positions.append(pos)
+
+        _set_latest_bar(engine, "NVDA", close=103.0, ma50=90.0)
+        monitor.on_bar("NVDA")
+
+        assert pos.close_retry_count == 0
+        client.place_option_order.assert_not_called()
+
 
 class TestCloseAllEodStuckPositionSweep:
     """

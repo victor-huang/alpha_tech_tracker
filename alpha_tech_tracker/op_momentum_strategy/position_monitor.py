@@ -209,6 +209,8 @@ class PositionMonitor:
                     retry_failed.append(pos)
         _MAX_CLOSE_RETRIES = 3
         for pos in retry_failed:
+            if pos.close_order_reconciled:
+                continue
             if pos.close_retry_count >= _MAX_CLOSE_RETRIES:
                 if not pos.close_alert_sent:
                     pos.close_alert_sent = True
@@ -1043,6 +1045,7 @@ class PositionMonitor:
                 if fill_price is not None:
                     pos.exit_fill_price = fill_price
                 pos.close_order_failed = False
+                pos.close_order_reconciled = True
 
             if fill_price is not None:
                 msg = (

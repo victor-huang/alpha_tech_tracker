@@ -86,6 +86,7 @@ class ActivePosition:
     last_evaluated_bar_time: Optional[datetime] = None
     is_doubledown_addon: bool = False
     close_order_failed: bool = False
+    close_order_reconciled: bool = False
     close_retry_count: int = 0
     closed_contracts: int = 0
     close_alert_sent: bool = False
