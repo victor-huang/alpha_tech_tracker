@@ -175,6 +175,52 @@ orders_cancelled_response = {
     "Errors": [],
 }
 
+orders_filled_sell_response = {
+    "Orders": [
+        {
+            "AccountID": "123456",
+            "OrderID": "307887901",
+            "Status": "FLL",
+            "Duration": "DAY",
+            "LimitPrice": "9.75",
+            "FilledPrice": "9.75",
+            "ClosedDateTime": "2025-04-20T14:02:00Z",
+            "Legs": [
+                {
+                    "Symbol": "TSLA 250420C240",
+                    "QuantityOrdered": "6",
+                    "ExecQuantity": "6",
+                    "BuyOrSell": "Sell",
+                }
+            ],
+        }
+    ],
+    "Errors": [],
+}
+
+orders_filled_stock_sell_response = {
+    "Orders": [
+        {
+            "AccountID": "123456",
+            "OrderID": "407887902",
+            "Status": "FLL",
+            "Duration": "DAY",
+            "LimitPrice": "0",
+            "FilledPrice": "248.50",
+            "ClosedDateTime": "2025-04-20T15:55:00Z",
+            "Legs": [
+                {
+                    "Symbol": "TSLA",
+                    "QuantityOrdered": "40",
+                    "ExecQuantity": "40",
+                    "BuyOrSell": "Sell",
+                }
+            ],
+        }
+    ],
+    "Errors": [],
+}
+
 cancel_order_response = {
     "OrderID": "207887821",
     "Message": "Cancel request submitted",

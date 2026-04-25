@@ -757,7 +757,69 @@ class TradeStationAPIClient(ExecutionClient):
         return result
 
     def get_filled_orders(self, symbol: str, limit: int = 5) -> list:
-        return []
+        import pytz
+        ET = pytz.timezone("America/New_York")
+
+        # Convert OCC option symbol to TS display format; plain tickers pass through
+        try:
+            ts_symbol = _occ_to_ts_order_symbol(symbol)
+        except ValueError:
+            ts_symbol = symbol.upper()
+
+        account_key = self._get_account_key()
+        response = self._session.get(
+            self._v3_base_url + f"/brokerage/accounts/{account_key}/orders",
+            params={"symbol": ts_symbol, "pageSize": max(limit * 3, 20)},
+        )
+        try:
+            data = self._parse(response)
+        except Exception:
+            logger.warning("get_filled_orders: failed to fetch orders for %s", symbol)
+            return []
+
+        orders = data if isinstance(data, list) else data.get("Orders", [])
+        result = []
+        for raw in orders:
+            if raw.get("Status") not in ("FLL", "FLP"):
+                continue
+
+            filled_price_raw = raw.get("FilledPrice") or raw.get("AverageFillPrice")
+            if not filled_price_raw:
+                continue
+
+            leg = raw.get("Legs", [{}])[0] if raw.get("Legs") else {}
+
+            # Normalize side to "buy" or "sell"
+            buy_or_sell = leg.get("BuyOrSell", "").lower()
+            if not buy_or_sell:
+                trade_action = leg.get("TradeAction", "").lower()
+                buy_or_sell = "buy" if "buy" in trade_action else "sell"
+
+            filled_qty_raw = leg.get("ExecQuantity") or raw.get("ExecuteQuantity") or 0
+
+            filled_at = None
+            filled_at_raw = raw.get("ClosedDateTime") or raw.get("FilledDateTime") or raw.get("TimeStamp")
+            if filled_at_raw:
+                try:
+                    dt = datetime.fromisoformat(str(filled_at_raw).replace("Z", "+00:00"))
+                    if dt.tzinfo is None:
+                        dt = ET.localize(dt)
+                    filled_at = dt
+                except Exception:
+                    pass
+
+            result.append({
+                "order_id": str(raw.get("OrderID", "")),
+                "filled_avg_price": float(filled_price_raw),
+                "filled_qty": float(filled_qty_raw),
+                "side": buy_or_sell,
+                "filled_at": filled_at,
+            })
+
+            if len(result) >= limit:
+                break
+
+        return result
 
     def cancel_order(self, order_id: str) -> dict:
         response = self._session.delete(

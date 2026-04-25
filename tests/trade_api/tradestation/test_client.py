@@ -21,6 +21,8 @@ from alpha_tech_tracker.trade_api.tradestation.tradestation_api_response import 
     place_order_response,
     orders_open_response,
     orders_filled_response,
+    orders_filled_sell_response,
+    orders_filled_stock_sell_response,
     orders_cancelled_response,
     cancel_order_response,
 )
@@ -865,6 +867,113 @@ class TestOrderStatus:
 
         assert result["order_id"] == "999999"
         assert result["status"] == "open"
+
+
+class TestGetFilledOrders:
+    def test_returns_filled_sell_order_for_option(self):
+        client = _make_client()
+        client._session.get.return_value = _mock_response(orders_filled_sell_response)
+
+        result = client.get_filled_orders("TSLA250420C00240000", limit=5)
+
+        assert len(result) == 1
+        assert result[0]["filled_avg_price"] == 9.75
+        assert result[0]["side"] == "sell"
+        assert result[0]["filled_qty"] == 6.0
+        assert result[0]["order_id"] == "307887901"
+
+    def test_option_symbol_converted_to_ts_display_format_in_query(self):
+        client = _make_client()
+        client._session.get.return_value = _mock_response(orders_filled_sell_response)
+
+        client.get_filled_orders("TSLA250420C00240000", limit=5)
+
+        params = client._session.get.call_args[1]["params"]
+        assert params["symbol"] == "TSLA 250420C240"
+
+    def test_stock_symbol_passed_as_uppercase_ticker(self):
+        client = _make_client()
+        client._session.get.return_value = _mock_response(orders_filled_stock_sell_response)
+
+        client.get_filled_orders("tsla", limit=5)
+
+        params = client._session.get.call_args[1]["params"]
+        assert params["symbol"] == "TSLA"
+
+    def test_filters_out_open_orders(self):
+        client = _make_client()
+        client._session.get.return_value = _mock_response(orders_open_response)
+
+        result = client.get_filled_orders("TSLA250420C00240000")
+
+        assert result == []
+
+    def test_filters_out_cancelled_orders(self):
+        client = _make_client()
+        client._session.get.return_value = _mock_response(orders_cancelled_response)
+
+        result = client.get_filled_orders("TSLA250420C00240000")
+
+        assert result == []
+
+    def test_returns_buy_side_for_buy_order(self):
+        client = _make_client()
+        client._session.get.return_value = _mock_response(orders_filled_response)
+
+        result = client.get_filled_orders("TSLA250420C00240000")
+
+        assert result[0]["side"] == "buy"
+
+    def test_filled_at_parsed_from_closed_datetime(self):
+        client = _make_client()
+        client._session.get.return_value = _mock_response(orders_filled_sell_response)
+
+        result = client.get_filled_orders("TSLA250420C00240000")
+
+        filled_at = result[0]["filled_at"]
+        assert filled_at is not None
+        assert filled_at.tzinfo is not None
+        assert filled_at.year == 2025
+
+    def test_limit_caps_results(self):
+        many_orders = {
+            "Orders": [
+                {
+                    "OrderID": str(i),
+                    "Status": "FLL",
+                    "FilledPrice": "10.00",
+                    "ClosedDateTime": "2025-04-20T14:00:00Z",
+                    "Legs": [{"Symbol": "TSLA 250420C240", "ExecQuantity": "1", "BuyOrSell": "Sell"}],
+                }
+                for i in range(10)
+            ],
+            "Errors": [],
+        }
+        client = _make_client()
+        client._session.get.return_value = _mock_response(many_orders)
+
+        result = client.get_filled_orders("TSLA250420C00240000", limit=3)
+
+        assert len(result) == 3
+
+    def test_returns_empty_list_on_api_error(self):
+        client = _make_client()
+        client._session.get.return_value = _mock_response({"Message": "Server error"}, status_code=500)
+
+        result = client.get_filled_orders("TSLA250420C00240000")
+
+        assert result == []
+
+    def test_stock_sell_returns_correct_price_and_qty(self):
+        client = _make_client()
+        client._session.get.return_value = _mock_response(orders_filled_stock_sell_response)
+
+        result = client.get_filled_orders("TSLA")
+
+        assert len(result) == 1
+        assert result[0]["filled_avg_price"] == 248.50
+        assert result[0]["filled_qty"] == 40.0
+        assert result[0]["side"] == "sell"
 
 
 class TestCancelOrder:
