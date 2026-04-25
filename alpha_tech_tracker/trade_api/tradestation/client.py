@@ -758,6 +758,7 @@ class TradeStationAPIClient(ExecutionClient):
 
     def get_filled_orders(self, symbol: str, limit: int = 5) -> list:
         import pytz
+        from datetime import timedelta
         ET = pytz.timezone("America/New_York")
 
         # Convert OCC option symbol to TS display format; plain tickers pass through
@@ -766,10 +767,11 @@ class TradeStationAPIClient(ExecutionClient):
         except ValueError:
             ts_symbol = symbol.upper()
 
+        since = (datetime.utcnow().date() - timedelta(days=3)).isoformat()
         account_key = self._get_account_key()
         response = self._session.get(
-            self._v3_base_url + f"/brokerage/accounts/{account_key}/orders",
-            params={"symbol": ts_symbol, "pageSize": max(limit * 3, 20)},
+            self._v3_base_url + f"/brokerage/accounts/{account_key}/historicalorders",
+            params={"symbol": ts_symbol, "since": since, "pageSize": max(limit * 3, 20)},
         )
         try:
             data = self._parse(response)

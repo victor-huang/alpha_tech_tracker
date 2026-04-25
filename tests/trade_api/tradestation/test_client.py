@@ -900,6 +900,24 @@ class TestGetFilledOrders:
         params = client._session.get.call_args[1]["params"]
         assert params["symbol"] == "TSLA"
 
+    def test_uses_historicalorders_endpoint(self):
+        client = _make_client()
+        client._session.get.return_value = _mock_response(orders_filled_sell_response)
+
+        client.get_filled_orders("TSLA250420C00240000", limit=5)
+
+        url = client._session.get.call_args[0][0]
+        assert "/historicalorders" in url
+
+    def test_sends_since_param(self):
+        client = _make_client()
+        client._session.get.return_value = _mock_response(orders_filled_sell_response)
+
+        client.get_filled_orders("TSLA250420C00240000", limit=5)
+
+        params = client._session.get.call_args[1]["params"]
+        assert "since" in params
+
     def test_filters_out_open_orders(self):
         client = _make_client()
         client._session.get.return_value = _mock_response(orders_open_response)
