@@ -573,6 +573,41 @@ class PositionMonitor:
             except Exception:
                 logger.exception("Could not fetch exit stock quote for %s", pos.ticker)
 
+        if not self._mock_trade_execution and not is_replay_mode():
+            try:
+                open_positions = self._client.get_open_positions()
+                broker_entry = open_positions.get(pos.ticker)
+                if broker_entry is None:
+                    logger.warning(
+                        "PRE-CLOSE SYNC %s [stock]: not found at broker — already fully closed manually",
+                        pos.ticker,
+                    )
+                    pos.close_order_failed = False
+                    _notify(
+                        f"MANUAL CLOSE DETECTED {pos.ticker} x{pos.shares} shares"
+                        f" — position already closed at broker, skipping order"
+                    )
+                    return
+                broker_qty = int(abs(broker_entry["qty"]))
+                if broker_qty < pos.shares:
+                    logger.warning(
+                        "PRE-CLOSE SYNC %s [stock]: broker qty=%d < engine qty=%d"
+                        " — adjusting (partial manual close detected)",
+                        pos.ticker, broker_qty, pos.shares,
+                    )
+                    _notify(
+                        f"PARTIAL MANUAL CLOSE {pos.ticker}:"
+                        f" engine={pos.shares} broker={broker_qty} shares"
+                        f" — selling remaining {broker_qty} shares"
+                    )
+                    pos.shares = broker_qty
+            except Exception:
+                logger.warning(
+                    "PRE-CLOSE SYNC: broker qty check failed for %s [stock]"
+                    " — proceeding with engine qty=%d",
+                    pos.ticker, pos.shares, exc_info=True,
+                )
+
         is_short = pos.signal == "BEARISH"
         close_order_action = "BUY_COVER" if is_short else "SELL_CLOSE"
         close_side = "BUY" if is_short else "SELL"
@@ -706,6 +741,44 @@ class PositionMonitor:
                         "Could not fetch exit quote for %s, using market order",
                         pos.option_symbol,
                     )
+
+        if not self._mock_trade_execution and not is_replay_mode():
+            try:
+                open_positions = self._client.get_open_positions()
+                broker_entry = open_positions.get(pos.option_symbol)
+                if broker_entry is None:
+                    logger.warning(
+                        "PRE-CLOSE SYNC %s: not found at broker — already fully closed manually",
+                        pos.option_symbol,
+                    )
+                    mid_est = self._fetch_option_mid(pos.option_symbol)
+                    if mid_est is not None:
+                        pos.exit_fill_price = mid_est
+                    pos.close_order_failed = False
+                    _notify(
+                        f"MANUAL CLOSE DETECTED {_fmt_option(pos.option_symbol)} x{pos.contracts}"
+                        f" — position already closed at broker, skipping order"
+                    )
+                    return
+                broker_qty = int(broker_entry["qty"])
+                if broker_qty < pos.contracts:
+                    logger.warning(
+                        "PRE-CLOSE SYNC %s: broker qty=%d < engine qty=%d"
+                        " — adjusting (partial manual close detected)",
+                        pos.option_symbol, broker_qty, pos.contracts,
+                    )
+                    _notify(
+                        f"PARTIAL MANUAL CLOSE {_fmt_option(pos.option_symbol)}:"
+                        f" engine={pos.contracts} broker={broker_qty}"
+                        f" — selling remaining {broker_qty} contracts"
+                    )
+                    pos.contracts = broker_qty
+            except Exception:
+                logger.warning(
+                    "PRE-CLOSE SYNC: broker qty check failed for %s"
+                    " — proceeding with engine qty=%d",
+                    pos.option_symbol, pos.contracts, exc_info=True,
+                )
 
         mid_str = f" @ ~${float(mid):.2f}" if mid is not None else ""
         prefix = "[SIMULATE] " if self._mock_trade_execution else ""
@@ -874,15 +947,66 @@ class PositionMonitor:
         self._stop_event.set()
 
     def _reconciliation_loop(self):
-        """Wake every 5 minutes and reconcile any stuck positions against the broker."""
+        """Wake every 5 minutes and reconcile positions against the broker."""
         _INTERVAL_SECONDS = 300
         while not self._stop_event.wait(timeout=_INTERVAL_SECONDS):
             if is_replay_mode():
                 continue
             try:
+                self._sync_open_position_qtys()
+            except Exception:
+                logger.exception("Reconciliation qty-sync error")
+            try:
                 self._reconcile_stuck_positions()
             except Exception:
                 logger.exception("Reconciliation loop error")
+
+    def _sync_open_position_qtys(self):
+        """Compare broker qty against engine's tracked qty for all open (not yet closed) positions.
+
+        Detects partial manual closes that happened outside the engine and updates
+        pos.contracts / pos.shares so the next exit sells the correct remaining quantity.
+        Only reduces qty — never increases — since the engine can't gain contracts externally.
+        """
+        with self._lock:
+            open_pos = [p for p in self._positions if not p.is_closed]
+        if not open_pos:
+            return
+
+        try:
+            open_positions = self._client.get_open_positions()
+        except Exception:
+            logger.warning("Could not fetch open positions for qty sync", exc_info=True)
+            return
+
+        for pos in open_pos:
+            lookup_symbol = pos.option_symbol if pos.trade_type != "stock" else pos.ticker
+            broker_entry = open_positions.get(lookup_symbol)
+            if broker_entry is None:
+                continue
+
+            if pos.trade_type == "stock":
+                broker_qty = int(abs(broker_entry["qty"]))
+                engine_qty = pos.shares
+            else:
+                broker_qty = int(broker_entry["qty"])
+                engine_qty = pos.contracts
+
+            if broker_qty < engine_qty:
+                logger.warning(
+                    "QTY SYNC %s: broker qty=%d < engine qty=%d"
+                    " — updating to broker qty (partial manual close detected)",
+                    lookup_symbol, broker_qty, engine_qty,
+                )
+                _notify(
+                    f"QTY SYNC {lookup_symbol}: engine={engine_qty}"
+                    f" broker={broker_qty} — updated to broker qty"
+                )
+                with self._lock:
+                    if pos.trade_type == "stock":
+                        pos.shares = broker_qty
+                    else:
+                        pos.contracts = broker_qty
 
     def _reconcile_stuck_positions(self):
         """Check broker open positions and resolve any stuck (close_order_failed) positions.

@@ -2674,3 +2674,232 @@ class TestExitRetryCallback:
             monitor.on_bar("NVDA")
 
         assert pos.close_order_failed is False
+
+
+class TestPreCloseBrokerQtySync:
+    """
+    _close_option_position() and _close_stock_position() query get_open_positions()
+    before placing a close order in live mode. If the user manually closed some or all
+    contracts/shares, the engine adjusts qty so the order matches the remaining position.
+    """
+
+    _REPLAY_PATH = "alpha_tech_tracker.op_momentum_strategy.position_monitor.is_replay_mode"
+    _PLACE_OPTION_PATH = "alpha_tech_tracker.op_momentum_strategy.position_monitor.place_option_order_in_tranches"
+    _PLACE_STOCK_PATH = "alpha_tech_tracker.op_momentum_strategy.position_monitor.place_stock_order"
+    _NOTIFY_PATH = "alpha_tech_tracker.op_momentum_strategy.position_monitor._notify"
+
+    def _make_live_monitor(self, contracts=6):
+        client = _make_alpaca_client()
+        client.get_option_quote_by_occ.return_value = {"bid": 8.50, "ask": 9.50, "mid": 9.00}
+        df = _build_history_df([116.0], ma20=118.0, ma50=118.0, ma200=120.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine, mock_trade_execution=False)
+        pos = _make_active_position(signal="BEARISH", contracts=contracts)
+        pos.entry_fill_price = _D("8.00")
+        return monitor, client, engine, pos
+
+    def test_option_full_manual_close_skips_order(self):
+        monitor, client, engine, pos = self._make_live_monitor()
+        client.get_open_positions.return_value = {}
+        with \
+                patch(self._REPLAY_PATH, return_value=False), \
+                patch(self._PLACE_OPTION_PATH) as place_order, \
+                patch(self._NOTIFY_PATH):
+            monitor._close_option_position(pos, "hard_stop")
+
+        place_order.assert_not_called()
+        assert pos.close_order_failed is False
+
+    def test_option_full_manual_close_sets_fill_price_from_mid(self):
+        monitor, client, engine, pos = self._make_live_monitor()
+        client.get_open_positions.return_value = {}
+        client.get_option_quote_by_occ.return_value = {"bid": 8.50, "ask": 9.50, "mid": 9.00}
+        with \
+                patch(self._REPLAY_PATH, return_value=False), \
+                patch(self._PLACE_OPTION_PATH), \
+                patch(self._NOTIFY_PATH):
+            monitor._close_option_position(pos, "hard_stop")
+
+        assert pos.exit_fill_price == _D("9.00")
+
+    def test_option_partial_manual_close_adjusts_contracts_before_order(self):
+        monitor, client, engine, pos = self._make_live_monitor(contracts=6)
+        client.get_open_positions.return_value = {pos.option_symbol: {"qty": 4.0}}
+        with \
+                patch(self._REPLAY_PATH, return_value=False), \
+                patch(self._PLACE_OPTION_PATH, return_value=({"order_id": "x"}, 4)) as place_order, \
+                patch(self._NOTIFY_PATH):
+            monitor._close_option_position(pos, "trailing_stop_ma20")
+
+        _, kwargs = place_order.call_args
+        assert kwargs["contracts"] == 4
+
+    def test_option_no_adjustment_when_broker_qty_matches_engine(self):
+        monitor, client, engine, pos = self._make_live_monitor(contracts=6)
+        client.get_open_positions.return_value = {pos.option_symbol: {"qty": 6.0}}
+        with \
+                patch(self._REPLAY_PATH, return_value=False), \
+                patch(self._PLACE_OPTION_PATH, return_value=({"order_id": "x"}, 6)) as place_order, \
+                patch(self._NOTIFY_PATH):
+            monitor._close_option_position(pos, "hard_stop")
+
+        _, kwargs = place_order.call_args
+        assert kwargs["contracts"] == 6
+
+    def test_option_broker_fetch_failure_proceeds_with_engine_qty(self):
+        monitor, client, engine, pos = self._make_live_monitor(contracts=6)
+        client.get_open_positions.side_effect = RuntimeError("network error")
+        with \
+                patch(self._REPLAY_PATH, return_value=False), \
+                patch(self._PLACE_OPTION_PATH, return_value=({"order_id": "x"}, 6)) as place_order, \
+                patch(self._NOTIFY_PATH):
+            monitor._close_option_position(pos, "hard_stop")
+
+        _, kwargs = place_order.call_args
+        assert kwargs["contracts"] == 6
+
+    def test_option_sync_skipped_in_mock_mode(self):
+        client = _make_alpaca_client()
+        df = _build_history_df([116.0], ma20=118.0, ma50=118.0, ma200=120.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine, mock_trade_execution=True)
+        pos = _make_active_position(signal="BEARISH", contracts=6)
+        pos.simulated_entry_mid = _D("8.00")
+        with \
+                patch(self._REPLAY_PATH, return_value=False), \
+                patch(self._NOTIFY_PATH):
+            monitor._close_option_position(pos, "hard_stop")
+
+        client.get_open_positions.assert_not_called()
+
+    def test_stock_full_manual_close_skips_order(self):
+        client = _make_alpaca_client()
+        df = _build_history_df([114.0], ma20=118.0, ma50=118.0, ma200=120.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine, mock_trade_execution=False)
+        pos = _make_stock_position(signal="BEARISH", shares=104)
+        client.get_open_positions.return_value = {}
+        with \
+                patch(self._REPLAY_PATH, return_value=False), \
+                patch(self._NOTIFY_PATH):
+            monitor._close_stock_position(pos, "trailing_stop_ma20")
+
+        client.place_stock_order.assert_not_called()
+        assert pos.close_order_failed is False
+
+    def test_stock_partial_manual_close_adjusts_shares_before_order(self):
+        client = _make_alpaca_client()
+        df = _build_history_df([114.0], ma20=118.0, ma50=118.0, ma200=120.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine, mock_trade_execution=False)
+        pos = _make_stock_position(signal="BEARISH", shares=104)
+        # Broker shows 50 shares remain (short position, negative qty)
+        client.get_open_positions.return_value = {"NVDA": {"qty": -50.0}}
+        with \
+                patch(self._REPLAY_PATH, return_value=False), \
+                patch(self._PLACE_STOCK_PATH, return_value={"order_id": "stk-order"}) as place_order, \
+                patch(self._NOTIFY_PATH):
+            monitor._close_stock_position(pos, "trailing_stop_ma20")
+
+        assert pos.shares == 50
+        _, kwargs = place_order.call_args
+        assert kwargs["shares"] == 50
+
+
+class TestSyncOpenPositionQtys:
+    """
+    _sync_open_position_qtys() polls the broker every 5 min and corrects pos.contracts /
+    pos.shares when the user manually partially closed a position outside the engine.
+    """
+
+    def _make_monitor_with_open_option(self, contracts=6):
+        client = _make_alpaca_client()
+        df = _build_history_df([116.0], ma20=118.0, ma50=118.0, ma200=120.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine)
+        pos = _make_active_position(signal="BEARISH", contracts=contracts)
+        monitor._positions.append(pos)
+        return monitor, client, pos
+
+    def test_no_broker_call_when_no_open_positions(self):
+        client = _make_alpaca_client()
+        df = _build_history_df([116.0], ma20=118.0, ma50=118.0, ma200=120.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine)
+        pos = _make_active_position(signal="BEARISH")
+        pos.is_closed = True
+        monitor._positions.append(pos)
+
+        monitor._sync_open_position_qtys()
+
+        client.get_open_positions.assert_not_called()
+
+    def test_partial_manual_close_updates_contracts(self):
+        monitor, client, pos = self._make_monitor_with_open_option(contracts=6)
+        client.get_open_positions.return_value = {pos.option_symbol: {"qty": 4.0}}
+
+        with patch("alpha_tech_tracker.op_momentum_strategy.position_monitor._notify"):
+            monitor._sync_open_position_qtys()
+
+        assert pos.contracts == 4
+
+    def test_sends_notify_on_partial_close(self):
+        monitor, client, pos = self._make_monitor_with_open_option(contracts=6)
+        client.get_open_positions.return_value = {pos.option_symbol: {"qty": 4.0}}
+
+        with patch(
+            "alpha_tech_tracker.op_momentum_strategy.position_monitor._notify"
+        ) as mock_notify:
+            monitor._sync_open_position_qtys()
+
+        assert mock_notify.call_count == 1
+        assert "QTY SYNC" in mock_notify.call_args[0][0]
+
+    def test_no_change_when_broker_qty_matches_engine(self):
+        monitor, client, pos = self._make_monitor_with_open_option(contracts=6)
+        client.get_open_positions.return_value = {pos.option_symbol: {"qty": 6.0}}
+
+        with patch("alpha_tech_tracker.op_momentum_strategy.position_monitor._notify") as mock_notify:
+            monitor._sync_open_position_qtys()
+
+        assert pos.contracts == 6
+        mock_notify.assert_not_called()
+
+    def test_position_absent_from_broker_leaves_contracts_unchanged(self):
+        monitor, client, pos = self._make_monitor_with_open_option(contracts=6)
+        client.get_open_positions.return_value = {}
+
+        monitor._sync_open_position_qtys()
+
+        assert pos.contracts == 6
+
+    def test_already_closed_positions_are_skipped(self):
+        monitor, client, pos = self._make_monitor_with_open_option(contracts=6)
+        pos.is_closed = True
+        client.get_open_positions.return_value = {pos.option_symbol: {"qty": 2.0}}
+
+        monitor._sync_open_position_qtys()
+
+        assert pos.contracts == 6
+
+    def test_stock_partial_close_updates_shares(self):
+        client = _make_alpaca_client()
+        df = _build_history_df([114.0], ma20=118.0, ma50=118.0, ma200=120.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine)
+        pos = _make_stock_position(signal="BEARISH", shares=104)
+        monitor._positions.append(pos)
+        client.get_open_positions.return_value = {"NVDA": {"qty": -50.0}}
+
+        with patch("alpha_tech_tracker.op_momentum_strategy.position_monitor._notify"):
+            monitor._sync_open_position_qtys()
+
+        assert pos.shares == 50
+
+    def test_broker_fetch_failure_leaves_positions_unchanged(self):
+        monitor, client, pos = self._make_monitor_with_open_option(contracts=6)
+        client.get_open_positions.side_effect = RuntimeError("network error")
+
+        monitor._sync_open_position_qtys()
+
+        assert pos.contracts == 6
