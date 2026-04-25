@@ -1,4 +1,6 @@
 import pytest
+from datetime import datetime, date
+from unittest.mock import MagicMock, patch
 
 from alpha_tech_tracker.trade_api.alpaca_client.client import AlpacaAPIClient
 
@@ -194,3 +196,101 @@ def test_cancel_order():
     assert cancel_result is not None
     assert cancel_result["order_id"] == order_id
     assert cancel_result["status"] == "cancelled"
+
+
+class TestGetFilledOrders:
+    def _make_mock_order(self, order_id, side, filled_avg_price, filled_qty, filled_at):
+        o = MagicMock()
+        o.id = order_id
+        o.side.value = side
+        o.filled_avg_price = filled_avg_price
+        o.filled_qty = filled_qty
+        o.filled_at = filled_at
+        return o
+
+    def test_returns_filled_orders_with_correct_fields(self):
+        client = AlpacaAPIClient.__new__(AlpacaAPIClient)
+        client._trading_client = MagicMock()
+        client._trading_client.get_orders.return_value = [
+            self._make_mock_order("abc123", "sell", 63.4, 4.0, datetime(2026, 4, 13, 19, 53, 14)),
+            self._make_mock_order("def456", "buy", 65.75, 1.0, datetime(2026, 4, 13, 19, 52, 15)),
+        ]
+
+        result = client.get_filled_orders("META260417C00570000")
+
+        assert len(result) == 2
+        assert result[0]["order_id"] == "abc123"
+        assert result[0]["filled_avg_price"] == 63.4
+        assert result[0]["filled_qty"] == 4.0
+        assert result[0]["side"] == "sell"
+
+    def test_excludes_orders_with_no_fill_price(self):
+        client = AlpacaAPIClient.__new__(AlpacaAPIClient)
+        client._trading_client = MagicMock()
+        client._trading_client.get_orders.return_value = [
+            self._make_mock_order("abc123", "sell", 63.4, 4.0, datetime(2026, 4, 13, 19, 53, 14)),
+            self._make_mock_order("canceled1", "buy", None, 0.0, None),
+        ]
+
+        result = client.get_filled_orders("META260417C00570000")
+
+        assert len(result) == 1
+        assert result[0]["order_id"] == "abc123"
+
+    def test_uses_today_midnight_as_after_param(self):
+        client = AlpacaAPIClient.__new__(AlpacaAPIClient)
+        client._trading_client = MagicMock()
+        client._trading_client.get_orders.return_value = []
+        today = date(2026, 4, 25)
+
+        with patch("alpha_tech_tracker.trade_api.alpaca_client.client.date") as mock_date:
+            mock_date.today.return_value = today
+            client.get_filled_orders("META260417C00570000")
+
+        call_kwargs = client._trading_client.get_orders.call_args[0][0]
+        assert call_kwargs.after.date() == today
+
+    def test_uses_limit_500_regardless_of_limit_param(self):
+        client = AlpacaAPIClient.__new__(AlpacaAPIClient)
+        client._trading_client = MagicMock()
+        client._trading_client.get_orders.return_value = []
+
+        client.get_filled_orders("META260417C00570000", limit=3)
+
+        call_kwargs = client._trading_client.get_orders.call_args[0][0]
+        assert call_kwargs.limit == 500
+
+    def test_returns_empty_list_when_no_fills_today(self):
+        client = AlpacaAPIClient.__new__(AlpacaAPIClient)
+        client._trading_client = MagicMock()
+        client._trading_client.get_orders.return_value = []
+
+        result = client.get_filled_orders("NVDA260417C00800000")
+
+        assert result == []
+
+    def test_passes_symbol_as_list(self):
+        client = AlpacaAPIClient.__new__(AlpacaAPIClient)
+        client._trading_client = MagicMock()
+        client._trading_client.get_orders.return_value = []
+
+        client.get_filled_orders("META260417C00570000")
+
+        call_kwargs = client._trading_client.get_orders.call_args[0][0]
+        assert call_kwargs.symbols == ["META260417C00570000"]
+
+    @pytest.mark.alpaca
+    @pytest.mark.credentials
+    def test_live_api_returns_list_and_accepts_today_scope(self):
+        client = AlpacaAPIClient(is_paper_trading=True)
+
+        result = client.get_filled_orders("META260417C00570000")
+
+        assert isinstance(result, list)
+        for r in result:
+            assert "order_id" in r
+            assert "filled_avg_price" in r
+            assert "filled_qty" in r
+            assert "side" in r
+            assert "filled_at" in r
+            assert r["filled_avg_price"] is not None

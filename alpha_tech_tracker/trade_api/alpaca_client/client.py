@@ -3,6 +3,7 @@ import logging
 import os
 import random
 import string
+from datetime import datetime, date
 
 from alpaca.trading.client import TradingClient
 from alpaca.data.historical import StockHistoricalDataClient, OptionHistoricalDataClient
@@ -421,9 +422,17 @@ class AlpacaAPIClient(ExecutionClient):
         return {p.symbol: {"qty": float(p.qty or 0)} for p in positions}
 
     def get_filled_orders(self, symbol: str, limit: int = 5) -> list:
+        import pytz
         from alpaca.trading.requests import GetOrdersRequest
         from alpaca.trading.enums import QueryOrderStatus
-        request = GetOrdersRequest(symbols=[symbol], status=QueryOrderStatus.CLOSED, limit=limit)
+        ET = pytz.timezone("America/New_York")
+        today_start = ET.localize(datetime.combine(date.today(), datetime.min.time()))
+        request = GetOrdersRequest(
+            symbols=[symbol],
+            status=QueryOrderStatus.CLOSED,
+            after=today_start,
+            limit=500,
+        )
         orders = self._trading_client.get_orders(request)
         result = []
         for o in orders:
