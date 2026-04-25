@@ -756,6 +756,9 @@ class TradeStationAPIClient(ExecutionClient):
             result[occ] = {"qty": qty}
         return result
 
+    def get_filled_orders(self, symbol: str, limit: int = 5) -> list:
+        return []
+
     def cancel_order(self, order_id: str) -> dict:
         response = self._session.delete(
             self._v3_base_url + f"/orderexecution/orders/{order_id}"

@@ -420,6 +420,24 @@ class AlpacaAPIClient(ExecutionClient):
         positions = self._trading_client.get_all_positions()
         return {p.symbol: {"qty": float(p.qty or 0)} for p in positions}
 
+    def get_filled_orders(self, symbol: str, limit: int = 5) -> list:
+        from alpaca.trading.requests import GetOrdersRequest
+        from alpaca.trading.enums import QueryOrderStatus
+        request = GetOrdersRequest(symbols=[symbol], status=QueryOrderStatus.CLOSED, limit=limit)
+        orders = self._trading_client.get_orders(request)
+        result = []
+        for o in orders:
+            if o.filled_avg_price is None:
+                continue
+            result.append({
+                "order_id": str(o.id),
+                "filled_avg_price": float(o.filled_avg_price),
+                "filled_qty": float(o.filled_qty) if o.filled_qty else 0.0,
+                "side": o.side.value,
+                "filled_at": o.filled_at,
+            })
+        return result
+
     def cancel_order(self, order_id):
         try:
             self._trading_client.cancel_order_by_id(order_id)

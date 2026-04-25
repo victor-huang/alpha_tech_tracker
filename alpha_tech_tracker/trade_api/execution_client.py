@@ -146,3 +146,13 @@ class ExecutionClient(ABC):
         Each value: {"qty": float}
         Returns empty dict on error.
         """
+
+    @abstractmethod
+    def get_filled_orders(self, symbol: str, limit: int = 5) -> list:
+        """
+        Return recent filled orders for symbol, newest first.
+        Options use OCC format; stocks use the ticker.
+        Each item: {"order_id": str, "filled_avg_price": float,
+                    "filled_qty": float, "side": str, "filled_at": datetime}
+        Returns [] on error.
+        """

@@ -2236,6 +2236,103 @@ class TestCloseRetryLimit:
         assert len(retry_limit_alerts) == 1
 
 
+class TestFetchManualCloseFillPrice:
+    """
+    _fetch_manual_close_fill_price() returns the actual fill price of a manual close
+    from order history, falling back to the option mid when no matching order is found.
+    """
+
+    def _make_monitor_and_pos(self, entry_time=None):
+        client = _make_alpaca_client()
+        client.get_option_quote_by_occ.return_value = {"bid": 8.50, "ask": 9.50, "mid": 9.00}
+        df = _build_history_df([116.0], ma20=118.0, ma50=118.0, ma200=120.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine)
+        pos = _make_active_position(signal="BEARISH", contracts=6)
+        if entry_time is not None:
+            pos.entry_time = entry_time
+        return monitor, client, pos
+
+    def test_returns_filled_order_price_when_sell_order_found(self):
+        monitor, client, pos = self._make_monitor_and_pos()
+        client.get_filled_orders.return_value = [
+            {"order_id": "o1", "side": "sell", "filled_avg_price": 9.80,
+             "filled_qty": 6.0, "filled_at": None},
+        ]
+
+        price = monitor._fetch_manual_close_fill_price(pos)
+
+        assert price == _D("9.80")
+
+    def test_skips_buy_orders_for_bearish_option(self):
+        monitor, client, pos = self._make_monitor_and_pos()
+        client.get_filled_orders.return_value = [
+            {"order_id": "o1", "side": "buy", "filled_avg_price": 9.80,
+             "filled_qty": 6.0, "filled_at": None},
+        ]
+
+        price = monitor._fetch_manual_close_fill_price(pos)
+
+        # No sell order found → falls back to mid
+        assert price == _D("9.00")
+
+    def test_skips_orders_filled_before_entry_time(self):
+        import pytz
+        from datetime import datetime
+        ET = pytz.timezone("America/New_York")
+        entry = ET.localize(datetime(2026, 4, 24, 9, 47))
+        before_entry = ET.localize(datetime(2026, 4, 24, 9, 30))
+        monitor, client, pos = self._make_monitor_and_pos(entry_time=entry)
+        client.get_filled_orders.return_value = [
+            {"order_id": "o1", "side": "sell", "filled_avg_price": 7.00,
+             "filled_qty": 6.0, "filled_at": before_entry},
+        ]
+
+        price = monitor._fetch_manual_close_fill_price(pos)
+
+        assert price == _D("9.00")  # fell back to mid
+
+    def test_falls_back_to_mid_when_no_matching_order(self):
+        monitor, client, pos = self._make_monitor_and_pos()
+        client.get_filled_orders.return_value = []
+
+        price = monitor._fetch_manual_close_fill_price(pos)
+
+        assert price == _D("9.00")
+
+    def test_falls_back_to_mid_when_order_history_fetch_fails(self):
+        monitor, client, pos = self._make_monitor_and_pos()
+        client.get_filled_orders.side_effect = RuntimeError("API error")
+
+        price = monitor._fetch_manual_close_fill_price(pos)
+
+        assert price == _D("9.00")
+
+    def test_returns_none_when_both_order_history_and_mid_unavailable(self):
+        monitor, client, pos = self._make_monitor_and_pos()
+        client.get_filled_orders.return_value = []
+        client.get_option_quote_by_occ.side_effect = RuntimeError("no quote")
+
+        price = monitor._fetch_manual_close_fill_price(pos)
+
+        assert price is None
+
+    def test_stock_bearish_close_looks_for_buy_side_order(self):
+        client = _make_alpaca_client()
+        df = _build_history_df([114.0], ma20=118.0, ma50=118.0, ma200=120.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine)
+        pos = _make_stock_position(signal="BEARISH", shares=104)
+        client.get_filled_orders.return_value = [
+            {"order_id": "o1", "side": "buy", "filled_avg_price": 109.50,
+             "filled_qty": 104.0, "filled_at": None},
+        ]
+
+        price = monitor._fetch_manual_close_fill_price(pos)
+
+        assert price == _D("109.50")
+
+
 class TestReconcileStuckPositions:
     """
     _reconcile_stuck_positions() checks the broker for open positions and resolves
@@ -2710,9 +2807,25 @@ class TestPreCloseBrokerQtySync:
         place_order.assert_not_called()
         assert pos.close_order_failed is False
 
-    def test_option_full_manual_close_sets_fill_price_from_mid(self):
+    def test_option_full_manual_close_sets_fill_price_from_order_history(self):
         monitor, client, engine, pos = self._make_live_monitor()
         client.get_open_positions.return_value = {}
+        client.get_filled_orders.return_value = [
+            {"order_id": "o1", "side": "sell", "filled_avg_price": 9.75,
+             "filled_qty": 6.0, "filled_at": None},
+        ]
+        with \
+                patch(self._REPLAY_PATH, return_value=False), \
+                patch(self._PLACE_OPTION_PATH), \
+                patch(self._NOTIFY_PATH):
+            monitor._close_option_position(pos, "hard_stop")
+
+        assert pos.exit_fill_price == _D("9.75")
+
+    def test_option_full_manual_close_falls_back_to_mid_when_no_order_history(self):
+        monitor, client, engine, pos = self._make_live_monitor()
+        client.get_open_positions.return_value = {}
+        client.get_filled_orders.return_value = []
         client.get_option_quote_by_occ.return_value = {"bid": 8.50, "ask": 9.50, "mid": 9.00}
         with \
                 patch(self._REPLAY_PATH, return_value=False), \

@@ -714,6 +714,9 @@ class EtradeAPIClient(ExecutionClient):
                     result[symbol] = {"qty": qty}
         return result
 
+    def get_filled_orders(self, symbol: str, limit: int = 5) -> list:
+        return []
+
     # ------------------------------------------------------------------
     # Legacy methods (kept for backward compatibility)
     # ------------------------------------------------------------------

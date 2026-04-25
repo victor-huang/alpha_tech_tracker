@@ -751,9 +751,9 @@ class PositionMonitor:
                         "PRE-CLOSE SYNC %s: not found at broker — already fully closed manually",
                         pos.option_symbol,
                     )
-                    mid_est = self._fetch_option_mid(pos.option_symbol)
-                    if mid_est is not None:
-                        pos.exit_fill_price = mid_est
+                    fill_est = self._fetch_manual_close_fill_price(pos)
+                    if fill_est is not None:
+                        pos.exit_fill_price = fill_est
                     pos.close_order_failed = False
                     _notify(
                         f"MANUAL CLOSE DETECTED {_fmt_option(pos.option_symbol)} x{pos.contracts}"
@@ -1038,16 +1038,16 @@ class PositionMonitor:
                 continue
 
             # Position is no longer open at the broker — manually closed.
-            mid = self._fetch_option_mid(pos.option_symbol) if pos.trade_type != "stock" else None
+            fill_price = self._fetch_manual_close_fill_price(pos)
             with self._lock:
-                if mid is not None:
-                    pos.exit_fill_price = mid
+                if fill_price is not None:
+                    pos.exit_fill_price = fill_price
                 pos.close_order_failed = False
 
-            if mid is not None:
+            if fill_price is not None:
                 msg = (
                     f"RECONCILED {pos.option_symbol} x{pos.contracts}"
-                    f" — manually closed at broker, exit price estimated at mid ${float(mid):.2f}"
+                    f" — manually closed at broker, exit price ${float(fill_price):.2f}"
                 )
             else:
                 msg = (
@@ -1066,6 +1066,37 @@ class PositionMonitor:
             return _D(str(q["mid"]))
         except Exception:
             return None
+
+    def _fetch_manual_close_fill_price(self, pos: ActivePosition) -> Optional[object]:
+        """Return the actual fill price of a manually placed close order.
+
+        Queries order history for the most recent filled sell (or buy-to-cover for stocks)
+        on the position's instrument that was submitted after the engine's entry time.
+        Falls back to the current option mid when no matching order is found.
+        """
+        symbol = pos.option_symbol if pos.trade_type != "stock" else pos.ticker
+        close_side = "buy" if (pos.trade_type == "stock" and pos.signal == "BEARISH") else "sell"
+        try:
+            filled_orders = self._client.get_filled_orders(symbol, limit=10)
+            for order in filled_orders:
+                if order["side"] != close_side:
+                    continue
+                if pos.entry_time is not None and order.get("filled_at") is not None:
+                    filled_at = order["filled_at"]
+                    if hasattr(filled_at, "tzinfo") and filled_at.tzinfo is None:
+                        filled_at = ET.localize(filled_at)
+                    if filled_at <= pos.entry_time:
+                        continue
+                price = _D(str(order["filled_avg_price"]))
+                logger.info(
+                    "MANUAL CLOSE FILL %s: found filled %s order %s @ %s (filled_at=%s)",
+                    symbol, close_side, order["order_id"], price, order.get("filled_at"),
+                )
+                return price
+        except Exception:
+            logger.warning("Could not fetch order history for %s", symbol, exc_info=True)
+
+        return self._fetch_option_mid(symbol) if pos.trade_type != "stock" else None
 
     def _poll_exit_fill_price(self, pos: ActivePosition, max_attempts: int = 3, interval: float = 5.0):
         """Poll order status after placing an exit order to set pos.exit_fill_price.
