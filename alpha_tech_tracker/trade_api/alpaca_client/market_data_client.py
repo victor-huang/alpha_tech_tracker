@@ -88,8 +88,12 @@ class AlpacaMarketDataClient(MarketDataClient):
         try:
             bars = hist_client.get_stock_bars(request)
             all_df = bars.df
-            # Alpaca returns flat DatetimeIndex when only one ticker is requested.
-            if not isinstance(all_df.index, pd.MultiIndex) and len(tickers) == 1:
+            if not isinstance(all_df.index, pd.MultiIndex):
+                if all_df.empty:
+                    # No data for any ticker in the batch.
+                    empty_cols = ["Open", "High", "Low", "Close", "Volume"]
+                    return {t: pd.DataFrame(columns=empty_cols) for t in tickers}
+                # Single-ticker batch: Alpaca returns a flat DatetimeIndex.
                 all_df = pd.concat({tickers[0]: all_df}, names=["symbol", "timestamp"])
             return _alpaca_bars_to_df_dict(all_df, tickers)
         except Exception:
