@@ -456,6 +456,8 @@ def run_selector_backtest(
     reversal_max_bars_held: int = 3,
     min_or_range: float = 0.0,
     min_or_range_windows: list = None,
+    min_ma200_distance: float = 0.0,
+    min_ma200_distance_windows: list = None,
     min_score: float = 0.0,
     min_ev: float = 0.0,
     or_bar_lookback: int = 3,
@@ -677,6 +679,15 @@ def run_selector_backtest(
                     min_or_range_windows is None or label in min_or_range_windows
                 ) and sig["or_range_pct"] < min_or_range:
                     continue
+                if min_ma200_distance > 0 and (
+                    min_ma200_distance_windows is None or label in min_ma200_distance_windows
+                ):
+                    ma200 = row.get("ma200", float("nan"))
+                    entry_price = row.get("entry_price", 0.0)
+                    if not pd.isna(ma200) and ma200 > 0:
+                        pct_above_ma200 = (entry_price - ma200) / ma200 * 100
+                        if pct_above_ma200 < min_ma200_distance:
+                            continue
                 if or_bar_lookback > 0:
                     day_df = bars_by_date.get(ticker, {}).get(d)
                     if day_df is not None:
@@ -1797,6 +1808,21 @@ def _parse_args():
         help="Only apply --min-or-range to these window labels (e.g. --min-or-range-windows M1 M2). Default: apply to all windows.",
     )
     parser.add_argument(
+        "--min-ma200-distance",
+        type=float,
+        default=0.0,
+        dest="min_ma200_distance",
+        help="Skip ticker if (entry - MA200) / MA200 %% < threshold. Filters entries too close to or below the 200-period MA. Default: 0.0 (disabled).",
+    )
+    parser.add_argument(
+        "--min-ma200-distance-windows",
+        nargs="+",
+        default=None,
+        dest="min_ma200_distance_windows",
+        metavar="LABEL",
+        help="Only apply --min-ma200-distance to these window labels (e.g. --min-ma200-distance-windows A1 A2). Default: apply to all windows.",
+    )
+    parser.add_argument(
         "--min-score",
         type=float,
         default=0.0,
@@ -2000,6 +2026,16 @@ if __name__ == "__main__":
     else:
         min_or_range_desc = "disabled"
     print(f"  Min OR range : {min_or_range_desc}")
+    if args.min_ma200_distance > 0:
+        ma200_wins_str = (
+            ",".join(args.min_ma200_distance_windows)
+            if args.min_ma200_distance_windows
+            else "all windows"
+        )
+        min_ma200_desc = f"{args.min_ma200_distance:.2f}% (windows: {ma200_wins_str})"
+    else:
+        min_ma200_desc = "disabled"
+    print(f"  Min MA200 dist: {min_ma200_desc}")
     print(
         f"  Min score    : {f'{args.min_score:.3f}' if args.min_score > 0 else 'disabled'}"
     )
@@ -2043,6 +2079,8 @@ if __name__ == "__main__":
         bullish_reentry_max_bars=args.bullish_reentry_max_bars,
         min_or_range=args.min_or_range,
         min_or_range_windows=args.min_or_range_windows,
+        min_ma200_distance=args.min_ma200_distance,
+        min_ma200_distance_windows=args.min_ma200_distance_windows,
         min_score=args.min_score,
         min_ev=args.min_ev,
         or_bar_lookback=args.or_bar_lookback,
