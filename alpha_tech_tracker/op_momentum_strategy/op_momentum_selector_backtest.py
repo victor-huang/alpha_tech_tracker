@@ -163,14 +163,13 @@ def _apply_capital_flow(
       its capital naturally flows back in (no deduction). DD P&L is applied separately
       via _apply_doubledown() and does not affect sequential window sizing.
 
-    Modelling assumption — capital recycling between windows:
-      Each window's backtest runs independently with natural exits (hard stop,
-      trailing MA, or EOD). The capital flow model assumes the prior window's
-      capital is fully returned before the next sequential window deploys.
-      In practice, if a morning trade holds to EOD it won't be available for an
-      afternoon window. Most trades exit intraday, so the gap is small, but this
-      model slightly overstates available capital for afternoon windows on days
-      where the morning trade holds to close.
+    Capital recycling between windows (timing-accurate):
+      Each sequential window's available capital is computed from what has
+      actually been returned by its drain time (OR close). Prior window trades
+      that are still running at drain time have their slot_capital deducted;
+      trades that exited before drain time contribute their cap_pnl. This
+      matches live engine behaviour and correctly handles morning trades that
+      hold past an afternoon window's start time.
 
     Mutates each trade row in-place, adding:
       - 'cap_pnl': actual dollar P&L for this trade given real capital allocation
@@ -185,13 +184,12 @@ def _apply_capital_flow(
     n_first = len(morning_split)
     window_labels = [w["label"] for w in windows]
 
-    # Pre-compute OR close time (minutes from midnight) for each window label.
-    # Used to determine whether a DD leg has exited before each sequential window starts.
-    or_close_min: dict = {}
-    if enable_doubledown:
-        for w in windows:
-            h, m = map(int, w["opening_start"].split(":"))
-            or_close_min[w["label"]] = h * 60 + m + w["opening_bars"] * 5
+    # OR close time (minutes from midnight) = drain time for each window.
+    # Used both for DD leg lock-up detection and for sequential capital timing.
+    drain_min: dict = {}
+    for w in windows:
+        h, m = map(int, w["opening_start"].split(":"))
+        drain_min[w["label"]] = h * 60 + m + w["opening_bars"] * 5
 
     # Index trade_rows by (date, window) for fast lookup
     by_day_window = {}
@@ -249,32 +247,39 @@ def _apply_capital_flow(
                     winner = next((r for r in rows if "dd_freed_ranks" in r), None)
                     if winner is not None:
                         exit_min = (
-                            or_close_min[label] + (winner["bars_held"] + 1) * 5
+                            drain_min[label] + (winner["bars_held"] + 1) * 5
                         )
                         day_dds.append((dd_dep, exit_min))
             first_group_pnl += win_pnl
 
         # --- Sequential windows ---
-        # available is recomputed per window from base + pnl_acc - active DDs so that
-        # a DD that exits between two sequential windows is correctly recycled.
-        #
-        # Known BT/RP structural difference: first_group_pnl includes the TOTAL
-        # final P&L of all first-group (M1) positions, even those that close after
-        # the sequential window's OR open. The live engine (replay) correctly uses
-        # only realized P&L at the sequential window's drain time, plus cost basis
-        # for still-open slots. In practice the divergence is small because most M1
-        # trades close (via hard stop or trailing MA) before A1 kicks in at ~1:20 PM.
-        base = portfolio + first_group_pnl
-        pnl_acc = 0.0
+        # For each sequential window, available capital is computed from what has
+        # actually been returned by its drain time, matching live engine behaviour:
+        #   available = portfolio
+        #             + cap_pnl for each prior row that exited before this drain
+        #             - slot_capital for each prior row still running at this drain
+        # This correctly handles morning trades that hold past an afternoon window's
+        # start time — their capital is locked and unavailable until they close.
         seq_pnl = 0.0
-        for label in window_labels[n_first:]:
-            this_or_close = or_close_min.get(label, 0)
+        for i_seq, label in enumerate(window_labels[n_first:]):
+            this_drain = drain_min[label]
 
-            # Deduct capital from any DD legs still running at this window's OR close.
-            available = base + pnl_acc
+            available = portfolio
+            for prior_label in window_labels[:n_first + i_seq]:
+                prior_drain = drain_min[prior_label]
+                for row in by_day_window.get((d, prior_label), []):
+                    if row.get("skipped"):
+                        continue
+                    exit_time = prior_drain + row.get("bars_held", 0) * 5
+                    if exit_time <= this_drain:
+                        available += row.get("cap_pnl", 0.0)
+                    else:
+                        available -= row.get("slot_capital", 0.0)
+
+            # Deduct capital from any DD legs still running at this window's drain.
             if enable_doubledown:
                 for dd_dep, exit_min in day_dds:
-                    if exit_min >= this_or_close:
+                    if exit_min >= this_drain:
                         available -= dd_dep
 
             rows = by_day_window.get((d, label), [])
@@ -311,11 +316,10 @@ def _apply_capital_flow(
                     winner = next((r for r in rows if "dd_freed_ranks" in r), None)
                     if winner is not None:
                         exit_min = (
-                            or_close_min[label] + (winner["bars_held"] + 1) * 5
+                            drain_min[label] + (winner["bars_held"] + 1) * 5
                         )
                         day_dds.append((dd_dep, exit_min))
             if not skipped:
-                pnl_acc += win_pnl
                 seq_pnl += win_pnl
 
         portfolio += first_group_pnl + seq_pnl

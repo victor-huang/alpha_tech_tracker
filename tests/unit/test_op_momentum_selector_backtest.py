@@ -169,6 +169,38 @@ class TestApplyCapitalFlowSequentialWindows:
         assert rows[1]["cap_pnl"] == 0.0
         assert rows[1]["skipped"] is True
 
+    def test_locked_morning_capital_reduces_sequential_window_budget(self):
+        # W1 drain = 09:30 + 3 bars = 09:45 = 585 min
+        # W2 drain = 13:15 + 1 bar  = 13:20 = 800 min
+        # W1 row bars_held=50 → exit at 585 + 250 = 835 min (after W2 drain 800)
+        # → slot_capital is locked; W2 should get 10000 - slot_capital, not 10000 + pnl
+        row_w1 = {**_row("W1", 1, 100.0, 5.0), "bars_held": 50}
+        row_w2 = _row("W2", 1, 50.0, 1.0)
+        _apply_capital_flow(
+            [row_w1, row_w2], [_W1, _W2], 10_000, _WEIGHTS, 3,
+            morning_split=[1.0],
+        )
+
+        slot_w1 = row_w1["slot_capital"]   # 10000 * 0.5 = 5000
+        assert row_w2["window_capital"] == pytest.approx(10_000 - slot_w1)
+
+    def test_locked_capital_unlocks_for_later_sequential_window(self):
+        # W1 exit at 835 min — after W2 drain (800) but before W3 drain (905)
+        # → locked for W2, but returned (with pnl) for W3
+        # W3 drain = 15:00 + 1 bar = 15:05 = 905 min
+        row_w1 = {**_row("W1", 1, 100.0, 5.0), "bars_held": 50}
+        row_w2 = _row("W2", 1, 50.0, 1.0)
+        row_w3 = _row("W3", 1, 50.0, 0.5)
+        _apply_capital_flow(
+            [row_w1, row_w2, row_w3], [_W1, _W2, _W3], 10_000, _WEIGHTS, 3,
+            morning_split=[1.0],
+        )
+
+        # W3 should get: 10000 + W1 pnl + W2 pnl (both returned before 905 min)
+        w1_pnl = row_w1["cap_pnl"]
+        w2_pnl = row_w2["cap_pnl"]
+        assert row_w3["window_capital"] == pytest.approx(10_000 + w1_pnl + w2_pnl)
+
 
 # ---------------------------------------------------------------------------
 # _apply_capital_flow — returns skip_log
