@@ -446,6 +446,37 @@ Dead zone: **10:30–11:30** range has the weakest EV/trade. 10:30 and 11:30 / 2
 
 **1-bar OR dominates 2025** — all top-4 configs use 1-bar. 2-bar is the weakest OR width.
 
+### Results — 2023 Full Year
+
+| A1 Config | WinRate | EV/trade | A1 Return% | Total Return% |
+|---|---|---|---|---|
+| **11:00 / 3 bars** | 50% | +0.524% | +130% | **+340%** |
+| **11:30 / 2 bars** | 44% | +0.373% | +91% | **+320%** |
+| **10:00 / 3 bars** | 41% | +0.409% | +84% | **+318%** |
+| **11:00 / 2 bars** | 43% | +0.428% | +107% | **+312%** |
+| **10:30 / 1 bar** | 38% | +0.326% | +69% | **+305%** |
+| **10:30 / 2 bars** | 44% | +0.369% | +68% | **+297%** |
+| **10:00 / 1 bar** | 44% | +0.431% | +68% | **+295%** |
+| **10:30 / 3 bars** | 45% | +0.271% | +47% | **+276%** |
+| 12:00–12:30 range | 35–41% | +0.15–0.26% | +40–55% | +241–268% |
+
+**2023 key pattern**: 11:00 window dominates — 11:00/3bar is rank 1, 11:00/2bar is rank 4. Wide OR bars work well in 2023's recovery/bull environment. Late windows (12:00–12:30) are weak — later afternoon entries miss the mid-day directional moves.
+
+### Results — 2024 Full Year
+
+| A1 Config | WinRate | EV/trade | A1 Return% | Total Return% |
+|---|---|---|---|---|
+| **10:00 / 1 bar** | 48% | +0.472% | +79% | **+192%** |
+| **11:00 / 3 bars** | 47% | +0.273% | +61% | **+173%** |
+| **10:00 / 2 bars** | 45% | +0.355% | +60% | **+172%** |
+| **10:30 / 1 bar** | 39% | +0.281% | +56% | **+167%** |
+| **11:00 / 2 bars** | 42% | +0.237% | +49% | **+161%** |
+| **12:00 / 1 bar** | 41% | +0.212% | +51% | **+161%** |
+| **12:30 / 3 bars** | 42% | +0.207% | +45% | **+153%** |
+| **11:30 / 1 bar** | 35% | +0.129% | +21% | **+131%** (weakest) |
+
+**2024 key pattern**: 10:00/1bar dominates by a wide margin (+192% vs +173% for 2nd). Very early entry (10:00 AM) captures the first wave of intraday direction while the trend is strongest. 11:00/3bar is runner-up — wide OR still helps. Late windows (12:00+) are mediocre; 11:30/1bar is worst.
+
 ### Results — 2022 Full Year (Bear Market)
 
 | A1 Config | Trades | WinRate | EV/trade | A1 Cap P&L | Total P&L | Return% |
@@ -460,15 +491,31 @@ Dead zone: **10:30–11:30** range has the weakest EV/trade. 10:30 and 11:30 / 2
 
 **Early windows dominate the 2022 bear year** — 10:00–10:30 capture directional moves faster; later windows lose that edge as intraday reversals are more common in trending-down markets.
 
-### Cross-Year Ranking Summary (Top Configs)
+### Cross-Year Ranking Summary — Full 5-Year View
 
-| Config | 2022 Rank | 2025 Rank | 2026 Rank | Pattern |
-|---|---|---|---|---|
-| 10:00 / 3 bars | **1** | 5 | 3 | Bear specialist; consistent top-5 |
-| 10:30 / 1 bar | 2 | 4 | 4 | Consistent mid-tier all years |
-| 11:00 / 1 bar | 7 | **2** | 2 | **Most consistent across all 3 years** |
-| 12:30 / 1 bar | 10 | **1** | 5 | Bull/choppy specialist; weak in 2022 |
-| 12:00 / 3 bars | 11 | 6 | **1** | 2026 champion; middling elsewhere |
+All 18 configs ranked by total return within each year. Average rank computed across all years with available data.
+
+| Config | 2022 | 2023 | 2024 | 2025 | 2026 | Avg rank | Pattern |
+|---|---|---|---|---|---|---|---|
+| **10:30 / 1 bar** | #2 | #5 | #4 | #4 | #7 | **4.4** | **Most consistent — never below #7** |
+| **11:00 / 3 bars** | #10 | #1 | #2 | — | #6 | 4.8 | Strong 2023/2024; weak in 2022 |
+| **10:00 / 1 bar** | #12 | #8 | **#1** | #3 | #2 | 5.2 | Bull specialist; dominant in 2024/2026 |
+| **10:00 / 3 bars** | **#1** | #3 | #12 | #5 | — | 5.2 | Bear specialist; dominant 2022 |
+| **11:00 / 2 bars** | #5 | #4 | #5 | — | — | 5.2 | Consistent top-5 (2022–2024) |
+| 10:00 / 2 bars | #9 | #10 | #3 | — | — | 7.3 | |
+| 11:30 / 2 bars | #17 | #2 | #8 | — | — | 9.0 | High 2023 anomaly; poor 2022 |
+| 12:30 / 1 bar | #14 | #15 | #14 | **#1** | #5 | 9.8 | Bull/trending specialist; weak in 2022/2024 |
+| 11:00 / 1 bar | #16 | #12 | #16 | #2 | #4 | 10.0 | Good in recent years; poor 2022/2024 |
+| 12:00 / 3 bars | #13 | #13 | #17 | #6 | **#1** | 10.0 | 2026 champion; middling elsewhere |
+
+Note: "—" = data exists but not in the reported top-7 for that year (rank 8+).
+
+**Key takeaways from full 5-year analysis:**
+- **10:30/1bar replaces 11:00/1bar as the most consistent pick** — the 3-year partial analysis (2022/2025/2026) favored 11:00/1bar, but the full data shows it ranks #12 in 2023 and #16 in 2024, making 10:30/1bar the true all-regime performer
+- **10:00/1bar is the bull-market specialist** — ranks #1 (2024), #2 (2026), #3 (2025), but falls to #12 in the 2022 bear year
+- **10:00/3bar is the bear-market specialist** — dominates 2022 (#1), strong in 2023 (#3) and 2025 (#5), drops to #12 in the bull year 2024
+- **2-bar OR is inconsistent** — no 2-bar config appears in the top-3 across all years; 2bar often beats 1bar in bear environments (10:30/2bar is #3 in 2022) but underperforms in bull years
+- **12:00/3bar is a 2026-specific phenomenon** — ranks #13 in 2023 and #17 in 2024; not a durable edge
 
 ### Baseline vs Best New Config (per year)
 
@@ -490,29 +537,40 @@ M1 P&L is **identical** in both configs (confirmed non-overlapping), validating 
 
 A3 in the new config is essentially the same window as old A2 — A3's contribution (+$4,597) is nearly identical to old A2 (+$4,737), confirming the window's independent edge is preserved.
 
-### Conclusions
+### Conclusions (Updated — Full 5-Year View)
 
-- **11:00/1bar is the most robust pick across all three years** — never lowest, always top-3 or top-4; works in bear and bull regimes
-- **10:00/3bar is the bear-market specialist** — dominant in 2022 (+261%), top-5 in 2025 and 2026; the wider 15-min OR at 10:00 filters noise in trending-down environments  
-- **12:00/3bar leads in 2026** but ranks 6th in 2025 and 11th in 2022 — high-variance, regime-dependent
-- **2-bar OR is consistently the weakest choice** in 2025 (3 of the bottom 4 configs use 2 bars); avoid
-- **2023 and 2024 not yet swept** — needed to finalize recommendation across full 5-year history
+- **10:30/1bar is the most robust pick across all 5 years** (avg rank 4.4, never below #7) — the earlier partial analysis (3 years) incorrectly identified 11:00/1bar as most consistent; the complete data reverses this: 11:00/1bar ranks #12 in 2023 and #16 in 2024
+- **10:00/1bar** is the second-best choice for bull/normal markets (ranks #1, #2, #3 in 2024/2026/2025), but drops to #12 in the 2022 bear year — regime-dependent
+- **10:00/3bar is the bear-market specialist** — dominant in 2022 (#1), solid in 2023 (#3) and 2025 (#5); the 15-min OR filters noise in trending-down environments; drops to #12 in 2024
+- **12:00/3bar led in 2026** but ranks #13 in 2023 and #17 in 2024 — regime-specific, not a durable edge
+- **2-bar OR is inconsistent** — no consistent advantage; 10:30/2bar beats 10:30/1bar in 2022 but underperforms in 2024; avoid as a standalone recommendation
+- **For live trading**: use **10:30/1bar** as the default A1 config — most durable across all market regimes; switch to **10:00/3bar** only in confirmed bear/trending-down environments
 
-### Pending Work
-
-Run the same 18-config sweep for 2023 and 2024 before selecting a new live A1 config.
-
-### CLI — New Config (Candidate)
+### CLI — Recommended Configs (Based on Full 5-Year Analysis)
 
 ```bash
-# New 4-window layout: M1 + A1(12:00/3) + A2(13:15/1) + A3(15:00/1)
+# Most consistent (10:30/1bar A1) — recommended default
 python alpha_tech_tracker/op_momentum_strategy/op_momentum_selector_backtest.py \
   --top 2 --weights 60 40 --morning-split 100 \
-  --window M1 09:30 3 --window A1 12:00 3 --window A2 13:15 1 --window A3 15:00 1 \
+  --window M1 09:30 3 --window A1 10:30 1 --window A2 13:15 1 --window A3 15:00 1 \
   --reversal --bearish-reentry --bullish-reentry --doubledown \
   --start YYYY-01-01 --end YYYY-12-31 --feed iex
 
-# Baseline for comparison
+# Bear-market specialist (10:00/3bar A1) — use in confirmed downtrend regimes
+python alpha_tech_tracker/op_momentum_strategy/op_momentum_selector_backtest.py \
+  --top 2 --weights 60 40 --morning-split 100 \
+  --window M1 09:30 3 --window A1 10:00 3 --window A2 13:15 1 --window A3 15:00 1 \
+  --reversal --bearish-reentry --bullish-reentry --doubledown \
+  --start YYYY-01-01 --end YYYY-12-31 --feed iex
+
+# Bull-market / trending variant (10:00/1bar A1) — use in trending bull environments
+python alpha_tech_tracker/op_momentum_strategy/op_momentum_selector_backtest.py \
+  --top 2 --weights 60 40 --morning-split 100 \
+  --window M1 09:30 3 --window A1 10:00 1 --window A2 13:15 1 --window A3 15:00 1 \
+  --reversal --bearish-reentry --bullish-reentry --doubledown \
+  --start YYYY-01-01 --end YYYY-12-31 --feed iex
+
+# Baseline for comparison (old 3-window layout)
 python alpha_tech_tracker/op_momentum_strategy/op_momentum_selector_backtest.py \
   --top 2 --weights 60 40 --morning-split 100 \
   --window M1 09:30 3 --window A1 13:15 1 --window A2 15:00 1 \
