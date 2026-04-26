@@ -895,3 +895,88 @@ Full analysis moved to [`engine_configuration_weakness_hunt.md`](engine_configur
 
 **Summary:** Three intraday QQQ failure modes drive all-loss weeks: (A) macro-micro contradiction — QQQ's 9:45 bar opposes the individual stock signal direction; (B) morning mean-reversion trap — OR closes at an extreme but QQQ reverses within 1–2 bars; (C) low-volume flat OR — OR range collapses below 0.30% with no directional information. BRU amplifies both Type A and Type B by re-entering into the same reversal that caused the primary hard stop. When QQQ macro-micro contradiction rate hits 40–50% in a week, losses are near-certain.
 
+---
+
+## Finding 17 — Double-Down Stop Mechanism and Gate Sweep (2021–2026)
+
+**Date:** 2026-04-25
+**Config:** M1(09:30/3bar) + A1(13:15/1bar) + A2(15:00/1bar), top-2, weights 60/40, R+BRE+BUE+DD(start=+5min), feed=IEX, no-compound, 17-ticker V3 pool
+
+### Background
+
+The double-down (DD) add-on leg previously used a **break-even stop** — `pnl_pct = max(0, raw_pct)`. This clamped all adverse exits to exactly 0%, which had two side-effects:
+
+1. DDs that went against the position showed as 0% P&L and were invisible in the trade log (`dd_cap_pnl == 0` filtered them from display).
+2. It masked the true DD win rate — in reality roughly half of all DDs exit adversely.
+
+The actual count of DD opportunities per year (2021–2025) with the break-even stop ranged from 13 (2026 YTD) to 68 (2021 full year).
+
+### Change 1 — Replace Break-Even Stop with 80% Bar-Range Stop
+
+**New rule:** at DD check time (OR close + 5 min), the hard stop is set at:
+- BULLISH: `stop = addon_entry − 0.80 × (addon_bar.High − addon_bar.Low)`
+- BEARISH: `stop = addon_entry + 0.80 × (addon_bar.High − addon_bar.Low)`
+
+The effective exit is `max(actual_exit, stop)` for BULLISH and `min(actual_exit, stop)` for BEARISH. The P&L is now signed (can be negative), and all DD legs are shown in the trade log with WIN/LOSS labels.
+
+**Impact (2026 YTD, baseline 0.0 no gates):**
+
+| Metric | Break-even stop | 80% bar-range stop |
+|--------|----------------|--------------------|
+| DDs shown | 13 (13W / 0L hidden) | 28 (13W / 15L) |
+| Total cap P&L | +$12,402.90 | +$12,137.73 |
+| Delta | — | −$265 |
+
+The 15 previously-hidden DDs now surface as small losses averaging ~$17 each. The 13 winners are identical. The −$265 reduction is the true cost of losing DDs that break-even was masking.
+
+**5-Year impact (baseline, no gates):**
+
+| Year | Break-even P&L | Bar-range P&L | Delta | DD (W/L) |
+|------|---------------|---------------|-------|----------|
+| 2021 | — | +$12,879 | — | 68 (34W/34L) |
+| 2022 | — | +$17,345 | — | 40 (20W/20L) |
+| 2023 | — | +$23,457 | — | 64 (20W/44L) |
+| 2024 | — | +$11,350 | — | 59 (23W/36L) |
+| 2025 | — | +$17,311 | — | 63 (32W/31L) |
+
+Key insight: **DD win rate is roughly 50/50 in normal years, and badly negative in 2023 (20W/44L) and 2024 (23W/36L).** The break-even stop was masking this — in those years many DDs were losing money and being silently reported as break-even.
+
+### Change 2 — Momentum Gate (`--dd-min-progress`) and Viability Check (`--dd-viability-check`) — TRIED AND REMOVED
+
+Two optional gates were implemented and swept across 2021–2026:
+
+**Momentum gate:** require survivor's close at check bar to have moved ≥ `N × or_range` in signal direction from entry. Values swept: 0.10, 0.20, 0.30, 0.50.
+
+**Viability check:** skip DD if survivor's close has crossed the wrong side of MA20 at check bar.
+
+**Momentum gate sweep results (bar-range stop baseline, 2026 YTD):**
+
+| progress | DDs fired | Total P&L | Delta vs 0.0 |
+|----------|-----------|-----------|--------------|
+| 0.0 | 28 (13W/15L) | +$12,138 | — |
+| 0.10 | 20 | +$11,834 | −$304 |
+| 0.20 | 17 | +$11,863 | −$275 |
+| 0.30 | 14 | +$11,602 | −$535 |
+| 0.50 | 8 | +$11,468 | −$670 |
+
+**Momentum gate sweep — 5-year summary:**
+
+| Year | p=0.0 | p=0.10 | p=0.20 | p=0.30 | p=0.50 |
+|------|-------|--------|--------|--------|--------|
+| 2021 | +$12,879 | −$292 | −$486 | −$556 | −$846 |
+| 2022 | +$17,345 | −$169 | −$197 | −$414 | −$545 |
+| 2023 | +$23,457 | −$208 | −$227 | **+$188** | **+$64** |
+| 2024 | +$11,350 | −$172 | −$310 | −$545 | −$728 |
+| 2025 | +$17,311 | −$466 | −$728 | −$970 | −$956 |
+
+**Viability check:** zero effect in 2026 and minimal effect across all years. The check fires at the 9:50 check bar, too early for MA trailing stop pressure to have built up.
+
+**Decision:** both gates **removed**. The momentum gate hurts P&L in 4 of 5 years (only marginally additive in 2023 at +$188 on a +$23k year). The viability check never fires in practice at the check time. Neither improves the strategy. The bar-range stop is retained as the sole DD hard stop.
+
+### Conclusions
+
+- **Break-even stop was masking the true DD win rate.** Replaced with 80%-bar-range stop — more realistic, reveals ~50% DD win rate in most years, ~33% in bad years.
+- **The −$265 cost of the new stop in 2026 is acceptable** — it reflects real risk that existed but was hidden.
+- **No filtering gate improves multi-year DD P&L.** The bar-range stop ensures DDs can never lose more than 80% of a single 5-min bar range, which is a natural and proportionate stop without needing additional entry gates.
+- **DD is net-positive overall** even with real losses exposed: the break-even mechanic has been replaced by a tight proportionate stop that still allows the strategy to capture the upside when the survivor continues moving.
+
