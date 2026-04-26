@@ -120,6 +120,13 @@ def _apply_doubledown_window(rows: list) -> float:
     winner["cap_pnl"] += addon_cap_pnl
     winner["dd_addon_cap_pnl"] = addon_cap_pnl
     winner["dd_freed_capital"] = total_freed
+
+    # Fold DD addon into composite pnl_pct / success so the primary row's quality
+    # score reflects the full day's performance (primary + REV + BRE + BRU + DD).
+    dd_pct = winner.get("dd_addon_pnl_pct", 0.0) * 100  # fraction → percentage
+    winner["pnl_pct"] = round(winner.get("pnl_pct", 0.0) + dd_pct, 3)
+    winner["success"] = winner["pnl_pct"] > 0
+
     return addon_cap_pnl
 
 
@@ -335,9 +342,11 @@ def _annotate_doubledown_addon(
 
     Add-on leg mechanics (backtested approximation):
     - Entry: close of the bar at OR close + doubledown_start_min.
-    - Hard stop: same price as entry → break-even protection (addon never loses).
-    - Exit: winner's exit price (same trailing-stop path).
-    - P&L: max(0, signed return from addon_entry to exit_price).
+    - Hard stop: entry ± 80% × (High − Low) of the check bar in the adverse
+      direction — allows a small loss proportional to the bar's range.
+    - Exit: winner's exit price (same trailing-stop path), or the hard stop
+      price if the exit is beyond it.
+    - P&L: signed return from addon_entry to effective exit (can be negative).
 
     At most one doubledown per window per day. All freed capital from multiple
     stopouts is combined into a single addon leg on the highest-ranked survivor.
@@ -356,7 +365,9 @@ def _annotate_doubledown_addon(
         position is likely about to exit on a trailing MA stop anyway.
 
     Mutates trade_rows in-place, adding to winner rows:
-      dd_addon_pnl_pct  float  add-on return as fraction of addon entry (≥ 0)
+      dd_addon_pnl_pct      float  add-on return as fraction of addon entry (signed)
+      dd_addon_stop_price   float  hard-stop price for the add-on leg
+      dd_addon_effective_exit float  actual exit used (stop or winner exit)
       dd_addon_entry    float  add-on entry / hard-stop price
       dd_freed_ranks    list   ranks whose freed capital flows to the winner
       dd_skipped_reason str    set when a gate vetoes the addon (diagnostics)
@@ -465,13 +476,20 @@ def _annotate_doubledown_addon(
                     continue
 
         exit_price = float(winner["exit_price"])
+        bar_range = float(addon_bar["High"]) - float(addon_bar["Low"])
         if winner["signal"] == "BULLISH":
-            raw_pct = (exit_price - addon_entry) / addon_entry
+            stop_price = addon_entry - 0.80 * bar_range
+            effective_exit = max(exit_price, stop_price)
+            raw_pct = (effective_exit - addon_entry) / addon_entry
         else:
-            raw_pct = (addon_entry - exit_price) / addon_entry
+            stop_price = addon_entry + 0.80 * bar_range
+            effective_exit = min(exit_price, stop_price)
+            raw_pct = (addon_entry - effective_exit) / addon_entry
 
-        winner["dd_addon_pnl_pct"] = max(0.0, raw_pct)
+        winner["dd_addon_pnl_pct"] = raw_pct
         winner["dd_addon_entry"] = addon_entry
+        winner["dd_addon_stop_price"] = stop_price
+        winner["dd_addon_effective_exit"] = effective_exit
         winner["dd_freed_ranks"] = freed_ranks
 
 
@@ -1159,21 +1177,22 @@ def _print_daily_table(
             freed = row.get("dd_freed_capital", 0.0)
             addon_entry = row.get("dd_addon_entry", 0.0)
             freed_ranks = row.get("dd_freed_ranks", [])
-            exit_p = float(row["exit_price"])
+            effective_exit = row.get("dd_addon_effective_exit", float(row["exit_price"]))
             if row["signal"] == "BULLISH":
-                per_share = max(0.0, exit_p - addon_entry)
+                per_share = effective_exit - addon_entry
             else:
-                per_share = max(0.0, addon_entry - exit_p)
+                per_share = addon_entry - effective_exit
             pnl_pct = per_share / addon_entry * 100 if addon_entry else 0.0
             pnl_str = f"+${per_share:.2f}" if per_share >= 0 else f"-${abs(per_share):.2f}"
             pct_str = f"+{pnl_pct:.2f}%" if pnl_pct >= 0 else f"{pnl_pct:.2f}%"
+            outcome = "WIN" if per_share >= 0 else "LOSS"
             blank_win = f"{'':5} " if multi_window else ""
             ranks_str = "/".join(f"R{r}" for r in freed_ranks)
             print(
                 f"  {'':12} {blank_win}{'':5} {'':6} "
                 f"{'[DD]':<9} {'':>5}  "
-                f"{addon_entry:>7.2f} {exit_p:>7.2f} "
-                f"{pnl_str:>7} {pct_str:>7}  {'WIN':<6}  freed ${freed:.0f} ← {ranks_str}"
+                f"{addon_entry:>7.2f} {effective_exit:>7.2f} "
+                f"{pnl_str:>7} {pct_str:>7}  {outcome:<6}  freed ${freed:.0f} ← {ranks_str}"
             )
 
     if current_date is not None:
@@ -1256,6 +1275,12 @@ def _stats_from_trades(trade_rows: list) -> dict:
     bru_wins = sum(1 for r in bru_rows if r.get("bru_pnl", 0) > 0)
     bru_losses = bru_total - bru_wins
 
+    dd_rows = [r for r in active if r.get("dd_addon_cap_pnl", 0.0) != 0.0]
+    dd_total = len(dd_rows)
+    dd_wins = sum(1 for r in dd_rows if r.get("dd_addon_cap_pnl", 0.0) > 0)
+    dd_losses = dd_total - dd_wins
+    dd_net_cap_pnl = sum(r.get("dd_addon_cap_pnl", 0.0) for r in dd_rows)
+
     return {
         "total": total,
         "wins": wins,
@@ -1274,6 +1299,10 @@ def _stats_from_trades(trade_rows: list) -> dict:
         "bru_total": bru_total,
         "bru_wins": bru_wins,
         "bru_losses": bru_losses,
+        "dd_total": dd_total,
+        "dd_wins": dd_wins,
+        "dd_losses": dd_losses,
+        "dd_net_cap_pnl": dd_net_cap_pnl,
     }
 
 
@@ -1303,6 +1332,13 @@ def _print_stats_block(label: str, stats: dict):
     if stats.get("bru_total", 0):
         print(
             f"  Bullish re-entry: {stats['bru_total']}  ({stats['bru_wins']}W / {stats['bru_losses']}L)"
+        )
+    if stats.get("dd_total", 0):
+        dd_net = stats["dd_net_cap_pnl"]
+        dd_net_str = f"+${dd_net:.2f}" if dd_net >= 0 else f"-${abs(dd_net):.2f}"
+        print(
+            f"  Double-down     : {stats['dd_total']}  ({stats['dd_wins']}W / {stats['dd_losses']}L)"
+            f"  net cap P&L: {dd_net_str}"
         )
     print(f"  Win rate        : {stats['win_rate'] * 100:.0f}%")
     print(f"  Avg win  %      : +{stats['avg_win_pct']:.2f}%  per trade")
@@ -1941,8 +1977,8 @@ def _parse_args():
         help=(
             "Enable double-down: if rank-2+ positions stop out within the doubledown window "
             "of OR close, deploy their returned capital into the highest-ranked survivor as a "
-            "single add-on leg. Add-on entry = close of the doubledown bar; hard stop = same "
-            "price (break-even). Default: off."
+            "single add-on leg. Add-on entry = close of the doubledown bar; hard stop = "
+            "entry ± 80% × bar range. Default: off."
         ),
     )
     parser.add_argument(
@@ -2089,7 +2125,7 @@ if __name__ == "__main__":
         if args.dd_viability_check:
             dd_gates.append("viability-check")
         gates_str = " " + ",".join(dd_gates) if dd_gates else ""
-        print(f"  Double-down  : on (start +{args.doubledown_start_min}min{gates_str}, break-even stop on add-on)")
+        print(f"  Double-down  : on (start +{args.doubledown_start_min}min{gates_str}, stop=80% bar-range on add-on)")
     else:
         print("  Double-down  : off")
     if args.min_or_range > 0:
