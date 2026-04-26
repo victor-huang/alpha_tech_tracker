@@ -886,7 +886,8 @@ class OpMomentumTradeEngine:
         """Fire the double-down add-on if one or more co-picks stopped out and a survivor remains.
 
         Fires once per window per day. Freed capital from eligible stopouts is
-        deployed 100% into the highest-ranked survivor as a break-even-stopped add-on.
+        deployed 100% into the highest-ranked survivor. Hard stop is set at
+        entry ± 80% × (High − Low) of the check bar in the adverse direction.
         """
         label = win.label
         if label in self._dd_fired:
@@ -946,19 +947,25 @@ class OpMomentumTradeEngine:
             )
             return
         dd_entry_price = _D(str(latest_bar["Close"]))
+        bar_range = _D(str(latest_bar["High"])) - _D(str(latest_bar["Low"]))
+        if winner.signal == "BULLISH":
+            dd_hard_stop = dd_entry_price - _D("0.80") * bar_range
+        else:
+            dd_hard_stop = dd_entry_price + _D("0.80") * bar_range
 
         logger.info(
-            "DD [%s] firing: winner=%s freed=%.2f from ranks %s entry=%.2f",
+            "DD [%s] firing: winner=%s freed=%.2f from ranks %s entry=%.2f stop=%.2f",
             label,
             winner.ticker,
             float(freed_capital),
             freed_ranks,
             float(dd_entry_price),
+            float(dd_hard_stop),
         )
         _notify(
             f"[DD] [{label}] ADD-ON {winner.ticker}"
             f" freed=${float(freed_capital):.0f} from rank(s) {freed_ranks}"
-            f" @ ~${float(dd_entry_price):.2f} (break-even stop)"
+            f" @ ~${float(dd_entry_price):.2f} stop=${float(dd_hard_stop):.2f}"
         )
 
         # Subtract freed capital from _window_returned to prevent double-counting
@@ -987,7 +994,7 @@ class OpMomentumTradeEngine:
             rank=winner.rank,
             window_label=label,
             window_budget=freed_capital,
-            hard_stop_override=dd_entry_price,
+            hard_stop_override=dd_hard_stop,
             initial_hard_stop_armed=True,
             reentry_type="doubledown",
             capital_weight_override=_D("1"),

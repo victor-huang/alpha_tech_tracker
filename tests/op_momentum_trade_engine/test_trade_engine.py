@@ -2917,7 +2917,10 @@ class TestDoubleDown:
 
     def _make_latest_bar(self, close=290.0):
         import pandas as pd
-        return pd.Series({"Close": close, "MA20": 285.0}, name=datetime.now(ET))
+        return pd.Series(
+            {"Close": close, "High": close + 1.0, "Low": close - 1.0, "MA20": 285.0},
+            name=datetime.now(ET),
+        )
 
     def _make_open_pos(self, rank, slot_capital, ticker="NVDA",
                        signal="BULLISH", window_label="W1"):
@@ -2965,7 +2968,8 @@ class TestDoubleDown:
         assert kw["reentry_type"] == "doubledown"
         assert kw["capital_weight_override"] == _D("1")
         assert kw["initial_hard_stop_armed"] is True
-        assert kw["hard_stop_override"] == _D("290")
+        # stop = entry - 0.80 * bar_range = 290 - 0.80 * (291 - 289) = 288.40
+        assert kw["hard_stop_override"] == _D("288.40")
 
     def test_dd_freed_capital_equals_returned_capital_from_stopout(self):
         engine = self._make_engine()
