@@ -27,7 +27,11 @@ from .config import (
     disable_notifications,
 )
 from .models import WindowConfig
-from .op_momentum_selector import ROLLING_LOOKBACK_DAYS as _DEFAULT_LOOKBACK_DAYS
+from .op_momentum_selector import (
+    ACTIVELY_TRADE_TICKERS,
+    DEFAULT_TICKERS,
+    ROLLING_LOOKBACK_DAYS as _DEFAULT_LOOKBACK_DAYS,
+)
 from .contract_selector import ITMOptionContractSelector, TimePremiumContractSelector
 from .option_price_monitor import OptionPriceMonitor, TradeEngineStrikeSelector
 from .trade_engine import OpMomentumTradeEngine
@@ -189,6 +193,12 @@ def parse_args():
         nargs="+",
         default=None,
         help="Override ticker universe, e.g. --tickers NVDA CRWD",
+    )
+    parser.add_argument(
+        "--ticker-set",
+        choices=["V3", "AT"],
+        default=None,
+        help="Named ticker set: V3 (default pool) or AT (ACTIVELY_TRADE_TICKERS)",
     )
     parser.add_argument(
         "--stop-pct",
@@ -642,6 +652,8 @@ def _build_contract_selector(args, client):
 
 if __name__ == "__main__":
     args = parse_args()
+    _TICKER_SETS = {"V3": DEFAULT_TICKERS, "AT": ACTIVELY_TRADE_TICKERS}
+    args.tickers = args.tickers or _TICKER_SETS.get(args.ticker_set)
     _load_config()
 
     if args.no_notify:

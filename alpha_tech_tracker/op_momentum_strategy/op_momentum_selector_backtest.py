@@ -12,6 +12,7 @@ from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import (
     fetch_daily_bars,
 )
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector import (
+    ACTIVELY_TRADE_TICKERS,
     DEFAULT_TICKERS,
     OPENING_BARS,
     OPENING_START_TIME,
@@ -1803,6 +1804,12 @@ def _parse_args():
         "--tickers", nargs="+", default=None, help="Override default ticker list"
     )
     parser.add_argument(
+        "--ticker-set",
+        choices=["V3", "AT"],
+        default=None,
+        help="Named ticker set: V3 (default pool) or AT (ACTIVELY_TRADE_TICKERS)",
+    )
+    parser.add_argument(
         "--lookback",
         type=int,
         default=ROLLING_LOOKBACK_DAYS,
@@ -2128,7 +2135,8 @@ def _parse_args():
 
 if __name__ == "__main__":
     args = _parse_args()
-    tickers = args.tickers if args.tickers else DEFAULT_TICKERS
+    _TICKER_SETS = {"V3": DEFAULT_TICKERS, "AT": ACTIVELY_TRADE_TICKERS}
+    tickers = args.tickers or _TICKER_SETS.get(args.ticker_set, DEFAULT_TICKERS)
     eval_start = date.fromisoformat(args.start)
     eval_end = date.fromisoformat(args.end) if args.end else date.today()
 

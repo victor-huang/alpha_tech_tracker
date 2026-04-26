@@ -91,17 +91,44 @@ The same signal logic drives both **live trading** (`trade_engine.py`) and **bac
 
 ---
 
-## Ticker Pool V2 (16 tickers — current default)
+## Ticker Pools
+
+Two named pools are available via `--ticker-set`. The active pool is set in `op_momentum_selector.py`.
+
+### V3 — Default pool (17 tickers, `DEFAULT_TICKERS`)
 
 ```python
 DEFAULT_TICKERS = [
     "SNDK", "APP", "SHOP", "CVNA", "AMD", "META",
-    "EXPE", "FANG", "RH", "FN", "MU",
-    "CRDO", "PLTR", "COIN", "NVDA", "TSLA",
+    "EXPE", "RH", "FN", "MU", "CRDO",
+    "PLTR", "COIN", "CLS", "MSTR", "CRWV", "MRVL",
 ]
 ```
 
-Added PLTR, COIN, NVDA in March 2026 after 30-day + 90-day screening. Added TSLA April 2026 (+10.9pp over 5 years). Replaced ANAB → CRDO April 2026 (ANAB had sparse live bars, min 17/day; CRDO has min 72 bars/day, 3.65% OR%, $121 avg price). Pool v2 outperforms the original 13-ticker pool by +11pp over 5 years.
+V3 replaced V2 in April 2026: removed FANG (structurally weak), NVDA (fading), TSLA (peaked); added CLS, MSTR, CRWV, MRVL. Wins 4 of 6 years and 5-yr total by +8.6pp over V2.
+
+### AT — Actively-trade pool (16 tickers, `ACTIVELY_TRADE_TICKERS`)
+
+```python
+ACTIVELY_TRADE_TICKERS = [
+    "SNDK", "APP", "SHOP", "CVNA", "AMD", "META",
+    "MU", "PLTR", "COIN", "NVDA", "TSLA",
+    "RKLB", "ASTS", "HOOD", "MSTR", "NFLX",
+]
+```
+
+Higher-momentum / higher-volatility set. Includes NVDA and TSLA (excluded from V3). Shared tickers with V3: SNDK, APP, SHOP, CVNA, AMD, META, MU, PLTR, COIN, MSTR.
+
+### Switching pools
+
+```bash
+# All three entry points accept --ticker-set {V3|AT}
+# --tickers <explicit list> takes precedence over --ticker-set
+
+python op_momentum_selector.py --ticker-set AT
+python op_momentum_selector_backtest.py --ticker-set AT --start 2025-01-01 --end 2025-12-31
+python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine run --ticker-set AT ...
+```
 
 ---
 
@@ -349,7 +376,7 @@ PYTHONPATH=/Users/victorhuang/work/alpha_tech_tracker \
 | `test_bar_recorder.py` | `BarRecorder` — CSV creation, header, ET timestamp, per-ticker file separation |
 | `test_option_price_monitor.py` | `OptionPriceMonitor`, `TradeEngineStrikeSelector`, `_parse_occ_symbol()`, `get_fair_price()` algorithm |
 | `test_trade_engine.py` | `TickerSelector`, `OpMomentumTradeEngine._enter_position()`, signal buffer, rank-weighted sizing, multi-window state; `TestEnterReentry` — `_enter_reentry()` signal direction, hard stop override, trailing arm, rank/window passthrough |
-| `test_parse_windows.py` | `_parse_windows()` — CLI window args → `WindowConfig` objects, morning-split fractions |
+| `test_parse_windows.py` | `_parse_windows()` — CLI window args → `WindowConfig` objects, morning-split fractions; `--ticker-set` resolution logic and arg parsing |
 | `test_full_day_simulation.py` | End-to-end fixture-driven simulation: 5-min bar → signal → entry → monitoring bars → exit → P&L |
 
 ### Key Test Patterns
@@ -392,9 +419,18 @@ export PYTHONPATH=/Users/victorhuang/work/alpha_tech_tracker
 python alpha_tech_tracker/op_momentum_strategy/op_momentum_selector.py \
   --regime-filter --regime-ma 8
 
+# Live selector — AT ticker pool
+python alpha_tech_tracker/op_momentum_strategy/op_momentum_selector.py \
+  --ticker-set AT --regime-filter --regime-ma 8
+
 # Selector backtest — single year, no-compound (strategy edge)
 python alpha_tech_tracker/op_momentum_strategy/op_momentum_selector_backtest.py \
   --start 2025-01-01 --end 2025-12-31 \
+  --regime-filter --regime-ma 8 --weights 50 30 20
+
+# Selector backtest — AT ticker pool
+python alpha_tech_tracker/op_momentum_strategy/op_momentum_selector_backtest.py \
+  --ticker-set AT --start 2025-01-01 --end 2025-12-31 \
   --regime-filter --regime-ma 8 --weights 50 30 20
 
 # Multi-window backtest (M2+A1+A2, aggressive)
@@ -415,6 +451,11 @@ python alpha_tech_tracker/op_momentum_strategy/op_momentum_selector_backtest.py 
 python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine run \
   --mock-trade-execution \
   --regime-filter --regime-ma 8 \
+  --window M1 09:30 3 --morning-split 100
+
+# Live engine — AT ticker pool
+python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine run \
+  --ticker-set AT --mock-trade-execution \
   --window M1 09:30 3 --morning-split 100
 
 # Live engine — TradeStation market data feed (run tradestation_auth.py first)

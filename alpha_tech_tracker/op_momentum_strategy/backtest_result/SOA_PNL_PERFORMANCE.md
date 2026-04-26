@@ -145,6 +145,79 @@ Added: RKLB, ASTS, HOOD (Russell 2000 high-activity), NFLX (large-cap); CRWD →
 
 ---
 
+## 4-Window Config — M1 + A1(10:00) + A2(13:15) + A3(15:00)
+
+**Last run: 2026-04-26** · SIP feed · adds a 10:00/1-bar window between M1 and the afternoon windows.
+
+### Configuration
+
+```bash
+python alpha_tech_tracker/op_momentum_strategy/op_momentum_selector_backtest.py \
+  --weights 60 40 \
+  --window M1 09:30 3 --window A1 10:00 1 --window A2 13:15 1 --window A3 15:00 1 \
+  --morning-split 100 \
+  --reversal --bearish-reentry --bullish-reentry \
+  --doubledown --doubledown-start 5 \
+  --top 2 \
+  --start <YEAR>-01-01 --end <YEAR>-12-31
+```
+
+The 10:00/1-bar window (A1) fires at 10:05 — capturing the concentrated cluster of M1
+re-entry and reversal signals (REV/BRE/BRU) that trigger at 09:55–10:05 as fresh primary
+signals in the 10:00 OR. Capital flows: M1 → A1(10:00) → A2(13:15) → A3(15:00).
+
+### V3 Pool — 4-Window vs 3-Window SOA
+
+| Year | 4-win Return | 3-win Return | Δ | Trades | WR |
+|------|-------------|-------------|---|--------|----|
+| 2021 | **+224.13%** | +185.72% | +38.4pp | 1,758 | 46% |
+| 2022 | **+247.44%** | +200.00% | +47.4pp | 1,659 | 44% |
+| 2023 | **+386.57%** | +332.13% | +54.4pp | 1,780 | 44% |
+| 2024 | **+229.09%** | +165.15% | +63.9pp | 1,771 | 46% |
+| 2025 | **+236.79%** | +165.48% | +71.3pp | 1,781 | 46% |
+| 2026 YTD (Jan–Apr 25) | **+122.94%** | +107.79% | +15.1pp | 551 | 53% |
+| **5-yr sum (2021–2025)** | **+1,324.02%** | **+1,048.48%** | **+275.5pp** | | |
+
+### AT Pool — 4-Window vs 3-Window SOA
+
+| Year | 4-win Return | 3-win Return | Δ | Trades | WR |
+|------|-------------|-------------|---|--------|----|
+| 2019 | **+156.20%** | +111.19% | +45.0pp | 1,609 | 46% |
+| 2020 | **+237.54%** | +191.64% | +45.9pp | 1,580 | 46% |
+| 2021 | **+196.46%** | +153.16% | +43.3pp | 1,747 | 45% |
+| 2022 | **+311.45%** | +229.63% | +81.8pp | 1,645 | 45% |
+| 2023 | **+403.06%** | +348.97% | +54.1pp | 1,741 | 45% |
+| 2024 | **+288.21%** | +196.20% | +92.0pp | 1,777 | 45% |
+| 2025 | **+261.55%** | +223.44% | +38.1pp | 1,734 | 48% |
+| 2026 YTD (Jan–Apr 25) | **+144.07%** | +128.21% | +15.9pp | 544 | 53% |
+| **5-yr sum (2021–2025)** | **+1,460.73%** | **+1,151.40%** | **+309.3pp** | | |
+
+### V3 vs AT — 4-Window Head-to-Head
+
+| Year | V3 | AT | Δ (AT−V3) | Winner |
+|------|----|----|-----------|--------|
+| 2021 | +224.13% | +196.46% | -27.7pp | **V3** |
+| 2022 | +247.44% | +311.45% | +64.0pp | **AT** |
+| 2023 | +386.57% | +403.06% | +16.5pp | **AT** |
+| 2024 | +229.09% | +288.21% | +59.1pp | **AT** |
+| 2025 | +236.79% | +261.55% | +24.8pp | **AT** |
+| 2026 YTD | +122.94% | +144.07% | +21.1pp | **AT** |
+| **5-yr sum** | **+1,324.02%** | **+1,460.73%** | **+136.7pp** | **AT** |
+
+### Key Observations
+
+1. **A1 10:00 window adds +276pp (V3) and +309pp (AT) over 3-window SOA** — positive every single year in both pools.
+
+2. **The 10:00 OR captures the M1 re-entry cluster** — exit time analysis shows ~40–46% of M1 REV/BRE/BRU re-entries trigger at 09:55, with entries entering at 10:00–10:05. The 10:00/1-bar OR formalizes this as an independent scored selection.
+
+3. **AT's lead over V3 widens to +137pp** (vs +103pp in 3-window) — AT's high-beta names (NVDA, TSLA, ASTS, MSTR) generate stronger 10:00 OR breakouts following M1 volatility.
+
+4. **V3 still wins 2021** — same RKLB/HOOD IPO-year limitation; AT pool is effectively smaller that year.
+
+5. **2024 is the largest incremental year for AT** (+92pp delta vs 3-window) — consistent with AT's high-beta tickers having strong mid-morning continuation after M1 OR breakouts.
+
+---
+
 ## Historical V2 Pool Reference (2019–2025)
 
 Results from the original V2 pool. Superseded by V3 for 2021 onwards.

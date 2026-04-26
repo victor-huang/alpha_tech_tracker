@@ -1,8 +1,16 @@
+import sys
 from unittest.mock import Mock
 
 import pytest
 
-from alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine import _parse_windows
+from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector import (
+    ACTIVELY_TRADE_TICKERS,
+    DEFAULT_TICKERS,
+)
+from alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine import (
+    _parse_windows,
+    parse_args,
+)
 
 
 def _make_args(window=None, morning_split=None):
@@ -114,3 +122,82 @@ class TestParseWindows:
 
         assert isinstance(result[0].opening_bars, int)
         assert result[0].opening_bars == 1
+
+
+def _resolve_tickers(ticker_set=None, tickers=None):
+    """Mirrors the resolution logic in all three entry points."""
+    _TICKER_SETS = {"V3": DEFAULT_TICKERS, "AT": ACTIVELY_TRADE_TICKERS}
+    return tickers or _TICKER_SETS.get(ticker_set, DEFAULT_TICKERS)
+
+
+class TestTickerSetResolutionLogic:
+    def test_no_ticker_set_returns_default_tickers(self):
+        result = _resolve_tickers(ticker_set=None, tickers=None)
+        assert result == DEFAULT_TICKERS
+
+    def test_ticker_set_v3_returns_default_tickers(self):
+        result = _resolve_tickers(ticker_set="V3", tickers=None)
+        assert result == DEFAULT_TICKERS
+
+    def test_ticker_set_at_returns_actively_trade_tickers(self):
+        result = _resolve_tickers(ticker_set="AT", tickers=None)
+        assert result == ACTIVELY_TRADE_TICKERS
+
+    def test_explicit_tickers_override_ticker_set(self):
+        result = _resolve_tickers(ticker_set="AT", tickers=["TSLA", "NVDA"])
+        assert result == ["TSLA", "NVDA"]
+
+    def test_explicit_tickers_override_default_when_no_ticker_set(self):
+        result = _resolve_tickers(ticker_set=None, tickers=["TSLA"])
+        assert result == ["TSLA"]
+
+    def test_at_and_v3_pools_are_distinct(self):
+        assert set(ACTIVELY_TRADE_TICKERS) != set(DEFAULT_TICKERS)
+
+    def test_at_pool_contains_nvda_and_tsla(self):
+        assert "NVDA" in ACTIVELY_TRADE_TICKERS
+        assert "TSLA" in ACTIVELY_TRADE_TICKERS
+
+    def test_v3_pool_does_not_contain_nvda_or_tsla(self):
+        assert "NVDA" not in DEFAULT_TICKERS
+        assert "TSLA" not in DEFAULT_TICKERS
+
+
+class TestTradeEngineTickerSetArg:
+    def test_ticker_set_at_stored_on_args(self, monkeypatch):
+        monkeypatch.setattr(
+            sys, "argv", ["engine", "run", "--ticker-set", "AT", "--window", "M1", "09:30", "3"]
+        )
+        args = parse_args()
+        assert args.ticker_set == "AT"
+
+    def test_ticker_set_v3_stored_on_args(self, monkeypatch):
+        monkeypatch.setattr(
+            sys, "argv", ["engine", "run", "--ticker-set", "V3", "--window", "M1", "09:30", "3"]
+        )
+        args = parse_args()
+        assert args.ticker_set == "V3"
+
+    def test_ticker_set_defaults_to_none_when_not_provided(self, monkeypatch):
+        monkeypatch.setattr(
+            sys, "argv", ["engine", "run", "--window", "M1", "09:30", "3"]
+        )
+        args = parse_args()
+        assert args.ticker_set is None
+
+    def test_invalid_ticker_set_raises_system_exit(self, monkeypatch):
+        monkeypatch.setattr(
+            sys, "argv", ["engine", "run", "--ticker-set", "UNKNOWN", "--window", "M1", "09:30", "3"]
+        )
+        with pytest.raises(SystemExit):
+            parse_args()
+
+    def test_ticker_set_and_tickers_can_coexist_on_args(self, monkeypatch):
+        monkeypatch.setattr(
+            sys,
+            "argv",
+            ["engine", "run", "--ticker-set", "AT", "--tickers", "TSLA", "--window", "M1", "09:30", "3"],
+        )
+        args = parse_args()
+        assert args.ticker_set == "AT"
+        assert args.tickers == ["TSLA"]

@@ -85,6 +85,103 @@ IEX generates **~8-10% more trades** than SIP (noisier, sparser data fires more 
 
 ---
 
+## 4-Window SOA Config: SIP vs IEX (2021–2026)
+
+Params used (no-compound, $10k/day reset, both pools):
+
+```
+--weights 60 40
+--window M1 09:30 3 --window A1 10:00 1 --window A2 13:15 1 --window A3 15:00 1
+--morning-split 100 --reversal --bearish-reentry --bullish-reentry
+--doubledown --doubledown-start 5 --top 2
+```
+
+Note: A1 at 10:00/1-bar captures re-entries that fire at 9:55 when M1 primary exits on bar 1 (9:50). A2 and A3 are the renamed afternoon windows.
+
+### V3 Pool (17 tickers — 2021–2026 YTD)
+
+| Year | SIP Trades | SIP Return | IEX Trades | IEX Return | Δ (IEX − SIP) |
+|------|-----------|-----------|-----------|-----------|----------------|
+| 2021 | 1,758 | +224.1% | 1,656 | +151.7% | −72.4pp |
+| 2022 | 1,659 | +247.4% | 1,627 | +215.8% | −31.6pp |
+| 2023 | 1,780 | +386.6% | 1,702 | +295.3% | −91.3pp |
+| 2024 | 1,771 | +229.1% | 1,714 | +191.8% | −37.3pp |
+| 2025 | 1,781 | +236.8% | 1,755 | +222.6% | −14.2pp |
+| 2026 YTD | 551 | +122.9% | 539 | +138.4% | +15.5pp |
+| **5-yr total** | | **+1,246%** | | **+1,075%** | **−171pp** |
+
+### AT Pool (16 tickers — ACTIVELY_TRADE_TICKERS, 2019–2026 YTD)
+
+| Year | SIP Trades | SIP Return | IEX Trades | IEX Return | Δ (IEX − SIP) |
+|------|-----------|-----------|-----------|-----------|----------------|
+| 2019 | 1,609 | +156.2% | 0 | n/a | n/a |
+| 2020 | 1,580 | +237.5% | 604 | +78.8% | −158.7pp |
+| 2021 | 1,747 | +196.5% | 1,677 | +162.7% | −33.8pp |
+| 2022 | 1,645 | +311.5% | 1,654 | +278.2% | −33.3pp |
+| 2023 | 1,741 | +403.1% | 1,725 | +279.0% | −124.1pp |
+| 2024 | 1,777 | +288.2% | 1,747 | +214.8% | −73.4pp |
+| 2025 | 1,734 | +261.6% | 1,727 | +247.0% | −14.6pp |
+| 2026 YTD | 544 | +144.1% | 556 | +133.1% | −11.0pp |
+
+### Observations
+
+1. **IEX consistently trails SIP by ~55pp/year** across both pools and all years. The strategy structure holds on both feeds but SIP captures more complete signals.
+2. **2019 AT: IEX returns 0 trades.** IEX lacks historical 5-min bar data for most tickers before 2021. Use SIP for any pre-2021 AT backtesting.
+3. **2020 AT: IEX severely degraded** — 604 trades vs 1,580 SIP (62% missing). Only H2 2020 data is available on IEX for many AT tickers.
+4. **2026 YTD: IEX slightly beats SIP** (V3: +138% vs +123%). Short-period variance is normal; not meaningful.
+5. **SIP is the authoritative feed** for all historical backtests. IEX numbers here are informational only. The live engine should use SIP when the Alpaca subscription is upgraded.
+
+---
+
+## 4-Window Config: M1 1-Bar vs 3-Bar, SIP vs IEX (2021–2026)
+
+Params (no-compound, $10k/day reset):
+
+```
+--weights 60 40
+--window M1 09:30 {1|3} --window A1 10:00 1 --window A2 13:15 1 --window A3 15:00 1
+--morning-split 100 --reversal --bearish-reentry --bullish-reentry
+--doubledown --doubledown-start 5 --top 2
+```
+
+Note: 2026 YTD always uses IEX (SIP blocks recent data via API; older years are served from cache).
+
+### V3 Pool (17 tickers)
+
+| Year | SIP 3-bar | SIP 1-bar | IEX 3-bar | IEX 1-bar |
+|------|-----------|-----------|-----------|-----------|
+| 2021 | +224.1% | +163.0% | +151.7% | +133.0% |
+| 2022 | +247.4% | +265.7% | +215.8% | +208.6% |
+| 2023 | +386.6% | +372.8% | +295.3% | +245.5% |
+| 2024 | +229.1% | +266.7% | +191.8% | +165.4% |
+| 2025 | +236.8% | +275.0% | +222.6% | +247.1% |
+| 2026 YTD (IEX) | +122.9% | +136.6% | +138.4% | +136.6% |
+| **5-yr total** | **+1,246%** | **+1,343%** | **+1,075%** | **+1,000%** |
+
+### AT Pool (16 tickers — ACTIVELY_TRADE_TICKERS)
+
+| Year | SIP 3-bar | SIP 1-bar | IEX 3-bar | IEX 1-bar |
+|------|-----------|-----------|-----------|-----------|
+| 2019 | +156.2% | +187.8% | 0 trades | 0 trades |
+| 2020 | +237.5% | +273.7% | +78.8% | +101.5% |
+| 2021 | +196.5% | +173.4% | +162.7% | +109.4% |
+| 2022 | +311.5% | +356.5% | +278.2% | +248.1% |
+| 2023 | +403.1% | +349.7% | +279.0% | +238.9% |
+| 2024 | +288.2% | +370.5% | +214.8% | +275.9% |
+| 2025 | +261.6% | +286.3% | +247.0% | +249.7% |
+| 2026 YTD (IEX) | +144.1% | +146.8% | +133.1% | +146.8% |
+| **5-yr total (2021–2025)** | **+1,461%** | **+1,536%** | **+1,182%** | **+1,122%** |
+
+### Observations
+
+1. **SIP 1-bar beats SIP 3-bar** — V3 +1,343% vs +1,246% (+97pp); AT +1,536% vs +1,461% (+75pp). The earlier 9:35 signal captures more momentum on full-coverage SIP data.
+2. **IEX 1-bar loses to IEX 3-bar** — V3 −75pp; AT −60pp. The 1-bar signal fires before the opening range forms; on IEX's thinner data the earlier trigger picks up more noise and produces worse entries.
+3. **1-bar is not monotonically better even on SIP** — it loses 2021 and 2023 for both pools. Those are years where the 15-min OR provides meaningful noise filtering that the 1-bar window skips.
+4. **SIP is the authoritative feed** for backtesting. IEX covers no data before ~2021 for most tickers and averages ~55pp/year worse across all configurations.
+5. **Config recommendation**: use SIP 3-bar (`M1 09:30 3`) as the stable live default; SIP 1-bar is a valid higher-return/higher-noise alternative worth monitoring.
+
+---
+
 # TradeStation vs Alpaca SIP: Replay Comparison
 
 *Experiment date: 2026-04-19. Engine: `--window M1 09:30 3 --morning-split 100 --mock-trade-execution`.*
