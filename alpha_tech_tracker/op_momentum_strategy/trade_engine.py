@@ -1779,7 +1779,7 @@ class OpMomentumTradeEngine:
         first_win = self._windows[0]
         return config_picks[(first_win.opening_start, first_win.opening_bars)]
 
-    def _build_ts_bar_recorder(self, tickers: list):
+    def _build_ts_bar_recorder(self, tickers: list, session_date=None):
         from alpha_tech_tracker.op_momentum_strategy.config import (
             _load_config,
             _TRADESTATION_SESSION_TOKENS,
@@ -1797,7 +1797,7 @@ class OpMomentumTradeEngine:
                     "Run tradestation_auth.py to refresh tokens."
                 )
                 return None
-            return TsBarRecorder(ts_client, tickers)
+            return TsBarRecorder(ts_client, tickers, session_date=session_date)
         except Exception:
             logger.exception("TsBarRecorder: failed to initialize TS client — skipping TS feed recording")
             return None
@@ -1925,7 +1925,7 @@ class OpMomentumTradeEngine:
                     "--record-tradestation-feed skipped: market closed today (%s)", session_date
                 )
             else:
-                ts_bar_recorder = self._build_ts_bar_recorder(all_tickers)
+                ts_bar_recorder = self._build_ts_bar_recorder(all_tickers, session_date=session_date)
                 if ts_bar_recorder is not None:
                     ts_bar_recorder.start()
 

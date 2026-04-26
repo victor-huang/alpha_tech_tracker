@@ -30,10 +30,11 @@ class TsBarRecorder:
         recorder.stop()
     """
 
-    def __init__(self, ts_client, tickers: list, session_template: str = "Default"):
+    def __init__(self, ts_client, tickers: list, session_template: str = "Default", session_date=None):
         self._ts_client = ts_client
         self._tickers = tickers
         self._session_template = session_template
+        self._session_date = session_date
         self._bar_recorder = BarRecorder(feed="tradestation")
         self._stream_1min = TradeStationBarStream(ts_client, interval=1, unit="Minute")
         self._stream_5min = TradeStationBarStream(ts_client, interval=5, unit="Minute")
@@ -45,7 +46,7 @@ class TsBarRecorder:
         Skipped when called before market open (nothing to backfill).
         """
         now_et = datetime.now(ET)
-        session_date = now_et.date()
+        session_date = self._session_date or now_et.date()
         market_open_et = ET.localize(
             datetime.combine(session_date, datetime.min.time()).replace(hour=9, minute=30)
         )
@@ -82,14 +83,12 @@ class TsBarRecorder:
                     )
 
     def _on_1min_bar(self, bar):
-        with self._lock:
-            session_date = bar.timestamp.date()
+        session_date = self._session_date or bar.timestamp.astimezone(ET).date()
         self._bar_recorder.record_1min(bar.symbol, bar, session_date)
         logger.debug("TS 1min: %s %s O=%.2f C=%.2f", bar.symbol, bar.timestamp, bar.open, bar.close)
 
     def _on_5min_bar(self, bar):
-        with self._lock:
-            session_date = bar.timestamp.date()
+        session_date = self._session_date or bar.timestamp.astimezone(ET).date()
         self._bar_recorder.record_5min(bar.symbol, bar, session_date)
         logger.debug("TS 5min: %s %s O=%.2f C=%.2f", bar.symbol, bar.timestamp, bar.open, bar.close)
 

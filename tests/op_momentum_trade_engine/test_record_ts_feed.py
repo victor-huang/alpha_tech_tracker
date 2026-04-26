@@ -100,11 +100,11 @@ class TestTsBarRecorderStop:
 
 
 class TestTsBarRecorderCallbacks:
-    def test_on_1min_bar_calls_record_1min_with_bar_date(self):
+    def test_on_1min_bar_calls_record_1min_with_bar_et_date(self):
         client = _make_ts_client()
         recorder = TsBarRecorder(client, ["TSLA"])
         recorder._bar_recorder = MagicMock()
-        bar = _make_bar(ts="2026-04-16T14:30:00Z")
+        bar = _make_bar(ts="2026-04-16T14:30:00Z")  # 10:30 AM ET
 
         recorder._on_1min_bar(bar)
 
@@ -113,11 +113,11 @@ class TestTsBarRecorderCallbacks:
             "TSLA", bar, date(2026, 4, 16)
         )
 
-    def test_on_5min_bar_calls_record_5min_with_bar_date(self):
+    def test_on_5min_bar_calls_record_5min_with_bar_et_date(self):
         client = _make_ts_client()
         recorder = TsBarRecorder(client, ["TSLA"])
         recorder._bar_recorder = MagicMock()
-        bar = _make_bar(symbol="META", ts="2026-04-16T15:00:00Z")
+        bar = _make_bar(symbol="META", ts="2026-04-16T15:00:00Z")  # 11:00 AM ET
 
         recorder._on_5min_bar(bar)
 
@@ -137,6 +137,37 @@ class TestTsBarRecorderCallbacks:
 
         assert recorder._bar_recorder.record_1min.call_count == 1
         assert recorder._bar_recorder.record_5min.call_count == 1
+
+    def test_on_1min_bar_uses_session_date_over_bar_timestamp(self):
+        # Bug fix: TS stream replays previous day's after-hours bars on connect.
+        # Without session_date, `bar.timestamp.date()` (UTC) routes those bars
+        # to the wrong directory. session_date pins the target date.
+        from datetime import date
+        client = _make_ts_client()
+        # Bar timestamp is April 23 close (19:59 UTC = 3:59 PM ET April 23)
+        # but the trading session being recorded is April 24.
+        prev_day_bar = _make_bar(ts="2026-04-23T19:59:00Z")
+        recorder = TsBarRecorder(client, ["TSLA"], session_date=date(2026, 4, 24))
+        recorder._bar_recorder = MagicMock()
+
+        recorder._on_1min_bar(prev_day_bar)
+
+        recorder._bar_recorder.record_1min.assert_called_once_with(
+            "TSLA", prev_day_bar, date(2026, 4, 24)
+        )
+
+    def test_on_5min_bar_uses_session_date_over_bar_timestamp(self):
+        from datetime import date
+        client = _make_ts_client()
+        prev_day_bar = _make_bar(symbol="META", ts="2026-04-23T19:55:00Z")
+        recorder = TsBarRecorder(client, ["META"], session_date=date(2026, 4, 24))
+        recorder._bar_recorder = MagicMock()
+
+        recorder._on_5min_bar(prev_day_bar)
+
+        recorder._bar_recorder.record_5min.assert_called_once_with(
+            "META", prev_day_bar, date(2026, 4, 24)
+        )
 
 
 class TestBackfillSession:
@@ -256,6 +287,35 @@ class TestBackfillSession:
             recorder._backfill_session()
 
         recorder._bar_recorder.record_5min.assert_called_once()
+
+    def test_backfill_uses_session_date_when_set(self):
+        # Engine started night of 4/23 → session_date=4/24; backfill must
+        # write bars to the 4/24 directory, not today's wall-clock date.
+        from datetime import date
+        client = _make_ts_client()
+        during_session = self._market_time(10, 0)
+        bar = _make_bar(ts="2026-04-24T13:35:00Z")
+
+        def get_historical_bars(ticker, start, end, interval):
+            if interval == 1:
+                return [bar]
+            return []
+
+        client.get_historical_bars.side_effect = get_historical_bars
+        recorder = TsBarRecorder(client, ["TSLA"], session_date=date(2026, 4, 24))
+        recorder._bar_recorder = MagicMock()
+
+        with patch(
+            "alpha_tech_tracker.op_momentum_strategy.record_ts_feed.datetime"
+        ) as mock_dt:
+            mock_dt.now.return_value = during_session
+            mock_dt.combine = datetime.combine
+            mock_dt.min = datetime.min
+            recorder._backfill_session()
+
+        _, call_kwargs = recorder._bar_recorder.record_1min.call_args
+        called_date = recorder._bar_recorder.record_1min.call_args[0][2]
+        assert called_date == date(2026, 4, 24)
 
     def test_continues_other_tickers_when_one_fetch_fails(self):
         recorder = self._make_recorder(tickers=["TSLA", "META"])
