@@ -97,13 +97,68 @@ The MA200 gap has grown over time for both windows (small in 2020-2021, large in
 
 ---
 
-## Proposed Next Step
+## Threshold Sweep Results
 
-Sweep a `--min-ma200-distance` filter threshold for A1 and A2 over the **2022–2026** period (the regime where the signal is reliable). Candidate thresholds: 1.0%, 1.5%, 2.0%.
+Tested thresholds 0.0% (baseline), 0.5%, 1.0%, 1.5%, 3.0% applied to **A1+A2 only** (`--min-ma200-distance-windows A1 A2`). All other config fixed: Top-2, weights 60/40, M1+A1+A2, reversal+BRE+BUE+doubledown, feed=iex.
 
-For each threshold, measure:
-- Signal count reduction (how many trades filtered out)
-- Win rate improvement
-- Net P&L change (filter removes some losers but also some winners)
+### Return vs Baseline
 
-**Do not apply to the 2020 backtest** — the reversed pattern suggests the filter is regime-dependent and would hurt in crash/recovery environments.
+| Year | 0.0% (base) | 0.5% | 1.0% | 1.5% | 3.0% | Regime |
+|---|---|---|---|---|---|---|
+| 2020 | +62.2% | +51.8% | +51.1% | +51.1% | +50.6% | COVID recovery |
+| 2021 | +132.0% | +118.5% | +113.1% | +111.6% | +101.9% | Bull |
+| 2022 | +177.9% | +143.3% | +139.7% | +136.9% | +124.0% | Bear/volatile |
+| 2023 | +241.4% | +229.2% | +218.5% | +216.0% | +208.8% | Bull |
+| 2025 | +178.2% | +161.9% | +155.4% | +152.2% | +135.2% | Choppy |
+| 2026 YTD | +124.0% | +112.7% | +114.4% | +110.4% | +107.3% | Volatile |
+
+### A1 Win Rate by Threshold
+
+| Year | 0.0% (base) | 0.5% | 1.0% | 1.5% | 3.0% |
+|---|---|---|---|---|---|
+| 2020 | 24.4% | 22.8% | 22.9% | 25.4% | 29.4% |
+| 2021 | 23.5% | 26.4% | 27.8% | 28.4% | 30.2% |
+| 2022 | 22.8% | 28.1% | 28.7% | 29.3% | 31.3% |
+| 2025 | 22.4% | 26.4% | 26.5% | 24.2% | 27.8% |
+| 2026 YTD | 26.0% | 25.8% | 27.7% | 27.5% | 32.4% |
+
+### A2 Win Rate by Threshold
+
+| Year | 0.0% (base) | 0.5% | 1.0% | 1.5% | 3.0% |
+|---|---|---|---|---|---|
+| 2020 | 22.3% | 21.4% | 24.5% | 25.6% | 23.3% |
+| 2021 | 27.9% | 27.5% | 26.5% | 28.7% | 29.2% |
+| 2022 | 26.8% | 30.1% | 29.3% | 27.8% | 27.9% |
+| 2025 | 28.4% | 32.4% | 32.0% | 34.0% | 36.2% |
+| 2026 YTD | 24.3% | 31.8% | 34.2% | 35.4% | 39.0% |
+
+---
+
+## Sweep Findings
+
+### 1. The filter always costs total return
+
+Across all 6 years and every threshold, total return decreases vs baseline. The biggest winners each year (FN +$30 in 2026, RH +$23 in 2025, SHOP +$15 in 2022) tend to be outliers with extreme MA200 extension that gets filtered first. These single trades carry enough weight to outweigh the aggregate loss reduction.
+
+### 2. A2 win rate improvement is consistent and front-loaded
+
+A2 gains most of its WR improvement by 0.5–1.0%:
+- 2025: 28.4% → 32.4% at 0.5%, then flattens
+- 2026: 24.3% → 31.8% at 0.5%, 34.2% at 1.0%
+- 2022: 26.8% → 30.1% at 0.5%
+
+Going to 3.0% adds marginal additional WR but costs significantly more return.
+
+### 3. A1 win rate improvement is noisier
+
+A1 gains are real in 2021–2022 (+4–6pp at 1.0%) but inconsistent in other years. The 2025 and 2026 A1 WR curves are non-monotonic — the big A1 winners span a wide MA200 distance range so the filter clips good and bad trades somewhat randomly.
+
+### 4. 2020 is still an exception
+
+A2 in 2020 shows no consistent improvement even at 3.0% (22.3% → 23.3%), confirming the earlier finding that the COVID crash/recovery regime is structurally different.
+
+### 5. Practical recommendation
+
+Use `--min-ma200-distance 1.0 --min-ma200-distance-windows A1 A2` if the goal is improving A2 win rate consistency in post-2021 regimes. Accept the ~10–22pp return cost as the price of filtering noise. Do not use in 2020-style crash/recovery conditions.
+
+**1.0% is preferred over higher thresholds** — most of the WR gain is captured by 1.0%, while going to 1.5–3.0% only costs more return without proportional WR benefit.
