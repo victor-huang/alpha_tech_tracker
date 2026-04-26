@@ -170,3 +170,65 @@ class TestFetchBars:
 
         assert result["AAPL"].empty
         assert result["TSLA"].empty
+
+    def test_multi_ticker_one_has_data_flat_index_labelled_from_bars_data(self):
+        # Reproduces the 2026-04-24 A1 bug: fetch_bars(['EXPE','RH','FN']) where only
+        # FN (tickers[2]) has trades — Alpaca returns a flat index, old code labelled
+        # it as EXPE (tickers[0]) and returned empty DataFrames for RH and FN.
+        client = _make_client()
+        mock_bars = MagicMock()
+        mock_bars.df = _make_flat_df(self._TS)
+        mock_bars.data = {"FN": [object()]}  # only FN has data
+
+        with patch(_HIST_CLIENT_CLS) as mock_hist_cls:
+            mock_hist_cls.return_value.get_stock_bars.return_value = mock_bars
+            result = client.fetch_bars(["EXPE", "RH", "FN"], self._START, self._END)
+
+        assert not result["FN"].empty
+        assert result["EXPE"].empty
+        assert result["RH"].empty
+
+    def test_multi_ticker_one_has_data_does_not_raise_type_error(self, caplog):
+        import logging
+        client = _make_client()
+        mock_bars = MagicMock()
+        mock_bars.df = _make_flat_df(self._TS)
+        mock_bars.data = {"RH": [object()]}
+
+        with patch(_HIST_CLIENT_CLS) as mock_hist_cls, \
+             caplog.at_level(logging.ERROR):
+            mock_hist_cls.return_value.get_stock_bars.return_value = mock_bars
+            client.fetch_bars(["EXPE", "RH", "FN"], self._START, self._END)
+
+        assert "fetch_bars failed" not in caplog.text
+
+
+class TestWarmup:
+    _START = pd.Timestamp("2026-01-02 09:30:00", tz="America/New_York")
+    _END = pd.Timestamp("2026-04-24 16:00:00", tz="America/New_York")
+    _TS = [pd.Timestamp("2026-04-24 17:15:00", tz="UTC")]
+
+    def test_normal_multi_ticker_returns_per_ticker_dfs(self):
+        client = _make_client()
+        mock_bars = MagicMock()
+        mock_bars.df = _make_multiindex_df(["AAPL", "TSLA"], self._TS)
+
+        with patch(_HIST_CLIENT_CLS) as mock_hist_cls:
+            mock_hist_cls.return_value.get_stock_bars.return_value = mock_bars
+            result = client.warmup(["AAPL", "TSLA"], self._START, self._END)
+
+        assert not result["AAPL"].empty
+        assert not result["TSLA"].empty
+
+    def test_single_ticker_flat_index_does_not_raise(self):
+        client = _make_client()
+        mock_bars = MagicMock()
+        mock_bars.df = _make_flat_df(self._TS)
+        mock_bars.data = {"AAPL": [object()]}
+
+        with patch(_HIST_CLIENT_CLS) as mock_hist_cls:
+            mock_hist_cls.return_value.get_stock_bars.return_value = mock_bars
+            result = client.warmup(["AAPL", "TSLA"], self._START, self._END)
+
+        assert not result["AAPL"].empty
+        assert result["TSLA"].empty

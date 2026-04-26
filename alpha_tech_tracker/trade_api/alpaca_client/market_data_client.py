@@ -74,7 +74,12 @@ class AlpacaMarketDataClient(MarketDataClient):
         )
         bars = hist_client.get_stock_bars(request)
         logger.info("Alpaca warmup fetch complete")
-        return _alpaca_bars_to_df_dict(bars.df, tickers)
+        all_df = bars.df
+        if not isinstance(all_df.index, pd.MultiIndex) and not all_df.empty:
+            tickers_with_data = [t for t in tickers if bars.data.get(t)]
+            label = tickers_with_data[0] if tickers_with_data else tickers[0]
+            all_df = pd.concat({label: all_df}, names=["symbol", "timestamp"])
+        return _alpaca_bars_to_df_dict(all_df, tickers)
 
     def fetch_bars(self, tickers: list, start_dt, end_dt) -> dict:
         hist_client = StockHistoricalDataClient(self._api_key, self._secret_key)
@@ -90,11 +95,13 @@ class AlpacaMarketDataClient(MarketDataClient):
             all_df = bars.df
             if not isinstance(all_df.index, pd.MultiIndex):
                 if all_df.empty:
-                    # No data for any ticker in the batch.
                     empty_cols = ["Open", "High", "Low", "Close", "Volume"]
                     return {t: pd.DataFrame(columns=empty_cols) for t in tickers}
-                # Single-ticker batch: Alpaca returns a flat DatetimeIndex.
-                all_df = pd.concat({tickers[0]: all_df}, names=["symbol", "timestamp"])
+                # Alpaca collapses the symbol level when exactly one ticker has data.
+                # Use bars.data to find which ticker it actually belongs to.
+                tickers_with_data = [t for t in tickers if bars.data.get(t)]
+                label = tickers_with_data[0] if tickers_with_data else tickers[0]
+                all_df = pd.concat({label: all_df}, names=["symbol", "timestamp"])
             return _alpaca_bars_to_df_dict(all_df, tickers)
         except Exception:
             logger.exception("Alpaca fetch_bars failed for %s", tickers)
