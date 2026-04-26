@@ -329,8 +329,6 @@ def _annotate_doubledown_addon(
     window_opening_times: dict,
     opening_bars_by_label: dict,
     doubledown_start_min: int = DOUBLEDOWN_START_MIN,
-    dd_min_progress: float = 0.0,
-    dd_viability_check: bool = False,
 ) -> None:
     """
     For each (date, window) group where rank-2+ positions stopped out before
@@ -351,26 +349,12 @@ def _annotate_doubledown_addon(
     At most one doubledown per window per day. All freed capital from multiple
     stopouts is combined into a single addon leg on the highest-ranked survivor.
 
-    Optional gates applied at the DD check bar before the addon is annotated:
-
-    dd_min_progress (float, default 0.0):
-        Momentum gate. The survivor's close at the DD check bar must have moved
-        at least ``dd_min_progress × or_range`` in the signal direction from its
-        entry price.  0.0 = disabled (current behaviour).
-        Example: 0.25 means survivor must show 25% of OR-range continuation.
-
-    dd_viability_check (bool, default False):
-        Survivor health gate. If the survivor's close at the DD check bar has
-        crossed below MA20 (BULLISH) or above MA20 (BEARISH), skip DD — the
-        position is likely about to exit on a trailing MA stop anyway.
-
     Mutates trade_rows in-place, adding to winner rows:
-      dd_addon_pnl_pct      float  add-on return as fraction of addon entry (signed)
-      dd_addon_stop_price   float  hard-stop price for the add-on leg
+      dd_addon_pnl_pct        float  add-on return as fraction of addon entry (signed)
+      dd_addon_stop_price     float  hard-stop price for the add-on leg
       dd_addon_effective_exit float  actual exit used (stop or winner exit)
-      dd_addon_entry    float  add-on entry / hard-stop price
-      dd_freed_ranks    list   ranks whose freed capital flows to the winner
-      dd_skipped_reason str    set when a gate vetoes the addon (diagnostics)
+      dd_addon_entry          float  add-on entry price
+      dd_freed_ranks          list   ranks whose freed capital flows to the winner
     """
     stop_reasons = {"hard_stop", "fallback_20pct"}
     # 0-indexed bar index at OR close + doubledown_start_min
@@ -448,33 +432,6 @@ def _annotate_doubledown_addon(
         if addon_entry == 0:
             continue
 
-        # Gate 1 — momentum: survivor must have moved ≥ dd_min_progress × or_range
-        # in the signal direction from its entry price at the DD check bar.
-        if dd_min_progress > 0.0:
-            or_range = winner["or_high"] - winner["or_low"]
-            w_entry = float(winner["entry_price"])
-            if or_range > 0:
-                if winner["signal"] == "BULLISH":
-                    progress = (addon_entry - w_entry) / or_range
-                else:
-                    progress = (w_entry - addon_entry) / or_range
-                if progress < dd_min_progress:
-                    winner["dd_skipped_reason"] = f"momentum:{progress:.3f}<{dd_min_progress}"
-                    continue
-
-        # Gate 2 — viability: skip if survivor has crossed the wrong side of MA20,
-        # signalling the trailing stop is about to fire.
-        if dd_viability_check:
-            addon_ma20 = addon_bar.get("MA20") if hasattr(addon_bar, "get") else addon_bar["MA20"]
-            if addon_ma20 is not None and not pd.isna(addon_ma20):
-                ma20_val = float(addon_ma20)
-                if winner["signal"] == "BULLISH" and addon_entry < ma20_val:
-                    winner["dd_skipped_reason"] = f"viability:close={addon_entry:.2f}<MA20={ma20_val:.2f}"
-                    continue
-                if winner["signal"] == "BEARISH" and addon_entry > ma20_val:
-                    winner["dd_skipped_reason"] = f"viability:close={addon_entry:.2f}>MA20={ma20_val:.2f}"
-                    continue
-
         exit_price = float(winner["exit_price"])
         bar_range = float(addon_bar["High"]) - float(addon_bar["Low"])
         if winner["signal"] == "BULLISH":
@@ -528,8 +485,6 @@ def run_selector_backtest(
     feed: DataFeed = None,
     enable_doubledown: bool = False,
     doubledown_start_min: int = DOUBLEDOWN_START_MIN,
-    dd_min_progress: float = 0.0,
-    dd_viability_check: bool = False,
     filter_flat_or: bool = True,
     qqq_align_filter: bool = False,
     qqq_align_threshold: float = 0.50,
@@ -899,8 +854,6 @@ def run_selector_backtest(
         _annotate_doubledown_addon(
             trade_rows, bars_by_date, window_opening_times, opening_bars_by_label,
             doubledown_start_min=doubledown_start_min,
-            dd_min_progress=dd_min_progress,
-            dd_viability_check=dd_viability_check,
         )
 
     return trade_rows, all_window_results, trading_days
@@ -1992,28 +1945,6 @@ def _parse_args():
             f"Must be a multiple of 5. Default: {DOUBLEDOWN_START_MIN}."
         ),
     )
-    parser.add_argument(
-        "--dd-min-progress",
-        type=float,
-        default=0.0,
-        dest="dd_min_progress",
-        help=(
-            "Momentum gate: the survivor's close at DD check time must have moved at least "
-            "this fraction of OR-range in the signal direction from its entry price. "
-            "0.0 = disabled (default). Example: 0.25 requires 25%% of OR-range continuation."
-        ),
-    )
-    parser.add_argument(
-        "--dd-viability-check",
-        action="store_true",
-        default=False,
-        dest="dd_viability_check",
-        help=(
-            "Viability gate: skip DD if the survivor's close at the DD check bar has "
-            "crossed below MA20 (BULLISH) or above MA20 (BEARISH), indicating the "
-            "trailing stop is likely to fire soon. Default: off."
-        ),
-    )
     return parser.parse_args()
 
 
@@ -2119,13 +2050,7 @@ if __name__ == "__main__":
         f"  Bullish RE   : {'on (max bars_held=' + str(args.bullish_reentry_max_bars) + ')' if args.bullish_reentry else 'off'}"
     )
     if args.doubledown:
-        dd_gates = []
-        if args.dd_min_progress > 0:
-            dd_gates.append(f"min-progress={args.dd_min_progress}")
-        if args.dd_viability_check:
-            dd_gates.append("viability-check")
-        gates_str = " " + ",".join(dd_gates) if dd_gates else ""
-        print(f"  Double-down  : on (start +{args.doubledown_start_min}min{gates_str}, stop=80% bar-range on add-on)")
+        print(f"  Double-down  : on (start +{args.doubledown_start_min}min, stop=80% bar-range on add-on)")
     else:
         print("  Double-down  : off")
     if args.min_or_range > 0:
@@ -2200,8 +2125,6 @@ if __name__ == "__main__":
         feed=alpaca_feed,
         enable_doubledown=args.doubledown,
         doubledown_start_min=args.doubledown_start_min,
-        dd_min_progress=args.dd_min_progress,
-        dd_viability_check=args.dd_viability_check,
         qqq_align_filter=args.qqq_align_filter,
         qqq_align_threshold=args.qqq_align_threshold,
         qqq_extend_days=args.qqq_extend_days,
