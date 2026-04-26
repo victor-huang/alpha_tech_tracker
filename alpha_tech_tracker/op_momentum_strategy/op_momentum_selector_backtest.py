@@ -270,6 +270,12 @@ def _apply_capital_flow(
                 for row in by_day_window.get((d, prior_label), []):
                     if row.get("skipped"):
                         continue
+                    # Add-on rows (BRE/BRU/REV) reuse freed capital from the primary
+                    # slot — they don't deploy additional window capital, so they must
+                    # not affect the available-capital calculation.
+                    if (row.get("is_reversal") or row.get("is_bearish_reentry")
+                            or row.get("is_bullish_reentry")):
+                        continue
                     exit_time = prior_drain + row.get("bars_held", 0) * 5
                     if exit_time <= this_drain:
                         available += row.get("cap_pnl", 0.0)
