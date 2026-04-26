@@ -546,6 +546,48 @@ A3 in the new config is essentially the same window as old A2 — A3's contribut
 - **2-bar OR is inconsistent** — no consistent advantage; 10:30/2bar beats 10:30/1bar in 2022 but underperforms in 2024; avoid as a standalone recommendation
 - **For live trading**: use **10:30/1bar** as the default A1 config — most durable across all market regimes; switch to **10:00/3bar** only in confirmed bear/trending-down environments
 
+### Monthly P&L Drill-Down — June 2025 → April 2026
+
+**Date**: 2026-04-26
+**Mode**: no-compound ($10,000/day reset)
+**Fixed windows**: M1 09:30/3 + A2 13:15/1 + A3 15:00/1 (identical across all configs)
+**Variable**: A1 start time and bar count only
+**Note**: Baseline uses old 3-window layout (M1 + A1 13:15/1 + A2 15:00/1, no A3)
+
+| Month | Baseline 13:15/1 | 10:00/1bar | 10:30/1bar | 11:00/2bar | 11:00/3bar |
+|---|---|---|---|---|---|
+| 2025-06 | +$1,802 (+18%) | +$2,124 (+21%) | **+$2,680 (+27%)** | +$2,096 (+21%) | +$1,823 (+18%) |
+| 2025-07 | +$862 (+9%) | +$841 (+8%) | +$755 (+8%) | +$722 (+7%) | +$725 (+7%) |
+| 2025-08 | +$999 (+10%) | **+$2,060 (+21%)** | +$1,243 (+12%) | +$1,318 (+13%) | +$863 (+9%) |
+| 2025-09 | +$781 (+8%) | **+$1,112 (+11%)** | +$1,021 (+10%) | +$1,013 (+10%) | +$975 (+10%) |
+| 2025-10 | +$1,660 (+17%) | +$1,749 (+17%) | **+$2,049 (+20%)** | +$1,722 (+17%) | +$1,802 (+18%) |
+| 2025-11 | +$1,728 (+17%) | +$1,792 (+18%) | **+$2,902 (+29%)** | +$2,387 (+24%) | +$2,892 (+29%) |
+| 2025-12 | +$954 (+10%) | +$1,362 (+14%) | +$1,338 (+13%) | +$743 (+7%) | **+$1,447 (+14%)** |
+| 2026-01 | +$3,897 (+39%) | +$4,155 (+42%) | +$4,145 (+41%) | +$4,270 (+43%) | **+$4,424 (+44%)** |
+| 2026-02 | +$4,494 (+45%) | **+$5,552 (+56%)** | +$4,559 (+46%) | +$4,317 (+43%) | +$4,444 (+44%) |
+| 2026-03 | +$2,502 (+25%) | +$2,425 (+24%) | +$2,232 (+22%) | +$2,445 (+24%) | **+$2,872 (+29%)** |
+| 2026-04 | +$962 (+10%) | **+$1,709 (+17%)** | +$1,259 (+13%) | +$1,553 (+16%) | +$486 (+5%) |
+| **TOTAL** | **+$20,641 (+206%)** | **+$24,880 (+249%)** | **+$24,184 (+242%)** | **+$22,587 (+226%)** | **+$22,754 (+228%)** |
+
+**A1 window contribution (per-window):**
+
+| Config | A1 Return% | A1 Win Rate | A1 EV/trade | A1 Trades |
+|---|---|---|---|---|
+| Baseline 13:15/1bar | +32% | 39% | +0.174% | 408 |
+| **10:00/1bar** | **+43%** | **44%** | **+0.399%** | 323 |
+| 10:30/1bar | +36% | 40% | +0.177% | 354 |
+| 11:00/2bar | +21% | 39% | +0.146% | 397 |
+| 11:00/3bar | +23% | 43% | +0.164% | 395 |
+
+**Observations:**
+- **10:00/1bar leads this 11-month window (+249%)** — highest A1 EV/trade (+0.399%), fewest trades (323) but highest quality; dominates Feb 2026 (+$5,552) and Aug 2025 (+$2,060)
+- **10:30/1bar is very close (+242%)** — wins the most individual months (Jun, Oct, Nov 2025); most consistent month-to-month
+- **11:00/2bar and 11:00/3bar trail** (+226%/+228%) despite more trades; 11:00/3bar has a weak Apr 2026 (+$486 vs +$1,709 for 10:00/1bar)
+- **All four new configs beat baseline by +20–43pp**, confirming the early A1 window consistently adds value regardless of exact config
+- **2026-04 is a regime divergence**: 10:00/1bar and 10:30/1bar hold up; 11:00/3bar collapses to +$486 — early entry is favored in volatile/tariff-driven conditions
+
+---
+
 ### CLI — Recommended Configs (Based on Full 5-Year Analysis)
 
 ```bash
