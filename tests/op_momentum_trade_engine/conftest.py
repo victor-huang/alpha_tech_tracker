@@ -101,7 +101,7 @@ def _build_history_df(closes, ma20, ma50, ma200):
     return df
 
 
-def _set_latest_bar(engine, ticker, close, ma50, ma20=None, high=None, low=None, open_=None):
+def _set_latest_bar(engine, ticker, close, ma50, ma20=None, high=None, low=None, open_=None, volume=None):
     df = engine._history[ticker]
     new_ts = df.index[-1] + timedelta(minutes=5)
     new_row = df.iloc[-1].copy()
@@ -115,6 +115,8 @@ def _set_latest_bar(engine, ticker, close, ma50, ma20=None, high=None, low=None,
         new_row["Low"] = float(low)
     if open_ is not None:
         new_row["Open"] = float(open_)
+    if volume is not None:
+        new_row["Volume"] = float(volume)
     engine._history[ticker] = pd.concat(
         [df, pd.DataFrame([new_row], index=[new_ts])]
     )

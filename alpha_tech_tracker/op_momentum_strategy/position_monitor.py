@@ -117,6 +117,7 @@ class PositionMonitor:
         close_callback: Optional[Callable] = None,
         exit_retry_callback: Optional[Callable] = None,
         alpaca_feed=None,
+        count_flat_bars_in_held: bool = False,
     ):
         self._client = alpaca_client
         self._signal_engine = signal_engine
@@ -136,6 +137,7 @@ class PositionMonitor:
         self._close_callback = close_callback
         self._exit_retry_callback = exit_retry_callback
         self._alpaca_feed = alpaca_feed
+        self._count_flat_bars_in_held = count_flat_bars_in_held
         self._positions: list = []
         self._reentry_watchers: list = []
         self._lock = threading.Lock()
@@ -167,6 +169,7 @@ class PositionMonitor:
         high = _D(latest["High"])
         low = _D(latest["Low"])
         bar_open = _D(latest["Open"])
+        bar_volume = latest.get("Volume", 0) or 0
         ma20 = latest.get("MA20")
         ma20_val = _D(ma20) if ma20 is not None and not pd.isna(ma20) else None
         ma50 = latest.get("MA50")
@@ -179,7 +182,7 @@ class PositionMonitor:
                     continue
                 if pos.entry_bar_time is not None and bar_time == pos.entry_bar_time:
                     continue
-                close_intent = self._evaluate_stop(pos, close, high, low, bar_open, ma20_val, ma50_val, bar_time)
+                close_intent = self._evaluate_stop(pos, close, high, low, bar_open, ma20_val, ma50_val, bar_time, bar_volume)
                 if close_intent is not None:
                     reason, override = close_intent
                     pos.is_closed = True
@@ -292,6 +295,7 @@ class PositionMonitor:
         ma20: Optional[object],
         ma50: Optional[object],
         bar_time=None,
+        bar_volume=0,
     ):
         exit_reason = None
 
@@ -383,7 +387,8 @@ class PositionMonitor:
             if bar_time is not None and bar_time == pos.last_evaluated_bar_time:
                 return None  # same bar repeated poll — don't double-count
             pos.last_evaluated_bar_time = bar_time
-            pos.bars_held += 1
+            if self._count_flat_bars_in_held or bar_volume > 0:
+                pos.bars_held += 1
             return None
 
     def _maybe_create_reentry_watcher(self, pos: ActivePosition, reason: str):

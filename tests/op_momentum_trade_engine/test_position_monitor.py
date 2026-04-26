@@ -1207,6 +1207,61 @@ class TestReentryWatcher:
 
         assert pos.bars_held == 2
 
+    def test_zero_volume_bar_does_not_increment_bars_held_by_default(self):
+        monitor, client, engine = self._make_monitor()
+        pos = self._make_bullish_pos()
+        monitor.add_position(pos)
+
+        _set_latest_bar(engine, "NVDA", close=106.0, ma50=97.0, volume=100)
+        monitor.on_bar("NVDA")
+        _set_latest_bar(engine, "NVDA", close=106.0, ma50=97.0, volume=0)
+        monitor.on_bar("NVDA")
+        _set_latest_bar(engine, "NVDA", close=106.0, ma50=97.0, volume=0)
+        monitor.on_bar("NVDA")
+        _set_latest_bar(engine, "NVDA", close=106.5, ma50=97.0, volume=200)
+        monitor.on_bar("NVDA")
+
+        assert pos.bars_held == 2
+
+    def test_zero_volume_bar_increments_bars_held_when_count_flat_bars_enabled(self):
+        monitor, client, engine = self._make_monitor(count_flat_bars_in_held=True)
+        pos = self._make_bullish_pos()
+        monitor.add_position(pos)
+
+        _set_latest_bar(engine, "NVDA", close=106.0, ma50=97.0, volume=100)
+        monitor.on_bar("NVDA")
+        _set_latest_bar(engine, "NVDA", close=106.0, ma50=97.0, volume=0)
+        monitor.on_bar("NVDA")
+        _set_latest_bar(engine, "NVDA", close=106.5, ma50=97.0, volume=200)
+        monitor.on_bar("NVDA")
+
+        assert pos.bars_held == 3
+
+    def test_bre_watcher_created_after_hard_stop_when_flat_bars_skipped(self):
+        monitor, _, engine = self._make_monitor(
+            enable_bearish_reentry=True, bearish_reentry_max_bars=3
+        )
+        # BEARISH position: hard_stop at 96.5, armed already; stop triggers when close > 96.5
+        pos = self._make_bearish_pos(bars_held=0)
+        pos.hard_stop_armed = True
+        monitor.add_position(pos)
+
+        # 1 real bar, 2 flat bars — bars_held stays at 1 (flat bars skipped)
+        _set_latest_bar(engine, "NVDA", close=94.0, ma50=110.0, volume=80)
+        monitor.on_bar("NVDA")
+        _set_latest_bar(engine, "NVDA", close=94.0, ma50=110.0, volume=0)
+        monitor.on_bar("NVDA")
+        _set_latest_bar(engine, "NVDA", close=94.0, ma50=110.0, volume=0)
+        monitor.on_bar("NVDA")
+        # hard stop triggers on this bar (close 96.5 == hard_stop_price boundary; use 97.0 > 96.5)
+        # bars_held is 1 at stop time (flat bars not counted) ≤ max_bars=3 → watcher created
+        _set_latest_bar(engine, "NVDA", close=97.0, ma50=110.0, volume=250)
+        monitor.on_bar("NVDA")
+
+        assert pos.is_closed is True
+        assert pos.exit_reason == "hard_stop"
+        assert len(monitor._reentry_watchers) == 1
+
     def test_reversal_watcher_created_on_bearish_hard_stop_within_max_bars(self):
         monitor, _, engine = self._make_monitor(enable_reversal=True, reversal_max_bars=3)
         pos = self._make_bearish_pos(bars_held=2)
