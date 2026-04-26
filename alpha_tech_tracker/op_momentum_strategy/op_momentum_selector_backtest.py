@@ -877,6 +877,87 @@ def _apply_doubledown(trade_rows: list) -> None:
         _apply_doubledown_window(rows)
 
 
+def _apply_opportunity_pool(
+    trade_rows: list,
+    windows: list,
+    initial_pool: float,
+    compound: bool = False,
+    doubledown_start_min: int = DOUBLEDOWN_START_MIN,
+) -> None:
+    """
+    Deploy the opportunity pool on DD-eligible winner rows, recycling capital
+    sequentially within each day across windows.
+
+    Requires _annotate_doubledown_addon and _apply_capital_flow to have run first.
+    Mutates winner rows in-place, adding:
+      opp_deployed   float  capital deployed from pool at this window's DD
+      opp_cap_pnl    float  dollar P&L from the deployment (signed)
+      opp_returned   float  capital returned after exit (floor 0)
+    Also folds opp_cap_pnl into winner["cap_pnl"] so weekly/monthly totals pick it up.
+    """
+    if initial_pool <= 0:
+        return
+
+    dd_bars = doubledown_start_min // 5
+    window_labels = [w["label"] for w in windows]
+
+    or_close_min_by_label = {}
+    for w in windows:
+        h, m = map(int, w["opening_start"].split(":"))
+        or_close_min_by_label[w["label"]] = h * 60 + m + w["opening_bars"] * 5
+
+    by_day_window: dict = {}
+    for row in trade_rows:
+        key = (row["date"], row["window"])
+        by_day_window.setdefault(key, []).append(row)
+
+    trading_days = sorted({row["date"] for row in trade_rows})
+    pool = initial_pool
+
+    for d in trading_days:
+        if not compound:
+            pool = initial_pool
+
+        pool_exit_min = 0  # 0 = pool is free; set after each deployment
+
+        for label in window_labels:
+            or_close_min = or_close_min_by_label[label]
+            dd_fire_min = or_close_min + dd_bars * 5
+
+            if pool_exit_min > dd_fire_min:
+                continue  # prior deployment still running — pool locked
+
+            if pool <= 0:
+                continue
+
+            rows = by_day_window.get((d, label), [])
+            winner = next(
+                (r for r in rows if "dd_freed_ranks" in r and not r.get("skipped")),
+                None,
+            )
+            if winner is None:
+                continue
+
+            if winner.get("bars_held", 0) < dd_bars:
+                continue  # safety guard (annotation already enforces this)
+
+            pnl_pct = winner.get("dd_addon_pnl_pct", 0.0)
+            opp_cap_pnl = pool * pnl_pct
+            opp_returned = max(pool + opp_cap_pnl, 0.0)
+
+            winner["opp_deployed"] = pool
+            winner["opp_cap_pnl"] = opp_cap_pnl
+            winner["opp_returned"] = opp_returned
+            winner["cap_pnl"] = winner.get("cap_pnl", 0.0) + opp_cap_pnl
+
+            pool = opp_returned
+
+            if winner.get("exit_reason") == "end_of_day":
+                pool_exit_min = 960
+            else:
+                pool_exit_min = or_close_min + (winner["bars_held"] + 1) * 5
+
+
 def _collect_baseline(
     all_window_results: dict, eval_start: date, eval_end: date
 ) -> pd.DataFrame:
@@ -1148,6 +1229,32 @@ def _print_daily_table(
                 f"{pnl_str:>7} {pct_str:>7}  {outcome:<6}  freed ${freed:.0f} ← {ranks_str}"
             )
 
+        opp_cap_pnl = row.get("opp_cap_pnl")
+        if opp_cap_pnl is not None:
+            opp_deployed = row.get("opp_deployed", 0.0)
+            opp_returned = row.get("opp_returned", 0.0)
+            addon_entry = row.get("dd_addon_entry", 0.0)
+            effective_exit = row.get("dd_addon_effective_exit", float(row["exit_price"]))
+            if row["signal"] == "BULLISH":
+                per_share = effective_exit - addon_entry
+            else:
+                per_share = addon_entry - effective_exit
+            pnl_pct = per_share / addon_entry * 100 if addon_entry else 0.0
+            pnl_str = f"+${per_share:.2f}" if per_share >= 0 else f"-${abs(per_share):.2f}"
+            pct_str = f"+{pnl_pct:.2f}%" if pnl_pct >= 0 else f"{pnl_pct:.2f}%"
+            outcome = "WIN" if opp_cap_pnl >= 0 else "LOSS"
+            opp_net_str = (
+                f"+${abs(opp_cap_pnl):.2f}" if opp_cap_pnl >= 0 else f"-${abs(opp_cap_pnl):.2f}"
+            )
+            blank_win = f"{'':5} " if multi_window else ""
+            print(
+                f"  {'':12} {blank_win}{'':5} {'':6} "
+                f"{'[OPP]':<9} {'':>5}  "
+                f"{addon_entry:>7.2f} {effective_exit:>7.2f} "
+                f"{pnl_str:>7} {pct_str:>7}  {outcome:<6}  "
+                f"pool ${opp_deployed:,.0f} → ${opp_returned:,.0f}  ({opp_net_str})"
+            )
+
     if current_date is not None:
         portfolio += day_cap_pnl
         _print_day_summary(
@@ -1234,6 +1341,12 @@ def _stats_from_trades(trade_rows: list) -> dict:
     dd_losses = dd_total - dd_wins
     dd_net_cap_pnl = sum(r.get("dd_addon_cap_pnl", 0.0) for r in dd_rows)
 
+    opp_rows = [r for r in active if r.get("opp_cap_pnl") is not None]
+    opp_total = len(opp_rows)
+    opp_wins = sum(1 for r in opp_rows if r.get("opp_cap_pnl", 0.0) > 0)
+    opp_losses = opp_total - opp_wins
+    opp_net_cap_pnl = sum(r.get("opp_cap_pnl", 0.0) for r in opp_rows)
+
     return {
         "total": total,
         "wins": wins,
@@ -1256,6 +1369,10 @@ def _stats_from_trades(trade_rows: list) -> dict:
         "dd_wins": dd_wins,
         "dd_losses": dd_losses,
         "dd_net_cap_pnl": dd_net_cap_pnl,
+        "opp_total": opp_total,
+        "opp_wins": opp_wins,
+        "opp_losses": opp_losses,
+        "opp_net_cap_pnl": opp_net_cap_pnl,
     }
 
 
@@ -1292,6 +1409,13 @@ def _print_stats_block(label: str, stats: dict):
         print(
             f"  Double-down     : {stats['dd_total']}  ({stats['dd_wins']}W / {stats['dd_losses']}L)"
             f"  net cap P&L: {dd_net_str}"
+        )
+    if stats.get("opp_total", 0):
+        opp_net = stats["opp_net_cap_pnl"]
+        opp_net_str = f"+${opp_net:.2f}" if opp_net >= 0 else f"-${abs(opp_net):.2f}"
+        print(
+            f"  Opportunity pool: {stats['opp_total']}  ({stats['opp_wins']}W / {stats['opp_losses']}L)"
+            f"  net cap P&L: {opp_net_str}"
         )
     print(f"  Win rate        : {stats['win_rate'] * 100:.0f}%")
     print(f"  Avg win  %      : +{stats['avg_win_pct']:.2f}%  per trade")
@@ -1615,6 +1739,38 @@ def _print_summary(
             )
 
     print(f"\n{sep}\n")
+
+
+def _print_opportunity_pool_block(
+    trade_rows: list, initial_pool: float, compound: bool
+):
+    opp_rows = [r for r in trade_rows if not r.get("skipped") and r.get("opp_cap_pnl") is not None]
+    if not opp_rows:
+        return
+    opp_total = len(opp_rows)
+    opp_wins = sum(1 for r in opp_rows if r.get("opp_cap_pnl", 0.0) > 0)
+    opp_losses = opp_total - opp_wins
+    win_rate = opp_wins / opp_total * 100
+    opp_net_cap_pnl = sum(r.get("opp_cap_pnl", 0.0) for r in opp_rows)
+    final_balance = initial_pool + opp_net_cap_pnl
+    pool_return_pct = opp_net_cap_pnl / initial_pool * 100 if initial_pool else 0.0
+
+    net_str = f"+${opp_net_cap_pnl:.2f}" if opp_net_cap_pnl >= 0 else f"-${abs(opp_net_cap_pnl):.2f}"
+    ret_str = f"+{pool_return_pct:.2f}%" if pool_return_pct >= 0 else f"{pool_return_pct:.2f}%"
+    compound_note = "compounded" if compound else "resets daily"
+
+    sep = "━" * 60
+    print(f"\n{sep}")
+    print(f"  OPPORTUNITY POOL  (${initial_pool:,.0f} initial | {compound_note})")
+    print(f"  {'─' * 56}")
+    print(f"  Deployments         : {opp_total}  ({opp_wins}W / {opp_losses}L)")
+    print(f"  Win rate            : {win_rate:.0f}%")
+    print(f"  Net cap P&L         : {net_str}")
+    print(f"  Net pool return (%) : {ret_str}")
+    if compound:
+        final_str = f"${final_balance:,.2f}"
+        print(f"  Final pool balance  : {final_str}")
+    print(sep)
 
 
 def _parse_args():
@@ -1945,6 +2101,18 @@ def _parse_args():
             f"Must be a multiple of 5. Default: {DOUBLEDOWN_START_MIN}."
         ),
     )
+    parser.add_argument(
+        "--opportunity-capital",
+        type=float,
+        default=0.0,
+        dest="opportunity_capital_pct",
+        help=(
+            "Size of the opportunity pool as a percentage of initial capital "
+            "(e.g. 50 = 50%%). Pool deploys on DD signals independently of "
+            "window capital and recycles sequentially within the day. "
+            "Requires --doubledown. Default: 0 (disabled)."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -2053,6 +2221,16 @@ if __name__ == "__main__":
         print(f"  Double-down  : on (start +{args.doubledown_start_min}min, stop=80% bar-range on add-on)")
     else:
         print("  Double-down  : off")
+    if args.opportunity_capital_pct > 0:
+        _opp_initial = args.capital * args.opportunity_capital_pct / 100
+        print(
+            f"  Opp pool     : ${_opp_initial:,.0f} ({args.opportunity_capital_pct:.0f}% of initial capital)"
+            + (" | compounded" if args.compound else " | resets daily")
+        )
+        if not args.doubledown:
+            print("  WARNING: --opportunity-capital has no effect without --doubledown")
+    else:
+        print("  Opp pool     : disabled")
     if args.min_or_range > 0:
         wins_str = (
             ",".join(args.min_or_range_windows)
@@ -2147,6 +2325,16 @@ if __name__ == "__main__":
     if args.doubledown:
         _apply_doubledown(trade_rows)
 
+    if args.opportunity_capital_pct > 0 and args.doubledown:
+        _opp_initial = args.capital * args.opportunity_capital_pct / 100
+        _apply_opportunity_pool(
+            trade_rows,
+            resolved_windows,
+            initial_pool=_opp_initial,
+            compound=args.compound,
+            doubledown_start_min=args.doubledown_start_min,
+        )
+
     baseline_df = _collect_baseline(all_window_results, eval_start, eval_end)
 
     print("Fetching QQQ daily bars for comparison...")
@@ -2173,5 +2361,9 @@ if __name__ == "__main__":
         weights=weights,
         morning_split=morning_split,
     )
+    if args.opportunity_capital_pct > 0 and args.doubledown:
+        _opp_initial = args.capital * args.opportunity_capital_pct / 100
+        _print_opportunity_pool_block(trade_rows, _opp_initial, args.compound)
+
     if args.show_execution_log:
         _print_skip_log(skip_log, resolved_windows)

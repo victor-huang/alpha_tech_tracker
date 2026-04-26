@@ -7,6 +7,7 @@ import pytz
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector_backtest import (
     _annotate_doubledown_addon,
     _apply_capital_flow,
+    _apply_opportunity_pool,
 )
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import (
     _stitch_cache,
@@ -466,3 +467,139 @@ class TestAnnotateDoubledownAddon:
 
         winner = next(r for r in rows if r["rank"] == 1)
         assert winner["dd_freed_ranks"] == [2]
+
+
+# ---------------------------------------------------------------------------
+# _apply_opportunity_pool
+# ---------------------------------------------------------------------------
+#
+# Window configs used throughout:
+#   M1: 09:30 / 3 bars → or_close_min=585, dd_fire_min=590 (with dd_start_min=5)
+#   A1: 13:15 / 1 bar  → or_close_min=800, dd_fire_min=805
+#   A2: 15:00 / 1 bar  → or_close_min=905, dd_fire_min=910
+#
+# A row is DD-eligible when it has "dd_freed_ranks" set and not "skipped".
+
+_M1 = {"label": "M1", "opening_start": "09:30", "opening_bars": 3}
+_A1 = {"label": "A1", "opening_start": "13:15", "opening_bars": 1}
+_A2 = {"label": "A2", "opening_start": "15:00", "opening_bars": 1}
+_DD_START_MIN = 5  # → dd_bars = 1
+
+
+def _opp_row(window, bars_held=3, pnl_pct=0.10, exit_reason="end_of_day", d=_D1):
+    return {
+        "date": d,
+        "window": window,
+        "rank": 1,
+        "entry_price": 100.0,
+        "pnl": 0.0,
+        "cap_pnl": 0.0,
+        "bars_held": bars_held,
+        "exit_reason": exit_reason,
+        "dd_freed_ranks": [2],
+        "dd_addon_pnl_pct": pnl_pct,
+    }
+
+
+class TestApplyOpportunityPool:
+    def test_deploys_pool_on_dd_eligible_winner(self):
+        row = _opp_row("M1", pnl_pct=0.10)
+        _apply_opportunity_pool([row], [_M1], initial_pool=1_000.0, doubledown_start_min=_DD_START_MIN)
+
+        assert row["opp_deployed"] == pytest.approx(1_000.0)
+        assert row["opp_cap_pnl"] == pytest.approx(100.0)
+        assert row["opp_returned"] == pytest.approx(1_100.0)
+
+    def test_opp_cap_pnl_folds_into_cap_pnl(self):
+        row = _opp_row("M1", pnl_pct=0.10)
+        row["cap_pnl"] = 500.0
+        _apply_opportunity_pool([row], [_M1], initial_pool=1_000.0, doubledown_start_min=_DD_START_MIN)
+
+        assert row["cap_pnl"] == pytest.approx(600.0)
+
+    def test_no_deployment_without_dd_freed_ranks(self):
+        row = {"date": _D1, "window": "M1", "rank": 1, "cap_pnl": 0.0,
+               "bars_held": 3, "dd_addon_pnl_pct": 0.10}
+        _apply_opportunity_pool([row], [_M1], initial_pool=1_000.0, doubledown_start_min=_DD_START_MIN)
+
+        assert "opp_cap_pnl" not in row
+
+    def test_no_deployment_when_row_is_skipped(self):
+        row = _opp_row("M1", pnl_pct=0.10)
+        row["skipped"] = True
+        _apply_opportunity_pool([row], [_M1], initial_pool=1_000.0, doubledown_start_min=_DD_START_MIN)
+
+        assert "opp_cap_pnl" not in row
+
+    def test_pool_recycles_to_next_window_after_early_exit(self):
+        # M1 exits after bars_held=2 (not EOD) → pool_exit_min=600 < A1 dd_fire=805 → A1 deploys
+        m1 = _opp_row("M1", bars_held=2, pnl_pct=0.10, exit_reason="trailing_stop")
+        a1 = _opp_row("A1", bars_held=3, pnl_pct=0.05, exit_reason="end_of_day")
+        _apply_opportunity_pool([m1, a1], [_M1, _A1], initial_pool=1_000.0, doubledown_start_min=_DD_START_MIN)
+
+        assert m1["opp_deployed"] == pytest.approx(1_000.0)
+        assert a1["opp_deployed"] == pytest.approx(1_100.0)  # recycled from M1
+        assert a1["opp_cap_pnl"] == pytest.approx(55.0)
+
+    def test_pool_locked_when_prior_deployment_still_running(self):
+        # M1 exit_reason=end_of_day → pool_exit_min=960 > A1 dd_fire=805 → A1 skipped
+        m1 = _opp_row("M1", bars_held=3, pnl_pct=0.10, exit_reason="end_of_day")
+        a1 = _opp_row("A1", bars_held=3, pnl_pct=0.05, exit_reason="end_of_day")
+        _apply_opportunity_pool([m1, a1], [_M1, _A1], initial_pool=1_000.0, doubledown_start_min=_DD_START_MIN)
+
+        assert "opp_cap_pnl" in m1
+        assert "opp_cap_pnl" not in a1
+
+    def test_no_compound_resets_pool_each_day(self):
+        d1_row = _opp_row("M1", pnl_pct=0.10, d=_D1)
+        d2_row = _opp_row("M1", pnl_pct=0.10, d=_D2)
+        _apply_opportunity_pool(
+            [d1_row, d2_row], [_M1], initial_pool=1_000.0,
+            compound=False, doubledown_start_min=_DD_START_MIN,
+        )
+
+        assert d1_row["opp_deployed"] == pytest.approx(1_000.0)
+        assert d2_row["opp_deployed"] == pytest.approx(1_000.0)
+
+    def test_compound_day2_deploys_day1_returned_balance(self):
+        d1_row = _opp_row("M1", pnl_pct=0.10, d=_D1)
+        d2_row = _opp_row("M1", pnl_pct=0.10, d=_D2)
+        _apply_opportunity_pool(
+            [d1_row, d2_row], [_M1], initial_pool=1_000.0,
+            compound=True, doubledown_start_min=_DD_START_MIN,
+        )
+
+        assert d1_row["opp_returned"] == pytest.approx(1_100.0)
+        assert d2_row["opp_deployed"] == pytest.approx(1_100.0)
+
+    def test_pool_floored_at_zero_after_total_loss(self):
+        # Day 1: 100% loss → opp_returned=0 → Day 2 pool=0 → no deployment
+        d1_row = _opp_row("M1", pnl_pct=-1.0, d=_D1)
+        d2_row = _opp_row("M1", pnl_pct=0.10, d=_D2)
+        _apply_opportunity_pool(
+            [d1_row, d2_row], [_M1], initial_pool=1_000.0,
+            compound=True, doubledown_start_min=_DD_START_MIN,
+        )
+
+        assert d1_row["opp_returned"] == pytest.approx(0.0)
+        assert "opp_cap_pnl" not in d2_row
+
+    def test_no_op_when_initial_pool_is_zero(self):
+        row = _opp_row("M1", pnl_pct=0.10)
+        _apply_opportunity_pool([row], [_M1], initial_pool=0.0, doubledown_start_min=_DD_START_MIN)
+
+        assert "opp_cap_pnl" not in row
+
+    def test_loss_deployment_records_negative_opp_cap_pnl(self):
+        row = _opp_row("M1", pnl_pct=-0.05)
+        _apply_opportunity_pool([row], [_M1], initial_pool=1_000.0, doubledown_start_min=_DD_START_MIN)
+
+        assert row["opp_cap_pnl"] == pytest.approx(-50.0)
+        assert row["opp_returned"] == pytest.approx(950.0)
+
+    def test_winner_with_insufficient_bars_held_is_skipped(self):
+        # bars_held=0 < dd_bars=1 → winner exited before DD fires → no deployment
+        row = _opp_row("M1", bars_held=0, pnl_pct=0.10)
+        _apply_opportunity_pool([row], [_M1], initial_pool=1_000.0, doubledown_start_min=_DD_START_MIN)
+
+        assert "opp_cap_pnl" not in row
