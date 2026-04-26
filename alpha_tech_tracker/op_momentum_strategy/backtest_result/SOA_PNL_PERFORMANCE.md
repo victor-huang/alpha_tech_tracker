@@ -28,13 +28,14 @@ python alpha_tech_tracker/op_momentum_strategy/op_momentum_selector_backtest.py 
 | Reversal | on (max bars=3) | BEARISH stop-out → price crosses OR high → flip BULLISH |
 | Bearish re-entry | on (max bars=3) | BEARISH stop-out → price closes below OR low → re-enter short |
 | Bullish re-entry | on (max bars=5) | BULLISH stop-out → price closes above OR high → re-enter long |
-| Doubledown | on, start=5 min | Co-pick stops out within 5 min of OR close → freed capital redeployed into surviving position with break-even hard stop |
+| Doubledown | on, start=5 min | Co-pick stops out within 5 min of OR close → freed capital redeployed into surviving position with 80% bar-range hard stop |
 | Regime filter | off | Not applied in this config |
 | Stop pct | 0.15 (default) | 15% of OR range |
 | Trailing MA | ma20 (default) | Exit when price crosses below MA20 (armed after 1× OR range move) |
 | Ticker pool | 17 tickers (V3) | SNDK APP SHOP CVNA AMD META EXPE RH FN MU CRDO PLTR COIN CLS MSTR CRWV MRVL |
 | Lookback | 60d rolling | For selector scoring |
 | Compounding | off | $10,000 reset each day |
+| Feed | SIP | Alpaca SIP feed |
 
 ### Secondary Features — Usage Notes
 
@@ -46,167 +47,9 @@ understand their combined upper bound.
 
 ---
 
-## 7-Year Annual Performance (2019–2025) + 2026 YTD — V2 Pool
+## V3 Pool — 6-Year Performance (2021–2026 YTD)
 
-Results include `--doubledown --doubledown-start 5`. Prior results (without DD) shown for reference.
-
-| Year | Trades | W/L | Return (with DD) | Return (no DD) | DD Delta | QQQ Return | Alpha |
-|---|---|---|---|---|---|---|---|
-| 2019 | 1,353 | 580W / 773L | **+109.75%** | +100.32% | +9.4pp | +37.27% | +72pp |
-| 2020 | 1,368 | 618W / 750L | **+212.43%** | +192.15% | +20.3pp | +45.14% | +167pp |
-| 2021 | 1,413 | 634W / 779L | **+158.41%** | +147.87% | +10.5pp | +28.63% | +130pp |
-| 2022 | 1,328 | 590W / 738L | **+210.80%** | +191.51% | +19.3pp | -33.71% | +244pp |
-| 2023 | 1,424 | 647W / 777L | **+352.89%** | +334.58% | +18.3pp | +54.84% | +298pp |
-| 2024 | 1,413 | 630W / 783L | **+151.69%** | +138.51% | +13.2pp | +26.99% | +125pp |
-| 2025 | 1,418 | 658W / 760L | **+185.14%** | +174.27% | +10.9pp | +20.40% | +165pp |
-| 2026 YTD (Jan–Apr 10) | 395 | 190W / 205L | **+108.79%** | +99.08% | +9.7pp | -0.31% | +109pp |
-| **7-yr sum (2019–2025)** | | | **+1,381.11%** | +1,279.21% | **+101.9pp** | **+179.56%** | **+1,201pp** |
-
-> 2026 uses `--feed iex` (SIP subscription does not allow querying recent data).
-> DD wins every year — delta ranges from +9pp to +20pp.
-
----
-
-## Key Observations
-
-1. **Beats QQQ every single year** — including 2022 where QQQ lost -33.71% and the
-   strategy returned +191.51%. The BEARISH signal path profits from downtrends that
-   destroy buy-and-hold portfolios.
-
-2. **2023 is the standout year** (+334.58%, +280pp alpha) — strong directional
-   intraday moves in both directions produced high-quality OR breakouts.
-
-3. **2026 YTD is exceptional relative to QQQ** (+99pp alpha in 3.5 months) —
-   the tariff-driven bearish macro environment generates sustained intraday
-   follow-through that the BEARISH + BRE combination captures effectively.
-
-4. **Win rate is consistently 44–47%** across all years — the strategy is profitable
-   with a sub-50% win rate because average wins are larger than average losses.
-
-5. **Reversal vs BRE split** (from independent-mode study, same config):
-   - BRE wins bear/choppy years: 2021 (+7pp), 2022 (+21pp), 2024 (+13pp)
-   - Reversal wins bull years: 2023 (+43pp), 2025 (+20pp), 2026 YTD (+15pp)
-   - Both features are additive — they fire on different days
-
----
-
-## AT Pool — Same Config (2026-04-11)
-
-Re-ran the identical SOA config against the **ACTIVELY_TRADE_TICKERS** (AT) pool.
-
-### AT Pool (16 tickers)
-
-```
-SNDK, APP, SHOP, CVNA, AMD, META, MU, PLTR, COIN, NVDA, TSLA,
-RKLB, ASTS, HOOD, CRWD, NFLX
-```
-
-Removed from V2: ANAB, RH, FN, EXPE, FANG (sparse bars / low liquidity).
-Added: RKLB, ASTS, HOOD (Russell 2000 high-activity), CRWD, NFLX (large-cap).
-
-### Year-by-Year Comparison (with --doubledown --doubledown-start 5)
-
-| Year | SOA V2 | AT Pool | Δ | Winner |
-|------|--------|---------|---|--------|
-| 2019 | +109.75% | +128.24% | +18.5pp | **AT** |
-| 2020 | +212.43% | +177.51% | -34.9pp | V2 |
-| 2021 | +158.41% | +146.73% | -11.7pp | V2 |
-| 2022 | +210.80% | +257.97% | +47.2pp | **AT** |
-| 2023 | +352.89% | +346.14% | -6.8pp | V2 |
-| 2024 | +151.69% | +191.15% | +39.5pp | **AT** |
-| 2025 | +185.14% | +218.03% | +32.9pp | **AT** |
-| 2026 YTD (Jan–Apr 10) | +108.79% | +99.72% | -9.1pp | V2 |
-| **7-yr sum (2019–2025)** | **+1,381.11%** | **+1,465.77%** | **+84.7pp** | **AT** |
-
-### Key Observations
-
-1. **AT wins 4 of 7 years and the 7-year total by +68pp** — the higher-OR% names (ASTS 3.49%, RKLB 3.22%, CRWD 2.65%) generate larger winning moves under the reversal+BRE config.
-
-2. **AT dominates bear/choppy years** — 2022 (+38pp), 2024 (+35.5pp), 2019 (+19pp). COIN's bearish asymmetry and CRWD/NVDA volatility drive outperformance when markets trend down intraday.
-
-3. **2025 flip vs prior M1-only study** — in the M1-alone study, AT trailed V2 by -22pp in 2025. With reversal+BRE, AT wins 2025 by +25pp. The re-entry and reversal signals extract more value from the AT pool's volatile names.
-
-4. **V2 edges AT in pure bull years** — 2020 (-31pp), 2021 (-11pp), 2023 (-7pp). EXPE/FANG/RH contributed strong BULLISH breakouts in those years; their removal hurts in sustained bull trends.
-
-5. **2020 gap (-31pp) is the largest drag** — RKLB, ASTS, HOOD were not listed in 2020, effectively running with a smaller pool that year.
-
-### Output Logs
-
-| File | Description |
-|------|-------------|
-| `active_traded_ticker_list/soa_at_2019.txt` | AT pool — 2019 full output |
-| `active_traded_ticker_list/soa_at_2020.txt` | AT pool — 2020 full output |
-| `active_traded_ticker_list/soa_at_2021.txt` | AT pool — 2021 full output |
-| `active_traded_ticker_list/soa_at_2022.txt` | AT pool — 2022 full output |
-| `active_traded_ticker_list/soa_at_2023.txt` | AT pool — 2023 full output |
-| `active_traded_ticker_list/soa_at_2024.txt` | AT pool — 2024 full output |
-| `active_traded_ticker_list/soa_at_2025.txt` | AT pool — 2025 full output |
-| `active_traded_ticker_list/soa_at_2026.txt` | AT pool — 2026 YTD full output |
-
----
-
-## AT+MSTR Pool — CRWD → MSTR Swap (2026-04-11)
-
-Ticker screening identified **MSTR (MicroStrategy)** as the best standalone replacement for CRWD:
-- MSTR standalone: +70.10% (2025), +21.05% (2026 YTD) vs CRWD: +35.97% / +13.49%
-- MSTR ADV ~20M shares/day (below Tier 1 floor but extreme beta; Bitcoin proxy since Aug 2020)
-- Other screened candidates: SOFI (+60.73%/+14.22%), MARA (+67.19%/+2.62%), AVGO (+38.61%/+11.48%), RIOT (+28.12%/+11.45%), IBIT (+32.00%/+3.16%)
-
-### AT+MSTR Pool (16 tickers)
-
-```
-SNDK, APP, SHOP, CVNA, AMD, META, MU, PLTR, COIN, NVDA, TSLA,
-RKLB, ASTS, HOOD, MSTR, NFLX
-```
-
-Change: CRWD → MSTR
-
-### Year-by-Year Comparison (with --doubledown --doubledown-start 5)
-
-| Year | SOA V2 | AT (CRWD) | AT+MSTR | Δ vs AT |
-|------|--------|-----------|---------|---------|
-| 2019 | +109.75% | +128.24% | +114.23% | -14.0pp |
-| 2020 | +212.43% | +177.51% | **+189.11%** | +11.6pp |
-| 2021 | +158.41% | +146.73% | **+158.03%** | +11.3pp |
-| 2022 | +210.80% | **+257.97%** | +243.30% | -14.7pp |
-| 2023 | +352.89% | +346.14% | +344.81% | -1.3pp |
-| 2024 | +151.69% | +191.15% | **+196.79%** | +5.6pp |
-| 2025 | +185.14% | +218.03% | **+224.02%** | +6.0pp |
-| 2026 YTD (Jan–Apr 10) | +108.79% | +99.72% | **+106.06%** | +6.3pp |
-| **7-yr sum (2019–2025)** | **+1,381.11%** | **+1,465.77%** | **+1,470.29%** | **+4.5pp** |
-
-### Key Observations
-
-1. **Net positive swap (+4.65pp over 7 years)** — MSTR wins 5 of 7 years vs the AT pool with CRWD.
-
-2. **MSTR is a Bitcoin-correlated name** — wins strongly in crypto bull years (2020 +10pp, 2021 +10pp, 2024 +7pp, 2025 +8pp) and loses in bear years (2022 -15pp). Saylor's BTC pivot was Aug 2020, so 2019 drag (-14pp) reflects pre-pivot MSTR behavior.
-
-3. **2022 is the main risk** (-15pp) — crypto names suffer in bear markets; CRWD's defensive cybersecurity profile held up better that year.
-
-4. **2026 YTD nearly matches SOA V2** (+98.67% vs +99.08%) — the tariff-driven bear environment hasn't hurt MSTR as much as expected, likely because BTC retains its safe-haven narrative.
-
-5. **7-year total: AT+MSTR leads all pools** — +1,470.29% vs AT +1,465.77% vs SOA V2 +1,381.11%.
-
-### Output Logs
-
-| File | Description |
-|------|-------------|
-| `active_traded_ticker_list/soa_at_mstr_2019.txt` | AT+MSTR pool — 2019 full output |
-| `active_traded_ticker_list/soa_at_mstr_2020.txt` | AT+MSTR pool — 2020 full output |
-| `active_traded_ticker_list/soa_at_mstr_2021.txt` | AT+MSTR pool — 2021 full output |
-| `active_traded_ticker_list/soa_at_mstr_2022.txt` | AT+MSTR pool — 2022 full output |
-| `active_traded_ticker_list/soa_at_mstr_2023.txt` | AT+MSTR pool — 2023 full output |
-| `active_traded_ticker_list/soa_at_mstr_2024.txt` | AT+MSTR pool — 2024 full output |
-| `active_traded_ticker_list/soa_at_mstr_2025.txt` | AT+MSTR pool — 2025 full output |
-| `active_traded_ticker_list/soa_at_mstr_2026.txt` | AT+MSTR pool — 2026 YTD full output |
-| `active_traded_ticker_list/tier1_candidates/` | Individual standalone screens for SOFI, MARA, IBIT, RIOT, AVGO, MSTR, SHOP, CVNA, CRWD |
-
----
-
-## V3 Pool — FANG/NVDA/TSLA → CLS/MSTR/CRWV/MRVL (2026-04-12)
-
-Quarterly P&L trend analysis of the V2 pool (Q3 2024 → Q1 2026) identified three structurally
-declining tickers. Replaced with four screened candidates, expanding the pool from 16 → 17 tickers.
+**Last run: 2026-04-25** · SIP feed · with `--doubledown --doubledown-start 5`
 
 ### V3 Pool (17 tickers)
 
@@ -215,62 +58,109 @@ SNDK, APP, SHOP, CVNA, AMD, META, EXPE, RH, FN, MU, CRDO, PLTR, COIN,
 CLS, MSTR, CRWV, MRVL
 ```
 
-Removed from V2: FANG (structurally weak, +1-2% in Q1/Q2 2025 and Q1 2026), NVDA (fading,
-+0.6% Q4 2024, sub-10% by Q3-Q4 2025), TSLA (peaked Q2/Q3 2025 at +43%/+41%, declined to +6.5% Q1 2026).
-Added: CLS (consistent +13-39%), MSTR (never negative, +56% Q4 2024 BTC run), CRWV (accelerating
-post-IPO: +24% Q4 2025, +37% Q1 2026), MRVL (high peaks: +40% Q2 2025, +28% Q1 2026).
+Removed from V2: FANG (structurally weak), NVDA (fading), TSLA (peaked).
+Added: CLS, MSTR, CRWV, MRVL (2026-04-12).
 
-### V2 vs V3 Year-by-Year (SOA config, with --doubledown --doubledown-start 5)
-
-| Year | V2 | V3 | Δ | Winner |
-|------|----|----|---|--------|
-| 2021 | +158.41% | +189.74% | +31.3pp | **V3** |
-| 2022 | +210.80% | +214.48% | +3.7pp  | **V3** |
-| 2023 | +352.89% | +332.33% | -20.6pp | V2 |
-| 2024 | +151.69% | +161.16% | +9.5pp  | **V3** |
-| 2025 | +185.14% | +169.83% | -15.3pp | V2 |
-| 2026 YTD (Jan–Apr 10) | +108.79% | +126.11% | +17.3pp | **V3** |
-| **5-yr sum (2021–2025)** | **+1,058.93%** | **+1,067.54%** | **+8.6pp** | **V3** |
-
-> 2019–2020 not rerun for V3. V2 results for those years remain the reference.
-
-### Key Observations
-
-1. **V3 wins 4 of 6 years and the 5-year total by +8.6pp** — confirmed as the better pool overall.
-
-2. **V2 wins 2023 (-20.6pp)**: Strong sustained bull year. TSLA and NVDA generated powerful
-   BULLISH OR breakouts; MSTR was in post-crypto-crash recovery; CRWV did not yet exist.
-
-3. **V2 wins 2025 (-15.3pp)**: TSLA was exceptional mid-year (Q2 +43%, Q3 +41%). CRWV also
-   missed Q1 2025 (pre-IPO), leaving V3 one ticker short that quarter.
-
-4. **V3 dominates bear/choppy years** (2021 +31pp, 2022 +4pp, 2024 +10pp, 2026 +17pp):
-   CLS, MSTR, MRVL extract stronger OR-breakout edge in volatile and downtrending markets.
-   MSTR's BTC-correlated beta generates large BEARISH moves in risk-off environments.
-
-5. **CRWV is the highest-risk addition** — only 4 quarters of live data (IPO March 2025).
-   Trend is accelerating (+17% → +12% → +24% → +37%) but insufficient history for a
-   definitive multi-year conclusion.
-
-### Output Logs
-
-| File | Description |
-|------|-------------|
-| `ticker_list_review/04_12_2026/FINDINGS.md` | Full quarterly trend table, candidate screen, V2 vs V3 validation |
+| Year | Trades | W/L | WR | Return | QQQ Return | Alpha |
+|------|--------|-----|----|--------|------------|-------|
+| 2021 | 1,400 | 628W/772L | 45% | **+185.72%** | +28.63% | +157pp |
+| 2022 | 1,318 | 581W/737L | 44% | **+200.00%** | -33.71% | +234pp |
+| 2023 | 1,406 | 612W/794L | 44% | **+332.13%** | +54.84% | +277pp |
+| 2024 | 1,398 | 623W/775L | 45% | **+165.15%** | +26.99% | +138pp |
+| 2025 | 1,415 | 634W/781L | 45% | **+165.48%** | +20.40% | +145pp |
+| 2026 YTD (Jan–Apr 24) | 446 | 239W/207L | 54% | **+107.79%** | +8.28% | +100pp |
+| **5-yr sum (2021–2025)** | | | | **+1,048.48%** | **+97.74%** | **+951pp** |
 
 ---
 
-## Doubledown Impact Summary
+## AT Pool — 7-Year Performance (2019–2026 YTD)
 
-`--doubledown --doubledown-start 5` added to all configs as of 2026-04-12. DD wins every year across all three pools.
+**Last run: 2026-04-25** · SIP feed · with `--doubledown --doubledown-start 5`
 
-| Pool | 7-yr sum (no DD) | 7-yr sum (with DD) | DD lift |
-|------|-----------------|-------------------|---------|
-| V2 | +1,279.21% | **+1,381.11%** | +101.9pp |
-| AT | +1,347.17% | **+1,465.77%** | +118.6pp |
-| AT+MSTR | +1,351.82% | **+1,470.29%** | +118.5pp |
+### AT Pool (16 tickers)
 
-Per-year DD delta ranges from **+9pp to +29pp** depending on year and pool. Largest gains in high-volatility years (2020, 2022) where stopouts are frequent and freed capital captures larger subsequent moves. See `dev_plan/double_down_on_winner.md` for full sweep analysis.
+```
+SNDK, APP, SHOP, CVNA, AMD, META, MU, PLTR, COIN, NVDA, TSLA,
+RKLB, ASTS, HOOD, MSTR, NFLX
+```
+
+Removed from V2: ANAB, RH, FN, EXPE, FANG (sparse bars / low liquidity).
+Added: RKLB, ASTS, HOOD (Russell 2000 high-activity), NFLX (large-cap); CRWD → MSTR swap.
+
+| Year | Trades | W/L | WR | Return | QQQ Return | Alpha |
+|------|--------|-----|----|--------|------------|-------|
+| 2019 | 1,280 | 581W/699L | 45% | **+111.19%** | +37.27% | +74pp |
+| 2020 | 1,239 | 560W/679L | 45% | **+191.64%** | +45.14% | +147pp |
+| 2021 | 1,372 | 603W/769L | 44% | **+153.16%** | +28.63% | +125pp |
+| 2022 | 1,299 | 587W/712L | 45% | **+229.63%** | -33.71% | +263pp |
+| 2023 | 1,391 | 613W/778L | 44% | **+348.97%** | +54.84% | +294pp |
+| 2024 | 1,395 | 599W/796L | 43% | **+196.20%** | +26.99% | +169pp |
+| 2025 | 1,378 | 675W/703L | 49% | **+223.44%** | +20.40% | +203pp |
+| 2026 YTD (Jan–Apr 24) | 431 | 232W/199L | 54% | **+128.21%** | +8.28% | +120pp |
+| **5-yr sum (2021–2025)** | | | | **+1,151.40%** | **+97.74%** | **+1,054pp** |
+| **7-yr sum (2019–2025)** | | | | **+1,454.23%** | **+180.18%** | **+1,274pp** |
+
+---
+
+## V3 vs AT Head-to-Head
+
+| Year | V3 | AT | Δ (AT−V3) | Winner |
+|------|----|----|-----------|--------|
+| 2021 | +185.72% | +153.16% | -32.56pp | **V3** |
+| 2022 | +200.00% | +229.63% | +29.63pp | **AT** |
+| 2023 | +332.13% | +348.97% | +16.84pp | **AT** |
+| 2024 | +165.15% | +196.20% | +31.05pp | **AT** |
+| 2025 | +165.48% | +223.44% | +57.96pp | **AT** |
+| 2026 YTD | +107.79% | +128.21% | +20.42pp | **AT** |
+| **5-yr sum** | **+1,048.48%** | **+1,151.40%** | **+102.92pp** | **AT** |
+
+### Key Observations
+
+1. **AT wins 5 of 6 years and the 5-year total by +103pp** — NVDA, TSLA, MSTR, ASTS generate larger BEARISH moves in risk-off environments that the AT pool captures more effectively.
+
+2. **V3 wins only 2021** (+32pp) — RKLB, ASTS, HOOD had limited history early in 2021 (RKLB IPO'd Nov 2021, HOOD Aug 2021), reducing the effective AT pool size that year.
+
+3. **2025 gap is the largest** (+58pp, AT wins) — NVDA and TSLA both had exceptional bull-year momentum that V3 specifically excluded; MSTR added BTC-correlated beta.
+
+4. **2026 YTD: AT +128% vs V3 +108%** (+20pp) — tariff-driven bear environment benefits AT's high-beta names (NVDA, TSLA, MSTR, ASTS) on the BEARISH signal path.
+
+5. **Win rate is consistently 43–49%** — profitable with sub-50% win rate because avg wins (+1.1–1.8%) exceed avg losses (-0.3–0.8%) every year in both pools.
+
+---
+
+## Key Observations (All Pools)
+
+1. **Beats QQQ every single year** — including 2022 where QQQ lost -33.71% while both pools returned +200%.
+
+2. **2023 is the standout year** (+332% V3, +349% AT) — strong directional intraday moves in both directions produced high-quality OR breakouts.
+
+3. **2026 YTD is exceptional vs QQQ** (+100pp / +120pp alpha in 4 months) — the tariff-driven bearish macro environment generates sustained intraday follow-through that the BEARISH + BRE combination captures effectively.
+
+4. **Win rate is consistently 43–49%** across all years — the strategy is profitable with a sub-50% win rate because average wins are larger than average losses.
+
+5. **Reversal vs BRE split** (from independent-mode study, same config):
+   - BRE wins bear/choppy years: 2021, 2022, 2024
+   - Reversal wins bull years: 2023, 2025, 2026 YTD
+   - Both features are additive — they fire on different days
+
+---
+
+## Historical V2 Pool Reference (2019–2025)
+
+Results from the original V2 pool. Superseded by V3 for 2021 onwards.
+
+| Year | Trades | W/L | Return (with DD) | Return (no DD) | QQQ Return |
+|------|--------|-----|-----------------|----------------|------------|
+| 2019 | 1,353 | 580W/773L | +109.75% | +100.32% | +37.27% |
+| 2020 | 1,368 | 618W/750L | +212.43% | +192.15% | +45.14% |
+| 2021 | 1,413 | 634W/779L | +158.41% | +147.87% | +28.63% |
+| 2022 | 1,328 | 590W/738L | +210.80% | +191.51% | -33.71% |
+| 2023 | 1,424 | 647W/777L | +352.89% | +334.58% | +54.84% |
+| 2024 | 1,413 | 630W/783L | +151.69% | +138.51% | +26.99% |
+| 2025 | 1,418 | 658W/760L | +185.14% | +174.27% | +20.40% |
+| **7-yr sum** | | | **+1,381.11%** | **+1,279.21%** | **+179.56%** |
+
+> V2 pool: SNDK APP SHOP CVNA AMD META EXPE FANG RH FN MU CRDO PLTR COIN NVDA TSLA
 
 ---
 
@@ -282,3 +172,4 @@ Per-year DD delta ranges from **+9pp to +29pp** depending on year and pool. Larg
 | `bearish_reentry/OVERVIEW.md` | BRE implementation design, config parameters, mutual exclusion with reversal |
 | `multiple_trading_windows/SUMMARY.md` | M1/M2/A1/A2 window comparison, compound growth projections |
 | `FINDINGS.md` | Regime filter, ticker pool, weight sweep, top-N findings |
+| `ticker_list_review/04_12_2026/FINDINGS.md` | V2 vs V3 quarterly trend analysis, candidate screen |
