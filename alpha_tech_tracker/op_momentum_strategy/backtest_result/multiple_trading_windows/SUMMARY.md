@@ -687,44 +687,248 @@ python alpha_tech_tracker/op_momentum_strategy/op_momentum_selector_backtest.py 
 | 11:30/3bar | 13 | 10 | 13 | 17 | 16 | 13.8 | |
 | 12:30/3bar | 18 | 18 | 16 | 8 | 14 | 14.8 | |
 
-### A1 Slot Trade Count vs Fire Rate
+### Delta P&L Added by A1 Slot (vs baseline M1 + A2 13:15 + A3 15:00)
 
-| Config | 2022 | 2023 | 2024 | 2025 | Fire rate (2025) |
+**Baseline** (no A1): +157.9% / +268.4% / +119.6% / +128.1% / +93.0% YTD
+
+Δ = total return with A1 minus baseline. A1 ret, trades, WR, and EV are the A1 slot's own stats.
+
+#### 10:00 / 1 bar — High EV, fires ~26% of days (locked by M1 sub-trades most days)
+
+| Year | Δ Total | A1 ret | Trades | WR | EV/tr |
 |---|---|---|---|---|---|
-| 10:00/1bar | 123 | 121 | 141 | 130 | ~26% of days |
-| 10:00/3bar | 150 | 155 | 174 | 172 | ~34% |
-| 10:30/1bar | 187 | 202 | 218 | 225 | ~45% |
-| 11:00/1bar | 250 | 268 | 300 | 277 | ~55% |
-| 11:00/2bar | 265 | 285 | 311 | 273 | ~54% |
-| **12:00/2bar** | **352** | **352** | **398** | **372** | **~74%** |
-| 12:30/2bar | 342 | 392 | 406 | 383 | ~76% |
+| 2022 | +25% | +25% | 123 | 46% | +0.54% |
+| 2023 | +13% | +16% | 121 | 39% | +0.29% |
+| 2024 | +19% | +20% | 141 | 51% | +0.43% |
+| 2025 | +26% | +28% | 130 | 55% | +0.82% |
+| 2026 | -0% | +1% | 43 | 49% | +0.18% |
+| **4yr avg** | **+21%** | | | | |
 
-Fire rate = A1 trades / (trading days × 2 slots). Early windows are blocked by M1 BRE/BRU/REV sub-trades on most days; by noon, most M1 activity has settled.
+#### 10:00 / 2 bar — Slightly more trades, lower EV
 
-### A1 Slot EV and Return (2022 vs 2025)
+| Year | Δ Total | A1 ret | Trades | WR | EV/tr |
+|---|---|---|---|---|---|
+| 2022 | +22% | +22% | 138 | 54% | +0.43% |
+| 2023 | +12% | +15% | 134 | 46% | +0.40% |
+| 2024 | +6% | +8% | 157 | 39% | +0.17% |
+| 2025 | +14% | +15% | 148 | 49% | +0.26% |
+| 2026 | +3% | +4% | 48 | 46% | +0.25% |
+| **4yr avg** | **+14%** | | | | |
 
-| Config | 2022 trades | 2022 EV | 2022 A1 ret | 2025 trades | 2025 EV | 2025 A1 ret |
-|---|---|---|---|---|---|---|
-| 10:00/1bar | 123 | +0.54% | +25% | 130 | +0.82% | +28% |
-| 10:00/3bar | 150 | +0.53% | +22% | 172 | +0.61% | +29% |
-| 10:30/1bar | 187 | +0.43% | +26% | 225 | +0.21% | +13% |
-| 11:00/1bar | 250 | +0.42% | +33% | 277 | +0.41% | +32% |
-| 12:00/2bar | 352 | +0.34% | +54% | 372 | +0.19% | +27% |
-| 12:30/2bar | 342 | +0.29% | +40% | 383 | +0.29% | +45% |
+#### 10:00 / 3 bar — Bear-year specialist; strong 2022 and 2025
 
-Key trade-off: early windows have higher EV per trade but fire rarely; mid-day windows have moderate EV but fire consistently. 10:00/1bar fires only ~26% of days but averages +0.54–0.82% EV per trade.
+| Year | Δ Total | A1 ret | Trades | WR | EV/tr |
+|---|---|---|---|---|---|
+| 2022 | +21% | +22% | 150 | 49% | +0.53% |
+| 2023 | +7% | +11% | 155 | 36% | +0.31% |
+| 2024 | +10% | +15% | 174 | 43% | +0.25% |
+| 2025 | +25% | +29% | 172 | 55% | +0.61% |
+| 2026 | +10% | +10% | 55 | 47% | +0.73% |
+| **4yr avg** | **+16%** | | | | |
+
+#### 10:30 / 1 bar — Old #1 rank, now average; EV decays badly in 2025
+
+| Year | Δ Total | A1 ret | Trades | WR | EV/tr |
+|---|---|---|---|---|---|
+| 2022 | +19% | +26% | 187 | 42% | +0.44% |
+| 2023 | +10% | +15% | 202 | 39% | +0.20% |
+| 2024 | +15% | +17% | 218 | 46% | +0.30% |
+| 2025 | +10% | +13% | 225 | 43% | +0.21% |
+| 2026 | +3% | +3% | 58 | 47% | +0.38% |
+| **4yr avg** | **+14%** | | | | |
+
+#### 10:30 / 2 bar — Strong 2022 only; collapses in 2025
+
+| Year | Δ Total | A1 ret | Trades | WR | EV/tr |
+|---|---|---|---|---|---|
+| 2022 | +28% | +29% | 190 | 44% | +0.50% |
+| 2023 | +3% | +10% | 214 | 44% | +0.21% |
+| 2024 | +6% | +7% | 223 | 43% | +0.14% |
+| 2025 | +2% | +2% | 223 | 46% | +0.02% |
+| 2026 | +1% | +5% | 61 | 43% | +0.33% |
+| **4yr avg** | **+10%** | | | | |
+
+#### 10:30 / 3 bar — Weakest 10:30 variant; goes negative in 2024
+
+| Year | Δ Total | A1 ret | Trades | WR | EV/tr |
+|---|---|---|---|---|---|
+| 2022 | +9% | +13% | 195 | 39% | +0.21% |
+| 2023 | +9% | +18% | 231 | 46% | +0.27% |
+| 2024 | -3% | +5% | 229 | 43% | +0.10% |
+| 2025 | +9% | +16% | 232 | 43% | +0.22% |
+| 2026 | +4% | +8% | 61 | 43% | +0.42% |
+| **4yr avg** | **+6%** | | | | |
+
+#### 11:00 / 1 bar — Best 2025 delta (+29%), but unreliable 2024 (-1%)
+
+| Year | Δ Total | A1 ret | Trades | WR | EV/tr |
+|---|---|---|---|---|---|
+| 2022 | +22% | +33% | 250 | 42% | +0.42% |
+| 2023 | +17% | +20% | 268 | 41% | +0.25% |
+| 2024 | -1% | +5% | 300 | 39% | +0.09% |
+| 2025 | +29% | +32% | 277 | 49% | +0.41% |
+| 2026 | +2% | +4% | 74 | 41% | +0.21% |
+| **4yr avg** | **+17%** | | | | |
+
+#### 11:00 / 2 bar — Top 2022–2023, fades in 2024–2025
+
+| Year | Δ Total | A1 ret | Trades | WR | EV/tr |
+|---|---|---|---|---|---|
+| 2022 | +29% | +35% | 265 | 48% | +0.39% |
+| 2023 | +20% | +35% | 285 | 49% | +0.41% |
+| 2024 | +8% | +16% | 311 | 45% | +0.19% |
+| 2025 | +8% | +14% | 273 | 41% | +0.14% |
+| 2026 | +7% | +11% | 91 | 34% | +0.27% |
+| **4yr avg** | **+16%** | | | | |
+
+#### 11:00 / 3 bar — Steadiest 11:00 variant; consistent across all years
+
+| Year | Δ Total | A1 ret | Trades | WR | EV/tr |
+|---|---|---|---|---|---|
+| 2022 | +19% | +28% | 272 | 44% | +0.24% |
+| 2023 | +12% | +26% | 286 | 48% | +0.32% |
+| 2024 | +15% | +25% | 332 | 45% | +0.28% |
+| 2025 | +16% | +25% | 298 | 43% | +0.24% |
+| 2026 | +4% | +9% | 95 | 46% | +0.22% |
+| **4yr avg** | **+16%** | | | | |
+
+#### 11:30 / 1 bar — Steady but uninspiring; lowest WR at 35% in 2022
+
+| Year | Δ Total | A1 ret | Trades | WR | EV/tr |
+|---|---|---|---|---|---|
+| 2022 | +16% | +25% | 283 | 35% | +0.17% |
+| 2023 | +15% | +23% | 293 | 42% | +0.23% |
+| 2024 | +16% | +24% | 354 | 44% | +0.20% |
+| 2025 | +14% | +20% | 322 | 45% | +0.23% |
+| 2026 | +1% | +10% | 105 | 39% | +0.21% |
+| **4yr avg** | **+15%** | | | | |
+
+#### 11:30 / 2 bar — Good 2022–2024, softens in 2025
+
+| Year | Δ Total | A1 ret | Trades | WR | EV/tr |
+|---|---|---|---|---|---|
+| 2022 | +25% | +41% | 316 | 44% | +0.30% |
+| 2023 | +15% | +31% | 307 | 46% | +0.29% |
+| 2024 | +17% | +28% | 361 | 44% | +0.22% |
+| 2025 | +9% | +15% | 339 | 44% | +0.16% |
+| 2026 | +4% | +17% | 103 | 41% | +0.38% |
+| **4yr avg** | **+17%** | | | | |
+
+#### 11:30 / 3 bar — Goes negative in 2026; EV evaporates in 2025
+
+| Year | Δ Total | A1 ret | Trades | WR | EV/tr |
+|---|---|---|---|---|---|
+| 2022 | +19% | +30% | 316 | 44% | +0.25% |
+| 2023 | +10% | +34% | 329 | 45% | +0.28% |
+| 2024 | +7% | +19% | 364 | 49% | +0.16% |
+| 2025 | +8% | +13% | 338 | 46% | +0.13% |
+| 2026 | -6% | +4% | 113 | 49% | +0.06% |
+| **4yr avg** | **+11%** | | | | |
+
+#### 12:00 / 1 bar — Big 2022 and 2024 but EV collapses in 2025; negative 2026
+
+| Year | Δ Total | A1 ret | Trades | WR | EV/tr |
+|---|---|---|---|---|---|
+| 2022 | +25% | +45% | 326 | 39% | +0.37% |
+| 2023 | +11% | +33% | 352 | 43% | +0.22% |
+| 2024 | +21% | +31% | 391 | 45% | +0.23% |
+| 2025 | +8% | +14% | 359 | 38% | +0.10% |
+| 2026 | -3% | +6% | 114 | 36% | +0.12% |
+| **4yr avg** | **+16%** | | | | |
+
+#### 12:00 / 2 bar — Most consistent; only config with zero negative delta years ✓
+
+| Year | Δ Total | A1 ret | Trades | WR | EV/tr |
+|---|---|---|---|---|---|
+| 2022 | **+39%** | +54% | 352 | 45% | +0.35% |
+| 2023 | +11% | +33% | 352 | 47% | +0.28% |
+| 2024 | +17% | +30% | 398 | 43% | +0.18% |
+| 2025 | +14% | +27% | 372 | 43% | +0.19% |
+| 2026 | **+9%** | +19% | 123 | 42% | +0.40% |
+| **4yr avg** | **+20%** | | | | |
+
+#### 12:00 / 3 bar — 2022 spike (+38% delta), inconsistent otherwise (2023: -4%)
+
+| Year | Δ Total | A1 ret | Trades | WR | EV/tr |
+|---|---|---|---|---|---|
+| 2022 | +38% | +53% | 347 | 44% | +0.35% |
+| 2023 | -4% | +28% | 367 | 43% | +0.19% |
+| 2024 | +10% | +32% | 400 | 49% | +0.24% |
+| 2025 | +18% | +31% | 368 | 41% | +0.18% |
+| 2026 | +8% | +18% | 123 | 50% | +0.28% |
+| **4yr avg** | **+15%** | | | | |
+
+#### 12:30 / 1 bar — Avoid: only config with negative A1 slot return in 2026 (-2.8%, -$0.047% EV)
+
+| Year | Δ Total | A1 ret | Trades | WR | EV/tr |
+|---|---|---|---|---|---|
+| 2022 | +17% | +32% | 328 | 42% | +0.26% |
+| 2023 | +4% | +39% | 370 | 41% | +0.26% |
+| 2024 | +19% | +31% | 392 | 42% | +0.21% |
+| 2025 | +19% | +28% | 366 | 42% | +0.18% |
+| 2026 | **-11%** | **-3%** | 120 | **32%** | **-0.05%** |
+| **4yr avg** | **+15%** | | | | |
+
+#### 12:30 / 2 bar — Tops 2024–2025 but drops negative in 2026 (-6% delta)
+
+| Year | Δ Total | A1 ret | Trades | WR | EV/tr |
+|---|---|---|---|---|---|
+| 2022 | +26% | +40% | 342 | 44% | +0.29% |
+| 2023 | -0% | +39% | 392 | 41% | +0.25% |
+| 2024 | +23% | +39% | 406 | 44% | +0.23% |
+| 2025 | **+27%** | +45% | 383 | 47% | +0.29% |
+| 2026 | -6% | +8% | 115 | 40% | +0.07% |
+| **4yr avg** | **+19%** | | | | |
+
+#### 12:30 / 3 bar — Weakest late config; negative 2023 and 2026
+
+| Year | Δ Total | A1 ret | Trades | WR | EV/tr |
+|---|---|---|---|---|---|
+| 2022 | +7% | +33% | 339 | 42% | +0.23% |
+| 2023 | -7% | +34% | 404 | 43% | +0.27% |
+| 2024 | +5% | +26% | 411 | 43% | +0.19% |
+| 2025 | +15% | +36% | 387 | 47% | +0.24% |
+| 2026 | -3% | +16% | 120 | 48% | +0.26% |
+| **4yr avg** | **+5%** | | | | |
+
+### Summary Delta Table (sorted by 4yr avg Δ)
+
+| Config | Δ 2022 | Δ 2023 | Δ 2024 | Δ 2025 | Δ 2026 | 4yr avg Δ | Neg years |
+|---|---|---|---|---|---|---|---|
+| **10:00/1bar** | +25% | +13% | +19% | +26% | -0% | **+21%** | 0 |
+| **12:00/2bar** | +39% | +11% | +17% | +14% | +9% | **+20%** | **0** |
+| **12:30/2bar** | +26% | -0% | +23% | +27% | -6% | **+19%** | 2 |
+| **11:00/1bar** | +22% | +17% | -1% | +29% | +2% | **+17%** | 1 |
+| **11:30/2bar** | +25% | +15% | +17% | +9% | +4% | **+17%** | 0 |
+| **11:00/2bar** | +29% | +20% | +8% | +8% | +7% | **+16%** | 0 |
+| 12:00/1bar | +25% | +11% | +21% | +8% | -3% | +16% | 1 |
+| 10:00/3bar | +21% | +7% | +10% | +25% | +10% | +16% | 0 |
+| 11:00/3bar | +19% | +12% | +15% | +16% | +4% | +16% | 0 |
+| 12:00/3bar | +38% | -4% | +10% | +18% | +8% | +15% | 1 |
+| 11:30/1bar | +16% | +15% | +16% | +14% | +1% | +15% | 0 |
+| 12:30/1bar | +17% | +4% | +19% | +19% | -11% | +15% | 1 |
+| 10:00/2bar | +22% | +12% | +6% | +14% | +3% | +14% | 0 |
+| 10:30/1bar | +19% | +10% | +15% | +10% | +3% | +14% | 0 |
+| 11:30/3bar | +19% | +10% | +7% | +8% | -6% | +11% | 1 |
+| 10:30/2bar | +28% | +3% | +6% | +2% | +1% | +10% | 0 |
+| 10:30/3bar | +9% | +9% | -3% | +9% | +4% | +6% | 1 |
+| 12:30/3bar | +7% | -7% | +5% | +15% | -3% | +5% | 2 |
 
 ### Key Findings (Corrected Sweep)
 
-1. **10:30/1bar is no longer the most consistent choice** — with the BRE/BRU/REV timing fix, it drops from avg rank 4.4 (old, stale) to 10.6 (corrected). Early windows (10:00–10:30) are blocked by M1 sub-trades frequently and should not be relied on for reliable daily A1 deployment.
+1. **10:30/1bar is no longer the most consistent choice** — with the BRE/BRU/REV timing fix it drops from avg rank 4.4 (old, stale) to rank 14 / +14% avg delta. Early windows (10:00–10:30) are blocked by M1 sub-trades frequently; 10:30 fires on only ~45% of days and its EV/trade decayed to +0.21% in 2025 vs +0.44% in 2022.
 
-2. **12:00/2bar is the new most consistent (avg rank 5.4)** — wins 2022 and 2026 YTD, top-6 every year except 2025 (#11). Fires on ~74% of trading days. When capital is available, the 2-bar OR filters mid-session noise better than 1-bar.
+2. **12:00/2bar is the recommended default** — only config with zero negative delta years across all 5 periods (+39% in 2022, still +9% in 2026 YTD). Fires ~74% of days. EV/trade is stable (+0.18–0.40%). The 2-bar OR filters mid-session noise vs 1-bar.
 
-3. **10:00/1bar has the best total 4-year return (189.2%)** and highest EV/trade (+0.54–0.82%) but fires only ~26% of days. It reliably fires on "clean" M1 days (no sub-trades running at 10:05), and those days tend to have continued strong directional momentum. This is a selective high-quality filter, not a reliable daily window.
+3. **10:00/1bar has the best 4yr raw return and highest EV/trade (+0.54–0.82%)** but fires only ~26% of days — capital sits idle 3+ days per week while A2/A3 still recycle it. Near-zero delta in 2026 (-0.3%) despite positive A1 slot return (+0.8%) shows capital timing effects. Best used when the operator wants max per-signal quality and accepts low fire rate.
 
-4. **The phantom capital effect was large**: 10:30/1bar appeared dominant in the old sweep because M1 capital was incorrectly credited as returned at 10:40 even when BRE/BRU/REV sub-trades were still running. The fix correctly blocks it on those days.
+4. **12:30/1bar should be avoided** — the only config with a negative A1 slot return in any year (2026: -2.8%, -0.047% EV/trade, -11% total delta). The 1-bar OR at 12:30 is too noisy in volatile regimes.
 
-5. **For live trading (current regime: volatile/uncertain)**: 12:00/2bar is the safer default — fires reliably, has good EV, consistent across regimes. 10:00/1bar is only worth adding if monitoring capital utilization and the operator is comfortable with it sitting idle 3+ days per week.
+5. **12:30/2bar is regime-dependent** — tops 2024 and 2025 (best deltas at +23%/+27%) but goes to -6% in 2026. Only use if the market is in a confirmed trending bull environment.
+
+6. **11:30/2bar and 11:00/3bar are underrated** — both show zero negative delta years, consistent +15–17% avg, and steady EV. They don't top any year but never hurt. Good second choices if 12:00/2bar is unavailable.
+
+7. **The phantom capital effect was decisive**: 10:30/1bar appeared dominant before the fix because M1 capital was credited as returned at 10:40 even when BRE/BRU/REV sub-trades were still running. The corrected results reflect true capital availability.
 
 ### Corrected CLI
 
