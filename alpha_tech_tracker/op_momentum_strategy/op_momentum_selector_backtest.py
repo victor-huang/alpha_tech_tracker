@@ -473,6 +473,8 @@ def run_selector_backtest(
     stop_pct: float = STOP_PCT,
     source: str = "alpaca",
     trailing_ma: str = "ma20",
+    trailing_ma_switch: str = "none",
+    trailing_ma_switch_factor: float = 1.0,
     max_loss_pct: float = None,
     armed_ma20_exit: bool = False,
     regime_filter: bool = False,
@@ -586,6 +588,8 @@ def run_selector_backtest(
                 stop_pct,
                 opening_start_time=win["opening_start"],
                 trailing_ma=trailing_ma,
+                trailing_ma_switch=trailing_ma_switch,
+                trailing_ma_switch_factor=trailing_ma_switch_factor,
                 max_loss_pct=max_loss_pct,
                 armed_ma20_exit=armed_ma20_exit,
                 bearish_regime_dates=bearish_regime_dates,
@@ -1946,6 +1950,23 @@ def _parse_args():
         help="Trailing MA stop to use once MA is above hard stop (default: ma20).",
     )
     parser.add_argument(
+        "--trailing-ma-switch",
+        choices=["none", "after-arm", "after-target"],
+        default="none",
+        dest="trailing_ma_switch",
+        help="Upgrade trailing stop from MA20 to MA8 once a profit threshold is reached. "
+        "after-arm: upgrade when price moves 1x OR range past entry. "
+        "after-target: upgrade at factor x OR range (see --trailing-ma-switch-factor). "
+        "Default: none.",
+    )
+    parser.add_argument(
+        "--trailing-ma-switch-factor",
+        type=float,
+        default=1.0,
+        dest="trailing_ma_switch_factor",
+        help="OR-range multiplier for --trailing-ma-switch after-target (default: 1.0).",
+    )
+    parser.add_argument(
         "--max-loss-pct",
         type=float,
         default=None,
@@ -2337,6 +2358,8 @@ if __name__ == "__main__":
         stop_pct=args.stop_pct,
         source=args.source,
         trailing_ma=args.trailing_ma,
+        trailing_ma_switch=args.trailing_ma_switch,
+        trailing_ma_switch_factor=args.trailing_ma_switch_factor,
         max_loss_pct=args.max_loss_pct,
         armed_ma20_exit=args.armed_ma20_exit,
         regime_filter=args.regime_filter,
