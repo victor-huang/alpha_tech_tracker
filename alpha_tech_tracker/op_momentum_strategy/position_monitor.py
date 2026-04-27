@@ -754,8 +754,20 @@ class PositionMonitor:
                 open_positions = self._client.get_open_positions()
                 broker_entry = open_positions.get(pos.option_symbol)
                 if broker_entry is None:
+                    # Broker may lag a few seconds after a fill before the position
+                    # appears in the positions API. Retry once before concluding the
+                    # position was manually closed.
                     logger.warning(
-                        "PRE-CLOSE SYNC %s: not found at broker — already fully closed manually",
+                        "PRE-CLOSE SYNC %s: not found at broker on first check"
+                        " — retrying in 3s (broker positions API may lag after fill)",
+                        pos.option_symbol,
+                    )
+                    time.sleep(3)
+                    open_positions = self._client.get_open_positions()
+                    broker_entry = open_positions.get(pos.option_symbol)
+                if broker_entry is None:
+                    logger.warning(
+                        "PRE-CLOSE SYNC %s: not found at broker after retry — already fully closed manually",
                         pos.option_symbol,
                     )
                     fill_est = self._fetch_manual_close_fill_price(pos)
