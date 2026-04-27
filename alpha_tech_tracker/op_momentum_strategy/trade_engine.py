@@ -1407,12 +1407,13 @@ class OpMomentumTradeEngine:
                     event.ticker,
                 )
                 return
+            rank = state["open_position_count"]
             state["open_position_count"] += 1
 
         win = next(w for w in self._windows if w.label == window_label)
         window_budget = self._get_window_budget(win)
         success = self._enter_position(
-            event, rank=0, window_label=window_label, window_budget=window_budget
+            event, rank=rank, window_label=window_label, window_budget=window_budget
         )
         if not success:
             with self._signal_lock:
