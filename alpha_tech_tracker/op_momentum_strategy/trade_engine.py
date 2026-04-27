@@ -152,7 +152,7 @@ class TickerSelector:
             fetch_start,
             bars_end,
             source="alpaca",
-            feed=self._alpaca_feed,
+            feed=DataFeed.SIP,
         )
 
     def select(self, ticker_dfs: dict = None) -> list:

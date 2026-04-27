@@ -154,6 +154,42 @@ class TestTickerSelector:
         assert mock_select_top_n.call_count == 2
 
 
+class TestTickerSelectorWarmupFeed:
+    """TickerSelector.fetch_bars() must always request SIP for historical warmup
+    regardless of the alpaca_feed the engine was configured with for live streaming."""
+
+    @patch(_FETCH_BARS_PATH)
+    def test_fetch_bars_uses_sip_when_alpaca_feed_is_iex(self, mock_fetch_bars):
+        from alpaca.data.enums import DataFeed
+        mock_fetch_bars.return_value = {}
+        selector = TickerSelector(
+            tickers=["NVDA"], top_n=1, alpaca_feed=DataFeed.IEX
+        )
+        selector.fetch_bars()
+        _, _args, kwargs = mock_fetch_bars.mock_calls[0]
+        assert kwargs.get("feed") == DataFeed.SIP
+
+    @patch(_FETCH_BARS_PATH)
+    def test_fetch_bars_uses_sip_when_alpaca_feed_is_sip(self, mock_fetch_bars):
+        from alpaca.data.enums import DataFeed
+        mock_fetch_bars.return_value = {}
+        selector = TickerSelector(
+            tickers=["NVDA"], top_n=1, alpaca_feed=DataFeed.SIP
+        )
+        selector.fetch_bars()
+        _, _args, kwargs = mock_fetch_bars.mock_calls[0]
+        assert kwargs.get("feed") == DataFeed.SIP
+
+    @patch(_FETCH_BARS_PATH)
+    def test_fetch_bars_uses_sip_by_default(self, mock_fetch_bars):
+        from alpaca.data.enums import DataFeed
+        mock_fetch_bars.return_value = {}
+        selector = TickerSelector(tickers=["NVDA"], top_n=1)
+        selector.fetch_bars()
+        _, _args, kwargs = mock_fetch_bars.mock_calls[0]
+        assert kwargs.get("feed") == DataFeed.SIP
+
+
 class TestSignalBuffer:
     def test_on_signal_buffers_when_before_deadline(self):
         engine = _make_engine_with_mock_client()

@@ -1217,6 +1217,18 @@ class TestLiveWarmupUsesAPI:
         mdc.fetch_bars.assert_called_once()
         mock_cached_fetch.assert_not_called()
 
+    def test_replay_warmup_always_uses_sip_feed(self):
+        engine = LiveSignalEngine(tickers=["APP"], opening_bars=3, on_signal=None)
+        replay_date = date(2026, 3, 5)
+        with patch(_BACKTEST_FETCH_BARS) as mock_fetch:
+            mock_fetch.return_value = {"APP": pd.DataFrame(
+                columns=["Open", "High", "Low", "Close", "Volume"]
+            )}
+            engine._warmup_from_cache(replay_date, market_data_client=None)
+        _, _args, kwargs = mock_fetch.mock_calls[0]
+        from alpaca.data.enums import DataFeed
+        assert kwargs.get("feed") == DataFeed.SIP
+
 
 # ---------------------------------------------------------------------------
 # TestOnBarWarmupPeriodGuard — _on_bar drops 1-min bars whose 5-min period

@@ -6,6 +6,8 @@ from typing import Optional
 import pandas as pd
 import pytz
 
+from alpaca.data.enums import DataFeed
+
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import (
     build_bearish_regime_dates,
 )
@@ -586,7 +588,7 @@ class LiveSignalEngine:
             bars_dict = market_data_client.fetch_bars(self._tickers, start_dt, end_dt)
         else:
             from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import fetch_bars
-            bars_dict = fetch_bars(self._tickers, start, end, source="alpaca")
+            bars_dict = fetch_bars(self._tickers, start, end, source="alpaca", feed=DataFeed.SIP)
         # _stitch_cache may return a wider file (e.g. 2020–2026) that covers the
         # requested range.  Clip to strictly before replay_date so MA calculations
         # are not influenced by future bars.
