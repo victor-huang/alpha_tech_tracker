@@ -586,15 +586,18 @@ class PositionMonitor:
                 broker_entry = open_positions.get(pos.ticker)
                 if broker_entry is None:
                     logger.warning(
-                        "PRE-CLOSE SYNC %s [stock]: not found at broker — already fully closed manually",
+                        "PRE-CLOSE SYNC %s [stock]: not found at broker — checking entry order status",
                         pos.ticker,
                     )
-                    pos.close_order_failed = False
-                    _notify(
-                        f"MANUAL CLOSE DETECTED {pos.ticker} x{pos.shares} shares"
-                        f" — position already closed at broker, skipping order"
-                    )
-                    return
+                    if pos.entry_order_id and self._entry_confirmed_filled_no_manual_close(pos):
+                        broker_entry = {"qty": float(-pos.shares if pos.signal == "BEARISH" else pos.shares)}
+                    else:
+                        pos.close_order_failed = False
+                        _notify(
+                            f"MANUAL CLOSE DETECTED {pos.ticker} x{pos.shares} shares"
+                            f" — position already closed at broker, skipping order"
+                        )
+                        return
                 broker_qty = int(abs(broker_entry["qty"]))
                 if broker_qty < pos.shares:
                     logger.warning(
@@ -753,34 +756,25 @@ class PositionMonitor:
             try:
                 open_positions = self._client.get_open_positions()
                 broker_entry = open_positions.get(pos.option_symbol)
-                # Broker may lag after a fill before the position appears in the
-                # positions API. Retry up to 2 more times before concluding the
-                # position was manually closed.
-                for attempt in range(1, 3):
-                    if broker_entry is not None:
-                        break
-                    logger.warning(
-                        "PRE-CLOSE SYNC %s: not found at broker (attempt %d/3)"
-                        " — retrying in 3s (broker positions API may lag after fill)",
-                        pos.option_symbol, attempt,
-                    )
-                    time.sleep(3)
-                    open_positions = self._client.get_open_positions()
-                    broker_entry = open_positions.get(pos.option_symbol)
                 if broker_entry is None:
                     logger.warning(
-                        "PRE-CLOSE SYNC %s: not found at broker after 3 attempts — already fully closed manually",
+                        "PRE-CLOSE SYNC %s: not found at broker — checking entry order status",
                         pos.option_symbol,
                     )
-                    fill_est = self._fetch_manual_close_fill_price(pos)
-                    if fill_est is not None:
-                        pos.exit_fill_price = fill_est
-                    pos.close_order_failed = False
-                    _notify(
-                        f"MANUAL CLOSE DETECTED {_fmt_option(pos.option_symbol)} x{pos.contracts}"
-                        f" — position already closed at broker, skipping order"
-                    )
-                    return
+                    if pos.entry_order_id and self._entry_confirmed_filled_no_manual_close(pos):
+                        # Entry confirmed filled, no manual sell found — positions API lag.
+                        # Proceed with close using the engine's known contract count.
+                        broker_entry = {"qty": float(pos.contracts)}
+                    else:
+                        fill_est = self._fetch_manual_close_fill_price(pos)
+                        if fill_est is not None:
+                            pos.exit_fill_price = fill_est
+                        pos.close_order_failed = False
+                        _notify(
+                            f"MANUAL CLOSE DETECTED {_fmt_option(pos.option_symbol)} x{pos.contracts}"
+                            f" — position already closed at broker, skipping order"
+                        )
+                        return
                 broker_qty = int(broker_entry["qty"])
                 if broker_qty < pos.contracts:
                     logger.warning(
@@ -1088,6 +1082,69 @@ class PositionMonitor:
             return _D(str(q["mid"]))
         except Exception:
             return None
+
+    def _entry_confirmed_filled_no_manual_close(self, pos: ActivePosition) -> bool:
+        """Return True if we should proceed with closing despite the position not appearing
+        in the broker's open-positions list.
+
+        The broker positions API (TradeStation) can lag several minutes after a fill.
+        We distinguish API lag from a genuine manual close by:
+        1. Checking the entry order status — if it was canceled/rejected the position
+           never opened, so we should skip the close.
+        2. Scanning recent filled orders for a sell placed after our entry — if one
+           exists, the user closed manually and we should skip.
+        3. If the entry is confirmed filled and no sell order is found, it is safe to
+           proceed: the positions API is just lagging.
+
+        Returns False on any exception (safe default: skip the close order).
+        """
+        symbol = pos.option_symbol if pos.trade_type != "stock" else pos.ticker
+        close_side = "buy" if (pos.trade_type == "stock" and pos.signal == "BEARISH") else "sell"
+        try:
+            status = self._client.order_status(pos.entry_order_id)
+            order_status_val = status.get("status", "")
+            if order_status_val in ("canceled", "cancelled", "rejected"):
+                logger.warning(
+                    "PRE-CLOSE SYNC %s: entry order %s was %s — position never opened, skipping close",
+                    symbol, pos.entry_order_id, order_status_val,
+                )
+                return False
+            if order_status_val != "filled":
+                logger.warning(
+                    "PRE-CLOSE SYNC %s: entry order %s status='%s' — cannot confirm position, skipping close",
+                    symbol, pos.entry_order_id, order_status_val,
+                )
+                return False
+            # Entry confirmed filled. Check if the user already closed it manually.
+            filled_orders = self._client.get_filled_orders(symbol, limit=10)
+            for order in filled_orders:
+                if order["side"] != close_side:
+                    continue
+                if pos.entry_time is not None and order.get("filled_at") is not None:
+                    filled_at = order["filled_at"]
+                    if hasattr(filled_at, "tzinfo") and filled_at.tzinfo is None:
+                        filled_at = ET.localize(filled_at)
+                    if filled_at <= pos.entry_time:
+                        continue
+                logger.info(
+                    "PRE-CLOSE SYNC %s: entry %s filled but found manual sell order %s — treating as manually closed",
+                    symbol, pos.entry_order_id, order.get("order_id"),
+                )
+                return False
+            # Entry filled, no manual sell found — broker positions API is lagging.
+            logger.warning(
+                "PRE-CLOSE SYNC %s: entry order %s confirmed filled but position absent from"
+                " broker positions API — likely API lag, proceeding with close (qty=%d)",
+                symbol, pos.entry_order_id,
+                pos.contracts if pos.trade_type != "stock" else pos.shares,
+            )
+            return True
+        except Exception:
+            logger.warning(
+                "PRE-CLOSE SYNC %s: could not verify entry order %s — skipping close",
+                symbol, pos.entry_order_id, exc_info=True,
+            )
+            return False
 
     def _fetch_manual_close_fill_price(self, pos: ActivePosition) -> Optional[object]:
         """Return the actual fill price of a manually placed close order.

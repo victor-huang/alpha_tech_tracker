@@ -2883,6 +2883,10 @@ class TestPreCloseBrokerQtySync:
     def test_option_full_manual_close_skips_order(self):
         monitor, client, engine, pos = self._make_live_monitor()
         client.get_open_positions.return_value = {}
+        client.order_status.return_value = {"status": "filled", "filled_avg_price": 8.0}
+        client.get_filled_orders.return_value = [
+            {"order_id": "sell1", "side": "sell", "filled_avg_price": 9.00, "filled_at": None},
+        ]
         with \
                 patch(self._REPLAY_PATH, return_value=False), \
                 patch(self._PLACE_OPTION_PATH) as place_order, \
@@ -2895,6 +2899,7 @@ class TestPreCloseBrokerQtySync:
     def test_option_full_manual_close_sets_fill_price_from_order_history(self):
         monitor, client, engine, pos = self._make_live_monitor()
         client.get_open_positions.return_value = {}
+        client.order_status.return_value = {"status": "filled", "filled_avg_price": 8.0}
         client.get_filled_orders.return_value = [
             {"order_id": "o1", "side": "sell", "filled_avg_price": 9.75,
              "filled_qty": 6.0, "filled_at": None},
@@ -2907,9 +2912,10 @@ class TestPreCloseBrokerQtySync:
 
         assert pos.exit_fill_price == _D("9.75")
 
-    def test_option_full_manual_close_falls_back_to_mid_when_no_order_history(self):
+    def test_option_falls_back_to_mid_when_order_status_unknown_and_no_sell_history(self):
         monitor, client, engine, pos = self._make_live_monitor()
         client.get_open_positions.return_value = {}
+        client.order_status.side_effect = RuntimeError("API unavailable")
         client.get_filled_orders.return_value = []
         client.get_option_quote_by_occ.return_value = {"bid": 8.50, "ask": 9.50, "mid": 9.00}
         with \
@@ -3003,92 +3009,86 @@ class TestPreCloseBrokerQtySync:
         _, kwargs = place_order.call_args
         assert kwargs["shares"] == 50
 
-    _SLEEP_PATH = "alpha_tech_tracker.op_momentum_strategy.position_monitor.time.sleep"
-
-    def test_option_found_on_second_attempt_proceeds_with_close(self):
+    def test_option_position_found_at_broker_proceeds_normally(self):
         monitor, client, engine, pos = self._make_live_monitor()
-        client.get_open_positions.side_effect = [
-            {},
-            {pos.option_symbol: {"qty": 6.0}},
-        ]
+        client.get_open_positions.return_value = {pos.option_symbol: {"qty": 6.0}}
         with \
                 patch(self._REPLAY_PATH, return_value=False), \
                 patch(self._PLACE_OPTION_PATH, return_value=({"order_id": "x"}, 6)) as place_order, \
-                patch(self._NOTIFY_PATH), \
-                patch(self._SLEEP_PATH):
+                patch(self._NOTIFY_PATH):
             monitor._close_option_position(pos, "hard_stop")
 
+        assert client.get_open_positions.call_count == 1
         _, kwargs = place_order.call_args
         assert kwargs["contracts"] == 6
 
-    def test_option_found_on_third_attempt_proceeds_with_close(self):
-        monitor, client, engine, pos = self._make_live_monitor()
-        client.get_open_positions.side_effect = [
-            {},
-            {},
-            {pos.option_symbol: {"qty": 6.0}},
-        ]
-        with \
-                patch(self._REPLAY_PATH, return_value=False), \
-                patch(self._PLACE_OPTION_PATH, return_value=({"order_id": "x"}, 6)) as place_order, \
-                patch(self._NOTIFY_PATH), \
-                patch(self._SLEEP_PATH):
-            monitor._close_option_position(pos, "hard_stop")
-
-        _, kwargs = place_order.call_args
-        assert kwargs["contracts"] == 6
-
-    def test_option_not_found_after_three_attempts_treats_as_manually_closed(self):
+    def test_option_broker_api_lag_proceeds_with_close_when_entry_confirmed(self):
         monitor, client, engine, pos = self._make_live_monitor()
         client.get_open_positions.return_value = {}
+        client.order_status.return_value = {"status": "filled", "filled_avg_price": 8.0}
+        client.get_filled_orders.return_value = []
+        with \
+                patch(self._REPLAY_PATH, return_value=False), \
+                patch(self._PLACE_OPTION_PATH, return_value=({"order_id": "x"}, 6)) as place_order, \
+                patch(self._NOTIFY_PATH):
+            monitor._close_option_position(pos, "hard_stop")
+
+        _, kwargs = place_order.call_args
+        assert kwargs["contracts"] == 6
+
+    def test_option_broker_api_lag_uses_engine_contract_count(self):
+        monitor, client, engine, pos = self._make_live_monitor(contracts=4)
+        client.get_open_positions.return_value = {}
+        client.order_status.return_value = {"status": "filled", "filled_avg_price": 8.0}
+        client.get_filled_orders.return_value = []
+        with \
+                patch(self._REPLAY_PATH, return_value=False), \
+                patch(self._PLACE_OPTION_PATH, return_value=({"order_id": "x"}, 4)) as place_order, \
+                patch(self._NOTIFY_PATH):
+            monitor._close_option_position(pos, "trailing_stop_ma20")
+
+        _, kwargs = place_order.call_args
+        assert kwargs["contracts"] == 4
+
+    def test_option_not_found_manual_sell_found_after_entry_skips_close(self):
+        monitor, client, engine, pos = self._make_live_monitor()
+        client.get_open_positions.return_value = {}
+        client.order_status.return_value = {"status": "filled", "filled_avg_price": 8.0}
+        client.get_filled_orders.return_value = [
+            {"order_id": "sell1", "side": "sell", "filled_avg_price": 9.50, "filled_at": None},
+        ]
         with \
                 patch(self._REPLAY_PATH, return_value=False), \
                 patch(self._PLACE_OPTION_PATH) as place_order, \
-                patch(self._NOTIFY_PATH), \
-                patch(self._SLEEP_PATH):
+                patch(self._NOTIFY_PATH):
             monitor._close_option_position(pos, "hard_stop")
 
         place_order.assert_not_called()
         assert pos.close_order_failed is False
 
-    def test_option_retry_queries_broker_three_times_when_always_empty(self):
+    def test_option_not_found_entry_canceled_skips_close(self):
         monitor, client, engine, pos = self._make_live_monitor()
         client.get_open_positions.return_value = {}
+        client.order_status.return_value = {"status": "canceled"}
         with \
                 patch(self._REPLAY_PATH, return_value=False), \
-                patch(self._PLACE_OPTION_PATH), \
-                patch(self._NOTIFY_PATH), \
-                patch(self._SLEEP_PATH):
+                patch(self._PLACE_OPTION_PATH) as place_order, \
+                patch(self._NOTIFY_PATH):
             monitor._close_option_position(pos, "hard_stop")
 
-        assert client.get_open_positions.call_count == 3
+        place_order.assert_not_called()
 
-    def test_option_retry_sleeps_3s_between_attempts(self):
+    def test_option_not_found_order_status_failure_skips_close(self):
         monitor, client, engine, pos = self._make_live_monitor()
         client.get_open_positions.return_value = {}
+        client.order_status.side_effect = RuntimeError("API unavailable")
         with \
                 patch(self._REPLAY_PATH, return_value=False), \
-                patch(self._PLACE_OPTION_PATH), \
-                patch(self._NOTIFY_PATH), \
-                patch(self._SLEEP_PATH) as mock_sleep:
+                patch(self._PLACE_OPTION_PATH) as place_order, \
+                patch(self._NOTIFY_PATH):
             monitor._close_option_position(pos, "hard_stop")
 
-        assert mock_sleep.call_count == 2
-        for call in mock_sleep.call_args_list:
-            assert call.args[0] == 3
-
-    def test_option_no_retry_when_found_on_first_attempt(self):
-        monitor, client, engine, pos = self._make_live_monitor()
-        client.get_open_positions.return_value = {pos.option_symbol: {"qty": 6.0}}
-        with \
-                patch(self._REPLAY_PATH, return_value=False), \
-                patch(self._PLACE_OPTION_PATH, return_value=({"order_id": "x"}, 6)), \
-                patch(self._NOTIFY_PATH), \
-                patch(self._SLEEP_PATH) as mock_sleep:
-            monitor._close_option_position(pos, "hard_stop")
-
-        mock_sleep.assert_not_called()
-        assert client.get_open_positions.call_count == 1
+        place_order.assert_not_called()
 
 
 class TestSyncOpenPositionQtys:
