@@ -682,8 +682,6 @@ if __name__ == "__main__":
             logging.getLogger(_noisy).setLevel(logging.WARNING)
         is_replay = bool(args.replay_date) or bool(args.replay_start and args.replay_end)
         mock_trade_execution = args.mock_trade_execution or is_replay
-        if is_replay:
-            args.trade_type = "stock"
         is_paper = _resolve_is_paper(args)
         client = build_execution_client(is_paper=is_paper, broker=args.execution_broker)
         # In replay mode, pass None so OpMomentumTradeEngine uses MockContractSelector

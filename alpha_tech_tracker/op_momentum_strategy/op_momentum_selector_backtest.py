@@ -277,7 +277,7 @@ def _apply_capital_flow(
                     if (row.get("is_reversal") or row.get("is_bearish_reentry")
                             or row.get("is_bullish_reentry")):
                         continue
-                    exit_time = prior_drain + row.get("slot_exit_bars", row.get("bars_held", 0)) * 5
+                    exit_time = prior_drain + row.get("bars_held", 0) * 5
                     if exit_time <= this_drain:
                         available += row.get("cap_pnl", 0.0)
                     else:
@@ -774,12 +774,6 @@ def run_selector_backtest(
                         "rev_exit_reason": str(rev_row["exit_reason"])
                         if rev_row is not None
                         else "",
-                        "rev_bars_held": int(rev_row["bars_held"])
-                        if rev_row is not None
-                        else 0,
-                        "rev_entry_idx": int(rev_row.get("entry_idx", 0))
-                        if rev_row is not None
-                        else 0,
                         "br_pnl": float(br_row["pnl"]) if br_row is not None else 0.0,
                         "br_entry_price": float(br_row["entry_price"])
                         if br_row is not None
@@ -790,12 +784,6 @@ def run_selector_backtest(
                         "br_exit_reason": str(br_row["exit_reason"])
                         if br_row is not None
                         else "",
-                        "br_bars_held": int(br_row["bars_held"])
-                        if br_row is not None
-                        else 0,
-                        "br_entry_idx": int(br_row.get("entry_idx", 0))
-                        if br_row is not None
-                        else 0,
                         "bru_pnl": float(bru_row["pnl"])
                         if bru_row is not None
                         else 0.0,
@@ -808,12 +796,6 @@ def run_selector_backtest(
                         "bru_exit_reason": str(bru_row["exit_reason"])
                         if bru_row is not None
                         else "",
-                        "bru_bars_held": int(bru_row["bars_held"])
-                        if bru_row is not None
-                        else 0,
-                        "bru_entry_idx": int(bru_row.get("entry_idx", 0))
-                        if bru_row is not None
-                        else 0,
                         "bars_held": int(row["bars_held"]),
                         "mins_held": int(row["mins_held"]),
                     }
@@ -843,26 +825,6 @@ def run_selector_backtest(
                 )
                 _h, _m = map(int, win["opening_start"].split(":"))
                 _or_close_min = _h * 60 + _m + win["opening_bars"] * 5
-                _primary_bars = pick["bars_held"]
-                # Compute how many bars from OR close until the slot is fully returned,
-                # accounting for BRE/BRU/REV sub-trades that start after the primary exits.
-                # Formula: sub_exit = primary_bars_held + 1 (gap to sub-trade entry scan start)
-                #                     + sub_entry_idx (bars into scan before sub-trade fires)
-                #                     + 1 (the entry bar itself)
-                #                     + sub_bars_held (bars the sub-trade holds after entry)
-                _br_exit = (
-                    _primary_bars + 1 + pick.get("br_entry_idx", 0) + 1 + pick.get("br_bars_held", 0)
-                    if pick.get("br_entry_price") else 0
-                )
-                _bru_exit = (
-                    _primary_bars + 1 + pick.get("bru_entry_idx", 0) + 1 + pick.get("bru_bars_held", 0)
-                    if pick.get("bru_entry_price") else 0
-                )
-                _rev_exit = (
-                    _primary_bars + 1 + pick.get("rev_entry_idx", 0) + 1 + pick.get("rev_bars_held", 0)
-                    if pick.get("rev_entry_price") else 0
-                )
-                _slot_exit_bars = max(_primary_bars, _br_exit, _bru_exit, _rev_exit)
                 trade_rows.append(
                     {
                         "date": d,
@@ -875,7 +837,6 @@ def run_selector_backtest(
                         "cap_pnl": 0.0,
                         "window_capital": 0.0,
                         "skipped": False,
-                        "slot_exit_bars": _slot_exit_bars,
                         **{
                             k: v
                             for k, v in pick.items()
