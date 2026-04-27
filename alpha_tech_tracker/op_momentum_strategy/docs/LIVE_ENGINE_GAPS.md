@@ -523,3 +523,84 @@ using the existing `_is_nyse_holiday()` from `contract_selector.py` (backed by
 `_NYSEHolidayCalendar` with 7 NYSE rules). When a non-trading day is detected, the engine
 logs a `WARNING` and returns immediately. The guard is skipped when
 `_mock_trade_execution` is `True` so replay and test mode are unaffected.
+
+---
+
+### ~~G28 — Replay uses options P&L; backtest uses stock-price surrogate~~ ✓ Fixed
+
+**File:** `op_momentum_trade_engine.py` → `_parse_args_and_run()`
+**Severity:** High — options P&L is 5–10× the backtest equivalent; replay results were not comparable
+
+The live engine defaulted to `trade_type="options"` for all runs including replay. In
+replay mode the engine should match the backtest, which uses stock price movement as a
+surrogate (no options chain lookup). Running with `trade_type="options"` amplified every
+trade's P&L by the contract leverage factor, making replay totals incomparable to backtest.
+
+**Fix (2026-04-26):** After the `is_replay` flag is set (determined by `--replay-date`
+or `--replay-start`/`--replay-end`), `args.trade_type` is forced to `"stock"` — mirroring
+how `mock_trade_execution` is forced for replay. Live mode is unaffected.
+
+```python
+is_replay = bool(args.replay_date) or bool(args.replay_start and args.replay_end)
+mock_trade_execution = args.mock_trade_execution or is_replay
+if is_replay:
+    args.trade_type = "stock"
+```
+
+---
+
+### ~~G29 — BRE/BRU/REV sub-trade timing ignored in sequential window capital flow~~ ✓ Fixed
+
+**Files:** `op_momentum_backtest.py`, `op_momentum_selector_backtest.py`
+**Severity:** Medium — sequential window (A1/A2) over-allocated capital on days where a sub-trade ran past the drain time
+
+`_apply_capital_flow()` computed each slot's return time using only `bars_held` from the
+primary trade. A BRE/BRU/REV sub-trade that fires *after* the primary exits — and runs
+into the afternoon — kept the slot locked in the replay engine, but the backtest saw only
+the primary exit time and incorrectly freed the slot before the sequential window opened.
+
+**Example (4/23, COIN BEARISH → BRE):**
+- Primary exits at 9:45 (bars_held=0, fallback). BRE enters at 9:50 and exits at 11:25.
+- At A1 drain (10:05), the replay correctly withheld COIN's $4,000 slot.
+- Backtest previously gave A1 the full $10k budget because COIN's exit_time (9:45) was
+  before the drain.
+
+**Fix (2026-04-26):**
+1. `op_momentum_backtest.py`: added `"entry_idx"` to BRE, BRU, and REV row dicts so the
+   lag between primary exit and sub-trade entry is available downstream.
+2. `op_momentum_selector_backtest.py`: compute `slot_exit_bars` per trade row as
+   `max(primary_bars_held, br_exit_bars, bru_exit_bars, rev_exit_bars)` where
+   `sub_exit = primary_bars + 1 + entry_idx + 1 + sub_bars_held`.
+3. `_apply_capital_flow()`: uses `slot_exit_bars` instead of `bars_held` for the
+   exit_time calculation.
+
+**Result:** BT total for 4/23 moved from -$153 to -$159 (closer to replay -$136). COIN's
+slot is now correctly deducted from A1's budget.
+
+---
+
+### G30 — FN bar-boundary ambiguity at sequential window drain (Won't Fix)
+
+**Files:** `op_momentum_selector_backtest.py` → `_apply_capital_flow()`
+**Severity:** Low — manifests only when a primary trade exits on the same bar the sequential window opens; ~$4k impact on 4/23 A1 budget
+
+The backtest uses a bar's **open time** as the exit timestamp
+(`exit_time = prior_drain + bars_held × 5`). A sequential window's drain equals
+`opening_start + opening_bars × 5`. When a primary trade's exit_time exactly equals the
+drain time (i.e., the bar closes at the same moment the window opens), the backtest treats
+the slot as returned — but the replay engine closes the position at bar *close*, which is
+simultaneous with the window firing and is treated as still-open.
+
+**Example (4/23, FN, A1 at 10:00/1 bar):**
+- M1 drain = 9:45 (585 min). FN exit_time = 585 + 3×5 = 600 (10:00).
+- A1 drain = 10:00 + 1×5 = 605 (10:05). Condition 600 ≤ 605 → True.
+- Backtest: FN slot returned before A1 fires → A1 budget includes FN's $6k slot.
+- Replay: FN exits at bar close = 10:05, simultaneous with A1 firing → slot withheld.
+- Result: A1 window_capital = $5,979 (BT) vs $1,965 (RP), ~$4k gap.
+
+**Why accepted as-is:** 5-minute bar granularity makes sub-bar exit timing ambiguous. The
+backtest interpretation (capital free once the stop fires within the bar) is arguably more
+correct for recycling purposes. Fixing it would require sub-bar exit timestamps not
+currently tracked. The ambiguity only manifests when a sequential window opens within one
+bar of a primary exit — most pronounced for early windows (A1 at 10:00 with M1 3-bar OR)
+and negligible for standard afternoon windows (A1 at 13:15, A2 at 15:00).
