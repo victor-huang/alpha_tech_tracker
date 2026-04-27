@@ -65,6 +65,18 @@ class TestOccTsSymbolConversion:
     def test_ts_to_occ_three_char(self):
         assert _ts_to_occ("SPY   250321C00520000") == "SPY250321C00520000"
 
+    def test_ts_to_occ_display_format_whole_strike(self):
+        assert _ts_to_occ("APP 260501C410") == "APP260501C00410000"
+
+    def test_ts_to_occ_display_format_decimal_strike(self):
+        assert _ts_to_occ("TSLA 260417C392.5") == "TSLA260417C00392500"
+
+    def test_ts_to_occ_display_format_put(self):
+        assert _ts_to_occ("CRWV 260501P115") == "CRWV260501P00115000"
+
+    def test_ts_to_occ_display_format_large_strike(self):
+        assert _ts_to_occ("MSTR 260501C1200") == "MSTR260501C01200000"
+
     def test_roundtrip(self):
         original = "TSLA250420C00240000"
         assert _ts_to_occ(_occ_to_ts(original)) == original
@@ -72,6 +84,10 @@ class TestOccTsSymbolConversion:
     def test_invalid_occ_raises(self):
         with pytest.raises(ValueError):
             _occ_to_ts("bad-symbol")
+
+    def test_ts_to_occ_invalid_raises(self):
+        with pytest.raises(ValueError):
+            _ts_to_occ("not-a-symbol")
 
 
 class TestOrderSymbolConversions:

@@ -74,11 +74,25 @@ def _occ_to_ts(occ_symbol: str) -> str:
 
 
 def _ts_to_occ(ts_symbol: str) -> str:
-    """Strip spaces from TradeStation padded symbol to get OCC format.
+    """Convert a TradeStation option symbol to standard 21-char OCC format.
 
-    e.g. 'TSLA  250420C00240000' -> 'TSLA250420C00240000'
+    Handles two TS symbol variants:
+    - Padded quote format:   'TSLA  250420C00240000' -> 'TSLA250420C00240000'
+    - Display/positions API: 'APP 260501C410'        -> 'APP260501C00410000'
+                             'TSLA 260417C392.5'     -> 'TSLA260417C00392500'
     """
-    return ts_symbol.replace(" ", "")
+    ts_symbol = ts_symbol.strip()
+    # Padded format: ticker (up to 6 chars, space-padded) + YYMMDD + C/P + 8-digit strike
+    m = re.match(r"^([A-Z]+)\s*(\d{6}[CP]\d{8})$", ts_symbol)
+    if m:
+        return m.group(1) + m.group(2)
+    # Display format: ticker + space(s) + YYMMDD + C/P + decimal strike (no leading zeros)
+    m = re.match(r"^([A-Z]+)\s+(\d{6})([CP])(\d+(?:\.\d+)?)$", ts_symbol)
+    if m:
+        ticker, date_str, cp, strike_str = m.groups()
+        strike_int = round(float(strike_str) * 1000)
+        return f"{ticker}{date_str}{cp}{strike_int:08d}"
+    raise ValueError(f"Cannot parse TS symbol: {ts_symbol!r}")
 
 
 def _occ_to_ts_order_symbol(occ_symbol: str) -> str:
