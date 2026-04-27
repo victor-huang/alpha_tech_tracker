@@ -1873,8 +1873,8 @@ def _parse_args():
     parser.add_argument(
         "--feed",
         choices=["iex", "sip"],
-        default="iex",
-        help="Alpaca data feed: 'iex' (free tier, default) or 'sip' (consolidated, requires paid subscription)",
+        default="sip",
+        help="Alpaca data feed: 'sip' (consolidated, default) or 'iex' (free tier)",
     )
     parser.add_argument(
         "--bearish-ma200",

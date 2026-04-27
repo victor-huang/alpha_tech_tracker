@@ -24,7 +24,7 @@ _CACHE_WARMUP_DAYS = 7
 
 # Alpaca data feed used for all bar fetches. Changing this automatically updates cache keys
 # so IEX and SIP data live in separate cache files (e.g. alpaca_iex_5min_... vs alpaca_sip_5min_...).
-_ALPACA_FEED = DataFeed.IEX
+_ALPACA_FEED = DataFeed.SIP
 
 
 def _trim_bars_to_range(df: pd.DataFrame, start_date: date, end_date: date) -> pd.DataFrame:
