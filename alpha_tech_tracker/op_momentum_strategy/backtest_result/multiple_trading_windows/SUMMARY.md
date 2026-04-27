@@ -619,3 +619,133 @@ python alpha_tech_tracker/op_momentum_strategy/op_momentum_selector_backtest.py 
   --reversal --bearish-reentry --bullish-reentry --doubledown \
   --start YYYY-01-01 --end YYYY-12-31 --feed iex
 ```
+
+---
+
+## ⚠️ Corrected A1 Sweep (2026-04-26 — SIP feed + BRE/BRU/REV timing fix)
+
+**Status of previous sweep results above**: STALE. Three issues invalidate those results:
+
+1. **IEX feed** — all prior runs used `--feed iex`; SIP is now the default (46-trade / 18.9pp gap vs IEX over 2025). Results must use SIP for consistency with live-engine scoring.
+2. **BRE/BRU/REV timing fix** — commit `56283ea` fixed `_apply_capital_flow` to use `slot_exit_bars` (the latest of primary + all sub-trade exits) instead of `bars_held`. Early windows like 10:00 and 10:30 were receiving phantom capital — M1 sub-trades (BRE/BRU/REV) frequently ran past their drain time, but the old code credited M1 capital as returned anyway.
+3. **CLI window ordering bug** — windows must be passed in chronological drain-time order. The prior sweep appended `--window A1 {time} {bars}` LAST (after A2/A3), so the sequential capital model incorrectly deducted A2+A3 slot-capital from A1's budget (since those windows drain *after* A1's drain time, the model treated them as still deployed). Result: A1 got zero capital for the full year, and A2/A3 results were unchanged. The correct CLI order is `M1 → A1 → A2 → A3`.
+
+### What Changed vs Old Results
+
+| Effect | Explanation |
+|---|---|
+| Early A1 (10:00-10:30) fires **only ~25% of days** | M1 BRE/BRU/REV sub-trades frequently extend past 10:40 drain; slot locked |
+| Mid-day A1 (12:00-12:30) fires **~70% of days** | By noon, M1 primary + most sub-trades have returned capital |
+| 10:30/1bar drops from **#1 (avg rank 4.4)** → **#14 (avg rank 10.6)** | Formerly benefited from phantom capital; now correctly starved |
+| 12:00/2bar emerges as **most consistent (avg rank 5.4)** | Reliable capital, good EV, solid in all regimes |
+
+### Total Returns per Year — 18 Configs (SIP feed, timing fix, correct window order)
+
+**Config**: M1 09:30/3 → A1 {sweep} → A2 13:15/1 → A3 15:00/1, `--top 2 --weights 60 40 --morning-split 100 --reversal --bearish-reentry --bullish-reentry --doubledown`
+
+| Config | 2022 | 2023 | 2024 | 2025 | 2026 YTD | 4yr avg | 5yr rank |
+|---|---|---|---|---|---|---|---|
+| **10:00/1bar** | +183.1% | +281.5% | +138.0% | +154.2% | +92.8% | **+189.2%** | 2 |
+| **12:00/2bar** | +196.6% | +279.6% | +136.7% | +141.8% | +101.8% | **+188.7%** | 1 |
+| **12:30/2bar** | +184.1% | +268.3% | +142.4% | +154.8% | +87.3% | **+187.4%** | 3 |
+| **11:00/1bar** | +180.3% | +285.3% | +118.8% | +156.7% | +94.7% | **+185.2%** | 4 |
+| **11:30/2bar** | +182.7% | +283.7% | +136.6% | +137.0% | +97.1% | **+185.0%** | 5 |
+| **11:00/2bar** | +186.4% | +288.6% | +128.0% | +135.7% | +99.8% | **+184.7%** | 6 |
+| 12:00/1bar | +183.2% | +279.0% | +140.2% | +136.2% | +89.9% | +184.7% | 7 |
+| 10:00/3bar | +178.7% | +275.2% | +129.5% | +152.9% | +102.6% | +184.1% | 8 |
+| 11:00/3bar | +176.7% | +280.3% | +134.9% | +144.3% | +96.6% | +184.1% | 9 |
+| 12:00/3bar | +195.4% | +264.2% | +129.4% | +146.4% | +101.3% | +183.8% | 10 |
+| 11:30/1bar | +173.8% | +283.3% | +135.5% | +142.4% | +94.3% | +183.8% | 11 |
+| 12:30/1bar | +175.3% | +272.5% | +138.7% | +147.1% | +82.4% | +183.4% | 12 |
+| 10:00/2bar | +180.0% | +280.8% | +125.5% | +142.2% | +96.2% | +182.1% | 13 |
+| 10:30/1bar | +177.0% | +278.4% | +134.2% | +138.2% | +96.1% | +182.0% | 14 |
+| 11:30/3bar | +177.0% | +278.5% | +126.4% | +135.7% | +87.4% | +179.4% | 15 |
+| 10:30/2bar | +186.0% | +271.1% | +125.0% | +129.9% | +94.0% | +178.0% | 16 |
+| 10:30/3bar | +166.4% | +277.0% | +116.8% | +137.5% | +97.5% | +174.4% | 17 |
+| 12:30/3bar | +164.3% | +261.1% | +124.5% | +142.9% | +90.6% | +173.2% | 18 |
+
+### Cross-Year Rank Matrix (rank within each year by total return)
+
+| Config | 2022 | 2023 | 2024 | 2025 | 2026 | Avg rank | Note |
+|---|---|---|---|---|---|---|---|
+| **12:00/2bar** | 1 | 8 | 5 | 11 | 2 | **5.4** | Best consistency — wins 2022 and 2026 YTD |
+| **10:00/1bar** | 7 | 5 | 4 | 3 | 13 | 6.4 | Best 4yr return but 2026 weak; fires ~25% of days |
+| **11:00/2bar** | 3 | 1 | 12 | 16 | 4 | 7.2 | Strong 2022–2023; erratic 2024–2025 |
+| **11:30/2bar** | 8 | 3 | 6 | 14 | 6 | 7.4 | |
+| **10:00/3bar** | 11 | 13 | 10 | 4 | 1 | 7.8 | |
+| **11:00/1bar** | 9 | 2 | 17 | 1 | 10 | 7.8 | Tops 2025; collapses 2024 (#17) |
+| 12:00/3bar | 2 | 17 | 11 | 6 | 3 | 7.8 | |
+| 12:30/2bar | 5 | 16 | 1 | 2 | 17 | 8.2 | Tops 2024 and 2025; 2026 weak |
+| 11:00/3bar | 14 | 7 | 8 | 7 | 7 | 8.6 | Solid mid-pack; no extremes |
+| 11:30/1bar | 16 | 4 | 7 | 9 | 11 | 9.4 | |
+| 12:00/1bar | 6 | 9 | 2 | 15 | 15 | 9.4 | |
+| 10:00/2bar | 10 | 6 | 14 | 10 | 8 | 9.6 | |
+| **10:30/1bar** | 12 | 11 | 9 | 12 | 9 | **10.6** | ← was #1 in old sweep (avg rank 4.4); now 14th |
+| 12:30/1bar | 15 | 14 | 3 | 5 | 18 | 11.0 | |
+| 10:30/2bar | 4 | 15 | 15 | 18 | 12 | 12.8 | |
+| 10:30/3bar | 17 | 12 | 18 | 13 | 5 | 13.0 | |
+| 11:30/3bar | 13 | 10 | 13 | 17 | 16 | 13.8 | |
+| 12:30/3bar | 18 | 18 | 16 | 8 | 14 | 14.8 | |
+
+### A1 Slot Trade Count vs Fire Rate
+
+| Config | 2022 | 2023 | 2024 | 2025 | Fire rate (2025) |
+|---|---|---|---|---|---|
+| 10:00/1bar | 123 | 121 | 141 | 130 | ~26% of days |
+| 10:00/3bar | 150 | 155 | 174 | 172 | ~34% |
+| 10:30/1bar | 187 | 202 | 218 | 225 | ~45% |
+| 11:00/1bar | 250 | 268 | 300 | 277 | ~55% |
+| 11:00/2bar | 265 | 285 | 311 | 273 | ~54% |
+| **12:00/2bar** | **352** | **352** | **398** | **372** | **~74%** |
+| 12:30/2bar | 342 | 392 | 406 | 383 | ~76% |
+
+Fire rate = A1 trades / (trading days × 2 slots). Early windows are blocked by M1 BRE/BRU/REV sub-trades on most days; by noon, most M1 activity has settled.
+
+### A1 Slot EV and Return (2022 vs 2025)
+
+| Config | 2022 trades | 2022 EV | 2022 A1 ret | 2025 trades | 2025 EV | 2025 A1 ret |
+|---|---|---|---|---|---|---|
+| 10:00/1bar | 123 | +0.54% | +25% | 130 | +0.82% | +28% |
+| 10:00/3bar | 150 | +0.53% | +22% | 172 | +0.61% | +29% |
+| 10:30/1bar | 187 | +0.43% | +26% | 225 | +0.21% | +13% |
+| 11:00/1bar | 250 | +0.42% | +33% | 277 | +0.41% | +32% |
+| 12:00/2bar | 352 | +0.34% | +54% | 372 | +0.19% | +27% |
+| 12:30/2bar | 342 | +0.29% | +40% | 383 | +0.29% | +45% |
+
+Key trade-off: early windows have higher EV per trade but fire rarely; mid-day windows have moderate EV but fire consistently. 10:00/1bar fires only ~26% of days but averages +0.54–0.82% EV per trade.
+
+### Key Findings (Corrected Sweep)
+
+1. **10:30/1bar is no longer the most consistent choice** — with the BRE/BRU/REV timing fix, it drops from avg rank 4.4 (old, stale) to 10.6 (corrected). Early windows (10:00–10:30) are blocked by M1 sub-trades frequently and should not be relied on for reliable daily A1 deployment.
+
+2. **12:00/2bar is the new most consistent (avg rank 5.4)** — wins 2022 and 2026 YTD, top-6 every year except 2025 (#11). Fires on ~74% of trading days. When capital is available, the 2-bar OR filters mid-session noise better than 1-bar.
+
+3. **10:00/1bar has the best total 4-year return (189.2%)** and highest EV/trade (+0.54–0.82%) but fires only ~26% of days. It reliably fires on "clean" M1 days (no sub-trades running at 10:05), and those days tend to have continued strong directional momentum. This is a selective high-quality filter, not a reliable daily window.
+
+4. **The phantom capital effect was large**: 10:30/1bar appeared dominant in the old sweep because M1 capital was incorrectly credited as returned at 10:40 even when BRE/BRU/REV sub-trades were still running. The fix correctly blocks it on those days.
+
+5. **For live trading (current regime: volatile/uncertain)**: 12:00/2bar is the safer default — fires reliably, has good EV, consistent across regimes. 10:00/1bar is only worth adding if monitoring capital utilization and the operator is comfortable with it sitting idle 3+ days per week.
+
+### Corrected CLI
+
+```bash
+# Most consistent (12:00/2bar A1) — recommended default (corrected sweep)
+python alpha_tech_tracker/op_momentum_strategy/op_momentum_selector_backtest.py \
+  --top 2 --weights 60 40 --morning-split 100 \
+  --window M1 09:30 3 --window A1 12:00 2 --window A2 13:15 1 --window A3 15:00 1 \
+  --reversal --bearish-reentry --bullish-reentry --doubledown \
+  --start YYYY-01-01 --end YYYY-12-31
+
+# High-EV selective window (10:00/1bar A1) — fires only on clean M1 days
+python alpha_tech_tracker/op_momentum_strategy/op_momentum_selector_backtest.py \
+  --top 2 --weights 60 40 --morning-split 100 \
+  --window M1 09:30 3 --window A1 10:00 1 --window A2 13:15 1 --window A3 15:00 1 \
+  --reversal --bearish-reentry --bullish-reentry --doubledown \
+  --start YYYY-01-01 --end YYYY-12-31
+
+# IMPORTANT: A1 must appear BEFORE A2/A3 in the window list.
+# Wrong: --window M1 09:30 3 --window A2 13:15 1 --window A3 15:00 1 --window A1 10:00 1
+# Correct: --window M1 09:30 3 --window A1 10:00 1 --window A2 13:15 1 --window A3 15:00 1
+```
+
+Log files: `backtest_result/a1_window_sweep_2026_04_26/a1_{time}b{bars}_{year}.txt`
