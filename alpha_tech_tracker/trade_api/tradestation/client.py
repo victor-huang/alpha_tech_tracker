@@ -750,6 +750,10 @@ class TradeStationAPIClient(ExecutionClient):
         }
 
     def get_open_positions(self) -> dict:
+        # NOTE: the /positions endpoint returns option symbols in display format
+        # (e.g. 'APP 260501C410'), NOT the padded quote format ('APP   260501C00410000').
+        # _ts_to_occ() handles both variants and converts to standard OCC keys so
+        # callers can look up positions by pos.option_symbol without format mismatch.
         account_key = self._get_account_key()
         response = self._session.get(
             self._v3_base_url + f"/brokerage/accounts/{account_key}/positions"
