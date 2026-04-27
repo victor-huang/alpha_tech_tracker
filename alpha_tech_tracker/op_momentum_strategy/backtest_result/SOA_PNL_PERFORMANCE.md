@@ -49,7 +49,7 @@ understand their combined upper bound.
 
 ## V3 Pool — 6-Year Performance (2021–2026 YTD)
 
-**Last run: 2026-04-25** · SIP feed · with `--doubledown --doubledown-start 5`
+**Last run: 2026-04-27** · SIP feed · with `--doubledown --doubledown-start 5` · includes `slot_exit_bars` capital timing fix
 
 ### V3 Pool (17 tickers)
 
@@ -63,19 +63,19 @@ Added: CLS, MSTR, CRWV, MRVL (2026-04-12).
 
 | Year | Trades | W/L | WR | Return | QQQ Return | Alpha |
 |------|--------|-----|----|--------|------------|-------|
-| 2021 | 1,400 | 628W/772L | 45% | **+185.72%** | +28.63% | +157pp |
-| 2022 | 1,318 | 581W/737L | 44% | **+200.00%** | -33.71% | +234pp |
-| 2023 | 1,406 | 612W/794L | 44% | **+332.13%** | +54.84% | +277pp |
-| 2024 | 1,398 | 623W/775L | 45% | **+165.15%** | +26.99% | +138pp |
-| 2025 | 1,415 | 634W/781L | 45% | **+165.48%** | +20.40% | +145pp |
-| 2026 YTD (Jan–Apr 24) | 446 | 239W/207L | 54% | **+107.79%** | +8.28% | +100pp |
-| **5-yr sum (2021–2025)** | | | | **+1,048.48%** | **+97.74%** | **+951pp** |
+| 2021 | 1,265 | 572W/693L | 45% | **+164.75%** | +28.63% | +136pp |
+| 2022 | 1,198 | 521W/677L | 43% | **+157.87%** | -33.71% | +192pp |
+| 2023 | 1,288 | 568W/720L | 44% | **+268.35%** | +54.84% | +213pp |
+| 2024 | 1,299 | 576W/723L | 44% | **+119.56%** | +26.99% | +93pp |
+| 2025 | 1,263 | 568W/695L | 45% | **+128.07%** | +20.40% | +108pp |
+| 2026 YTD (Jan–Apr 25) | 392 | 213W/179L | 54% | **+93.03%** | +8.28% | +85pp |
+| **5-yr sum (2021–2025)** | | | | **+838.60%** | **+97.74%** | **+741pp** |
 
 ---
 
 ## AT Pool — 7-Year Performance (2019–2026 YTD)
 
-**Last run: 2026-04-25** · SIP feed · with `--doubledown --doubledown-start 5`
+**Last run: 2026-04-27** · SIP feed · with `--doubledown --doubledown-start 5` · includes `slot_exit_bars` capital timing fix
 
 ### AT Pool (16 tickers)
 
@@ -89,16 +89,16 @@ Added: RKLB, ASTS, HOOD (Russell 2000 high-activity), NFLX (large-cap); CRWD →
 
 | Year | Trades | W/L | WR | Return | QQQ Return | Alpha |
 |------|--------|-----|----|--------|------------|-------|
-| 2019 | 1,280 | 581W/699L | 45% | **+111.19%** | +37.27% | +74pp |
-| 2020 | 1,239 | 560W/679L | 45% | **+191.64%** | +45.14% | +147pp |
-| 2021 | 1,372 | 603W/769L | 44% | **+153.16%** | +28.63% | +125pp |
-| 2022 | 1,299 | 587W/712L | 45% | **+229.63%** | -33.71% | +263pp |
-| 2023 | 1,391 | 613W/778L | 44% | **+348.97%** | +54.84% | +294pp |
-| 2024 | 1,395 | 599W/796L | 43% | **+196.20%** | +26.99% | +169pp |
-| 2025 | 1,378 | 675W/703L | 49% | **+223.44%** | +20.40% | +203pp |
-| 2026 YTD (Jan–Apr 24) | 431 | 232W/199L | 54% | **+128.21%** | +8.28% | +120pp |
-| **5-yr sum (2021–2025)** | | | | **+1,151.40%** | **+97.74%** | **+1,054pp** |
-| **7-yr sum (2019–2025)** | | | | **+1,454.23%** | **+180.18%** | **+1,274pp** |
+| 2019 | 1,162 | 533W/629L | 46% | **+92.29%** | +37.27% | +55pp |
+| 2020 | 1,147 | 512W/635L | 45% | **+161.30%** | +45.14% | +116pp |
+| 2021 | 1,253 | 560W/693L | 45% | **+137.17%** | +28.63% | +108pp |
+| 2022 | 1,177 | 535W/642L | 45% | **+176.83%** | -33.71% | +211pp |
+| 2023 | 1,275 | 562W/713L | 44% | **+275.29%** | +54.84% | +220pp |
+| 2024 | 1,293 | 560W/733L | 43% | **+166.97%** | +26.99% | +140pp |
+| 2025 | 1,232 | 609W/623L | 49% | **+185.01%** | +20.40% | +165pp |
+| 2026 YTD (Jan–Apr 25) | 388 | 213W/175L | 55% | **+107.64%** | +8.28% | +99pp |
+| **5-yr sum (2021–2025)** | | | | **+941.27%** | **+97.74%** | **+843pp** |
+| **7-yr sum (2019–2025)** | | | | **+1,194.86%** | **+180.18%** | **+1,015pp** |
 
 ---
 
@@ -106,23 +106,23 @@ Added: RKLB, ASTS, HOOD (Russell 2000 high-activity), NFLX (large-cap); CRWD →
 
 | Year | V3 | AT | Δ (AT−V3) | Winner |
 |------|----|----|-----------|--------|
-| 2021 | +185.72% | +153.16% | -32.56pp | **V3** |
-| 2022 | +200.00% | +229.63% | +29.63pp | **AT** |
-| 2023 | +332.13% | +348.97% | +16.84pp | **AT** |
-| 2024 | +165.15% | +196.20% | +31.05pp | **AT** |
-| 2025 | +165.48% | +223.44% | +57.96pp | **AT** |
-| 2026 YTD | +107.79% | +128.21% | +20.42pp | **AT** |
-| **5-yr sum** | **+1,048.48%** | **+1,151.40%** | **+102.92pp** | **AT** |
+| 2021 | +164.75% | +137.17% | -27.58pp | **V3** |
+| 2022 | +157.87% | +176.83% | +18.96pp | **AT** |
+| 2023 | +268.35% | +275.29% | +6.94pp | **AT** |
+| 2024 | +119.56% | +166.97% | +47.41pp | **AT** |
+| 2025 | +128.07% | +185.01% | +56.94pp | **AT** |
+| 2026 YTD | +93.03% | +107.64% | +14.61pp | **AT** |
+| **5-yr sum** | **+838.60%** | **+941.27%** | **+102.67pp** | **AT** |
 
 ### Key Observations
 
 1. **AT wins 5 of 6 years and the 5-year total by +103pp** — NVDA, TSLA, MSTR, ASTS generate larger BEARISH moves in risk-off environments that the AT pool captures more effectively.
 
-2. **V3 wins only 2021** (+32pp) — RKLB, ASTS, HOOD had limited history early in 2021 (RKLB IPO'd Nov 2021, HOOD Aug 2021), reducing the effective AT pool size that year.
+2. **V3 wins only 2021** (+28pp) — RKLB, ASTS, HOOD had limited history early in 2021 (RKLB IPO'd Nov 2021, HOOD Aug 2021), reducing the effective AT pool size that year.
 
-3. **2025 gap is the largest** (+58pp, AT wins) — NVDA and TSLA both had exceptional bull-year momentum that V3 specifically excluded; MSTR added BTC-correlated beta.
+3. **2025 gap is the largest** (+57pp, AT wins) — NVDA and TSLA both had exceptional bull-year momentum that V3 specifically excluded; MSTR added BTC-correlated beta.
 
-4. **2026 YTD: AT +128% vs V3 +108%** (+20pp) — tariff-driven bear environment benefits AT's high-beta names (NVDA, TSLA, MSTR, ASTS) on the BEARISH signal path.
+4. **2026 YTD: AT +108% vs V3 +93%** (+15pp) — tariff-driven bear environment benefits AT's high-beta names (NVDA, TSLA, MSTR, ASTS) on the BEARISH signal path.
 
 5. **Win rate is consistently 43–49%** — profitable with sub-50% win rate because avg wins (+1.1–1.8%) exceed avg losses (-0.3–0.8%) every year in both pools.
 
@@ -130,11 +130,11 @@ Added: RKLB, ASTS, HOOD (Russell 2000 high-activity), NFLX (large-cap); CRWD →
 
 ## Key Observations (All Pools)
 
-1. **Beats QQQ every single year** — including 2022 where QQQ lost -33.71% while both pools returned +200%.
+1. **Beats QQQ every single year** — including 2022 where QQQ lost -33.71% while both pools returned +157–177%.
 
-2. **2023 is the standout year** (+332% V3, +349% AT) — strong directional intraday moves in both directions produced high-quality OR breakouts.
+2. **2023 is the standout year** (+268% V3, +275% AT) — strong directional intraday moves in both directions produced high-quality OR breakouts.
 
-3. **2026 YTD is exceptional vs QQQ** (+100pp / +120pp alpha in 4 months) — the tariff-driven bearish macro environment generates sustained intraday follow-through that the BEARISH + BRE combination captures effectively.
+3. **2026 YTD is exceptional vs QQQ** (+85pp / +99pp alpha in 4 months) — the tariff-driven bearish macro environment generates sustained intraday follow-through that the BEARISH + BRE combination captures effectively.
 
 4. **Win rate is consistently 43–49%** across all years — the strategy is profitable with a sub-50% win rate because average wins are larger than average losses.
 
@@ -240,33 +240,33 @@ Capital flows: M1 → A1(12:00) → A2(13:15) → A3(15:00).
 
 > **Note on `--doubledown-start 5`:** The default is already 5 min, so `--doubledown` and `--doubledown --doubledown-start 5` are equivalent.
 
-> **Note on timing vs the 3-window SOA:** The 3-window SOA results were produced on 2026-04-25, one day before the `slot_exit_bars` fix (committed 2026-04-26). That fix makes `_apply_capital_flow()` use the full sub-trade exit time (including BRE/BRU/REV add-ons) instead of the primary trade's `bars_held` when computing how much M1 capital is still locked at the next sequential window's drain. The 12:00 window fires at 12:10, when many M1 BRE/BRU/REV sub-trades are still active — so the fix withholds more capital from A1(12:00) on those days. The 3-window SOA's A1(13:15) is much less affected because most sub-trades settle before 1:20 PM.
+> **Note on timing fix:** The 3-window SOA baseline in this section was re-run on 2026-04-27 with the `slot_exit_bars` fix applied — both configs now use identical capital timing logic and are directly comparable.
 
 ### V3 Pool — 4-Window vs 3-Window SOA
 
 | Year | 4-win Return | 3-win Return | Δ | Trades | WR |
 |------|-------------|-------------|---|--------|----|
-| 2021 | **+156.17%** | +185.72% | -29.6pp | 1,539 | 44% |
-| 2022 | **+196.55%** | +200.00% | -3.5pp | 1,477 | 45% |
-| 2023 | **+279.56%** | +332.13% | -52.6pp | 1,531 | 45% |
-| 2024 | **+136.72%** | +165.15% | -28.4pp | 1,605 | 44% |
-| 2025 | **+141.85%** | +165.48% | -23.6pp | 1,547 | 44% |
-| 2026 YTD (Jan–Apr 25) | **+101.77%** | +107.79% | -6.0pp | 477 | 51% |
-| **5-yr sum (2021–2025)** | **+910.85%** | **+1,048.48%** | **-137.6pp** | | |
+| 2021 | +156.17% | **+164.75%** | -8.6pp | 1,539 | 44% |
+| 2022 | **+196.55%** | +157.87% | +38.7pp | 1,477 | 45% |
+| 2023 | **+279.56%** | +268.35% | +11.2pp | 1,531 | 45% |
+| 2024 | **+136.72%** | +119.56% | +17.2pp | 1,605 | 44% |
+| 2025 | **+141.85%** | +128.07% | +13.8pp | 1,547 | 44% |
+| 2026 YTD (Jan–Apr 25) | **+101.77%** | +93.03% | +8.7pp | 477 | 51% |
+| **5-yr sum (2021–2025)** | **+910.85%** | +838.60% | **+72.3pp** | | |
 
 ### AT Pool — 4-Window vs 3-Window SOA
 
 | Year | 4-win Return | 3-win Return | Δ | Trades | WR |
 |------|-------------|-------------|---|--------|----|
-| 2019 | **+102.43%** | +111.19% | -8.8pp | 1,412 | 46% |
-| 2020 | **+168.09%** | +191.64% | -23.6pp | 1,384 | 44% |
-| 2021 | **+147.31%** | +153.16% | -5.9pp | 1,498 | 44% |
-| 2022 | **+193.52%** | +229.63% | -36.1pp | 1,459 | 45% |
-| 2023 | **+288.09%** | +348.97% | -60.9pp | 1,532 | 44% |
-| 2024 | **+197.70%** | +196.20% | +1.5pp | 1,576 | 44% |
-| 2025 | **+192.22%** | +223.44% | -31.2pp | 1,501 | 47% |
-| 2026 YTD (Jan–Apr 25) | **+125.81%** | +128.21% | -2.4pp | 476 | 52% |
-| **5-yr sum (2021–2025)** | **+1,018.84%** | **+1,151.40%** | **-132.6pp** | | |
+| 2019 | **+102.43%** | +92.29% | +10.1pp | 1,412 | 46% |
+| 2020 | **+168.09%** | +161.30% | +6.8pp | 1,384 | 44% |
+| 2021 | **+147.31%** | +137.17% | +10.1pp | 1,498 | 44% |
+| 2022 | **+193.52%** | +176.83% | +16.7pp | 1,459 | 45% |
+| 2023 | **+288.09%** | +275.29% | +12.8pp | 1,532 | 44% |
+| 2024 | **+197.70%** | +166.97% | +30.7pp | 1,576 | 44% |
+| 2025 | **+192.22%** | +185.01% | +7.2pp | 1,501 | 47% |
+| 2026 YTD (Jan–Apr 25) | **+125.81%** | +107.64% | +18.2pp | 476 | 52% |
+| **5-yr sum (2021–2025)** | **+1,018.84%** | +941.27% | **+77.6pp** | | |
 
 ### V3 vs AT — 4-Window Head-to-Head
 
@@ -306,9 +306,11 @@ Capital flows: M1 → A1(12:00) → A2(13:15) → A3(15:00).
 
 ### Key Observations
 
-1. **This config trails the 3-window SOA every year (V3: -3.5pp to -52.6pp; AT: -2.4pp to -60.9pp)** — the primary cause is the `slot_exit_bars` timing fix applied 2026-04-26. The 3-window SOA results (last run 2026-04-25) predate the fix. The fix withholds M1 capital from A1(12:00) on days where BRE/BRU/REV sub-trades extend past 12:10; the 3-window SOA's A1(13:15) is much less affected because most sub-trades settle well before 1:20 PM.
+1. **This config beats the corrected 3-window SOA in 5 of 6 years for V3 (+72pp 5-yr) and all 8 years for AT (+78pp 5-yr)** — once both configs use the same `slot_exit_bars` capital timing, the 12:00/2bar window is clearly additive. The apparent underperformance in the previous comparison was an artifact of the old 3-window SOA being run before the timing fix.
 
-2. **The 12:00/2bar A1 slot is consistently positive EV** — all years, both pools show positive EV/trade (+0.07% to +0.53%). The slot adds real edge; the drag is a capital availability effect from the timing fix, not a signal quality problem.
+2. **V3 2021 is the one exception** (-8.6pp) — the 12:00/2bar A1 window underperforms vs running A1 at 13:15 that year. Likely because 2021 had more extended M1 BRE/BRU/REV sub-trades still active at 12:10, leaving less capital for the 12:00 slot.
+
+3. **The 12:00/2bar A1 slot is consistently positive EV** — all years, both pools show positive EV/trade (+0.07% to +0.53%). The slot adds real edge, and with 337–399 trades/year (AT) it fires frequently enough to matter.
 
 3. **AT 2024 is the one exception where this config beats the 3-window SOA** (+1.5pp) — AT high-beta names (NVDA, TSLA) generate strong mid-morning OR breakouts after M1 volatility, and the unrestricted doubledown happens to benefit in this year.
 
@@ -316,7 +318,7 @@ Capital flows: M1 → A1(12:00) → A2(13:15) → A3(15:00).
 
 5. **AT wins the 5-year total by +108pp** — consistent with AT's high-beta advantage, though narrower than the 3-window SOA gap (+103pp). The 12:00 window fires in 337–399 trades/year (AT) — high utilization with positive EV every year.
 
-6. **To get a fair apples-to-apples comparison, re-run the 3-window SOA with the `slot_exit_bars` fix applied** — the current 3-window SOA results predate the fix and are slightly overstated. The gap between these two configs should narrow once both share the same timing model.
+6. **AT beats V3 every year in the 4-window config** (except 2021 and 2022 where V3 wins) — consistent with AT's high-beta advantage; the 12:00 window amplifies this because NVDA/TSLA generate stronger mid-morning continuation signals.
 
 ---
 
