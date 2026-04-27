@@ -203,6 +203,128 @@ class TestApplyCapitalFlowSequentialWindows:
 
 
 # ---------------------------------------------------------------------------
+# _apply_capital_flow — slot_exit_bars (BRE/BRU/REV sub-trade timing fix)
+#
+# Windows used in this section:
+#   W1        09:30 / 3 bars → drain = 09:45 = 585 min  (first group)
+#   W_EARLY   10:00 / 1 bar  → drain = 10:05 = 605 min  (sequential, 20 min after W1)
+#   W2        13:15 / 1 bar  → drain = 13:20 = 800 min  (sequential)
+#
+# A primary that exits before W_EARLY drain (bars_held=1 → exit_time=590 ≤ 605)
+# normally frees its slot. When a BRU/BRE fires after that primary exit and runs
+# past the drain, slot_exit_bars > bars_held, keeping the slot locked.
+#
+# slot_exit_bars formula (per sub-trade):
+#   sub_exit = primary_bars + 1 + entry_idx + 1 + sub_bars_held
+#   slot_exit_bars = max(primary_bars, br_exit, bru_exit, rev_exit)
+# ---------------------------------------------------------------------------
+
+_W_EARLY = {"label": "W_EARLY", "opening_start": "10:00", "opening_bars": 1}
+
+
+def _slot_row(window, rank, entry, pnl, bars_held, slot_exit_bars=None, d=_D1, **extra):
+    r = {"date": d, "window": window, "rank": rank, "entry_price": entry,
+         "pnl": pnl, "bars_held": bars_held}
+    if slot_exit_bars is not None:
+        r["slot_exit_bars"] = slot_exit_bars
+    r.update(extra)
+    return r
+
+
+class TestApplyCapitalFlowSlotExitBars:
+    def test_no_slot_exit_bars_falls_back_to_bars_held(self):
+        # Primary exits at 590 (< W_EARLY drain 605): slot freed, W_EARLY gets full pot.
+        row_w1 = _slot_row("W1", 1, 100.0, 5.0, bars_held=1)
+        row_we = _slot_row("W_EARLY", 1, 50.0, 1.0, bars_held=1)
+        _apply_capital_flow(
+            [row_w1, row_we], [_W1, _W_EARLY], 10_000, _WEIGHTS, 3,
+            morning_split=[1.0],
+        )
+
+        assert row_we["window_capital"] == pytest.approx(10_000 + row_w1["cap_pnl"])
+
+    def test_sub_trade_past_drain_locks_slot(self):
+        # Primary exits at 590 (< drain 605), but BRU runs past drain:
+        # slot_exit_bars=5 → exit_time = 585 + 25 = 610 > 605 → slot locked.
+        # W_EARLY capital = 10000 - slot_capital(W1).
+        row_w1 = _slot_row("W1", 1, 100.0, 5.0, bars_held=1, slot_exit_bars=5)
+        row_we = _slot_row("W_EARLY", 1, 50.0, 1.0, bars_held=1)
+        _apply_capital_flow(
+            [row_w1, row_we], [_W1, _W_EARLY], 10_000, _WEIGHTS, 3,
+            morning_split=[1.0],
+        )
+
+        slot_w1 = row_w1["slot_capital"]
+        assert row_we["window_capital"] == pytest.approx(10_000 - slot_w1)
+
+    def test_sub_trade_that_exits_exactly_at_drain_frees_slot(self):
+        # exit_time = 585 + 4*5 = 605 == W_EARLY drain 605 → condition ≤ → freed.
+        row_w1 = _slot_row("W1", 1, 100.0, 5.0, bars_held=1, slot_exit_bars=4)
+        row_we = _slot_row("W_EARLY", 1, 50.0, 1.0, bars_held=1)
+        _apply_capital_flow(
+            [row_w1, row_we], [_W1, _W_EARLY], 10_000, _WEIGHTS, 3,
+            morning_split=[1.0],
+        )
+
+        assert row_we["window_capital"] == pytest.approx(10_000 + row_w1["cap_pnl"])
+
+    def test_both_slots_locked_by_sub_trades_skips_sequential_window(self):
+        # Mirrors the real CRDO-BRU / SNDK case on 2026-01-09:
+        # rank-1 primary runs past drain (bars_held=25, exit_time=710 > 605).
+        # rank-2 primary exits before drain (bars_held=1) but BRU keeps slot locked
+        # (slot_exit_bars=33 → exit_time=585+165=750 > 605).
+        # With 60/40 weights both slots together consume 100% of capital
+        # → available ≈ 0 → W_EARLY skipped.
+        weights_60_40 = [0.6, 0.4]
+        row_r1 = _slot_row("W1", 1, 100.0, 2.0, bars_held=25)
+        row_r2 = _slot_row("W1", 2, 100.0, -1.0, bars_held=1, slot_exit_bars=33)
+        row_we = _slot_row("W_EARLY", 1, 50.0, 1.0, bars_held=1)
+        _apply_capital_flow(
+            [row_r1, row_r2, row_we], [_W1, _W_EARLY], 10_000, weights_60_40, 2,
+            morning_split=[1.0],
+        )
+
+        assert row_we["skipped"] is True
+
+    def test_slot_locked_for_early_window_but_freed_for_later_window(self):
+        # slot_exit_bars=5 → exit_time=610 > W_EARLY drain (605) but < W2 drain (800).
+        # → locked for W_EARLY, returned (with pnl) for W2.
+        row_w1 = _slot_row("W1", 1, 100.0, 5.0, bars_held=1, slot_exit_bars=5)
+        row_we = _slot_row("W_EARLY", 1, 50.0, 2.0, bars_held=1)
+        row_w2 = _slot_row("W2", 1, 50.0, 1.0, bars_held=1)
+        _apply_capital_flow(
+            [row_w1, row_we, row_w2], [_W1, _W_EARLY, _W2], 10_000, _WEIGHTS, 3,
+            morning_split=[1.0],
+        )
+
+        slot_w1 = row_w1["slot_capital"]
+        assert row_we["window_capital"] == pytest.approx(10_000 - slot_w1)
+        assert row_w2["window_capital"] == pytest.approx(
+            10_000 + row_w1["cap_pnl"] + row_we["cap_pnl"]
+        )
+
+    def test_add_on_rows_excluded_from_capital_flow_calculation(self):
+        # A BRE add-on row (is_bearish_reentry=True) reuses the primary's slot —
+        # it must not be double-counted in the available-capital formula.
+        # Without the exclusion, the add-on's large slot_exit_bars would falsely
+        # deduct additional capital, starving the sequential window.
+        row_w1 = _slot_row("W1", 1, 100.0, 2.0, bars_held=1)
+        row_bre = _slot_row(
+            "W1", 1, 100.0, -1.0, bars_held=30, slot_exit_bars=35,
+            is_bearish_reentry=True,
+        )
+        row_we = _slot_row("W_EARLY", 1, 50.0, 1.0, bars_held=1)
+        _apply_capital_flow(
+            [row_w1, row_bre, row_we], [_W1, _W_EARLY], 10_000, _WEIGHTS, 3,
+            morning_split=[1.0],
+        )
+
+        # Primary exits at 590 (freed for W_EARLY); BRE row is excluded.
+        # W_EARLY should get full pot (not have BRE's slot deducted).
+        assert row_we["window_capital"] == pytest.approx(10_000 + row_w1["cap_pnl"])
+
+
+# ---------------------------------------------------------------------------
 # _apply_capital_flow — returns skip_log
 # ---------------------------------------------------------------------------
 
