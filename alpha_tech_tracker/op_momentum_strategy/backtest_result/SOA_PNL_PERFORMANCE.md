@@ -238,7 +238,9 @@ python alpha_tech_tracker/op_momentum_strategy/op_momentum_selector_backtest.py 
 The 12:00/2-bar window (A1) fires at 12:10 — after the mid-morning consolidation phase.
 Capital flows: M1 → A1(12:00) → A2(13:15) → A3(15:00).
 
-> **Note on doubledown:** This config uses `--doubledown` without `--doubledown-start 5`. The 3-window SOA uses `--doubledown-start 5` which restricts doubledown to co-picks that stop out within 5 min of OR close. The missing quality gate accounts for most of the gap vs the SOA baseline.
+> **Note on `--doubledown-start 5`:** The default is already 5 min, so `--doubledown` and `--doubledown --doubledown-start 5` are equivalent.
+
+> **Note on timing vs the 3-window SOA:** The 3-window SOA results were produced on 2026-04-25, one day before the `slot_exit_bars` fix (committed 2026-04-26). That fix makes `_apply_capital_flow()` use the full sub-trade exit time (including BRE/BRU/REV add-ons) instead of the primary trade's `bars_held` when computing how much M1 capital is still locked at the next sequential window's drain. The 12:00 window fires at 12:10, when many M1 BRE/BRU/REV sub-trades are still active — so the fix withholds more capital from A1(12:00) on those days. The 3-window SOA's A1(13:15) is much less affected because most sub-trades settle before 1:20 PM.
 
 ### V3 Pool — 4-Window vs 3-Window SOA
 
@@ -304,9 +306,9 @@ Capital flows: M1 → A1(12:00) → A2(13:15) → A3(15:00).
 
 ### Key Observations
 
-1. **This config trails the 3-window SOA every year (V3: -3.5pp to -52.6pp; AT: -2.4pp to -60.9pp)** — the primary cause is the missing `--doubledown-start 5` quality gate. The SOA restricts doubledown to co-picks that stop out within 5 min of OR close, improving doubledown EV. Without this gate, early stop-outs throughout the session dilute the doubledown pool.
+1. **This config trails the 3-window SOA every year (V3: -3.5pp to -52.6pp; AT: -2.4pp to -60.9pp)** — the primary cause is the `slot_exit_bars` timing fix applied 2026-04-26. The 3-window SOA results (last run 2026-04-25) predate the fix. The fix withholds M1 capital from A1(12:00) on days where BRE/BRU/REV sub-trades extend past 12:10; the 3-window SOA's A1(13:15) is much less affected because most sub-trades settle well before 1:20 PM.
 
-2. **The 12:00/2bar A1 slot is consistently positive EV** — all years, both pools show positive EV/trade (+0.07% to +0.53%). The slot adds real edge; the drag comes from baseline config differences, not the window itself.
+2. **The 12:00/2bar A1 slot is consistently positive EV** — all years, both pools show positive EV/trade (+0.07% to +0.53%). The slot adds real edge; the drag is a capital availability effect from the timing fix, not a signal quality problem.
 
 3. **AT 2024 is the one exception where this config beats the 3-window SOA** (+1.5pp) — AT high-beta names (NVDA, TSLA) generate strong mid-morning OR breakouts after M1 volatility, and the unrestricted doubledown happens to benefit in this year.
 
@@ -314,7 +316,7 @@ Capital flows: M1 → A1(12:00) → A2(13:15) → A3(15:00).
 
 5. **AT wins the 5-year total by +108pp** — consistent with AT's high-beta advantage, though narrower than the 3-window SOA gap (+103pp). The 12:00 window fires in 337–399 trades/year (AT) — high utilization with positive EV every year.
 
-6. **To match or exceed the 3-window SOA with this config, add `--doubledown-start 5`** — that single flag change accounts for +30–53pp improvement in bull years and is the recommended path before live deployment of this window config.
+6. **To get a fair apples-to-apples comparison, re-run the 3-window SOA with the `slot_exit_bars` fix applied** — the current 3-window SOA results predate the fix and are slightly overstated. The gap between these two configs should narrow once both share the same timing model.
 
 ---
 
