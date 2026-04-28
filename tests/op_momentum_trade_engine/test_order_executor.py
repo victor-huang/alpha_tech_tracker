@@ -1012,7 +1012,7 @@ class TestPlaceStockOrderAskZeroGuard:
         assert calls[-1].kwargs["order_type"] == "MARKET"
 
     def test_normal_quote_places_limit_first(self):
-        client = _make_stock_client(bid=329.0, ask=331.0)
+        client = _make_stock_client(bid=329.75, ask=330.25)
         with patch(f"{_MODULE}.time.sleep", lambda _: None):
             place_stock_order(client=client, ticker="FN", shares=1, order_action="BUY_OPEN")
 
@@ -1095,8 +1095,9 @@ class TestPlaceStockOrderStaleQuoteGuard:
 
 class TestPlaceStockOrderStep1Loop:
     """
-    Step 1 retries up to 3 times at mid price (5s each) before escalating
-    to step 2.
+    Step 1 retries up to 3 times at mid price (2s each) for entries before
+    escalating to step 2. Uses narrow spread (≤$0.50) so the wide-spread skip
+    does not interfere with these tests.
     """
 
     def _run(self, client, order_action="BUY_OPEN", filled_on_step1_attempt=None):
@@ -1118,7 +1119,7 @@ class TestPlaceStockOrderStep1Loop:
             )
 
     def test_step1_fills_on_first_attempt_returns_without_escalating(self):
-        client = _make_stock_client(bid=329.0, ask=331.0)
+        client = _make_stock_client(bid=329.75, ask=330.25)
         self._run(client, filled_on_step1_attempt=1)
         calls = client.place_stock_order.call_args_list
         assert len(calls) == 1
@@ -1126,27 +1127,27 @@ class TestPlaceStockOrderStep1Loop:
         assert calls[0].kwargs["limit_price"] == 330.0
 
     def test_step1_fills_on_second_attempt_returns_without_escalating(self):
-        client = _make_stock_client(bid=329.0, ask=331.0)
+        client = _make_stock_client(bid=329.75, ask=330.25)
         self._run(client, filled_on_step1_attempt=2)
         limit_calls = [c for c in client.place_stock_order.call_args_list if c.kwargs["order_type"] == "LIMIT"]
         assert len(limit_calls) == 2
         assert all(c.kwargs["limit_price"] == 330.0 for c in limit_calls)
 
     def test_step1_fills_on_third_attempt_returns_without_escalating(self):
-        client = _make_stock_client(bid=329.0, ask=331.0)
+        client = _make_stock_client(bid=329.75, ask=330.25)
         self._run(client, filled_on_step1_attempt=3)
         limit_calls = [c for c in client.place_stock_order.call_args_list if c.kwargs["order_type"] == "LIMIT"]
         assert len(limit_calls) == 3
         assert all(c.kwargs["limit_price"] == 330.0 for c in limit_calls)
 
     def test_step1_all_attempts_exhausted_escalates_to_step2(self):
-        client = _make_stock_client(bid=329.0, ask=331.0)
+        client = _make_stock_client(bid=329.75, ask=330.25)
         self._run(client, filled_on_step1_attempt=None)
         # step1(3) + step2(3) + step3 market(1) = 7 total orders
         assert client.place_stock_order.call_count == 7
 
     def test_step1_quote_fetch_failure_falls_back_to_market_immediately(self):
-        client = _make_stock_client(bid=329.0, ask=331.0)
+        client = _make_stock_client(bid=329.75, ask=330.25)
         client.get_stock_quote.side_effect = RuntimeError("quote unavailable")
         client.order_status.return_value = {"status": "open"}
         with patch(f"{_MODULE}.time.sleep", lambda _: None):
@@ -1184,53 +1185,54 @@ class TestPlaceStockOrderStep2Loop:
             )
 
     def test_step2_all_attempts_exhausted_falls_back_to_market(self):
-        client = _make_stock_client(bid=329.0, ask=331.0)
+        client = _make_stock_client(bid=329.75, ask=330.25)
         self._run(client, filled_on_attempt=None)
         last_call = client.place_stock_order.call_args_list[-1]
         assert last_call.kwargs["order_type"] == "MARKET"
 
     def test_step2_all_attempts_exhausted_places_exactly_seven_orders(self):
         # step1(3) + step2(3) + step3 market(1) = 7
-        client = _make_stock_client(bid=329.0, ask=331.0)
+        client = _make_stock_client(bid=329.75, ask=330.25)
         self._run(client, filled_on_attempt=None)
         assert client.place_stock_order.call_count == 7
 
     def test_step2_fills_on_first_attempt_returns_without_market(self):
-        client = _make_stock_client(bid=329.0, ask=331.0)
+        client = _make_stock_client(bid=329.75, ask=330.25)
         self._run(client, filled_on_attempt=1)
         calls = client.place_stock_order.call_args_list
         assert all(c.kwargs["order_type"] == "LIMIT" for c in calls)
 
     def test_step2_fills_on_second_attempt_returns_without_market(self):
-        client = _make_stock_client(bid=329.0, ask=331.0)
+        client = _make_stock_client(bid=329.75, ask=330.25)
         self._run(client, filled_on_attempt=2)
         calls = client.place_stock_order.call_args_list
         assert all(c.kwargs["order_type"] == "LIMIT" for c in calls)
 
     def test_step2_fills_on_third_attempt_returns_without_market(self):
-        client = _make_stock_client(bid=329.0, ask=331.0)
+        client = _make_stock_client(bid=329.75, ask=330.25)
         self._run(client, filled_on_attempt=3)
         calls = client.place_stock_order.call_args_list
         assert all(c.kwargs["order_type"] == "LIMIT" for c in calls)
 
     def test_step2_buy_limit_price_is_ask(self):
-        client = _make_stock_client(bid=329.0, ask=331.0)
+        client = _make_stock_client(bid=329.75, ask=330.25)
         self._run(client, order_action="BUY_OPEN", filled_on_attempt=None)
         step2_calls = client.place_stock_order.call_args_list[3:6]
         for call in step2_calls:
             assert call.kwargs["order_type"] == "LIMIT"
-            assert call.kwargs["limit_price"] == 331.0
+            assert call.kwargs["limit_price"] == 330.25
 
     def test_step2_sell_limit_price_is_bid(self):
-        client = _make_stock_client(bid=329.0, ask=331.0)
+        # SELL_CLOSE is an exit: only 1 step1 attempt before step2 starts at index [1]
+        client = _make_stock_client(bid=329.75, ask=330.25)
         self._run(client, order_action="SELL_CLOSE", filled_on_attempt=None)
-        step2_calls = client.place_stock_order.call_args_list[3:6]
+        step2_calls = client.place_stock_order.call_args_list[1:4]
         for call in step2_calls:
             assert call.kwargs["order_type"] == "LIMIT"
-            assert call.kwargs["limit_price"] == 329.0
+            assert call.kwargs["limit_price"] == 329.75
 
     def test_step2_quote_fetch_failure_falls_back_to_market_immediately(self):
-        client = _make_stock_client(bid=329.0, ask=331.0)
+        client = _make_stock_client(bid=329.75, ask=330.25)
         call_count = [0]
 
         def quote_side_effect(symbol, **kwargs):
@@ -1239,7 +1241,7 @@ class TestPlaceStockOrderStep2Loop:
                 raise RuntimeError("quote unavailable")
             return {
                 "QuoteResponse": {
-                    "QuoteData": [{"All": {"bid": 329.0, "ask": 331.0, "lastTrade": 329.0}}]
+                    "QuoteData": [{"All": {"bid": 329.75, "ask": 330.25, "lastTrade": 329.75}}]
                 }
             }
 
@@ -1307,7 +1309,7 @@ class TestPlaceStockOrderInsufficientFundsAbort:
         assert client.place_stock_order.call_count == 4  # 3 step1 + 1 step2
 
     def test_non_insufficient_funds_step1_failure_still_escalates(self):
-        client = _make_stock_client(bid=473.0, ask=484.49)
+        client = _make_stock_client(bid=473.0, ask=473.40)
         client.place_stock_order.side_effect = Exception("network timeout")
         client.order_status.return_value = {"status": "open"}
 
@@ -2343,3 +2345,115 @@ class TestTrancheFilling:
             )
         assert mock_inner.call_args_list[0].kwargs["entry_fill_price"] == 5.00
         assert mock_inner.call_args_list[1].kwargs["entry_fill_price"] is None
+
+
+class TestStockOrderEscalationPolicy:
+    """
+    Tests for the three 2026-04-28 escalation policy changes:
+      1. Buy orders with spread > $0.50 skip step1 and go straight to step2 at ask.
+      2. Exit orders (BUY_COVER, SELL_CLOSE) get only 1 step1 attempt.
+      3. Step1 sleep is 2s (tested via captured sleep args).
+    """
+
+    _NARROW_BID = 329.75
+    _NARROW_ASK = 330.25  # spread = $0.50 — exactly at boundary, NOT skipped
+    _WIDE_BID = 1050.0
+    _WIDE_ASK = 1070.0    # spread = $20.00 >> $0.50
+
+    def _run(self, client, order_action, sleep_calls=None):
+        def capture_sleep(secs):
+            if sleep_calls is not None:
+                sleep_calls.append(secs)
+
+        with patch(f"{_MODULE}.time.sleep", side_effect=capture_sleep):
+            return place_stock_order(
+                client=client,
+                ticker="SNDK",
+                shares=1,
+                order_action=order_action,
+            )
+
+    # ── wide-spread buy skips step1 ──────────────────────────────────────────
+
+    def test_wide_spread_buy_open_skips_step1_first_order_is_at_ask(self):
+        client = _make_stock_client(bid=self._WIDE_BID, ask=self._WIDE_ASK)
+        self._run(client, order_action="BUY_OPEN")
+        first_order = client.place_stock_order.call_args_list[0]
+        assert first_order.kwargs["order_type"] == "LIMIT"
+        assert first_order.kwargs["limit_price"] == self._WIDE_ASK
+
+    def test_wide_spread_buy_cover_skips_step1_first_order_is_at_ask(self):
+        client = _make_stock_client(bid=self._WIDE_BID, ask=self._WIDE_ASK)
+        self._run(client, order_action="BUY_COVER")
+        first_order = client.place_stock_order.call_args_list[0]
+        assert first_order.kwargs["order_type"] == "LIMIT"
+        assert first_order.kwargs["limit_price"] == self._WIDE_ASK
+
+    def test_wide_spread_sell_short_does_not_skip_step1(self):
+        # spread check only applies to buy orders
+        client = _make_stock_client(bid=self._WIDE_BID, ask=self._WIDE_ASK)
+        client.order_status.return_value = {"status": "filled"}
+        self._run(client, order_action="SELL_SHORT")
+        first_order = client.place_stock_order.call_args_list[0]
+        mid = (self._WIDE_BID + self._WIDE_ASK) / 2
+        assert first_order.kwargs["order_type"] == "LIMIT"
+        assert first_order.kwargs["limit_price"] == mid
+
+    def test_narrow_spread_buy_uses_step1_at_mid(self):
+        # spread = $0.50 is exactly at boundary — not skipped
+        client = _make_stock_client(bid=self._NARROW_BID, ask=self._NARROW_ASK)
+        client.order_status.return_value = {"status": "filled"}
+        self._run(client, order_action="BUY_OPEN")
+        first_order = client.place_stock_order.call_args_list[0]
+        assert first_order.kwargs["order_type"] == "LIMIT"
+        assert first_order.kwargs["limit_price"] == 330.0  # mid
+
+    def test_wide_spread_buy_total_orders_is_four(self):
+        # 0 step1 + 3 step2 + 1 market = 4
+        client = _make_stock_client(bid=self._WIDE_BID, ask=self._WIDE_ASK)
+        self._run(client, order_action="BUY_OPEN")
+        assert client.place_stock_order.call_count == 4
+
+    # ── exit orders limited to 1 step1 attempt ──────────────────────────────
+
+    def test_sell_close_escalates_to_step2_after_one_step1_attempt(self):
+        client = _make_stock_client(bid=self._NARROW_BID, ask=self._NARROW_ASK)
+        self._run(client, order_action="SELL_CLOSE")
+        orders = client.place_stock_order.call_args_list
+        # first order: step1 limit at mid; second order: step2 limit at bid
+        assert orders[0].kwargs["limit_price"] == 330.0
+        assert orders[1].kwargs["limit_price"] == self._NARROW_BID
+
+    def test_buy_cover_escalates_to_step2_after_one_step1_attempt(self):
+        # BUY_COVER + narrow spread: goes through step1 once (wide-spread skip not triggered)
+        client = _make_stock_client(bid=self._NARROW_BID, ask=self._NARROW_ASK)
+        self._run(client, order_action="BUY_COVER")
+        orders = client.place_stock_order.call_args_list
+        assert orders[0].kwargs["limit_price"] == 330.0  # step1 at mid
+        assert orders[1].kwargs["limit_price"] == self._NARROW_ASK  # step2 at ask
+
+    def test_sell_close_total_orders_is_five(self):
+        # 1 step1 + 3 step2 + 1 market = 5
+        client = _make_stock_client(bid=self._NARROW_BID, ask=self._NARROW_ASK)
+        self._run(client, order_action="SELL_CLOSE")
+        assert client.place_stock_order.call_count == 5
+
+    def test_buy_cover_narrow_spread_total_orders_is_five(self):
+        client = _make_stock_client(bid=self._NARROW_BID, ask=self._NARROW_ASK)
+        self._run(client, order_action="BUY_COVER")
+        assert client.place_stock_order.call_count == 5
+
+    def test_entry_order_still_gets_three_step1_attempts(self):
+        # BUY_OPEN / SELL_SHORT with narrow spread: 3 step1 attempts
+        client = _make_stock_client(bid=self._NARROW_BID, ask=self._NARROW_ASK)
+        self._run(client, order_action="BUY_OPEN")
+        assert client.place_stock_order.call_count == 7  # 3+3+1
+
+    # ── step1 sleep is 2s ───────────────────────────────────────────────────
+
+    def test_step1_sleep_interval_is_two_seconds(self):
+        sleep_calls = []
+        client = _make_stock_client(bid=self._NARROW_BID, ask=self._NARROW_ASK)
+        self._run(client, order_action="BUY_OPEN", sleep_calls=sleep_calls)
+        step1_sleeps = sleep_calls[:3]
+        assert step1_sleeps == [2, 2, 2]

@@ -680,9 +680,12 @@ def place_stock_order(
 ) -> dict:
     """
     Place a stock buy or sell order with 3-step fill escalation:
-      Step 1 (0-10s):   limit at mid — quote fetched fresh before placing
-      Step 2 (10-20s):  cancel unfilled -> re-fetch quote -> limit at ask (buy) or bid (sell)
-      Step 3 (20s+):    cancel unfilled -> market order
+      Step 1: limit at mid — 1 attempt for exits, up to 3 for entries.
+              Buy orders with spread > $0.50 skip step1 (mid-limit won't fill on IEX).
+              Poll interval: 2s per attempt.
+      Step 2: cancel unfilled -> re-fetch quote -> limit at ask (buy) or bid (sell).
+              Up to 3 attempts, 10s each.
+      Step 3: cancel unfilled -> market order.
     order_action: "BUY_OPEN", "SELL_CLOSE", "SELL_SHORT", or "BUY_COVER"
       BUY_OPEN   — buy to open a long position
       SELL_CLOSE — sell to close a long position
@@ -693,6 +696,7 @@ def place_stock_order(
     Returns: {order_id, status, filled_qty, filled_avg_price}
     """
     is_buy = order_action in ("BUY_OPEN", "BUY_COVER")
+    is_exit = order_action in ("BUY_COVER", "SELL_CLOSE")
 
     side = "BUY" if is_buy else "SELL"
 
@@ -762,7 +766,7 @@ def place_stock_order(
                 "Could not cancel order %s (may already be filled)", order_id
             )
 
-    for attempt in range(1, 4):
+    for attempt in range(1, 2 if is_exit else 4):
         try:
             bid, ask, mid = _fetch_mid_bid_ask()
             logger.info(
@@ -780,6 +784,13 @@ def place_stock_order(
                 attempt, ticker, exc_info=True,
             )
             return _place_market()
+
+        if is_buy and (ask - bid) > _D("0.50"):
+            logger.info(
+                "STOCK FILL_ESC step1 attempt=%d %s %s: wide spread $%.2f > $0.50, skipping to step2",
+                attempt, order_action, ticker, float(ask - bid),
+            )
+            break
 
         try:
             order = _place_limit(mid)
@@ -799,7 +810,7 @@ def place_stock_order(
         order_id = order.get("order_id")
         logger.info("STOCK FILL_ESC step1 attempt=%d order placed: id=%s", attempt, order_id)
 
-        time.sleep(5)
+        time.sleep(2)
         fill_status = _is_filled(order_id)
         if fill_status:
             logger.info("STOCK FILL_ESC step1 attempt=%d filled: %s", attempt, order_id)
