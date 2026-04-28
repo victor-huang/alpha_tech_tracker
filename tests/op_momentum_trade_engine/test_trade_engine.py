@@ -246,6 +246,45 @@ class TestSignalBuffer:
 
         assert engine._window_state["W1"]["open_position_count"] == 1
 
+    def test_second_fast_path_signal_gets_rank_1_not_rank_0(self):
+        # After a restart open_position_count resets to 0 and all new signals
+        # go through the fast path (deadline already passed). Both the first
+        # and second signal were incorrectly getting rank=0 (60% weight each),
+        # deploying 120% of the window budget.
+        engine = _make_engine_with_mock_client()
+        engine._window_state["W1"]["collection_deadline"] = datetime.now(
+            ET
+        ) - timedelta(minutes=1)
+        engine._window_state["W1"]["open_position_count"] = 0
+
+        event1 = _make_signal_event("CRDO")
+        event2 = _make_signal_event("COIN")
+
+        ranks = []
+        with patch.object(engine, "_enter_position", side_effect=lambda e, rank, **kw: ranks.append(rank) or True), \
+             patch.object(engine, "_get_window_budget", return_value=None):
+            engine._on_signal_for_window("W1", event1)
+            engine._on_signal_for_window("W1", event2)
+
+        assert ranks == [0, 1]
+
+    def test_fast_path_rank_accounts_for_already_open_recovered_positions(self):
+        # If one position was recovered from checkpoint (open_position_count=1),
+        # the next fast-path signal should enter at rank=1, not rank=0.
+        engine = _make_engine_with_mock_client()
+        engine._window_state["W1"]["collection_deadline"] = datetime.now(
+            ET
+        ) - timedelta(minutes=1)
+        engine._window_state["W1"]["open_position_count"] = 1
+
+        event = _make_signal_event("COIN")
+
+        with patch.object(engine, "_enter_position") as mock_enter, \
+             patch.object(engine, "_get_window_budget", return_value=None):
+            engine._on_signal_for_window("W1", event)
+            _, kwargs = mock_enter.call_args
+            assert kwargs["rank"] == 1
+
 
 class TestSignalSelectionLoop:
     def test_no_action_when_no_signals_buffered(self):
