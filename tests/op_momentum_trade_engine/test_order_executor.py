@@ -2457,3 +2457,74 @@ class TestStockOrderEscalationPolicy:
         self._run(client, order_action="BUY_OPEN", sleep_calls=sleep_calls)
         step1_sleeps = sleep_calls[:3]
         assert step1_sleeps == [2, 2, 2]
+
+
+# ---------------------------------------------------------------------------
+# TestStep3FairPriceFloorNotDecayed — G33
+# ---------------------------------------------------------------------------
+
+
+class TestStep3FairPriceFloorNotDecayed:
+    """
+    G33: When bid is materially below fair_price, the step3 floor is max(bid, fair_price)
+    = fair_price. Since fair_price is re-fetched from the (stale) option-price cache on
+    each call to _place_with_fill_escalation, the floor does not decay between retry
+    attempts. The exit order gets stuck 1-2 min above the market bid until the market
+    recovers.
+
+    Observed 2026-04-28: EXPE retry ran steps 1-8 (~2 min) all at 20.05-20.10 while bid
+    sat at 18.70-18.80. Fix: pass a retry_attempt counter and decay the floor by
+    25% of the bid-gap per retry.
+    """
+
+    _BID = 18.80
+    _FAIR = 20.05
+
+    def _run_sell_all_miss(self, bid=None, fair_price=None):
+        bid = bid if bid is not None else self._BID
+        fair_price = fair_price if fair_price is not None else self._FAIR
+        ask = bid + 2.0
+        client = MagicMock()
+        client.get_option_quote_by_occ.return_value = {
+            "bid": bid, "ask": ask, "mid": (bid + ask) / 2,
+        }
+        client.place_option_order.return_value = {"order_id": "ord-1", "status": "open"}
+        client.order_status.return_value = {"status": "open"}
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            result = _place_with_fill_escalation(
+                client=client,
+                ticker="EXPE",
+                option_symbol="EXPE260501P00260000",
+                option_type="PUT",
+                contracts=1,
+                order_action="SELL_CLOSE",
+                feed=None,
+                get_fair_price_fn=MagicMock(return_value=_D(str(fair_price))),
+            )
+        limit_prices = [
+            c.kwargs["price"]
+            for c in client.place_option_order.call_args_list
+            if c.kwargs.get("price_type") == "LIMIT"
+        ]
+        return result, limit_prices
+
+    def test_bid_below_fair_price_all_limits_floored_at_fair(self):
+        # bid=18.80 << fair=20.05: every limit must be >= 20.05 (the floor)
+        _, limit_prices = self._run_sell_all_miss()
+        assert limit_prices, "expected at least one LIMIT order to be placed"
+        assert all(p >= self._FAIR for p in limit_prices)
+
+    def test_bid_below_fair_price_results_in_miss(self):
+        # orders placed above bid → unfilled → MISS (0 contracts)
+        (_, filled), _ = self._run_sell_all_miss()
+        assert filled == 0
+
+    def test_second_call_same_floor_no_decay(self):
+        # G33 core: a second _place_with_fill_escalation call (the retry) receives a
+        # fresh fair_price from the same stale cache — identical floor, same MISS.
+        # Fix should decay the floor per retry_attempt so the exit eventually fills.
+        for attempt in range(2):
+            (_, filled), limit_prices = self._run_sell_all_miss()
+            assert filled == 0, f"attempt {attempt}: expected MISS"
+            assert all(p >= self._FAIR for p in limit_prices), \
+                f"attempt {attempt}: floor not decayed — all limits still at fair_price"
