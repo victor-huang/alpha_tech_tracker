@@ -630,6 +630,33 @@ rather than the original engine start.
 
 ---
 
+### G33 — FILL_ESC step3 fair\_price floor not lowered on successive retry attempts
+
+**File:** `order_executor.py` `fill_esc_place_option_order()`
+**Severity:** Medium — close order gets stuck for 2+ minutes when fair\_price is materially above market bid, delaying exit and extending risk exposure
+
+Step3 floors the sell limit at `max(bid, fair_price)`.  When `bid << fair_price` (e.g. bid=$18.80,
+fair=$20.05), the placed limit is $1.25 above the market and will not fill within the timeout.
+`_retry_close_position` then calls `_close_position` again, which starts a fresh FILL_ESC —
+computing a fresh `fair_price` from the (stale) option-price cache and landing at the same floor.
+
+Observed 2026-04-28: EXPE retry ran steps 1–8 (~2 min) all hitting tick rejection at 20.05→20.10
+while bid sat at 18.70–18.80.  The position eventually filled only because the market recovered.
+
+**Fix:** Pass a `retry_attempt` counter through to `fill_esc_place_option_order`.  Decay the
+fair-price floor progressively:
+
+```python
+# example: shrink the floor by 25 % of the bid-gap per retry
+gap = fair - bid
+floor = fair - retry_attempt * 0.25 * gap
+step3_price = max(bid, floor)
+```
+
+Cap decay so the floor never drops below the market bid (ensuring at least `bid` is used).
+
+---
+
 ### G30 — FN bar-boundary ambiguity at sequential window drain (Won't Fix)
 
 **Files:** `op_momentum_selector_backtest.py` → `_apply_capital_flow()`
