@@ -1652,6 +1652,78 @@ class TestDrainPendingSignals:
 
         assert engine._window_state["W1"].get("budget") == _D("8000")
 
+    def test_zero_budget_skips_all_entries(self):
+        # G35: when all capital is locked in open re-entries, sequential window
+        # budget = 0. The sizer's max(1,...) would still force 1 contract, deploying
+        # real cash. Guard skips entry entirely when window_budget <= 0.
+        engine = _make_engine_with_mock_client()
+        engine._window_state["W1"]["collection_deadline"] = datetime.now(ET) - timedelta(
+            seconds=1
+        )
+        engine._window_state["W1"]["pending_signals"] = {
+            "NVDA": _make_signal_event("NVDA"),
+            "AMD": _make_signal_event("AMD"),
+        }
+        engine._rolling_stats = {
+            "NVDA": {"ev_trade": 0.5, "win_rate": 0.5, "avg_win_pct": 1.0},
+            "AMD": {"ev_trade": 0.4, "win_rate": 0.4, "avg_win_pct": 0.8},
+        }
+        enter_calls = []
+        with patch(_SCORE_TICKER_PATH, side_effect=[1.5, 1.2]), \
+             patch.object(
+                 engine, "_enter_position",
+                 side_effect=lambda e, **kw: enter_calls.append(e.ticker),
+             ), \
+             patch.object(engine, "_get_window_budget", return_value=_D("0")):
+            engine._drain_pending_signals_for_window(engine._windows[0])
+
+        assert enter_calls == []
+
+    def test_negative_budget_skips_all_entries(self):
+        engine = _make_engine_with_mock_client()
+        engine._window_state["W1"]["collection_deadline"] = datetime.now(ET) - timedelta(
+            seconds=1
+        )
+        engine._window_state["W1"]["pending_signals"] = {
+            "NVDA": _make_signal_event("NVDA"),
+        }
+        engine._rolling_stats = {
+            "NVDA": {"ev_trade": 0.5, "win_rate": 0.5, "avg_win_pct": 1.0},
+        }
+        enter_calls = []
+        with patch(_SCORE_TICKER_PATH, return_value=1.5), \
+             patch.object(
+                 engine, "_enter_position",
+                 side_effect=lambda e, **kw: enter_calls.append(e.ticker),
+             ), \
+             patch.object(engine, "_get_window_budget", return_value=_D("-500")):
+            engine._drain_pending_signals_for_window(engine._windows[0])
+
+        assert enter_calls == []
+
+    def test_none_budget_proceeds_with_entries(self):
+        # budget=None means "no tracking" (first-group windows using account balance)
+        engine = _make_engine_with_mock_client()
+        engine._window_state["W1"]["collection_deadline"] = datetime.now(ET) - timedelta(
+            seconds=1
+        )
+        engine._window_state["W1"]["pending_signals"] = {
+            "NVDA": _make_signal_event("NVDA"),
+        }
+        engine._rolling_stats = {
+            "NVDA": {"ev_trade": 0.5, "win_rate": 0.5, "avg_win_pct": 1.0},
+        }
+        enter_calls = []
+        with patch(_SCORE_TICKER_PATH, return_value=1.5), \
+             patch.object(
+                 engine, "_enter_position",
+                 side_effect=lambda e, **kw: enter_calls.append(e.ticker),
+             ), \
+             patch.object(engine, "_get_window_budget", return_value=None):
+            engine._drain_pending_signals_for_window(engine._windows[0])
+
+        assert "NVDA" in enter_calls
+
 
 # ---------------------------------------------------------------------------
 # _enter_position failure paths — open_position_count must be decremented

@@ -1485,6 +1485,14 @@ class OpMomentumTradeEngine:
             with self._signal_lock:
                 self._window_state[label]["budget"] = window_budget
 
+        if window_budget is not None and window_budget <= _D("0"):
+            logger.warning(
+                "Sequential window [%s] budget is $0 — all capital tied up in"
+                " open re-entries or lost; skipping entries",
+                label,
+            )
+            return
+
         # Collect top-N selections first (no fallback on failure).
         selections = []
         for rank, (score, ticker, event) in enumerate(scored):
