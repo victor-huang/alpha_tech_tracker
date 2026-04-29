@@ -602,6 +602,34 @@ call (`pos.closed_contracts += filled`), **or** credit partial-fill P&L immediat
 
 ---
 
+### G32 — Watchdog uses engine start-time as baseline after reconnect, logs misleadingly large elapsed time
+
+**File:** `signal_engine.py` `reconnect()`, `trade_engine.py` `_check_ws_health()`
+**Severity:** Medium — watchdog fires based on engine uptime rather than time since last bar; actual stream health is correctly detected but the logged elapsed-time figure is confusing
+
+`reconnect()` resets `_last_bar_received_at = None` but does **not** update `_stream_started_at`.
+After reconnect the watchdog computes:
+
+```python
+last = engine._last_bar_received_at or engine._stream_started_at
+elapsed = (now - last).total_seconds()
+```
+
+`_last_bar_received_at` is `None` immediately after reconnect, so `last = _stream_started_at`
+(set once at engine startup, e.g. 08:31 ET).  `elapsed = now − 08:31` = the full engine uptime,
+which can be hours.
+
+Observed 2026-04-28: watchdog logged "no bar received for 17927s / 17627s" at 13:30 ET on both
+engines, exactly matching seconds elapsed since startup.  The stream was genuinely stale (TS
+reconnect failures), so the reconnect was correct, but the 17927s figure implies bars hadn't
+been seen since startup — misleading for post-hoc debugging.
+
+**Fix:** In `signal_engine.reconnect()`, reset `_stream_started_at = _now_et()` after clearing
+`_last_bar_received_at`, so the watchdog's baseline reflects the most recent reconnect attempt
+rather than the original engine start.
+
+---
+
 ### G30 — FN bar-boundary ambiguity at sequential window drain (Won't Fix)
 
 **Files:** `op_momentum_selector_backtest.py` → `_apply_capital_flow()`
