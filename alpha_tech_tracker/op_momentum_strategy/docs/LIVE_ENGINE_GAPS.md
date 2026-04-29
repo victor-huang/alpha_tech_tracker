@@ -579,6 +579,29 @@ slot is now correctly deducted from A1's budget.
 
 ---
 
+### G31 — Partial tranche fill P&L lost when MISS triggers retry
+
+**File:** `position_monitor.py` line 874
+**Severity:** High — P&L underreported by the contracts filled in tranche 1 whenever a tranche-2 MISS triggers a retry
+
+When `_close_position` is called for a multi-tranche exit and tranche 2 MISSes:
+
+1. Line 874 sets `pos.closed_contracts = pos.contracts` (e.g. 3) before the loop.
+2. Tranche 1 fills 2 contracts → `pos.contracts -= 2` → `pos.contracts = 1`.
+3. MISS sets `pos.close_order_failed = True`.  `_on_position_closed` does **not** fire yet because `pos.contracts > 0`.
+4. `_retry_close_position` calls `_close_position` again.  Line 874 executes again: `pos.closed_contracts = pos.contracts = 1` — **overwriting the 3 that was there**.
+5. Retry fills 1 → `pos.contracts = 0`.  `_on_exit_fill_corrected` runs with `effective_contracts = closed_contracts = 1`.
+6. cap\_pnl = `1 × 100 × (exit − entry)` — only the retry contract.  The 2 tranche-1 fills are **never credited**.
+
+Observed 2026-04-28: EXPE bought 3 contracts at $18.00, all eventually closed at ~$20.10.
+Final summary showed qty=1 and P&L=+$210 instead of qty=3 and P&L=+$630 — a $420 understatement.
+
+**Fix:** Accumulate `closed_contracts` additively instead of resetting on each `_close_position`
+call (`pos.closed_contracts += filled`), **or** credit partial-fill P&L immediately via
+`_on_exit_fill_corrected` before the MISS is recorded.
+
+---
+
 ### G30 — FN bar-boundary ambiguity at sequential window drain (Won't Fix)
 
 **Files:** `op_momentum_selector_backtest.py` → `_apply_capital_flow()`
