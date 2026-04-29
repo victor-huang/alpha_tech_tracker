@@ -657,6 +657,45 @@ Cap decay so the floor never drops below the market bid (ensuring at least `bid`
 
 ---
 
+### G34 — `print_status()` closed-position block shows `x0` contracts using `p.contracts` instead of original count
+
+**File:** `position_monitor.py` line 1360
+**Severity:** Low — misleading intraday P&L display; no money impact
+
+`print_status()` formats the closed-position quantity as:
+
+```python
+qty_str = f"x{p.contracts}"   # line 1360
+```
+
+`p.contracts` tracks *remaining* unfilled contracts and reaches 0 when all tranches close.
+`print_summary()` (the end-of-day table) correctly uses `_effective_contracts(p)` which
+returns `closed_contracts` when non-zero.
+
+Additionally, `p.exit_fill_price` may be `None` while the async fill poll is still in flight,
+so `_pnl()` returns `None` → the P&L column shows `+$0.00` for all closed positions in every
+interim status print.
+
+Observed 2026-04-28: every `POSITION STATUS` print from ~11:41 ET onward showed
+`EXPE BEARISH EXPE260501P00260000 x0 09:47→11:36 trailing_stop_ma20 +$0.00`
+and `RH BEARISH RH260501P00145000 x0 09:48→11:16 trailing_stop_ma20 +$0.00`
+even though both positions were fully closed and profitable.
+
+**Fix:** In `print_status()` closed-position block, define `_effective_contracts` in scope
+and use it for the quantity display:
+
+```python
+# before (broken)
+qty_str = f"x{p.contracts}"
+
+# after
+qty_str = f"x{_effective_contracts(p)}"
+```
+
+where `_effective_contracts(p) = p.closed_contracts if p.closed_contracts > 0 else p.contracts`.
+
+---
+
 ### G30 — FN bar-boundary ambiguity at sequential window drain (Won't Fix)
 
 **Files:** `op_momentum_selector_backtest.py` → `_apply_capital_flow()`
