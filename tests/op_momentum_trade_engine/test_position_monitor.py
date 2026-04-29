@@ -3256,7 +3256,10 @@ class TestClosedContractsRetentionOnRetry:
         assert pos.closed_contracts == 3
 
 
-# _G34_PLACEHOLDER_
+
+# ---------------------------------------------------------------------------
+# TestPrintStatusClosedQty — G34
+# ---------------------------------------------------------------------------
 
 
 class TestPrintStatusClosedQty:
