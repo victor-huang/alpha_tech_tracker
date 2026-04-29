@@ -206,8 +206,9 @@ Most pool tickers are on the CBOE Penny Pilot Program, but not all. Non-pilot ti
 - `RH` — absent from CBOE list; confirmed 2026-04-21 (6 live rejections)
 - `FN` — absent from CBOE list; confirmed 2026-04-21 (2 live rejections)
 - `CLS` — absent from CBOE list; Celestica has liquid options but is not enrolled
+- `APP` — confirmed 2026-04-28 (6 live rejections across put and call orders, `required=0.1`)
 
-All other V3 pool tickers (`SNDK`, `APP`, `SHOP`, `CVNA`, `AMD`, `META`, `EXPE`, `MU`, `PLTR`, `COIN`, `MSTR`, `CRWV`, `MRVL`) are confirmed Penny Pilot per CBOE 2026-04-22 report.
+All other V3 pool tickers (`SNDK`, `SHOP`, `CVNA`, `AMD`, `META`, `EXPE`, `MU`, `PLTR`, `COIN`, `MSTR`, `CRWV`, `MRVL`) are confirmed Penny Pilot per CBOE 2026-04-22 report.
 
 When adding a new pool ticker, verify its Penny Pilot status before the first live session. If live fills show `required=0.1` tick rejections, add the ticker to `_NON_PENNY_PILOT_TICKERS`.
 
