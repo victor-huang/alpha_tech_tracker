@@ -579,6 +579,24 @@ slot is now correctly deducted from A1's budget.
 
 ---
 
+### ~~G35 — Sequential window enters positions when budget is zero~~ ✓ Fixed
+
+**File:** `trade_engine.py` `_drain_pending_signals_for_window()`
+**Severity:** High — real cash deployed with $0 tracked slot capital
+
+When all M1 capital is locked in open BRE re-entries, `_get_window_budget` returns $0
+for A1. `PositionSizer.compute()` has a `max(1, int(budget / mid / 100))` floor that
+forces 1 contract regardless, causing positions to be entered with `slot_capital=0`.
+
+Observed 2026-04-29: A1 entered FN ($8,020) and CLS ($3,210) with `budget=0.0`; each
+also spawned BRE watchers that re-entered again. Total over-deployment: ~$11k from $0
+tracked budget.
+
+**Fix:** In `_drain_pending_signals_for_window`, return early if `window_budget is not
+None and window_budget <= 0`.
+
+---
+
 ### G31 — Partial tranche fill P&L lost when MISS triggers retry
 
 **File:** `position_monitor.py` line 874
