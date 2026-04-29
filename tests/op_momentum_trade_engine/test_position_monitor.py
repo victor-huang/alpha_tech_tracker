@@ -3188,3 +3188,119 @@ class TestSyncOpenPositionQtys:
         monitor._sync_open_position_qtys()
 
         assert pos.contracts == 6
+
+
+# ---------------------------------------------------------------------------
+# TestClosedContractsRetentionOnRetry — G31
+# ---------------------------------------------------------------------------
+
+
+class TestClosedContractsRetentionOnRetry:
+    """
+    G31: _close_option_position sets pos.closed_contracts = pos.contracts (line 874)
+    on every call. After a partial tranche fill (contracts decremented), a retry call
+    resets closed_contracts to the *remaining* count, discarding the tranche-1 fill count.
+
+    Expected behaviour: closed_contracts should reflect the full original position size
+    and must not be reduced on retry.
+    """
+
+    _PLACE_OPTION_PATH = "alpha_tech_tracker.op_momentum_strategy.position_monitor.place_option_order_in_tranches"
+    _NOTIFY_PATH = "alpha_tech_tracker.op_momentum_strategy.position_monitor._notify"
+    _REPLAY_PATH = "alpha_tech_tracker.op_momentum_strategy.position_monitor.is_replay_mode"
+
+    def _make_monitor_with_pos(self, contracts=3):
+        client = _make_alpaca_client()
+        client.get_option_quote_by_occ.return_value = {"bid": 8.50, "ask": 9.50, "mid": 9.00}
+        df = _build_history_df([116.0], ma20=118.0, ma50=118.0, ma200=120.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine, mock_trade_execution=False)
+        pos = _make_active_position(signal="BEARISH", contracts=contracts)
+        pos.entry_fill_price = _D("8.00")
+        return monitor, client, pos
+
+    def test_first_partial_close_sets_closed_contracts_to_original_count(self):
+        monitor, _, pos = self._make_monitor_with_pos(contracts=3)
+        with \
+                patch(self._REPLAY_PATH, return_value=True), \
+                patch(self._PLACE_OPTION_PATH, return_value=({"order_id": "o1"}, 2)), \
+                patch(self._NOTIFY_PATH):
+            monitor._close_option_position(pos, "hard_stop")
+
+        assert pos.closed_contracts == 3
+        assert pos.contracts == 1
+        assert pos.close_order_failed is True
+
+    def test_retry_does_not_reduce_closed_contracts_below_original(self):
+        # G31 BUG: line 874 `pos.closed_contracts = pos.contracts` executes on every
+        # call. On retry pos.contracts==1 (remaining), so closed_contracts is reset to 1,
+        # losing the 2-contract tranche-1 fill. Expected: closed_contracts stays at 3.
+        monitor, _, pos = self._make_monitor_with_pos(contracts=3)
+        with \
+                patch(self._REPLAY_PATH, return_value=True), \
+                patch(self._PLACE_OPTION_PATH, return_value=({"order_id": "o1"}, 2)), \
+                patch(self._NOTIFY_PATH):
+            monitor._close_option_position(pos, "hard_stop")
+
+        assert pos.closed_contracts == 3
+        assert pos.contracts == 1
+
+        with \
+                patch(self._REPLAY_PATH, return_value=True), \
+                patch(self._PLACE_OPTION_PATH, return_value=({"order_id": "o2"}, 0)), \
+                patch(self._NOTIFY_PATH):
+            monitor._close_option_position(pos, "hard_stop")
+
+        # Bug: closed_contracts is reset to 1 (remaining qty) on retry.
+        # Fix should preserve 3 — the original position size.
+        assert pos.closed_contracts == 3
+
+
+# _G34_PLACEHOLDER_
+
+
+class TestPrintStatusClosedQty:
+    """
+    G34: print_status() closed-position block uses `p.contracts` (line 1360) for the
+    quantity string. After a live close, pos.contracts is decremented to 0 while
+    pos.closed_contracts holds the original count. The display shows "x0" and $0.00 P&L
+    for every closed position. Expected: quantity should use closed_contracts when >0.
+    """
+
+    def test_closed_position_qty_shows_closed_contracts_not_zero(self, caplog):
+        client = _make_alpaca_client()
+        df = _build_history_df([116.0], ma20=118.0, ma50=118.0, ma200=120.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine)
+        pos = _make_active_position(signal="BEARISH", contracts=3)
+        pos.is_closed = True
+        pos.exit_reason = "trailing_stop_ma20"
+        pos.contracts = 0          # zeroed by _close_option_position
+        pos.closed_contracts = 3   # original fill count
+        monitor.add_position(pos)
+
+        with caplog.at_level(logging.INFO):
+            monitor.print_status()
+
+        # Bug: shows "x0" because p.contracts==0. Fix should show "x3".
+        assert "x3" in caplog.text
+
+    def test_closed_position_pnl_uses_closed_contracts(self, caplog):
+        client = _make_alpaca_client()
+        df = _build_history_df([116.0], ma20=118.0, ma50=118.0, ma200=120.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine)
+        pos = _make_active_position(signal="BEARISH", contracts=3)
+        pos.is_closed = True
+        pos.exit_reason = "trailing_stop_ma20"
+        pos.entry_fill_price = _D("10.00")
+        pos.exit_fill_price = _D("8.00")   # BEARISH profit: entry - exit > 0
+        pos.contracts = 0
+        pos.closed_contracts = 3
+        monitor.add_position(pos)
+
+        with caplog.at_level(logging.INFO):
+            monitor.print_status()
+
+        # P&L = (10 - 8) * 3 * 100 = +$600. Bug shows +$0.00 because p.contracts==0.
+        assert "+$600.00" in caplog.text
