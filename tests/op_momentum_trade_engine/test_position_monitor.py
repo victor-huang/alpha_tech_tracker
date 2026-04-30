@@ -3373,35 +3373,50 @@ class TestClosedContractsRetentionOnRetry:
 
 class TestPrintStatusClosedQty:
     """
-    G34: print_status() closed-position block uses `p.contracts` (line 1360) for the
-    quantity string. After a live close, pos.contracts is decremented to 0 while
-    pos.closed_contracts holds the original count. The display shows "x0" and $0.00 P&L
-    for every closed position. Expected: quantity should use closed_contracts when >0.
+    G34: print_status() closed-position block used p.contracts for qty and P&L multiplier.
+    After a live close p.contracts reaches 0, so every closed position showed x0 and
+    +$0.00. Fix: use _effective_contracts() (returns closed_contracts when > 0).
     """
 
-    def test_closed_position_qty_shows_closed_contracts_not_zero(self, caplog):
+    def _make_monitor(self):
         client = _make_alpaca_client()
         df = _build_history_df([116.0], ma20=118.0, ma50=118.0, ma200=120.0)
         engine = _make_signal_engine_with_history("NVDA", df)
-        monitor = PositionMonitor(client, engine)
+        return PositionMonitor(client, engine)
+
+    def test_closed_position_qty_shows_closed_contracts_not_zero(self, caplog):
+        monitor = self._make_monitor()
         pos = _make_active_position(signal="BEARISH", contracts=3)
         pos.is_closed = True
         pos.exit_reason = "trailing_stop_ma20"
-        pos.contracts = 0          # zeroed by _close_option_position
-        pos.closed_contracts = 3   # original fill count
+        pos.contracts = 0
+        pos.closed_contracts = 3
         monitor.add_position(pos)
 
         with caplog.at_level(logging.INFO):
             monitor.print_status()
 
-        # Bug: shows "x0" because p.contracts==0. Fix should show "x3".
         assert "x3" in caplog.text
 
+    def test_closed_position_qty_falls_back_to_contracts_when_closed_contracts_zero(self, caplog):
+        # closed_contracts stays 0 when the close hasn't filled yet (mid-retry).
+        # In that case _effective_contracts falls back to p.contracts.
+        monitor = self._make_monitor()
+        pos = _make_active_position(signal="BULLISH", contracts=2)
+        pos.is_closed = True
+        pos.exit_reason = "hard_stop"
+        pos.contracts = 2
+        pos.closed_contracts = 0
+        monitor.add_position(pos)
+
+        with caplog.at_level(logging.INFO):
+            monitor.print_status()
+
+        assert "x2" in caplog.text
+
     def test_closed_position_pnl_uses_closed_contracts(self, caplog):
-        client = _make_alpaca_client()
-        df = _build_history_df([116.0], ma20=118.0, ma50=118.0, ma200=120.0)
-        engine = _make_signal_engine_with_history("NVDA", df)
-        monitor = PositionMonitor(client, engine)
+        # P&L = (10 - 8) * 3 * 100 = +$600.
+        monitor = self._make_monitor()
         pos = _make_active_position(signal="BULLISH", contracts=3)
         pos.is_closed = True
         pos.exit_reason = "trailing_stop_ma20"
@@ -3414,5 +3429,52 @@ class TestPrintStatusClosedQty:
         with caplog.at_level(logging.INFO):
             monitor.print_status()
 
-        # P&L = (10 - 8) * 3 * 100 = +$600. Bug shows +$0.00 because p.contracts==0.
         assert "+$600.00" in caplog.text
+
+    def test_closed_bearish_option_pnl_profit_when_exit_above_entry(self, caplog):
+        # BEARISH put: bought at 8, sold at 10 → profit = (10 - 8) * 2 * 100 = +$400.
+        monitor = self._make_monitor()
+        pos = _make_active_position(signal="BEARISH", contracts=2)
+        pos.is_closed = True
+        pos.exit_reason = "hard_stop"
+        pos.entry_fill_price = _D("8.00")
+        pos.exit_fill_price = _D("10.00")
+        pos.contracts = 0
+        pos.closed_contracts = 2
+        monitor.add_position(pos)
+
+        with caplog.at_level(logging.INFO):
+            monitor.print_status()
+
+        assert "+$400.00" in caplog.text
+
+    def test_closed_position_pnl_blank_when_exit_fill_price_missing(self, caplog):
+        # exit_fill_price=None means fill not yet confirmed; P&L column must be blank,
+        # not $0.00, so the operator knows the figure is pending.
+        monitor = self._make_monitor()
+        pos = _make_active_position(signal="BULLISH", contracts=2)
+        pos.is_closed = True
+        pos.exit_reason = "hard_stop"
+        pos.entry_fill_price = _D("9.00")
+        pos.exit_fill_price = None
+        pos.contracts = 0
+        pos.closed_contracts = 2
+        monitor.add_position(pos)
+
+        with caplog.at_level(logging.INFO):
+            monitor.print_status()
+
+        assert "$0.00" not in caplog.text
+
+    def test_closed_stock_position_qty_uses_shares(self, caplog):
+        # Stock positions use p.shares (unchanged by the fix); verify no regression.
+        monitor = self._make_monitor()
+        pos = _make_stock_position(signal="BULLISH", shares=15)
+        pos.is_closed = True
+        pos.exit_reason = "end_of_day"
+        monitor.add_position(pos)
+
+        with caplog.at_level(logging.INFO):
+            monitor.print_status()
+
+        assert "x15sh" in caplog.text
