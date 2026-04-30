@@ -593,9 +593,13 @@ class PositionMonitor:
                         broker_entry = {"qty": float(-pos.shares if pos.signal == "BEARISH" else pos.shares)}
                     else:
                         pos.close_order_failed = False
+                        fill_price = self._fetch_manual_close_fill_price(pos)
+                        if fill_price is not None:
+                            pos.exit_fill_price = fill_price
+                        price_str = f", exit ${float(fill_price):.2f}" if fill_price is not None else ""
                         _notify(
                             f"MANUAL CLOSE DETECTED {pos.ticker} x{pos.shares} shares"
-                            f" — position already closed at broker, skipping order"
+                            f" — position already closed at broker{price_str}"
                         )
                         return
                 broker_qty = int(abs(broker_entry["qty"]))

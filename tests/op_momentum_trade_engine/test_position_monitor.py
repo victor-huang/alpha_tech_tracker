@@ -877,6 +877,66 @@ class TestStockClosePosition:
         assert pos2.is_closed is True
         assert set(closed_tickers) == {"APP", "MSTR"}
 
+    def test_manual_close_detection_sets_exit_fill_price_from_broker(self):
+        # G37: when PRE-CLOSE SYNC finds the position gone at broker,
+        # _fetch_manual_close_fill_price must be called and its return value
+        # stored on pos.exit_fill_price so print_summary() can show P&L.
+        client = _make_alpaca_client()
+        client.get_stock_quote.return_value = {
+            "QuoteResponse": {
+                "QuoteData": [{"All": {"bid": 99.0, "ask": 101.0, "bid_size": 1, "ask_size": 1, "last": None}}]
+            }
+        }
+        client.get_open_positions.return_value = {}
+        client.get_filled_orders.return_value = [
+            {"order_id": "o1", "side": "buy", "filled_avg_price": 105.50,
+             "filled_qty": 15.0, "filled_at": None},
+        ]
+
+        pos = _make_stock_position(signal="BEARISH", shares=15)
+        pos.entry_order_id = None
+        df = _build_history_df([104.0], ma20=90.0, ma50=90.0, ma200=85.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine, mock_trade_execution=False)
+        monitor.add_position(pos)
+
+        with patch(
+            "alpha_tech_tracker.op_momentum_strategy.position_monitor.is_replay_mode",
+            return_value=False,
+        ):
+            monitor.close_all(reason="end_of_day")
+
+        assert pos.exit_fill_price == _D("105.50")
+        client.place_stock_order.assert_not_called()
+
+    def test_manual_close_detection_leaves_exit_fill_price_none_when_fetch_fails(self):
+        # G37: if _fetch_manual_close_fill_price returns None (no order found, no quote),
+        # exit_fill_price must remain None — not silently set to 0 or mid.
+        client = _make_alpaca_client()
+        client.get_stock_quote.return_value = {
+            "QuoteResponse": {
+                "QuoteData": [{"All": {"bid": 99.0, "ask": 101.0, "bid_size": 1, "ask_size": 1, "last": None}}]
+            }
+        }
+        client.get_open_positions.return_value = {}
+        client.get_filled_orders.side_effect = RuntimeError("API down")
+
+        pos = _make_stock_position(signal="BULLISH", shares=10)
+        pos.entry_order_id = None
+        df = _build_history_df([104.0], ma20=90.0, ma50=90.0, ma200=85.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine, mock_trade_execution=False)
+        monitor.add_position(pos)
+
+        with patch(
+            "alpha_tech_tracker.op_momentum_strategy.position_monitor.is_replay_mode",
+            return_value=False,
+        ):
+            monitor.close_all(reason="hard_stop")
+
+        assert pos.exit_fill_price is None
+        client.place_stock_order.assert_not_called()
+
 
 class TestCloseOrderRetry:
     @pytest.fixture(autouse=True)
