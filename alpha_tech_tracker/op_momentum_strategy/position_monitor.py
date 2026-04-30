@@ -875,7 +875,6 @@ class PositionMonitor:
                         pos.contracts,
                     )
             original_contracts = pos.contracts
-            pos.closed_contracts = pos.contracts
             last_order, filled = place_option_order_in_tranches(
                 client=self._client,
                 ticker=pos.ticker,
@@ -888,6 +887,7 @@ class PositionMonitor:
                 feed=self._alpaca_feed,
             )
             pos.contracts -= filled
+            pos.closed_contracts += filled
             pos.exit_order_id = last_order.get("order_id")
             if pos.contracts > 0:
                 pos.close_order_failed = True

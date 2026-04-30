@@ -3257,12 +3257,12 @@ class TestSyncOpenPositionQtys:
 
 class TestClosedContractsRetentionOnRetry:
     """
-    G31: _close_option_position sets pos.closed_contracts = pos.contracts (line 874)
+    G31: _close_option_position previously set pos.closed_contracts = pos.contracts
     on every call. After a partial tranche fill (contracts decremented), a retry call
-    resets closed_contracts to the *remaining* count, discarding the tranche-1 fill count.
+    reset closed_contracts to the *remaining* count, discarding the tranche-1 fill count.
 
-    Expected behaviour: closed_contracts should reflect the full original position size
-    and must not be reduced on retry.
+    Fix: closed_contracts is now accumulated additively (+= filled) so each tranche's
+    fill is retained across retry calls.
     """
 
     _PLACE_OPTION_PATH = "alpha_tech_tracker.op_momentum_strategy.position_monitor.place_option_order_in_tranches"
@@ -3279,7 +3279,8 @@ class TestClosedContractsRetentionOnRetry:
         pos.entry_fill_price = _D("8.00")
         return monitor, client, pos
 
-    def test_first_partial_close_sets_closed_contracts_to_original_count(self):
+    def test_first_partial_close_accumulates_filled_count(self):
+        # First call fills 2 of 3 → closed_contracts accumulates to 2.
         monitor, _, pos = self._make_monitor_with_pos(contracts=3)
         with \
                 patch(self._REPLAY_PATH, return_value=True), \
@@ -3287,14 +3288,15 @@ class TestClosedContractsRetentionOnRetry:
                 patch(self._NOTIFY_PATH):
             monitor._close_option_position(pos, "hard_stop")
 
-        assert pos.closed_contracts == 3
+        assert pos.closed_contracts == 2
         assert pos.contracts == 1
         assert pos.close_order_failed is True
 
-    def test_retry_does_not_reduce_closed_contracts_below_original(self):
-        # G31 BUG: line 874 `pos.closed_contracts = pos.contracts` executes on every
-        # call. On retry pos.contracts==1 (remaining), so closed_contracts is reset to 1,
-        # losing the 2-contract tranche-1 fill. Expected: closed_contracts stays at 3.
+    def test_retry_fill_adds_to_previously_accumulated_closed_contracts(self):
+        # First call fills 2; retry fills remaining 1 → closed_contracts totals 3.
+        # G31 bug: retry called pos.closed_contracts = pos.contracts = 1, overwriting
+        # the tranche-1 fill, so effective_contracts was 1 instead of 3 and P&L was
+        # understated (observed EXPE 2026-04-28: +$210 instead of +$630).
         monitor, _, pos = self._make_monitor_with_pos(contracts=3)
         with \
                 patch(self._REPLAY_PATH, return_value=True), \
@@ -3302,8 +3304,29 @@ class TestClosedContractsRetentionOnRetry:
                 patch(self._NOTIFY_PATH):
             monitor._close_option_position(pos, "hard_stop")
 
-        assert pos.closed_contracts == 3
+        assert pos.closed_contracts == 2
         assert pos.contracts == 1
+
+        with \
+                patch(self._REPLAY_PATH, return_value=True), \
+                patch(self._PLACE_OPTION_PATH, return_value=({"order_id": "o2"}, 1)), \
+                patch(self._NOTIFY_PATH):
+            monitor._close_option_position(pos, "hard_stop")
+
+        assert pos.closed_contracts == 3
+        assert pos.contracts == 0
+        assert pos.close_order_failed is False
+
+    def test_miss_on_retry_does_not_reduce_previously_filled_count(self):
+        # First call fills 2; retry MISSes (fills 0) → closed_contracts stays at 2.
+        monitor, _, pos = self._make_monitor_with_pos(contracts=3)
+        with \
+                patch(self._REPLAY_PATH, return_value=True), \
+                patch(self._PLACE_OPTION_PATH, return_value=({"order_id": "o1"}, 2)), \
+                patch(self._NOTIFY_PATH):
+            monitor._close_option_position(pos, "hard_stop")
+
+        assert pos.closed_contracts == 2
 
         with \
                 patch(self._REPLAY_PATH, return_value=True), \
@@ -3311,9 +3334,8 @@ class TestClosedContractsRetentionOnRetry:
                 patch(self._NOTIFY_PATH):
             monitor._close_option_position(pos, "hard_stop")
 
-        # Bug: closed_contracts is reset to 1 (remaining qty) on retry.
-        # Fix should preserve 3 — the original position size.
-        assert pos.closed_contracts == 3
+        assert pos.closed_contracts == 2
+        assert pos.contracts == 1
 
 
 
