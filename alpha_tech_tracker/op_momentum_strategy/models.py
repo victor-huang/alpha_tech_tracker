@@ -9,9 +9,17 @@ def _D(x) -> Decimal:
 
 
 def _stock_bid_ask(quote: dict) -> tuple:
-    """Extract (bid, ask) floats from AlpacaAPIClient.get_stock_quote() response."""
+    """Extract (bid, ask) floats from AlpacaAPIClient.get_stock_quote() response.
+
+    ask=0 is a WebSocket staleness artifact. Fall back to bid so callers compute
+    mid = bid rather than mid = bid/2.
+    """
     all_data = quote["QuoteResponse"]["QuoteData"][0]["All"]
-    return float(all_data["bid"]), float(all_data["ask"])
+    bid = float(all_data["bid"])
+    ask = float(all_data["ask"])
+    if ask == 0:
+        ask = bid
+    return bid, ask
 
 
 @dataclass

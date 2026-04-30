@@ -610,6 +610,33 @@ class TestPrintSummaryPnl:
         assert "+$-" not in caplog.text
 
 
+class TestStockBidAsk:
+    """_stock_bid_ask() — G36: ask=0 stale quote must not halve the mid."""
+
+    def _make_quote(self, bid, ask):
+        return {"QuoteResponse": {"QuoteData": [{"All": {"bid": bid, "ask": ask}}]}}
+
+    def test_normal_quote_returns_bid_and_ask(self):
+        from alpha_tech_tracker.op_momentum_strategy.models import _stock_bid_ask
+        bid, ask = _stock_bid_ask(self._make_quote(619.50, 620.10))
+        assert bid == 619.50
+        assert ask == 620.10
+
+    def test_ask_zero_falls_back_to_bid(self):
+        # G36: WebSocket delivers ask=0 snapshot; mid must use bid, not bid/2.
+        from alpha_tech_tracker.op_momentum_strategy.models import _stock_bid_ask
+        bid, ask = _stock_bid_ask(self._make_quote(620.0, 0.0))
+        assert bid == 620.0
+        assert ask == 620.0
+
+    def test_ask_zero_mid_equals_bid_not_half(self):
+        from alpha_tech_tracker.op_momentum_strategy.models import _stock_bid_ask
+        from decimal import Decimal
+        bid_f, ask_f = _stock_bid_ask(self._make_quote(620.0, 0.0))
+        mid = (Decimal(str(bid_f)) + Decimal(str(ask_f))) / Decimal("2")
+        assert mid == Decimal("620.0")
+
+
 class TestStockClosePosition:
     @pytest.fixture(autouse=True)
     def patch_sleep(self, monkeypatch):
