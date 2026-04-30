@@ -20,25 +20,21 @@ exit at bar close — matching backtest behavior.
 
 ---
 
-## G31 — Partial tranche fill P&L lost when MISS triggers retry
+## ~~G31 — Partial tranche fill P&L lost when MISS triggers retry~~ ✓ Fixed
 
-**File:** `position_monitor.py` line 874
+**File:** `position_monitor.py` `_close_option_position()`
 **Severity:** High — P&L underreported by tranche-1 contracts whenever a tranche-2 MISS triggers a retry
 
-When `_close_position` is called for a multi-tranche exit and tranche 2 MISSes:
-
-1. Line 874 sets `pos.closed_contracts = pos.contracts` (e.g. 3) before the loop.
-2. Tranche 1 fills 2 contracts → `pos.contracts -= 2` → `pos.contracts = 1`.
-3. MISS sets `pos.close_order_failed = True`. `_on_position_closed` does not fire yet.
-4. `_retry_close_position` calls `_close_position` again. Line 874 executes again:
-   `pos.closed_contracts = pos.contracts = 1` — **overwriting the 3 that was there**.
-5. Retry fills 1 → `pos.contracts = 0`. `_on_exit_fill_corrected` runs with `effective_contracts = 1`.
-6. `cap_pnl` = 1 × 100 × (exit − entry) — only the retry contract. Tranche-1 fills never credited.
+`_close_option_position` previously set `pos.closed_contracts = pos.contracts` before calling
+`place_option_order_in_tranches`. On retry, `pos.contracts` had already been decremented to the
+remaining count (1), so the assignment overwrote the tranche-1 fill count (2) with 1. The final
+`effective_contracts` was 1 and P&L was calculated for 1 contract only.
 
 Observed 2026-04-28: EXPE 3 contracts. Final summary showed qty=1 and P&L=+$210 instead of qty=3 and P&L=+$630.
 
-**Fix:** Accumulate `closed_contracts` additively (`pos.closed_contracts += filled`) instead of
-resetting to `pos.contracts` on each `_close_position` call.
+**Fix (commit cd50fe5):** Removed the upfront `pos.closed_contracts = pos.contracts` assignment.
+Added `pos.closed_contracts += filled` after the tranche call so each retry accumulates its fill
+into the running total rather than resetting it.
 
 ---
 
