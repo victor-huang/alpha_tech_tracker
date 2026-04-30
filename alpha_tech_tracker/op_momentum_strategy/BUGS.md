@@ -136,25 +136,27 @@ else:
 
 ---
 
-## G37 — BRE/BRU re-entry positions missing EntryFill/ExitFill in DAILY TRADE SUMMARY
+## ~~G37 — BRE/BRU re-entry positions missing EntryFill/ExitFill in DAILY TRADE SUMMARY~~ ✓ Fixed
 
-**File:** `position_monitor.py` `print_summary()` / `_refresh_fill_prices()`
+**File:** `position_monitor.py` `_close_stock_position()`
 **Severity:** Medium — daily P&L total understated; re-entry trade rows show `—` for all fill prices and P&L
 
-`_refresh_fill_prices()` fails silently for re-entry positions at EOD — either the order ID is
-not stored on the `ActivePosition`, or the broker query returns no result for orders placed via
-the watcher callback path. In mock-execution mode, `entry_fill_price` and `exit_fill_price` also
-appear absent, suggesting the fill prices are set on a different object instance than the one
-held by the monitor.
+Stock PRE-CLOSE SYNC path returned early without fetching the exit fill price when
+a position had been manually closed at the broker. `print_summary()` then called
+`_position_pnl(pos, entry, None)` → returned `None` → all display columns including
+`entry_str` were replaced with `"—"`.
+
+The options path (`_close_option_position`) already called `_fetch_manual_close_fill_price()`
+before the early return; the stock path was missing the same call.
 
 Observed 2026-04-29 stock log DAILY TRADE SUMMARY:
 - `COIN [Bearish Cont.] 67sh  10:11 → 15:55  hard_stop   — / — = —`
 - `APP [Bearish Cont.]  18sh  10:12 → 14:56  hard_stop   — / — = —`
 - `FN [Bearish Cont.]    1sh  12:32 → 14:04  trailing_stop_ma20  — / — = —`
 
-**Fix:** Audit `_enter_reentry()` and the watcher callback to confirm `pos.entry_fill_price` is
-set on the same `ActivePosition` object added to the monitor. Confirm `exit_fill_price` is set
-in the mock-execution stock exit path for re-entry positions.
+**Fix (commit 519f342):** In `_close_stock_position` manual-close early-return path,
+call `_fetch_manual_close_fill_price(pos)` and assign result to `pos.exit_fill_price`
+before returning — matching the existing options path.
 
 ---
 
