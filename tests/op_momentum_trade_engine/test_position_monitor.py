@@ -3402,11 +3402,11 @@ class TestPrintStatusClosedQty:
         df = _build_history_df([116.0], ma20=118.0, ma50=118.0, ma200=120.0)
         engine = _make_signal_engine_with_history("NVDA", df)
         monitor = PositionMonitor(client, engine)
-        pos = _make_active_position(signal="BEARISH", contracts=3)
+        pos = _make_active_position(signal="BULLISH", contracts=3)
         pos.is_closed = True
         pos.exit_reason = "trailing_stop_ma20"
-        pos.entry_fill_price = _D("10.00")
-        pos.exit_fill_price = _D("8.00")   # BEARISH profit: entry - exit > 0
+        pos.entry_fill_price = _D("8.00")
+        pos.exit_fill_price = _D("10.00")
         pos.contracts = 0
         pos.closed_contracts = 3
         monitor.add_position(pos)

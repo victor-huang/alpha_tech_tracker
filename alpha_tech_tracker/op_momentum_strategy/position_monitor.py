@@ -63,6 +63,11 @@ _QUICK_EXIT_MAX_SECONDS = 360  # positions held < 6 min trigger entry-price-firs
 _QUICK_EXIT_STOCK_TOLERANCE_PCT = _D("0.003")  # stock must be within 0.3% of entry price
 
 
+def _effective_contracts(pos) -> int:
+    """Return the filled contract count, falling back to remaining contracts when not yet set."""
+    return pos.closed_contracts if pos.closed_contracts > 0 else pos.contracts
+
+
 def _quick_exit_entry_price(
     pos: ActivePosition,
     current_stock_price=None,
@@ -1283,7 +1288,7 @@ class PositionMonitor:
                 raw = exit_ - entry
             if pos.trade_type == "stock":
                 return raw * _D(pos.shares)
-            return raw * _D(pos.contracts) * _D("100")
+            return raw * _D(_effective_contracts(pos)) * _D("100")
 
         def _pnl_str(pnl) -> str:
             if pnl is None:
@@ -1361,7 +1366,7 @@ class PositionMonitor:
                     qty_str = f"x{p.shares}sh"
                     sym_str = f"{p.ticker} [stock]"
                 else:
-                    qty_str = f"x{p.contracts}"
+                    qty_str = f"x{_effective_contracts(p)}"
                     sym_str = p.option_symbol
                 lines.append(
                     f"  {p.ticker:<7} {p.signal:<9} {sym_str:<26} "
@@ -1393,9 +1398,6 @@ class PositionMonitor:
 
         def _fmt_time(dt: Optional[datetime]) -> str:
             return dt.strftime("%H:%M") if dt else "—"
-
-        def _effective_contracts(pos) -> int:
-            return pos.closed_contracts if pos.closed_contracts > 0 else pos.contracts
 
         def _position_pnl(pos, entry_price, exit_price):
             if entry_price is None or exit_price is None:
