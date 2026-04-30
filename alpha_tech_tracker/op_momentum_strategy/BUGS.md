@@ -43,16 +43,10 @@ into the running total rather than resetting it.
 **File:** `signal_engine.py` `reconnect()`
 **Severity:** Medium — misleading log; reconnect fires correctly but elapsed-time figure shows engine uptime not gap since last bar
 
-`reconnect()` resets `_last_bar_received_at = None` but does not update `_stream_started_at`.
-After reconnect the watchdog falls back to `_stream_started_at` (engine startup time) when
-computing elapsed, producing logs like "no bar received for 17927s" — the full engine uptime —
-instead of the actual gap since the reconnect.
-
-Observed 2026-04-28: both engines logged ~17927s / 17627s at 13:30 ET, matching seconds since
-startup, not since the reconnect.
-
-**Fix:** In `signal_engine.reconnect()`, reset `_stream_started_at = _now_et()` after clearing
-`_last_bar_received_at`.
+Already fixed in the codebase — `reconnect()` resets both `_stream_started_at = _now_et()` and
+`_last_bar_received_at = None`. The 2026-04-28 large elapsed log (17927s) was from the first-ever
+watchdog trigger since startup (correct behavior); subsequent ticks after reconnect use the reset
+timestamp. Five tests in `TestWsWatchdog` cover this behavior.
 
 ---
 
@@ -80,32 +74,21 @@ step3_price = max(bid, floor)
 
 ---
 
-## G34 — `print_status()` closed-position block shows `x0` contracts
+## ~~G34 — `print_status()` closed-position block shows `x0` contracts~~ ✓ Fixed
 
-**File:** `position_monitor.py` line 1360
+**File:** `position_monitor.py` `print_status()`
 **Severity:** Low — misleading intraday status prints; no money impact
 
-`print_status()` formats closed-position quantity as `f"x{p.contracts}"`. `p.contracts` tracks
-remaining unfilled contracts and reaches 0 when fully closed. `print_summary()` correctly uses
-`_effective_contracts(p)` (returns `closed_contracts` when non-zero), but `print_status()` does
-not.
-
-Additionally `p.exit_fill_price` may still be `None` during async fill polling, so `_pnl()`
-returns `None` → the P&L column shows `+$0.00` for all closed positions in every interim status
-print.
+`print_status()` used `p.contracts` for both qty string and the `_pnl()` multiplier. After a
+live close `p.contracts` reaches 0, so every closed position showed `x0` and `+$0.00` for the
+rest of the trading day.
 
 Observed 2026-04-28: every `POSITION STATUS` print showed `EXPE … x0 … +$0.00` and
 `RH … x0 … +$0.00` even though both were fully closed and profitable.
 
-**Fix:** In `print_status()` closed-position block, use `_effective_contracts(p)` for quantity:
-
-```python
-# before
-qty_str = f"x{p.contracts}"
-
-# after
-qty_str = f"x{_effective_contracts(p)}"
-```
+**Fix (commit 76fb295):** Extracted `_effective_contracts()` to module level (was a local inside
+`print_summary()`). Applied it to `qty_str` and to the `_pnl()` contracts multiplier in the
+`print_status()` closed-position block.
 
 ---
 
