@@ -10,20 +10,20 @@ Compare three sources for the same trading date to understand P&L and trade diff
 
 Parse `$ARGUMENTS` for three values:
 - **DATE** — required, format `YYYY-MM-DD`. If omitted, ask the user — do not guess.
-- **FEED** — optional, either `iex` or `sip`. Default: `iex`.
+- **FEED** — optional, either `iex` or `sip`. Default: `sip`.
 - **ENGINE** — optional, either `stock` or `options`. Default: `stock`.
 
 Accepted argument formats:
-- `2026-04-13` → DATE=2026-04-13, FEED=iex, ENGINE=stock
-- `2026-04-13 sip` → DATE=2026-04-13, FEED=sip, ENGINE=stock
-- `2026-04-13 --feed sip` → DATE=2026-04-13, FEED=sip, ENGINE=stock
-- `2026-04-13 options` → DATE=2026-04-13, FEED=iex, ENGINE=options
-- `2026-04-13 --engine options` → DATE=2026-04-13, FEED=iex, ENGINE=options
-- `2026-04-13 sip options` → DATE=2026-04-13, FEED=sip, ENGINE=options
+- `2026-04-13` → DATE=2026-04-13, FEED=sip, ENGINE=stock
+- `2026-04-13 iex` → DATE=2026-04-13, FEED=iex, ENGINE=stock
+- `2026-04-13 --feed iex` → DATE=2026-04-13, FEED=iex, ENGINE=stock
+- `2026-04-13 options` → DATE=2026-04-13, FEED=sip, ENGINE=options
+- `2026-04-13 --engine options` → DATE=2026-04-13, FEED=sip, ENGINE=options
+- `2026-04-13 iex options` → DATE=2026-04-13, FEED=iex, ENGINE=options
 
 Set:
 - `DATE` = YYYY-MM-DD
-- `FEED` = `iex` (or `sip` if specified)
+- `FEED` = `sip` (or `iex` if specified)
 - `ENGINE` = `stock` or `options`
 - `EC2_HOST` = `ec2-user@ec2-3-133-120-51.us-east-2.compute.amazonaws.com`
 - `EC2_KEY` = `~/.ssh/trade-sys.pem`
