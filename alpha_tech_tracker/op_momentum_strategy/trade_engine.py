@@ -938,6 +938,26 @@ class OpMomentumTradeEngine:
             logger.info("DD [%s]: freed capital is zero, skipping", label)
             return
 
+        # Cancel pending re-entry watchers for stopout tickers. Their freed slot
+        # capital is being redeployed into the DD add-on; letting a watcher fire
+        # later would claim the same capital a second time.
+        stopout_tickers = {p.ticker for p in stopouts}
+        with self._monitor._lock:
+            before_count = len(self._monitor._reentry_watchers)
+            self._monitor._reentry_watchers = [
+                w for w in self._monitor._reentry_watchers
+                if not (w.window_label == label and w.ticker in stopout_tickers)
+            ]
+            cancelled = before_count - len(self._monitor._reentry_watchers)
+        if cancelled:
+            logger.info(
+                "DD [%s]: cancelled %d re-entry watcher(s) for %s"
+                " — freed capital redeployed via DD",
+                label,
+                cancelled,
+                sorted(stopout_tickers),
+            )
+
         winner = min(survivors, key=lambda p: p.rank)
 
         latest_bar = self._signal_engine.get_latest_bar(winner.ticker)

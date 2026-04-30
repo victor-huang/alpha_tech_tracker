@@ -3049,6 +3049,7 @@ class TestDoubleDown:
         )
         engine._monitor = Mock()
         engine._monitor._lock = threading.Lock()
+        engine._monitor._reentry_watchers = []
         engine._signal_engine = Mock()
         engine._window_state["W1"] = {
             "pending_signals": {},
@@ -3261,6 +3262,7 @@ class TestDoubleDown:
         )
         engine._monitor = Mock()
         engine._monitor._lock = threading.Lock()
+        engine._monitor._reentry_watchers = []
         engine._signal_engine = Mock()
         engine._signal_engine.get_latest_bar.return_value = self._make_latest_bar(close=290.0)
         engine._window_state["W1"] = {
@@ -3296,6 +3298,7 @@ class TestDoubleDown:
         )
         engine._monitor = Mock()
         engine._monitor._lock = threading.Lock()
+        engine._monitor._reentry_watchers = []
         engine._signal_engine = Mock()
         engine._signal_engine.get_latest_bar.return_value = self._make_latest_bar(close=290.0)
         engine._window_state["W1"] = {
@@ -3422,6 +3425,74 @@ class TestDoubleDown:
         )
         engine._schedule_dd_check_for_window(self._make_win())
         assert "W1" not in engine._dd_timers
+
+    def _make_reentry_watcher(self, ticker, window_label="W1", rank=1):
+        return ReentryWatcher(
+            ticker=ticker,
+            reentry_type="bearish_reentry",
+            primary_signal="BEARISH",
+            or_high=_D("170"),
+            or_low=_D("165"),
+            or_range=_D("5"),
+            midpoint=_D("167.5"),
+            window_label=window_label,
+            rank=rank,
+            window_budget=_D("10000"),
+            primary_exit_bar_time=None,
+        )
+
+    def test_dd_cancels_reentry_watchers_for_stopout_tickers(self):
+        engine = self._make_engine()
+        winner = self._make_open_pos(rank=0, slot_capital=6000, ticker="SNDK")
+        stopout = self._make_stopout_pos(rank=1, slot_capital=4000, ticker="CRDO",
+                                         signal="BEARISH", exit_reason="fallback_20pct",
+                                         entry_mid=168.65, exit_mid=168.76)
+        engine._monitor._positions = [winner, stopout]
+        engine._monitor._reentry_watchers = [self._make_reentry_watcher("CRDO")]
+        engine._signal_engine.get_latest_bar.return_value = self._make_latest_bar(close=290.0)
+
+        with patch.object(engine, "_enter_position"), \
+             patch(_NOTIFY_PATH):
+            engine._check_doubledown_for_window(self._make_win())
+
+        assert engine._monitor._reentry_watchers == []
+
+    def test_dd_does_not_cancel_watchers_for_different_window(self):
+        engine = self._make_engine()
+        winner = self._make_open_pos(rank=0, slot_capital=6000, ticker="SNDK")
+        stopout = self._make_stopout_pos(rank=1, slot_capital=4000, ticker="CRDO",
+                                         signal="BEARISH", exit_reason="fallback_20pct",
+                                         entry_mid=168.65, exit_mid=168.76)
+        engine._monitor._positions = [winner, stopout]
+        other_window_watcher = self._make_reentry_watcher("CRDO", window_label="W2")
+        engine._monitor._reentry_watchers = [other_window_watcher]
+        engine._signal_engine.get_latest_bar.return_value = self._make_latest_bar(close=290.0)
+
+        with patch.object(engine, "_enter_position"), \
+             patch(_NOTIFY_PATH):
+            engine._check_doubledown_for_window(self._make_win())
+
+        assert len(engine._monitor._reentry_watchers) == 1
+
+    def test_dd_cancels_only_stopout_watcher_not_survivor_watcher(self):
+        engine = self._make_engine()
+        winner = self._make_open_pos(rank=0, slot_capital=6000, ticker="SNDK")
+        stopout = self._make_stopout_pos(rank=1, slot_capital=4000, ticker="CRDO",
+                                         signal="BEARISH", exit_reason="fallback_20pct",
+                                         entry_mid=168.65, exit_mid=168.76)
+        engine._monitor._positions = [winner, stopout]
+        crdo_watcher = self._make_reentry_watcher("CRDO", rank=1)
+        sndk_watcher = self._make_reentry_watcher("SNDK", rank=0)
+        engine._monitor._reentry_watchers = [crdo_watcher, sndk_watcher]
+        engine._signal_engine.get_latest_bar.return_value = self._make_latest_bar(close=290.0)
+
+        with patch.object(engine, "_enter_position"), \
+             patch(_NOTIFY_PATH):
+            engine._check_doubledown_for_window(self._make_win())
+
+        remaining = engine._monitor._reentry_watchers
+        assert len(remaining) == 1
+        assert remaining[0].ticker == "SNDK"
 
 
 _MOCK_ENTRY_PRICE_PATH = (
