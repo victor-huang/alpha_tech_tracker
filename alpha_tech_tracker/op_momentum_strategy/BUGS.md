@@ -109,26 +109,19 @@ qty_str = f"x{_effective_contracts(p)}"
 
 ---
 
-## G36 — `ask=0` stale stock quote causes mid-price to halve
+## ~~G36 — `ask=0` stale stock quote causes mid-price to halve~~ ✓ Fixed
 
-**File:** `models.py` `_stock_bid_ask()` (or mid-price computation site in `position_monitor.py`)
+**File:** `models.py` `_stock_bid_ask()`
 **Severity:** High — exit limit placed at ~50% of fair value; escalation steps all start from wrong baseline, causing MISS and market-order fallback
 
 When the WebSocket delivers a snapshot with `ask=0` (staleness artifact), `mid = (bid + 0) / 2 = bid / 2`.
 FILL_ESC step1 places a limit at this price, which is far below market and will never fill.
-All subsequent escalation steps start from the same wrong baseline.
 
 Observed 2026-04-29 stock log: `EXIT STOCK QUOTE FN: bid=620.0 ask=0.0 mid=310.00` — $310 mid
 on a ~$630 stock.
 
-**Fix:** Guard `ask == 0` before computing mid. Use `bid` alone as the reference if `ask` is zero:
-
-```python
-if ask > 0:
-    mid = (bid + ask) / 2
-else:
-    mid = bid  # ask=0 is a stale snapshot
-```
+**Fix (commit cb1a6c3):** Guard `ask == 0` in `_stock_bid_ask()`. When ask is zero, return `bid`
+for both values so callers compute `mid = bid` instead of `bid / 2`.
 
 ---
 
