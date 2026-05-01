@@ -504,6 +504,13 @@ def parse_args():
         help=f"Rolling lookback window in days for pre-market ticker scoring (default: {_DEFAULT_LOOKBACK_DAYS}).",
     )
     parser.add_argument(
+        "--min-ev",
+        type=float,
+        default=0.0,
+        dest="min_ev",
+        help="Skip ticker if rolling ev_trade < threshold (default: 0.0, matches backtest behavior).",
+    )
+    parser.add_argument(
         "--feed",
         choices=["sip", "iex"],
         default="iex",
@@ -714,6 +721,7 @@ if __name__ == "__main__":
             bullish_reentry_max_bars=args.bullish_reentry_max_bars,
             top_n=args.top,
             lookback_days=args.lookback,
+            min_ev=args.min_ev,
             replay_capital=args.capital,
             ws_reconnect_timeout=args.ws_reconnect_timeout,
             alpaca_feed=DataFeed.IEX if args.feed == "iex" else DataFeed.SIP,
@@ -833,6 +841,7 @@ if __name__ == "__main__":
             bullish_reentry_max_bars=args.bullish_reentry_max_bars,
             top_n=args.top,
             lookback_days=args.lookback,
+            min_ev=args.min_ev,
             replay_capital=args.capital,
             ws_reconnect_timeout=args.ws_reconnect_timeout,
             alpaca_feed=DataFeed.IEX if args.feed == "iex" else DataFeed.SIP,

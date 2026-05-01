@@ -266,6 +266,7 @@ class OpMomentumTradeEngine:
         rank_weights: Optional[list] = None,
         top_n: int = MAX_ACTIVE_SYMBOLS,
         lookback_days: int = ROLLING_LOOKBACK_DAYS,
+        min_ev: float = 0.0,
         windows: Optional[list] = None,
         trade_type: str = "options",
         option_price_monitor: Optional[OptionPriceMonitor] = None,
@@ -307,6 +308,7 @@ class OpMomentumTradeEngine:
             self._rank_weights = None
         self._top_n = top_n
         self._lookback_days = lookback_days
+        self._min_ev = min_ev
         self._trade_type = trade_type
         self._option_price_monitor = option_price_monitor
         self._contract_selector = contract_selector if contract_selector is not None else ITMOptionContractSelector(alpaca_client)
@@ -1463,13 +1465,17 @@ class OpMomentumTradeEngine:
         window_rolling_stats = self._rolling_stats_by_window.get(label, self._rolling_stats)
         scored = []
         for ticker, event in pending.items():
-            stats = window_rolling_stats.get(ticker, {})
-            if stats.get("ev_trade", 0) <= 0:
+            stats = window_rolling_stats.get(ticker)
+            if not stats:
+                logger.info("Skipping %s [%s]: no rolling stats", ticker, label)
+                continue
+            if stats.get("ev_trade", 0) < self._min_ev:
                 logger.info(
-                    "Skipping %s [%s]: ev_trade=%.3f <= 0",
+                    "Skipping %s [%s]: ev_trade=%.3f < min_ev=%.3f",
                     ticker,
                     label,
                     stats.get("ev_trade", 0),
+                    self._min_ev,
                 )
                 continue
             midpoint = (event.or_high + event.or_low) / _D("2")
