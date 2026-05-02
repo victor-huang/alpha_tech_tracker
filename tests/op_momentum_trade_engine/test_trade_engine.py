@@ -1069,6 +1069,206 @@ class TestEnterReentry:
         assert call_kwargs[1]["window_label"] == "W1"
         assert call_kwargs[1]["window_budget"] == _D("3000")
 
+    def _make_multi_window_engine(self):
+        from alpha_tech_tracker.op_momentum_strategy.models import WindowConfig
+        client = _make_alpaca_client()
+        engine = OpMomentumTradeEngine(
+            alpaca_client=client,
+            mock_trade_execution=True,
+            windows=[
+                WindowConfig(label="A1", opening_start="13:15", opening_bars=1),
+                WindowConfig(label="A2", opening_start="15:00", opening_bars=1, is_sequential=True),
+            ],
+        )
+        engine._enter_position = Mock()
+        return engine
+
+    def _make_a1_watcher(self):
+        return ReentryWatcher(
+            ticker="CRDO",
+            reentry_type="bullish_reentry",
+            primary_signal="BULLISH",
+            or_high=_D("185"),
+            or_low=_D("175"),
+            or_range=_D("10"),
+            midpoint=_D("180"),
+            window_label="A1",
+            rank=0,
+            window_budget=_D("19909"),
+        )
+
+    def test_reentry_fires_when_next_window_has_not_opened(self):
+        engine = self._make_multi_window_engine()
+        watcher = self._make_a1_watcher()
+
+        engine._enter_reentry(watcher, _D("186"))
+
+        engine._enter_position.assert_called_once()
+
+    def test_reentry_blocked_when_next_sequential_window_has_opened(self):
+        engine = self._make_multi_window_engine()
+        watcher = self._make_a1_watcher()
+        engine._window_state["A2"]["budget"] = _D("19500")
+
+        engine._enter_reentry(watcher, _D("186"))
+
+        engine._enter_position.assert_not_called()
+
+    def test_reentry_not_blocked_when_next_window_is_not_sequential(self):
+        from alpha_tech_tracker.op_momentum_strategy.models import WindowConfig
+        client = _make_alpaca_client()
+        engine = OpMomentumTradeEngine(
+            alpaca_client=client,
+            mock_trade_execution=True,
+            windows=[
+                WindowConfig(label="M1", opening_start="09:30", opening_bars=3),
+                WindowConfig(label="M2", opening_start="09:30", opening_bars=1, capital_fraction=0.4),
+            ],
+        )
+        engine._enter_position = Mock()
+        watcher = ReentryWatcher(
+            ticker="AMD",
+            reentry_type="bullish_reentry",
+            primary_signal="BULLISH",
+            or_high=_D("120"),
+            or_low=_D("110"),
+            or_range=_D("10"),
+            midpoint=_D("115"),
+            window_label="M1",
+            rank=0,
+            window_budget=_D("10000"),
+        )
+        engine._window_state["M2"]["budget"] = _D("4000")
+
+        engine._enter_reentry(watcher, _D("121"))
+
+        engine._enter_position.assert_called_once()
+
+    def test_reentry_fires_for_last_window_with_no_successor(self):
+        engine = self._make_multi_window_engine()
+        watcher = ReentryWatcher(
+            ticker="CRDO",
+            reentry_type="bullish_reentry",
+            primary_signal="BULLISH",
+            or_high=_D("185"),
+            or_low=_D("175"),
+            or_range=_D("10"),
+            midpoint=_D("180"),
+            window_label="A2",
+            rank=0,
+            window_budget=_D("19909"),
+        )
+
+        engine._enter_reentry(watcher, _D("186"))
+
+        engine._enter_position.assert_called_once()
+
+    def test_reentry_gate_checks_next_window_state_under_signal_lock(self):
+        engine = self._make_multi_window_engine()
+        watcher = self._make_a1_watcher()
+        # Budget added without holding the signal lock — gate must read under the lock.
+        engine._window_state["A2"]["budget"] = _D("5000")
+
+        engine._enter_reentry(watcher, _D("186"))
+
+        engine._enter_position.assert_not_called()
+
+    def test_reentry_in_middle_window_blocked_when_third_window_opened(self):
+        from alpha_tech_tracker.op_momentum_strategy.models import WindowConfig
+        client = _make_alpaca_client()
+        engine = OpMomentumTradeEngine(
+            alpaca_client=client,
+            mock_trade_execution=True,
+            windows=[
+                WindowConfig(label="M1", opening_start="09:30", opening_bars=3),
+                WindowConfig(label="A1", opening_start="13:15", opening_bars=1, is_sequential=True),
+                WindowConfig(label="A2", opening_start="15:00", opening_bars=1, is_sequential=True),
+            ],
+        )
+        engine._enter_position = Mock()
+        watcher = ReentryWatcher(
+            ticker="AMD",
+            reentry_type="bullish_reentry",
+            primary_signal="BULLISH",
+            or_high=_D("120"),
+            or_low=_D("110"),
+            or_range=_D("10"),
+            midpoint=_D("115"),
+            window_label="A1",
+            rank=0,
+            window_budget=_D("19000"),
+        )
+        engine._window_state["A2"]["budget"] = _D("18500")
+
+        engine._enter_reentry(watcher, _D("121"))
+
+        engine._enter_position.assert_not_called()
+
+
+class TestNextSequentialWindowLabel:
+    def _make_engine(self, windows):
+        client = _make_alpaca_client()
+        return OpMomentumTradeEngine(
+            alpaca_client=client,
+            mock_trade_execution=True,
+            windows=windows,
+        )
+
+    def test_returns_next_label_when_next_window_is_sequential(self):
+        from alpha_tech_tracker.op_momentum_strategy.models import WindowConfig
+        engine = self._make_engine([
+            WindowConfig(label="A1", opening_start="13:15", opening_bars=1),
+            WindowConfig(label="A2", opening_start="15:00", opening_bars=1, is_sequential=True),
+        ])
+
+        result = engine._next_sequential_window_label("A1")
+
+        assert result == "A2"
+
+    def test_returns_none_when_next_window_is_not_sequential(self):
+        from alpha_tech_tracker.op_momentum_strategy.models import WindowConfig
+        engine = self._make_engine([
+            WindowConfig(label="M1", opening_start="09:30", opening_bars=3, capital_fraction=0.6),
+            WindowConfig(label="M2", opening_start="09:30", opening_bars=1, capital_fraction=0.4),
+        ])
+
+        result = engine._next_sequential_window_label("M1")
+
+        assert result is None
+
+    def test_returns_none_for_last_window(self):
+        from alpha_tech_tracker.op_momentum_strategy.models import WindowConfig
+        engine = self._make_engine([
+            WindowConfig(label="A1", opening_start="13:15", opening_bars=1),
+            WindowConfig(label="A2", opening_start="15:00", opening_bars=1, is_sequential=True),
+        ])
+
+        result = engine._next_sequential_window_label("A2")
+
+        assert result is None
+
+    def test_returns_none_for_unknown_label(self):
+        from alpha_tech_tracker.op_momentum_strategy.models import WindowConfig
+        engine = self._make_engine([
+            WindowConfig(label="A1", opening_start="13:15", opening_bars=1),
+        ])
+
+        result = engine._next_sequential_window_label("X9")
+
+        assert result is None
+
+    def test_three_window_chain_middle_returns_third(self):
+        from alpha_tech_tracker.op_momentum_strategy.models import WindowConfig
+        engine = self._make_engine([
+            WindowConfig(label="M1", opening_start="09:30", opening_bars=3),
+            WindowConfig(label="A1", opening_start="13:15", opening_bars=1, is_sequential=True),
+            WindowConfig(label="A2", opening_start="15:00", opening_bars=1, is_sequential=True),
+        ])
+
+        assert engine._next_sequential_window_label("M1") == "A1"
+        assert engine._next_sequential_window_label("A1") == "A2"
+        assert engine._next_sequential_window_label("A2") is None
+
 
 class TestBuildContractSelector:
     def _make_args(self, option_selector="standard", time_premium_pct_cap=0.01):

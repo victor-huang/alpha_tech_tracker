@@ -2381,12 +2381,12 @@ class TestCloseRetryLimit:
 class TestFetchManualCloseFillPrice:
     """
     _fetch_manual_close_fill_price() returns the actual fill price of a manual close
-    from order history, falling back to the option mid when no matching order is found.
+    from broker order history. Returns None when no matching filled order is found —
+    no mid fallback, so capital is not prematurely returned to the window budget.
     """
 
     def _make_monitor_and_pos(self, entry_time=None):
         client = _make_alpaca_client()
-        client.get_option_quote_by_occ.return_value = {"bid": 8.50, "ask": 9.50, "mid": 9.00}
         df = _build_history_df([116.0], ma20=118.0, ma50=118.0, ma200=120.0)
         engine = _make_signal_engine_with_history("NVDA", df)
         monitor = PositionMonitor(client, engine)
@@ -2415,8 +2415,7 @@ class TestFetchManualCloseFillPrice:
 
         price = monitor._fetch_manual_close_fill_price(pos)
 
-        # No sell order found → falls back to mid
-        assert price == _D("9.00")
+        assert price is None
 
     def test_skips_orders_filled_before_entry_time(self):
         import pytz
@@ -2432,28 +2431,19 @@ class TestFetchManualCloseFillPrice:
 
         price = monitor._fetch_manual_close_fill_price(pos)
 
-        assert price == _D("9.00")  # fell back to mid
+        assert price is None
 
-    def test_falls_back_to_mid_when_no_matching_order(self):
+    def test_returns_none_when_no_matching_order(self):
         monitor, client, pos = self._make_monitor_and_pos()
         client.get_filled_orders.return_value = []
 
         price = monitor._fetch_manual_close_fill_price(pos)
 
-        assert price == _D("9.00")
+        assert price is None
 
-    def test_falls_back_to_mid_when_order_history_fetch_fails(self):
+    def test_returns_none_when_order_history_fetch_fails(self):
         monitor, client, pos = self._make_monitor_and_pos()
         client.get_filled_orders.side_effect = RuntimeError("API error")
-
-        price = monitor._fetch_manual_close_fill_price(pos)
-
-        assert price == _D("9.00")
-
-    def test_returns_none_when_both_order_history_and_mid_unavailable(self):
-        monitor, client, pos = self._make_monitor_and_pos()
-        client.get_filled_orders.return_value = []
-        client.get_option_quote_by_occ.side_effect = RuntimeError("no quote")
 
         price = monitor._fetch_manual_close_fill_price(pos)
 
@@ -2479,11 +2469,16 @@ class TestReconcileStuckPositions:
     """
     _reconcile_stuck_positions() checks the broker for open positions and resolves
     stuck (close_order_failed) positions that the user has manually closed.
+
+    Two paths when broker confirms position is closed:
+    - Fill confirmed in order history → RECONCILED: clears close_order_failed, fires callback.
+    - Fill not yet in order history (API lag) → RECONCILE PENDING: sets close_order_reconciled
+      to stop FILL_ESC retries but keeps close_order_failed=True so the next 5-min cycle retries.
     """
 
     def _make_monitor_with_stuck_option(self):
         client = _make_alpaca_client()
-        client.get_option_quote_by_occ.return_value = {"bid": 4.80, "ask": 5.20, "mid": 5.00}
+        client.get_filled_orders.return_value = []
 
         df = _build_history_df([104.0], ma20=90.0, ma50=90.0, ma200=85.0)
         engine = _make_signal_engine_with_history("NVDA", df)
@@ -2498,6 +2493,9 @@ class TestReconcileStuckPositions:
         pos.slot_capital = _D("5000")
         monitor._positions.append(pos)
         return monitor, client, pos
+
+    def _sell_order(self, price=5.00):
+        return {"order_id": "o99", "side": "sell", "filled_avg_price": price, "filled_at": None}
 
     def test_no_action_when_no_stuck_positions(self):
         client = _make_alpaca_client()
@@ -2518,25 +2516,46 @@ class TestReconcileStuckPositions:
         assert pos.close_order_failed is True
         assert pos.exit_fill_price is None
 
-    def test_clears_close_order_failed_when_broker_confirms_closed(self):
+    def test_clears_close_order_failed_when_fill_confirmed(self):
         monitor, client, pos = self._make_monitor_with_stuck_option()
         client.get_open_positions.return_value = {}
+        client.get_filled_orders.return_value = [self._sell_order(5.10)]
 
         monitor._reconcile_stuck_positions()
 
         assert pos.close_order_failed is False
 
-    def test_sets_exit_fill_price_from_option_mid(self):
+    def test_keeps_close_order_failed_when_fill_pending(self):
         monitor, client, pos = self._make_monitor_with_stuck_option()
         client.get_open_positions.return_value = {}
+        client.get_filled_orders.return_value = []
 
         monitor._reconcile_stuck_positions()
 
-        assert pos.exit_fill_price == _D("5.00")
+        assert pos.close_order_failed is True
 
-    def test_fires_exit_retry_callback_with_confirmed_fill(self):
+    def test_sets_exit_fill_price_from_broker_order_history(self):
         monitor, client, pos = self._make_monitor_with_stuck_option()
         client.get_open_positions.return_value = {}
+        client.get_filled_orders.return_value = [self._sell_order(5.10)]
+
+        monitor._reconcile_stuck_positions()
+
+        assert pos.exit_fill_price == _D("5.10")
+
+    def test_does_not_set_exit_fill_price_when_fill_pending(self):
+        monitor, client, pos = self._make_monitor_with_stuck_option()
+        client.get_open_positions.return_value = {}
+        client.get_filled_orders.return_value = []
+
+        monitor._reconcile_stuck_positions()
+
+        assert pos.exit_fill_price is None
+
+    def test_fires_exit_retry_callback_when_fill_confirmed(self):
+        monitor, client, pos = self._make_monitor_with_stuck_option()
+        client.get_open_positions.return_value = {}
+        client.get_filled_orders.return_value = [self._sell_order(5.10)]
 
         callback_positions = []
         monitor._exit_retry_callback = callback_positions.append
@@ -2546,23 +2565,23 @@ class TestReconcileStuckPositions:
         assert len(callback_positions) == 1
         assert callback_positions[0] is pos
 
-    def test_no_callback_when_mid_unavailable(self):
+    def test_no_callback_when_fill_pending(self):
         monitor, client, pos = self._make_monitor_with_stuck_option()
         client.get_open_positions.return_value = {}
-        client.get_option_quote_by_occ.side_effect = RuntimeError("quote unavailable")
+        client.get_filled_orders.return_value = []
 
         callback_called = []
         monitor._exit_retry_callback = lambda p: callback_called.append(p)
 
         monitor._reconcile_stuck_positions()
 
-        assert pos.close_order_failed is False
         assert pos.exit_fill_price is None
         assert callback_called == []
 
-    def test_sends_notify_when_manually_closed(self):
+    def test_sends_reconciled_notify_when_fill_confirmed(self):
         monitor, client, pos = self._make_monitor_with_stuck_option()
         client.get_open_positions.return_value = {}
+        client.get_filled_orders.return_value = [self._sell_order(5.10)]
 
         with patch(
             "alpha_tech_tracker.op_momentum_strategy.position_monitor._notify"
@@ -2572,6 +2591,19 @@ class TestReconcileStuckPositions:
         assert mock_notify.call_count == 1
         assert "RECONCILED" in mock_notify.call_args[0][0]
 
+    def test_sends_pending_notify_when_fill_not_yet_in_order_history(self):
+        monitor, client, pos = self._make_monitor_with_stuck_option()
+        client.get_open_positions.return_value = {}
+        client.get_filled_orders.return_value = []
+
+        with patch(
+            "alpha_tech_tracker.op_momentum_strategy.position_monitor._notify"
+        ) as mock_notify:
+            monitor._reconcile_stuck_positions()
+
+        assert mock_notify.call_count == 1
+        assert "RECONCILE PENDING" in mock_notify.call_args[0][0]
+
     def test_graceful_when_broker_fetch_fails(self):
         monitor, client, pos = self._make_monitor_with_stuck_option()
         client.get_open_positions.side_effect = RuntimeError("network error")
@@ -2580,9 +2612,19 @@ class TestReconcileStuckPositions:
 
         assert pos.close_order_failed is True
 
-    def test_sets_close_order_reconciled_when_broker_confirms_closed(self):
+    def test_sets_close_order_reconciled_when_fill_confirmed(self):
         monitor, client, pos = self._make_monitor_with_stuck_option()
         client.get_open_positions.return_value = {}
+        client.get_filled_orders.return_value = [self._sell_order(5.10)]
+
+        monitor._reconcile_stuck_positions()
+
+        assert pos.close_order_reconciled is True
+
+    def test_sets_close_order_reconciled_when_fill_pending(self):
+        monitor, client, pos = self._make_monitor_with_stuck_option()
+        client.get_open_positions.return_value = {}
+        client.get_filled_orders.return_value = []
 
         monitor._reconcile_stuck_positions()
 
@@ -2999,19 +3041,20 @@ class TestPreCloseBrokerQtySync:
 
         assert pos.exit_fill_price == _D("9.75")
 
-    def test_option_falls_back_to_mid_when_order_status_unknown_and_no_sell_history(self):
+    def test_option_marks_pending_when_order_status_unknown_and_no_sell_history(self):
         monitor, client, engine, pos = self._make_live_monitor()
         client.get_open_positions.return_value = {}
         client.order_status.side_effect = RuntimeError("API unavailable")
         client.get_filled_orders.return_value = []
-        client.get_option_quote_by_occ.return_value = {"bid": 8.50, "ask": 9.50, "mid": 9.00}
         with \
                 patch(self._REPLAY_PATH, return_value=False), \
                 patch(self._PLACE_OPTION_PATH), \
                 patch(self._NOTIFY_PATH):
             monitor._close_option_position(pos, "hard_stop")
 
-        assert pos.exit_fill_price == _D("9.00")
+        assert pos.exit_fill_price is None
+        assert pos.close_order_failed is True
+        assert pos.close_order_reconciled is True
 
     def test_option_partial_manual_close_adjusts_contracts_before_order(self):
         monitor, client, engine, pos = self._make_live_monitor(contracts=6)
@@ -3063,13 +3106,17 @@ class TestPreCloseBrokerQtySync:
 
         client.get_open_positions.assert_not_called()
 
-    def test_stock_full_manual_close_skips_order(self):
+    def test_stock_full_manual_close_skips_order_fill_confirmed(self):
         client = _make_alpaca_client()
         df = _build_history_df([114.0], ma20=118.0, ma50=118.0, ma200=120.0)
         engine = _make_signal_engine_with_history("NVDA", df)
         monitor = PositionMonitor(client, engine, mock_trade_execution=False)
         pos = _make_stock_position(signal="BEARISH", shares=104)
         client.get_open_positions.return_value = {}
+        client.get_filled_orders.return_value = [
+            {"order_id": "o1", "side": "buy", "filled_avg_price": 109.50,
+             "filled_qty": 104.0, "filled_at": None},
+        ]
         with \
                 patch(self._REPLAY_PATH, return_value=False), \
                 patch(self._NOTIFY_PATH):
@@ -3077,6 +3124,25 @@ class TestPreCloseBrokerQtySync:
 
         client.place_stock_order.assert_not_called()
         assert pos.close_order_failed is False
+        assert pos.exit_fill_price == _D("109.50")
+
+    def test_stock_full_manual_close_skips_order_fill_pending(self):
+        client = _make_alpaca_client()
+        df = _build_history_df([114.0], ma20=118.0, ma50=118.0, ma200=120.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine, mock_trade_execution=False)
+        pos = _make_stock_position(signal="BEARISH", shares=104)
+        client.get_open_positions.return_value = {}
+        client.get_filled_orders.return_value = []
+        with \
+                patch(self._REPLAY_PATH, return_value=False), \
+                patch(self._NOTIFY_PATH):
+            monitor._close_stock_position(pos, "trailing_stop_ma20")
+
+        client.place_stock_order.assert_not_called()
+        assert pos.close_order_failed is True
+        assert pos.close_order_reconciled is True
+        assert pos.exit_fill_price is None
 
     def test_stock_partial_manual_close_adjusts_shares_before_order(self):
         client = _make_alpaca_client()
@@ -3478,3 +3544,170 @@ class TestPrintStatusClosedQty:
             monitor.print_status()
 
         assert "x15sh" in caplog.text
+
+
+class TestReconcileTwoCycleRetry:
+    """
+    When the broker confirms a position is closed but the fill is not yet in order
+    history (RECONCILE PENDING), the reconciliation thread must retry on the next
+    5-min cycle and fire the callback only once — when the real fill is confirmed.
+    """
+
+    def _make_monitor_with_stuck_pos(self):
+        client = _make_alpaca_client()
+        client.get_open_positions.return_value = {}
+        client.get_filled_orders.return_value = []
+
+        df = _build_history_df([104.0], ma20=90.0, ma50=90.0, ma200=85.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine)
+
+        pos = _make_active_position(signal="BULLISH")
+        pos.is_closed = True
+        pos.exit_reason = "hard_stop"
+        pos.close_order_failed = True
+        pos.entry_fill_price = _D("3.50")
+        pos.slot_capital = _D("5000")
+        monitor._positions.append(pos)
+        return monitor, client, pos
+
+    def test_callback_not_fired_on_pending_cycle(self):
+        monitor, client, pos = self._make_monitor_with_stuck_pos()
+        callback_called = []
+        monitor._exit_retry_callback = callback_called.append
+
+        monitor._reconcile_stuck_positions()
+
+        assert callback_called == []
+
+    def test_callback_fired_once_on_confirmed_cycle(self):
+        monitor, client, pos = self._make_monitor_with_stuck_pos()
+        callback_called = []
+        monitor._exit_retry_callback = callback_called.append
+
+        monitor._reconcile_stuck_positions()
+        assert callback_called == []
+
+        client.get_filled_orders.return_value = [
+            {"order_id": "o1", "side": "sell", "filled_avg_price": 5.20, "filled_at": None},
+        ]
+        monitor._reconcile_stuck_positions()
+
+        assert len(callback_called) == 1
+        assert pos.exit_fill_price == _D("5.20")
+
+    def test_fill_price_set_only_on_confirmed_cycle(self):
+        monitor, client, pos = self._make_monitor_with_stuck_pos()
+
+        monitor._reconcile_stuck_positions()
+        assert pos.exit_fill_price is None
+
+        client.get_filled_orders.return_value = [
+            {"order_id": "o1", "side": "sell", "filled_avg_price": 5.20, "filled_at": None},
+        ]
+        monitor._reconcile_stuck_positions()
+
+        assert pos.exit_fill_price == _D("5.20")
+
+    def test_close_order_failed_cleared_on_confirmed_cycle(self):
+        monitor, client, pos = self._make_monitor_with_stuck_pos()
+
+        monitor._reconcile_stuck_positions()
+        assert pos.close_order_failed is True
+
+        client.get_filled_orders.return_value = [
+            {"order_id": "o1", "side": "sell", "filled_avg_price": 5.20, "filled_at": None},
+        ]
+        monitor._reconcile_stuck_positions()
+
+        assert pos.close_order_failed is False
+
+    def test_pending_position_picked_up_again_by_stuck_filter(self):
+        monitor, client, pos = self._make_monitor_with_stuck_pos()
+
+        monitor._reconcile_stuck_positions()
+
+        assert pos.close_order_failed is True
+        assert pos.close_order_reconciled is True
+        assert client.get_open_positions.call_count == 1
+
+        monitor._reconcile_stuck_positions()
+
+        assert client.get_open_positions.call_count == 2
+
+
+class TestFillEscMissGuard:
+    """
+    When a FILL_ESC attempt times out and fires a MISS after the reconciliation thread
+    has already confirmed the position closed at broker (close_order_reconciled=True),
+    the MISS must NOT re-set close_order_failed=True.
+
+    Without the guard, a concurrent in-flight FILL_ESC restores close_order_failed=True,
+    triggering a redundant second reconciliation cycle with a stale mid-price estimate.
+    """
+
+    _REPLAY_PATH = "alpha_tech_tracker.op_momentum_strategy.position_monitor.is_replay_mode"
+    _PLACE_OPTION_PATH = "alpha_tech_tracker.op_momentum_strategy.position_monitor.place_option_order_in_tranches"
+    _NOTIFY_PATH = "alpha_tech_tracker.op_momentum_strategy.position_monitor._notify"
+
+    def _make_live_monitor(self):
+        client = _make_alpaca_client()
+        client.get_open_positions.return_value = {
+            "NVDA260328C00900000": {"qty": 6.0}
+        }
+        df = _build_history_df([116.0], ma20=118.0, ma50=118.0, ma200=120.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine, mock_trade_execution=False)
+        pos = _make_active_position(signal="BEARISH", contracts=6)
+        pos.entry_fill_price = _D("8.00")
+        pos.close_order_failed = False
+        pos.close_order_reconciled = True
+        return monitor, client, pos
+
+    def test_miss_does_not_set_close_order_failed_when_already_reconciled(self):
+        monitor, client, pos = self._make_live_monitor()
+        with \
+                patch(self._REPLAY_PATH, return_value=False), \
+                patch(self._PLACE_OPTION_PATH, return_value=({"order_id": "x"}, 0)), \
+                patch(self._NOTIFY_PATH):
+            monitor._close_option_position(pos, "hard_stop")
+
+        assert pos.close_order_failed is False
+
+    def test_miss_still_sets_close_order_failed_when_not_yet_reconciled(self):
+        client = _make_alpaca_client()
+        client.get_open_positions.return_value = {
+            "NVDA260328C00900000": {"qty": 6.0}
+        }
+        df = _build_history_df([116.0], ma20=118.0, ma50=118.0, ma200=120.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine, mock_trade_execution=False)
+        pos = _make_active_position(signal="BEARISH", contracts=6)
+        pos.entry_fill_price = _D("8.00")
+        pos.close_order_failed = False
+        pos.close_order_reconciled = False
+        with \
+                patch(self._REPLAY_PATH, return_value=False), \
+                patch(self._PLACE_OPTION_PATH, return_value=({"order_id": "x"}, 0)), \
+                patch(self._NOTIFY_PATH):
+            monitor._close_option_position(pos, "hard_stop")
+
+        assert pos.close_order_failed is True
+
+    def test_reconciled_position_not_picked_up_again_by_reconciliation_after_miss(self):
+        monitor, client, pos = self._make_live_monitor()
+        with \
+                patch(self._REPLAY_PATH, return_value=False), \
+                patch(self._PLACE_OPTION_PATH, return_value=({"order_id": "x"}, 0)), \
+                patch(self._NOTIFY_PATH):
+            monitor._close_option_position(pos, "hard_stop")
+
+        pos.is_closed = True
+        client.get_open_positions.return_value = {}
+        client.get_filled_orders.return_value = []
+
+        callback_called = []
+        monitor._exit_retry_callback = callback_called.append
+        monitor._reconcile_stuck_positions()
+
+        assert callback_called == []

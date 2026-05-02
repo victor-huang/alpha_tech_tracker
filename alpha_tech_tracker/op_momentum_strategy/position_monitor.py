@@ -597,10 +597,14 @@ class PositionMonitor:
                     if pos.entry_order_id and self._entry_confirmed_filled_no_manual_close(pos):
                         broker_entry = {"qty": float(-pos.shares if pos.signal == "BEARISH" else pos.shares)}
                     else:
-                        pos.close_order_failed = False
                         fill_price = self._fetch_manual_close_fill_price(pos)
                         if fill_price is not None:
                             pos.exit_fill_price = fill_price
+                            pos.close_order_failed = False
+                        else:
+                            # Fill not yet in order history — let reconciliation thread retry.
+                            pos.close_order_failed = True
+                            pos.close_order_reconciled = True
                         price_str = f", exit ${float(fill_price):.2f}" if fill_price is not None else ""
                         _notify(
                             f"MANUAL CLOSE DETECTED {pos.ticker} x{pos.shares} shares"
@@ -691,7 +695,8 @@ class PositionMonitor:
             self._poll_exit_fill_price(pos)
         except Exception:
             logger.exception("Failed to place stock close order for %s", pos.ticker)
-            pos.close_order_failed = True
+            if not pos.close_order_reconciled:
+                pos.close_order_failed = True
             _notify(f"CLOSE FAILED {pos.ticker} x{pos.shares} shares reason={reason} — close manually")
 
     def _close_option_position(self, pos: ActivePosition, reason: str, exit_stock_price_override=None):
@@ -778,7 +783,11 @@ class PositionMonitor:
                         fill_est = self._fetch_manual_close_fill_price(pos)
                         if fill_est is not None:
                             pos.exit_fill_price = fill_est
-                        pos.close_order_failed = False
+                            pos.close_order_failed = False
+                        else:
+                            # Fill not yet in order history — let reconciliation thread retry.
+                            pos.close_order_failed = True
+                            pos.close_order_reconciled = True
                         _notify(
                             f"MANUAL CLOSE DETECTED {_fmt_option(pos.option_symbol)} x{pos.contracts}"
                             f" — position already closed at broker, skipping order"
@@ -895,7 +904,8 @@ class PositionMonitor:
             pos.closed_contracts += filled
             pos.exit_order_id = last_order.get("order_id")
             if pos.contracts > 0:
-                pos.close_order_failed = True
+                if not pos.close_order_reconciled:
+                    pos.close_order_failed = True
                 if filled > 0:
                     _notify(
                         f"CLOSE PARTIAL {pos.option_symbol}:"
@@ -913,7 +923,8 @@ class PositionMonitor:
                 self._poll_exit_fill_price(pos)
         except Exception:
             logger.exception("Failed to place close order for %s", pos.option_symbol)
-            pos.close_order_failed = True
+            if not pos.close_order_reconciled:
+                pos.close_order_failed = True
             _notify(f"CLOSE FAILED {pos.option_symbol} x{pos.contracts} reason={reason} — close manually")
 
     def close_all(self, reason: str = "end_of_day"):
@@ -1036,10 +1047,16 @@ class PositionMonitor:
         """Check broker open positions and resolve any stuck (close_order_failed) positions.
 
         For each position marked close_order_failed, queries the broker to see whether
-        the position is still open. If the broker shows it as closed (manually closed by
-        the user), sets exit_fill_price from the current option mid (best estimate),
-        clears close_order_failed, and fires exit_retry_callback so _on_exit_fill_corrected
-        updates daily P&L.
+        the position is still open at the broker.
+
+        - If the broker shows it still open: no action, wait for the next cycle.
+        - If the broker shows it closed (manually closed) and the fill price is confirmed
+          in broker order history: records the real exit price, clears close_order_failed,
+          and fires exit_retry_callback to update daily P&L.
+        - If the broker shows it closed but the fill is not yet in order history (API lag):
+          sets close_order_reconciled=True to stop FILL_ESC from placing more orders, but
+          keeps close_order_failed=True so the next 5-min cycle retries for the real price.
+          Does NOT fire the callback — capital is not returned until the real fill is known.
         """
         with self._lock:
             stuck = [
@@ -1063,27 +1080,32 @@ class PositionMonitor:
 
             # Position is no longer open at the broker — manually closed.
             fill_price = self._fetch_manual_close_fill_price(pos)
-            with self._lock:
-                if fill_price is not None:
-                    pos.exit_fill_price = fill_price
-                pos.close_order_failed = False
-                pos.close_order_reconciled = True
-
             if fill_price is not None:
+                with self._lock:
+                    pos.exit_fill_price = fill_price
+                    pos.close_order_failed = False
+                    pos.close_order_reconciled = True
                 msg = (
                     f"RECONCILED {pos.option_symbol} x{pos.contracts}"
                     f" — manually closed at broker, exit price ${float(fill_price):.2f}"
                 )
+                logger.info(msg)
+                _notify(msg)
+                if self._exit_retry_callback:
+                    self._exit_retry_callback(pos)
             else:
+                # Broker confirms position is closed but fill has not yet appeared in order
+                # history (TradeStation typically lags 1–4 min). Mark reconciled to stop
+                # FILL_ESC from placing more close orders, but keep close_order_failed=True
+                # so the next reconciliation cycle retries for the real fill price.
+                with self._lock:
+                    pos.close_order_reconciled = True
                 msg = (
-                    f"RECONCILED {pos.option_symbol} x{pos.contracts}"
-                    f" — manually closed at broker, exit price unknown"
+                    f"RECONCILE PENDING {pos.option_symbol} x{pos.contracts}"
+                    f" — confirmed closed at broker, waiting for fill price"
                 )
-            logger.info(msg)
-            _notify(msg)
-
-            if self._exit_retry_callback and pos.exit_fill_price is not None:
-                self._exit_retry_callback(pos)
+                logger.info(msg)
+                _notify(msg)
 
     def _fetch_option_mid(self, option_symbol: str) -> Optional[object]:
         try:
@@ -1160,7 +1182,8 @@ class PositionMonitor:
 
         Queries order history for the most recent filled sell (or buy-to-cover for stocks)
         on the position's instrument that was submitted after the engine's entry time.
-        Falls back to the current option mid when no matching order is found.
+        Returns None when no matching order is found — callers must not fall back to a
+        market-mid estimate, as that would misreport capital returned to the window budget.
         """
         symbol = pos.option_symbol if pos.trade_type != "stock" else pos.ticker
         close_side = "buy" if (pos.trade_type == "stock" and pos.signal == "BEARISH") else "sell"
@@ -1184,7 +1207,7 @@ class PositionMonitor:
         except Exception:
             logger.warning("Could not fetch order history for %s", symbol, exc_info=True)
 
-        return self._fetch_option_mid(symbol) if pos.trade_type != "stock" else None
+        return None
 
     def _poll_exit_fill_price(self, pos: ActivePosition, max_attempts: int = 3, interval: float = 5.0):
         """Poll order status after placing an exit order to set pos.exit_fill_price.

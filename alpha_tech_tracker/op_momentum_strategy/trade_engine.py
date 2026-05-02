@@ -784,6 +784,24 @@ class OpMomentumTradeEngine:
         return None, None
 
     def _enter_reentry(self, watcher: ReentryWatcher, trigger_price: _D):
+        # Block re-entries whose window capital has already been forwarded to the next
+        # sequential window. Once the next window opens (budget computed and stored),
+        # any remaining re-entry watchers from the prior window would deploy broker cash
+        # on top of the next window's positions, exceeding the account's sequential budget.
+        next_label = self._next_sequential_window_label(watcher.window_label)
+        if next_label is not None:
+            with self._signal_lock:
+                next_opened = "budget" in self._window_state.get(next_label, {})
+            if next_opened:
+                logger.info(
+                    "Re-entry [%s] %s: window [%s] capital forwarded to [%s] — skipping",
+                    watcher.reentry_type,
+                    watcher.ticker,
+                    watcher.window_label,
+                    next_label,
+                )
+                return
+
         reentry_signal = "BEARISH" if watcher.reentry_type == "bearish_reentry" else "BULLISH"
         trailing_arm = (
             trigger_price + watcher.or_range
@@ -824,6 +842,13 @@ class OpMomentumTradeEngine:
         for i, w in enumerate(self._windows):
             if w.label == win.label and i > 0:
                 return self._windows[i - 1].label
+        return None
+
+    def _next_sequential_window_label(self, label: str) -> Optional[str]:
+        for i, w in enumerate(self._windows):
+            if w.label == label and i < len(self._windows) - 1:
+                nxt = self._windows[i + 1]
+                return nxt.label if nxt.is_sequential else None
         return None
 
     def _compute_position_returned_capital(self, pos) -> _D:
