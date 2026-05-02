@@ -110,7 +110,7 @@ The standard stock-trading replay config used for all three runs. **Do not chang
 ```
 BASE_FLAGS="
   --trade-type stock
-  --window M1 09:30 3 --window A1 12:00 2 --window A2 13:15 1 --window A3 15:00 1 --morning-split 100
+  --window M1 09:30 3 --window A1 10:00 3 --window A2 13:15 1 --window A3 15:15 1 --morning-split 100
   --reversal --bearish-reentry --bullish-reentry
   --doubledown --doubledown-start 10
   --top 2 --capital 10000
@@ -123,7 +123,7 @@ The backtest equivalent (translated flags — `--weights` instead of `--rank-wei
 
 ```
 BACKTEST_FLAGS="
-  --window M1 09:30 3 --window A1 12:00 2 --window A2 13:15 1 --window A3 15:00 1 --morning-split 100
+  --window M1 09:30 3 --window A1 10:00 3 --window A2 13:15 1 --window A3 15:15 1 --morning-split 100
   --reversal --bearish-reentry --bullish-reentry
   --doubledown --doubledown-start 10
   --top 2 --capital 10000
