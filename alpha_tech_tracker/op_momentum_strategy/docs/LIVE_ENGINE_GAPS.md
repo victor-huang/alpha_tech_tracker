@@ -581,12 +581,19 @@ drain time (i.e., the bar closes at the same moment the window opens), the backt
 the slot as returned — but the replay engine closes the position at bar *close*, which is
 simultaneous with the window firing and is treated as still-open.
 
-**Example (4/23, FN, A1 at 10:00/1 bar):**
+**Example A (4/23, FN, A1 at 10:00/1 bar):**
 - M1 drain = 9:45 (585 min). FN exit_time = 585 + 3×5 = 600 (10:00).
 - A1 drain = 10:00 + 1×5 = 605 (10:05). Condition 600 ≤ 605 → True.
 - Backtest: FN slot returned before A1 fires → A1 budget includes FN's $6k slot.
 - Replay: FN exits at bar close = 10:05, simultaneous with A1 firing → slot withheld.
 - Result: A1 window_capital = $5,979 (BT) vs $1,965 (RP), ~$4k gap.
+
+**Example B (4/10, COIN, A1 at 10:00/3 bars):**
+- M1 drain = 9:45 (585 min). COIN bars_held = 6. exit_time = 585 + 6×5 = 615 (10:15).
+- A1 drain = 10:00 + 3×5 = 615 (10:15). Condition 615 > 615 → False.
+- Backtest: COIN considered exited at 10:15 → A1 gets $3,996 budget → CRWV+CVNA win $137.86.
+- Replay: COIN exits at bar close = 10:20, still open when A1 fires at 10:15 → A1 gets $0.
+- Result: entire $137.86 A1 gain appears in BT but not RP; contributes to 4/10 gap of +$151.89.
 
 **Why accepted as-is:** 5-minute bar granularity makes sub-bar exit timing ambiguous. The
 backtest interpretation (capital free once the stop fires within the bar) is arguably more

@@ -1,5 +1,5 @@
 ---
-description: 'SCP today''s options and stock trading logs from EC2, then run daily bug analysis on both'
+description: 'SCP today''s options and stock trading logs from EC2, run daily bug analysis on both, and run fill quality analysis on options and stock fills'
 ---
 
 # Daily Log Review
@@ -86,11 +86,119 @@ Read the DAILY TRADE SUMMARY at the end of each log. For each row:
 - Check for tickers receiving bars with abnormally long gaps (>30 min between consecutive bars during regular hours)
 - Note any WebSocket reconnection events
 
-## Step 4 — Report
+## Step 4 — Fill quality analysis (options engine only)
+
+Run `fetch_ts_orders` for the same date to pull all TradeStation fills and enrich them with Alpaca market data, log-sourced bid/ask, intrinsic values, and hourly average time value:
+
+```bash
+source ~/.pyenv/versions/alpha_tech_tracker/bin/activate
+PYTHONPATH=/Users/victorhuang/work/alpha_tech_tracker \
+  python -m alpha_tech_tracker.op_momentum_strategy.fetch_ts_orders \
+  --date ${LOG_DATE} \
+  --log-file ${LOCAL_OPTION_LOG}
+```
+
+The CSV is written to `logs/fills/${LOG_DATE}/options_fills_${LOG_DATE}.csv`. Read it and flag the following:
+
+### 4a. Escalation cost
+
+For each fill with `opt_log_step` = 2 or 3:
+- Report the symbol, side, step reached, and `fill_vs_log_mid`
+- Step 2/3 means the initial fair-price limit wasn't competitive and the engine chased the ask
+- Flag any step-3 fill that also has `fill_vs_log_mid > 0` (paid above mid after escalation)
+
+### 4b. Fills vs intrinsic
+
+For each fill where `intrinsic_value` is populated:
+
+**Entries bought above intrinsic (normal but monitor):**
+- `time_value_paid > $1.00`: flag as elevated time premium — report `time_value_paid` and `hourly_avg_time_value` for context
+
+**Entries bought below intrinsic (favorable):**
+- `time_value_paid < 0`: note as a favorable dislocation capture — no action needed
+
+**Exits sold below intrinsic (concerning):**
+- `time_value_paid < -$0.10` on a SELL: the engine sold an option for less than its exercise value — report the symbol, fill price, intrinsic, and the shortfall. Check whether the exit went through the `FILL_ESC` path or an EOD/timeout path (missing `opt_log_bid` indicates the latter)
+
+### 4c. Fill vs mid at order time
+
+For fills where `opt_log_mid` is populated:
+- **Entries**: flag `fill_vs_log_mid > +$0.50` — paid well above mid, escalation likely chased a fast-moving option
+- **Exits**: flag `fill_vs_log_mid < -$0.50` — sold well below mid, spread friction or thin market
+
+### 4d. Wide spreads
+
+For fills where `opt_log_spread_pct` is populated:
+- Flag any fill with `opt_log_spread_pct > 15%` — inherently expensive to trade regardless of execution quality; note whether the fill was at or below mid (fair_price algorithm handling)
+- Flag `opt_log_spread_pct > 10%` for entries specifically — entering a wide-spread option means the round-trip cost is high
+
+### 4e. Missing log quotes
+
+Count fills where `opt_log_bid` is empty. These exits went through the `position_monitor` EOD/timeout path rather than `order_executor`'s FILL_ESC loop — no quote was logged at order time. Report which fills are blind and whether any of them also show `time_value_paid < -$0.10` (sold below intrinsic with no quote context).
+
+### 4f. Time value vs hourly average
+
+For fills where `hourly_avg_time_value` is populated:
+- **Entries**: flag `time_value_vs_hourly_avg > +$1.00` — entered when the option was trading at a significant premium relative to its own hour (momentum spike pricing)
+- **Exits**: flag `time_value_vs_hourly_avg < -$1.00` — exited when the option's time value had collapsed relative to the hour's baseline (hard stop into a liquidity hole)
+
+## Step 5 — Stock fill quality analysis
+
+Run `fetch_alpaca_orders` for the same date to pull all Alpaca stock fills and enrich them with bar data, historical NBBO quotes, and log-sourced bid/ask from FILL_ESC lines:
+
+```bash
+source ~/.pyenv/versions/alpha_tech_tracker/bin/activate
+PYTHONPATH=/Users/victorhuang/work/alpha_tech_tracker \
+  python -m alpha_tech_tracker.op_momentum_strategy.fetch_alpaca_orders \
+  --date ${LOG_DATE} \
+  --log-file ${LOCAL_STOCK_LOG} \
+  --live
+```
+
+The CSV is written to `logs/fills/${LOG_DATE}/stocks_fills_${LOG_DATE}.csv`. Read it and flag the following:
+
+### 5a. Escalation cost
+
+For each fill with `log_step` = 2 or 3:
+- Report the ticker, side, step reached, wide-spread flag, and `fill_vs_log_mid`
+- Step 2 = engine chased the ask (wide spread or step-1 timeout); step 3 = market order fallback
+- Flag any step-3 fill — market orders have no price protection
+- Flag any step-2 fill where `fill_vs_nbbo_mid > +$0.50` (paid well above mid after escalation)
+
+### 5b. Wide spread entries
+
+For fills where `log_wide_spread = True` on an entry:
+- Report the ticker, bid/ask spread implied by `log_bid`/`log_ask`, and `fill_vs_nbbo_mid`
+- SNDK routinely has $20–30 wide spreads — step 2 (aggressive at ask) is expected; flag only if fill came in above the ask
+- For other tickers, a wide spread entry means high round-trip cost; note whether the fill was at or below NBBO mid (good execution despite spread)
+
+### 5c. Fill vs NBBO mid at fill time
+
+For fills where `nbbo_mid` is populated:
+- **Entries**: flag `fill_vs_nbbo_mid > +$1.00` — paid well above mid; stock moved against us between order placement and fill
+- **Exits**: flag `fill_vs_nbbo_mid < -$1.00` — sold well below mid; stop triggered into a falling market or thin liquidity
+
+### 5d. Slippage vs limit
+
+For fills where `slippage_bps` is populated:
+- **Entries**: positive slippage = filled worse than limit (paid above for buys, received below for shorts)
+- **Exits**: positive slippage = filled worse than limit (received below for sells, paid above for covers)
+- Flag any fill with `|slippage_bps| > 100` — significant deviation from the intended limit
+
+### 5e. Missing log quotes
+
+Count fills where `log_bid` is empty. These went through EOD market exit or manual close — no FILL_ESC quote was logged. Report which fills are blind and note whether any also show `fill_vs_nbbo_mid < -$1.00` (sold well below mid with no quote context).
+
+### 5f. Fill inside bar
+
+Report any `fill_inside_bar = False`. These mean the fill price is outside the 1-min OHLC range at fill time — could indicate a stale bar lookup or an off-exchange fill. Single-cent mismatches at bar boundaries are rounding artifacts; larger gaps warrant investigation.
+
+## Step 6 — Report
 
 Present findings as a numbered list grouped by severity, with **[OPTIONS]** / **[STOCK]** labels:
 
 **Functional bugs** (wrong behaviour, money impact, missed trades)
+**Fill quality issues** (escalation cost, below-intrinsic exits, wide spreads)
 **Cosmetic / messaging bugs** (wrong labels, confusing notifications)
 **Data issues** (missing bars, sparse tickers)
 **Informational** (reconnects, expected warnings)
@@ -101,4 +209,6 @@ End with:
 - Options engine P&L for the day
 - Stock engine P&L for the day
 - Combined daily P&L
-- Whether any functional bugs require immediate code fixes
+- Options fill quality summary: total fills, step 2/3 count, below-intrinsic exits, widest spread seen
+- Stock fill quality summary: total fills, step 2/3 count, market-order (step 3) count, worst `fill_vs_nbbo_mid` entry and exit, blind fills (no log quote)
+- Whether any functional bugs or fill quality issues require immediate code fixes
