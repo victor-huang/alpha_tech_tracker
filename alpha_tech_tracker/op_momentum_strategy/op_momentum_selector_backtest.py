@@ -1237,12 +1237,23 @@ def _print_reentry_subrow(
     ep = row.get(ep_key, 0)
     if not ep:
         return None
+    blank_win = f"{'':5} " if multi_window else ""
+    cancelled = row.get("reentry_cancelled_by_dd") or row.get("bru_cancelled")
+    if cancelled:
+        cancel_reason = "cancelled by DD" if row.get("reentry_cancelled_by_dd") else "cancelled (capital recycled)"
+        print(
+            f"  {'':12} {blank_win}{'':5} {'':6} "
+            f"{label:<9} {'':>5}  "
+            f"{'':>5} {'':>5}  "
+            f"{ep:>7.2f} {'':>7} "
+            f"{'':>7} {'':>7}  {'':6}  {cancel_reason}"
+        )
+        return None
     p = row[pnl_key]
     pct = p / ep * 100
     pnl_str = f"+${abs(p):.2f}" if p >= 0 else f"-${abs(p):.2f}"
     pct_str = f"+{abs(pct):.2f}%" if pct >= 0 else f"{pct:.2f}%"
     result = "WIN" if p > 0 else "LOSS"
-    blank_win = f"{'':5} " if multi_window else ""
     print(
         f"  {'':12} {blank_win}{'':5} {'':6} "
         f"{label:<9} {'':>5}  "
