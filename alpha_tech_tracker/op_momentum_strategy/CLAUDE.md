@@ -212,6 +212,36 @@ All other V3 pool tickers (`SNDK`, `SHOP`, `CVNA`, `AMD`, `META`, `EXPE`, `MU`, 
 
 When adding a new pool ticker, verify its Penny Pilot status before the first live session. If live fills show `required=0.1` tick rejections, add the ticker to `_NON_PENNY_PILOT_TICKERS`.
 
+**Penny Pilot Audit script (`penny_pilot_audit.py`)**:
+Probes each ticker's actual tick schedule against TradeStation's live order placement API. Selects next week's ITM call (same strike logic as `ITMOptionContractSelector`), places a LIMIT order at `floor(mid) + $0.07` — invalid for both the $0.05 Penny Pilot tick and $0.10 Non-Pilot tick — and reads the `RejectReason` to extract the required increment.
+
+**Must be run during market hours (9:30 AM – 4:00 PM ET).** TradeStation queues after-hours DAY orders without tick validation, so the rejection never fires and results are unreliable outside those hours.
+
+```bash
+source ~/.pyenv/versions/alpha_tech_tracker/bin/activate
+export PYTHONPATH=/Users/victorhuang/work/alpha_tech_tracker
+
+# All DEFAULT_TICKERS + ACTIVELY_TRADE_TICKERS (23 unique):
+python alpha_tech_tracker/op_momentum_strategy/penny_pilot_audit.py \
+  --tickers AMD APP ASTS CLS COIN CRDO CRWV CVNA EXPE FN HOOD META MRVL MSTR MU NFLX NVDA PLTR RH RKLB SHOP SNDK TSLA
+
+# DEFAULT_TICKERS only (17 tickers, default):
+python alpha_tech_tracker/op_momentum_strategy/penny_pilot_audit.py
+
+# Specific tickers:
+python alpha_tech_tracker/op_momentum_strategy/penny_pilot_audit.py --tickers APP CLS CRDO FN RH
+
+# Dry-run (contract selection + quote fetch, no orders placed — works any time):
+python alpha_tech_tracker/op_momentum_strategy/penny_pilot_audit.py --dry-run \
+  --tickers AMD APP ASTS CLS COIN CRDO CRWV CVNA EXPE FN HOOD META MRVL MSTR MU NFLX NVDA PLTR RH RKLB SHOP SNDK TSLA
+```
+
+If mismatches are found, the script prints the exact `frozenset` line to paste into `option_price_monitor.py`:
+```
+  Suggested update to option_price_monitor.py:
+    _NON_PENNY_PILOT_TICKERS: frozenset = frozenset({'APP', 'CLS', 'CRDO', 'FN', 'RH'})
+```
+
 ---
 
 ## FairPriceTester (`option_fair_price_tester.py`)

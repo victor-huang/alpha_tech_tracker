@@ -42,7 +42,7 @@ source ~/.pyenv/versions/alpha_tech_tracker/bin/activate && \
 PYTHONPATH=/Users/victorhuang/work/alpha_tech_tracker \
 python alpha_tech_tracker/op_momentum_strategy/op_momentum_selector_backtest.py \
   --top 2 --weights 60 40 \
-  --window M1 09:30 3 --window A1 13:15 1 --window A2 15:00 1 --morning-split 100 \
+  --window M1 09:30 3 --window A1 12:00 2 --window A2 13:15 1 --window A3 15:00 1 --morning-split 100 \
   --reversal --bearish-reentry --bullish-reentry \
   --doubledown --doubledown-start 10 \
   --start ${DATE} --end ${DATE} --feed iex 2>&1
