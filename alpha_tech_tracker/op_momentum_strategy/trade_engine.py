@@ -106,6 +106,7 @@ class TickerSelector:
         regime_filter: bool = False,
         regime_ma: int = 8,
         alpaca_feed: DataFeed = DataFeed.SIP,
+        score_feed: DataFeed = None,
         market_data_client=None,
     ):
         self._tickers = tickers
@@ -117,6 +118,7 @@ class TickerSelector:
         self._regime_filter = regime_filter
         self._regime_ma = regime_ma
         self._alpaca_feed = alpaca_feed
+        self._score_feed = score_feed if score_feed is not None else alpaca_feed
         self._market_data_client = market_data_client
         self.rolling_stats: dict = {}
 
@@ -152,7 +154,7 @@ class TickerSelector:
             fetch_start,
             bars_end,
             source="alpaca",
-            feed=self._alpaca_feed,
+            feed=self._score_feed,
         )
 
     def select(self, ticker_dfs: dict = None) -> list:
@@ -281,6 +283,7 @@ class OpMomentumTradeEngine:
         or_bar_lookback: int = 3,
         ws_reconnect_timeout: int = WS_RECONNECT_TIMEOUT_SECONDS,
         alpaca_feed: DataFeed = DataFeed.SIP,
+        score_feed: DataFeed = None,
         enable_doubledown: bool = False,
         doubledown_start_min: int = 5,
         record_tradestation_feed: bool = False,
@@ -324,6 +327,7 @@ class OpMomentumTradeEngine:
         self._or_bar_lookback = or_bar_lookback
         self._ws_reconnect_timeout = ws_reconnect_timeout
         self._alpaca_feed = alpaca_feed
+        self._score_feed = score_feed if score_feed is not None else alpaca_feed
         self._enable_doubledown = enable_doubledown
         self._doubledown_start_min = doubledown_start_min
         self._record_tradestation_feed = record_tradestation_feed
@@ -1849,6 +1853,7 @@ class OpMomentumTradeEngine:
                     regime_filter=self._regime_filter,
                     regime_ma=self._regime_ma,
                     alpaca_feed=self._alpaca_feed,
+                    score_feed=self._score_feed,
                     market_data_client=self._market_data_client,
                 )
                 if first_config_key is None:
@@ -1956,11 +1961,20 @@ class OpMomentumTradeEngine:
             if self._market_data_client is not None
             else f"alpaca/{self._alpaca_feed.value.upper()}"
         )
-        logger.info(
-            "Market data source: %s (live/warmup) | alpaca/%s (selector backtest cache)",
-            live_source,
-            self._alpaca_feed.value.upper(),
-        )
+        score_feed_label = self._score_feed.value.upper()
+        if self._score_feed != self._alpaca_feed:
+            logger.info(
+                "Market data source: %s (live/warmup) | alpaca/%s (selector scoring — overridden from %s)",
+                live_source,
+                score_feed_label,
+                self._alpaca_feed.value.upper(),
+            )
+        else:
+            logger.info(
+                "Market data source: %s (live/warmup) | alpaca/%s (selector backtest cache)",
+                live_source,
+                score_feed_label,
+            )
         all_tickers = tickers_override or TICKERS
         first_window = self._windows[0]
 

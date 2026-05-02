@@ -517,6 +517,18 @@ def parse_args():
         help="Alpaca data feed: 'sip' (consolidated, default) or 'iex' (free tier).",
     )
     parser.add_argument(
+        "--score-feed",
+        choices=["sip", "iex"],
+        default=None,
+        dest="score_feed",
+        help=(
+            "Alpaca feed used for the 60-day selector lookback (scoring). "
+            "Defaults to --feed when not set. "
+            "Useful for replay: --feed iex --score-feed sip runs intraday bars from "
+            "IEX while scoring tickers against the SIP 60-day history."
+        ),
+    )
+    parser.add_argument(
         "--market-data-source",
         choices=["alpaca", "tradestation"],
         default="alpaca",
@@ -725,6 +737,7 @@ if __name__ == "__main__":
             replay_capital=args.capital,
             ws_reconnect_timeout=args.ws_reconnect_timeout,
             alpaca_feed=DataFeed.IEX if args.feed == "iex" else DataFeed.SIP,
+            score_feed=DataFeed.IEX if args.score_feed == "iex" else DataFeed.SIP if args.score_feed == "sip" else None,
             enable_doubledown=args.doubledown,
             doubledown_start_min=args.doubledown_start_min,
             record_tradestation_feed=args.record_tradestation_feed,
@@ -845,6 +858,7 @@ if __name__ == "__main__":
             replay_capital=args.capital,
             ws_reconnect_timeout=args.ws_reconnect_timeout,
             alpaca_feed=DataFeed.IEX if args.feed == "iex" else DataFeed.SIP,
+            score_feed=DataFeed.IEX if args.score_feed == "iex" else DataFeed.SIP if args.score_feed == "sip" else None,
             enable_doubledown=args.doubledown,
             doubledown_start_min=args.doubledown_start_min,
             record_tradestation_feed=args.record_tradestation_feed,
