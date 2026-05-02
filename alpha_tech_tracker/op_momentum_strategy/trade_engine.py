@@ -784,23 +784,48 @@ class OpMomentumTradeEngine:
         return None, None
 
     def _enter_reentry(self, watcher: ReentryWatcher, trigger_price: _D):
-        # Block re-entries whose window capital has already been forwarded to the next
-        # sequential window. Once the next window opens (budget computed and stored),
-        # any remaining re-entry watchers from the prior window would deploy broker cash
-        # on top of the next window's positions, exceeding the account's sequential budget.
+        # Block re-entries if the next sequential window has open positions (capital
+        # actively deployed). If the next window has opened but returned all capital,
+        # the budget is idle and the re-entry may proceed using the current available
+        # capital — which matches backtest behaviour where BRU from window N can fire
+        # after window N+1 finishes and returns capital.
+        window_budget = watcher.window_budget
         next_label = self._next_sequential_window_label(watcher.window_label)
         if next_label is not None:
             with self._signal_lock:
                 next_opened = "budget" in self._window_state.get(next_label, {})
             if next_opened:
-                logger.info(
-                    "Re-entry [%s] %s: window [%s] capital forwarded to [%s] — skipping",
-                    watcher.reentry_type,
-                    watcher.ticker,
-                    watcher.window_label,
-                    next_label,
+                next_has_open = False
+                if self._monitor is not None:
+                    with self._monitor._lock:
+                        next_has_open = any(
+                            p.window_label == next_label and not p.is_closed
+                            for p in self._monitor._positions
+                        )
+                if next_has_open:
+                    logger.info(
+                        "Re-entry [%s] %s: window [%s] capital deployed in [%s] — skipping",
+                        watcher.reentry_type,
+                        watcher.ticker,
+                        watcher.window_label,
+                        next_label,
+                    )
+                    return
+                # Next window returned all capital — recompute available budget.
+                win_config = next(
+                    (w for w in self._windows if w.label == watcher.window_label), None
                 )
-                return
+                if win_config is not None:
+                    fresh_budget = self._get_window_budget(win_config)
+                    if fresh_budget is None or fresh_budget <= _D("0"):
+                        logger.info(
+                            "Re-entry [%s] %s: window [%s] no capital available — skipping",
+                            watcher.reentry_type,
+                            watcher.ticker,
+                            watcher.window_label,
+                        )
+                        return
+                    window_budget = fresh_budget
 
         reentry_signal = "BEARISH" if watcher.reentry_type == "bearish_reentry" else "BULLISH"
         trailing_arm = (
@@ -831,7 +856,7 @@ class OpMomentumTradeEngine:
             event,
             rank=watcher.rank,
             window_label=watcher.window_label,
-            window_budget=watcher.window_budget,
+            window_budget=window_budget,
             hard_stop_override=watcher.midpoint,
             trailing_arm_price=trailing_arm,
             initial_hard_stop_armed=True,
