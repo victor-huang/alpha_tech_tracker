@@ -261,6 +261,16 @@ def _apply_capital_flow(
         #             - slot_capital for each prior row still running at this drain
         # This correctly handles morning trades that hold past an afternoon window's
         # start time — their capital is locked and unavailable until they close.
+        #
+        # Sub-trade timing (BRU/BRE/REV): a sub-trade fires hours after the primary
+        # exits.  Between the primary exit and the sub-trade entry the capital is
+        # genuinely free.  We therefore use a three-phase model per slot:
+        #   Phase 1 — primary still running at this_drain → deduct slot_capital
+        #   Phase 2 — primary done, sub not started yet   → capital is free; add
+        #             primary-only cap_pnl (avoids pulling in future sub P&L)
+        #   Phase 3 — sub running at this_drain           → capital re-deployed;
+        #             deduct slot_capital
+        #   Phase 4 — everything exited before this_drain → add combined cap_pnl
         seq_pnl = 0.0
         for i_seq, label in enumerate(window_labels[n_first:]):
             this_drain = drain_min[label]
@@ -277,11 +287,77 @@ def _apply_capital_flow(
                     if (row.get("is_reversal") or row.get("is_bearish_reentry")
                             or row.get("is_bullish_reentry")):
                         continue
-                    exit_time = prior_drain + row.get("slot_exit_bars", row.get("bars_held", 0)) * 5
-                    if exit_time <= this_drain:
+                    primary_bars = row.get("bars_held", 0)
+                    primary_exit_time = prior_drain + primary_bars * 5
+
+                    if primary_exit_time > this_drain:
+                        # Phase 1: primary still running — full slot locked.
+                        available -= row.get("slot_capital", 0.0)
+                        continue
+
+                    # Primary has exited.  Check sub-trade timing when BRU/BRE/REV
+                    # fields are present.  Three phases are possible:
+                    #   Phase 2 — sub exists but hasn't started at this_drain
+                    #             → primary capital is free; add primary-only cap_pnl
+                    #   Phase 3 — sub is running at this_drain
+                    #             → slot still deployed; deduct slot_capital
+                    #   Phase 4 — sub finished before this_drain (or no sub)
+                    #             → add full combined cap_pnl
+                    # When no BRU/BRE/REV entry_price is set we fall back to the
+                    # slot_exit_bars-based lock check (original pre-phase behaviour).
+                    sub_active = False
+                    sub_started = False
+                    sub_exists = False
+                    for sub_prefix, idx_key, bars_key in (
+                        ("bru", "bru_entry_idx", "bru_bars_held"),
+                        ("br",  "br_entry_idx",  "br_bars_held"),
+                        ("rev", "rev_entry_idx", "rev_bars_held"),
+                    ):
+                        if not row.get(f"{sub_prefix}_entry_price"):
+                            continue
+                        sub_exists = True
+                        sub_entry_idx = row.get(idx_key, 0)
+                        sub_bars = row.get(bars_key, 0)
+                        # Sub-trade scan starts one bar after the primary exits;
+                        # sub fires sub_entry_idx bars into that scan, then holds
+                        # sub_bars more bars.
+                        sub_entry_min = prior_drain + (primary_bars + 1 + sub_entry_idx + 1) * 5
+                        sub_exit_min = sub_entry_min + sub_bars * 5
+                        if sub_entry_min <= this_drain:
+                            sub_started = True
+                        if sub_entry_min <= this_drain < sub_exit_min:
+                            sub_active = True
+
+                    if sub_active:
+                        # Phase 3: sub-trade running — slot capital re-deployed.
+                        available -= row.get("slot_capital", 0.0)
+                    elif sub_exists and not sub_started:
+                        # Phase 2: primary done, sub hasn't started yet.
+                        # Add primary-only cap_pnl; sub P&L will be included when
+                        # the sub exits (combined cap_pnl flows in at Phase 4 time).
+                        entry_price = row.get("entry_price", 0.0)
+                        exit_price = row.get("exit_price", entry_price)
+                        if entry_price > 0:
+                            raw = (
+                                exit_price - entry_price
+                                if row.get("signal") == "BULLISH"
+                                else entry_price - exit_price
+                            )
+                            primary_cap_pnl = row.get("slot_capital", 0.0) / entry_price * raw
+                        else:
+                            primary_cap_pnl = 0.0
+                        available += primary_cap_pnl
+                    elif sub_exists:
+                        # Phase 4 (with sub): sub already exited — full combined cap_pnl.
                         available += row.get("cap_pnl", 0.0)
                     else:
-                        available -= row.get("slot_capital", 0.0)
+                        # No BRU/BRE/REV fields: fall back to slot_exit_bars timing.
+                        slot_exit_bars = row.get("slot_exit_bars", primary_bars)
+                        slot_exit_time = prior_drain + slot_exit_bars * 5
+                        if slot_exit_time > this_drain:
+                            available -= row.get("slot_capital", 0.0)
+                        else:
+                            available += row.get("cap_pnl", 0.0)
 
             # Deduct capital from any DD legs still running at this window's drain.
             if enable_doubledown:

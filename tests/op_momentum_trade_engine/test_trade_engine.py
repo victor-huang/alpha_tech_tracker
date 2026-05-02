@@ -167,11 +167,11 @@ class TestTickerSelector:
 
 
 class TestTickerSelectorWarmupFeed:
-    """TickerSelector.fetch_bars() must always request SIP for historical warmup
-    regardless of the alpaca_feed the engine was configured with for live streaming."""
+    """TickerSelector.fetch_bars() uses the configured alpaca_feed for warmup
+    so that scoring bars match the feed used for live streaming."""
 
     @patch(_FETCH_BARS_PATH)
-    def test_fetch_bars_uses_sip_when_alpaca_feed_is_iex(self, mock_fetch_bars):
+    def test_fetch_bars_uses_iex_when_alpaca_feed_is_iex(self, mock_fetch_bars):
         from alpaca.data.enums import DataFeed
         mock_fetch_bars.return_value = {}
         selector = TickerSelector(
@@ -179,7 +179,7 @@ class TestTickerSelectorWarmupFeed:
         )
         selector.fetch_bars()
         _, _args, kwargs = mock_fetch_bars.mock_calls[0]
-        assert kwargs.get("feed") == DataFeed.SIP
+        assert kwargs.get("feed") == DataFeed.IEX
 
     @patch(_FETCH_BARS_PATH)
     def test_fetch_bars_uses_sip_when_alpaca_feed_is_sip(self, mock_fetch_bars):
@@ -1625,7 +1625,9 @@ class TestGetWindowBudgetCapitalFlow:
             ],
         )
 
-    def test_sequential_budget_includes_still_open_prior_position_slot_capital(self):
+    def test_sequential_budget_uses_only_returned_capital_when_prior_position_still_open(self):
+        """Open primary positions are still deployed — only actually returned capital
+        is available; the still-open slot is not counted."""
         engine = self._make_m1_a1_engine()
         engine._window_returned["M1"] = _D("2000")
 
@@ -1643,7 +1645,55 @@ class TestGetWindowBudgetCapitalFlow:
         a1_win = next(w for w in engine._windows if w.label == "A1")
         result = engine._get_window_budget(a1_win)
 
-        assert result == _D("5333")
+        assert result == _D("2000")
+        engine._client.get_accounts.assert_not_called()
+
+    def test_sequential_budget_is_zero_when_prior_primaries_still_open_and_nothing_returned(self):
+        """When prior primaries are still open and no capital has returned yet,
+        the sequential window gets $0 — not the fallback replay capital."""
+        engine = self._make_m1_a1_engine()
+        engine._window_returned["M1"] = _D("0")
+        engine._window_primary_deployed["M1"] = _D("10000")
+
+        open_pos = _make_active_position()
+        open_pos.window_label = "M1"
+        open_pos.is_closed = False
+        open_pos.trailing_arm_price = None
+        open_pos.slot_capital = _D("6000")
+
+        mock_monitor = Mock()
+        mock_monitor._lock = threading.Lock()
+        mock_monitor._positions = [open_pos]
+        engine._monitor = mock_monitor
+
+        a1_win = next(w for w in engine._windows if w.label == "A1")
+        result = engine._get_window_budget(a1_win)
+
+        assert result == _D("0")
+        engine._client.get_accounts.assert_not_called()
+
+    def test_sequential_budget_is_zero_when_all_returned_capital_absorbed_by_reentries(self):
+        """When prior primaries returned but all capital is tied up in re-entries
+        (prior_deployed > 0), return $0 instead of fallback capital."""
+        engine = self._make_m1_a1_engine()
+        engine._window_returned["M1"] = _D("0")
+        engine._window_primary_deployed["M1"] = _D("10000")
+
+        reentry_pos = _make_active_position()
+        reentry_pos.window_label = "M1"
+        reentry_pos.is_closed = False
+        reentry_pos.trailing_arm_price = _D("110")
+        reentry_pos.slot_capital = _D("10000")
+
+        mock_monitor = Mock()
+        mock_monitor._lock = threading.Lock()
+        mock_monitor._positions = [reentry_pos]
+        engine._monitor = mock_monitor
+
+        a1_win = next(w for w in engine._windows if w.label == "A1")
+        result = engine._get_window_budget(a1_win)
+
+        assert result == _D("0")
         engine._client.get_accounts.assert_not_called()
 
     def test_sequential_budget_excludes_reentry_open_positions(self):
@@ -3628,8 +3678,8 @@ class TestDoubleDown:
 
         assert "W1" not in engine._window_primary_deployed
 
-    def test_sequential_window_budget_not_inflated_by_dd_addon(self):
-        """A1 budget must equal open M1 capital only — no double-count from freed stopout capital."""
+    def test_sequential_window_budget_is_zero_when_m1_fully_deployed_with_dd_addon(self):
+        """A1 budget must be $0 when all M1 capital is still deployed (primary + DD add-on open)."""
         from alpha_tech_tracker.op_momentum_strategy.models import WindowConfig
 
         client = _make_alpaca_client()
@@ -3671,8 +3721,8 @@ class TestDoubleDown:
                               capital_fraction=1.0, is_sequential=True)
         budget = engine._get_window_budget(a1_win)
 
-        # A1 budget should be $9800 (rank-1 $6000 + DD add-on $3800), not $13600
-        assert budget == _D("9800")
+        # All $10k is still deployed (rank-1 $6000 + DD add-on $3800 still open) → A1 gets $0
+        assert budget == _D("0")
 
     def test_schedule_dd_skips_in_replay_mode(self):
         engine = self._make_engine()

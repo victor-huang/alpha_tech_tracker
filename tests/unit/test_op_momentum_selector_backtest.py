@@ -325,6 +325,182 @@ class TestApplyCapitalFlowSlotExitBars:
 
 
 # ---------------------------------------------------------------------------
+# _apply_capital_flow — sub-trade phase model (Phase 2 / Phase 3 / Phase 4)
+#
+# Windows:
+#   W1  09:30 / 3 bars → drain = 585 min (first group; prior_drain for W2)
+#   W2  13:15 / 1 bar  → drain = 800 min (first sequential)
+#   W3  15:00 / 1 bar  → drain = 905 min (second sequential)
+#
+# Sub-trade entry formula (BRU/BRE/REV):
+#   sub_entry_min = prior_drain + (primary_bars + 1 + sub_entry_idx + 1) * 5
+# With primary_bars=1, prior_drain=585:
+#   sub_entry_idx=44 → sub_entry_min = 585 + (3+44)*5 = 820  (after W2 drain 800)
+#   sub_entry_idx=20 → sub_entry_min = 585 + (3+20)*5 = 700  (before W2 drain 800)
+#
+# This test class captures the 2026-05-01 bug where both A1 slots had BRUs that
+# fired AFTER A2's drain time, causing the batch backtest to lock those slots at
+# A2 time and give A2 a $0 budget (skipped) — even though capital was genuinely
+# free between the A1 primary exit and the late BRU entry.
+# ---------------------------------------------------------------------------
+
+
+def _bru_row(
+    window,
+    rank,
+    bru_entry_idx,
+    bru_bars_held,
+    entry=100.0,
+    exit_=98.0,
+    signal="BEARISH",
+    pnl=-5.0,
+    bru_entry=99.0,
+    bru_pnl=-50.0,
+    d=_D1,
+):
+    """Row helper: primary exits after 1 bar; BRU timing set via entry_idx/bars_held."""
+    primary_bars = 1
+    slot_exit = max(primary_bars, primary_bars + 1 + bru_entry_idx + 1 + bru_bars_held)
+    return {
+        "date": d,
+        "window": window,
+        "rank": rank,
+        "entry_price": entry,
+        "exit_price": exit_,
+        "signal": signal,
+        "pnl": pnl,
+        "bars_held": primary_bars,
+        "slot_exit_bars": slot_exit,
+        "bru_entry_price": bru_entry,
+        "bru_entry_idx": bru_entry_idx,
+        "bru_bars_held": bru_bars_held,
+        "bru_pnl": bru_pnl,
+    }
+
+
+class TestApplyCapitalFlowSubTradeTiming:
+    def test_phase2_bru_not_started_at_drain_adds_primary_cap_pnl(self):
+        # BRU entry_min=820 > W2 drain (800) → Phase 2.
+        # W2 window_capital = initial + primary-only cap_pnl (not combined).
+        # slot_capital = 10000 * 0.5 = 5000; primary_cap_pnl = 5000/100*(100-98) = 100.
+        row_w1 = _bru_row("W1", 1, bru_entry_idx=44, bru_bars_held=5)
+        row_w2 = _row("W2", 1, 50.0, 1.0)
+        _apply_capital_flow(
+            [row_w1, row_w2], [_W1, _W2], 10_000, _WEIGHTS, 3,
+            morning_split=[1.0],
+        )
+
+        slot_capital = row_w1["slot_capital"]
+        primary_cap_pnl = slot_capital / 100.0 * (100.0 - 98.0)
+        assert row_w2["window_capital"] == pytest.approx(10_000 + primary_cap_pnl)
+
+    def test_phase2_combined_cap_pnl_not_applied_early(self):
+        # At Phase 2, only primary P&L is added — not the BRU's (negative) P&L.
+        # Combined cap_pnl is negative; primary_cap_pnl is positive.
+        # W2 window_capital must be above initial (primary gain), not below (combined loss).
+        row_w1 = _bru_row("W1", 1, bru_entry_idx=44, bru_bars_held=5,
+                           pnl=-5.0, bru_pnl=-200.0)
+        row_w2 = _row("W2", 1, 50.0, 1.0)
+        _apply_capital_flow(
+            [row_w1, row_w2], [_W1, _W2], 10_000, _WEIGHTS, 3,
+            morning_split=[1.0],
+        )
+
+        slot_capital = row_w1["slot_capital"]
+        primary_cap_pnl = slot_capital / 100.0 * (100.0 - 98.0)
+        assert row_w2["window_capital"] == pytest.approx(10_000 + primary_cap_pnl)
+        assert row_w2["window_capital"] > 10_000
+
+    def test_phase3_bru_running_at_drain_locks_slot(self):
+        # BRU entry_min=700 ≤ W2 drain (800) < exit_min=825 → Phase 3.
+        # W2 window_capital = initial - slot_capital.
+        row_w1 = _bru_row("W1", 1, bru_entry_idx=20, bru_bars_held=25)
+        row_w2 = _row("W2", 1, 50.0, 1.0)
+        _apply_capital_flow(
+            [row_w1, row_w2], [_W1, _W2], 10_000, _WEIGHTS, 3,
+            morning_split=[1.0],
+        )
+
+        slot_capital = row_w1["slot_capital"]
+        assert row_w2["window_capital"] == pytest.approx(10_000 - slot_capital)
+
+    def test_phase4_bru_already_exited_adds_combined_cap_pnl(self):
+        # BRU entry_min=700, exit_min=735 — both ≤ W2 drain (800) → Phase 4.
+        # W2 window_capital = initial + combined cap_pnl (primary + BRU).
+        row_w1 = _bru_row("W1", 1, bru_entry_idx=20, bru_bars_held=5)
+        row_w2 = _row("W2", 1, 50.0, 1.0)
+        _apply_capital_flow(
+            [row_w1, row_w2], [_W1, _W2], 10_000, _WEIGHTS, 3,
+            morning_split=[1.0],
+        )
+
+        assert row_w2["window_capital"] == pytest.approx(10_000 + row_w1["cap_pnl"])
+
+    def test_phase2_at_w2_then_phase4_at_w3(self):
+        # BRU entry_min=820, exit_min=845. Phase 2 at W2 (820>800); Phase 4 at W3 (845≤905).
+        # W2 capital = initial + primary_cap_pnl.
+        # W3 capital = initial + combined cap_pnl + W2 cap_pnl.
+        row_w1 = _bru_row("W1", 1, bru_entry_idx=44, bru_bars_held=5)
+        row_w2 = _row("W2", 1, 50.0, 2.0)
+        row_w3 = _row("W3", 1, 50.0, 1.0)
+        _apply_capital_flow(
+            [row_w1, row_w2, row_w3], [_W1, _W2, _W3], 10_000, _WEIGHTS, 3,
+            morning_split=[1.0],
+        )
+
+        slot_capital = row_w1["slot_capital"]
+        primary_cap_pnl = slot_capital / 100.0 * (100.0 - 98.0)
+        assert row_w2["window_capital"] == pytest.approx(10_000 + primary_cap_pnl)
+        assert row_w3["window_capital"] == pytest.approx(
+            10_000 + row_w1["cap_pnl"] + row_w2["cap_pnl"]
+        )
+
+    def test_both_slots_phase2_sequential_window_not_skipped(self):
+        # 2026-05-01 bug pattern: both W1 rank-1 and rank-2 have BRUs that fire
+        # after W2's drain. Previously the batch locked both slots → W2 got $0 →
+        # skipped. Now both contribute primary_cap_pnl → W2 receives enough capital.
+        weights_60_40 = [0.6, 0.4]
+        row_r1 = _bru_row("W1", 1, bru_entry_idx=44, bru_bars_held=5)
+        row_r2 = _bru_row("W1", 2, bru_entry_idx=44, bru_bars_held=5)
+        row_w2 = _row("W2", 1, 50.0, 1.0)
+        _apply_capital_flow(
+            [row_r1, row_r2, row_w2], [_W1, _W2], 10_000, weights_60_40, 2,
+            morning_split=[1.0],
+        )
+
+        assert row_w2["skipped"] is False
+        slot_r1 = row_r1["slot_capital"]  # 10000 * 0.6 = 6000
+        slot_r2 = row_r2["slot_capital"]  # 10000 * 0.4 = 4000
+        primary_pnl_r1 = slot_r1 / 100.0 * (100.0 - 98.0)
+        primary_pnl_r2 = slot_r2 / 100.0 * (100.0 - 98.0)
+        assert row_w2["window_capital"] == pytest.approx(
+            10_000 + primary_pnl_r1 + primary_pnl_r2
+        )
+
+    def test_phase1_regression_primary_still_running_locks_slot(self):
+        # When the primary trade itself hasn't exited by W2's drain, slot is locked
+        # regardless of BRU fields. Regression guard for Phase 1.
+        # primary_bars=20 → primary_exit_time = 585+100=685 < 800 → Phase 1... wait
+        # Actually 685 < 800 means it HAS exited. Use primary_bars=44.
+        # primary_bars=44 → exit = 585+220=805 > 800 → Phase 1 (locked).
+        row_w1 = {
+            "date": _D1, "window": "W1", "rank": 1,
+            "entry_price": 100.0, "exit_price": 98.0, "signal": "BEARISH",
+            "pnl": -5.0, "bars_held": 44,
+            "bru_entry_price": 99.0, "bru_entry_idx": 44, "bru_bars_held": 5,
+            "bru_pnl": -10.0,
+        }
+        row_w2 = _row("W2", 1, 50.0, 1.0)
+        _apply_capital_flow(
+            [row_w1, row_w2], [_W1, _W2], 10_000, _WEIGHTS, 3,
+            morning_split=[1.0],
+        )
+
+        slot_capital = row_w1["slot_capital"]
+        assert row_w2["window_capital"] == pytest.approx(10_000 - slot_capital)
+
+
+# ---------------------------------------------------------------------------
 # _apply_capital_flow — returns skip_log
 # ---------------------------------------------------------------------------
 

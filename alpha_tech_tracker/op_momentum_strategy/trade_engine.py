@@ -152,7 +152,7 @@ class TickerSelector:
             fetch_start,
             bars_end,
             source="alpaca",
-            feed=DataFeed.SIP,
+            feed=self._alpaca_feed,
         )
 
     def select(self, ticker_dfs: dict = None) -> list:
@@ -1388,7 +1388,8 @@ class OpMomentumTradeEngine:
                         continue
                     if pos.trailing_arm_price is None:
                         open_primary_capital += pos.slot_capital
-        prior_returned += open_primary_capital
+        # Do NOT add open_primary_capital to prior_returned — that capital is still
+        # deployed in open primary positions and is not yet available.
         if open_reentry_capital > 0:
             logger.info(
                 "Sequential window [%s]: %.2f tied up in open re-entries in [%s],"
@@ -1422,6 +1423,20 @@ class OpMomentumTradeEngine:
                 float(prior_returned),
             )
             return prior_returned
+
+        # Prior window deployed capital but nothing has come back yet — either
+        # primaries are still running, or all returned capital is absorbed by
+        # open re-entries. Block this sequential window instead of using fallback.
+        if open_primary_capital > 0 or prior_deployed > 0:
+            logger.info(
+                "Sequential window [%s]: prior [%s] capital still deployed"
+                " (open_primary=%.2f deployed=%.2f) — budget=$0",
+                win.label,
+                prior_label,
+                float(open_primary_capital),
+                float(prior_deployed),
+            )
+            return _D("0")
 
         logger.info(
             "Sequential window [%s]: no prior [%s] capital, using fallback",
