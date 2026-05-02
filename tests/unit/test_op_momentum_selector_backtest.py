@@ -8,6 +8,8 @@ from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector_backtest impor
     _annotate_doubledown_addon,
     _apply_capital_flow,
     _apply_opportunity_pool,
+    _print_daily_table,
+    _print_reentry_subrow,
 )
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import (
     _stitch_cache,
@@ -933,3 +935,229 @@ class TestApplyOpportunityPool:
         _apply_opportunity_pool([row], [_M1], initial_pool=1_000.0, doubledown_start_min=_DD_START_MIN)
 
         assert "opp_cap_pnl" not in row
+
+
+# ---------------------------------------------------------------------------
+# _print_reentry_subrow — sub-leg entry/exit time display
+# ---------------------------------------------------------------------------
+
+def _fmt(minutes: int) -> str:
+    return f"{minutes // 60:02d}:{minutes % 60:02d}"
+
+
+def _sub_row(
+    or_close_min,
+    primary_bars,
+    ep_key,
+    ep,
+    pnl_key,
+    pnl,
+    exit_price_key,
+    exit_price,
+    exit_reason_key,
+    exit_reason,
+    entry_idx_key,
+    entry_idx,
+    bars_held_key,
+    bars_held,
+):
+    return {
+        "or_close_min": or_close_min,
+        "bars_held": primary_bars,
+        ep_key: ep,
+        pnl_key: pnl,
+        exit_price_key: exit_price,
+        exit_reason_key: exit_reason,
+        entry_idx_key: entry_idx,
+        bars_held_key: bars_held,
+    }
+
+
+class TestPrintReentrySubrowTimes:
+    # or_close_min=585 (09:45) for M1 09:30/3-bar window
+
+    def test_bru_entry_time_one_bar_after_primary_exit(self, capsys):
+        # Primary holds 0 bars (exits at first bar = 09:50).
+        # BRU entry_idx=0: fires on the very first scan bar → entry = 09:55.
+        row = _sub_row(
+            or_close_min=585, primary_bars=0,
+            ep_key="bru_entry_price", ep=100.0,
+            pnl_key="bru_pnl", pnl=2.0,
+            exit_price_key="bru_exit_price", exit_price=102.0,
+            exit_reason_key="bru_exit_reason", exit_reason="trailing_stop_ma20",
+            entry_idx_key="bru_entry_idx", entry_idx=0,
+            bars_held_key="bru_bars_held", bars_held=0,
+        )
+        _print_reentry_subrow(
+            row, "[BRU]",
+            "bru_entry_price", "bru_pnl", "bru_exit_price", "bru_exit_reason",
+            "bru_entry_idx", "bru_bars_held",
+            multi_window=False, fmt_bar_time=_fmt,
+        )
+        out = capsys.readouterr().out
+        # primary exits at 09:50, BRU entry_idx=0 → entry bar is the one right after → 09:55
+        assert "09:55" in out
+        # BRU bars_held=0 → exits one bar later at 10:00
+        assert "10:00" in out
+
+    def test_bru_entry_delayed_by_entry_idx(self, capsys):
+        # Primary holds 2 bars (exits at 10:00). BRU entry_idx=3 (fires 3 bars into scan).
+        # sub_entry = 585 + (2 + 3 + 2) * 5 = 585 + 35 = 620 → 10:20
+        row = _sub_row(
+            or_close_min=585, primary_bars=2,
+            ep_key="bru_entry_price", ep=200.0,
+            pnl_key="bru_pnl", pnl=-4.0,
+            exit_price_key="bru_exit_price", exit_price=196.0,
+            exit_reason_key="bru_exit_reason", exit_reason="hard_stop",
+            entry_idx_key="bru_entry_idx", entry_idx=3,
+            bars_held_key="bru_bars_held", bars_held=1,
+        )
+        _print_reentry_subrow(
+            row, "[BRU]",
+            "bru_entry_price", "bru_pnl", "bru_exit_price", "bru_exit_reason",
+            "bru_entry_idx", "bru_bars_held",
+            multi_window=False, fmt_bar_time=_fmt,
+        )
+        out = capsys.readouterr().out
+        assert "10:20" in out
+        # exit: 620 + (1+1)*5 = 630 → 10:30
+        assert "10:30" in out
+
+    def test_bre_end_of_day_shows_1600(self, capsys):
+        # BRE that runs to end of day should show "16:00" for exit, not a computed time.
+        row = _sub_row(
+            or_close_min=585, primary_bars=0,
+            ep_key="br_entry_price", ep=150.0,
+            pnl_key="br_pnl", pnl=3.0,
+            exit_price_key="br_exit_price", exit_price=153.0,
+            exit_reason_key="br_exit_reason", exit_reason="end_of_day",
+            entry_idx_key="br_entry_idx", entry_idx=0,
+            bars_held_key="br_bars_held", bars_held=50,
+        )
+        _print_reentry_subrow(
+            row, "[BRE]",
+            "br_entry_price", "br_pnl", "br_exit_price", "br_exit_reason",
+            "br_entry_idx", "br_bars_held",
+            multi_window=False, fmt_bar_time=_fmt,
+        )
+        out = capsys.readouterr().out
+        assert "16:00" in out
+
+    def test_rev_afternoon_window_entry_time(self, capsys):
+        # A2 window 13:15/1-bar: or_close_min = 13*60+15+5 = 800 (13:20).
+        # Primary bars_held=0 exits at 13:25. REV entry_idx=1 → entry at 13:35.
+        row = _sub_row(
+            or_close_min=800, primary_bars=0,
+            ep_key="rev_entry_price", ep=190.0,
+            pnl_key="rev_pnl", pnl=1.5,
+            exit_price_key="rev_exit_price", exit_price=191.5,
+            exit_reason_key="rev_exit_reason", exit_reason="trailing_stop_ma20",
+            entry_idx_key="rev_entry_idx", entry_idx=1,
+            bars_held_key="rev_bars_held", bars_held=2,
+        )
+        _print_reentry_subrow(
+            row, "[REV]",
+            "rev_entry_price", "rev_pnl", "rev_exit_price", "rev_exit_reason",
+            "rev_entry_idx", "rev_bars_held",
+            multi_window=False, fmt_bar_time=_fmt,
+        )
+        out = capsys.readouterr().out
+        # sub_entry = 800 + (0 + 1 + 2) * 5 = 815 → 13:35
+        assert "13:35" in out
+        # sub_exit = 815 + (2+1)*5 = 830 → 13:50
+        assert "13:50" in out
+
+    def test_cancelled_subrow_shows_entry_time_not_exit(self, capsys):
+        # Cancelled sub-leg should show the pending entry time but no exit time.
+        row = {
+            "or_close_min": 585,
+            "bars_held": 0,
+            "bru_entry_price": 100.0,
+            "bru_entry_idx": 0,
+            "bru_bars_held": 0,
+            "bru_pnl": 0.0,
+            "bru_exit_price": 0.0,
+            "bru_exit_reason": "",
+            "bru_cancelled": True,
+        }
+        _print_reentry_subrow(
+            row, "[BRU]",
+            "bru_entry_price", "bru_pnl", "bru_exit_price", "bru_exit_reason",
+            "bru_entry_idx", "bru_bars_held",
+            multi_window=False, fmt_bar_time=_fmt,
+        )
+        out = capsys.readouterr().out
+        assert "09:55" in out
+        assert "cancelled" in out
+
+    def test_missing_entry_price_prints_nothing(self, capsys):
+        # Row with no sub-leg entry price → function returns None and prints nothing.
+        row = {"or_close_min": 585, "bars_held": 0, "bru_entry_price": 0}
+        result = _print_reentry_subrow(
+            row, "[BRU]",
+            "bru_entry_price", "bru_pnl", "bru_exit_price", "bru_exit_reason",
+            "bru_entry_idx", "bru_bars_held",
+            multi_window=False, fmt_bar_time=_fmt,
+        )
+        assert result is None
+        assert capsys.readouterr().out == ""
+
+
+# ---------------------------------------------------------------------------
+# DD entry/exit time display (via _print_daily_table)
+# ---------------------------------------------------------------------------
+
+def _dd_trade_row(or_close_min, bars_held, exit_reason, dd_fire_min, signal="BULLISH"):
+    """Minimal trade row that triggers a [DD] sub-row in _print_daily_table."""
+    return {
+        "date": _D1,
+        "window": "W1",
+        "rank": 1,
+        "ticker": "TST",
+        "signal": signal,
+        "score": 1.0,
+        "or_close_min": or_close_min,
+        "entry_price": 100.0,
+        "exit_price": 102.0,
+        "pnl": 2.0,
+        "exit_reason": exit_reason,
+        "bars_held": bars_held,
+        "cap_pnl": 20.0,
+        "skipped": False,
+        "dd_addon_cap_pnl": 5.0,
+        "dd_addon_entry": 101.0,
+        "dd_addon_effective_exit": 103.0,
+        "dd_freed_capital": 4000.0,
+        "dd_freed_ranks": [2],
+        "dd_fire_min": dd_fire_min,
+    }
+
+
+class TestDDSubrowTimes:
+    def test_dd_in_time_matches_dd_fire_min(self, capsys):
+        # DD fires at 09:55 (585 + 10 min = 595). Primary exits at 10:25 (bars_held=7).
+        row = _dd_trade_row(or_close_min=585, bars_held=7, exit_reason="trailing_stop_ma20", dd_fire_min=595)
+        _print_daily_table([row], n=1, multi_window=False)
+        out = capsys.readouterr().out
+        assert "09:55" in out
+        # exit = 585 + (7+1)*5 = 625 → 10:25
+        assert "10:25" in out
+
+    def test_dd_out_time_is_1600_when_end_of_day(self, capsys):
+        # DD fires at 10:00; primary holds to EOD.
+        row = _dd_trade_row(or_close_min=585, bars_held=50, exit_reason="end_of_day", dd_fire_min=600)
+        _print_daily_table([row], n=1, multi_window=False)
+        out = capsys.readouterr().out
+        assert "10:00" in out
+        assert "16:00" in out
+
+    def test_dd_in_out_aligned_with_primary_columns(self, capsys):
+        # Both the primary row and [DD] sub-row must have In/Out values in their output.
+        row = _dd_trade_row(or_close_min=800, bars_held=3, exit_reason="hard_stop", dd_fire_min=810)
+        _print_daily_table([row], n=1, multi_window=False)
+        out = capsys.readouterr().out
+        lines = [l for l in out.splitlines() if "[DD]" in l]
+        assert len(lines) == 1
+        # 13:30 (dd_fire_min=810) and 13:40 (exit = 800+(3+1)*5=820)
+        assert "13:30" in lines[0]
+        assert "13:40" in lines[0]

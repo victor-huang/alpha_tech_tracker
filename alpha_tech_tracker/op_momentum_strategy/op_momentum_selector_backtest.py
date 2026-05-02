@@ -566,6 +566,7 @@ def _annotate_doubledown_addon(
         winner["dd_addon_stop_price"] = stop_price
         winner["dd_addon_effective_exit"] = effective_exit
         winner["dd_freed_ranks"] = freed_ranks
+        winner["dd_fire_min"] = winner.get("or_close_min", 0) + dd_bars * 5
 
         # DD confirmed to fire. Mark stopout rows that had sub-trades — their
         # re-entries are cancelled by DD (matches live engine behaviour).
@@ -1219,9 +1220,9 @@ def _print_skip_log(skip_log: list, windows: list):
 
 
 _REENTRY_TYPES = [
-    ("[REV]", "rev_entry_price", "rev_pnl", "rev_exit_price", "rev_exit_reason"),
-    ("[BRE]", "br_entry_price", "br_pnl", "br_exit_price", "br_exit_reason"),
-    ("[BRU]", "bru_entry_price", "bru_pnl", "bru_exit_price", "bru_exit_reason"),
+    ("[REV]", "rev_entry_price", "rev_pnl", "rev_exit_price", "rev_exit_reason", "rev_entry_idx", "rev_bars_held"),
+    ("[BRE]", "br_entry_price", "br_pnl", "br_exit_price", "br_exit_reason", "br_entry_idx", "br_bars_held"),
+    ("[BRU]", "bru_entry_price", "bru_pnl", "bru_exit_price", "bru_exit_reason", "bru_entry_idx", "bru_bars_held"),
 ]
 
 
@@ -1232,19 +1233,40 @@ def _print_reentry_subrow(
     pnl_key: str,
     exit_price_key: str,
     exit_reason_key: str,
+    entry_idx_key: str,
+    bars_held_key: str,
     multi_window: bool,
+    fmt_bar_time,
 ):
     ep = row.get(ep_key, 0)
     if not ep:
         return None
     blank_win = f"{'':5} " if multi_window else ""
+
+    or_close = row.get("or_close_min")
+    primary_bars = row.get("bars_held", 0)
+    entry_idx = row.get(entry_idx_key, 0)
+    sub_bars = row.get(bars_held_key, 0)
+    if or_close is not None:
+        sub_entry_min = or_close + (primary_bars + entry_idx + 2) * 5
+        exit_reason = row.get(exit_reason_key, "")
+        if exit_reason == "end_of_day":
+            sub_exit_str = "16:00"
+        else:
+            sub_exit_min = sub_entry_min + (sub_bars + 1) * 5
+            sub_exit_str = fmt_bar_time(sub_exit_min)
+        sub_entry_str = fmt_bar_time(sub_entry_min)
+    else:
+        sub_entry_str = "—"
+        sub_exit_str = "—"
+
     cancelled = row.get("reentry_cancelled_by_dd") or row.get("bru_cancelled")
     if cancelled:
         cancel_reason = "cancelled by DD" if row.get("reentry_cancelled_by_dd") else "cancelled (capital recycled)"
         print(
             f"  {'':12} {blank_win}{'':5} {'':6} "
             f"{label:<9} {'':>5}  "
-            f"{'':>5} {'':>5}  "
+            f"{sub_entry_str:>5} {'':>5}  "
             f"{ep:>7.2f} {'':>7} "
             f"{'':>7} {'':>7}  {'':6}  {cancel_reason}"
         )
@@ -1257,7 +1279,7 @@ def _print_reentry_subrow(
     print(
         f"  {'':12} {blank_win}{'':5} {'':6} "
         f"{label:<9} {'':>5}  "
-        f"{'':>5} {'':>5}  "
+        f"{sub_entry_str:>5} {sub_exit_str:>5}  "
         f"{ep:>7.2f} {row[exit_price_key]:>7.2f} "
         f"{pnl_str:>7} {pct_str:>7}  {result:<6}  {row[exit_reason_key]}"
     )
@@ -1368,6 +1390,8 @@ def _print_daily_table(
             _pnl_key,
             _exit_price_key,
             _exit_reason_key,
+            _entry_idx_key,
+            _bars_held_key,
         ) in _REENTRY_TYPES:
             sub = _print_reentry_subrow(
                 row,
@@ -1376,7 +1400,10 @@ def _print_daily_table(
                 _pnl_key,
                 _exit_price_key,
                 _exit_reason_key,
+                _entry_idx_key,
+                _bars_held_key,
                 multi_window,
+                _fmt_bar_time,
             )
             if sub is not None:
                 p, pct = sub
@@ -1404,9 +1431,18 @@ def _print_daily_table(
             outcome = "WIN" if per_share >= 0 else "LOSS"
             blank_win = f"{'':5} " if multi_window else ""
             ranks_str = "/".join(f"R{r}" for r in freed_ranks)
+            dd_fire_min = row.get("dd_fire_min")
+            if dd_fire_min is not None:
+                dd_in_str = _fmt_bar_time(dd_fire_min)
+                dd_out_str = "16:00" if row.get("exit_reason") == "end_of_day" \
+                    else _fmt_bar_time(row.get("or_close_min", 0) + (row.get("bars_held", 0) + 1) * 5)
+            else:
+                dd_in_str = "—"
+                dd_out_str = "—"
             print(
                 f"  {'':12} {blank_win}{'':5} {'':6} "
                 f"{'[DD]':<9} {'':>5}  "
+                f"{dd_in_str:>5} {dd_out_str:>5}  "
                 f"{addon_entry:>7.2f} {effective_exit:>7.2f} "
                 f"{pnl_str:>7} {pct_str:>7}  {outcome:<6}  freed ${freed:.0f} ← {ranks_str}"
             )
@@ -1429,9 +1465,18 @@ def _print_daily_table(
                 f"+${abs(opp_cap_pnl):.2f}" if opp_cap_pnl >= 0 else f"-${abs(opp_cap_pnl):.2f}"
             )
             blank_win = f"{'':5} " if multi_window else ""
+            dd_fire_min = row.get("dd_fire_min")
+            if dd_fire_min is not None:
+                opp_in_str = _fmt_bar_time(dd_fire_min)
+                opp_out_str = "16:00" if row.get("exit_reason") == "end_of_day" \
+                    else _fmt_bar_time(row.get("or_close_min", 0) + (row.get("bars_held", 0) + 1) * 5)
+            else:
+                opp_in_str = "—"
+                opp_out_str = "—"
             print(
                 f"  {'':12} {blank_win}{'':5} {'':6} "
                 f"{'[OPP]':<9} {'':>5}  "
+                f"{opp_in_str:>5} {opp_out_str:>5}  "
                 f"{addon_entry:>7.2f} {effective_exit:>7.2f} "
                 f"{pnl_str:>7} {pct_str:>7}  {outcome:<6}  "
                 f"pool ${opp_deployed:,.0f} → ${opp_returned:,.0f}  ({opp_net_str})"

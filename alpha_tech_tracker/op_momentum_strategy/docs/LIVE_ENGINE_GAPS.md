@@ -601,3 +601,38 @@ correct for recycling purposes. Fixing it would require sub-bar exit timestamps 
 currently tracked. The ambiguity only manifests when a sequential window opens within one
 bar of a primary exit — most pronounced for early windows (A1 at 10:00 with M1 3-bar OR)
 and negligible for standard afternoon windows (A1 at 13:15, A2 at 15:00).
+
+---
+
+### G36 — BRU/BRE fires after sequential window drain using prior window's slot budget (Structural, Won't Fix)
+
+**Files:** `trade_engine.py`, `op_momentum_selector_backtest.py` → `_apply_capital_flow()`
+**Severity:** Low — directionally random; only manifests when re-entry fires 1–2 bars after a sequential window drain
+
+When a primary trade exits just before a sequential window drains, the RP may execute a
+BRU/BRE using the original window slot budget even though the sequential window has
+already consumed the returned capital. The BT cancels the re-entry (Phase 2) and gives
+all returned capital to the sequential window.
+
+**Mechanism:**
+- **BT Phase 2** (`_apply_capital_flow`): `sub_entry_min > sequential_drain` → sub hasn't
+  started yet → capital recycled to A1 → BRU marked `bru_cancelled=True`.
+- **RP**: Each window tracks its own slot budgets independently. When BRU fires, it
+  re-deploys the M1 slot budget (`source=window_budget`) without checking whether the
+  sequential window has already consumed the returned capital. This over-deploys capital.
+
+**Example (2022-07-19, CRDO M1 BULLISH, A1 at 10:00/3 bars):**
+- CRDO M1 exits at bar-close 10:10 (bars_held=4). Slot ($4,000) returned as $3,961.97.
+- A1 drains at 10:15. A1 takes $2,377 from the returned $3,961 for MU.
+- CRDO M1 BRU trigger fires on bar opening 10:15, closing 10:20 (bru_entry_idx=1, close=11.61 > or_high=11.58).
+  - BT: `sub_entry_min = 620 > A1_drain = 615` → Phase 2 → BRU cancelled.
+  - RP: BRU enters with M1 slot budget ($4,000), runs to EOD, wins cap_pnl=+$93.02.
+- Gap: RP +$23.79 vs BT -$28.20 ($51.99), dominated by the +$93 BRU win that BT doesn't take.
+
+**Why accepted as-is:** The RP over-deploys capital (BRU $4,000 when only ~$1,584 is free
+after A1 took $2,377). The BT is the more capital-conservative model. The divergence is
+directionally random: positive when BRU wins, negative when BRU loses. Fixing the RP would
+require inter-window capital accounting on re-entries, which adds significant complexity.
+This pattern is most likely to appear when `bru_entry_idx=1` and the sequential window
+drains between the primary exit bar and the BRU entry bar — i.e., the sequential window
+fires within 1 bar of the BRU trigger.
