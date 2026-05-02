@@ -131,6 +131,20 @@ def _apply_doubledown_window(rows: list) -> float:
     return addon_cap_pnl
 
 
+def _compute_primary_cap_pnl(row: dict, slot_capital: float) -> float:
+    """Compute cap_pnl using only primary entry/exit, excluding BRU/BR/REV sub-trades."""
+    entry_price = row.get("entry_price", 0.0)
+    exit_price = row.get("exit_price", entry_price)
+    if entry_price <= 0:
+        return 0.0
+    raw = (
+        exit_price - entry_price
+        if row.get("signal") == "BULLISH"
+        else entry_price - exit_price
+    )
+    return slot_capital / entry_price * raw
+
+
 def _apply_capital_flow(
     trade_rows: list,
     windows: list,
@@ -210,6 +224,10 @@ def _apply_capital_flow(
         # Used by sequential windows to decide how much capital is still locked in DD.
         day_dds: list = []
 
+        # Tracks BRU P&L removed mid-loop (Phase 2 cancellations) so portfolio
+        # receives the correct net P&L at end of day.
+        day_pnl_correction = 0.0
+
         # --- First group: simultaneous windows, each gets portfolio * split[i] ---
         first_group_pnl = 0.0
         for i, label in enumerate(window_labels[:n_first]):
@@ -239,7 +257,10 @@ def _apply_capital_flow(
                 else:
                     slot_capital = win_capital * weights[row["rank"] - 1]
                     row["slot_capital"] = slot_capital
-                    row["cap_pnl"] = _compute_cap_pnl(row, slot_capital)
+                    if row.get("reentry_cancelled_by_dd"):
+                        row["cap_pnl"] = _compute_primary_cap_pnl(row, slot_capital)
+                    else:
+                        row["cap_pnl"] = _compute_cap_pnl(row, slot_capital)
                     row["skipped"] = False
                     win_pnl += row["cap_pnl"]
             if enable_doubledown and not skipped:
@@ -295,10 +316,28 @@ def _apply_capital_flow(
                         available -= row.get("slot_capital", 0.0)
                         continue
 
+                    # Primary has exited.  Handle cancellation shortcuts before
+                    # phase logic — these rows have already had their sub-trades
+                    # suppressed and their cap_pnl corrected.
+                    if row.get("bru_cancelled"):
+                        # Phase 2 was applied at an earlier sequential window.
+                        # BRU capital was given to that window — use stored
+                        # primary-only cap_pnl (BRU contribution already removed).
+                        available += row["primary_only_cap_pnl"]
+                        continue
+
+                    if row.get("reentry_cancelled_by_dd"):
+                        # DD fired at this row's window and cancelled its sub-trade.
+                        # cap_pnl was already set to primary-only during window exec.
+                        # DD capital is separately deducted via day_dds.
+                        available += row.get("cap_pnl", 0.0)
+                        continue
+
                     # Primary has exited.  Check sub-trade timing when BRU/BRE/REV
                     # fields are present.  Three phases are possible:
                     #   Phase 2 — sub exists but hasn't started at this_drain
                     #             → primary capital is free; add primary-only cap_pnl
+                    #             → mark row so BRU is suppressed for all later windows
                     #   Phase 3 — sub is running at this_drain
                     #             → slot still deployed; deduct slot_capital
                     #   Phase 4 — sub finished before this_drain (or no sub)
@@ -333,20 +372,20 @@ def _apply_capital_flow(
                         available -= row.get("slot_capital", 0.0)
                     elif sub_exists and not sub_started:
                         # Phase 2: primary done, sub hasn't started yet.
-                        # Add primary-only cap_pnl; sub P&L will be included when
-                        # the sub exits (combined cap_pnl flows in at Phase 4 time).
-                        entry_price = row.get("entry_price", 0.0)
-                        exit_price = row.get("exit_price", entry_price)
-                        if entry_price > 0:
-                            raw = (
-                                exit_price - entry_price
-                                if row.get("signal") == "BULLISH"
-                                else entry_price - exit_price
-                            )
-                            primary_cap_pnl = row.get("slot_capital", 0.0) / entry_price * raw
-                        else:
-                            primary_cap_pnl = 0.0
+                        # Capital is genuinely free — add primary-only cap_pnl.
+                        # Also mark the BRU as cancelled: the sequential window
+                        # has claimed this capital so the sub-trade can't fire.
+                        # Matches live engine "window [M] capital deployed in [W]
+                        # — skipping" behaviour.
+                        primary_cap_pnl = _compute_primary_cap_pnl(
+                            row, row.get("slot_capital", 0.0)
+                        )
                         available += primary_cap_pnl
+                        if not row.get("bru_cancelled"):
+                            row["bru_cancelled"] = True
+                            row["primary_only_cap_pnl"] = primary_cap_pnl
+                            day_pnl_correction += row.get("cap_pnl", 0.0) - primary_cap_pnl
+                            row["cap_pnl"] = primary_cap_pnl
                     elif sub_exists:
                         # Phase 4 (with sub): sub already exited — full combined cap_pnl.
                         available += row.get("cap_pnl", 0.0)
@@ -390,7 +429,10 @@ def _apply_capital_flow(
                 else:
                     slot_capital = available * weights[row["rank"] - 1]
                     row["slot_capital"] = slot_capital
-                    row["cap_pnl"] = _compute_cap_pnl(row, slot_capital)
+                    if row.get("reentry_cancelled_by_dd"):
+                        row["cap_pnl"] = _compute_primary_cap_pnl(row, slot_capital)
+                    else:
+                        row["cap_pnl"] = _compute_cap_pnl(row, slot_capital)
                     row["skipped"] = False
                     win_pnl += row["cap_pnl"]
             if enable_doubledown and not skipped:
@@ -405,7 +447,7 @@ def _apply_capital_flow(
             if not skipped:
                 seq_pnl += win_pnl
 
-        portfolio += first_group_pnl + seq_pnl
+        portfolio += first_group_pnl + seq_pnl - day_pnl_correction
 
     return skip_log
 
@@ -458,31 +500,20 @@ def _annotate_doubledown_addon(
 
         rows_by_rank = sorted(rows, key=lambda r: r["rank"])
 
-        # Partition into stopouts and survivors at the 15-min mark.
-        # A rank is only a "stopout" (capital freed) if it stopped early AND has no
-        # reversal/re-entry — if it does, the capital was redeployed into that leg,
-        # not freed for doubledown.
-        def _has_reentry(r):
+        # Partition into stopouts and survivors at the DD check time.
+        # Any early stopout frees its capital for the winner's add-on — including
+        # ranks that had a pending re-entry (BRU/BR/REV). When DD fires, the live
+        # engine cancels those re-entry watchers ("DD [W]: cancelled N re-entry
+        # watcher(s) for [...]"). We mark those rows so _apply_capital_flow can
+        # suppress their sub-trade and use primary-only cap_pnl.
+        def _is_early_stopout(r):
             return (
-                r.get("rev_entry_price", 0) != 0
-                or r.get("br_entry_price", 0) != 0
-                or r.get("bru_entry_price", 0) != 0
-            )
-
-        stopouts = [
-            r for r in rows_by_rank
-            if r.get("exit_reason", "") in stop_reasons
-            and r.get("bars_held", 999) <= dd_bars
-            and not _has_reentry(r)
-        ]
-        survivors = [
-            r for r in rows_by_rank
-            if not (
                 r.get("exit_reason", "") in stop_reasons
                 and r.get("bars_held", 999) <= dd_bars
-                and not _has_reentry(r)
             )
-        ]
+
+        stopouts = [r for r in rows_by_rank if _is_early_stopout(r)]
+        survivors = [r for r in rows_by_rank if not _is_early_stopout(r)]
 
         if not stopouts or not survivors:
             continue
@@ -535,6 +566,16 @@ def _annotate_doubledown_addon(
         winner["dd_addon_stop_price"] = stop_price
         winner["dd_addon_effective_exit"] = effective_exit
         winner["dd_freed_ranks"] = freed_ranks
+
+        # DD confirmed to fire. Mark stopout rows that had sub-trades — their
+        # re-entries are cancelled by DD (matches live engine behaviour).
+        for r in stopouts:
+            if (
+                r.get("bru_entry_price", 0) != 0
+                or r.get("br_entry_price", 0) != 0
+                or r.get("rev_entry_price", 0) != 0
+            ):
+                r["reentry_cancelled_by_dd"] = True
 
 
 def run_selector_backtest(

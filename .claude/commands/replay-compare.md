@@ -8,23 +8,27 @@ Compare three sources for the same trading date to understand P&L and trade diff
 
 ## Step 1 — Resolve the date, feed, and engine
 
-Parse `$ARGUMENTS` for three values:
+Parse `$ARGUMENTS` for these values:
 - **DATE** — required, format `YYYY-MM-DD`. If omitted, ask the user — do not guess.
-- **FEED** — optional, either `iex` or `sip`. Default: `sip`.
+- **FEED** — optional, either `iex` or `sip`. Default: `sip`. Controls historical API / bar-cache feed for Run B and Run C.
 - **ENGINE** — optional, either `stock` or `options`. Default: `stock`.
+- **--live-data-feed FEED** — optional, either `iex` or `tradestation`. Default: inherits `FEED` value. Controls the CSV filename prefix used when loading BarRecorder files in Run A. Set this to `tradestation` when the live CSV files were recorded by the TradeStation data source (`tradestation_{ticker}_5min.csv`). If not set, defaults to the `FEED` value (`iex` → `iex_{ticker}_5min.csv`, `sip` → `sip_{ticker}_5min.csv`).
 
 Accepted argument formats:
-- `2026-04-13` → DATE=2026-04-13, FEED=sip, ENGINE=stock
-- `2026-04-13 iex` → DATE=2026-04-13, FEED=iex, ENGINE=stock
-- `2026-04-13 --feed iex` → DATE=2026-04-13, FEED=iex, ENGINE=stock
-- `2026-04-13 options` → DATE=2026-04-13, FEED=sip, ENGINE=options
-- `2026-04-13 --engine options` → DATE=2026-04-13, FEED=sip, ENGINE=options
-- `2026-04-13 iex options` → DATE=2026-04-13, FEED=iex, ENGINE=options
+- `2026-04-13` → DATE=2026-04-13, FEED=sip, ENGINE=stock, LIVE_DATA_FEED=sip
+- `2026-04-13 iex` → DATE=2026-04-13, FEED=iex, ENGINE=stock, LIVE_DATA_FEED=iex
+- `2026-04-13 --feed iex` → DATE=2026-04-13, FEED=iex, ENGINE=stock, LIVE_DATA_FEED=iex
+- `2026-04-13 options` → DATE=2026-04-13, FEED=sip, ENGINE=options, LIVE_DATA_FEED=sip
+- `2026-04-13 --engine options` → DATE=2026-04-13, FEED=sip, ENGINE=options, LIVE_DATA_FEED=sip
+- `2026-04-13 iex options` → DATE=2026-04-13, FEED=iex, ENGINE=options, LIVE_DATA_FEED=iex
+- `2026-04-13 --live-data-feed tradestation` → DATE=2026-04-13, FEED=sip, ENGINE=stock, LIVE_DATA_FEED=tradestation
+- `2026-04-13 iex --live-data-feed tradestation` → DATE=2026-04-13, FEED=iex, ENGINE=stock, LIVE_DATA_FEED=tradestation
 
 Set:
 - `DATE` = YYYY-MM-DD
 - `FEED` = `sip` (or `iex` if specified)
 - `ENGINE` = `stock` or `options`
+- `LIVE_DATA_FEED` = `FEED` value unless `--live-data-feed` is explicitly provided
 - `EC2_HOST` = `ec2-user@ec2-3-133-120-51.us-east-2.compute.amazonaws.com`
 - `EC2_KEY` = `~/.ssh/trade-sys.pem`
 - If ENGINE=stock:
@@ -34,10 +38,12 @@ Set:
 - `LOCAL_LIVE_DATA_ROOT` = `alpha_tech_tracker/op_momentum_strategy/live_trade_market_data`
 - `TGZ_FILE` = `live_trade_market_data_${ENGINE}_${DATE}.tgz`
 - `LOG_DIR` = `logs/replay`
-- `LOG_LIVE` = `${LOG_DIR}/compare_live_${ENGINE}_${DATE}.log`
+- `LOG_LIVE` = `${LOG_DIR}/compare_live_${ENGINE}_${LIVE_DATA_FEED}_${DATE}.log`
 - `LOG_API` = `${LOG_DIR}/compare_api_${ENGINE}_${DATE}.log`
 
-Report the resolved DATE, FEED, and ENGINE before proceeding.
+> **TradeStation CSV note**: TradeStation recordings use the filename prefix `tradestation_` (e.g. `tradestation_AAPL_5min.csv`). Sessions started before the engine's `_backfill_session()` warmup completes may be missing early morning bars (9:30–~10:00). Before running Run A with `--live-data-feed tradestation`, verify bar counts: `ls ${LOCAL_LIVE_DATA_ROOT}/${DATE}/*.csv | head -5` and spot-check line counts — a full day should have ~66 rows (6.5 hours × 12 bars/hour + header).
+
+Report the resolved DATE, FEED, LIVE_DATA_FEED, and ENGINE before proceeding.
 
 ## Step 2 — Create TGZ on EC2 (date folder only)
 
@@ -141,6 +147,7 @@ PYTHONPATH=/Users/victorhuang/work/alpha_tech_tracker \
   python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine run \
   --replay-date ${DATE} \
   --live-data-dir ${LOCAL_LIVE_DATA_ROOT} \
+  --live-data-feed ${LIVE_DATA_FEED} \
   --log-file ${LOG_LIVE} \
   ${BASE_FLAGS}
 ```
