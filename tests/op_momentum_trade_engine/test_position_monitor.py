@@ -1682,11 +1682,12 @@ class TestReentryWatcher:
 
     def test_bearish_ma20_trailing_stop_uses_or_midpoint_threshold(self):
         """
-        The bearish MA20 trailing stop gate uses OR midpoint, not OR low.
+        BRE (trailing_arm_price set): bearish MA20 trailing stop gate uses OR midpoint,
+        matching the backtest's br_eff_trail < midpoint condition.
 
         With or_high=105, or_low=95, midpoint=100:
-        - MA20=97 (between or_low and midpoint) → gate passes under the midpoint rule
-        - MA20=101 (above midpoint) → gate fails
+        - MA20=101 (above midpoint) → gate fails → no exit
+        - MA20=97 (between or_low and midpoint) → gate passes → trailing_stop_ma20
         """
         monitor, _, engine = self._make_monitor()
         pos = self._make_bearish_pos()
@@ -1707,6 +1708,83 @@ class TestReentryWatcher:
         monitor.on_bar("NVDA")
         assert pos.is_closed is True
         assert pos.exit_reason == "trailing_stop_ma20"
+
+    def test_primary_bearish_ma20_trailing_stop_uses_or_low_threshold(self):
+        """
+        Primary BEARISH positions (trailing_arm_price=None) use or_low as the MA20
+        gate — matching the backtest's _eff_trail < or_low condition (line 510).
+
+        With or_high=105, or_low=95, midpoint=100:
+        - MA20=97 (between or_low and midpoint) → gate fails for primary → no exit
+          (would pass midpoint gate — this test catches the regression)
+        - MA20=94 (below or_low) → gate passes → trailing_stop_ma20
+        """
+        monitor, _, engine = self._make_monitor()
+        pos = self._make_bearish_pos()
+        pos.hard_stop_price = _D("102")   # above midpoint; won't fire at close=98
+        pos.fallback_price = _D("97")
+        pos.hard_stop_armed = True
+        # trailing_arm_price=None → primary position
+        monitor.add_position(pos)
+
+        # MA20=97 is between or_low(95) and midpoint(100): primary gate (or_low) fails → no exit
+        _set_latest_bar(engine, "NVDA", close=98.0, ma50=110.0, ma20=97.0)
+        monitor.on_bar("NVDA")
+        assert pos.is_closed is False
+
+        # MA20=94 < or_low(95) → gate passes; close=96 > MA20=94 → trailing_stop_ma20
+        _set_latest_bar(engine, "NVDA", close=96.0, ma50=110.0, ma20=94.0)
+        monitor.on_bar("NVDA")
+        assert pos.is_closed is True
+        assert pos.exit_reason == "trailing_stop_ma20"
+
+    def test_bre_bearish_ma50_trailing_stop_uses_or_midpoint_threshold(self):
+        """
+        BRE positions use midpoint as the MA50 gate (same logic as MA20 for BRE).
+        MA50 between or_low and midpoint triggers an exit for BRE but not for primary.
+
+        With or_high=105, or_low=95, midpoint=100:
+        - BRE (trailing_arm_price set): MA50=97 < midpoint → gate passes → exit
+        """
+        monitor, _, engine = self._make_monitor(trailing_ma="ma50")
+        pos = self._make_bearish_pos()
+        pos.hard_stop_price = _D("100")
+        pos.fallback_price = _D("100")
+        pos.hard_stop_armed = True
+        pos.trailing_arm_price = _D("85")   # BRE position
+        monitor.add_position(pos)
+
+        # MA50=97 < midpoint(100); close=98 > MA50=97 → trailing_stop_ma50
+        _set_latest_bar(engine, "NVDA", close=98.0, ma50=97.0, ma20=97.0)
+        monitor.on_bar("NVDA")
+        assert pos.is_closed is True
+        assert pos.exit_reason == "trailing_stop_ma50"
+
+    def test_primary_bearish_ma50_trailing_stop_uses_or_low_threshold(self):
+        """
+        Primary BEARISH positions use or_low as the MA50 gate, matching the backtest
+        condition bar_ma50 < or_low (line 525).
+
+        MA50 between or_low and midpoint must NOT trigger an exit for primary positions.
+        """
+        monitor, _, engine = self._make_monitor(trailing_ma="ma50")
+        pos = self._make_bearish_pos()
+        pos.hard_stop_price = _D("102")
+        pos.fallback_price = _D("97")
+        pos.hard_stop_armed = True
+        # trailing_arm_price=None → primary position
+        monitor.add_position(pos)
+
+        # MA50=97 between or_low(95) and midpoint(100) → primary gate (or_low) fails → no exit
+        _set_latest_bar(engine, "NVDA", close=98.0, ma50=97.0, ma20=97.0)
+        monitor.on_bar("NVDA")
+        assert pos.is_closed is False
+
+        # MA50=94 < or_low(95) → gate passes; close=96 > MA50=94 → trailing_stop_ma50
+        _set_latest_bar(engine, "NVDA", close=96.0, ma50=94.0, ma20=97.0)
+        monitor.on_bar("NVDA")
+        assert pos.is_closed is True
+        assert pos.exit_reason == "trailing_stop_ma50"
 
     def test_trailing_arm_price_latches_for_bullish_reentry_after_price_retreats(self):
         """

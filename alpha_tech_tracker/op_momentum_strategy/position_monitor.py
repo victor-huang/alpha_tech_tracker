@@ -347,6 +347,14 @@ class PositionMonitor:
             ):
                 exit_reason = "trailing_stop_ma50"
         else:
+            # BRE re-entries (trailing_arm_price set) use midpoint as the MA gate,
+            # matching the backtest's br_eff_trail < midpoint condition.
+            # Primary bearish positions use or_low (backtest lines 510, 525).
+            _bearish_ma_threshold = (
+                (pos.or_high + pos.or_low) / _D("2")
+                if pos.trailing_arm_price is not None
+                else pos.or_low
+            )
             if not pos.hard_stop_armed and close < pos.hard_stop_price:
                 pos.hard_stop_armed = True
             if pos.hard_stop_armed and self._armed_ma20_exit:
@@ -363,7 +371,7 @@ class PositionMonitor:
                 trailing_armed
                 and self._trailing_ma in ("ma20", "both")
                 and ma20 is not None
-                and ma20 < (pos.or_high + pos.or_low) / _D("2")
+                and ma20 < _bearish_ma_threshold
                 and close > ma20
             ):
                 exit_reason = "trailing_stop_ma20"
@@ -371,7 +379,7 @@ class PositionMonitor:
                 trailing_armed
                 and self._trailing_ma in ("ma50", "both")
                 and ma50 is not None
-                and ma50 < pos.or_low
+                and ma50 < _bearish_ma_threshold
                 and close > ma50
             ):
                 exit_reason = "trailing_stop_ma50"
