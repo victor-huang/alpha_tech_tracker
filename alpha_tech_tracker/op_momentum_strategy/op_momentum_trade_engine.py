@@ -704,7 +704,10 @@ if __name__ == "__main__":
         if is_replay:
             args.trade_type = "stock"
         is_paper = _resolve_is_paper(args)
-        client = build_execution_client(is_paper=is_paper, broker=args.execution_broker)
+        # In mock/replay mode use Alpaca — avoids TradeStation OAuth port conflict
+        # when running many parallel replays that would all fight over port 8080.
+        effective_broker = "alpaca" if mock_trade_execution else args.execution_broker
+        client = build_execution_client(is_paper=is_paper, broker=effective_broker)
         # In replay mode, pass None so OpMomentumTradeEngine uses MockContractSelector
         # (which builds synthetic ITM symbols without API calls using the session date).
         contract_selector = None if is_replay else _build_contract_selector(args, client)
