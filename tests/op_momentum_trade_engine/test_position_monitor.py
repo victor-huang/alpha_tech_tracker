@@ -1556,15 +1556,11 @@ class TestReentryWatcher:
 
         assert len(monitor._reentry_watchers) == 0
 
-    def test_pre_armed_bue_bullish_exits_via_ma20_without_reaching_trailing_arm_price(self):
+    def test_pre_armed_reversal_bullish_exits_via_ma20_without_reaching_trailing_arm_price(self):
         """
-        BUE/re-entry positions start with hard_stop_armed=True, which immediately
-        enables the MA trailing stop — the price arm threshold (trailing_arm_price)
-        is no longer required when the position is pre-armed.
-
-        Mirrors the CVNA 4/30 scenario on the bullish side: entered BUE at 105,
-        trailing_arm at 115 (never reached), but stock drops below MA20 while
-        MA20 > hard_stop (98) → trailing_stop_ma20 fires on the first bar.
+        Reversal positions start with hard_stop_armed=True, which immediately enables
+        the MA trailing stop — the price arm threshold is bypassed for reversal (and BRE).
+        bullish_reentry is the exception: it gates on trailing_arm_price (0.1x or_range).
         """
         monitor, _, engine = self._make_monitor()
         pos = self._make_bullish_pos()
@@ -1572,13 +1568,71 @@ class TestReentryWatcher:
         pos.fallback_price = _D("98")
         pos.hard_stop_armed = True
         pos.trailing_arm_price = _D("115")
+        pos.reentry_type = "reversal"
         monitor.add_position(pos)
 
-        # close=106 < MA20=108, MA20=108 > hard_stop(98); arm threshold(115) not reached
-        # hard_stop_armed=True → trailing immediately active → trailing_stop_ma20
+        # close=106 < MA20=108; arm threshold(115) not reached but reentry_type=reversal
+        # → hard_stop_armed bypass applies → trailing_stop_ma20 fires immediately
         _set_latest_bar(engine, "NVDA", close=106.0, ma50=97.0, ma20=108.0)
         monitor.on_bar("NVDA")
 
+        assert pos.is_closed is True
+        assert pos.exit_reason == "trailing_stop_ma20"
+
+    def test_bru_trailing_does_not_fire_before_0_1x_arm_price_reached(self):
+        """
+        bullish_reentry positions gate the MA trailing stop on trailing_arm_price
+        (entry + 0.1 × or_range) even when hard_stop_armed=True.
+        The trailing stop must not fire until the price arm is reached.
+        """
+        monitor, _, engine = self._make_monitor()
+        pos = _make_active_position(
+            signal="BULLISH",
+            or_high=_D("105"),
+            or_low=_D("95"),
+            hard_stop_price=_D("100"),
+            fallback_price=_D("100"),
+        )
+        pos.entry_stock_price = _D("106")
+        pos.hard_stop_armed = True
+        pos.trailing_arm_price = _D("107")  # entry(106) + or_range(10) * 0.1
+        pos.reentry_type = "bullish_reentry"
+        monitor.add_position(pos)
+
+        # close=106.5 < arm(107) and close=106.5 < MA20=108 → no exit (arm not reached)
+        _set_latest_bar(engine, "NVDA", close=106.5, ma50=97.0, ma20=108.0)
+        monitor.on_bar("NVDA")
+
+        assert pos.is_closed is False
+
+    def test_bru_trailing_fires_after_0_1x_arm_price_reached(self):
+        """
+        After close reaches trailing_arm_price (entry + 0.1 × or_range), the arm
+        latches and the MA trailing stop becomes active for bullish_reentry positions.
+        """
+        monitor, _, engine = self._make_monitor()
+        pos = _make_active_position(
+            signal="BULLISH",
+            or_high=_D("105"),
+            or_low=_D("95"),
+            hard_stop_price=_D("100"),
+            fallback_price=_D("100"),
+        )
+        pos.entry_stock_price = _D("106")
+        pos.hard_stop_armed = True
+        pos.trailing_arm_price = _D("107")  # entry(106) + or_range(10) * 0.1
+        pos.reentry_type = "bullish_reentry"
+        monitor.add_position(pos)
+
+        # close=107.5 >= arm(107) → arm latches; MA20=105 < close=107.5 → no trailing yet
+        _set_latest_bar(engine, "NVDA", close=107.5, ma50=97.0, ma20=105.0)
+        monitor.on_bar("NVDA")
+        assert pos.is_closed is False
+        assert pos.trailing_arm_reached is True
+
+        # close=104 < MA20=105, MA20=105 > hard_stop(100) → trailing_stop_ma20
+        _set_latest_bar(engine, "NVDA", close=104.0, ma50=97.0, ma20=105.0)
+        monitor.on_bar("NVDA")
         assert pos.is_closed is True
         assert pos.exit_reason == "trailing_stop_ma20"
 

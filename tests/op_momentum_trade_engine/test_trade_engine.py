@@ -1036,6 +1036,16 @@ class TestEnterReentry:
         call_kwargs = engine._enter_position.call_args
         assert call_kwargs[1]["trailing_arm_price"] == trigger + _D("10")
 
+    def test_bullish_reentry_trailing_arm_is_trigger_plus_0_1x_or_range(self):
+        engine = self._make_engine()
+        watcher = self._make_watcher(reentry_type="bullish_reentry")
+        trigger = _D("108")
+
+        engine._enter_reentry(watcher, trigger)
+
+        call_kwargs = engine._enter_position.call_args
+        assert call_kwargs[1]["trailing_arm_price"] == trigger + _D("10") * _D("0.1")
+
     def test_bearish_reentry_calls_enter_position_with_bearish_signal(self):
         engine = self._make_engine()
         watcher = self._make_watcher(reentry_type="bearish_reentry")

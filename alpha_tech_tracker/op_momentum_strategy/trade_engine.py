@@ -832,11 +832,12 @@ class OpMomentumTradeEngine:
                     window_budget = fresh_budget
 
         reentry_signal = "BEARISH" if watcher.reentry_type == "bearish_reentry" else "BULLISH"
-        trailing_arm = (
-            trigger_price + watcher.or_range
-            if reentry_signal == "BULLISH"
-            else trigger_price - watcher.or_range
-        )
+        if watcher.reentry_type == "bullish_reentry":
+            trailing_arm = trigger_price + watcher.or_range * _D("0.1")
+        elif reentry_signal == "BULLISH":
+            trailing_arm = trigger_price + watcher.or_range
+        else:
+            trailing_arm = trigger_price - watcher.or_range
         event = SignalEvent(
             ticker=watcher.ticker,
             signal=reentry_signal,
