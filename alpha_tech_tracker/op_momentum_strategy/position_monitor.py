@@ -273,15 +273,15 @@ class PositionMonitor:
         """
         Returns True when the trailing MA stop is allowed to fire.
 
-        Primary positions (trailing_arm_price=None) use the existing behaviour:
-        the MA trailing stop is always eligible once armed via hard_stop_armed.
-        Re-entry positions gate the trailing stop behind a price threshold
-        (entry ± or_range) to match the backtest arming condition.
-
-        Once armed, the flag latches — matching the backtest's persistent
-        bru_trailing_armed boolean that stays True once set.
+        Primary positions (trailing_arm_price=None): always eligible.
+        Re-entry positions that start pre-armed (hard_stop_armed=True at entry,
+        e.g. BRE/BUE/reversal): also immediately eligible — no price threshold
+        required, since the hard stop already guards the position from bar 1.
+        Other re-entry positions gate behind a price threshold (entry ± or_range).
         """
         if pos.trailing_arm_price is None:
+            return True
+        if pos.hard_stop_armed:
             return True
         if not pos.trailing_arm_reached:
             if pos.signal == "BULLISH":
@@ -362,7 +362,7 @@ class PositionMonitor:
                 trailing_armed
                 and self._trailing_ma in ("ma20", "both")
                 and ma20 is not None
-                and ma20 < pos.or_low
+                and ma20 < (pos.or_high + pos.or_low) / _D("2")
                 and close > ma20
             ):
                 exit_reason = "trailing_stop_ma20"
