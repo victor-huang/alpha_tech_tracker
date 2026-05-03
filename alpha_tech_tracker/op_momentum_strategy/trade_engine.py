@@ -1761,7 +1761,7 @@ class OpMomentumTradeEngine:
         return last_order
 
     def _check_ws_health(self, now) -> None:
-        """Reconnect the WebSocket stream if no bar has been received for too long.
+        """Reconnect the stream if no bar has been received for too long.
 
         Only fires within the expected bar window (_ws_bars_start_et to WS_BARS_END_ET).
         For Alpaca, that window starts at 4:00 AM ET (extended hours). For TradeStation,
@@ -1770,6 +1770,11 @@ class OpMomentumTradeEngine:
 
         Uses _stream_started_at as the baseline when no bar has ever arrived so
         the watchdog doesn't fire the instant the engine starts up.
+
+        For local_ts_broadcast: the broadcaster sends a heartbeat every 30s even when
+        no bars arrive (pre-market, between bars). A recent heartbeat means the
+        broadcaster is alive, so elapsed time is measured from the last message
+        (bar or heartbeat) rather than just the last bar.
         """
         bars_start_h, bars_start_m = [int(x) for x in self._ws_bars_start_et.split(":")]
         bars_end_h, bars_end_m = [int(x) for x in WS_BARS_END_ET.split(":")]
@@ -1787,16 +1792,25 @@ class OpMomentumTradeEngine:
         if last is None:
             return
         elapsed = (now - last).total_seconds()
+
+        # For the broadcaster client, a recent heartbeat means the connection is
+        # healthy even if no bar has arrived. Use the smaller of the two elapsed values.
+        from alpha_tech_tracker.trade_api.local_ts_broadcast.market_data_client import (
+            LocalTSBroadcastMarketDataClient,
+        )
+        if isinstance(self._market_data_client, LocalTSBroadcastMarketDataClient):
+            elapsed = min(elapsed, self._market_data_client.seconds_since_last_message())
+
         if elapsed > self._ws_reconnect_timeout:
             logger.warning(
-                "WebSocket watchdog: no bar received for %.0fs (threshold %ds) — reconnecting",
+                "Stream watchdog: no bar or heartbeat received for %.0fs (threshold %ds) — reconnecting",
                 elapsed,
                 self._ws_reconnect_timeout,
             )
             try:
                 engine.reconnect()
             except Exception:
-                logger.exception("WebSocket reconnect failed")
+                logger.exception("Stream reconnect failed")
 
     def _monitor_loop(self, active_tickers: list, session_date: date = None):
         eod_h, eod_m = [int(x) for x in EOD_EXIT_TIME.split(":")]

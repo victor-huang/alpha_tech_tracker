@@ -3201,6 +3201,80 @@ class TestCheckWsHealth:
 
         engine._signal_engine.reconnect.assert_called_once()
 
+    def test_no_reconnect_when_broadcaster_heartbeat_is_recent(self):
+        # local_ts_broadcast: last bar was 20 min ago but heartbeat arrived 15s ago
+        # → broadcaster is alive, no reconnect
+        from alpha_tech_tracker.trade_api.local_ts_broadcast.market_data_client import (
+            LocalTSBroadcastMarketDataClient,
+        )
+        client = _make_alpaca_client()
+        market_data_client = Mock(spec=LocalTSBroadcastMarketDataClient)
+        market_data_client.seconds_since_last_message.return_value = 15.0
+        engine = OpMomentumTradeEngine(
+            alpaca_client=client,
+            mock_trade_execution=True,
+            market_data_client=market_data_client,
+        )
+        engine._ws_reconnect_timeout = 600
+        engine._signal_engine = Mock()
+        engine._signal_engine._last_bar_received_at = ET.localize(
+            datetime(2026, 4, 11, 9, 30)
+        )
+        engine._signal_engine._stream_started_at = None
+        now = ET.localize(datetime(2026, 4, 11, 10, 30))
+
+        engine._check_ws_health(now)
+
+        engine._signal_engine.reconnect.assert_not_called()
+
+    def test_reconnect_when_broadcaster_heartbeat_is_stale(self):
+        # local_ts_broadcast: both last bar and last heartbeat exceed timeout
+        # → broadcaster is down, trigger reconnect
+        from alpha_tech_tracker.trade_api.local_ts_broadcast.market_data_client import (
+            LocalTSBroadcastMarketDataClient,
+        )
+        client = _make_alpaca_client()
+        market_data_client = Mock(spec=LocalTSBroadcastMarketDataClient)
+        market_data_client.seconds_since_last_message.return_value = 700.0
+        engine = OpMomentumTradeEngine(
+            alpaca_client=client,
+            mock_trade_execution=True,
+            market_data_client=market_data_client,
+        )
+        engine._ws_reconnect_timeout = 600
+        engine._signal_engine = Mock()
+        engine._signal_engine._last_bar_received_at = ET.localize(
+            datetime(2026, 4, 11, 9, 30)
+        )
+        engine._signal_engine._stream_started_at = None
+        now = ET.localize(datetime(2026, 4, 11, 10, 30))
+
+        engine._check_ws_health(now)
+
+        engine._signal_engine.reconnect.assert_called_once()
+
+    def test_heartbeat_check_skipped_for_non_broadcast_client(self):
+        # Regular TradeStation client (plain Mock, not LocalTSBroadcastMarketDataClient)
+        # → watchdog falls back to bar-only elapsed time and reconnects normally
+        client = _make_alpaca_client()
+        market_data_client = Mock()
+        engine = OpMomentumTradeEngine(
+            alpaca_client=client,
+            mock_trade_execution=True,
+            market_data_client=market_data_client,
+        )
+        engine._ws_reconnect_timeout = 600
+        engine._signal_engine = Mock()
+        engine._signal_engine._last_bar_received_at = ET.localize(
+            datetime(2026, 4, 11, 9, 30)
+        )
+        engine._signal_engine._stream_started_at = None
+        now = ET.localize(datetime(2026, 4, 11, 10, 30))
+
+        engine._check_ws_health(now)
+
+        engine._signal_engine.reconnect.assert_called_once()
+
 
 # ---------------------------------------------------------------------------
 # TestMarketHolidayGuard — run() exits early on weekends and NYSE holidays
