@@ -11,6 +11,7 @@ Run the op-momentum trade engine replay for every trading day in a given year, s
 Parse `$ARGUMENTS` for:
 
 - **YEAR** — required integer (e.g. `2024`)
+- **--trade-type** — optional. `stock` (default) or `options`. Log dir changes accordingly.
 - **--force** — optional. Re-run days that already have a saved log.
 - **--summary** — optional. Skip replay, just print P&L summary from existing logs.
 
@@ -26,7 +27,7 @@ Report the resolved parameters before running.
 
 ```bash
 source ~/.pyenv/versions/alpha_tech_tracker/bin/activate && \
-  bash ${SCRIPT} --year ${YEAR} [--force] [--summary]
+  bash ${SCRIPT} --year ${YEAR} [--trade-type stock|options] [--force] [--summary]
 ```
 
 The script runs 10 days in parallel per batch. It will:

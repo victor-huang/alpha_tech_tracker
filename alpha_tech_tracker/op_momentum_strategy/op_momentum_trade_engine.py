@@ -306,9 +306,9 @@ def parse_args():
     parser.add_argument(
         "--trade-type",
         type=str,
-        default="options",
+        default=None,
         choices=["options", "stock"],
-        help="Trade type: options (default) or stock",
+        help="Trade type: options (live default) or stock (replay default)",
     )
     parser.add_argument(
         "--option-selector",
@@ -701,8 +701,8 @@ if __name__ == "__main__":
             logging.getLogger(_noisy).setLevel(logging.WARNING)
         is_replay = bool(args.replay_date) or bool(args.replay_start and args.replay_end)
         mock_trade_execution = args.mock_trade_execution or is_replay
-        if is_replay:
-            args.trade_type = "stock"
+        if args.trade_type is None:
+            args.trade_type = "stock" if is_replay else "options"
         is_paper = _resolve_is_paper(args)
         # In mock/replay mode use Alpaca — avoids TradeStation OAuth port conflict
         # when running many parallel replays that would all fight over port 8080.
