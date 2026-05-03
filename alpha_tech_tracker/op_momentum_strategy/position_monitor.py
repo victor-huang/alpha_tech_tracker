@@ -1089,13 +1089,18 @@ class PositionMonitor:
 
             # Position is no longer open at the broker — manually closed.
             fill_price = self._fetch_manual_close_fill_price(pos)
+            instrument = (
+                f"{pos.ticker} x{pos.shares} shares"
+                if pos.trade_type == "stock"
+                else f"{pos.option_symbol} x{pos.contracts}"
+            )
             if fill_price is not None:
                 with self._lock:
                     pos.exit_fill_price = fill_price
                     pos.close_order_failed = False
                     pos.close_order_reconciled = True
                 msg = (
-                    f"RECONCILED {pos.option_symbol} x{pos.contracts}"
+                    f"RECONCILED {instrument}"
                     f" — manually closed at broker, exit price ${float(fill_price):.2f}"
                 )
                 logger.info(msg)
@@ -1110,7 +1115,7 @@ class PositionMonitor:
                 with self._lock:
                     pos.close_order_reconciled = True
                 msg = (
-                    f"RECONCILE PENDING {pos.option_symbol} x{pos.contracts}"
+                    f"RECONCILE PENDING {instrument}"
                     f" — confirmed closed at broker, waiting for fill price"
                 )
                 logger.info(msg)
