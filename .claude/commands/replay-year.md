@@ -1,109 +1,59 @@
 ---
-description: 'Run full-year trade engine replay (options, M1+A1+A2, parallel of 8) and report weekly/monthly P&L, streaks, top-10 days'
+description: 'Run full-year trade engine replay (stock, M1 09:30/3 + A1 10:00/3 + A2 13:15/1 + A3 15:15/1, parallel of 10) and report weekly P&L and total'
 ---
 
-# Full-Year Replay
+# Full-Year Stock Replay (4-window)
 
-Run the op-momentum trade engine replay for every trading day in a given year (or date range), save per-day logs, and print a full stats report.
+Run the op-momentum trade engine replay for every trading day in a given year, save per-day logs, and print a full P&L report.
 
 ## Step 1 — Parse arguments
 
-Parse `$ARGUMENTS` for these values:
+Parse `$ARGUMENTS` for:
 
-- **YEAR** — required integer (e.g. `2025`). Alternatively accept `--start YYYY-MM-DD --end YYYY-MM-DD` for a custom range.
-- **--live-data-dir PATH** — optional. Path to the BarRecorder CSV directory (e.g. `alpha_tech_tracker/op_momentum_strategy/live_trade_market_data`). When provided, each replay day will load intraday bars from recorded CSVs instead of the Alpaca cache.
-- **--live-data-feed FEED** — optional, only meaningful when `--live-data-dir` is set. Either `iex` or `tradestation`. Default: `iex`.
-- **--force** — optional flag. If set, re-run days that already have a saved log file.
+- **YEAR** — required integer (e.g. `2024`)
+- **--force** — optional. Re-run days that already have a saved log.
+- **--summary** — optional. Skip replay, just print P&L summary from existing logs.
 
-Accepted formats:
-- `2025` → YEAR=2025, no live data
-- `2025 --live-data-dir alpha_tech_tracker/op_momentum_strategy/live_trade_market_data` → YEAR=2025, live CSV mode
-- `2025 --live-data-dir /path/to/dir --live-data-feed tradestation` → YEAR=2025, TradeStation CSV mode
-- `--start 2025-06-01 --end 2025-09-30` → custom range, no live data
-- `--start 2025-06-01 --end 2025-09-30 --live-data-dir /path/to/dir` → custom range, live CSV mode
-
-If YEAR is missing and no `--start/--end` given, ask the user before proceeding.
+If YEAR is missing, ask the user before proceeding.
 
 Set:
-- `PYTHONPATH` = `/Users/victorhuang/work/alpha_tech_tracker`
-- `PYTHON` = `/Users/victorhuang/.pyenv/versions/alpha_tech_tracker/bin/python`
-- `SCRIPT` = `/Users/victorhuang/work/alpha_tech_tracker/run_replay_year.py`
-- `LOG_BASE` = `/Users/victorhuang/work/alpha_tech_tracker/logs`
+- `SCRIPT` = `/Users/victorhuang/work/alpha_tech_tracker/run_replay_stock_4win.sh`
+- `LOG_DIR` = `/Users/victorhuang/work/alpha_tech_tracker/logs/replay_${YEAR}_stock_4win`
 
 Report the resolved parameters before running.
 
-## Step 2 — Build the command
-
-For a full-year run:
-```
-YEAR_ARG="--year ${YEAR}"
-```
-
-For a custom date range:
-```
-YEAR_ARG="--start ${START} --end ${END}"
-```
-
-Live-data flags (append only when `--live-data-dir` was provided):
-```
-LIVE_ARGS="--live-data-dir ${LIVE_DATA_DIR} --live-data-feed ${LIVE_DATA_FEED}"
-```
-
-Force flag (append only when `--force` was provided):
-```
-FORCE_ARG="--force"
-```
-
-Full command:
-```bash
-PYTHONPATH=${PYTHONPATH} ${PYTHON} ${SCRIPT} \
-  ${YEAR_ARG} \
-  [${LIVE_ARGS}] \
-  [${FORCE_ARG}]
-```
-
-## Step 3 — Determine expected log directory
-
-The script saves logs to:
-- `--year N` → `${LOG_BASE}/replay_${YEAR}/`
-- `--start/--end` → `${LOG_BASE}/replay_${START}_${END}/`
-
-Note this path — you will report it to the user at the end.
-
-## Step 4 — Run the replay
-
-Run the command from Step 2. The script:
-
-1. **Phase 1 (sequential)** — runs one warmup day per calendar month first (sequentially) to populate the bar cache before parallel runs start. Prints `skip ... [cached]` for days that already have logs.
-2. **Phase 2 (parallel of 8)** — runs all remaining trading days in parallel. Progress is printed live: `[N/M] YYYY-MM-DD  +$X,XXX.XX (+XX.XX%)`.
-3. **After completion** — automatically prints the full stats report and saves it to `${LOG_DIR}/RESULTS.txt`.
-
-Expected runtime:
-- Full year with warm cache: ~15–25 min (all days served from cache in seconds each)
-- Full year cold (first run for that year): ~45–90 min
-
-Wait for the script to finish — do **not** interrupt it. If it exits with a non-zero code, report the last 30 lines of output and stop.
-
-## Step 5 — Report results
-
-Once the script completes, read and display the saved results file:
+## Step 2 — Run the replay
 
 ```bash
-cat ${LOG_DIR}/RESULTS.txt
+source ~/.pyenv/versions/alpha_tech_tracker/bin/activate && \
+  bash ${SCRIPT} --year ${YEAR} [--force] [--summary]
 ```
 
-Present the results to the user with these sections clearly labeled:
+The script runs 10 days in parallel per batch. It will:
+1. Skip days that already have a log (unless `--force`)
+2. Print `OK` / `ERR` per day as each batch completes
+3. Print the full weekly + total P&L summary when done
 
-1. **Configuration summary** — year/range, live-data mode, log directory
-2. **Weekly P&L table** — all weeks (from RESULTS.txt)
-3. **Monthly P&L table** — all months
-4. **Top-10 best days** — date, P&L, pct
-5. **Top-10 worst days** — date, P&L, pct
-6. **Longest winning streak** — dates + streak P&L
-7. **Longest losing streak** — dates + streak P&L
-8. **Totals** — total P&L, trading days, win/loss count, win rate
+If any days show `ERR`, re-run them individually:
+```bash
+source ~/.pyenv/versions/alpha_tech_tracker/bin/activate && \
+  PYTHONPATH=/Users/victorhuang/work/alpha_tech_tracker \
+  python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine run \
+  --log-level DEBUG --trade-type stock \
+  --window M1 09:30 3 --window A1 10:00 3 --window A2 13:15 1 --window A3 15:15 1 \
+  --morning-split 100 --bearish-reentry --bullish-reentry --reversal \
+  --rank-weighted-sizing 60 40 --doubledown --doubledown-start 10 \
+  --top 2 --capital 10000 --mock-trade-execution --feed sip \
+  --replay-date YYYY-MM-DD \
+  > ${LOG_DIR}/YYYY-MM-DD.log 2>&1
+```
 
-Also report:
-- Path to the RESULTS.txt file
-- Path to the per-day log directory
-- Any days that show `$0.00` P&L (no-trade days) — list them separately for awareness
+## Step 3 — Report results
+
+Present results clearly:
+
+1. **Configuration** — year, log directory, days complete
+2. **Weekly P&L table** — all weeks with daily breakdown
+3. **Total** — total capital P&L and % return on $10k
+
+Also note any losing weeks or standout days.
