@@ -290,6 +290,11 @@ one field propagates automatically to related fields.
 **Check:** Write a test: pre-armed position, price never reaches trailing arm, MA
 crosses threshold. Verify exit fires on bar 1.
 
+**Code review heuristic:** Grep for `if bar_close > threshold` (or `< threshold`) inside
+monitoring loops. Each one is a candidate for this bug — ask: is this condition meant
+to be permanent once first crossed? If yes, it must be a latched boolean, not a
+per-bar recomputation.
+
 ---
 
 ### P5 — Capital accounting must use confirmed broker fills, never estimates
@@ -397,6 +402,22 @@ computes `success` and verify it uses the combined value.
 `or_range == 0`, `entry_price == 0`, `close == NaN` — any percent-based condition
 relative to a zero denominator is trivially true or crashes. Guard before evaluating.
 For sparse tickers: synthesize flat bars so the MA series stays continuous.
+
+---
+
+### P18 — Auto-formatter can silently revert critical arithmetic
+
+The `BDay(1)` date shift in the regime filter was reverted twice by the linter, which
+interpreted the set-comprehension change as a stylistic cleanup. Comparison operators
+(`<=` vs `<`), decimal quantize arguments, and date offsets are all targets — they look
+like constants but carry semantic weight.
+
+**Check:** After any auto-format or lint pass, run `git diff` and inspect every line
+that touches date arithmetic, comparison operators, or numeric constants. Do not
+assume the formatter preserved the intent. This applies especially to:
+- `BDay(n)` shifts in date filters
+- `Decimal` rounding arguments
+- `< 0` vs `<= 0` in gate conditions
 
 ---
 
@@ -522,6 +543,7 @@ end-to-end simulation of entry → monitoring → exit → P&L without live API 
 | **Trade-type field mismatch in logs** | — | M8 (option_symbol for stock) |
 | **Gate operator polarity** | — | M9 (min_ev <= vs <) |
 | **Rank captured after mutation** | — | M10 (fast-path rank) |
+| **Auto-formatter silently reverts arithmetic** | A1 (BDay shift reverted 2×) | M9 (operator polarity) |
 
 ### Top 3 universal checklist items
 
