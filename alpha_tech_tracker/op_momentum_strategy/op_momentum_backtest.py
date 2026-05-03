@@ -760,7 +760,7 @@ def compute_signals_with_backtest(
                 br_bar_close = br_bar["Close"]
                 br_move = br_entry_price - br_bar_close
 
-                if br_bar_close <= br_entry_price - effective_or_range:
+                if not br_trailing_armed and not pd.isna(br_bar_ma20) and br_bar_ma20 < midpoint:
                     br_trailing_armed = True
 
                 if not br_use_ma8 and trailing_ma_switch != "none":

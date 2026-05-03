@@ -185,6 +185,64 @@ class TestComputeSignalsBearishReentry:
         assert reentry["exit_price"] == pytest.approx(100.0)  # midpoint
         assert reentry["pnl"] < 0
 
+    def test_bre_trailing_armed_and_exits_via_ma20_when_ma20_below_midpoint(self):
+        # OR: high=102, low=98, midpoint=100.
+        # BRE entry at 97.0 (close < or_low=98).
+        # MA20=99.5 < midpoint=100 → arm fires immediately on the first remaining bar.
+        # Second bar: close=99.8 > MA20=99.5 → trailing_stop_ma20 exit.
+        # MA20=102 (_BEAR_MA20) is used only for the primary trade bars to suppress primary trailing.
+        _ma20_below_mid = 99.5
+        df = _make_bars("2025-01-02", _BEARISH_OPENING + _BEARISH_POST_HARDSTOP + [
+            ("09:55",  97.0, 98.0, 96.5,  97.0, _BEAR_MA20,      _BEAR_MA50, _MA200),  # BRE entry
+            ("10:00",  97.5, 98.5, 97.0,  97.5, _ma20_below_mid, _BEAR_MA50, _MA200),  # arm; close < MA20
+            ("10:05",  99.5, 100,  98.5,  99.8, _ma20_below_mid, _BEAR_MA50, _MA200),  # close > MA20 → exit
+        ])
+        result = compute_signals_with_backtest(
+            df, opening_bars=3, enable_bearish_reentry=True
+        )
+
+        reentry = result[result["is_bearish_reentry"] == True].iloc[0]
+        assert reentry["exit_reason"] == "trailing_stop_ma20"
+        assert reentry["exit_price"] == pytest.approx(99.8)
+        assert reentry["entry_price"] == pytest.approx(97.0)
+
+    def test_bre_holds_to_eod_when_ma20_above_midpoint(self):
+        # MA20=102 > midpoint=100 throughout BRE bars → trailing never arms → EOD exit.
+        df = _make_bars("2025-01-02", _BEARISH_OPENING + _BEARISH_POST_HARDSTOP + [
+            ("09:55",  97.0, 98.0, 96.5,  97.0, _BEAR_MA20, _BEAR_MA50, _MA200),  # BRE entry
+            ("10:00",  97.5, 98.5, 97.0,  97.5, _BEAR_MA20, _BEAR_MA50, _MA200),
+            ("10:05",  97.0, 97.5, 96.5,  96.0, _BEAR_MA20, _BEAR_MA50, _MA200),
+        ])
+        result = compute_signals_with_backtest(
+            df, opening_bars=3, enable_bearish_reentry=True
+        )
+
+        reentry = result[result["is_bearish_reentry"] == True].iloc[0]
+        assert reentry["exit_reason"] == "end_of_day"
+        assert reentry["exit_price"] == pytest.approx(96.0)
+        assert reentry["pnl"] == pytest.approx(97.0 - 96.0)
+
+    def test_bre_trailing_arm_latches_once_set(self):
+        # MA20 drops below midpoint on bar 1 (arm latches), rises back above on bar 2,
+        # drops below again on bar 3.  Bar 4 has close > MA20 → trailing fires because
+        # arm is already latched from bar 1, not re-evaluated each bar.
+        _ma20_below_mid = 99.5
+        _ma20_above_mid = 100.5
+        df = _make_bars("2025-01-02", _BEARISH_OPENING + _BEARISH_POST_HARDSTOP + [
+            ("09:55",  97.0, 98.0, 96.5,  97.0, _BEAR_MA20,      _BEAR_MA50, _MA200),  # BRE entry
+            ("10:00",  97.5, 98.0, 97.0,  97.5, _ma20_below_mid, _BEAR_MA50, _MA200),  # arm latches
+            ("10:05",  97.5, 98.5, 97.0,  98.0, _ma20_above_mid, _BEAR_MA50, _MA200),  # MA20>mid; arm still held
+            ("10:10",  98.5, 99.5, 98.0,  98.5, _ma20_below_mid, _BEAR_MA50, _MA200),  # close < MA20; no exit
+            ("10:15",  99.5, 100,  98.5,  99.8, _ma20_below_mid, _BEAR_MA50, _MA200),  # close > MA20 → exit
+        ])
+        result = compute_signals_with_backtest(
+            df, opening_bars=3, enable_bearish_reentry=True
+        )
+
+        reentry = result[result["is_bearish_reentry"] == True].iloc[0]
+        assert reentry["exit_reason"] == "trailing_stop_ma20"
+        assert reentry["exit_price"] == pytest.approx(99.8)
+
 
 # ---------------------------------------------------------------------------
 # TestComputeSignalsBullishReentry
