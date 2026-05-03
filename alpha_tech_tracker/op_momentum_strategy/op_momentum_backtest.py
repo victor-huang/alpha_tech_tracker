@@ -863,7 +863,7 @@ def compute_signals_with_backtest(
                     bru_bar_close = bru_bar["Close"]
                     bru_move = bru_bar_close - bru_entry_price
 
-                    if bru_bar_close >= bru_entry_price + effective_or_range:
+                    if not bru_trailing_armed and bru_bar_close >= bru_entry_price + effective_or_range * 0.1:
                         bru_trailing_armed = True
 
                     if not bru_use_ma8 and trailing_ma_switch != "none":

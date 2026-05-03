@@ -321,6 +321,61 @@ class TestComputeSignalsBullishReentry:
         assert reentry["exit_price"] == pytest.approx(100.0)  # midpoint
         assert reentry["pnl"] < 0
 
+    def test_bru_trailing_armed_and_exits_via_ma20_when_price_reaches_0_1x_threshold(self):
+        # BRU entry at 102.5; effective_or_range=4; arm threshold = 102.5 + 4*0.1 = 102.9.
+        # Bar 1: close=103.0 >= 102.9 → arm latches; MA20=101.0 > hard_stop=100.
+        # Bar 2: close=100.5 < MA20=101.0 → trailing_stop_ma20 exit at 100.5.
+        _bru_ma20_above_mid = 101.0
+        df = _make_bars("2025-01-02", _BULLISH_OPENING + _BULLISH_POST_HARDSTOP + [
+            ("09:55", 103, 103, 102, 102.5, _BULL_MA20,          _BULL_MA50, _MA200),
+            ("10:00", 103, 104, 102, 103.0, _bru_ma20_above_mid, _BULL_MA50, _MA200),
+            ("10:05", 101, 102, 100, 100.5, _bru_ma20_above_mid, _BULL_MA50, _MA200),
+        ])
+        result = compute_signals_with_backtest(
+            df, opening_bars=3, enable_bullish_reentry=True
+        )
+
+        reentry = result[result["is_bullish_reentry"] == True].iloc[0]
+        assert reentry["entry_price"] == pytest.approx(102.5)
+        assert reentry["exit_reason"] == "trailing_stop_ma20"
+        assert reentry["exit_price"] == pytest.approx(100.5)
+
+    def test_bru_trailing_arm_does_not_fire_when_price_stays_below_0_1x_threshold(self):
+        # BRU entry at 102.5; arm threshold=102.9; post-entry close stays at 102.7 → no arm.
+        # MA20=101.0 would trigger trailing if armed, but since arm never latches, EOD exit.
+        _bru_ma20_above_mid = 101.0
+        df = _make_bars("2025-01-02", _BULLISH_OPENING + _BULLISH_POST_HARDSTOP + [
+            ("09:55", 103, 103, 102, 102.5, _BULL_MA20,          _BULL_MA50, _MA200),
+            ("10:00", 103, 103, 102, 102.7, _bru_ma20_above_mid, _BULL_MA50, _MA200),
+            ("10:05", 101, 102, 100, 100.5, _bru_ma20_above_mid, _BULL_MA50, _MA200),
+        ])
+        result = compute_signals_with_backtest(
+            df, opening_bars=3, enable_bullish_reentry=True
+        )
+
+        reentry = result[result["is_bullish_reentry"] == True].iloc[0]
+        assert reentry["exit_reason"] == "end_of_day"
+        assert reentry["exit_price"] == pytest.approx(100.5)
+
+    def test_bru_trailing_arm_latches_once_set(self):
+        # Bar 1 post-entry: close=103.2 → arm latches (103.2 >= 102.9).
+        # Bar 2: close drops to 102.5 (below 102.9); arm remains held.
+        # Bar 3: close=100.5 < MA20=101.0 → trailing fires because arm is still set.
+        _bru_ma20_above_mid = 101.0
+        df = _make_bars("2025-01-02", _BULLISH_OPENING + _BULLISH_POST_HARDSTOP + [
+            ("09:55", 103,   104,   102,   102.5, _BULL_MA20,          _BULL_MA50, _MA200),
+            ("10:00", 104,   105,   103,   103.2, _bru_ma20_above_mid, _BULL_MA50, _MA200),
+            ("10:05", 102,   103,   102,   102.5, _bru_ma20_above_mid, _BULL_MA50, _MA200),
+            ("10:10", 100.5, 102,   100,   100.5, _bru_ma20_above_mid, _BULL_MA50, _MA200),
+        ])
+        result = compute_signals_with_backtest(
+            df, opening_bars=3, enable_bullish_reentry=True
+        )
+
+        reentry = result[result["is_bullish_reentry"] == True].iloc[0]
+        assert reentry["exit_reason"] == "trailing_stop_ma20"
+        assert reentry["exit_price"] == pytest.approx(100.5)
+
 
 # ---------------------------------------------------------------------------
 # TestOrBarLookbackEffectiveOrRange
