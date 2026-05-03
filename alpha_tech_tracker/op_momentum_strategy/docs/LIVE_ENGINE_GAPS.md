@@ -636,3 +636,48 @@ require inter-window capital accounting on re-entries, which adds significant co
 This pattern is most likely to appear when `bru_entry_idx=1` and the sequential window
 drains between the primary exit bar and the BRU entry bar — i.e., the sequential window
 fires within 1 bar of the BRU trigger.
+
+---
+
+### G37 — DD eligibility check fires 1 bar earlier in RP than in BT (Structural, Won't Fix)
+
+**Files:** `trade_engine.py` → `_check_doubledown()`, `op_momentum_selector_backtest.py` → `_annotate_doubledown_addon()`
+**Severity:** Medium — directionally random; manifests when a rank-2+ stopout occurs on the same bar as the DD check bar
+
+The RP fires the DD eligibility check at the **bar-open** of the DD bar (OR close + `doubledown_start_min`). The BT fires at the **bar-close** of that same bar (`post_or.iloc[dd_bars]`). This 5-minute difference means that when a rank-2+ position stops out on the exact DD bar, it is visible to the BT but not the RP:
+
+- **BT**: DD check runs at bar-close of `post_or[dd_bars]`. Any stopout on the same bar is already processed. Freed capital funds the DD add-on; REV/BRE watchers on stopout rows are cancelled.
+- **RP**: DD check runs at bar-open of that bar. The stopout hasn't happened yet. DD finds no eligible stopouts → skips.
+
+**Cascade effects (all caused by the same timing difference):**
+1. BT fires DD add-on on rank-1 winner; RP does not.
+2. BT cancels REV/BRE watcher on the rank-2 stopout; RP's watcher remains active and may fire.
+3. BT locks freed capital (rank-2 return) in the DD add-on, reducing sequential window budget; RP returns that capital to the sequential window.
+
+**Example (2020-03-17, M1 09:30/3 bars, `doubledown_start_min=10`, `dd_bars=2`):**
+- DD bar = `post_or[2]` = 09:55–10:00 bar (close = 10:00).
+- CLS rank-2 BEARISH exits at hard_stop, bar-close 10:00 (primary `bars_held=3`, exit_time=10:00).
+- **BT**: DD check at 10:00. CLS already stopped → CVNA DD add-on fires (entry=33.55, exit=10:50, cap_pnl≈-$94). CLS REV cancelled. CLS freed capital ($3,956) locks into DD → A1 budget=$0.
+- **RP**: DD check at 09:55. CLS still open → no DD fires. CLS exits at 10:00, REV fires at 11:10 (cap_pnl=-$154). Freed capital goes to A1 (FN BULLISH, cap_pnl=-$16).
+- Gap: BT +$36.71 vs RP -$180.62 ($217 gap, dominated by CLS REV -$154 and FN A1 -$16 in RP).
+
+**Why accepted as-is:** The 5-minute ambiguity is inherent to the bar-by-bar execution model. The BT's behaviour (fire DD at bar-close, treating same-bar stopouts as eligible) is arguably correct: the stop and the DD check both happen at the same bar boundary. Fixing the RP would require moving the DD check to after all positions' exit logic runs on the DD bar, which is a significant refactor. The divergence is directionally random — sometimes the DD add-on wins and BT is worse; sometimes the REV/A1 trades win and RP is better. Most pronounced with `doubledown_start_min=10` and early sequential windows (A1 at 10:00/3 bars).
+
+---
+
+### G38 — BT misses intrabar stop hits on DD add-on legs (Structural, Won't Fix)
+
+**Files:** `op_momentum_selector_backtest.py` → `_annotate_doubledown_addon()`, `position_monitor.py` → `_evaluate_stop()`
+**Severity:** Low — manifests when DD add-on stop is extremely tight (≤ $0.10 from entry) and stock briefly spikes through it before recovering
+
+The BT computes DD add-on P&L as `effective_exit = min(primary_exit_price, stop_price)` using bar-close prices only. If the stock briefly exceeds the hard stop intrabar but closes below the stop level (i.e., recovers before bar close), the BT never triggers the stop and stays in the trade. The RP's `PositionMonitor` checks every bar update and exits immediately when the stop is crossed, even intrabar.
+
+The DD add-on stop is `addon_entry + 0.80 × bar_range` (for BEARISH) or `addon_entry − 0.80 × bar_range` (for BULLISH). With a small bar range (e.g., $0.12), the stop is within $0.10 of entry — any brief tick through that level in the monitoring bars exits the RP immediately.
+
+**Example (2020-05-12, MU A2 BEARISH DD add-on):**
+- DD add-on entry: 46.60. Bar range at DD bar ≈ $0.125. Stop = 46.60 + 0.80 × 0.125 = 46.70.
+- BT: MU primary A2 exits at EOD (45.68). `effective_exit = min(45.68, 46.70) = 45.68` → DD add-on WIN (+$0.92/sh, cap +$78).
+- RP: MU briefly spikes to 46.70 intrabar (13:55 bar), triggering hard_stop. Exit at 46.70, -$0.10/sh (cap -$8.50).
+- Gap: BT +$393 vs RP +$301 ($92 gap), dominated by the ~$87 swing on this DD add-on.
+
+**Why accepted as-is:** The BT uses 5-min bar OHLC data; it could check `High/Low` to detect intrabar stop hits, but this is not currently implemented. Adding bar High/Low checks would complicate the DD annotation logic and reduce the gap but not eliminate it (fill price would still differ from a live stop execution). The effect is directionally biased toward BT overstating DD add-on P&L when stops are this tight, but the sign depends on whether the stock recovers after the intrabar spike.
