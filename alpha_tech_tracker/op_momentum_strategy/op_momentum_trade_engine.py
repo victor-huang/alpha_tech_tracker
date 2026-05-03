@@ -530,11 +530,16 @@ def parse_args():
     )
     parser.add_argument(
         "--market-data-source",
-        choices=["alpaca", "tradestation"],
-        default="alpaca",
+        choices=["alpaca", "tradestation", "local_ts_broadcast"],
+        default=None,
         dest="market_data_source",
-        help="Market data source for live bar streaming and warmup (default: alpaca). "
-        "'tradestation' requires valid TradeStation session tokens in config.json.",
+        help=(
+            "Market data source for live bar streaming and warmup (default: alpaca). "
+            "'tradestation' — direct TS HTTP stream, requires valid TS session tokens. "
+            "'local_ts_broadcast' — receive bars from a running bar_broadcaster daemon "
+            "over a Unix domain socket; requires bar_broadcaster.py to be started first. "
+            "Can also be set via 'market_data_source' in config.json."
+        ),
     )
     parser.add_argument(
         "--execution-broker",
@@ -621,18 +626,25 @@ def _resolve_is_paper(args) -> bool:
 
 
 def _build_market_data_client(args):
-    """Return a MarketDataClient based on --market-data-source, or None for default Alpaca."""
-    if getattr(args, "market_data_source", "alpaca") == "tradestation":
-        from alpha_tech_tracker.op_momentum_strategy.config import (
-            _load_config,
-            _TRADESTATION_SESSION_TOKENS,
-            TRADESTATION_ENVIRONMENT,
-        )
+    """Return a MarketDataClient based on --market-data-source, or None for default Alpaca.
+
+    Resolution order: CLI flag → config.json 'market_data_source' → 'alpaca'.
+    """
+    from alpha_tech_tracker.op_momentum_strategy.config import (
+        _load_config,
+        MARKET_DATA_SOURCE,
+        TS_BROADCAST_SOCKET_PATH,
+        _TRADESTATION_SESSION_TOKENS,
+        TRADESTATION_ENVIRONMENT,
+    )
+    _load_config()
+    source = getattr(args, "market_data_source", None) or MARKET_DATA_SOURCE
+
+    if source == "tradestation":
         from alpha_tech_tracker.trade_api.tradestation.client import TradeStationAPIClient
         from alpha_tech_tracker.trade_api.tradestation.market_data_client import (
             TradeStationMarketDataClient,
         )
-        _load_config()
         ts_client = TradeStationAPIClient(environment=TRADESTATION_ENVIRONMENT)
         ts_client.restore_session(_TRADESTATION_SESSION_TOKENS)
         if not ts_client.verify_session():
@@ -641,6 +653,17 @@ def _build_market_data_client(args):
             )
         logger.info("Market data source: TradeStation (env=%s)", TRADESTATION_ENVIRONMENT)
         return TradeStationMarketDataClient(ts_client)
+
+    if source == "local_ts_broadcast":
+        from alpha_tech_tracker.trade_api.tradestation.client import TradeStationAPIClient
+        from alpha_tech_tracker.trade_api.local_ts_broadcast.market_data_client import (
+            LocalTSBroadcastMarketDataClient,
+        )
+        ts_client = TradeStationAPIClient(environment=TRADESTATION_ENVIRONMENT)
+        ts_client.restore_session(_TRADESTATION_SESSION_TOKENS)
+        logger.info("Market data source: local_ts_broadcast (socket=%s)", TS_BROADCAST_SOCKET_PATH)
+        return LocalTSBroadcastMarketDataClient(ts_client, socket_path=TS_BROADCAST_SOCKET_PATH)
+
     return None  # caller defaults to AlpacaMarketDataClient
 
 

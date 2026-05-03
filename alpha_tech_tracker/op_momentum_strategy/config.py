@@ -17,6 +17,8 @@ _config_write_lock = threading.Lock()
 
 TICKERS = DEFAULT_TICKERS
 EXECUTION_BROKER = "alpaca"   # "alpaca" | "etrade" | "tradestation"
+MARKET_DATA_SOURCE = "alpaca"  # "alpaca" | "tradestation" | "local_ts_broadcast"
+TS_BROADCAST_SOCKET_PATH = "/tmp/ts_bar_feed.sock"
 ETRADE_ACCOUNT_ID = None
 ETRADE_SANDBOX = False
 _ETRADE_SESSION_TOKENS: dict = {}
@@ -88,7 +90,8 @@ def _load_config(config_file: str = _CONFIG_FILE):
           }
         }
     """
-    global EXECUTION_BROKER, ETRADE_ACCOUNT_ID, ETRADE_SANDBOX, \
+    global EXECUTION_BROKER, MARKET_DATA_SOURCE, TS_BROADCAST_SOCKET_PATH, \
+        ETRADE_ACCOUNT_ID, ETRADE_SANDBOX, \
         TRADESTATION_ACCOUNT_KEY, TRADESTATION_ENVIRONMENT
 
     if not os.path.exists(config_file):
@@ -100,6 +103,10 @@ def _load_config(config_file: str = _CONFIG_FILE):
     # Broker selection
     if cfg.get("execution_broker"):
         EXECUTION_BROKER = cfg["execution_broker"]
+    if cfg.get("market_data_source"):
+        MARKET_DATA_SOURCE = cfg["market_data_source"]
+    if cfg.get("ts_broadcast_socket_path"):
+        TS_BROADCAST_SOCKET_PATH = cfg["ts_broadcast_socket_path"]
 
     # Alpaca credentials → env vars
     alpaca = cfg.get("alpaca", {})

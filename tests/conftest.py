@@ -7,10 +7,9 @@ including mocks for external API clients to enable testing without credentials.
 
 import json
 import os
-from datetime import datetime
 from decimal import Decimal
 from pathlib import Path
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pytest
@@ -30,6 +29,13 @@ def test_data_dir():
 # ============================================================================
 # Mock Alpaca Clients (for tests that import alpaca_engine/alpaca_py_engine)
 # ============================================================================
+
+
+@pytest.fixture(autouse=True)
+def _block_telegram():
+    """Prevent any test from accidentally sending real Telegram or SMS messages."""
+    with patch("alpha_tech_tracker.op_momentum_strategy.config._send_telegram"):
+        yield
 
 
 @pytest.fixture(autouse=True)
@@ -344,7 +350,6 @@ def clean_env(monkeypatch):
 def pytest_configure(config):
     """Configure pytest with custom markers."""
     # Markers are already defined in pytest.ini, but we can add runtime config here if needed
-    pass
 
 
 def pytest_collection_modifyitems(config, items):
@@ -357,4 +362,3 @@ def pytest_collection_modifyitems(config, items):
     - Modify test execution order
     """
     # Markers are now defined in pytest.ini, no need to add dynamically
-    pass
