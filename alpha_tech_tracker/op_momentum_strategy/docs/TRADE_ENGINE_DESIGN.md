@@ -416,6 +416,7 @@ python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine \
 | `--opening-start HH:MM` | `09:30` | Opening window start time (single-window mode) |
 | `--window LABEL START BARS` | — | Define a named trading window (repeatable) |
 | `--morning-split PCT …` | — | Capital split % for simultaneous first-group windows |
+| `--market-data-source {alpaca,tradestation,local_ts_broadcast}` | `alpaca` | Bar stream source (see Market Data Sources section) |
 | `--log-level {DEBUG,INFO,…}` | `INFO` | Log verbosity |
 | `--log-file PATH` | `logs/op_momentum.log` | Log file path (daemon mode) |
 | `--pid-file PATH` | `~/.op_momentum_daemon.pid` | PID file path |
@@ -466,6 +467,16 @@ python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine stop
 # Watch specific tickers (override universe)
 python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine \
   run --mock-trade-execution --tickers NVDA COIN PLTR
+
+# TradeStation market data (direct, single engine — run tradestation_auth.py first)
+python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine \
+  run --market-data-source tradestation --mock-trade-execution \
+  --window M1 09:30 3 --window A1 13:15 1 --window A2 15:00 1 --morning-split 100
+
+# Local TS broadcast (dual-engine setup — start bar_broadcaster first)
+python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine \
+  run --market-data-source local_ts_broadcast --mock-trade-execution \
+  --window M1 09:30 3 --window A1 13:15 1 --window A2 15:00 1 --morning-split 100
 ```
 
 ---
@@ -491,6 +502,16 @@ Located at `alpha_tech_tracker/op_momentum_strategy/config.json`:
 
 Environment variables `ALPACA_API_KEY` and `ALPACA_SECRET_KEY` take precedence over the
 config file. ClickSend is disabled by default; set `"enabled": true` to activate SMS.
+
+### Additional config.json fields
+
+| Key | Default | Description |
+|---|---|---|
+| `market_data_source` | `"alpaca"` | Bar stream source: `"alpaca"` / `"tradestation"` / `"local_ts_broadcast"` |
+| `ts_broadcast_socket_path` | `"/tmp/ts_bar_feed.sock"` | Unix socket path for `local_ts_broadcast` source |
+| `execution_broker` | `"alpaca"` | Order execution backend: `"alpaca"` / `"tradestation"` / `"etrade"` |
+
+`market_data_source` and `execution_broker` are independently configurable — market data and order routing do not have to use the same broker. The CLI `--market-data-source` flag overrides `config.json` when supplied.
 
 ---
 
@@ -608,6 +629,210 @@ Other contributing factors:
 - Options price intrinsic on a fixed strike; delta is always < 1 for near-ATM strikes.
 - Contracts are integer-valued, so capital is never fully deployed (fractional contracts
   are dropped), leading to small systematic underuse of the position budget.
+
+---
+
+## Market Data Sources
+
+The engine supports three bar stream backends. Resolution order: CLI `--market-data-source`
+flag → `config.json` `"market_data_source"` key → default `"alpaca"`.
+
+| Source | What connects | Use case |
+|---|---|---|
+| `alpaca` (default) | `AlpacaMarketDataClient` → Alpaca WebSocket | Single engine, Alpaca feed |
+| `tradestation` | `TradeStationMarketDataClient` → TS HTTP stream | Single engine, TradeStation direct |
+| `local_ts_broadcast` | `LocalTSBroadcastMarketDataClient` → Unix socket | Two engines sharing one TS stream |
+
+All three sources implement the same `MarketDataClient` ABC — no changes are needed in
+`signal_engine.py` or `trade_engine.py` when switching sources.
+
+### Alpaca
+
+Default. Requires `ALPACA_API_KEY` and `ALPACA_SECRET_KEY` (env vars or `config.json`).
+Use `--feed sip` (default, consolidated, requires paid subscription) or `--feed iex`
+(free tier, IEX venues only).
+
+### TradeStation
+
+Requires a valid TS session. Run `tradestation_auth.py` once to authorize and store tokens,
+then the engine auto-refreshes the token in-process. One persistent HTTP chunked connection
+per ticker.
+
+```bash
+python -m alpha_tech_tracker.op_momentum_strategy.tradestation_auth
+```
+
+### Local TS Broadcast
+
+Connects to the `bar_broadcaster` daemon over a Unix domain socket (`/tmp/ts_bar_feed.sock`
+by default). The broadcaster holds the single TS stream; all connected engines receive the
+same bars via fan-out.
+
+Warmup and historical `fetch_bars()` calls still hit the TS REST API directly — no socket
+involvement for historical data. The engine requires a valid TS session for these REST calls
+but **never refreshes the token** — the broadcaster is the sole token owner, eliminating
+any refresh race between processes.
+
+The `LocalTSBroadcastMarketDataClient` retries the socket connection with backoff (2s
+interval, 60s max) at startup, so engines can start before the broadcaster is ready.
+
+---
+
+## Bar Broadcaster Daemon
+
+**Module:** `alpha_tech_tracker/op_momentum_strategy/bar_broadcaster.py`
+
+An independent feeder process that holds a single `TradeStationBarStream` and fans out
+bars to any number of trade engine processes over a Unix domain socket. The broadcaster
+is its own daemon — not owned by either engine. It must start before the engines and
+stay up for the duration of the trading session.
+
+### Wire protocol
+
+All messages are newline-delimited JSON (`\n`-terminated) over `AF_UNIX / SOCK_STREAM`.
+
+**Bar message** — emitted on every closed 1-min bar:
+```json
+{"type": "bar", "symbol": "AMD", "timestamp": "2026-05-02T09:31:00-04:00", "open": 100.25, "high": 101.00, "low": 100.10, "close": 100.80, "volume": 42381}
+```
+
+**Heartbeat** — emitted every 30 seconds even when no bars arrive (pre-market, gaps):
+```json
+{"type": "heartbeat", "ts": "2026-05-02T09:31:30-04:00"}
+```
+
+The heartbeat keeps the socket alive and is tracked by each engine's stream watchdog.
+When the engine's market data source is `local_ts_broadcast`, the watchdog uses the
+most recent of (last bar timestamp, last heartbeat timestamp) to decide whether to
+reconnect, preventing false reconnects during pre-market quiet periods.
+
+### Broadcaster CLI
+
+```bash
+python -m alpha_tech_tracker.op_momentum_strategy.bar_broadcaster <action> [options]
+```
+
+| Action | Description |
+|---|---|
+| `run` | Run in foreground (dev / debug) |
+| `start` | Start as background daemon |
+| `stop` | Stop the running daemon |
+| `status` | Show PID / not-running |
+| `restart` | Stop then start |
+
+| Flag | Default | Description |
+|---|---|---|
+| `--tickers SYM …` | V3 pool (17 tickers) | Ticker symbols to stream |
+| `--socket-path PATH` | `/tmp/ts_bar_feed.sock` | Unix domain socket path |
+| `--log-level` | `INFO` | Log verbosity |
+
+PID file: `logs/bar_broadcaster.pid`
+Log file: `logs/bar_broadcaster_YYYY-MM-DD.log` (rotated midnight, kept 30 days)
+
+### Token ownership
+
+The broadcaster is the **sole writer** to `tradestation_tokens.json`. It is the only
+process that holds an active `TradeStationBarStream` and auto-refreshes the TS OAuth token.
+Trade engines using `local_ts_broadcast` read the token file for REST calls (warmup,
+fetch_bars) but never write to it. This means a single `tradestation_auth.py` run
+authorizes both engines indefinitely, and there is no token file contention.
+
+---
+
+## Dual-Engine Setup
+
+Running a stock engine and an options engine simultaneously, both receiving bars from
+one `bar_broadcaster` process.
+
+### Folder layout
+
+```
+/home/ec2-user/
+  alpha_tech_tracker_stock_engine/
+    config.json                         # "market_data_source": "local_ts_broadcast"
+    logs/
+      bar_broadcaster.pid               # broadcaster lives in the primary folder
+      bar_broadcaster_YYYY-MM-DD.log
+      op_momentum_YYYY-MM-DD.log
+    state/
+
+  alpha_tech_tracker_options_engine/
+    config.json                         # "market_data_source": "local_ts_broadcast"
+    logs/
+      op_momentum_YYYY-MM-DD.log
+    state/
+```
+
+Both `config.json` files point to the same socket path. The broadcaster PID and log
+files live in the stock engine folder (treated as the primary).
+
+### config.json (each engine folder)
+
+```json
+{
+  "market_data_source": "local_ts_broadcast",
+  "ts_broadcast_socket_path": "/tmp/ts_bar_feed.sock",
+  "execution_broker": "alpaca"
+}
+```
+
+### First-time setup
+
+```bash
+cd alpha_tech_tracker_stock_engine
+python -m alpha_tech_tracker.op_momentum_strategy.tradestation_auth
+```
+
+### Daily startup (before market open)
+
+```bash
+# 1. Start broadcaster first — engines wait for the socket to appear
+cd alpha_tech_tracker_stock_engine
+python -m alpha_tech_tracker.op_momentum_strategy.bar_broadcaster start \
+  --tickers SNDK APP SHOP CVNA AMD META EXPE RH FN MU CRDO PLTR COIN CLS MSTR CRWV MRVL
+
+python -m alpha_tech_tracker.op_momentum_strategy.bar_broadcaster status
+# → Running (PID 12345)
+
+# 2. Start stock engine
+cd alpha_tech_tracker_stock_engine
+python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine start \
+  --trade-type stock \
+  --window M1 09:30 3 --window A1 13:15 1 --window A2 15:00 1 --morning-split 100
+
+# 3. Start options engine
+cd alpha_tech_tracker_options_engine
+python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine start \
+  --window M1 09:30 3 --window A1 13:15 1 --window A2 15:00 1 --morning-split 100
+```
+
+### Daily shutdown
+
+```bash
+# Stop engines first, then broadcaster
+cd alpha_tech_tracker_stock_engine
+python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine stop
+
+cd alpha_tech_tracker_options_engine
+python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine stop
+
+cd alpha_tech_tracker_stock_engine
+python -m alpha_tech_tracker.op_momentum_strategy.bar_broadcaster stop
+```
+
+### Recovering from a broadcaster crash mid-session
+
+```bash
+cd alpha_tech_tracker_stock_engine
+python -m alpha_tech_tracker.op_momentum_strategy.bar_broadcaster restart \
+  --tickers SNDK APP SHOP CVNA AMD META EXPE RH FN MU CRDO PLTR COIN CLS MSTR CRWV MRVL
+```
+
+When the broadcaster is down, the trade engine watchdog detects a stale heartbeat and
+logs an alert. Both engines continue monitoring open positions under `PositionMonitor`
+control — only new bar delivery is interrupted. Engines reconnect automatically once
+the socket is available again (the client retries with backoff for up to 60s on each
+`reconnect()` call).
 
 ---
 
