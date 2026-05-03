@@ -1116,9 +1116,17 @@ class TestEnterReentry:
         engine._enter_position.assert_called_once()
 
     def test_reentry_blocked_when_next_sequential_window_has_opened(self):
+        import threading
         engine = self._make_multi_window_engine()
         watcher = self._make_a1_watcher()
         engine._window_state["A2"]["budget"] = _D("19500")
+        monitor = Mock()
+        monitor._lock = threading.Lock()
+        open_pos = Mock()
+        open_pos.window_label = "A2"
+        open_pos.is_closed = False
+        monitor._positions = [open_pos]
+        engine._monitor = monitor
 
         engine._enter_reentry(watcher, _D("186"))
 
@@ -1174,16 +1182,81 @@ class TestEnterReentry:
         engine._enter_position.assert_called_once()
 
     def test_reentry_gate_checks_next_window_state_under_signal_lock(self):
+        import threading
         engine = self._make_multi_window_engine()
         watcher = self._make_a1_watcher()
         # Budget added without holding the signal lock — gate must read under the lock.
         engine._window_state["A2"]["budget"] = _D("5000")
+        monitor = Mock()
+        monitor._lock = threading.Lock()
+        open_pos = Mock()
+        open_pos.window_label = "A2"
+        open_pos.is_closed = False
+        monitor._positions = [open_pos]
+        engine._monitor = monitor
+
+        engine._enter_reentry(watcher, _D("186"))
+
+        engine._enter_position.assert_not_called()
+
+    def test_reentry_fires_when_next_window_opened_but_all_positions_closed(self):
+        import threading
+        engine = self._make_multi_window_engine()
+        engine._replay_capital = 10000
+        watcher = self._make_a1_watcher()
+        engine._window_state["A2"]["budget"] = _D("9500")
+        monitor = Mock()
+        monitor._lock = threading.Lock()
+        closed_pos = Mock()
+        closed_pos.window_label = "A2"
+        closed_pos.is_closed = True
+        monitor._positions = [closed_pos]
+        engine._monitor = monitor
+
+        engine._enter_reentry(watcher, _D("186"))
+
+        engine._enter_position.assert_called_once()
+
+    def test_reentry_uses_fresh_budget_when_next_window_cleared(self):
+        import threading
+        engine = self._make_multi_window_engine()
+        engine._replay_capital = 8500
+        watcher = self._make_a1_watcher()
+        engine._window_state["A2"]["budget"] = _D("9500")
+        monitor = Mock()
+        monitor._lock = threading.Lock()
+        closed_pos = Mock()
+        closed_pos.window_label = "A2"
+        closed_pos.is_closed = True
+        monitor._positions = [closed_pos]
+        engine._monitor = monitor
+
+        engine._enter_reentry(watcher, _D("186"))
+
+        call_kwargs = engine._enter_position.call_args
+        assert call_kwargs[1]["window_budget"] == _D("8500")
+        assert call_kwargs[1]["window_budget"] != watcher.window_budget
+
+    def test_reentry_skips_when_next_window_cleared_but_fresh_budget_is_zero(self):
+        import threading
+        engine = self._make_multi_window_engine()
+        engine._replay_capital = 0
+        watcher = self._make_a1_watcher()
+        engine._window_state["A2"]["budget"] = _D("9500")
+        monitor = Mock()
+        monitor._lock = threading.Lock()
+        closed_pos = Mock()
+        closed_pos.window_label = "A2"
+        closed_pos.is_closed = True
+        monitor._positions = [closed_pos]
+        engine._monitor = monitor
 
         engine._enter_reentry(watcher, _D("186"))
 
         engine._enter_position.assert_not_called()
 
     def test_reentry_in_middle_window_blocked_when_third_window_opened(self):
+        import threading
         from alpha_tech_tracker.op_momentum_strategy.models import WindowConfig
         client = _make_alpaca_client()
         engine = OpMomentumTradeEngine(
@@ -1209,6 +1282,13 @@ class TestEnterReentry:
             window_budget=_D("19000"),
         )
         engine._window_state["A2"]["budget"] = _D("18500")
+        monitor = Mock()
+        monitor._lock = threading.Lock()
+        open_pos = Mock()
+        open_pos.window_label = "A2"
+        open_pos.is_closed = False
+        monitor._positions = [open_pos]
+        engine._monitor = monitor
 
         engine._enter_reentry(watcher, _D("121"))
 
