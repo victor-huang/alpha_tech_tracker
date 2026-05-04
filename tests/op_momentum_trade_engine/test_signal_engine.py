@@ -1465,6 +1465,123 @@ class TestLiveWarmupUsesAPI:
 
 
 # ---------------------------------------------------------------------------
+# TestLateRestartWindowSkip — when the engine starts after a window's OR has
+# already closed, that window must be pre-marked so it never fires stale signals
+# ---------------------------------------------------------------------------
+
+class TestLateRestartWindowSkip:
+    """
+    If the engine restarts at e.g. 13:00 and M1 closed at 09:45, the catchup
+    thread must NOT re-fire M1 signals from historical OR bars.  start() now
+    pre-marks any window whose or_close <= now as already done.
+    """
+
+    def _make_engine_with_windows(self, windows, tickers=None):
+        tickers = tickers or ["CRDO", "MRVL"]
+        signals = []
+        for w in windows:
+            w.setdefault("on_signal", signals.append)
+        engine = LiveSignalEngine(tickers=tickers, windows=windows)
+        mdc = Mock()
+        mdc.warmup.return_value = {t: pd.DataFrame(
+            columns=["Open", "High", "Low", "Close", "Volume"]
+        ) for t in tickers}
+        engine._market_data_client = mdc
+        return engine, signals
+
+    def _fake_now(self, time_str, base_date=None):
+        """Return a patched _now_et that returns a fixed ET datetime."""
+        base = base_date or date(2026, 5, 4)
+        dt = ET.localize(datetime.combine(base, datetime.strptime(time_str, "%H:%M").time()))
+        return dt
+
+    def test_window_or_already_closed_sets_signal_fired_for_all_tickers(self):
+        # Engine starts at 13:00 — M1 (09:30, 3 bars → closes 09:45) already past.
+        engine, _ = self._make_engine_with_windows([
+            {"label": "M1", "opening_start": "09:30", "opening_bars": 3, "on_signal": lambda e: None},
+        ])
+        with patch(f"{_SE_MODULE}._now_et", return_value=self._fake_now("13:00")):
+            engine.start()
+
+        for ticker in engine._tickers:
+            assert engine._signal_fired["M1"][ticker] is True
+
+    def test_window_or_already_closed_sets_catchup_done(self):
+        engine, _ = self._make_engine_with_windows([
+            {"label": "M1", "opening_start": "09:30", "opening_bars": 3, "on_signal": lambda e: None},
+        ])
+        with patch(f"{_SE_MODULE}._now_et", return_value=self._fake_now("13:00")):
+            engine.start()
+
+        assert engine._opening_catchup_done["M1"] is True
+
+    def test_window_not_yet_closed_is_not_pre_marked(self):
+        # Engine starts at 09:40 — M1 OR (09:30–09:45) is still open.
+        engine, _ = self._make_engine_with_windows([
+            {"label": "M1", "opening_start": "09:30", "opening_bars": 3, "on_signal": lambda e: None},
+        ])
+        with patch(f"{_SE_MODULE}._now_et", return_value=self._fake_now("09:40")):
+            engine.start()
+
+        assert engine._opening_catchup_done["M1"] is False
+        for ticker in engine._tickers:
+            assert engine._signal_fired["M1"][ticker] is False
+
+    def test_only_past_windows_are_skipped_in_multi_window_config(self):
+        # Engine starts at 13:00: M1 (closes 09:45) past, A1 (closes 13:20) not yet.
+        signals = []
+        engine, _ = self._make_engine_with_windows([
+            {"label": "M1", "opening_start": "09:30", "opening_bars": 3, "on_signal": signals.append},
+            {"label": "A1", "opening_start": "13:15", "opening_bars": 1, "on_signal": signals.append},
+        ])
+        with patch(f"{_SE_MODULE}._now_et", return_value=self._fake_now("13:00")):
+            engine.start()
+
+        assert engine._opening_catchup_done["M1"] is True
+        assert engine._opening_catchup_done["A1"] is False
+        for ticker in engine._tickers:
+            assert engine._signal_fired["M1"][ticker] is True
+            assert engine._signal_fired["A1"][ticker] is False
+
+    def test_pre_marked_window_does_not_trigger_catchup_on_bar(self):
+        # After late start, the first live bar must not spawn a catchup thread for M1.
+        engine, _ = self._make_engine_with_windows([
+            {"label": "M1", "opening_start": "09:30", "opening_bars": 3, "on_signal": lambda e: None},
+        ])
+        with patch(f"{_SE_MODULE}._now_et", return_value=self._fake_now("13:00")):
+            engine.start()
+
+        bar = Mock()
+        bar.symbol = "CRDO"
+        bar.timestamp = self._fake_now("13:01")
+        bar.open = bar.high = bar.low = bar.close = 185.0
+        bar.volume = 1000
+
+        with patch.object(engine, "_catch_up_opening_bars_for_window") as mock_catchup, \
+             patch(f"{_SE_MODULE}._now_et", return_value=self._fake_now("13:01")):
+            engine._on_bar(bar)
+
+        mock_catchup.assert_not_called()
+
+    def test_start_replay_does_not_pre_mark_windows(self):
+        # start_replay() must never skip windows — replay always fires all signals.
+        signals = []
+        engine = LiveSignalEngine(
+            tickers=["CRDO"],
+            windows=[{"label": "M1", "opening_start": "09:30", "opening_bars": 3, "on_signal": signals.append}],
+        )
+        replay_date = date(2026, 5, 4)
+        with patch("alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest.fetch_bars") as mock_fetch:
+            mock_fetch.return_value = {"CRDO": pd.DataFrame(
+                columns=["Open", "High", "Low", "Close", "Volume"]
+            )}
+            engine.start_replay(replay_date)
+
+        assert engine._opening_catchup_done["M1"] is False
+        assert engine._signal_fired["M1"]["CRDO"] is False
+
+
+# ---------------------------------------------------------------------------
 # TestOnBarWarmupPeriodGuard — _on_bar drops 1-min bars whose 5-min period
 # is already covered by the warmup history (prevents barsback duplicates)
 # ---------------------------------------------------------------------------

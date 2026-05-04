@@ -719,6 +719,27 @@ class LiveSignalEngine:
                 len(self._bearish_regime_dates),
             )
 
+        # Mark any window whose OR already closed before the engine started.
+        # Without this, the catchup thread would re-fire historical OR bars as
+        # live signals after a late restart (e.g. restarting at 13:00 would
+        # re-fire the 09:30 M1 signal). Replay is unaffected (uses start_replay).
+        now_et = _now_et()
+        today = now_et.date()
+        for win in self._windows:
+            or_open = ET.localize(datetime.combine(today, win["_opening_start_t"]))
+            or_close = or_open + timedelta(minutes=win["opening_bars"] * 5)
+            if now_et >= or_close:
+                label = win["label"]
+                self._opening_catchup_done[label] = True
+                for ticker in self._tickers:
+                    self._signal_fired[label][ticker] = True
+                logger.info(
+                    "[%s] OR closed at %s ET before engine start (%s ET) — skipping window",
+                    label,
+                    or_close.strftime("%H:%M"),
+                    now_et.strftime("%H:%M"),
+                )
+
         self._market_data_client.subscribe_bars(self._on_bar, *self._tickers)
         logger.info("Starting live data stream for %s", self._tickers)
         self._market_data_client.start()
