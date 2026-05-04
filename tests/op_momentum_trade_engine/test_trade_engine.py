@@ -1202,6 +1202,7 @@ class TestEnterReentry:
     def test_reentry_fires_when_next_window_opened_but_all_positions_closed(self):
         import threading
         engine = self._make_multi_window_engine()
+        engine._reentry_after_next_window_returned = True
         engine._replay_capital = 10000
         watcher = self._make_a1_watcher()
         engine._window_state["A2"]["budget"] = _D("9500")
@@ -1220,6 +1221,7 @@ class TestEnterReentry:
     def test_reentry_uses_fresh_budget_when_next_window_cleared(self):
         import threading
         engine = self._make_multi_window_engine()
+        engine._reentry_after_next_window_returned = True
         engine._replay_capital = 8500
         watcher = self._make_a1_watcher()
         engine._window_state["A2"]["budget"] = _D("9500")
@@ -1240,7 +1242,27 @@ class TestEnterReentry:
     def test_reentry_skips_when_next_window_cleared_but_fresh_budget_is_zero(self):
         import threading
         engine = self._make_multi_window_engine()
+        engine._reentry_after_next_window_returned = True
         engine._replay_capital = 0
+        watcher = self._make_a1_watcher()
+        engine._window_state["A2"]["budget"] = _D("9500")
+        monitor = Mock()
+        monitor._lock = threading.Lock()
+        closed_pos = Mock()
+        closed_pos.window_label = "A2"
+        closed_pos.is_closed = True
+        monitor._positions = [closed_pos]
+        engine._monitor = monitor
+
+        engine._enter_reentry(watcher, _D("186"))
+
+        engine._enter_position.assert_not_called()
+
+    def test_reentry_blocked_when_next_window_opened_and_bt_matching_mode(self):
+        import threading
+        engine = self._make_multi_window_engine()
+        engine._reentry_after_next_window_returned = False
+        engine._replay_capital = 10000
         watcher = self._make_a1_watcher()
         engine._window_state["A2"]["budget"] = _D("9500")
         monitor = Mock()

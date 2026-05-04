@@ -313,6 +313,7 @@ class OpMomentumTradeEngine:
         market_data_client: Optional[MarketDataClient] = None,
         force_run: bool = False,
         reset_session: bool = False,
+        reentry_after_next_window_returned: bool = True,
     ):
         self._client = alpaca_client
         self._api_key = getattr(alpaca_client, "_api_key", None)
@@ -363,6 +364,7 @@ class OpMomentumTradeEngine:
             self._ws_bars_start_et = WS_BARS_START_ET
         self._force_run = force_run
         self._reset_session = reset_session
+        self._reentry_after_next_window_returned = reentry_after_next_window_returned
         self._dd_timers: dict = {}
         self._dd_fired: set = set()
         self._monitor: PositionMonitor = None
@@ -811,17 +813,31 @@ class OpMomentumTradeEngine:
         return None, None
 
     def _enter_reentry(self, watcher: ReentryWatcher, trigger_price: _D):
-        # Block re-entries if the next sequential window has open positions (capital
-        # actively deployed). If the next window has opened but returned all capital,
-        # the budget is idle and the re-entry may proceed using the current available
-        # capital — which matches backtest behaviour where BRU from window N can fire
-        # after window N+1 finishes and returns capital.
+        # Block re-entries based on next sequential window state.
+        #
+        # Default (reentry_after_next_window_returned=False, matches backtest):
+        #   Once the next window has opened (capital ever deployed), permanently block
+        #   BRU/REV for the prior window — even if the next window later returns all
+        #   capital.  This is the BT Phase-2 cancellation rule.
+        #
+        # Optional (reentry_after_next_window_returned=True):
+        #   Allow BRU/REV to fire again once the next window has fully returned its
+        #   capital (no open positions). Only block while the next window is actively
+        #   holding open positions.
         window_budget = watcher.window_budget
         next_label = self._next_sequential_window_label(watcher.window_label)
         if next_label is not None:
             with self._signal_lock:
                 next_opened = "budget" in self._window_state.get(next_label, {})
             if next_opened:
+                if not self._reentry_after_next_window_returned:
+                    logger.info(
+                        "Re-entry [%s] %s: window [%s] already opened — skipping (BT-matching mode)",
+                        watcher.reentry_type,
+                        watcher.ticker,
+                        next_label,
+                    )
+                    return
                 next_has_open = False
                 if self._monitor is not None:
                     with self._monitor._lock:
@@ -831,10 +847,9 @@ class OpMomentumTradeEngine:
                         )
                 if next_has_open:
                     logger.info(
-                        "Re-entry [%s] %s: window [%s] capital deployed in [%s] — skipping",
+                        "Re-entry [%s] %s: window [%s] capital actively deployed — skipping",
                         watcher.reentry_type,
                         watcher.ticker,
-                        watcher.window_label,
                         next_label,
                     )
                     return
@@ -853,6 +868,20 @@ class OpMomentumTradeEngine:
                         )
                         return
                     window_budget = fresh_budget
+
+        window_rolling_stats = self._rolling_stats_by_window.get(
+            watcher.window_label, self._rolling_stats
+        )
+        stats = window_rolling_stats.get(watcher.ticker)
+        if stats and stats.get("ev_trade", 0) < self._min_ev:
+            logger.info(
+                "Re-entry [%s] %s: ev_trade=%.3f < min_ev=%.3f — skipping",
+                watcher.reentry_type,
+                watcher.ticker,
+                stats.get("ev_trade", 0),
+                self._min_ev,
+            )
+            return
 
         reentry_signal = "BEARISH" if watcher.reentry_type == "bearish_reentry" else "BULLISH"
         if watcher.reentry_type == "bullish_reentry":

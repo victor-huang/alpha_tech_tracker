@@ -681,3 +681,49 @@ The DD add-on stop is `addon_entry + 0.80 × bar_range` (for BEARISH) or `addon_
 - Gap: BT +$393 vs RP +$301 ($92 gap), dominated by the ~$87 swing on this DD add-on.
 
 **Why accepted as-is:** The BT uses 5-min bar OHLC data; it could check `High/Low` to detect intrabar stop hits, but this is not currently implemented. Adding bar High/Low checks would complicate the DD annotation logic and reduce the gap but not eliminate it (fill price would still differ from a live stop execution). The effect is directionally biased toward BT overstating DD add-on P&L when stops are this tight, but the sign depends on whether the stock recovers after the intrabar spike.
+
+---
+
+### G39 — BRU/REV allowed after sequential window returns capital (Structural, By Design)
+
+**Files:** `trade_engine.py` → `_enter_reentry()`, `op_momentum_selector_backtest.py` → `_apply_capital_flow()`
+**Severity:** Low — net positive for the live engine; directionally consistent (extra re-entries are profitable on average)
+
+The BT permanently cancels BRU/REV from window N the moment window N+1's drain time is reached ("Phase 2 cancellation"). The RP allows BRU/REV to fire after window N+1 has fully returned all its capital (no open positions remain), using the current available budget.
+
+**Mechanism:**
+- **BT Phase 2** (`_apply_capital_flow`): once A1's drain time is reached, any pending BRU/REV from M1 is marked `bru_cancelled=True`. Capital recycled to A1. BRU/REV never fires regardless of what A1 does later.
+- **RP (default)**: `_enter_reentry()` checks if A1 currently has any open positions. If `next_has_open=False` (A1 has fully returned), the BRU/REV proceeds using the fresh available budget. If A1 is still holding positions, it is blocked.
+
+**Example (2025-04-09, CVNA and CLS BRU after A1 fully returns):**
+- A1 exits all positions by ~11:30. CVNA BRU triggers at 12:15 (+$504), CLS BRU at 12:40 (+$730).
+- BT: both blocked (Phase 2 — A1's drain time already passed at 10:15).
+- RP: both fire since A1 has no open positions at trigger time.
+- Gap: RP +$2,348 vs BT +$1,114 (+$1,234 extra from the two BRUs).
+
+**2025 full-year impact:** Re-entries allowed after next window returns added net ~+$1,521 cap P&L vs BT-matching mode (+$17,171 vs +$15,650).
+
+**Decision: By Design (RP is more realistic)**
+BT's Phase 2 cancellation is a modeling simplification — in live trading, if A1 has returned all capital and it is sitting idle, there is no real-world reason to block a BRU/REV from deploying it. The RP behavior is more economically correct.
+
+**Behavioral control:** `reentry_after_next_window_returned` parameter on `OpMomentumTradeEngine` (default `True`). Pass `--no-reentry-after-next-window-returned` CLI flag to enable BT-matching mode (permanent block once sequential window ever opens). BT-matching mode reduces 2025 replay P&L by ~$1,521.
+
+---
+
+### G40 — Mid-window reversal timing granularity differs between BT scan and RP bar-by-bar (Structural, Won't Fix)
+
+**Files:** `trade_engine.py` → `_enter_reentry()`, `op_momentum_selector_backtest.py` → `_apply_capital_flow()`
+**Severity:** Low — directionally random; ~$185/day on affected dates, ~$775 residual gap across 2025
+
+BT determines whether a reversal/BRE/BRU fires "before" or "after" a sequential window's drain using arithmetic bar-count timing:
+```
+sub_entry_min = prior_drain + (primary_bars + 1 + sub_entry_idx + 1) × 5
+```
+The RP fires the sub-trade when an actual bar's close crosses the trigger threshold. The two timing methods may disagree on whether a reversal fires before or after A1's drain time.
+
+**Example (2025-03-07, COIN M1 reversal):**
+- COIN M1 primary exits. BT's formula places the reversal scan time after A1's drain → Phase 2 → reversal cancelled → A1 gets primary-only capital.
+- RP: COIN reversal triggers on a real bar before A1 opens → fires → loses -$75 → A1 inherits less capital.
+- Gap: BT +$219 vs RP +$34 (~$185 difference).
+
+**Why accepted as-is:** The 5-minute bar granularity creates inherent ambiguity between "scan-time entry" (BT) and "real-time bar-close trigger" (RP). Fixing would require BT to simulate reversal timing at the same bar-by-bar resolution as the RP — a significant rewrite. The divergence is directionally random (sometimes BT cancels a losing reversal, sometimes a winning one). Total residual across 2025: ~$775 (~0.8% on $10k), well within acceptable noise.

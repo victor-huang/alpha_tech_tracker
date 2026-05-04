@@ -558,6 +558,18 @@ def parse_args():
         "and capital state from prior runs today. Use this to restart the engine fresh "
         "after manually closing positions or when the prior session state is corrupt.",
     )
+    parser.add_argument(
+        "--no-reentry-after-next-window-returned",
+        action="store_false",
+        default=True,
+        dest="reentry_after_next_window_returned",
+        help=(
+            "Disable BRU/REV re-entries from window N after window N+1 has fully returned "
+            "its capital. Default (on): re-entries are allowed once window N+1 has no open "
+            "positions, using the current available budget. Pass this flag to match strict "
+            "backtest behavior (permanently block once window N+1 has ever opened)."
+        ),
+    )
     args = parser.parse_args()
     if args.rank_weighted_sizing and len(args.rank_weighted_sizing) != args.top:
         parser.error(
@@ -770,6 +782,7 @@ if __name__ == "__main__":
             market_data_client=_build_market_data_client(args),
             force_run=args.force_run,
             reset_session=args.reset_session,
+            reentry_after_next_window_returned=args.reentry_after_next_window_returned,
         )
         if args.replay_date:
             from datetime import date as _date
@@ -891,6 +904,7 @@ if __name__ == "__main__":
             market_data_client=_build_market_data_client(args),
             force_run=args.force_run,
             reset_session=args.reset_session,
+            reentry_after_next_window_returned=args.reentry_after_next_window_returned,
         )
         engine.run(tickers_override=args.tickers)
     finally:

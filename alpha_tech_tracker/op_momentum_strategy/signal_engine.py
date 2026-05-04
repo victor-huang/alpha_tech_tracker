@@ -246,27 +246,49 @@ class LiveSignalEngine:
             volume=0.0,
         )
 
+    def _inject_into_opening_buf(
+        self, ticker: str, label: str, win: dict, bar: _FiveMinBar
+    ):
+        """Add a bar to _opening_buf without re-appending it to _history.
+
+        Used by the OR catchup when a bar already exists in _history (from a
+        mid-session warmup) but was never routed through _on_bar, so _opening_buf
+        never received it. Fires the signal if the buffer becomes complete.
+        Must be called under self._lock.
+        """
+        buf = self._opening_buf[label][ticker]
+        if len(buf) >= win["opening_bars"]:
+            return
+        if bar.timestamp in {b.timestamp for b in buf}:
+            return
+        buf.append(bar)
+        logger.info(
+            "Catchup [%s]: %s injected from history %s close=%.2f",
+            label, ticker, bar.timestamp.strftime("%H:%M"), bar.close,
+        )
+        if len(buf) == win["opening_bars"]:
+            self._signal_fired[label][ticker] = True
+            hist = self._history.get(ticker)
+            if hist is not None and not hist.empty:
+                self._try_fire_signal(ticker, hist.iloc[-1], win)
+
     def _fill_or_gaps_with_flat_bars(
         self, ticker: str, label: str, or_bar_period_starts: list, win: dict
     ):
-        """Synthesize flat bars for OR slots that still have no bar in _history.
+        """Fill OR slots that are missing from _opening_buf.
 
-        Called from _catch_up_opening_bars_for_window after Alpaca API data has
-        been processed. Fills only the minimum slots needed to complete the OR
-        buffer so the signal can fire.
+        For periods already in _history (e.g. from a mid-session warmup),
+        injects the real bar from history instead of synthesizing a flat bar.
+        For periods absent from both buffer and history, synthesizes a flat bar
+        so the signal can still fire on sparse data.
         """
         if len(self._opening_buf[label].get(ticker, [])) >= win["opening_bars"]:
             return
-        # Track bar timestamps already in the buffer to avoid double-injecting a
-        # period that was already served from _minute_buf or the Alpaca pass.
         buf_timestamps = {b.timestamp for b in self._opening_buf[label][ticker]}
         for period_ts in or_bar_period_starts:
             if len(self._opening_buf[label][ticker]) >= win["opening_bars"]:
                 break
             if period_ts in buf_timestamps:
-                continue
-            existing = self._history.get(ticker, pd.DataFrame())
-            if not existing.empty and period_ts in existing.index:
                 continue
             flat_bar = self._make_flat_bar(ticker, period_ts)
             if flat_bar is None:
@@ -275,15 +297,26 @@ class LiveSignalEngine:
                     label, ticker, period_ts.strftime("%H:%M"),
                 )
                 break
-            logger.info(
-                "Catchup [%s]: %s flat bar %s close=%.2f (no trades)",
-                label, ticker, period_ts.strftime("%H:%M"), flat_bar.close,
-            )
             with self._lock:
                 existing = self._history.get(ticker, pd.DataFrame())
                 if not existing.empty and period_ts in existing.index:
-                    continue
-                self._process_five_min_bar(flat_bar)
+                    hist_row = existing.loc[period_ts]
+                    from_history = _FiveMinBar(
+                        symbol=ticker,
+                        timestamp=period_ts,
+                        open=float(hist_row["Open"]),
+                        high=float(hist_row["High"]),
+                        low=float(hist_row["Low"]),
+                        close=float(hist_row["Close"]),
+                        volume=float(hist_row["Volume"]),
+                    )
+                    self._inject_into_opening_buf(ticker, label, win, from_history)
+                else:
+                    logger.info(
+                        "Catchup [%s]: %s flat bar %s close=%.2f (no trades)",
+                        label, ticker, period_ts.strftime("%H:%M"), flat_bar.close,
+                    )
+                    self._process_five_min_bar(flat_bar)
 
     def _aggregate_bars(
         self, ticker: str, period_start: datetime, bars: list
@@ -435,6 +468,17 @@ class LiveSignalEngine:
                 with self._lock:
                     existing = self._history.get(ticker, pd.DataFrame())
                     if not existing.empty and ts in existing.index:
+                        hist_row = existing.loc[ts]
+                        from_history = _FiveMinBar(
+                            symbol=ticker,
+                            timestamp=ts,
+                            open=float(hist_row["Open"]),
+                            high=float(hist_row["High"]),
+                            low=float(hist_row["Low"]),
+                            close=float(hist_row["Close"]),
+                            volume=float(hist_row["Volume"]),
+                        )
+                        self._inject_into_opening_buf(ticker, label, win, from_history)
                         continue
                     self._process_five_min_bar(synthetic)
 
