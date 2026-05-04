@@ -108,6 +108,7 @@ class TickerSelector:
         alpaca_feed: DataFeed = DataFeed.SIP,
         score_feed: DataFeed = None,
         market_data_client=None,
+        or_bar_lookback: int = 3,
     ):
         self._tickers = tickers
         self._top_n = top_n
@@ -120,6 +121,7 @@ class TickerSelector:
         self._alpaca_feed = alpaca_feed
         self._score_feed = score_feed if score_feed is not None else alpaca_feed
         self._market_data_client = market_data_client
+        self._or_bar_lookback = or_bar_lookback
         self.rolling_stats: dict = {}
 
     def _selector_cache_path(self, target_date: date) -> Path:
@@ -181,6 +183,7 @@ class TickerSelector:
                 opening_start_time=self._opening_start_time,
                 regime_filter=self._regime_filter,
                 regime_ma=self._regime_ma,
+                or_bar_lookback=self._or_bar_lookback,
             )
             picks = result["picks"]
         else:
@@ -197,6 +200,7 @@ class TickerSelector:
                 opening_start_time=self._opening_start_time,
                 regime_filter=self._regime_filter,
                 regime_ma=self._regime_ma,
+                or_bar_lookback=self._or_bar_lookback,
             )
             picks = result["picks"]
 
@@ -222,6 +226,7 @@ class TickerSelector:
                     opening_start_time=self._opening_start_time,
                     regime_filter=self._regime_filter,
                     regime_ma=self._regime_ma,
+                    or_bar_lookback=self._or_bar_lookback,
                 )
                 picks = result["picks"]
 
@@ -1870,6 +1875,7 @@ class OpMomentumTradeEngine:
                     alpaca_feed=self._alpaca_feed,
                     score_feed=self._score_feed,
                     market_data_client=self._market_data_client,
+                    or_bar_lookback=self._or_bar_lookback,
                 )
                 if first_config_key is None:
                     first_config_key = config_key
