@@ -1009,6 +1009,111 @@ class TestGetFilledOrders:
         assert result[0]["filled_qty"] == 40.0
         assert result[0]["side"] == "sell"
 
+    def test_falls_back_to_orders_when_historicalorders_empty(self):
+        # historicalorders returns nothing (today's fills not yet in history);
+        # /orders (current-day endpoint) has the fill — reconcile must find it.
+        empty_historical = {"Orders": [], "Errors": []}
+        today_orders = {
+            "Orders": [
+                {
+                    "OrderID": "1261038199",
+                    "Status": "FLL",
+                    "FilledPrice": "19.20",
+                    "ClosedDateTime": "2026-05-04T14:44:57Z",
+                    "Legs": [{"Symbol": "CRDO 260508P200", "ExecQuantity": "1", "BuyOrSell": "Sell"}],
+                }
+            ],
+            "Errors": [],
+        }
+        client = _make_client()
+        client._session.get.side_effect = [
+            _mock_response(empty_historical),
+            _mock_response(today_orders),
+        ]
+
+        result = client.get_filled_orders("CRDO260508P00200000", limit=5)
+
+        assert len(result) == 1
+        assert result[0]["filled_avg_price"] == 19.20
+        assert result[0]["side"] == "sell"
+        assert result[0]["order_id"] == "1261038199"
+
+    def test_fallback_filters_by_symbol(self):
+        # /orders returns orders for multiple symbols; only the requested symbol is returned.
+        empty_historical = {"Orders": [], "Errors": []}
+        today_orders = {
+            "Orders": [
+                {
+                    "OrderID": "111",
+                    "Status": "FLL",
+                    "FilledPrice": "19.20",
+                    "ClosedDateTime": "2026-05-04T14:44:57Z",
+                    "Legs": [{"Symbol": "CRDO 260508P200", "ExecQuantity": "1", "BuyOrSell": "Sell"}],
+                },
+                {
+                    "OrderID": "222",
+                    "Status": "FLL",
+                    "FilledPrice": "40.50",
+                    "ClosedDateTime": "2026-05-04T14:30:00Z",
+                    "Legs": [{"Symbol": "AMD 260508C320", "ExecQuantity": "2", "BuyOrSell": "Sell"}],
+                },
+            ],
+            "Errors": [],
+        }
+        client = _make_client()
+        client._session.get.side_effect = [
+            _mock_response(empty_historical),
+            _mock_response(today_orders),
+        ]
+
+        result = client.get_filled_orders("CRDO260508P00200000", limit=5)
+
+        assert len(result) == 1
+        assert result[0]["order_id"] == "111"
+
+    def test_fallback_filters_out_non_filled_orders(self):
+        # /orders contains rejected and open orders for the symbol — only FLL passes.
+        empty_historical = {"Orders": [], "Errors": []}
+        today_orders = {
+            "Orders": [
+                {
+                    "OrderID": "REJ1",
+                    "Status": "REJ",
+                    "FilledPrice": "0",
+                    "ClosedDateTime": "2026-05-04T14:46:27Z",
+                    "Legs": [{"Symbol": "CRDO 260508P200", "ExecQuantity": "0", "BuyOrSell": "Sell"}],
+                },
+                {
+                    "OrderID": "FLL1",
+                    "Status": "FLL",
+                    "FilledPrice": "19.00",
+                    "ClosedDateTime": "2026-05-04T14:43:53Z",
+                    "Legs": [{"Symbol": "CRDO 260508P200", "ExecQuantity": "1", "BuyOrSell": "Sell"}],
+                },
+            ],
+            "Errors": [],
+        }
+        client = _make_client()
+        client._session.get.side_effect = [
+            _mock_response(empty_historical),
+            _mock_response(today_orders),
+        ]
+
+        result = client.get_filled_orders("CRDO260508P00200000", limit=5)
+
+        assert len(result) == 1
+        assert result[0]["order_id"] == "FLL1"
+
+    def test_no_fallback_when_historicalorders_has_results(self):
+        # When historicalorders returns data, /orders should not be called.
+        client = _make_client()
+        client._session.get.return_value = _mock_response(orders_filled_sell_response)
+
+        result = client.get_filled_orders("TSLA250420C00240000", limit=5)
+
+        assert client._session.get.call_count == 1
+        assert len(result) == 1
+
 
 class TestCancelOrder:
     def test_delete_method_used(self):

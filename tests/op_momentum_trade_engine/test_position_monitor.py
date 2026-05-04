@@ -3835,6 +3835,76 @@ class TestReconcileTwoCycleRetry:
 
         assert client.get_open_positions.call_count == 2
 
+    def test_pending_notify_includes_attempt_counter(self):
+        monitor, client, pos = self._make_monitor_with_stuck_pos()
+
+        with patch(
+            "alpha_tech_tracker.op_momentum_strategy.position_monitor._notify"
+        ) as mock_notify:
+            monitor._reconcile_stuck_positions()
+
+        msg = mock_notify.call_args[0][0]
+        assert "RECONCILE PENDING" in msg
+        assert "1/" in msg
+
+    def test_reconcile_pending_count_increments_each_cycle(self):
+        monitor, client, pos = self._make_monitor_with_stuck_pos()
+
+        for _ in range(3):
+            monitor._reconcile_stuck_positions()
+
+        assert pos.reconcile_pending_count == 3
+
+    def test_abandoned_after_max_attempts(self):
+        monitor, client, pos = self._make_monitor_with_stuck_pos()
+        max_attempts = PositionMonitor._MAX_RECONCILE_ATTEMPTS
+
+        for _ in range(max_attempts):
+            monitor._reconcile_stuck_positions()
+
+        assert pos.close_order_failed is False
+
+    def test_abandoned_sends_abandoned_notify(self):
+        monitor, client, pos = self._make_monitor_with_stuck_pos()
+        max_attempts = PositionMonitor._MAX_RECONCILE_ATTEMPTS
+
+        notifications = []
+        with patch(
+            "alpha_tech_tracker.op_momentum_strategy.position_monitor._notify",
+            side_effect=notifications.append,
+        ):
+            for _ in range(max_attempts):
+                monitor._reconcile_stuck_positions()
+
+        last_msg = notifications[-1]
+        assert "RECONCILE ABANDONED" in last_msg
+
+    def test_no_further_reconcile_cycles_after_abandoned(self):
+        monitor, client, pos = self._make_monitor_with_stuck_pos()
+        max_attempts = PositionMonitor._MAX_RECONCILE_ATTEMPTS
+
+        for _ in range(max_attempts):
+            monitor._reconcile_stuck_positions()
+
+        call_count_at_abandon = client.get_open_positions.call_count
+        monitor._reconcile_stuck_positions()
+
+        assert client.get_open_positions.call_count == call_count_at_abandon
+
+    def test_fill_confirmed_before_max_still_resolves(self):
+        monitor, client, pos = self._make_monitor_with_stuck_pos()
+
+        monitor._reconcile_stuck_positions()
+        assert pos.close_order_failed is True
+
+        client.get_filled_orders.return_value = [
+            {"order_id": "o1", "side": "sell", "filled_avg_price": 5.20, "filled_at": None},
+        ]
+        monitor._reconcile_stuck_positions()
+
+        assert pos.close_order_failed is False
+        assert pos.exit_fill_price == _D("5.20")
+
 
 class TestFillEscMissGuard:
     """

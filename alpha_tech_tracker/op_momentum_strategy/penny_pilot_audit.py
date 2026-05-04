@@ -179,13 +179,17 @@ def probe_ticker(client, ticker: str, dry_run: bool = False) -> dict:
             _option_symbol_override=occ_symbol,
         )
 
-        raw = order_result.get("raw_response", {})
-        order_data = (raw.get("Orders") or [{}])[0] if isinstance(raw, dict) else {}
-        ts_status = order_data.get("Status", "")
-        reject_reason = order_data.get("RejectReason", "") or ""
+        order_id = order_result.get("order_id")
+        if order_id:
+            status_result = client.order_status(order_id)
+        else:
+            status_result = order_result
+
+        reject_reason = status_result.get("reject_reason") or ""
+        ts_status = status_result.get("status", "")
         result["reject_reason"] = reject_reason
 
-        if ts_status == "REJ" or reject_reason:
+        if ts_status in ("canceled", "rejected") or reject_reason:
             tick = _parse_tick_from_error(reject_reason)
             result["tick"] = tick
             result["classification"] = _classify_from_tick(tick, mid)
@@ -193,7 +197,6 @@ def probe_ticker(client, ticker: str, dry_run: bool = False) -> dict:
             # Order was accepted without tick rejection.
             # During market hours this means penny pilot (0.01 tick, valid price).
             # After market hours TS queues DAY orders without tick validation — unreliable.
-            order_id = order_result.get("order_id")
             if order_id:
                 client.cancel_order(order_id)
             et_now = datetime.now(pytz.timezone("America/New_York"))

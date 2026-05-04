@@ -1052,6 +1052,8 @@ class PositionMonitor:
                     else:
                         pos.contracts = broker_qty
 
+    _MAX_RECONCILE_ATTEMPTS = 8
+
     def _reconcile_stuck_positions(self):
         """Check broker open positions and resolve any stuck (close_order_failed) positions.
 
@@ -1066,6 +1068,8 @@ class PositionMonitor:
           sets close_order_reconciled=True to stop FILL_ESC from placing more orders, but
           keeps close_order_failed=True so the next 2-min cycle retries for the real price.
           Does NOT fire the callback — capital is not returned until the real fill is known.
+        - After _MAX_RECONCILE_ATTEMPTS pending cycles without a fill price, gives up and
+          logs a manual-intervention alert.
         """
         with self._lock:
             stuck = [
@@ -1114,12 +1118,26 @@ class PositionMonitor:
                 # so the next reconciliation cycle retries for the real fill price.
                 with self._lock:
                     pos.close_order_reconciled = True
-                msg = (
-                    f"RECONCILE PENDING {instrument}"
-                    f" — confirmed closed at broker, waiting for fill price"
-                )
-                logger.info(msg)
-                _notify(msg)
+                    pos.reconcile_pending_count += 1
+                    attempts = pos.reconcile_pending_count
+                if attempts >= self._MAX_RECONCILE_ATTEMPTS:
+                    with self._lock:
+                        pos.close_order_failed = False
+                    msg = (
+                        f"RECONCILE ABANDONED {instrument}"
+                        f" — fill price not found after {attempts} attempts,"
+                        f" manual P&L entry required"
+                    )
+                    logger.warning(msg)
+                    _notify(msg)
+                else:
+                    msg = (
+                        f"RECONCILE PENDING {instrument}"
+                        f" — confirmed closed at broker, waiting for fill price"
+                        f" (attempt {attempts}/{self._MAX_RECONCILE_ATTEMPTS})"
+                    )
+                    logger.info(msg)
+                    _notify(msg)
 
     def _fetch_option_mid(self, option_symbol: str) -> Optional[object]:
         try:

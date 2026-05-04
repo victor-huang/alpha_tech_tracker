@@ -798,6 +798,22 @@ class TradeStationAPIClient(ExecutionClient):
             return []
 
         orders = data if isinstance(data, list) else data.get("Orders", [])
+
+        # historicalorders only covers completed trading days — today's fills are on /orders.
+        # Fall back when historical returns nothing so same-day reconciliation works.
+        if not orders:
+            try:
+                resp2 = self._session.get(
+                    self._v3_base_url + f"/brokerage/accounts/{account_key}/orders",
+                    params={"pageSize": 200},
+                )
+                data2 = self._parse(resp2)
+                all_today = data2 if isinstance(data2, list) else data2.get("Orders", [])
+                orders = [o for o in all_today if ts_symbol in (
+                    (o.get("Legs") or [{}])[0].get("Symbol", "")
+                )]
+            except Exception:
+                logger.warning("get_filled_orders: fallback /orders also failed for %s", symbol)
         result = []
         for raw in orders:
             if raw.get("Status") not in ("FLL", "FLP"):
