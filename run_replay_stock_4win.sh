@@ -4,10 +4,11 @@
 # Config: M1 09:30/3 + A1 10:00/3 + A2 13:15/1 + A3 15:15/1, reversal+reentry+DD
 #
 # Usage:
-#   ./run_replay_stock_4win.sh --year 2025                       # stock (default)
-#   ./run_replay_stock_4win.sh --year 2026 --trade-type options  # options
-#   ./run_replay_stock_4win.sh --year 2025 --summary             # summary only
-#   ./run_replay_stock_4win.sh --year 2025 --force               # re-run all dates
+#   ./run_replay_stock_4win.sh --year 2025                              # stock (default)
+#   ./run_replay_stock_4win.sh --year 2026 --trade-type options         # options
+#   ./run_replay_stock_4win.sh --year 2026 --ticker-set AT              # AT ticker pool
+#   ./run_replay_stock_4win.sh --year 2025 --summary                    # summary only
+#   ./run_replay_stock_4win.sh --year 2025 --force                      # re-run all dates
 
 set -euo pipefail
 
@@ -18,23 +19,32 @@ SUMMARY_ONLY=false
 FORCE=false
 YEAR=""
 TRADE_TYPE="stock"
+TICKER_SET=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --year)       YEAR="$2"; shift 2 ;;
-    --trade-type) TRADE_TYPE="$2"; shift 2 ;;
-    --summary)    SUMMARY_ONLY=true; shift ;;
-    --force)      FORCE=true; shift ;;
+    --year)        YEAR="$2"; shift 2 ;;
+    --trade-type)  TRADE_TYPE="$2"; shift 2 ;;
+    --ticker-set)  TICKER_SET="$2"; shift 2 ;;
+    --summary)     SUMMARY_ONLY=true; shift ;;
+    --force)       FORCE=true; shift ;;
     *) echo "Unknown arg: $1"; exit 1 ;;
   esac
 done
 
 if [ -z "$YEAR" ]; then
-  echo "Usage: $0 --year YYYY [--trade-type stock|options] [--summary] [--force]"
+  echo "Usage: $0 --year YYYY [--trade-type stock|options] [--ticker-set V3|AT] [--summary] [--force]"
   exit 1
 fi
 
-LOG_DIR="$BASE_LOG_DIR/replay_${YEAR}_${TRADE_TYPE}_4win"
+TICKER_SET_SUFFIX=""
+TICKER_SET_FLAG=""
+if [ -n "$TICKER_SET" ]; then
+  TICKER_SET_SUFFIX="_${TICKER_SET}"
+  TICKER_SET_FLAG="--ticker-set $TICKER_SET"
+fi
+
+LOG_DIR="$BASE_LOG_DIR/replay_${YEAR}_${TRADE_TYPE}_4win${TICKER_SET_SUFFIX}"
 
 # ---------------------------------------------------------------------------
 # Generate trading days for YEAR via Python (hardcoded NYSE holidays 2024-2026)
@@ -118,6 +128,7 @@ replay_one() {
     --top 2 --capital 10000 \
     --mock-trade-execution \
     --feed sip \
+    $TICKER_SET_FLAG \
     --replay-date "$DATE" > "$LOG" 2>&1
 }
 
