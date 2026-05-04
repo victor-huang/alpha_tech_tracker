@@ -125,11 +125,13 @@ class TestResolveIsPaper:
 
 class TestBuildMarketDataClient:
     def test_returns_none_for_alpaca_source(self):
-        result = _build_market_data_client(_args(market_data_source="alpaca"))
+        with patch("alpha_tech_tracker.op_momentum_strategy.config._load_config"):
+            result = _build_market_data_client(_args(market_data_source="alpaca"))
         assert result is None
 
     def test_returns_none_when_market_data_source_missing(self):
-        result = _build_market_data_client(_args())
+        with patch("alpha_tech_tracker.op_momentum_strategy.config._load_config"):
+            result = _build_market_data_client(_args())
         assert result is None
 
     def test_returns_tradestation_client_for_tradestation_source(self):

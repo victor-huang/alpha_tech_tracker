@@ -163,6 +163,10 @@ class LocalTSBroadcastMarketDataClient(MarketDataClient):
         self._stop_event.set()
         if self._sock:
             try:
+                self._sock.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+            try:
                 self._sock.close()
             except OSError:
                 pass
