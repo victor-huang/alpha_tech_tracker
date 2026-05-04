@@ -2035,14 +2035,14 @@ class OpMomentumTradeEngine:
         score_feed_label = self._score_feed.value.upper()
         if self._score_feed != self._alpaca_feed:
             logger.info(
-                "Market data source: %s (live/warmup) | alpaca/%s (selector scoring — overridden from %s)",
+                "Market data source: %s (live/warmup) | alpaca/%s (stock selector scoring — overridden from %s)",
                 live_source,
                 score_feed_label,
                 self._alpaca_feed.value.upper(),
             )
         else:
             logger.info(
-                "Market data source: %s (live/warmup) | alpaca/%s (selector backtest cache)",
+                "Market data source: %s (live/warmup) | alpaca/%s (stock selector scoring)",
                 live_source,
                 score_feed_label,
             )
