@@ -20,12 +20,14 @@ FORCE=false
 YEAR=""
 TRADE_TYPE="stock"
 TICKER_SET=""
+FEED="sip"
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --year)        YEAR="$2"; shift 2 ;;
     --trade-type)  TRADE_TYPE="$2"; shift 2 ;;
     --ticker-set)  TICKER_SET="$2"; shift 2 ;;
+    --feed)        FEED="$2"; shift 2 ;;
     --summary)     SUMMARY_ONLY=true; shift ;;
     --force)       FORCE=true; shift ;;
     *) echo "Unknown arg: $1"; exit 1 ;;
@@ -44,7 +46,9 @@ if [ -n "$TICKER_SET" ]; then
   TICKER_SET_FLAG="--ticker-set $TICKER_SET"
 fi
 
-LOG_DIR="$BASE_LOG_DIR/replay_${YEAR}_${TRADE_TYPE}_4win${TICKER_SET_SUFFIX}"
+FEED_SUFFIX=""
+[ "$FEED" != "sip" ] && FEED_SUFFIX="_${FEED}"
+LOG_DIR="$BASE_LOG_DIR/replay_${YEAR}_${TRADE_TYPE}_4win${TICKER_SET_SUFFIX}${FEED_SUFFIX}"
 
 # ---------------------------------------------------------------------------
 # Generate trading days for YEAR via Python (hardcoded NYSE holidays 2024-2026)
@@ -127,7 +131,7 @@ replay_one() {
     --doubledown --doubledown-start 10 \
     --top 2 --capital 10000 \
     --mock-trade-execution \
-    --feed sip \
+    --feed "$FEED" \
     $TICKER_SET_FLAG \
     --replay-date "$DATE" > "$LOG" 2>&1
 }
