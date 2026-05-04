@@ -984,15 +984,15 @@ class PositionMonitor:
             name="stuck-position-reconciler",
         )
         t.start()
-        logger.info("Stuck-position reconciliation thread started (interval=5 min)")
+        logger.info("Stuck-position reconciliation thread started (interval=2 min)")
 
     def stop(self):
         """Signal the reconciliation thread to exit on its next wakeup."""
         self._stop_event.set()
 
     def _reconciliation_loop(self):
-        """Wake every 5 minutes and reconcile positions against the broker."""
-        _INTERVAL_SECONDS = 300
+        """Wake every 2 minutes and reconcile positions against the broker."""
+        _INTERVAL_SECONDS = 120
         while not self._stop_event.wait(timeout=_INTERVAL_SECONDS):
             if is_replay_mode():
                 continue
@@ -1064,7 +1064,7 @@ class PositionMonitor:
           and fires exit_retry_callback to update daily P&L.
         - If the broker shows it closed but the fill is not yet in order history (API lag):
           sets close_order_reconciled=True to stop FILL_ESC from placing more orders, but
-          keeps close_order_failed=True so the next 5-min cycle retries for the real price.
+          keeps close_order_failed=True so the next 2-min cycle retries for the real price.
           Does NOT fire the callback — capital is not returned until the real fill is known.
         """
         with self._lock:
