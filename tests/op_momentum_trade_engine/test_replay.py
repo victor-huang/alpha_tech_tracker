@@ -465,6 +465,22 @@ class TestCsvLiveBarsSourceTsFeed:
         assert timestamps == sorted(timestamps)
         assert len(injected) == 3
 
+    def test_prior_day_backfill_bars_are_excluded(self, tmp_path):
+        session = date(2026, 4, 27)
+        csv_path = tmp_path / "2026-04-27" / "tradestation_SNDK_5min.csv"
+        _write_5min_csv(csv_path, [
+            ["2026-04-24 15:55:00", 992.64, 992.79, 988.57, 989.92, 161879],
+            ["2026-04-24 15:55:00", 992.64, 992.79, 988.57, 989.92, 161879],
+            ["2026-04-27 09:30:00", 1020.49, 1030.8, 1010.0, 1030.67, 488883],
+            ["2026-04-27 09:35:00", 1029.67, 1043.09, 1021.5, 1028.94, 373503],
+        ])
+
+        source = CsvLiveBarsSource(str(tmp_path), feed="tradestation")
+        result = source.load(["SNDK"], session)
+
+        assert len(result["SNDK"]) == 2
+        assert all(b.timestamp.date() == session for b in result["SNDK"])
+
     def test_iex_and_tradestation_files_coexist_without_interference(self, tmp_path):
         session = date(2026, 4, 16)
         for feed in ["iex", "tradestation"]:

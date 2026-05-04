@@ -66,6 +66,7 @@ class CsvLiveBarsSource(LiveBarsSource):
                 result[ticker] = []
                 continue
             df = pd.read_csv(csv_path, parse_dates=["timestamp"])
+            df = df[df["timestamp"].dt.date == replay_date]
             df = df.drop_duplicates(subset=["timestamp"]).sort_values("timestamp").reset_index(drop=True)
             bars = []
             for _, row in df.iterrows():
