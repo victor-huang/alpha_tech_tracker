@@ -637,6 +637,35 @@ def _resolve_is_paper(args) -> bool:
     return not getattr(args, "live", False)
 
 
+def _build_sip_quote_client(args):
+    """Return a TradeStation SIP client for parallel quote comparison when feed=IEX, or None.
+
+    Skips if the TS session file is missing or expired — the Alpaca client
+    will use its own IEX quote in that case.
+    """
+    if getattr(args, "feed", None) != "iex":
+        return None
+    from alpha_tech_tracker.op_momentum_strategy.config import (
+        _TRADESTATION_SESSION_TOKENS,
+        TRADESTATION_ENVIRONMENT,
+    )
+    if not _TRADESTATION_SESSION_TOKENS.get("access_token"):
+        logger.debug("IEX feed: no TS session tokens found, skipping quote fallback")
+        return None
+    try:
+        from alpha_tech_tracker.trade_api.tradestation.client import TradeStationAPIClient
+        ts_client = TradeStationAPIClient(environment=TRADESTATION_ENVIRONMENT)
+        ts_client.restore_session(_TRADESTATION_SESSION_TOKENS)
+        if not ts_client.verify_session():
+            logger.warning("IEX feed: TS session expired — SIP quote client disabled, run tradestation_auth.py to enable")
+            return None
+        logger.info("IEX feed: TradeStation SIP quote client enabled")
+        return ts_client
+    except Exception:
+        logger.warning("IEX feed: failed to init TS SIP quote client — proceeding without it", exc_info=True)
+        return None
+
+
 def _build_market_data_client(args):
     """Return a MarketDataClient based on --market-data-source, or None for default Alpaca.
 
@@ -742,7 +771,8 @@ if __name__ == "__main__":
         # In mock/replay mode use Alpaca — avoids TradeStation OAuth port conflict
         # when running many parallel replays that would all fight over port 8080.
         effective_broker = "alpaca" if mock_trade_execution else args.execution_broker
-        client = build_execution_client(is_paper=is_paper, broker=effective_broker)
+        sip_quote_client = None if mock_trade_execution else _build_sip_quote_client(args)
+        client = build_execution_client(is_paper=is_paper, broker=effective_broker, sip_quote_client=sip_quote_client)
         # In replay mode, pass None so OpMomentumTradeEngine uses MockContractSelector
         # (which builds synthetic ITM symbols without API calls using the session date).
         contract_selector = None if is_replay else _build_contract_selector(args, client)
@@ -866,7 +896,8 @@ if __name__ == "__main__":
 
     try:
         is_paper = _resolve_is_paper(args)
-        client = build_execution_client(is_paper=is_paper, broker=args.execution_broker)
+        sip_quote_client = _build_sip_quote_client(args)
+        client = build_execution_client(is_paper=is_paper, broker=args.execution_broker, sip_quote_client=sip_quote_client)
         contract_selector = _build_contract_selector(args, client)
         engine = OpMomentumTradeEngine(
             alpaca_client=client,

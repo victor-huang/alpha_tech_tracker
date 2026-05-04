@@ -206,7 +206,7 @@ def _save_tradestation_session_tokens(
     logger.info("TradeStation session tokens saved to %s", config_file)
 
 
-def build_execution_client(is_paper: bool = True, broker: str = None):
+def build_execution_client(is_paper: bool = True, broker: str = None, sip_quote_client=None):
     """
     Construct and return an ExecutionClient based on EXECUTION_BROKER.
 
@@ -257,7 +257,7 @@ def build_execution_client(is_paper: bool = True, broker: str = None):
         return client
 
     from alpha_tech_tracker.trade_api.alpaca_client.client import AlpacaAPIClient
-    return AlpacaAPIClient(is_paper_trading=is_paper)
+    return AlpacaAPIClient(is_paper_trading=is_paper, sip_quote_client=sip_quote_client)
 
 
 def _send_telegram(message: str):

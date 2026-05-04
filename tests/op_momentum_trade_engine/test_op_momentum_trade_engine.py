@@ -9,6 +9,7 @@ from alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine import (
     _build_contract_selector,
     _build_market_data_client,
     _build_option_price_monitor,
+    _build_sip_quote_client,
     _resolve_is_paper,
 )
 from alpha_tech_tracker.op_momentum_strategy.option_price_monitor import (
@@ -161,3 +162,55 @@ class TestBuildMarketDataClient:
             mock_ts_client.verify_session.return_value = False
             with pytest.raises(RuntimeError, match="TradeStation session invalid"):
                 _build_market_data_client(_args(market_data_source="tradestation"))
+
+
+_TS_TOKENS_PATH = "alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine._build_sip_quote_client"
+_TS_CLIENT_IMPORT = "alpha_tech_tracker.trade_api.tradestation.client.TradeStationAPIClient"
+_TS_TOKENS_CONFIG = "alpha_tech_tracker.op_momentum_strategy.config._TRADESTATION_SESSION_TOKENS"
+_TS_ENV_CONFIG = "alpha_tech_tracker.op_momentum_strategy.config.TRADESTATION_ENVIRONMENT"
+
+
+class TestBuildSipQuoteClient:
+    def test_returns_none_when_feed_is_not_iex(self):
+        result = _build_sip_quote_client(_args(feed="sip"))
+        assert result is None
+
+    def test_returns_none_when_feed_attribute_missing(self):
+        result = _build_sip_quote_client(Namespace())
+        assert result is None
+
+    def test_returns_none_when_no_access_token(self):
+        with patch(_TS_TOKENS_CONFIG, {"access_token": ""}):
+            result = _build_sip_quote_client(_args(feed="iex"))
+        assert result is None
+
+    def test_returns_none_when_tokens_dict_is_empty(self):
+        with patch(_TS_TOKENS_CONFIG, {}):
+            result = _build_sip_quote_client(_args(feed="iex"))
+        assert result is None
+
+    def test_returns_none_when_session_expired(self):
+        mock_ts = Mock()
+        mock_ts.verify_session.return_value = False
+        with patch(_TS_TOKENS_CONFIG, {"access_token": "tok"}), \
+             patch(_TS_ENV_CONFIG, "Live"), \
+             patch(_TS_CLIENT_IMPORT, return_value=mock_ts):
+            result = _build_sip_quote_client(_args(feed="iex"))
+        assert result is None
+        mock_ts.restore_session.assert_called_once()
+
+    def test_returns_ts_client_when_session_valid(self):
+        mock_ts = Mock()
+        mock_ts.verify_session.return_value = True
+        with patch(_TS_TOKENS_CONFIG, {"access_token": "tok"}), \
+             patch(_TS_ENV_CONFIG, "Live"), \
+             patch(_TS_CLIENT_IMPORT, return_value=mock_ts):
+            result = _build_sip_quote_client(_args(feed="iex"))
+        assert result is mock_ts
+
+    def test_returns_none_when_ts_init_raises(self):
+        with patch(_TS_TOKENS_CONFIG, {"access_token": "tok"}), \
+             patch(_TS_ENV_CONFIG, "Live"), \
+             patch(_TS_CLIENT_IMPORT, side_effect=Exception("import error")):
+            result = _build_sip_quote_client(_args(feed="iex"))
+        assert result is None

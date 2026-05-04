@@ -3,6 +3,7 @@ import logging
 import os
 import random
 import string
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, date
 
 from alpaca.trading.client import TradingClient
@@ -43,11 +44,13 @@ class AlpacaAPIClient(ExecutionClient):
         secret_key=None,
         is_paper_trading=True,
         selected_account_id=None,
+        sip_quote_client=None,
     ):
         self._api_key = api_key or os.environ.get("ALPACA_API_KEY")
         self._secret_key = secret_key or os.environ.get("ALPACA_SECRET_KEY")
         self._is_paper_trading = is_paper_trading
         self._selected_account_id = selected_account_id
+        self._sip_quote_client = sip_quote_client
 
         self._trading_client = TradingClient(
             self._api_key, self._secret_key, paper=is_paper_trading
@@ -59,6 +62,7 @@ class AlpacaAPIClient(ExecutionClient):
             self._api_key, self._secret_key
         )
         self._apply_request_timeout(timeout=30)
+        self._quote_executor = ThreadPoolExecutor(max_workers=2)
 
     def _apply_request_timeout(self, timeout: int):
         """Patch every SDK client's requests.Session to enforce a hard timeout.
@@ -123,16 +127,12 @@ class AlpacaAPIClient(ExecutionClient):
             "raw_response": account,
         }
 
-    def get_stock_quote(self, symbols, feed: DataFeed = DataFeed.IEX):
-        if isinstance(symbols, str):
-            symbols = [symbols]
-
+    def _fetch_alpaca_quote(self, symbols: list, feed: DataFeed) -> dict:
         request_params = StockLatestQuoteRequest(symbol_or_symbols=symbols, feed=feed)
         quotes = self._stock_data_client.get_stock_latest_quote(request_params)
-
-        formatted_quotes = {}
+        formatted = {}
         for symbol, quote_data in quotes.items():
-            formatted_quotes[symbol] = {
+            formatted[symbol] = {
                 "QuoteResponse": {
                     "QuoteData": [
                         {
@@ -147,11 +147,61 @@ class AlpacaAPIClient(ExecutionClient):
                     ]
                 }
             }
+        return formatted
 
-        if len(symbols) == 1:
-            return formatted_quotes[symbols[0]]
+    def _extract_bid_ask(self, quote_by_symbol: dict, symbol: str):
+        all_data = (
+            quote_by_symbol.get(symbol, {})
+            .get("QuoteResponse", {})
+            .get("QuoteData", [{}])[0]
+            .get("All", {})
+        )
+        return all_data.get("bid"), all_data.get("ask")
 
-        return formatted_quotes
+    def get_stock_quote(self, symbols, feed: DataFeed = DataFeed.IEX):
+        if isinstance(symbols, str):
+            symbols = [symbols]
+
+        if feed == DataFeed.IEX and self._sip_quote_client is not None:
+            sym_arg = symbols[0] if len(symbols) == 1 else symbols
+            alpaca_future = self._quote_executor.submit(self._fetch_alpaca_quote, symbols, feed)
+            ts_future = self._quote_executor.submit(self._sip_quote_client.get_stock_quote, sym_arg)
+
+            alpaca_by_sym, ts_by_sym = {}, {}
+            try:
+                alpaca_by_sym = alpaca_future.result()
+            except Exception as exc:
+                logger.warning("Alpaca IEX quote fetch failed: %s", exc)
+            try:
+                ts_raw = ts_future.result()
+                ts_by_sym = {symbols[0]: ts_raw} if len(symbols) == 1 else ts_raw
+            except Exception as exc:
+                logger.warning("TradeStation quote fetch failed: %s — falling back to Alpaca IEX", exc)
+                if not alpaca_by_sym:
+                    raise RuntimeError("Both quote sources failed for %s" % symbols) from exc
+                result = alpaca_by_sym
+                return result[symbols[0]] if len(symbols) == 1 else result
+
+            for sym in symbols:
+                a_bid, a_ask = self._extract_bid_ask(alpaca_by_sym, sym)
+                t_bid, t_ask = self._extract_bid_ask(ts_by_sym, sym)
+                logger.info(
+                    "QUOTE COMPARE %s: Alpaca IEX bid=%s ask=%s | TradeStation bid=%s ask=%s"
+                    " | bid_diff=%s ask_diff=%s",
+                    sym,
+                    f"{a_bid:.2f}" if a_bid is not None else "N/A",
+                    f"{a_ask:.2f}" if a_ask is not None else "N/A",
+                    f"{t_bid:.2f}" if t_bid is not None else "N/A",
+                    f"{t_ask:.2f}" if t_ask is not None else "N/A",
+                    f"{t_bid - a_bid:+.4f}" if t_bid is not None and a_bid is not None else "N/A",
+                    f"{t_ask - a_ask:+.4f}" if t_ask is not None and a_ask is not None else "N/A",
+                )
+
+            return ts_by_sym[symbols[0]] if len(symbols) == 1 else ts_by_sym
+
+        logger.debug("get_stock_quote %s: feed=%s via Alpaca", symbols, feed)
+        result = self._fetch_alpaca_quote(symbols, feed)
+        return result[symbols[0]] if len(symbols) == 1 else result
 
     def get_option_quote(self, symbol, option_key, option_type="CALL"):
         option_symbol = self._build_option_symbol(symbol, option_key, option_type)

@@ -9,6 +9,7 @@ Coverage Target: Critical paths only
 
 import pytest
 from unittest.mock import Mock, patch
+from alpaca.data.enums import DataFeed
 from alpha_tech_tracker.trade_api.alpaca_client.client import (
     AlpacaAPIClient,
     APIError,
@@ -425,3 +426,172 @@ class TestPriceCalculations:
         assert client.round_nearest(5.28, 0.05) == pytest.approx(5.30)
         assert client.round_nearest(5.25, 0.05) == pytest.approx(5.25)
         assert client.round_nearest(150.51, 1.0) == pytest.approx(151.0)
+
+
+_ALPACA_PATCH = "alpha_tech_tracker.trade_api.alpaca_client.client"
+
+
+def _make_alpaca_raw_quote(bid=150.50, ask=150.75):
+    q = Mock()
+    q.bid_price = bid
+    q.ask_price = ask
+    q.bid_size = 100
+    q.ask_size = 200
+    return q
+
+
+def _make_ts_response(bid, ask):
+    return {
+        "QuoteResponse": {
+            "QuoteData": [{"All": {"bid": bid, "ask": ask, "bid_size": 50, "ask_size": 50, "last": None}}]
+        }
+    }
+
+
+class TestGetStockQuoteWithFallback:
+    """Tests for get_stock_quote IEX → TradeStation SIP quote routing.
+
+    Multi-symbol error paths (TS failure fallback, both-fail RuntimeError) are not
+    covered — primary use case is single-symbol and those branches differ only in
+    the final return (result vs result[symbols[0]]).
+    """
+
+    def test_sip_quote_client_stored_on_init(self):
+        ts_client = Mock()
+        with patch(f"{_ALPACA_PATCH}.TradingClient"), \
+             patch(f"{_ALPACA_PATCH}.StockHistoricalDataClient"), \
+             patch(f"{_ALPACA_PATCH}.OptionHistoricalDataClient"):
+            client = AlpacaAPIClient(api_key="test", secret_key="test", sip_quote_client=ts_client)
+
+        assert client._sip_quote_client is ts_client
+
+    def test_no_fallback_uses_alpaca_on_iex(self):
+        with patch(f"{_ALPACA_PATCH}.TradingClient"), \
+             patch(f"{_ALPACA_PATCH}.StockHistoricalDataClient") as mock_data, \
+             patch(f"{_ALPACA_PATCH}.OptionHistoricalDataClient"):
+            mock_data.return_value.get_stock_latest_quote.return_value = {"TSLA": _make_alpaca_raw_quote(150.50, 150.75)}
+            client = AlpacaAPIClient(api_key="test", secret_key="test")
+
+            quote = client.get_stock_quote("TSLA", feed=DataFeed.IEX)
+
+        assert quote["QuoteResponse"]["QuoteData"][0]["All"]["bid"] == 150.50
+        mock_data.return_value.get_stock_latest_quote.assert_called_once()
+
+    def test_fallback_ignored_when_feed_is_sip(self):
+        ts_client = Mock()
+        with patch(f"{_ALPACA_PATCH}.TradingClient"), \
+             patch(f"{_ALPACA_PATCH}.StockHistoricalDataClient") as mock_data, \
+             patch(f"{_ALPACA_PATCH}.OptionHistoricalDataClient"):
+            mock_data.return_value.get_stock_latest_quote.return_value = {"TSLA": _make_alpaca_raw_quote(150.50, 150.75)}
+            client = AlpacaAPIClient(api_key="test", secret_key="test", sip_quote_client=ts_client)
+
+            quote = client.get_stock_quote("TSLA", feed=DataFeed.SIP)
+
+        assert quote["QuoteResponse"]["QuoteData"][0]["All"]["bid"] == 150.50
+        ts_client.get_stock_quote.assert_not_called()
+
+    def test_returns_ts_quote_when_feed_is_iex(self):
+        ts_client = Mock()
+        ts_client.get_stock_quote.return_value = _make_ts_response(150.52, 150.73)
+        with patch(f"{_ALPACA_PATCH}.TradingClient"), \
+             patch(f"{_ALPACA_PATCH}.StockHistoricalDataClient") as mock_data, \
+             patch(f"{_ALPACA_PATCH}.OptionHistoricalDataClient"):
+            mock_data.return_value.get_stock_latest_quote.return_value = {"TSLA": _make_alpaca_raw_quote(150.50, 150.75)}
+            client = AlpacaAPIClient(api_key="test", secret_key="test", sip_quote_client=ts_client)
+
+            quote = client.get_stock_quote("TSLA", feed=DataFeed.IEX)
+
+        assert quote["QuoteResponse"]["QuoteData"][0]["All"]["bid"] == 150.52
+        assert quote["QuoteResponse"]["QuoteData"][0]["All"]["ask"] == 150.73
+
+    def test_both_apis_called_for_comparison(self):
+        ts_client = Mock()
+        ts_client.get_stock_quote.return_value = _make_ts_response(150.52, 150.73)
+        with patch(f"{_ALPACA_PATCH}.TradingClient"), \
+             patch(f"{_ALPACA_PATCH}.StockHistoricalDataClient") as mock_data, \
+             patch(f"{_ALPACA_PATCH}.OptionHistoricalDataClient"):
+            mock_data.return_value.get_stock_latest_quote.return_value = {"TSLA": _make_alpaca_raw_quote()}
+            client = AlpacaAPIClient(api_key="test", secret_key="test", sip_quote_client=ts_client)
+
+            client.get_stock_quote("TSLA", feed=DataFeed.IEX)
+
+        mock_data.return_value.get_stock_latest_quote.assert_called_once()
+        ts_client.get_stock_quote.assert_called_once_with("TSLA")
+
+    def test_ts_failure_falls_back_to_alpaca_result(self):
+        ts_client = Mock()
+        ts_client.get_stock_quote.side_effect = Exception("TS connection error")
+        with patch(f"{_ALPACA_PATCH}.TradingClient"), \
+             patch(f"{_ALPACA_PATCH}.StockHistoricalDataClient") as mock_data, \
+             patch(f"{_ALPACA_PATCH}.OptionHistoricalDataClient"):
+            mock_data.return_value.get_stock_latest_quote.return_value = {"TSLA": _make_alpaca_raw_quote(150.50, 150.75)}
+            client = AlpacaAPIClient(api_key="test", secret_key="test", sip_quote_client=ts_client)
+
+            quote = client.get_stock_quote("TSLA", feed=DataFeed.IEX)
+
+        assert quote["QuoteResponse"]["QuoteData"][0]["All"]["bid"] == 150.50
+        assert quote["QuoteResponse"]["QuoteData"][0]["All"]["ask"] == 150.75
+
+    def test_alpaca_failure_still_returns_ts_quote(self):
+        ts_client = Mock()
+        ts_client.get_stock_quote.return_value = _make_ts_response(150.52, 150.73)
+        with patch(f"{_ALPACA_PATCH}.TradingClient"), \
+             patch(f"{_ALPACA_PATCH}.StockHistoricalDataClient") as mock_data, \
+             patch(f"{_ALPACA_PATCH}.OptionHistoricalDataClient"):
+            mock_data.return_value.get_stock_latest_quote.side_effect = Exception("Alpaca timeout")
+            client = AlpacaAPIClient(api_key="test", secret_key="test", sip_quote_client=ts_client)
+
+            quote = client.get_stock_quote("TSLA", feed=DataFeed.IEX)
+
+        assert quote["QuoteResponse"]["QuoteData"][0]["All"]["bid"] == 150.52
+
+    def test_multi_symbol_returns_ts_quotes_keyed_by_symbol(self):
+        ts_client = Mock()
+        ts_client.get_stock_quote.return_value = {
+            "TSLA": _make_ts_response(310.1, 310.4),
+            "AAPL": _make_ts_response(150.1, 150.4),
+        }
+        with patch(f"{_ALPACA_PATCH}.TradingClient"), \
+             patch(f"{_ALPACA_PATCH}.StockHistoricalDataClient") as mock_data, \
+             patch(f"{_ALPACA_PATCH}.OptionHistoricalDataClient"):
+            mock_data.return_value.get_stock_latest_quote.return_value = {
+                "TSLA": _make_alpaca_raw_quote(310.0, 310.5),
+                "AAPL": _make_alpaca_raw_quote(150.0, 150.5),
+            }
+            client = AlpacaAPIClient(api_key="test", secret_key="test", sip_quote_client=ts_client)
+
+            quotes = client.get_stock_quote(["TSLA", "AAPL"], feed=DataFeed.IEX)
+
+        assert quotes["TSLA"]["QuoteResponse"]["QuoteData"][0]["All"]["bid"] == 310.1
+        assert quotes["AAPL"]["QuoteResponse"]["QuoteData"][0]["All"]["bid"] == 150.1
+        ts_client.get_stock_quote.assert_called_once_with(["TSLA", "AAPL"])
+
+    def test_quote_compare_log_contains_both_bid_ask(self, caplog):
+        import logging
+        ts_client = Mock()
+        ts_client.get_stock_quote.return_value = _make_ts_response(150.52, 150.73)
+        with patch(f"{_ALPACA_PATCH}.TradingClient"), \
+             patch(f"{_ALPACA_PATCH}.StockHistoricalDataClient") as mock_data, \
+             patch(f"{_ALPACA_PATCH}.OptionHistoricalDataClient"):
+            mock_data.return_value.get_stock_latest_quote.return_value = {"TSLA": _make_alpaca_raw_quote(150.50, 150.75)}
+            client = AlpacaAPIClient(api_key="test", secret_key="test", sip_quote_client=ts_client)
+
+            with caplog.at_level(logging.INFO, logger="trade_api.alpaca"):
+                client.get_stock_quote("TSLA", feed=DataFeed.IEX)
+
+        assert "QUOTE COMPARE" in caplog.text
+        assert "TSLA" in caplog.text
+        assert "150.50" in caplog.text
+        assert "150.52" in caplog.text
+
+    def test_both_sources_fail_raises_runtime_error(self):
+        ts_client = Mock()
+        ts_client.get_stock_quote.side_effect = Exception("TS down")
+        with patch(f"{_ALPACA_PATCH}.TradingClient"), \
+             patch(f"{_ALPACA_PATCH}.StockHistoricalDataClient") as mock_data, \
+             patch(f"{_ALPACA_PATCH}.OptionHistoricalDataClient"):
+            mock_data.return_value.get_stock_latest_quote.side_effect = Exception("Alpaca down")
+            client = AlpacaAPIClient(api_key="test", secret_key="test", sip_quote_client=ts_client)
+
+            with pytest.raises(RuntimeError, match="Both quote sources failed"):
+                client.get_stock_quote("TSLA", feed=DataFeed.IEX)
