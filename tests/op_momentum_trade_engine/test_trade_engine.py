@@ -1548,6 +1548,111 @@ class TestTickerSelectorReplayMode:
 
 
 # ---------------------------------------------------------------------------
+# TickerSelector — or_bar_lookback threading
+# ---------------------------------------------------------------------------
+
+def _make_select_result_with_pick():
+    return {
+        "picks": [{"ticker": "NVDA", "score": 1.0, "ev_trade": 0.5}],
+        "no_signal": [],
+        "negative_ev": [],
+        "rolling_stats": {"NVDA": {}},
+    }
+
+
+class TestTickerSelectorOrBarLookback:
+    def test_defaults_to_3(self):
+        selector = TickerSelector(tickers=["NVDA"], top_n=1)
+        assert selector._or_bar_lookback == 3
+
+    def test_stores_configured_value(self):
+        selector = TickerSelector(tickers=["NVDA"], top_n=1, or_bar_lookback=5)
+        assert selector._or_bar_lookback == 5
+
+    @patch(_SELECT_TOP_N_PATH)
+    @patch(_FETCH_BARS_PATH)
+    def test_select_passes_or_bar_lookback_to_select_top_n_in_live_mode(
+        self, mock_fetch_bars, mock_select_top_n
+    ):
+        mock_fetch_bars.return_value = {}
+        mock_select_top_n.return_value = _make_select_result_with_pick()
+        selector = TickerSelector(tickers=["NVDA"], top_n=1, or_bar_lookback=5)
+
+        with patch(
+            "alpha_tech_tracker.op_momentum_strategy.trade_engine.is_replay_mode",
+            return_value=False,
+        ):
+            selector.select()
+
+        assert mock_select_top_n.call_args[1]["or_bar_lookback"] == 5
+
+    @patch(_SELECT_TOP_N_PATH)
+    @patch(_FETCH_BARS_PATH)
+    def test_select_passes_or_bar_lookback_to_select_top_n_in_replay_mode(
+        self, mock_fetch_bars, mock_select_top_n
+    ):
+        mock_fetch_bars.return_value = {}
+        mock_select_top_n.return_value = _make_select_result_with_pick()
+        selector = TickerSelector(tickers=["NVDA"], top_n=1, or_bar_lookback=7)
+
+        with patch(
+            "alpha_tech_tracker.op_momentum_strategy.trade_engine.is_replay_mode",
+            return_value=True,
+        ), patch(
+            "alpha_tech_tracker.op_momentum_strategy.trade_engine._now_et"
+        ) as mock_now_et:
+            mock_now_et.return_value.date.return_value = date(2026, 4, 7)
+            selector.select()
+
+        assert mock_select_top_n.call_args[1]["or_bar_lookback"] == 7
+
+    @patch(_SELECT_TOP_N_PATH)
+    @patch(_FETCH_BARS_PATH)
+    def test_select_passes_or_bar_lookback_on_prev_day_fallback(
+        self, mock_fetch_bars, mock_select_top_n
+    ):
+        mock_fetch_bars.return_value = {}
+        empty_result = {"picks": [], "no_signal": [], "negative_ev": [], "rolling_stats": {}}
+        mock_select_top_n.side_effect = [empty_result, _make_select_result_with_pick()]
+        selector = TickerSelector(tickers=["NVDA"], top_n=1, or_bar_lookback=2)
+
+        with patch(
+            "alpha_tech_tracker.op_momentum_strategy.trade_engine.is_replay_mode",
+            return_value=False,
+        ):
+            selector.select()
+
+        assert mock_select_top_n.call_count == 2
+        for call in mock_select_top_n.call_args_list:
+            assert call[1]["or_bar_lookback"] == 2
+
+    @patch("alpha_tech_tracker.op_momentum_strategy.trade_engine.TickerSelector")
+    def test_run_window_selectors_passes_engine_or_bar_lookback_to_ticker_selector(
+        self, mock_ticker_selector_cls
+    ):
+        mock_instance = Mock()
+        mock_instance.rolling_stats = {}
+        mock_instance.fetch_bars.return_value = {}
+        mock_instance.select.return_value = []
+        mock_ticker_selector_cls.return_value = mock_instance
+
+        engine = OpMomentumTradeEngine(
+            alpaca_client=_make_alpaca_client(),
+            mock_trade_execution=True,
+            or_bar_lookback=4,
+        )
+        from alpha_tech_tracker.op_momentum_strategy.models import WindowConfig
+        engine._windows = [
+            WindowConfig(label="M1", opening_start="09:30", opening_bars=3,
+                         capital_fraction=1.0, is_sequential=False)
+        ]
+        engine._run_window_selectors(["NVDA"])
+
+        _, kwargs = mock_ticker_selector_cls.call_args
+        assert kwargs["or_bar_lookback"] == 4
+
+
+# ---------------------------------------------------------------------------
 # TickerSelector — market_data_client (TradeStation caching)
 # ---------------------------------------------------------------------------
 
