@@ -1,6 +1,7 @@
 import json
 import os
 import socket
+import sys
 import tempfile
 import threading
 import time
@@ -11,6 +12,11 @@ import pytest
 
 from alpha_tech_tracker.op_momentum_strategy.bar_broadcaster import (
     BarBroadcaster,
+    _parse_args,
+)
+from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector import (
+    ACTIVELY_TRADE_TICKERS,
+    DEFAULT_TICKERS,
 )
 from alpha_tech_tracker.trade_api.tradestation.bar_stream import _TSBar
 
@@ -218,3 +224,44 @@ class TestBarBroadcasterSocketSetup:
     def test_no_clients_on_init(self, tmp_socket_path):
         broadcaster = BarBroadcaster(_make_ts_client(), ["AMD"], socket_path=tmp_socket_path)
         assert broadcaster._clients == []
+
+
+class TestBarBroadcasterParseArgs:
+    def test_default_ticker_set_resolves_to_v3_pool(self, monkeypatch):
+        monkeypatch.setattr(sys, "argv", ["bar_broadcaster", "run"])
+        args = _parse_args()
+        assert args.tickers == DEFAULT_TICKERS
+
+    def test_ticker_set_v3_resolves_to_default_tickers(self, monkeypatch):
+        monkeypatch.setattr(sys, "argv", ["bar_broadcaster", "run", "--ticker-set", "V3"])
+        args = _parse_args()
+        assert args.tickers == DEFAULT_TICKERS
+
+    def test_ticker_set_at_resolves_to_actively_trade_tickers(self, monkeypatch):
+        monkeypatch.setattr(sys, "argv", ["bar_broadcaster", "run", "--ticker-set", "AT"])
+        args = _parse_args()
+        assert args.tickers == ACTIVELY_TRADE_TICKERS
+
+    def test_explicit_tickers_override_default_ticker_set(self, monkeypatch):
+        monkeypatch.setattr(sys, "argv", ["bar_broadcaster", "run", "--tickers", "TSLA", "NVDA"])
+        args = _parse_args()
+        assert args.tickers == ["TSLA", "NVDA"]
+
+    def test_explicit_tickers_override_named_ticker_set(self, monkeypatch):
+        monkeypatch.setattr(
+            sys, "argv",
+            ["bar_broadcaster", "run", "--ticker-set", "AT", "--tickers", "TSLA"],
+        )
+        args = _parse_args()
+        assert args.tickers == ["TSLA"]
+
+    def test_invalid_ticker_set_raises_system_exit(self, monkeypatch):
+        monkeypatch.setattr(sys, "argv", ["bar_broadcaster", "run", "--ticker-set", "UNKNOWN"])
+        with pytest.raises(SystemExit):
+            _parse_args()
+
+    def test_jpm_in_v3_pool_not_rh(self, monkeypatch):
+        monkeypatch.setattr(sys, "argv", ["bar_broadcaster", "run"])
+        args = _parse_args()
+        assert "JPM" in args.tickers
+        assert "RH" not in args.tickers

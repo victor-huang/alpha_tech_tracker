@@ -10,6 +10,10 @@ import threading
 import time
 from datetime import date, datetime, timezone
 
+from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector import (
+    ACTIVELY_TRADE_TICKERS,
+    DEFAULT_TICKERS,
+)
 from alpha_tech_tracker.trade_api.tradestation.bar_stream import TradeStationBarStream
 
 logger = logging.getLogger(__name__)
@@ -325,12 +329,15 @@ def _parse_args():
     parser.add_argument(
         "--tickers",
         nargs="+",
-        default=[
-            "SNDK", "APP", "SHOP", "CVNA", "AMD", "META",
-            "EXPE", "RH", "FN", "MU", "CRDO",
-            "PLTR", "COIN", "CLS", "MSTR", "CRWV", "MRVL",
-        ],
-        help="Tickers to stream (default: V3 pool)",
+        default=None,
+        help="Override ticker list (takes precedence over --ticker-set)",
+    )
+    parser.add_argument(
+        "--ticker-set",
+        default="V3",
+        choices=["V3", "AT"],
+        dest="ticker_set",
+        help="Named ticker set: V3 (default pool) or AT (ACTIVELY_TRADE_TICKERS)",
     )
     parser.add_argument(
         "--socket-path",
@@ -344,7 +351,10 @@ def _parse_args():
         dest="log_level",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
     )
-    return parser.parse_args()
+    args = parser.parse_args()
+    _TICKER_SETS = {"V3": DEFAULT_TICKERS, "AT": ACTIVELY_TRADE_TICKERS}
+    args.tickers = args.tickers or _TICKER_SETS.get(args.ticker_set, DEFAULT_TICKERS)
+    return args
 
 
 def main():
