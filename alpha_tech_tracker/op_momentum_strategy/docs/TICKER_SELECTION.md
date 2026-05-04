@@ -557,6 +557,8 @@ Tracks all additions and removals from `DEFAULT_TICKERS` with rationale and supp
 | 2026-04-01 | **Added** | RH | Swap test (-ISSC +RH) vs current pool: +19pp over 5 years (+$1,904 on $10k). M1 gained +20.5pp — largest single-window improvement of any ticker change tested. RH (Restoration Hardware) is a high-beta luxury retailer with strong OR breakout follow-through. All three windows improved. Baseline EV/trade improved from +0.276% → +0.288%. | **+19.0pp** |
 | 2026-05-03 | **Removed** | RH | Confirmed non-Penny Pilot ticker — live orders rejected repeatedly with `required=0.10` tick. Using $0.05-increment limit prices caused exchange rejections and escalation latency in live trading. Replaced by JPM to eliminate execution friction. | — |
 | 2026-05-03 | **Added** | JPM | Replaced RH due to RH's non-Penny Pilot tick issue. Screened 6 candidates (NFLX, AEM, AAPL, INTC, RTTD, JPM) over 2026 YTD (Jan–May) using the 4-window config (M1 09:30/3, A1 10:00/3, A2 13:15/1, A3 15:15/1), top-2, weights 60/40. JPM had negligible impact: -0.04pp vs RH on 2026 YTD (+122.71% vs +122.75%), and identical 5-year result (+117.95% both). JPM is Penny Pilot — no tick issues. INTC was the only candidate to edge RH (+122.92%, +0.17pp) but with a worse win rate (242W/300L vs 251W/291L), suggesting larger wins masking more frequent losses. JPM confirmed safe drop-in with zero 5-year P&L impact. Removed RH from `_NON_PENNY_PILOT_TICKERS` in `option_price_monitor.py`. | **~0pp** |
+| 2026-05-03 | **Removed** | FN | Confirmed non-Penny Pilot ticker ($0.10 tick, live rejections). Replaced by TSLA after 5-year compound backtest showed TSLA +1301% vs FN +1284% (+16.9pp). Removed FN from `_NON_PENNY_PILOT_TICKERS` in `option_price_monitor.py`. | — |
+| 2026-05-03 | **Added** | TSLA | Replaced FN. 5-year compound: +1301% vs FN +1284% (**+16.9pp**). TSLA wins 2021 (+7.5pp) and 2026 YTD (+0.6pp); FN wins 2022–2025 by 0.6–0.9pp/yr but the 2021 advantage compounds forward. No-compound 5-yr totals appear identical (+117.95%) because FN/TSLA are both rarely selected in 2021–2025 under daily reset — the edge only shows in compound mode. 2026 YTD no-compound: TSLA +131.33% vs FN +122.71% (+8.62pp, wins every month). TSLA is Penny Pilot — no tick issues. | **+16.9pp (compound)** |
 
 #### Candidate comparison (2026 YTD, RH replacement screen)
 
@@ -572,4 +574,4 @@ Tracks all additions and removals from `DEFAULT_TICKERS` with rationale and supp
 
 ### Current Pool (as of 2026-05-03) — 17 tickers
 
-`SNDK, APP, SHOP, CVNA, AMD, META, EXPE, JPM, FN, MU, CRDO, PLTR, COIN, CLS, MSTR, CRWV, MRVL`
+`SNDK, APP, SHOP, CVNA, AMD, META, EXPE, JPM, TSLA, MU, CRDO, PLTR, COIN, CLS, MSTR, CRWV, MRVL`
