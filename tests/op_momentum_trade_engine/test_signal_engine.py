@@ -757,6 +757,206 @@ class TestCatchUpFetchBarsInjection:
         assert "NVDA" in symbols
 
 
+class TestInjectIntoOpeningBuf:
+    """Unit tests for _inject_into_opening_buf.
+
+    The helper adds a bar to _opening_buf without re-appending to _history,
+    deduplicates by timestamp, and fires the signal when the buffer is complete.
+    It is the mechanism that allows OR catchup to recover bars that landed in
+    _history during a mid-session warmup but never reached _opening_buf.
+    """
+
+    def _make_m1_engine(self, ticker="AMD", last_close=100.0):
+        engine = LiveSignalEngine(
+            tickers=[ticker],
+            windows=[{"label": "M1", "opening_start": "09:30", "opening_bars": 3, "on_signal": None}],
+        )
+        engine._history[ticker] = _build_history_df(
+            closes=[last_close] * 25,
+            ma20=[last_close] * 25,
+            ma50=[last_close] * 25,
+            ma200=[last_close] * 25,
+        )
+        return engine
+
+    def _make_bar(self, ticker, period_ts, close=101.0):
+        return _FiveMinBar(
+            symbol=ticker, timestamp=period_ts,
+            open=100.0, high=102.0, low=99.0, close=close, volume=500.0,
+        )
+
+    def test_bar_appended_to_opening_buf(self):
+        today = date(2026, 1, 15)
+        engine = self._make_m1_engine("AMD")
+        or_start = ET.localize(datetime.combine(today, datetime.strptime("09:30", "%H:%M").time()))
+        bar = self._make_bar("AMD", or_start)
+
+        engine._inject_into_opening_buf("AMD", "M1", engine._windows[0], bar)
+
+        assert len(engine._opening_buf["M1"]["AMD"]) == 1
+        assert engine._opening_buf["M1"]["AMD"][0] is bar
+
+    def test_does_not_append_bar_to_history(self):
+        today = date(2026, 1, 15)
+        engine = self._make_m1_engine("AMD")
+        history_len_before = len(engine._history["AMD"])
+        or_start = ET.localize(datetime.combine(today, datetime.strptime("09:30", "%H:%M").time()))
+        bar = self._make_bar("AMD", or_start)
+
+        engine._inject_into_opening_buf("AMD", "M1", engine._windows[0], bar)
+
+        assert len(engine._history["AMD"]) == history_len_before
+
+    def test_skips_bar_with_duplicate_timestamp(self):
+        today = date(2026, 1, 15)
+        engine = self._make_m1_engine("AMD")
+        or_start = ET.localize(datetime.combine(today, datetime.strptime("09:30", "%H:%M").time()))
+        bar = self._make_bar("AMD", or_start)
+        engine._opening_buf["M1"]["AMD"].append(bar)
+
+        engine._inject_into_opening_buf("AMD", "M1", engine._windows[0], bar)
+
+        assert len(engine._opening_buf["M1"]["AMD"]) == 1
+
+    def test_skips_when_buffer_already_full(self):
+        today = date(2026, 1, 15)
+        engine = self._make_m1_engine("AMD")
+        or_start = ET.localize(datetime.combine(today, datetime.strptime("09:30", "%H:%M").time()))
+        for i in range(3):
+            engine._opening_buf["M1"]["AMD"].append(
+                self._make_bar("AMD", or_start + timedelta(minutes=i * 5))
+            )
+
+        extra_bar = self._make_bar("AMD", or_start + timedelta(minutes=15))
+        engine._inject_into_opening_buf("AMD", "M1", engine._windows[0], extra_bar)
+
+        assert len(engine._opening_buf["M1"]["AMD"]) == 3
+
+    def test_fires_signal_when_buffer_becomes_complete(self):
+        today = date(2026, 1, 15)
+        fired = []
+        engine = LiveSignalEngine(
+            tickers=["AMD"],
+            windows=[{"label": "M1", "opening_start": "09:30", "opening_bars": 3,
+                       "on_signal": lambda evt: fired.append(evt)}],
+        )
+        engine._history["AMD"] = _build_history_df(
+            closes=[100.0] * 25, ma20=[95.0] * 25, ma50=[95.0] * 25, ma200=[90.0] * 25,
+        )
+        or_start = ET.localize(datetime.combine(today, datetime.strptime("09:30", "%H:%M").time()))
+        engine._opening_buf["M1"]["AMD"] = [
+            _FiveMinBar(symbol="AMD", timestamp=or_start,
+                        open=95.0, high=105.0, low=90.0, close=92.0, volume=1000.0),
+            _FiveMinBar(symbol="AMD", timestamp=or_start + timedelta(minutes=5),
+                        open=92.0, high=96.0, low=90.0, close=91.0, volume=800.0),
+        ]
+        third_bar = _FiveMinBar(
+            symbol="AMD", timestamp=or_start + timedelta(minutes=10),
+            open=91.0, high=93.0, low=90.5, close=91.5, volume=600.0,
+        )
+
+        engine._inject_into_opening_buf("AMD", "M1", engine._windows[0], third_bar)
+
+        assert len(fired) == 1
+
+
+class TestCatchUpFetchBarsHistoryInjection:
+    """_catch_up_opening_bars_for_window: when fetch_bars returns bars that are
+    already in _history (mid-session restart), they must be injected into
+    _opening_buf via _inject_into_opening_buf rather than skipped silently.
+    _process_five_min_bar must NOT be called for those bars (no double-append
+    to _history). The final _opening_buf must contain all OR bars with the
+    correct OHLC values from history.
+    """
+
+    def _make_m1_engine_with_history_or_bars(self, ticker="CVNA"):
+        today = date(2026, 4, 30)
+        or_start = ET.localize(
+            datetime.combine(today, datetime.strptime("09:30", "%H:%M").time())
+        )
+        engine = LiveSignalEngine(
+            tickers=[ticker],
+            windows=[{"label": "M1", "opening_start": "09:30", "opening_bars": 3,
+                       "on_signal": None}],
+        )
+        engine._history[ticker] = _build_history_df(
+            closes=[380.0] * 25,
+            ma20=[390.0] * 25,
+            ma50=[390.0] * 25,
+            ma200=[390.0] * 25,
+        )
+        or_bars = [
+            (or_start,                         419.0, 419.0, 396.0, 398.0),
+            (or_start + timedelta(minutes=5),  398.0, 398.0, 379.0, 379.0),
+            (or_start + timedelta(minutes=10), 380.0, 383.0, 378.0, 383.0),
+        ]
+        rows = [
+            pd.Series(
+                {"Open": o, "High": h, "Low": lo, "Close": c, "Volume": 1000.0,
+                 "MA20": 390.0, "MA50": 390.0, "MA200": 390.0},
+                name=ts,
+            )
+            for ts, o, h, lo, c in or_bars
+        ]
+        engine._history[ticker] = pd.concat(
+            [engine._history[ticker]] + [r.to_frame().T for r in rows]
+        )
+        return engine, today, or_start
+
+    def _make_or_df(self, or_start):
+        or_bars = [
+            (or_start,                         419.0, 419.0, 396.0, 398.0),
+            (or_start + timedelta(minutes=5),  398.0, 398.0, 379.0, 379.0),
+            (or_start + timedelta(minutes=10), 380.0, 383.0, 378.0, 383.0),
+        ]
+        return pd.DataFrame(
+            [{"Open": o, "High": h, "Low": lo, "Close": c, "Volume": 1000.0}
+             for _, o, h, lo, c in or_bars],
+            index=pd.DatetimeIndex([ts for ts, *_ in or_bars]),
+        )
+
+    def test_or_bars_injected_from_history_not_via_process(self):
+        engine, today, or_start = self._make_m1_engine_with_history_or_bars()
+        mdc = Mock()
+        mdc.fetch_bars.return_value = {"CVNA": self._make_or_df(or_start)}
+        engine._market_data_client = mdc
+
+        process_calls = []
+        with patch.object(engine, "_process_five_min_bar",
+                          side_effect=lambda b: process_calls.append(b)):
+            engine._catch_up_opening_bars_for_window(today, engine._windows[0])
+
+        assert process_calls == [], "history bars must not be re-appended via _process_five_min_bar"
+        assert len(engine._opening_buf["M1"]["CVNA"]) == 3
+
+    def test_opening_buf_has_correct_ohlc_from_history(self):
+        engine, today, or_start = self._make_m1_engine_with_history_or_bars()
+        mdc = Mock()
+        mdc.fetch_bars.return_value = {"CVNA": self._make_or_df(or_start)}
+        engine._market_data_client = mdc
+
+        with patch.object(engine, "_process_five_min_bar"):
+            engine._catch_up_opening_bars_for_window(today, engine._windows[0])
+
+        buf = engine._opening_buf["M1"]["CVNA"]
+        assert len(buf) == 3
+        assert buf[0].open == 419.0
+        assert buf[1].close == 379.0
+        assert buf[2].high == 383.0
+
+    def test_history_length_unchanged_after_injection(self):
+        engine, today, or_start = self._make_m1_engine_with_history_or_bars()
+        history_len_before = len(engine._history["CVNA"])
+        mdc = Mock()
+        mdc.fetch_bars.return_value = {"CVNA": self._make_or_df(or_start)}
+        engine._market_data_client = mdc
+
+        with patch.object(engine, "_process_five_min_bar"):
+            engine._catch_up_opening_bars_for_window(today, engine._windows[0])
+
+        assert len(engine._history["CVNA"]) == history_len_before
+
+
 class TestFlatOrSignalGuard:
     """When all OR bars are synthetic (volume=0, or_range=0), _try_fire_signal
     must not emit a signal — no real price discovery took place."""
@@ -888,12 +1088,11 @@ class TestFillOrGapsWithFlatBars:
         assert all(b.volume == 0.0 for b in injected)
         assert all(b.open == b.high == b.low == b.close == 25.0 for b in injected)
 
-    def test_does_not_overwrite_existing_real_bar(self):
+    def test_injects_history_bar_into_opening_buf_when_missing_from_buffer(self):
         today = date(2026, 1, 15)
         engine = self._make_m1_engine("ANAB")
         or_starts = self._or_bar_period_starts(today)
 
-        # Pre-populate history with a real bar at the first OR slot
         real_row = pd.Series(
             {"Open": 26.0, "High": 27.0, "Low": 25.0, "Close": 26.5, "Volume": 1000.0,
              "MA20": 25.0, "MA50": 25.0, "MA200": 25.0},
@@ -902,12 +1101,11 @@ class TestFillOrGapsWithFlatBars:
         engine._history["ANAB"] = pd.concat(
             [engine._history["ANAB"], real_row.to_frame().T]
         )
-        engine._opening_buf["M1"]["ANAB"].append(Mock())  # 1 bar already in buf
 
-        injected = []
+        flat_bar_calls = []
 
         def fake_process(bar):
-            injected.append(bar)
+            flat_bar_calls.append(bar)
             engine._opening_buf["M1"]["ANAB"].append(bar)
 
         with patch.object(engine, "_process_five_min_bar", side_effect=fake_process):
@@ -915,8 +1113,44 @@ class TestFillOrGapsWithFlatBars:
                 "ANAB", "M1", or_starts, engine._windows[0]
             )
 
-        # Only 2 flat bars should be synthesized (slots 2 and 3)
-        assert len(injected) == 2
+        # 09:30 injected from history (not via _process_five_min_bar); 09:35 and 09:40 as flat bars
+        assert len(flat_bar_calls) == 2
+        assert len(engine._opening_buf["M1"]["ANAB"]) == 3
+        assert engine._opening_buf["M1"]["ANAB"][0].close == 26.5
+
+    def test_does_not_double_inject_bar_already_in_opening_buf(self):
+        today = date(2026, 1, 15)
+        engine = self._make_m1_engine("ANAB")
+        or_starts = self._or_bar_period_starts(today)
+
+        real_row = pd.Series(
+            {"Open": 26.0, "High": 27.0, "Low": 25.0, "Close": 26.5, "Volume": 1000.0,
+             "MA20": 25.0, "MA50": 25.0, "MA200": 25.0},
+            name=or_starts[0],
+        )
+        engine._history["ANAB"] = pd.concat(
+            [engine._history["ANAB"], real_row.to_frame().T]
+        )
+        existing_buf_bar = _FiveMinBar(
+            symbol="ANAB", timestamp=or_starts[0],
+            open=26.0, high=27.0, low=25.0, close=26.5, volume=1000.0,
+        )
+        engine._opening_buf["M1"]["ANAB"].append(existing_buf_bar)
+
+        flat_bar_calls = []
+
+        def fake_process(bar):
+            flat_bar_calls.append(bar)
+            engine._opening_buf["M1"]["ANAB"].append(bar)
+
+        with patch.object(engine, "_process_five_min_bar", side_effect=fake_process):
+            engine._fill_or_gaps_with_flat_bars(
+                "ANAB", "M1", or_starts, engine._windows[0]
+            )
+
+        # 09:30 already in buf (timestamp match) — skipped; 09:35 and 09:40 as flat bars
+        assert len(flat_bar_calls) == 2
+        assert engine._opening_buf["M1"]["ANAB"][0] is existing_buf_bar
 
     def test_does_nothing_when_or_buffer_already_full(self):
         today = date(2026, 1, 15)
