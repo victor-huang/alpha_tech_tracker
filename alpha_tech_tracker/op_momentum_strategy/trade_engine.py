@@ -109,6 +109,9 @@ class TickerSelector:
         score_feed: DataFeed = None,
         market_data_client=None,
         or_bar_lookback: int = 3,
+        trailing_ma: str = "ma20",
+        max_loss_pct: Optional[float] = None,
+        armed_ma20_exit: bool = False,
     ):
         self._tickers = tickers
         self._top_n = top_n
@@ -122,6 +125,9 @@ class TickerSelector:
         self._score_feed = score_feed if score_feed is not None else alpaca_feed
         self._market_data_client = market_data_client
         self._or_bar_lookback = or_bar_lookback
+        self._trailing_ma = trailing_ma
+        self._max_loss_pct = max_loss_pct
+        self._armed_ma20_exit = armed_ma20_exit
         self.rolling_stats: dict = {}
 
     def _selector_cache_path(self, target_date: date) -> Path:
@@ -184,6 +190,10 @@ class TickerSelector:
                 regime_filter=self._regime_filter,
                 regime_ma=self._regime_ma,
                 or_bar_lookback=self._or_bar_lookback,
+                trailing_ma=self._trailing_ma,
+                max_loss_pct=self._max_loss_pct,
+                armed_ma20_exit=self._armed_ma20_exit,
+                feed=self._score_feed,
             )
             picks = result["picks"]
         else:
@@ -201,6 +211,10 @@ class TickerSelector:
                 regime_filter=self._regime_filter,
                 regime_ma=self._regime_ma,
                 or_bar_lookback=self._or_bar_lookback,
+                trailing_ma=self._trailing_ma,
+                max_loss_pct=self._max_loss_pct,
+                armed_ma20_exit=self._armed_ma20_exit,
+                feed=self._score_feed,
             )
             picks = result["picks"]
 
@@ -227,6 +241,10 @@ class TickerSelector:
                     regime_filter=self._regime_filter,
                     regime_ma=self._regime_ma,
                     or_bar_lookback=self._or_bar_lookback,
+                    trailing_ma=self._trailing_ma,
+                    max_loss_pct=self._max_loss_pct,
+                    armed_ma20_exit=self._armed_ma20_exit,
+                    feed=self._score_feed,
                 )
                 picks = result["picks"]
 
@@ -1876,6 +1894,9 @@ class OpMomentumTradeEngine:
                     score_feed=self._score_feed,
                     market_data_client=self._market_data_client,
                     or_bar_lookback=self._or_bar_lookback,
+                    trailing_ma=self._trailing_ma,
+                    max_loss_pct=self._max_loss_pct,
+                    armed_ma20_exit=self._armed_ma20_exit,
                 )
                 if first_config_key is None:
                     first_config_key = config_key

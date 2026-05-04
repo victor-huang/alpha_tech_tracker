@@ -1653,6 +1653,313 @@ class TestTickerSelectorOrBarLookback:
 
 
 # ---------------------------------------------------------------------------
+# TickerSelector — strategy param threading (trailing_ma, max_loss_pct,
+#                  armed_ma20_exit, feed)
+# ---------------------------------------------------------------------------
+
+_RUN_BACKTEST_PATH = "alpha_tech_tracker.op_momentum_strategy.op_momentum_selector.run_backtest"
+_BUILD_REGIME_PATH = "alpha_tech_tracker.op_momentum_strategy.op_momentum_selector.build_bearish_regime_dates"
+_SELECT_TOP_N_SELECTOR_PATH = "alpha_tech_tracker.op_momentum_strategy.op_momentum_selector.select_top_n"
+
+
+def _make_run_backtest_result():
+    return {}
+
+
+def _make_select_top_n_result_with_pick():
+    return {
+        "picks": [{"ticker": "NVDA", "score": 1.0, "ev_trade": 0.5}],
+        "no_signal": [],
+        "negative_ev": [],
+        "rolling_stats": {"NVDA": {}},
+    }
+
+
+class TestSelectTopNStrategyParams:
+    """select_top_n() threads trailing_ma / max_loss_pct / armed_ma20_exit
+    through to run_backtest(), and feed through to build_bearish_regime_dates()."""
+
+    @patch(_RUN_BACKTEST_PATH)
+    @patch("alpha_tech_tracker.op_momentum_strategy.op_momentum_selector.fetch_bars")
+    def test_passes_trailing_ma_to_run_backtest(self, mock_fetch, mock_run_backtest):
+        from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector import select_top_n
+        mock_fetch.return_value = {}
+        mock_run_backtest.return_value = {}
+
+        select_top_n(
+            n=1, tickers=["NVDA"], lookback_days=10, opening_bars=3,
+            bearish_ma200=False, stop_pct=0.15, source="alpaca",
+            trailing_ma="ma50",
+        )
+
+        assert mock_run_backtest.call_args[1]["trailing_ma"] == "ma50"
+
+    @patch(_RUN_BACKTEST_PATH)
+    @patch("alpha_tech_tracker.op_momentum_strategy.op_momentum_selector.fetch_bars")
+    def test_passes_max_loss_pct_to_run_backtest(self, mock_fetch, mock_run_backtest):
+        from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector import select_top_n
+        mock_fetch.return_value = {}
+        mock_run_backtest.return_value = {}
+
+        select_top_n(
+            n=1, tickers=["NVDA"], lookback_days=10, opening_bars=3,
+            bearish_ma200=False, stop_pct=0.15, source="alpaca",
+            max_loss_pct=0.05,
+        )
+
+        assert mock_run_backtest.call_args[1]["max_loss_pct"] == 0.05
+
+    @patch(_RUN_BACKTEST_PATH)
+    @patch("alpha_tech_tracker.op_momentum_strategy.op_momentum_selector.fetch_bars")
+    def test_passes_armed_ma20_exit_to_run_backtest(self, mock_fetch, mock_run_backtest):
+        from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector import select_top_n
+        mock_fetch.return_value = {}
+        mock_run_backtest.return_value = {}
+
+        select_top_n(
+            n=1, tickers=["NVDA"], lookback_days=10, opening_bars=3,
+            bearish_ma200=False, stop_pct=0.15, source="alpaca",
+            armed_ma20_exit=True,
+        )
+
+        assert mock_run_backtest.call_args[1]["armed_ma20_exit"] is True
+
+    @patch(_BUILD_REGIME_PATH)
+    @patch(_RUN_BACKTEST_PATH)
+    @patch("alpha_tech_tracker.op_momentum_strategy.op_momentum_selector.fetch_bars")
+    def test_passes_feed_to_build_bearish_regime_dates(
+        self, mock_fetch, mock_run_backtest, mock_build_regime
+    ):
+        from alpaca.data.enums import DataFeed
+        from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector import select_top_n
+        mock_fetch.return_value = {}
+        mock_run_backtest.return_value = {}
+        mock_build_regime.return_value = set()
+
+        select_top_n(
+            n=1, tickers=["NVDA"], lookback_days=10, opening_bars=3,
+            bearish_ma200=False, stop_pct=0.15, source="alpaca",
+            regime_filter=True, feed=DataFeed.IEX,
+        )
+
+        assert mock_build_regime.call_args[1].get("feed") == DataFeed.IEX
+
+    @patch(_RUN_BACKTEST_PATH)
+    @patch("alpha_tech_tracker.op_momentum_strategy.op_momentum_selector.fetch_bars")
+    def test_defaults_trailing_ma_to_ma20(self, mock_fetch, mock_run_backtest):
+        from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector import select_top_n
+        mock_fetch.return_value = {}
+        mock_run_backtest.return_value = {}
+
+        select_top_n(
+            n=1, tickers=["NVDA"], lookback_days=10, opening_bars=3,
+            bearish_ma200=False, stop_pct=0.15, source="alpaca",
+        )
+
+        assert mock_run_backtest.call_args[1]["trailing_ma"] == "ma20"
+
+    @patch(_RUN_BACKTEST_PATH)
+    @patch("alpha_tech_tracker.op_momentum_strategy.op_momentum_selector.fetch_bars")
+    def test_defaults_max_loss_pct_to_none(self, mock_fetch, mock_run_backtest):
+        from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector import select_top_n
+        mock_fetch.return_value = {}
+        mock_run_backtest.return_value = {}
+
+        select_top_n(
+            n=1, tickers=["NVDA"], lookback_days=10, opening_bars=3,
+            bearish_ma200=False, stop_pct=0.15, source="alpaca",
+        )
+
+        assert mock_run_backtest.call_args[1]["max_loss_pct"] is None
+
+    @patch(_RUN_BACKTEST_PATH)
+    @patch("alpha_tech_tracker.op_momentum_strategy.op_momentum_selector.fetch_bars")
+    def test_defaults_armed_ma20_exit_to_false(self, mock_fetch, mock_run_backtest):
+        from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector import select_top_n
+        mock_fetch.return_value = {}
+        mock_run_backtest.return_value = {}
+
+        select_top_n(
+            n=1, tickers=["NVDA"], lookback_days=10, opening_bars=3,
+            bearish_ma200=False, stop_pct=0.15, source="alpaca",
+        )
+
+        assert mock_run_backtest.call_args[1]["armed_ma20_exit"] is False
+
+
+class TestTickerSelectorStrategyParams:
+    """TickerSelector stores strategy params and passes them to select_top_n().
+    _run_window_selectors() passes the engine's configured values."""
+
+    def test_defaults(self):
+        selector = TickerSelector(tickers=["NVDA"], top_n=1)
+        assert selector._trailing_ma == "ma20"
+        assert selector._max_loss_pct is None
+        assert selector._armed_ma20_exit is False
+
+    def test_stores_configured_values(self):
+        selector = TickerSelector(
+            tickers=["NVDA"], top_n=1,
+            trailing_ma="ma50", max_loss_pct=0.05, armed_ma20_exit=True,
+        )
+        assert selector._trailing_ma == "ma50"
+        assert selector._max_loss_pct == 0.05
+        assert selector._armed_ma20_exit is True
+
+    @patch(_SELECT_TOP_N_PATH)
+    @patch(_FETCH_BARS_PATH)
+    def test_select_passes_trailing_ma_to_select_top_n(
+        self, mock_fetch_bars, mock_select_top_n
+    ):
+        mock_fetch_bars.return_value = {}
+        mock_select_top_n.return_value = _make_select_top_n_result_with_pick()
+        selector = TickerSelector(tickers=["NVDA"], top_n=1, trailing_ma="ma50")
+
+        with patch(
+            "alpha_tech_tracker.op_momentum_strategy.trade_engine.is_replay_mode",
+            return_value=False,
+        ):
+            selector.select()
+
+        assert mock_select_top_n.call_args[1]["trailing_ma"] == "ma50"
+
+    @patch(_SELECT_TOP_N_PATH)
+    @patch(_FETCH_BARS_PATH)
+    def test_select_passes_max_loss_pct_to_select_top_n(
+        self, mock_fetch_bars, mock_select_top_n
+    ):
+        mock_fetch_bars.return_value = {}
+        mock_select_top_n.return_value = _make_select_top_n_result_with_pick()
+        selector = TickerSelector(tickers=["NVDA"], top_n=1, max_loss_pct=0.08)
+
+        with patch(
+            "alpha_tech_tracker.op_momentum_strategy.trade_engine.is_replay_mode",
+            return_value=False,
+        ):
+            selector.select()
+
+        assert mock_select_top_n.call_args[1]["max_loss_pct"] == 0.08
+
+    @patch(_SELECT_TOP_N_PATH)
+    @patch(_FETCH_BARS_PATH)
+    def test_select_passes_armed_ma20_exit_to_select_top_n(
+        self, mock_fetch_bars, mock_select_top_n
+    ):
+        mock_fetch_bars.return_value = {}
+        mock_select_top_n.return_value = _make_select_top_n_result_with_pick()
+        selector = TickerSelector(tickers=["NVDA"], top_n=1, armed_ma20_exit=True)
+
+        with patch(
+            "alpha_tech_tracker.op_momentum_strategy.trade_engine.is_replay_mode",
+            return_value=False,
+        ):
+            selector.select()
+
+        assert mock_select_top_n.call_args[1]["armed_ma20_exit"] is True
+
+    @patch(_SELECT_TOP_N_PATH)
+    @patch(_FETCH_BARS_PATH)
+    def test_select_passes_score_feed_as_feed_to_select_top_n(
+        self, mock_fetch_bars, mock_select_top_n
+    ):
+        from alpaca.data.enums import DataFeed
+        mock_fetch_bars.return_value = {}
+        mock_select_top_n.return_value = _make_select_top_n_result_with_pick()
+        selector = TickerSelector(
+            tickers=["NVDA"], top_n=1,
+            alpaca_feed=DataFeed.SIP, score_feed=DataFeed.IEX,
+        )
+
+        with patch(
+            "alpha_tech_tracker.op_momentum_strategy.trade_engine.is_replay_mode",
+            return_value=False,
+        ):
+            selector.select()
+
+        assert mock_select_top_n.call_args[1]["feed"] == DataFeed.IEX
+
+    @patch(_SELECT_TOP_N_PATH)
+    @patch(_FETCH_BARS_PATH)
+    def test_strategy_params_propagate_in_replay_mode(
+        self, mock_fetch_bars, mock_select_top_n
+    ):
+        mock_fetch_bars.return_value = {}
+        mock_select_top_n.return_value = _make_select_top_n_result_with_pick()
+        selector = TickerSelector(
+            tickers=["NVDA"], top_n=1,
+            trailing_ma="ma50", max_loss_pct=0.03, armed_ma20_exit=True,
+        )
+
+        with patch(
+            "alpha_tech_tracker.op_momentum_strategy.trade_engine.is_replay_mode",
+            return_value=True,
+        ), patch(
+            "alpha_tech_tracker.op_momentum_strategy.trade_engine._now_et"
+        ) as mock_now_et:
+            mock_now_et.return_value.date.return_value = date(2026, 4, 7)
+            selector.select()
+
+        kwargs = mock_select_top_n.call_args[1]
+        assert kwargs["trailing_ma"] == "ma50"
+        assert kwargs["max_loss_pct"] == 0.03
+        assert kwargs["armed_ma20_exit"] is True
+
+    @patch(_SELECT_TOP_N_PATH)
+    @patch(_FETCH_BARS_PATH)
+    def test_strategy_params_propagate_on_prev_day_fallback(
+        self, mock_fetch_bars, mock_select_top_n
+    ):
+        mock_fetch_bars.return_value = {}
+        empty = {"picks": [], "no_signal": [], "negative_ev": [], "rolling_stats": {}}
+        mock_select_top_n.side_effect = [empty, _make_select_top_n_result_with_pick()]
+        selector = TickerSelector(
+            tickers=["NVDA"], top_n=1,
+            trailing_ma="ma50", max_loss_pct=0.03, armed_ma20_exit=True,
+        )
+
+        with patch(
+            "alpha_tech_tracker.op_momentum_strategy.trade_engine.is_replay_mode",
+            return_value=False,
+        ):
+            selector.select()
+
+        assert mock_select_top_n.call_count == 2
+        for call in mock_select_top_n.call_args_list:
+            assert call[1]["trailing_ma"] == "ma50"
+            assert call[1]["max_loss_pct"] == 0.03
+            assert call[1]["armed_ma20_exit"] is True
+
+    @patch("alpha_tech_tracker.op_momentum_strategy.trade_engine.TickerSelector")
+    def test_run_window_selectors_passes_engine_strategy_params(
+        self, mock_ticker_selector_cls
+    ):
+        mock_instance = Mock()
+        mock_instance.rolling_stats = {}
+        mock_instance.fetch_bars.return_value = {}
+        mock_instance.select.return_value = []
+        mock_ticker_selector_cls.return_value = mock_instance
+
+        engine = OpMomentumTradeEngine(
+            alpaca_client=_make_alpaca_client(),
+            mock_trade_execution=True,
+            trailing_ma="ma50",
+            max_loss_pct=0.04,
+            armed_ma20_exit=True,
+        )
+        from alpha_tech_tracker.op_momentum_strategy.models import WindowConfig
+        engine._windows = [
+            WindowConfig(label="M1", opening_start="09:30", opening_bars=3,
+                         capital_fraction=1.0, is_sequential=False)
+        ]
+        engine._run_window_selectors(["NVDA"])
+
+        _, kwargs = mock_ticker_selector_cls.call_args
+        assert kwargs["trailing_ma"] == "ma50"
+        assert kwargs["max_loss_pct"] == 0.04
+        assert kwargs["armed_ma20_exit"] is True
+
+
+# ---------------------------------------------------------------------------
 # TickerSelector — market_data_client (TradeStation caching)
 # ---------------------------------------------------------------------------
 

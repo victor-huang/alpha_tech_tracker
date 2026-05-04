@@ -3,6 +3,8 @@ import pandas as pd
 import pytz
 from datetime import date, datetime, timedelta
 
+from alpaca.data.enums import DataFeed
+
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import (
     build_bearish_regime_dates,
     fetch_bars,
@@ -256,6 +258,10 @@ def select_top_n(
     regime_filter: bool = False,
     regime_ma: int = 8,
     close_top_pct: float = None,
+    trailing_ma: str = "ma20",
+    max_loss_pct: float = None,
+    armed_ma20_exit: bool = False,
+    feed: DataFeed = None,
 ) -> list:
     if target_date is None:
         target_date = datetime.now(_ET).date()
@@ -288,6 +294,9 @@ def select_top_n(
         regime_filter=regime_filter,
         regime_ma=regime_ma,
         close_top_pct=close_top_pct,
+        trailing_ma=trailing_ma,
+        max_loss_pct=max_loss_pct,
+        armed_ma20_exit=armed_ma20_exit,
     )
 
     rolling_stats = {
@@ -298,7 +307,7 @@ def select_top_n(
     }
 
     _bearish_regime_dates = (
-        build_bearish_regime_dates(lookback_start, target_date, source, regime_ma)
+        build_bearish_regime_dates(lookback_start, target_date, source, regime_ma, feed=feed)
         if regime_filter
         else None
     )
