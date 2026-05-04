@@ -555,9 +555,21 @@ Tracks all additions and removals from `DEFAULT_TICKERS` with rationale and supp
 | 2026-04-01 | **Added** | TSLA | 5-year backtest (2021–2026-03-31) with TSLA vs without: +10.9pp gain (+$1,090 on $10k). M1 window gained +8.3pp, A2 +4.3pp. High-beta, high-volatility ticker with clean OR breakout profile consistent with COIN and PLTR. | **+10.9pp** |
 | 2026-04-01 | **Removed** | ISSC | Replaced by RH. ISSC is a thinly traded small-cap producing frequent `fallback_20pct` exits (no intraday momentum follow-through). Options ADV well below 5K threshold — execution friction in live trading. | — |
 | 2026-04-01 | **Added** | RH | Swap test (-ISSC +RH) vs current pool: +19pp over 5 years (+$1,904 on $10k). M1 gained +20.5pp — largest single-window improvement of any ticker change tested. RH (Restoration Hardware) is a high-beta luxury retailer with strong OR breakout follow-through. All three windows improved. Baseline EV/trade improved from +0.276% → +0.288%. | **+19.0pp** |
+| 2026-05-03 | **Removed** | RH | Confirmed non-Penny Pilot ticker — live orders rejected repeatedly with `required=0.10` tick. Using $0.05-increment limit prices caused exchange rejections and escalation latency in live trading. Replaced by JPM to eliminate execution friction. | — |
+| 2026-05-03 | **Added** | JPM | Replaced RH due to RH's non-Penny Pilot tick issue. Screened 6 candidates (NFLX, AEM, AAPL, INTC, RTTD, JPM) over 2026 YTD (Jan–May) using the 4-window config (M1 09:30/3, A1 10:00/3, A2 13:15/1, A3 15:15/1), top-2, weights 60/40. JPM had negligible impact: -0.04pp vs RH on 2026 YTD (+122.71% vs +122.75%), and identical 5-year result (+117.95% both). JPM is Penny Pilot — no tick issues. INTC was the only candidate to edge RH (+122.92%, +0.17pp) but with a worse win rate (242W/300L vs 251W/291L), suggesting larger wins masking more frequent losses. JPM confirmed safe drop-in with zero 5-year P&L impact. Removed RH from `_NON_PENNY_PILOT_TICKERS` in `option_price_monitor.py`. | **~0pp** |
 
-### Current Pool (as of 2026-04-01) — 16 tickers
+#### Candidate comparison (2026 YTD, RH replacement screen)
 
-`SNDK, APP, SHOP, CVNA, AMD, META, EXPE, FANG, RH, FN, MU, ANAB, PLTR, COIN, NVDA, TSLA`
+| Candidate | Total Return | vs RH | Notes |
+|---|---|---|---|
+| RH (baseline) | +122.75% | — | Non-Penny Pilot; live tick rejections |
+| INTC | +122.92% | **+0.17pp** | Only candidate to beat RH; lower win rate (44.7%) offset by bigger wins |
+| **JPM** | **+122.71%** | **-0.04pp** | Best overall: near-zero 2026 gap, identical 5-year, Penny Pilot ✅ |
+| AAPL | +122.23% | -0.52pp | Strong Feb but weak Apr |
+| RTTD | +121.76% | -0.99pp | — |
+| NFLX | +121.74% | -1.01pp | — |
+| AEM | +119.05% | -3.70pp | Worst of candidates |
 
-5-year return with this pool: **+789.62%** (+$78,962 on $10k initial, no-compound, M1+A1+A2, top-3, 50/30/20 weights, regime MA8).
+### Current Pool (as of 2026-05-03) — 17 tickers
+
+`SNDK, APP, SHOP, CVNA, AMD, META, EXPE, JPM, FN, MU, CRDO, PLTR, COIN, CLS, MSTR, CRWV, MRVL`

@@ -50,7 +50,7 @@ DEFAULT_TICKERS = [
     "AMD",
     "META",
     "EXPE",
-    "RH",
+    "JPM",
     "FN",
     "MU",
     "CRDO", # replaced ANAB 2026-04-10: sparse live data; CRDO has min 72 bars/day, 3.65% OR
