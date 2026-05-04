@@ -1133,7 +1133,9 @@ class TestVerifySession:
 
 
 class TestAuthorizeSession:
-    def test_raises_when_credentials_missing(self):
+    def test_raises_when_credentials_missing(self, monkeypatch):
+        monkeypatch.delenv("TS_CLIENT_ID", raising=False)
+        monkeypatch.delenv("TS_CLIENT_SECRET", raising=False)
         client = TradeStationAPIClient(environment="sim")
 
         with pytest.raises(RuntimeError, match="credentials are missing"):

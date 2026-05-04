@@ -158,9 +158,11 @@ class TestTickerSetResolutionLogic:
         assert "NVDA" in ACTIVELY_TRADE_TICKERS
         assert "TSLA" in ACTIVELY_TRADE_TICKERS
 
-    def test_v3_pool_does_not_contain_nvda_or_tsla(self):
+    def test_v3_pool_does_not_contain_nvda(self):
         assert "NVDA" not in DEFAULT_TICKERS
-        assert "TSLA" not in DEFAULT_TICKERS
+
+    def test_v3_pool_contains_tsla(self):
+        assert "TSLA" in DEFAULT_TICKERS
 
 
 class TestTradeEngineTickerSetArg:
