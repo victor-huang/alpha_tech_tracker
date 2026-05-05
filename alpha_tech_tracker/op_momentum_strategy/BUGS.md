@@ -150,3 +150,36 @@ $7,943. Peak simultaneous: $27,275 against a $19,933 budget ($7,342 overrun).
 **Fix (commit 24ba321):** In `_check_doubledown_for_window`, after confirming DD will fire
 (`freed_capital > 0`), cancel all re-entry watchers in the same window whose ticker matches a
 stopout position — before deducting from `_window_returned` or entering the DD position.
+
+---
+
+## G41 — Post-RECOVER count-based slot check allows re-entry when DD already consumed all capital
+
+**File:** `trade_engine.py` `_recover_session()` / `_drain_pending_signals_for_window()`
+**Severity:** High — live engine can deploy up to 2× the window budget after a TS stream reconnect
+
+After a TradeStation stream RECOVER, `_recover_session()` reconstructs open positions from the
+broker. When a DD add-on is active, only the surviving primary position is visible to the broker
+(the loser has already exited); position count is therefore **1**, not 2. The max-positions gate
+(`open_position_count < max_positions`) sees 1 < 2 and treats the window as having a free slot.
+If the catchup bar injection replays the opening-range signals, the engine enters up to 2 new
+positions using fresh budget — even though the DD add-on already consumed all window capital.
+
+**Observed 2026-05-04 (stock log, M1 window):**
+- 09:45 ET: CRWV primary $12k (rank-0) + SNDK $8k (rank-1) entered. M1 fully deployed.
+- 09:51 ET: SNDK exits. DD fires → CRWV add-on $7,962. M1 still ~$20k. Position count: **1**.
+- 11:43 ET: TS stream drops. Engine RECOVERs, re-runs OR catchup.
+- 11:44 ET: Catchup sees 1 open M1 position, 1 free slot. Enters CVNA $12k + AMD $8k.
+- Result: M1 deployed $39,890 against a $20k budget.
+
+**Root cause:** `_rebuild_window_returned()` uses `pos.slot_capital` for the recovered position
+but has no knowledge of DD add-on capital that was already consumed (the add-on position itself
+is gone). The effective remaining budget is therefore overstated by the add-on amount (~$8k),
+and the count-based gate is not a safe backup because DD drops count from 2 → 1.
+
+**Fix:** `_rebuild_window_returned()` must account for DD add-on capital. One approach:
+persist a `window_dd_deployed` field on `_window_state` that is checkpointed to disk and
+restored on RECOVER — so the remaining-budget calculation is:
+`remaining = initial_budget - recovered_slot_capital - window_dd_deployed`.
+Alternatively, check `remaining_budget <= 0` as an explicit gate in
+`_drain_pending_signals_for_window` before entering any post-RECOVER position.
