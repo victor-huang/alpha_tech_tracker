@@ -2528,3 +2528,74 @@ class TestStep3FairPriceFloorNotDecayed:
             assert filled == 0, f"attempt {attempt}: expected MISS"
             assert all(p >= self._FAIR for p in limit_prices), \
                 f"attempt {attempt}: floor not decayed — all limits still at fair_price"
+
+
+class TestPlaceStockOrderPartialFillOnCancel:
+    """
+    When a step-1 limit order is partially filled before being cancelled,
+    the next attempt must be for the remaining shares only (not the original
+    full quantity), preventing a double-position in the broker.
+
+    Real-world failure (2026-05-04, COIN): attempt-1 BUY 58 shares partially
+    filled 44 before cancel; attempt-2 placed another BUY for 58 → broker held
+    44+58=102 shares but engine tracked only 58. User had to close 44 manually.
+    """
+
+    def _make_partial_fill_client(self, total_shares=58, partial_on_attempt1=44):
+        client = MagicMock()
+        client.get_stock_quote.return_value = {
+            "QuoteResponse": {
+                "QuoteData": [{"All": {"bid": 204.81, "ask": 205.08, "lastTrade": 204.95}}]
+            }
+        }
+        order_ids = ["order-attempt-1", "order-attempt-2"]
+        call_count = [0]
+
+        def place_side_effect(**kwargs):
+            idx = call_count[0]
+            call_count[0] += 1
+            return {"order_id": order_ids[min(idx, len(order_ids) - 1)], "status": "open",
+                    "filled_qty": 0}
+
+        client.place_stock_order.side_effect = place_side_effect
+
+        def order_status_side_effect(order_id):
+            if order_id == "order-attempt-1":
+                # attempt-1: partially filled, not complete
+                return {"status": "partially_filled", "filled_qty": partial_on_attempt1}
+            # attempt-2: fully filled for the remaining shares
+            remaining = total_shares - partial_on_attempt1
+            return {"status": "filled", "filled_qty": remaining}
+
+        client.order_status.side_effect = order_status_side_effect
+        return client
+
+    def test_second_attempt_uses_remaining_shares_after_partial_cancel(self):
+        client = self._make_partial_fill_client(total_shares=58, partial_on_attempt1=44)
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            place_stock_order(client=client, ticker="COIN", shares=58, order_action="BUY_OPEN")
+
+        calls = client.place_stock_order.call_args_list
+        assert len(calls) == 2
+        assert calls[0].kwargs["quantity"] == 58
+        assert calls[1].kwargs["quantity"] == 14, (
+            "second attempt must request only the 14 remaining shares, not the full 58"
+        )
+
+    def test_no_extra_order_when_partial_fills_complete_the_position(self):
+        # attempt-1 partially fills all requested shares before cancel fires
+        client = self._make_partial_fill_client(total_shares=58, partial_on_attempt1=58)
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            place_stock_order(client=client, ticker="COIN", shares=58, order_action="BUY_OPEN")
+
+        calls = client.place_stock_order.call_args_list
+        assert len(calls) == 1, "no second order needed when partial fills all shares"
+
+    def test_full_fill_on_attempt1_still_returns_immediately(self):
+        client = _make_stock_client(bid=204.81, ask=205.08, order_status="filled")
+        client.order_status.return_value = {"status": "filled", "filled_qty": 58}
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            place_stock_order(client=client, ticker="COIN", shares=58, order_action="BUY_OPEN")
+
+        calls = client.place_stock_order.call_args_list
+        assert len(calls) == 1, "fully filled on attempt-1 must not place a second order"
