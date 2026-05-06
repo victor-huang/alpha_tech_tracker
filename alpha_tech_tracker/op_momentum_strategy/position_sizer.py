@@ -10,6 +10,16 @@ from .models import _D
 logger = logging.getLogger(__name__)
 
 
+class InsufficientSlotBudgetError(RuntimeError):
+    """Raised when the per-slot window budget cannot fund a single contract/share.
+
+    Distinct from `RuntimeError("Insufficient buying power...")` so the trade
+    engine can skip the entry quietly (this is an expected path when a window
+    weight × budget is small relative to the option's contract cost) instead of
+    logging a stack trace.
+    """
+
+
 class PositionSizer:
     """Computes contract quantity based on available buying power."""
 
@@ -50,7 +60,7 @@ class PositionSizer:
 
         raw_contracts = int(budget / (mid * _D("100")))
         if raw_contracts == 0 and window_budget is not None:
-            raise RuntimeError(
+            raise InsufficientSlotBudgetError(
                 "Insufficient slot budget for %s: need $%.2f/contract, slot=$%.2f"
                 % (option_symbol, float(mid * _D("100")), float(budget))
             )
@@ -124,7 +134,13 @@ class PositionSizer:
             logger.warning("Mid price is zero for %s, defaulting to 1 share", ticker)
             return 1, limit_price
 
-        shares = max(1, int(budget / mid))
+        raw_shares = int(budget / mid)
+        if raw_shares == 0 and window_budget is not None:
+            raise InsufficientSlotBudgetError(
+                "Insufficient slot budget for %s stock: need $%.2f/share, slot=$%.2f"
+                % (ticker, float(mid), float(budget))
+            )
+        shares = max(1, raw_shares)
 
         if not mock:
             if account_buying_power is None:

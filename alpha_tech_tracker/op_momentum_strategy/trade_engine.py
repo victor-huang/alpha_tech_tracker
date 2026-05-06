@@ -56,7 +56,7 @@ from .models import ActivePosition, ReentryWatcher, SignalEvent, WindowConfig, _
 from .option_price_monitor import OptionPriceMonitor
 from .order_executor import place_option_order_in_tranches, place_stock_order
 from .position_monitor import PositionMonitor
-from .position_sizer import PositionSizer
+from .position_sizer import InsufficientSlotBudgetError, PositionSizer
 from .replay import BarReplayDriver, LiveBarsSource, _now_et, is_replay_mode, set_replay_clock, clear_replay_clock
 from .session_state import save as _save_session, load as _load_session, load_metadata as _load_session_metadata, delete as _delete_session
 from .signal_engine import LiveSignalEngine
@@ -511,6 +511,9 @@ class OpMomentumTradeEngine:
                 event.ticker, event.stock_price, capital_weight, window_budget,
                 mock=self._mock_trade_execution,
             )
+        except InsufficientSlotBudgetError as e:
+            logger.warning("Skipping %s [%s] entry: %s", event.ticker, window_label, e)
+            return False
         except Exception:
             logger.exception("Could not size stock position for %s", event.ticker)
             return False
@@ -666,6 +669,9 @@ class OpMomentumTradeEngine:
                 option_symbol, capital_weight, window_budget,
                 mock_stock_price=mock_stock_price,
             )
+        except InsufficientSlotBudgetError as e:
+            logger.warning("Skipping %s [%s] entry: %s", event.ticker, window_label, e)
+            return False
         except Exception:
             logger.exception("Could not size position for %s", option_symbol)
             return False

@@ -21,7 +21,10 @@ from alpha_tech_tracker.op_momentum_strategy.models import (
     SignalEvent,
     WindowConfig,
 )
-from alpha_tech_tracker.op_momentum_strategy.position_sizer import PositionSizer
+from alpha_tech_tracker.op_momentum_strategy.position_sizer import (
+    InsufficientSlotBudgetError,
+    PositionSizer,
+)
 from alpha_tech_tracker.op_momentum_strategy.trade_engine import OpMomentumTradeEngine
 
 from conftest import _D, _make_alpaca_client, _make_option_quote
@@ -88,7 +91,7 @@ class TestPositionSizerSlotBudgetCap:
         )
 
         sizer = PositionSizer(client)
-        with pytest.raises(RuntimeError, match="slot budget"):
+        with pytest.raises(InsufficientSlotBudgetError, match="slot budget"):
             sizer.compute(
                 "SNDK260508C01260000",
                 capital_weight=_D("0.40"),
@@ -104,7 +107,7 @@ class TestPositionSizerSlotBudgetCap:
         )
 
         sizer = PositionSizer(client)
-        with pytest.raises(RuntimeError, match="slot budget"):
+        with pytest.raises(InsufficientSlotBudgetError, match="slot budget"):
             sizer.compute(
                 "AMD260508C00350000",
                 capital_weight=_D("0.20"),
@@ -237,6 +240,36 @@ class TestEnterPositionCapitalCap:
 
         assert placed is False
         place_entry.assert_not_called()
+
+    def test_insufficient_slot_budget_logs_warning_without_stack_trace(self, caplog):
+        # Mirrors the live "Insufficient slot budget for CRDO260508P00220000:
+        # need $2840.00/contract, slot=$192.00" case — should surface as a clean
+        # WARNING line, not as ERROR with a Traceback.
+        import logging
+
+        engine = self._make_engine()
+
+        def _raise(*_a, **_kw):
+            raise InsufficientSlotBudgetError(
+                "Insufficient slot budget for CRDO260508P00220000:"
+                " need $2840.00/contract, slot=$192.00"
+            )
+
+        with caplog.at_level(logging.WARNING), patch(
+            _OPTION_CONTRACT_SELECTOR_PATH, return_value="CRDO260508P00220000"
+        ), patch(_POSITION_SIZER_PATH, side_effect=_raise), patch(
+            _PLACE_ENTRY_PATH
+        ) as place_entry:
+            placed = engine._enter_position(_make_signal_event("CRDO"), rank=0)
+
+        assert placed is False
+        place_entry.assert_not_called()
+        relevant = [
+            r for r in caplog.records if "Insufficient slot budget" in r.getMessage()
+        ]
+        assert relevant, "expected a slot-budget skip log line"
+        assert all(r.levelno == logging.WARNING for r in relevant)
+        assert all(r.exc_info is None for r in relevant)
 
     def test_allows_entry_within_available_capital(self):
         engine = self._make_engine()
