@@ -4458,10 +4458,12 @@ _PLACE_WITH_FILL_ESCALATION_PATH = (
 
 
 class TestPlaceEntryOptionOrderSimulateMode:
-    """_place_entry in mock mode must use mock_entry_price, not get_fair_price."""
+    """_place_entry in mock mode must trust the sizer's limit_price."""
 
     # strike $90 call — gives non-zero intrinsic when stock > $90
     _CALL_SYM = "NVDA260328C00090000"
+    # strike $120 put — reproduces the SHOP 2026-05-04 below-intrinsic case
+    _PUT_SYM = "SHOP260508P00120000"
 
     def _make_engine(self):
         client = _make_alpaca_client()
@@ -4478,16 +4480,37 @@ class TestPlaceEntryOptionOrderSimulateMode:
         engine._place_entry("NVDA", "BULLISH", self._CALL_SYM, 1, _D("12.00"))
         engine._option_price_monitor.get_fair_price.assert_not_called()
 
-    def test_mock_entry_price_is_called_in_mock_mode(self):
+    def test_mock_entry_price_not_recomputed_in_mock_mode(self):
+        # PositionSizer already priced this from event.entry_price; _place_entry
+        # must not call mock_entry_price again (re-fetching latest_bar in replay
+        # can return a different OR bar and produce a below-intrinsic mid).
         engine = self._make_engine()
-        with patch(_MOCK_ENTRY_PRICE_PATH, return_value=_D("12.00")) as mock_fn:
+        with patch(_MOCK_ENTRY_PRICE_PATH) as mock_fn:
             engine._place_entry("NVDA", "BULLISH", self._CALL_SYM, 1, _D("12.00"))
-        mock_fn.assert_called_once()
+        mock_fn.assert_not_called()
 
-    def test_simulated_fill_mid_is_nonzero_in_mock_mode(self):
+    def test_simulated_fill_mid_equals_limit_price_in_mock_mode(self):
         engine = self._make_engine()
         result = engine._place_entry("NVDA", "BULLISH", self._CALL_SYM, 1, _D("12.00"))
-        assert result["simulated_fill_mid"] > _D("0")
+        assert result["simulated_fill_mid"] == _D("12.00")
+
+    def test_below_intrinsic_entry_not_produced_when_latest_bar_drifts(self):
+        # Reproduces the SHOP 2026-05-04 bug: signal fired on OR-close stock
+        # $114.02 (true intrinsic for $120 put = $5.98), sizer's limit_price
+        # was $7.18, but _place_entry's latest_bar lookup returned the FIRST
+        # OR bar (close $117.56), producing a $2.93 entry mid below intrinsic.
+        engine = self._make_engine()
+        # Stale latest_bar returns the first OR bar's close.
+        engine._signal_engine.get_latest_bar.return_value = {"Close": 117.56}
+        sizer_limit = _D("7.18")  # intrinsic 5.98 × 1.20 = 7.176 → 7.18 quantized
+
+        result = engine._place_entry("SHOP", "BEARISH", self._PUT_SYM, 5, sizer_limit)
+
+        intrinsic = _D("120") - _D("114.02")
+        assert result["simulated_fill_mid"] >= intrinsic, (
+            f"entry mid {result['simulated_fill_mid']} below intrinsic {intrinsic}"
+        )
+        assert result["simulated_fill_mid"] == sizer_limit
 
     def test_get_fair_price_called_in_live_mode(self):
         client = _make_alpaca_client()

@@ -1801,12 +1801,12 @@ class OpMomentumTradeEngine:
 
         if entry_mid == limit_price:
             if self._mock_trade_execution:
-                from .mock_option_pricer import mock_entry_price
-                latest_bar = self._signal_engine.get_latest_bar(ticker)
-                if latest_bar is not None:
-                    stock_price = _D(str(latest_bar["Close"]))
-                    entry_mid = mock_entry_price(stock_price, option_symbol, option_type_lower)
-                    logger.info("MOCK ENTRY PRICE %s: %s", option_symbol, entry_mid)
+                # PositionSizer already priced this from event.entry_price (the
+                # OR-close bar that fired the signal). Re-fetching latest_bar
+                # here can pick up a later or earlier OR bar in replay (race
+                # between bar advance and entry placement) and produce a mid
+                # below intrinsic — trust the sizer's limit_price.
+                pass
             else:
                 try:
                     q = self._client.get_option_quote_by_occ(option_symbol)
