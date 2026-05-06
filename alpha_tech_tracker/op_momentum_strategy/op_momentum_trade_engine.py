@@ -725,6 +725,29 @@ def _build_option_price_monitor(args, client, tickers, contract_selector):
     )
 
 
+def _warn_replay_feed_mismatch(args):
+    """Warn when --live-data-feed is set but --market-data-source isn't.
+
+    --live-data-feed only swaps the *intraday* OR bars (read from recorded CSVs).
+    Signal-engine warmup (90-day MA history) and ticker-selector scoring (60-day
+    rolling stats) still come from Alpaca SIP unless --market-data-source is also
+    set. Mixing TS intraday with Alpaca warmup/scoring routinely produces
+    different picks than the live engine that recorded the CSVs.
+    """
+    if not args.live_data_dir or not args.live_data_feed:
+        return
+    if args.live_data_feed != "tradestation":
+        return
+    if getattr(args, "market_data_source", None) == "tradestation":
+        return
+    logger.warning(
+        "Replay flag mismatch: --live-data-feed tradestation feeds OR bars from "
+        "TS recordings, but --market-data-source is not set so signal-engine "
+        "warmup and selector scoring fall back to Alpaca SIP. Picks may diverge "
+        "from the live TS engine. Add --market-data-source tradestation to match."
+    )
+
+
 def _build_contract_selector(args, client):
     if args.option_selector == "time-premium":
         return TimePremiumContractSelector(
@@ -814,6 +837,9 @@ if __name__ == "__main__":
             reset_session=args.reset_session,
             reentry_after_next_window_returned=args.reentry_after_next_window_returned,
         )
+        if args.replay_date or (args.replay_start and args.replay_end):
+            _warn_replay_feed_mismatch(args)
+
         if args.replay_date:
             from datetime import date as _date
             from .replay import CsvLiveBarsSource

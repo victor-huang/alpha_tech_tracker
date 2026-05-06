@@ -9,6 +9,7 @@ from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector import (
 )
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine import (
     _parse_windows,
+    _warn_replay_feed_mismatch,
     parse_args,
 )
 
@@ -203,3 +204,56 @@ class TestTradeEngineTickerSetArg:
         args = parse_args()
         assert args.ticker_set == "AT"
         assert args.tickers == ["TSLA"]
+
+
+class TestWarnReplayFeedMismatch:
+    def _make_args(self, live_data_dir=None, live_data_feed=None, market_data_source=None):
+        args = Mock()
+        args.live_data_dir = live_data_dir
+        args.live_data_feed = live_data_feed
+        args.market_data_source = market_data_source
+        return args
+
+    def test_warns_when_ts_csv_intraday_but_alpaca_warmup(self, caplog):
+        import logging
+        args = self._make_args(
+            live_data_dir="some/dir",
+            live_data_feed="tradestation",
+            market_data_source=None,
+        )
+        with caplog.at_level(logging.WARNING):
+            _warn_replay_feed_mismatch(args)
+        assert any("--market-data-source tradestation" in r.getMessage() for r in caplog.records)
+
+    def test_silent_when_market_data_source_matches(self, caplog):
+        import logging
+        args = self._make_args(
+            live_data_dir="some/dir",
+            live_data_feed="tradestation",
+            market_data_source="tradestation",
+        )
+        with caplog.at_level(logging.WARNING):
+            _warn_replay_feed_mismatch(args)
+        assert not caplog.records
+
+    def test_silent_when_no_live_data_dir(self, caplog):
+        import logging
+        args = self._make_args(
+            live_data_dir=None,
+            live_data_feed="tradestation",
+            market_data_source=None,
+        )
+        with caplog.at_level(logging.WARNING):
+            _warn_replay_feed_mismatch(args)
+        assert not caplog.records
+
+    def test_silent_when_live_data_feed_is_iex(self, caplog):
+        import logging
+        args = self._make_args(
+            live_data_dir="some/dir",
+            live_data_feed="iex",
+            market_data_source=None,
+        )
+        with caplog.at_level(logging.WARNING):
+            _warn_replay_feed_mismatch(args)
+        assert not caplog.records
