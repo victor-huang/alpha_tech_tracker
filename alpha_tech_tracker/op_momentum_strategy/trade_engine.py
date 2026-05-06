@@ -670,6 +670,24 @@ class OpMomentumTradeEngine:
             logger.exception("Could not size position for %s", option_symbol)
             return False
 
+        is_reentry = trailing_arm_price is not None or reentry_type == "doubledown"
+        if not is_reentry:
+            new_cost = _D(contracts) * limit_price * _D("100")
+            available = self._available_capital()
+            if available is not None and new_cost > available:
+                logger.warning(
+                    "Skipping %s [%s] entry: would deploy $%.2f but only $%.2f"
+                    " available (initial=%.2f pnl=%.2f open=%.2f) — capital cap",
+                    event.ticker,
+                    window_label,
+                    float(new_cost),
+                    float(available),
+                    float(self._initial_capital),
+                    float(self._daily_realized_pnl),
+                    float(self._sum_open_position_cost()),
+                )
+                return False
+
         hard_stop = bull_hard_stop if event.signal == "BULLISH" else bear_hard_stop
         prefix = "[SIMULATE] " if self._mock_trade_execution else ""
         _notify(
@@ -700,7 +718,6 @@ class OpMomentumTradeEngine:
             slot_capital = None
 
         # DD add-ons deploy recycled capital, not original window budget — exclude them.
-        is_reentry = trailing_arm_price is not None or reentry_type == "doubledown"
         if not is_reentry and slot_capital is not None:
             with self._returned_lock:
                 if window_label not in self._window_primary_deployed:
@@ -932,6 +949,51 @@ class OpMomentumTradeEngine:
                 nxt = self._windows[i + 1]
                 return nxt.label if nxt.is_sequential else None
         return None
+
+    def _open_position_cost(self, pos) -> _D:
+        """Actual capital deployed in an open position (mark-to-cost, not slot budget).
+
+        Prefers fill price (live) or simulated mid (replay), then entry stock price,
+        finally falling back to slot_capital. Used to enforce the hard cap that
+        total deployed capital never exceeds initial_capital + realized_pnl.
+        """
+        if pos.is_closed:
+            return _D("0")
+        if pos.trade_type == "stock":
+            qty = _D(getattr(pos, "shares", 0) or 0)
+            price = (
+                pos.entry_fill_price
+                or pos.simulated_entry_mid
+                or pos.entry_stock_price
+            )
+            if qty > 0 and price is not None:
+                return qty * price
+        else:
+            contracts = _D(pos.contracts or 0)
+            price = pos.entry_fill_price or pos.simulated_entry_mid
+            if contracts > 0 and price is not None:
+                return contracts * price * _D("100")
+        return pos.slot_capital or _D("0")
+
+    def _sum_open_position_cost(self) -> _D:
+        """Sum the actual deployed capital across all currently-open positions."""
+        total = _D("0")
+        if self._monitor is None:
+            return total
+        with self._monitor._lock:
+            for pos in self._monitor._positions:
+                if pos.is_closed:
+                    continue
+                total += self._open_position_cost(pos)
+        return total
+
+    def _available_capital(self) -> Optional[_D]:
+        """Bankroll currently free to deploy: initial + realized P&L − open cost."""
+        if self._initial_capital is None:
+            return None
+        with self._pnl_lock:
+            daily_pnl = self._daily_realized_pnl
+        return self._initial_capital + daily_pnl - self._sum_open_position_cost()
 
     def _compute_position_returned_capital(self, pos) -> _D:
         """Return the capital actually returned from a closed position (principal + P&L)."""
@@ -1401,34 +1463,25 @@ class OpMomentumTradeEngine:
                 return _D(str(self._replay_capital))
             return None
 
-        # Capital tied up in open re-entries in the prior window (must be excluded —
-        # reentry positions redeploy the primary's returned slot_capital so it is not
-        # available for the next sequential window until the reentry closes).
-        open_reentry_capital = _D("0")
-        if self._monitor is not None:
-            with self._monitor._lock:
-                for pos in self._monitor._positions:
-                    if pos.window_label != prior_label or pos.is_closed or pos.slot_capital is None:
-                        continue
-                    if pos.trailing_arm_price is not None:
-                        open_reentry_capital += pos.slot_capital
+        # Capital actually tied up in ALL open positions (primary + re-entry).
+        # Using actual entry-fill cost (not slot_capital) so a sizing overshoot in
+        # a prior window can't leave the next window thinking capital is free.
+        total_open_capital = self._sum_open_position_cost()
 
         if self._initial_capital is not None:
-            # Correct formula: initial M1 budget + all realized P&L today − capital
-            # currently locked in open re-entries.  initial_capital already accounts
-            # for open primary positions at cost, so open_primary_capital need not be
-            # added separately.
             with self._pnl_lock:
                 daily_pnl = self._daily_realized_pnl
-            budget = max(self._initial_capital + daily_pnl - open_reentry_capital, _D("0"))
+            budget = max(
+                self._initial_capital + daily_pnl - total_open_capital, _D("0")
+            )
             logger.info(
                 "Sequential window [%s] budget: %.2f"
-                " (initial=%.2f pnl=%.2f reentry=%.2f)",
+                " (initial=%.2f pnl=%.2f open=%.2f)",
                 win.label,
                 float(budget),
                 float(self._initial_capital),
                 float(daily_pnl),
-                float(open_reentry_capital),
+                float(total_open_capital),
             )
             return budget
 
@@ -1438,6 +1491,7 @@ class OpMomentumTradeEngine:
             prior_deployed = self._window_primary_deployed.get(prior_label, _D("0"))
 
         open_primary_capital = _D("0")
+        open_reentry_capital = _D("0")
         if self._monitor is not None:
             with self._monitor._lock:
                 for pos in self._monitor._positions:
@@ -1445,6 +1499,8 @@ class OpMomentumTradeEngine:
                         continue
                     if pos.trailing_arm_price is None:
                         open_primary_capital += pos.slot_capital
+                    else:
+                        open_reentry_capital += pos.slot_capital
         # Do NOT add open_primary_capital to prior_returned — that capital is still
         # deployed in open primary positions and is not yet available.
         if open_reentry_capital > 0:

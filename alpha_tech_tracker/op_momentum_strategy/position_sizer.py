@@ -48,7 +48,13 @@ class PositionSizer:
             )
             return 1, ask
 
-        contracts = max(1, int(budget / (mid * _D("100"))))
+        raw_contracts = int(budget / (mid * _D("100")))
+        if raw_contracts == 0 and window_budget is not None:
+            raise RuntimeError(
+                "Insufficient slot budget for %s: need $%.2f/contract, slot=$%.2f"
+                % (option_symbol, float(mid * _D("100")), float(budget))
+            )
+        contracts = max(1, raw_contracts)
         limit_price = mid.quantize(_D("0.01"), rounding=ROUND_HALF_UP)
 
         if mock_stock_price is None:
