@@ -286,3 +286,161 @@ class TestEnterPositionCapitalCap:
 
         assert placed is True
         place_entry.assert_called_once()
+
+
+class TestDrainSlotFallback:
+    """When an option doesn't fit a slot, advance to the next-ranked candidate
+    instead of leaving the slot empty.
+    """
+
+    def _make_engine(self):
+        from datetime import datetime, timedelta
+        import pytz
+
+        client = _make_alpaca_client()
+        windows = [
+            WindowConfig(
+                label="M1", opening_start="09:30", opening_bars=3,
+                capital_fraction=1.0,
+            ),
+        ]
+        engine = OpMomentumTradeEngine(
+            alpaca_client=client,
+            mock_trade_execution=True,
+            windows=windows,
+            trade_type="options",
+            rank_weights=[60, 40],
+            top_n=2,
+        )
+        engine._initial_capital = _D("10000")
+        engine._monitor = Mock()
+        engine._monitor._lock = threading.Lock()
+        engine._monitor._positions = []
+        engine._signal_engine = Mock()
+        engine._signal_engine.get_latest_bar.return_value = None
+        # Drain runs after the deadline; pin it in the past so the loop fires.
+        et = pytz.timezone("America/New_York")
+        engine._window_state["M1"]["collection_deadline"] = (
+            datetime.now(et) - timedelta(seconds=1)
+        )
+        # Stats picked so the score ordering is BIG > MID > SMALL when each
+        # event has identical OR/entry params (avg_win_pct dominates).
+        engine._rolling_stats_by_window = {
+            "M1": {
+                "BIG":   {"ev_trade": 1.0, "win_rate": 0.6, "avg_win_pct": 20.0},
+                "MID":   {"ev_trade": 0.8, "win_rate": 0.5, "avg_win_pct": 10.0},
+                "SMALL": {"ev_trade": 0.6, "win_rate": 0.5, "avg_win_pct": 5.0},
+            },
+        }
+        engine._rolling_stats = engine._rolling_stats_by_window["M1"]
+        return engine
+
+    def _signal(self, ticker, entry):
+        return SignalEvent(
+            ticker=ticker,
+            signal="BULLISH",
+            entry_price=_D(str(entry)),
+            stock_price=_D(str(entry)),
+            or_high=_D(str(entry + 5)),
+            or_low=_D(str(entry - 5)),
+            or_range=_D("10"),
+            ma50_at_signal=_D(str(entry)),
+        )
+
+    def test_falls_through_to_next_candidate_when_slot_too_small(self):
+        # Score order: BIG > MID > SMALL. Slot 0 weight 60% × $10k = $6,000;
+        # BIG's contract is rejected by the slot budget; MID at $3k fits slot
+        # 0, SMALL at $2k fits slot 1.
+        engine = self._make_engine()
+        engine._window_state["M1"]["pending_signals"] = {
+            "BIG":   self._signal("BIG", 100),
+            "MID":   self._signal("MID", 100),
+            "SMALL": self._signal("SMALL", 100),
+        }
+
+        def _select(ticker, signal, stock_price):
+            return f"{ticker}260508C00010000"
+
+        def _size(symbol, weight, window_budget, **kw):
+            if symbol.startswith("BIG"):
+                raise InsufficientSlotBudgetError("slot too small for BIG")
+            if symbol.startswith("MID"):
+                return (1, _D("30.00"))
+            return (1, _D("20.00"))
+
+        entered = []
+
+        def _enter(event, rank, **kw):
+            entered.append((rank, event.ticker))
+            return True
+
+        with patch(_OPTION_CONTRACT_SELECTOR_PATH, side_effect=_select), \
+             patch(_POSITION_SIZER_PATH, side_effect=_size), \
+             patch.object(engine, "_get_window_budget", return_value=_D("10000")), \
+             patch.object(engine, "_enter_position", side_effect=_enter):
+            engine._signal_selection_loop_for_window(engine._windows[0])
+
+        assert entered == [(0, "MID"), (1, "SMALL")]
+
+    def test_skips_slot_entirely_when_no_candidate_fits(self):
+        engine = self._make_engine()
+        engine._window_state["M1"]["pending_signals"] = {
+            "BIG": self._signal("BIG", 100),
+            "MID": self._signal("MID", 100),
+        }
+
+        def _select(ticker, signal, stock_price):
+            return f"{ticker}260508C00010000"
+
+        def _size(symbol, weight, window_budget, **kw):
+            raise InsufficientSlotBudgetError(f"too small for {symbol}")
+
+        entered = []
+
+        def _enter(event, rank, **kw):
+            entered.append((rank, event.ticker))
+            return True
+
+        with patch(_OPTION_CONTRACT_SELECTOR_PATH, side_effect=_select), \
+             patch(_POSITION_SIZER_PATH, side_effect=_size), \
+             patch.object(engine, "_get_window_budget", return_value=_D("10000")), \
+             patch.object(engine, "_enter_position", side_effect=_enter):
+            engine._signal_selection_loop_for_window(engine._windows[0])
+
+        assert entered == []
+
+    def test_falls_through_when_bankroll_cap_exceeded(self):
+        # initial_capital $10k, but $9k already locked in an open position.
+        # Slot 0 budget weight is $6k, but bankroll only has $1k free.
+        # MID at $3k → exceeds bankroll. SMALL at $0.5k → fits.
+        engine = self._make_engine()
+        engine._monitor._positions = [
+            _make_open_position("LOCK", contracts=3, entry_fill_price=30,
+                                slot_capital=9000),
+        ]
+        engine._window_state["M1"]["pending_signals"] = {
+            "MID":   self._signal("MID", 100),
+            "SMALL": self._signal("SMALL", 100),
+        }
+
+        def _select(ticker, signal, stock_price):
+            return f"{ticker}260508C00010000"
+
+        def _size(symbol, weight, window_budget, **kw):
+            if symbol.startswith("MID"):
+                return (1, _D("30.00"))   # cost $3000 > available $1000
+            return (1, _D("5.00"))        # cost $500 fits
+
+        entered = []
+
+        def _enter(event, rank, **kw):
+            entered.append((rank, event.ticker))
+            return True
+
+        with patch(_OPTION_CONTRACT_SELECTOR_PATH, side_effect=_select), \
+             patch(_POSITION_SIZER_PATH, side_effect=_size), \
+             patch.object(engine, "_get_window_budget", return_value=_D("10000")), \
+             patch.object(engine, "_enter_position", side_effect=_enter):
+            engine._signal_selection_loop_for_window(engine._windows[0])
+
+        assert entered == [(0, "SMALL")]

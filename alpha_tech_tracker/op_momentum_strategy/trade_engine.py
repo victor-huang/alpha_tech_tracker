@@ -7,7 +7,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 
 import pytz
 
@@ -993,6 +993,62 @@ class OpMomentumTradeEngine:
                 total += self._open_position_cost(pos)
         return total
 
+    def _option_entry_fits_capital(
+        self,
+        event,
+        slot_weight: _D,
+        window_budget: Optional[_D],
+        prior_pending_cost: _D,
+    ) -> Tuple[bool, _D]:
+        """Dry-run option contract selection + sizing for the drain loop.
+
+        Returns (fits, estimated_cost). fits=False when:
+          • Sizer raises InsufficientSlotBudgetError (one contract > slot)
+          • Bankroll cap (initial + pnl − open − prior_pending_cost) is exceeded
+
+        Used to advance to the next-ranked candidate when a slot can't fund
+        the current candidate's option, instead of leaving the slot empty.
+        """
+        try:
+            if is_replay_mode() and not self._contract_selector_overridden:
+                ref_date = getattr(self._signal_engine, "_session_date", None)
+                selector = MockContractSelector(ref_date or date.today())
+            else:
+                selector = self._contract_selector
+            option_symbol = selector.select(
+                event.ticker, event.signal, event.stock_price
+            )
+        except Exception:
+            logger.exception(
+                "Pre-check: contract select failed for %s — skipping candidate",
+                event.ticker,
+            )
+            return False, _D("0")
+
+        try:
+            sizer = PositionSizer(self._client)
+            mock_stock_price = (
+                event.entry_price if self._mock_trade_execution else None
+            )
+            contracts, limit_price = sizer.compute(
+                option_symbol, slot_weight, window_budget,
+                mock_stock_price=mock_stock_price,
+            )
+        except InsufficientSlotBudgetError:
+            return False, _D("0")
+        except Exception:
+            logger.exception(
+                "Pre-check: sizing failed for %s — skipping candidate",
+                option_symbol,
+            )
+            return False, _D("0")
+
+        cost = _D(contracts) * limit_price * _D("100")
+        available = self._available_capital()
+        if available is not None and cost > available - prior_pending_cost:
+            return False, cost
+        return True, cost
+
     def _available_capital(self) -> Optional[_D]:
         """Bankroll currently free to deploy: initial + realized P&L − open cost."""
         if self._initial_capital is None:
@@ -1703,9 +1759,17 @@ class OpMomentumTradeEngine:
             )
             return
 
-        # Collect top-N selections first (no fallback on failure).
+        # Collect top-N selections. For options, advance to the next-ranked
+        # candidate when a slot can't fund the contract (slot weight × budget
+        # smaller than 1 contract, or bankroll cap exceeded). For stock and for
+        # tests without a window_budget, behaviour is unchanged.
         selections = []
-        for rank, (score, ticker, event) in enumerate(scored):
+        candidate_iter = iter(scored)
+        pending_cost = _D("0")
+        should_pre_check = (
+            self._trade_type == "options" and window_budget is not None
+        )
+        for rank in range(self._top_n):
             if self._is_circuit_breaker_tripped():
                 logger.warning(
                     "Daily max-loss circuit breaker tripped, stopping drain [%s] — realized_pnl=%.2f limit=%.2f",
@@ -1718,6 +1782,41 @@ class OpMomentumTradeEngine:
                 if state["open_position_count"] >= self._top_n:
                     logger.info("Max positions reached [%s], stopping selection", label)
                     break
+
+            if self._rank_weights and rank < len(self._rank_weights):
+                slot_weight = self._rank_weights[rank]
+            else:
+                slot_weight = _D("1") / _D(str(self._top_n))
+
+            chosen = None
+            while True:
+                try:
+                    score, ticker, event = next(candidate_iter)
+                except StopIteration:
+                    break
+                if should_pre_check:
+                    fits, est_cost = self._option_entry_fits_capital(
+                        event, slot_weight, window_budget, pending_cost,
+                    )
+                    if not fits:
+                        logger.info(
+                            "Slot rank=%d [%s]: %s does not fit slot/bankroll"
+                            " capital, trying next candidate",
+                            rank, label, ticker,
+                        )
+                        continue
+                    pending_cost += est_cost
+                chosen = (score, ticker, event)
+                break
+            if chosen is None:
+                logger.info(
+                    "Slot rank=%d [%s]: no remaining candidate fits, leaving"
+                    " slot empty",
+                    rank, label,
+                )
+                break
+            score, ticker, event = chosen
+            with self._signal_lock:
                 state["open_position_count"] += 1
             logger.info(
                 "Selecting %s from buffer [%s] (score=%.3f rank=%d)",
