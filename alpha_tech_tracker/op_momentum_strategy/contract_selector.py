@@ -347,13 +347,13 @@ class TimePremiumContractSelector:
 class MockContractSelector:
     """Builds an OCC option symbol for replay mode — no API calls.
 
-    BULLISH (call): strike = floor(stock_price × 0.90 / increment) × increment
-    BEARISH (put):  strike = ceil(stock_price × 1.10 / increment) × increment
+    BULLISH (call): strike = floor(stock_price × 0.95 / increment) × increment
+    BEARISH (put):  strike = ceil(stock_price × 1.05 / increment) × increment
     Expiry: next Friday on or after ref_date.
     """
 
-    _CALL_RATIO = _D("0.90")
-    _PUT_RATIO = _D("1.10")
+    _CALL_RATIO = _D("0.95")
+    _PUT_RATIO = _D("1.05")
 
     def __init__(self, ref_date: date):
         self._ref_date = ref_date
