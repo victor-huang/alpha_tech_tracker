@@ -21,15 +21,17 @@ YEAR=""
 TRADE_TYPE="stock"
 TICKER_SET=""
 FEED="sip"
+MARKET_DATA_SOURCE=""
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --year)        YEAR="$2"; shift 2 ;;
-    --trade-type)  TRADE_TYPE="$2"; shift 2 ;;
-    --ticker-set)  TICKER_SET="$2"; shift 2 ;;
-    --feed)        FEED="$2"; shift 2 ;;
-    --summary)     SUMMARY_ONLY=true; shift ;;
-    --force)       FORCE=true; shift ;;
+    --year)                YEAR="$2"; shift 2 ;;
+    --trade-type)          TRADE_TYPE="$2"; shift 2 ;;
+    --ticker-set)          TICKER_SET="$2"; shift 2 ;;
+    --feed)                FEED="$2"; shift 2 ;;
+    --market-data-source)  MARKET_DATA_SOURCE="$2"; shift 2 ;;
+    --summary)             SUMMARY_ONLY=true; shift ;;
+    --force)               FORCE=true; shift ;;
     *) echo "Unknown arg: $1"; exit 1 ;;
   esac
 done
@@ -47,7 +49,11 @@ if [ -n "$TICKER_SET" ]; then
 fi
 
 FEED_SUFFIX=""
-[ "$FEED" != "sip" ] && FEED_SUFFIX="_${FEED}"
+if [ -n "$MARKET_DATA_SOURCE" ]; then
+  FEED_SUFFIX="_${MARKET_DATA_SOURCE}"
+elif [ "$FEED" != "sip" ]; then
+  FEED_SUFFIX="_${FEED}"
+fi
 LOG_DIR="$BASE_LOG_DIR/replay_${YEAR}_${TRADE_TYPE}_4win${TICKER_SET_SUFFIX}${FEED_SUFFIX}"
 
 # ---------------------------------------------------------------------------
@@ -131,7 +137,7 @@ replay_one() {
     --doubledown --doubledown-start 10 \
     --top 2 --capital 10000 \
     --mock-trade-execution \
-    --feed "$FEED" \
+    $([ -n "$MARKET_DATA_SOURCE" ] && echo "--market-data-source $MARKET_DATA_SOURCE" || echo "--feed $FEED") \
     $TICKER_SET_FLAG \
     --replay-date "$DATE" > "$LOG" 2>&1
 }
