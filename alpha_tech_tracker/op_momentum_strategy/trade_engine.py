@@ -41,7 +41,7 @@ from .config import (
     REGIME_FILTER,
     REGIME_MA,
     SESSION_END_TIME,
-    SIGNAL_BUFFER_SECONDS,
+    SIGNAL_BUFFER_MINUTES,
     STOP_PCT,
     TICKERS,
     TRAILING_MA,
@@ -405,7 +405,7 @@ class OpMomentumTradeEngine:
             opening_start_t = datetime.strptime(win.opening_start, "%H:%M").time()
             or_open = ET.localize(datetime.combine(today, opening_start_t))
             or_close = or_open + timedelta(minutes=win.opening_bars * 5)
-            deadline = or_close + timedelta(seconds=SIGNAL_BUFFER_SECONDS)
+            deadline = or_close + timedelta(minutes=SIGNAL_BUFFER_MINUTES)
             self._window_state[win.label] = {
                 "pending_signals": {},
                 "collection_deadline": deadline,
@@ -1634,27 +1634,6 @@ class OpMomentumTradeEngine:
         now = _now_et()
         state = self._window_state[window_label]
         with self._signal_lock:
-            # Live: 5-min bar aggregation lag means the first signal of a window
-            # typically arrives ~60s after OR close — past the OR_close+15s
-            # deadline. When the buffer is empty and the deadline was passed
-            # within the bar-aggregation grace window, extend by
-            # SIGNAL_BUFFER_SECONDS so peers from the same bar batch get
-            # ranked together rather than each falling through to an unranked
-            # immediate entry. Beyond the grace (e.g., mid-day engine restart
-            # hours after OR close), keep the original fast-path so stragglers
-            # enter directly. Replay: signals arrive at OR_close ahead of the
-            # deadline; this branch is a no-op there.
-            _BAR_AGG_GRACE_SECONDS = 90
-            if not state["pending_signals"]:
-                seconds_past = (now - state["collection_deadline"]).total_seconds()
-                if 0 < seconds_past <= _BAR_AGG_GRACE_SECONDS:
-                    state["collection_deadline"] = now + timedelta(seconds=SIGNAL_BUFFER_SECONDS)
-                    logger.info(
-                        "Signal collection deadline [%s] extended to %s ET (first signal arrived %.0fs past OR-close deadline)",
-                        window_label,
-                        state["collection_deadline"].strftime("%H:%M:%S"),
-                        seconds_past,
-                    )
             if now <= state["collection_deadline"]:
                 # In replay mode the clock is pinned to bar timestamps and the
                 # collection deadline equals the OR-close bar timestamp exactly.
@@ -1880,12 +1859,13 @@ class OpMomentumTradeEngine:
     def _signal_selection_loop_for_window(self, win: WindowConfig):
         label = win.label
         state = self._window_state[label]
+        deadline = state["collection_deadline"]
         logger.info(
             "Signal collection window [%s] open until %s ET",
             label,
-            state["collection_deadline"].strftime("%H:%M:%S"),
+            deadline.strftime("%H:%M:%S"),
         )
-        while _now_et() < state["collection_deadline"]:
+        while _now_et() < deadline:
             time.sleep(0.5)
         self._drain_pending_signals_for_window(win)
 
@@ -2254,7 +2234,7 @@ class OpMomentumTradeEngine:
             opening_start_t = datetime.strptime(win.opening_start, "%H:%M").time()
             or_open_et = ET.localize(datetime.combine(session_date, opening_start_t))
             or_close_et = or_open_et + timedelta(minutes=win.opening_bars * 5)
-            deadline = or_close_et + timedelta(seconds=SIGNAL_BUFFER_SECONDS)
+            deadline = or_close_et + timedelta(minutes=SIGNAL_BUFFER_MINUTES)
 
             label = win.label
             self._window_state[label] = {

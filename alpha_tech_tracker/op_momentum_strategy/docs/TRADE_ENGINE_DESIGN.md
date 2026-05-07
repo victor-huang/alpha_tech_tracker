@@ -59,7 +59,7 @@ tests/op_momentum_trade_engine/
 | `MA_WARMUP_DAYS` | `7` | Calendar days of 5-min bars to pre-warm MAs |
 | `ROLLING_LOOKBACK_DAYS` | `30` | Days for ticker selection rolling stats |
 | `BEARISH_MA200` | `False` | Require close < MA200 for BEARISH signals |
-| `SIGNAL_BUFFER_SECONDS` | `10` | Collection window after first signal arrives (deadline auto-extends past OR-close in live to absorb 5-min bar aggregation lag, up to 90s grace) |
+| `SIGNAL_BUFFER_MINUTES` | `2` | Collection window after OR closes |
 | `TRAILING_MA` | `"ma20"` | MA to use for trailing stop: `ma20`, `ma50`, `both` |
 | `MAX_LOSS_PCT` | `None` | Per-trade max stock loss % (e.g. `0.02` = 2%). Disabled by default |
 | `ARMED_MA20_EXIT` | `False` | Use MA20 as trailing exit once hard stop is armed |
@@ -119,7 +119,7 @@ gets a smaller budget. No explicit force-close is needed.
 Each window runs independently:
 1. `LiveSignalEngine` tracks OR bars for each window simultaneously on a single stream
 2. When a window's OR closes, signals are collected into a per-window buffer
-3. After `SIGNAL_BUFFER_SECONDS` past the first buffered signal (deadline auto-extends in live to cover bar aggregation lag), the per-window selection loop ranks buffered signals
+3. After `SIGNAL_BUFFER_MINUTES`, the per-window selection loop ranks buffered signals
 4. Up to `MAX_ACTIVE_SYMBOLS` positions are entered for that window
 5. Positions exit naturally (hard stop, trailing MA, or EOD at 3:55 PM)
 
@@ -257,14 +257,9 @@ daemon thread — preserving `_history` so no re-warmup is needed.
 
 ### 6. Signal Collection Window & Ranking
 
-After the opening range closes, the engine collects signals from all watched tickers for
-`SIGNAL_BUFFER_SECONDS` (10s) before entering. The initial deadline is `or_close + 10s`;
-when the first signal of a window arrives past that deadline (typical in live, where 5-min
-bar aggregation adds ~60s of lag), the deadline is extended to `arrival_time + 10s`,
-provided the lag is within the 90s bar-aggregation grace window. Beyond that grace (e.g.,
-mid-day engine restart), the legacy fast-path applies: the late signal enters directly at
-the next available rank without buffering. During the active window, signals are buffered
-in `_pending_signals`.
+After the opening range closes, the engine waits `SIGNAL_BUFFER_MINUTES` (2 min) to
+collect signals from all watched tickers before entering. During this window, signals are
+buffered in `_pending_signals`.
 
 When the deadline passes, buffered signals are ranked by the same composite score used by
 the selector (EV × signal strength). Only tickers with positive EV are eligible. The top
@@ -332,7 +327,7 @@ Startup     _load_config() — load alpaca + clicksend credentials
             LiveSignalEngine.start() — warmup bars, build regime dates, start stream
 
 9:30 AM     Opening range begins (OPENING_BARS × 5-min bars)
-            Signal collection window: deadline = OR close + SIGNAL_BUFFER_SECONDS, auto-extended on first late signal
+            Signal collection window opens at OR close + SIGNAL_BUFFER_MINUTES
 
 Collection  Buffered signals ranked by composite score
 window      Top MAX_ACTIVE_SYMBOLS entered via _enter_position(event, rank=i)
