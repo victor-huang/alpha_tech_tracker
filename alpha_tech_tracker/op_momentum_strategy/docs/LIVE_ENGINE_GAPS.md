@@ -128,7 +128,7 @@ the backtest would have skipped them.
 **File:** `trade_engine.py` `run_replay()` window-state setup
 **Severity:** High — entry bar skipped entirely for every window in replay
 
-The collection deadline was set to `or_close_et + SIGNAL_BUFFER_MINUTES`, causing
+The collection deadline was set to `or_close_et + SIGNAL_BUFFER_SECONDS` (then `_MINUTES`), causing
 the drain to fire one bar after the OR closed.  The signal bar became the same bar
 as the first monitoring bar, and the position monitor skipped it via the
 `entry_bar_time` guard.

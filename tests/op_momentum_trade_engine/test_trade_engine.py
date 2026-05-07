@@ -234,7 +234,7 @@ class TestSignalBuffer:
         engine = _make_engine_with_mock_client()
         engine._window_state["W1"]["collection_deadline"] = datetime.now(
             ET
-        ) - timedelta(minutes=1)
+        ) - timedelta(minutes=5)
         engine._window_state["W1"]["open_position_count"] = MAX_ACTIVE_SYMBOLS
 
         with patch.object(engine, "_enter_position") as mock_enter:
@@ -245,7 +245,7 @@ class TestSignalBuffer:
         engine = _make_engine_with_mock_client()
         engine._window_state["W1"]["collection_deadline"] = datetime.now(
             ET
-        ) - timedelta(minutes=1)
+        ) - timedelta(minutes=5)
         engine._window_state["W1"]["open_position_count"] = 0
 
         with patch.object(engine, "_enter_position") as mock_enter, \
@@ -266,7 +266,7 @@ class TestSignalBuffer:
         engine = _make_engine_with_mock_client()
         engine._window_state["W1"]["collection_deadline"] = datetime.now(
             ET
-        ) - timedelta(minutes=1)
+        ) - timedelta(minutes=5)
         engine._window_state["W1"]["open_position_count"] = 0
 
         event1 = _make_signal_event("CRDO")
@@ -286,7 +286,7 @@ class TestSignalBuffer:
         engine = _make_engine_with_mock_client()
         engine._window_state["W1"]["collection_deadline"] = datetime.now(
             ET
-        ) - timedelta(minutes=1)
+        ) - timedelta(minutes=5)
         engine._window_state["W1"]["open_position_count"] = 1
 
         event = _make_signal_event("COIN")
