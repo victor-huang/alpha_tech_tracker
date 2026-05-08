@@ -41,7 +41,7 @@ from .config import (
     REGIME_FILTER,
     REGIME_MA,
     SESSION_END_TIME,
-    SIGNAL_BUFFER_MINUTES,
+    SIGNAL_BUFFER_SECONDS,
     STOP_PCT,
     TICKERS,
     TRAILING_MA,
@@ -405,7 +405,7 @@ class OpMomentumTradeEngine:
             opening_start_t = datetime.strptime(win.opening_start, "%H:%M").time()
             or_open = ET.localize(datetime.combine(today, opening_start_t))
             or_close = or_open + timedelta(minutes=win.opening_bars * 5)
-            deadline = or_close + timedelta(minutes=SIGNAL_BUFFER_MINUTES)
+            deadline = or_close + timedelta(seconds=SIGNAL_BUFFER_SECONDS)
             self._window_state[win.label] = {
                 "pending_signals": {},
                 "collection_deadline": deadline,
@@ -1633,6 +1633,8 @@ class OpMomentumTradeEngine:
     def _on_signal_for_window(self, window_label: str, event: SignalEvent):
         now = _now_et()
         state = self._window_state[window_label]
+        _BAR_AGG_GRACE_SECONDS = 90
+        schedule_drain = False
         with self._signal_lock:
             if now <= state["collection_deadline"]:
                 # In replay mode the clock is pinned to bar timestamps and the
@@ -1652,15 +1654,49 @@ class OpMomentumTradeEngine:
                     event.signal,
                 )
                 return
-            if self._is_circuit_breaker_tripped():
-                logger.warning(
-                    "Daily max-loss circuit breaker tripped [%s], skipping %s — realized_pnl=%.2f limit=%.2f",
-                    window_label,
-                    event.ticker,
-                    float(self._daily_realized_pnl),
-                    float(self._daily_max_loss_usd),
-                )
-                return
+            # Auto-extend: if the first signal arrives after the deadline but within
+            # the bar-aggregation grace window, extend the deadline and schedule a
+            # drain. This handles live-mode bar lag where the 5-min bar closes at
+            # OR-close but the aggregated bar arrives ~60s later.
+            if not state["pending_signals"]:
+                seconds_past = (now - state["collection_deadline"]).total_seconds()
+                if 0 < seconds_past <= _BAR_AGG_GRACE_SECONDS:
+                    state["collection_deadline"] = now + timedelta(seconds=SIGNAL_BUFFER_SECONDS)
+                    logger.info(
+                        "Signal collection deadline [%s] extended to %s ET "
+                        "(first signal arrived %.0fs past OR-close deadline)",
+                        window_label,
+                        state["collection_deadline"].strftime("%H:%M:%S"),
+                        seconds_past,
+                    )
+                    if self._signal_engine is not None:
+                        latest_bar = self._signal_engine.get_latest_bar(event.ticker)
+                        event.signal_bar_time = latest_bar.name if latest_bar is not None else None
+                    state["pending_signals"][event.ticker] = event
+                    logger.info(
+                        "Buffered signal [%s]: %s %s",
+                        window_label,
+                        event.ticker,
+                        event.signal,
+                    )
+                    schedule_drain = True
+        if schedule_drain:
+            win_obj = next(w for w in self._windows if w.label == window_label)
+            delay = (state["collection_deadline"] - _now_et()).total_seconds() + 0.1
+            threading.Timer(
+                max(delay, 0.1), self._drain_pending_signals_for_window, args=(win_obj,)
+            ).start()
+            return
+        if self._is_circuit_breaker_tripped():
+            logger.warning(
+                "Daily max-loss circuit breaker tripped [%s], skipping %s — realized_pnl=%.2f limit=%.2f",
+                window_label,
+                event.ticker,
+                float(self._daily_realized_pnl),
+                float(self._daily_max_loss_usd),
+            )
+            return
+        with self._signal_lock:
             if state["open_position_count"] >= self._top_n:
                 logger.info(
                     "Max positions reached [%s] (%d), skipping %s",
@@ -1859,13 +1895,12 @@ class OpMomentumTradeEngine:
     def _signal_selection_loop_for_window(self, win: WindowConfig):
         label = win.label
         state = self._window_state[label]
-        deadline = state["collection_deadline"]
         logger.info(
             "Signal collection window [%s] open until %s ET",
             label,
-            deadline.strftime("%H:%M:%S"),
+            state["collection_deadline"].strftime("%H:%M:%S"),
         )
-        while _now_et() < deadline:
+        while _now_et() < state["collection_deadline"]:
             time.sleep(0.5)
         self._drain_pending_signals_for_window(win)
 
@@ -2234,7 +2269,7 @@ class OpMomentumTradeEngine:
             opening_start_t = datetime.strptime(win.opening_start, "%H:%M").time()
             or_open_et = ET.localize(datetime.combine(session_date, opening_start_t))
             or_close_et = or_open_et + timedelta(minutes=win.opening_bars * 5)
-            deadline = or_close_et + timedelta(minutes=SIGNAL_BUFFER_MINUTES)
+            deadline = or_close_et + timedelta(seconds=SIGNAL_BUFFER_SECONDS)
 
             label = win.label
             self._window_state[label] = {

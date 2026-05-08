@@ -134,7 +134,6 @@ replay_one() {
     --morning-split 100 \
     --bearish-reentry --bullish-reentry --reversal \
     --rank-weighted-sizing 60 40 \
-    --doubledown --doubledown-start 10 \
     --top 2 --capital 10000 \
     --mock-trade-execution \
     $([ -n "$MARKET_DATA_SOURCE" ] && echo "--market-data-source $MARKET_DATA_SOURCE" || echo "--feed $FEED") \

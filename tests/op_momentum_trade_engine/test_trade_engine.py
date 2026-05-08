@@ -234,7 +234,7 @@ class TestSignalBuffer:
         engine = _make_engine_with_mock_client()
         engine._window_state["W1"]["collection_deadline"] = datetime.now(
             ET
-        ) - timedelta(minutes=1)
+        ) - timedelta(minutes=5)
         engine._window_state["W1"]["open_position_count"] = MAX_ACTIVE_SYMBOLS
 
         with patch.object(engine, "_enter_position") as mock_enter:
@@ -245,7 +245,7 @@ class TestSignalBuffer:
         engine = _make_engine_with_mock_client()
         engine._window_state["W1"]["collection_deadline"] = datetime.now(
             ET
-        ) - timedelta(minutes=1)
+        ) - timedelta(minutes=5)
         engine._window_state["W1"]["open_position_count"] = 0
 
         with patch.object(engine, "_enter_position") as mock_enter, \
@@ -266,7 +266,7 @@ class TestSignalBuffer:
         engine = _make_engine_with_mock_client()
         engine._window_state["W1"]["collection_deadline"] = datetime.now(
             ET
-        ) - timedelta(minutes=1)
+        ) - timedelta(minutes=5)
         engine._window_state["W1"]["open_position_count"] = 0
 
         event1 = _make_signal_event("CRDO")
@@ -286,7 +286,7 @@ class TestSignalBuffer:
         engine = _make_engine_with_mock_client()
         engine._window_state["W1"]["collection_deadline"] = datetime.now(
             ET
-        ) - timedelta(minutes=1)
+        ) - timedelta(minutes=5)
         engine._window_state["W1"]["open_position_count"] = 1
 
         event = _make_signal_event("COIN")
@@ -296,6 +296,110 @@ class TestSignalBuffer:
             engine._on_signal_for_window("W1", event)
             _, kwargs = mock_enter.call_args
             assert kwargs["rank"] == 1
+
+
+class TestDeadlineAutoExtend:
+    """Guard against the 2026-05-07 incident where bar-aggregation lag caused all
+    signals to arrive ~60s after the OR-close deadline, hitting the post-deadline
+    path instead of the buffer path, with no drain scheduled — 0 trades all day."""
+
+    def test_first_signal_within_grace_is_buffered_not_entered(self):
+        engine = _make_engine_with_mock_client()
+        engine._window_state["W1"]["collection_deadline"] = datetime.now(ET) - timedelta(seconds=60)
+
+        with patch.object(engine, "_enter_position") as mock_enter, \
+             patch("threading.Timer") as mock_timer:
+            mock_timer.return_value = Mock()
+            engine._on_signal_for_window("W1", _make_signal_event("SHOP"))
+            mock_enter.assert_not_called()
+
+        assert "SHOP" in engine._window_state["W1"]["pending_signals"]
+
+    def test_deadline_is_extended_when_first_signal_arrives_in_grace_window(self):
+        engine = _make_engine_with_mock_client()
+        original_deadline = datetime.now(ET) - timedelta(seconds=60)
+        engine._window_state["W1"]["collection_deadline"] = original_deadline
+
+        with patch("threading.Timer") as mock_timer:
+            mock_timer.return_value = Mock()
+            engine._on_signal_for_window("W1", _make_signal_event("SHOP"))
+
+        new_deadline = engine._window_state["W1"]["collection_deadline"]
+        assert new_deadline > original_deadline
+
+    def test_drain_timer_is_scheduled_after_auto_extend(self):
+        engine = _make_engine_with_mock_client()
+        engine._window_state["W1"]["collection_deadline"] = datetime.now(ET) - timedelta(seconds=60)
+
+        with patch("alpha_tech_tracker.op_momentum_strategy.trade_engine.threading.Timer") as mock_timer:
+            mock_instance = Mock()
+            mock_timer.return_value = mock_instance
+            engine._on_signal_for_window("W1", _make_signal_event("SHOP"))
+
+        mock_timer.assert_called_once()
+        drain_fn = mock_timer.call_args[0][1]
+        assert drain_fn == engine._drain_pending_signals_for_window
+        mock_instance.start.assert_called_once()
+
+    def test_second_signal_during_extended_window_is_buffered(self):
+        engine = _make_engine_with_mock_client()
+        engine._window_state["W1"]["collection_deadline"] = datetime.now(ET) - timedelta(seconds=60)
+
+        with patch("alpha_tech_tracker.op_momentum_strategy.trade_engine.threading.Timer") as mock_timer:
+            mock_timer.return_value = Mock()
+            engine._on_signal_for_window("W1", _make_signal_event("SHOP"))
+
+        engine._on_signal_for_window("W1", _make_signal_event("AMD"))
+
+        assert "SHOP" in engine._window_state["W1"]["pending_signals"]
+        assert "AMD" in engine._window_state["W1"]["pending_signals"]
+
+    def test_auto_extend_does_not_fire_past_grace_window(self):
+        engine = _make_engine_with_mock_client()
+        engine._window_state["W1"]["collection_deadline"] = datetime.now(ET) - timedelta(seconds=91)
+        engine._window_state["W1"]["open_position_count"] = 0
+
+        with patch.object(engine, "_enter_position") as mock_enter, \
+             patch.object(engine, "_get_window_budget", return_value=None), \
+             patch("alpha_tech_tracker.op_momentum_strategy.trade_engine.threading.Timer") as mock_timer:
+            engine._on_signal_for_window("W1", _make_signal_event("SHOP"))
+            mock_enter.assert_called_once()
+            mock_timer.assert_not_called()
+
+    def test_auto_extend_does_not_fire_when_pending_signals_already_exist(self):
+        engine = _make_engine_with_mock_client()
+        engine._window_state["W1"]["collection_deadline"] = datetime.now(ET) - timedelta(seconds=60)
+        engine._window_state["W1"]["pending_signals"] = {
+            "COIN": _make_signal_event("COIN")
+        }
+        engine._window_state["W1"]["open_position_count"] = 0
+
+        with patch.object(engine, "_enter_position") as mock_enter, \
+             patch.object(engine, "_get_window_budget", return_value=None), \
+             patch("alpha_tech_tracker.op_momentum_strategy.trade_engine.threading.Timer") as mock_timer:
+            engine._on_signal_for_window("W1", _make_signal_event("SHOP"))
+            mock_enter.assert_called_once()
+            mock_timer.assert_not_called()
+
+    def test_drain_called_when_timer_fires(self):
+        # Verify that invoking the scheduled callback actually clears pending_signals,
+        # confirming the timer target is _drain_pending_signals_for_window and not a no-op.
+        engine = _make_engine_with_mock_client()
+        engine._window_state["W1"]["collection_deadline"] = datetime.now(ET) - timedelta(seconds=60)
+
+        captured = {}
+        with patch("alpha_tech_tracker.op_momentum_strategy.trade_engine.threading.Timer") as mock_timer:
+            mock_timer.return_value = Mock()
+            engine._on_signal_for_window("W1", _make_signal_event("SHOP"))
+            captured["fn"] = mock_timer.call_args[0][1]
+            captured["args"] = mock_timer.call_args[1].get("args", mock_timer.call_args[0][2:])
+
+        assert "SHOP" in engine._window_state["W1"]["pending_signals"]
+        with patch.object(engine, "_enter_position"), \
+             patch.object(engine, "_get_window_budget", return_value=None):
+            captured["fn"](*captured["args"])
+
+        assert engine._window_state["W1"]["pending_signals"] == {}
 
 
 class TestSignalSelectionLoop:
