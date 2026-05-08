@@ -401,6 +401,18 @@ class TestDeadlineAutoExtend:
 
         assert engine._window_state["W1"]["pending_signals"] == {}
 
+    def test_circuit_breaker_blocks_grace_window_auto_extend(self):
+        engine = _make_engine_with_mock_client()
+        engine._window_state["W1"]["collection_deadline"] = datetime.now(ET) - timedelta(seconds=60)
+        engine._daily_max_loss_usd = 100
+        engine._daily_realized_pnl = -200
+
+        with patch("alpha_tech_tracker.op_momentum_strategy.trade_engine.threading.Timer") as mock_timer:
+            engine._on_signal_for_window("W1", _make_signal_event("SHOP"))
+
+        assert "SHOP" not in engine._window_state["W1"]["pending_signals"]
+        mock_timer.assert_not_called()
+
 
 class TestSignalSelectionLoop:
     def test_no_action_when_no_signals_buffered(self):

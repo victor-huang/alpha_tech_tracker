@@ -41,6 +41,7 @@ from .config import (
     REGIME_FILTER,
     REGIME_MA,
     SESSION_END_TIME,
+    BAR_AGG_GRACE_SECONDS,
     SIGNAL_BUFFER_SECONDS,
     STOP_PCT,
     TICKERS,
@@ -411,6 +412,7 @@ class OpMomentumTradeEngine:
                 "collection_deadline": deadline,
                 "open_position_count": 0,
                 "capital_fraction": win.capital_fraction,
+                "drain_timer_scheduled": False,
             }
 
     def _enter_position(
@@ -1633,7 +1635,12 @@ class OpMomentumTradeEngine:
     def _on_signal_for_window(self, window_label: str, event: SignalEvent):
         now = _now_et()
         state = self._window_state[window_label]
-        _BAR_AGG_GRACE_SECONDS = 90
+        # Read outside the lock to avoid lock-ordering inversion with signal_engine's lock.
+        latest_bar = (
+            self._signal_engine.get_latest_bar(event.ticker)
+            if self._signal_engine is not None
+            else None
+        )
         schedule_drain = False
         with self._signal_lock:
             if now <= state["collection_deadline"]:
@@ -1643,9 +1650,7 @@ class OpMomentumTradeEngine:
                 # ranked by the drain rather than jumping the queue at rank=0.
                 # In live mode now == deadline is essentially impossible
                 # (millisecond clock vs 5-min bar grid), so this is safe.
-                if self._signal_engine is not None:
-                    latest_bar = self._signal_engine.get_latest_bar(event.ticker)
-                    event.signal_bar_time = latest_bar.name if latest_bar is not None else None
+                event.signal_bar_time = latest_bar.name if latest_bar is not None else None
                 state["pending_signals"][event.ticker] = event
                 logger.info(
                     "Buffered signal [%s]: %s %s",
@@ -1660,7 +1665,14 @@ class OpMomentumTradeEngine:
             # OR-close but the aggregated bar arrives ~60s later.
             if not state["pending_signals"]:
                 seconds_past = (now - state["collection_deadline"]).total_seconds()
-                if 0 < seconds_past <= _BAR_AGG_GRACE_SECONDS:
+                if 0 < seconds_past <= BAR_AGG_GRACE_SECONDS:
+                    if self._is_circuit_breaker_tripped():
+                        logger.warning(
+                            "Daily max-loss circuit breaker tripped [%s], skipping grace-window extend for %s",
+                            window_label,
+                            event.ticker,
+                        )
+                        return
                     state["collection_deadline"] = now + timedelta(seconds=SIGNAL_BUFFER_SECONDS)
                     logger.info(
                         "Signal collection deadline [%s] extended to %s ET "
@@ -1669,9 +1681,7 @@ class OpMomentumTradeEngine:
                         state["collection_deadline"].strftime("%H:%M:%S"),
                         seconds_past,
                     )
-                    if self._signal_engine is not None:
-                        latest_bar = self._signal_engine.get_latest_bar(event.ticker)
-                        event.signal_bar_time = latest_bar.name if latest_bar is not None else None
+                    event.signal_bar_time = latest_bar.name if latest_bar is not None else None
                     state["pending_signals"][event.ticker] = event
                     logger.info(
                         "Buffered signal [%s]: %s %s",
@@ -1679,6 +1689,7 @@ class OpMomentumTradeEngine:
                         event.ticker,
                         event.signal,
                     )
+                    state["drain_timer_scheduled"] = True
                     schedule_drain = True
         if schedule_drain:
             win_obj = next(w for w in self._windows if w.label == window_label)
@@ -1902,7 +1913,10 @@ class OpMomentumTradeEngine:
         )
         while _now_et() < state["collection_deadline"]:
             time.sleep(0.5)
-        self._drain_pending_signals_for_window(win)
+        with self._signal_lock:
+            timer_pending = state["drain_timer_scheduled"]
+        if not timer_pending:
+            self._drain_pending_signals_for_window(win)
 
     def _place_entry(
         self,
@@ -2277,6 +2291,7 @@ class OpMomentumTradeEngine:
                 "collection_deadline": deadline,
                 "open_position_count": 0,
                 "capital_fraction": win.capital_fraction,
+                "drain_timer_scheduled": False,
             }
             logger.info(
                 "Window [%s] %s/%dbar — collection deadline %s ET",
@@ -2476,6 +2491,7 @@ class OpMomentumTradeEngine:
                 "collection_deadline": deadline,
                 "open_position_count": 0,
                 "capital_fraction": win.capital_fraction,
+                "drain_timer_scheduled": False,
             }
             engine_windows.append(
                 {
