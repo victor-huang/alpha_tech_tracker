@@ -864,7 +864,10 @@ def compute_signals_with_backtest(
                     bru_move = bru_bar_close - bru_entry_price
 
                     if not bru_trailing_armed and bru_bar_close >= bru_entry_price + effective_or_range * 0.1:
-                        bru_trailing_armed = True
+                        _bru_arm_ma = bru_bar_ma8 if (bru_use_ma8 and not pd.isna(bru_bar_ma8)) else bru_bar_ma20
+                        bru_trailing_armed = (
+                            not pd.isna(_bru_arm_ma) and bru_bar_close > _bru_arm_ma
+                        )
 
                     if not bru_use_ma8 and trailing_ma_switch != "none":
                         if trailing_ma_switch == "after-arm" and bru_trailing_armed:

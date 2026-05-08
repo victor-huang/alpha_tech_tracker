@@ -1636,6 +1636,44 @@ class TestReentryWatcher:
         assert pos.is_closed is True
         assert pos.exit_reason == "trailing_stop_ma20"
 
+    def test_bru_trailing_arm_not_latched_when_close_at_threshold_but_below_ma20(self):
+        """
+        bullish_reentry arm requires BOTH close >= arm_price AND close > MA20.
+        When close reaches the price threshold but is still below MA20, the arm
+        must not latch — the trailing stop should remain inactive.
+        """
+        monitor, _, engine = self._make_monitor()
+        pos = _make_active_position(
+            signal="BULLISH",
+            or_high=_D("105"),
+            or_low=_D("95"),
+            hard_stop_price=_D("100"),
+            fallback_price=_D("100"),
+        )
+        pos.entry_stock_price = _D("106")
+        pos.hard_stop_armed = True
+        pos.trailing_arm_price = _D("107")  # entry(106) + or_range(10) * 0.1
+        pos.reentry_type = "bullish_reentry"
+        monitor.add_position(pos)
+
+        # close=107.5 >= arm(107) but close=107.5 < MA20=110 → arm must NOT latch yet
+        _set_latest_bar(engine, "NVDA", close=107.5, ma50=97.0, ma20=110.0)
+        monitor.on_bar("NVDA")
+        assert pos.trailing_arm_reached is False
+        assert pos.is_closed is False
+
+        # close=111 >= arm(107) AND close=111 > MA20=110 → arm now latches
+        _set_latest_bar(engine, "NVDA", close=111.0, ma50=97.0, ma20=110.0)
+        monitor.on_bar("NVDA")
+        assert pos.trailing_arm_reached is True
+        assert pos.is_closed is False
+
+        # close=109 < MA20=110, MA20=110 > hard_stop(100) → trailing_stop_ma20
+        _set_latest_bar(engine, "NVDA", close=109.0, ma50=97.0, ma20=110.0)
+        monitor.on_bar("NVDA")
+        assert pos.is_closed is True
+        assert pos.exit_reason == "trailing_stop_ma20"
+
     def test_pre_armed_bre_bearish_exits_via_ma20_without_reaching_trailing_arm_price(self):
         """
         BRE (bearish re-entry) position starts with hard_stop_armed=True, so the

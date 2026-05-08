@@ -269,7 +269,7 @@ class PositionMonitor:
                         daemon=True,
                     ).start()
 
-    def _trailing_armed(self, pos: ActivePosition, close) -> bool:
+    def _trailing_armed(self, pos: ActivePosition, close, ma20=None, ma50=None) -> bool:
         """
         Returns True when the trailing MA stop is allowed to fire.
 
@@ -277,7 +277,7 @@ class PositionMonitor:
         BRE and reversal positions start pre-armed (hard_stop_armed=True) and
         are immediately eligible — the hard stop already guards from bar 1.
         bullish_reentry positions gate on a price threshold (entry + 0.1 × or_range)
-        even when hard_stop_armed=True, matching backtest arm behaviour.
+        AND require close to be above the configured trailing MA at the moment of arming.
         Other (non-pre-armed) re-entry positions gate behind trailing_arm_price.
         """
         if pos.trailing_arm_price is None:
@@ -286,7 +286,15 @@ class PositionMonitor:
             return True
         if not pos.trailing_arm_reached:
             if pos.signal == "BULLISH":
-                pos.trailing_arm_reached = close >= pos.trailing_arm_price
+                price_threshold_met = close >= pos.trailing_arm_price
+                if price_threshold_met and pos.reentry_type == "bullish_reentry":
+                    ma_above = (
+                        (self._trailing_ma in ("ma20", "both") and ma20 is not None and close > ma20)
+                        or (self._trailing_ma in ("ma50", "both") and ma50 is not None and close > ma50)
+                    )
+                    pos.trailing_arm_reached = ma_above
+                else:
+                    pos.trailing_arm_reached = price_threshold_met
             else:
                 pos.trailing_arm_reached = close <= pos.trailing_arm_price
         return pos.trailing_arm_reached
@@ -315,7 +323,7 @@ class PositionMonitor:
             if loss_pct >= _D(str(self._max_loss_pct)):
                 return ("max_loss", None)
 
-        trailing_armed = self._trailing_armed(pos, close)
+        trailing_armed = self._trailing_armed(pos, close, ma20=ma20, ma50=ma50)
 
         if pos.signal == "BULLISH":
             if not pos.hard_stop_armed and close > pos.hard_stop_price:
