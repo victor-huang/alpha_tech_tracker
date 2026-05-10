@@ -142,6 +142,33 @@ class TestComputeSignalsBearishReentry:
         assert len(result) == 1
         assert result.iloc[0]["is_bearish_reentry"] == False
 
+    def test_bre_blocked_when_close_below_or_low_but_above_ma20(self):
+        # close=97.5 < or_low=98 but MA20=97.0 → close > MA20 → BRE must not fire.
+        # Simulates a CVNA-style situation where price dipped below OR but is still above MA20.
+        df = _make_bars("2025-01-02", _BEARISH_OPENING + _BEARISH_POST_HARDSTOP + [
+            ("09:55",  97,  98,  96.5,  97.5,  97.0, _BEAR_MA50, _MA200),  # close=97.5 > MA20=97.0
+            ("10:00",  97,  98,  96.5,  97.5,  97.0, _BEAR_MA50, _MA200),
+        ])
+        result = compute_signals_with_backtest(
+            df, opening_bars=3, enable_bearish_reentry=True
+        )
+
+        assert len(result) == 1
+        assert result.iloc[0]["is_bearish_reentry"] == False
+
+    def test_bre_fires_when_close_below_both_or_low_and_ma20(self):
+        # close=96.5 < or_low=98 AND MA20=97.5 → close < MA20 → BRE fires.
+        df = _make_bars("2025-01-02", _BEARISH_OPENING + _BEARISH_POST_HARDSTOP + [
+            ("09:55",  97,  98,  96,  96.5,  97.5, _BEAR_MA50, _MA200),  # close=96.5 < MA20=97.5
+            ("10:00",  96,  97,  95,  96.0,  97.5, _BEAR_MA50, _MA200),
+        ])
+        result = compute_signals_with_backtest(
+            df, opening_bars=3, enable_bearish_reentry=True
+        )
+
+        assert len(result) == 2
+        assert any(result["is_bearish_reentry"])
+
     def test_bre_does_not_fire_when_primary_held_too_many_bars(self):
         # bearish_reentry_max_bars=0 means bars_held=1 > 0 → ineligible.
         df = _make_bars("2025-01-02", _BEARISH_OPENING + _BEARISH_POST_HARDSTOP + [

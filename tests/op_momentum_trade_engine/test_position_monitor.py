@@ -1513,7 +1513,7 @@ class TestReentryWatcher:
         _set_latest_bar(engine, "NVDA", close=96.5, ma50=110.0)
         monitor.on_bar("NVDA")
 
-        # Price crosses below OR low (95)
+        # Price crosses below OR low (95) and below MA20 (default 98.0) → BRE fires.
         _set_latest_bar(engine, "NVDA", close=94.5, ma50=110.0)
         monitor.on_bar("NVDA")
 
@@ -1522,6 +1522,53 @@ class TestReentryWatcher:
         w, trigger = fired[0]
         assert w.reentry_type == "bearish_reentry"
         assert trigger == _D("94.5")
+
+    def test_bearish_reentry_blocked_when_close_above_ma20(self):
+        # close < or_low=95 but close > MA20 — price dipped below OR but is still above MA20,
+        # meaning the downtrend is not confirmed. BRE must not fire (CVNA Apr-30 style false re-entry).
+        fired = []
+        monitor, _, engine = self._make_monitor(
+            enable_bearish_reentry=True, bearish_reentry_max_bars=3,
+            re_entry_callback=lambda w, price: fired.append((w, price)),
+        )
+        pos = self._make_bearish_pos(bars_held=2)
+        pos.hard_stop_armed = True
+        monitor.add_position(pos)
+
+        _set_latest_bar(engine, "NVDA", close=96.5, ma50=110.0)
+        monitor.on_bar("NVDA")
+
+        # close=94.0 < or_low=95 but MA20=93.0 → close > MA20 → BRE blocked.
+        _set_latest_bar(engine, "NVDA", close=94.0, ma50=110.0, ma20=93.0)
+        monitor.on_bar("NVDA")
+
+        assert len(fired) == 0
+        assert len(monitor._reentry_watchers) == 1
+
+    def test_bearish_reentry_fires_only_when_close_below_both_or_low_and_ma20(self):
+        # Verifies the MA20 guard lifts once price falls below MA20 as well.
+        fired = []
+        monitor, _, engine = self._make_monitor(
+            enable_bearish_reentry=True, bearish_reentry_max_bars=5,
+            re_entry_callback=lambda w, price: fired.append((w, price)),
+        )
+        pos = self._make_bearish_pos(bars_held=2)
+        pos.hard_stop_armed = True
+        monitor.add_position(pos)
+
+        _set_latest_bar(engine, "NVDA", close=96.5, ma50=110.0)
+        monitor.on_bar("NVDA")
+
+        # close=94.0 < or_low=95 but MA20=93.0 → close > MA20 → still blocked.
+        _set_latest_bar(engine, "NVDA", close=94.0, ma50=110.0, ma20=93.0)
+        monitor.on_bar("NVDA")
+        assert len(fired) == 0
+
+        # close=92.0 < or_low=95 AND close < MA20=93.5 → BRE fires.
+        _set_latest_bar(engine, "NVDA", close=92.0, ma50=110.0, ma20=93.5)
+        monitor.on_bar("NVDA")
+        assert len(fired) == 1
+        assert fired[0][0].reentry_type == "bearish_reentry"
 
     def test_bullish_reentry_watcher_created_on_bullish_hard_stop(self):
         monitor, _, engine = self._make_monitor(

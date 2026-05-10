@@ -361,4 +361,10 @@ def pytest_collection_modifyitems(config, items):
     - Skip tests based on conditions
     - Modify test execution order
     """
-    # Markers are now defined in pytest.ini, no need to add dynamically
+    # Skip integration tests unless explicitly selected via -m integration.
+    if config.option.markexpr and "integration" in config.option.markexpr:
+        return
+    skip_integration = pytest.mark.skip(reason="integration test — run with -m integration")
+    for item in items:
+        if item.get_closest_marker("integration"):
+            item.add_marker(skip_integration)
