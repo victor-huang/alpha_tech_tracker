@@ -50,7 +50,7 @@ def _make_bars(date_str, bar_specs):
         for t, *_ in bar_specs
     ]
     rows = [
-        {"Open": o, "High": h, "Low": l, "Close": c, "MA20": m20, "MA50": m50, "MA200": m200}
+        {"Open": o, "High": h, "Low": l, "Close": c, "Volume": 1000.0, "MA20": m20, "MA50": m50, "MA200": m200}
         for _, o, h, l, c, m20, m50, m200 in bar_specs
     ]
     return pd.DataFrame(rows, index=pd.DatetimeIndex(index))

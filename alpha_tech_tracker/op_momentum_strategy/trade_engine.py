@@ -1748,6 +1748,30 @@ class OpMomentumTradeEngine:
             pending = dict(state["pending_signals"])
             state["pending_signals"].clear()
 
+        # When a sequential window claims the prior window's returned capital,
+        # any pending re-entry watchers from the prior window must be cancelled.
+        # If they fired after this drain their slot capital would be double-spent
+        # (already recycled into this window). Matches the backtest's
+        # "cancelled (capital recycled)" logic in _apply_capital_flow Phase 2.
+        if self._monitor is not None:
+            prior_label = self._prior_window_label(win)
+            if prior_label is not None:
+                with self._monitor._lock:
+                    before = len(self._monitor._reentry_watchers)
+                    self._monitor._reentry_watchers = [
+                        w for w in self._monitor._reentry_watchers
+                        if w.window_label != prior_label
+                    ]
+                    cancelled = before - len(self._monitor._reentry_watchers)
+                if cancelled:
+                    logger.info(
+                        "Sequential window [%s]: cancelled %d re-entry watcher(s)"
+                        " from [%s] — capital recycled",
+                        label,
+                        cancelled,
+                        prior_label,
+                    )
+
         if not pending:
             logger.info(
                 "Signal collection window [%s] closed: no signals buffered", label
@@ -2581,22 +2605,29 @@ class OpMomentumTradeEngine:
                     if _now_et() >= deadline:
                         _drained_windows.add(lbl)
                         self._drain_pending_signals_for_window(win)
-            # DD check fires after the window has been drained (positions entered).
-            if self._enable_doubledown:
-                for win in self._windows:
-                    lbl = win.label
-                    if (lbl in _drained_windows
-                            and lbl not in _dd_checked_windows
-                            and _now_et() >= _dd_check_times[lbl]):
-                        _dd_checked_windows.add(lbl)
-                        self._check_doubledown_for_window(win)
             self._monitor.on_bar(ticker)
+
+        def _on_bar_group_complete():
+            # DD check fires AFTER all tickers' monitors have processed this bar
+            # group. This ensures positions that exit on the DD check bar are
+            # correctly identified as stopouts (not survivors), matching the
+            # backtest's per-bar exit-then-DD-check order.
+            if not self._enable_doubledown:
+                return
+            for win in self._windows:
+                lbl = win.label
+                if (lbl in _drained_windows
+                        and lbl not in _dd_checked_windows
+                        and _now_et() >= _dd_check_times[lbl]):
+                    _dd_checked_windows.add(lbl)
+                    self._check_doubledown_for_window(win)
 
         driver = BarReplayDriver(
             tickers=all_tickers,
             replay_date=replay_date,
             signal_engine=self._signal_engine,
             on_bar_injected=_on_bar,
+            on_bar_group_complete=_on_bar_group_complete,
             bars_source=bars_source,
             exit_time=replay_exit_time,
             feed=self._alpaca_feed.value,

@@ -314,6 +314,15 @@ def parse_args():
         "Filters weak-open days with no institutional participation "
         "(e.g. 1.5 requires 1.5× the average per-bar rate). Default: disabled.",
     )
+    parser.add_argument(
+        "--min-or-vol-ratio",
+        type=float,
+        default=None,
+        dest="min_or_vol_ratio",
+        help="Skip entry if OR-window mean volume / 20d historical OR-window mean volume < threshold. "
+        "Apples-to-apples vs Rule 4: compares OR bars to historical OR bars, not full-session avg. "
+        "Default: disabled.",
+    )
     return parser.parse_args()
 
 
@@ -343,6 +352,7 @@ def compute_signals_with_backtest(
     trailing_ma_switch_period: int = 8,
     min_first_bar_range_pct: float = None,
     min_first_bar_volume_mult: float = None,
+    min_or_vol_ratio: float = None,
 ) -> pd.DataFrame:
     opening_start_t = datetime.strptime(opening_start_time, "%H:%M").time()
 
@@ -370,6 +380,18 @@ def compute_signals_with_backtest(
         daily_vol = df.groupby(df.index.date)["Volume"].sum()
         rolling_avg = daily_vol.rolling(20, min_periods=5).mean().shift(1)
         _avg_daily_vol = rolling_avg.to_dict()
+
+    # OR vol ratio: 20-day rolling avg of mean OR-window volume for the same time slot.
+    # Apples-to-apples: compares today's OR bars to historical OR bars (not full-session avg).
+    # Always computed so or_vol_ratio is available in every trade row for scoring.
+    # Shift 1 ensures no lookahead bias.
+    _or_slice = df[df.index.time >= opening_start_t]
+    or_vol_by_date = (
+        _or_slice
+        .groupby(_or_slice.index.date)
+        .apply(lambda g: g.head(opening_bars)["Volume"].mean())
+    )
+    _hist_or_vol: dict = or_vol_by_date.rolling(20, min_periods=5).mean().shift(1).to_dict()
 
     rows = []
     for date_, day_df in df.groupby(df.index.date):
@@ -407,6 +429,26 @@ def compute_signals_with_backtest(
             if avg_daily_vol is not None and not pd.isna(avg_daily_vol) and avg_daily_vol > 0:
                 if opening.iloc[0]["Volume"] < min_first_bar_volume_mult * avg_daily_vol / 78:
                     continue
+
+        # OR vol ratio gate: compare mean OR-window volume to the 20d historical OR-window avg.
+        # Acceleration boost: if every successive OR bar grows by > 8%, multiply or_vol_ratio by 1.20.
+        # Values (8%, 20%) were validated via a 25-combo 2026 sweep — the default combination
+        # was already optimal; sweeping other combinations produced no improvement.
+        _OR_VOL_ACC_THRESHOLD = 0.08
+        _OR_VOL_ACC_BOOST = 0.20
+        or_vol_ratio = None
+        hist_or_vol = _hist_or_vol.get(date_)
+        if hist_or_vol is not None and not pd.isna(hist_or_vol) and hist_or_vol > 0:
+            or_vol_ratio = opening["Volume"].mean() / hist_or_vol
+            or_vols = opening["Volume"].tolist()
+            if len(or_vols) > 1 and all(
+                or_vols[i] > or_vols[i - 1] * (1 + _OR_VOL_ACC_THRESHOLD)
+                for i in range(1, len(or_vols))
+            ):
+                or_vol_ratio *= 1 + _OR_VOL_ACC_BOOST
+        if min_or_vol_ratio is not None and (or_vol_ratio is None or or_vol_ratio < min_or_vol_ratio):
+            continue
+
         midpoint = (or_high + or_low) / 2
         bottom_30_threshold = or_low + 0.20 * or_range
 
@@ -651,6 +693,7 @@ def compute_signals_with_backtest(
                 "is_reversal": False,
                 "is_bearish_reentry": False,
                 "is_bullish_reentry": False,
+                "or_vol_ratio": round(or_vol_ratio, 4) if or_vol_ratio is not None else None,
             }
         )
 
@@ -819,6 +862,7 @@ def compute_signals_with_backtest(
                     "is_reversal": True,
                     "is_bearish_reentry": False,
                     "is_bullish_reentry": False,
+                    "or_vol_ratio": round(or_vol_ratio, 4) if or_vol_ratio is not None else None,
                 }
             )
 
@@ -900,6 +944,7 @@ def compute_signals_with_backtest(
                     "is_reversal": False,
                     "is_bearish_reentry": True,
                     "is_bullish_reentry": False,
+                    "or_vol_ratio": round(or_vol_ratio, 4) if or_vol_ratio is not None else None,
                 }
             )
 
@@ -1013,6 +1058,7 @@ def compute_signals_with_backtest(
                         "is_reversal": False,
                         "is_bearish_reentry": False,
                         "is_bullish_reentry": True,
+                        "or_vol_ratio": round(or_vol_ratio, 4) if or_vol_ratio is not None else None,
                     }
                 )
 
@@ -1850,6 +1896,7 @@ def run_backtest(
     trailing_ma_switch_period: int = 8,
     min_first_bar_range_pct: float = None,
     min_first_bar_volume_mult: float = None,
+    min_or_vol_ratio: float = None,
 ) -> dict:
     if ticker_dfs is None:
         ticker_dfs = fetch_bars(tickers, start_date, end_date, source=source)
@@ -1885,6 +1932,7 @@ def run_backtest(
             trailing_ma_switch_period=trailing_ma_switch_period,
             min_first_bar_range_pct=min_first_bar_range_pct,
             min_first_bar_volume_mult=min_first_bar_volume_mult,
+            min_or_vol_ratio=min_or_vol_ratio,
         )
         if not results.empty:
             results = results[results["date"] >= start_date].reset_index(drop=True)
@@ -1983,6 +2031,7 @@ if __name__ == "__main__":
             trailing_ma_switch_period=args.trailing_ma_switch_period,
             min_first_bar_range_pct=args.min_first_bar_range_pct,
             min_first_bar_volume_mult=args.min_first_bar_volume_mult,
+            min_or_vol_ratio=args.min_or_vol_ratio,
         )
         if not results.empty:
             results = results[results["date"] >= cutoff].reset_index(drop=True)

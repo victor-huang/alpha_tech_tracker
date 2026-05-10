@@ -2731,6 +2731,75 @@ class TestDrainPendingSignals:
 
         assert "NVDA" in enter_calls
 
+    # ── Bug fix: sequential drain cancels prior-window reentry watchers ──────
+
+    def _make_two_window_engine(self):
+        from alpha_tech_tracker.op_momentum_strategy.models import WindowConfig
+        client = _make_alpaca_client()
+        engine = OpMomentumTradeEngine(
+            alpaca_client=client,
+            mock_trade_execution=True,
+            windows=[
+                WindowConfig(label="M1", opening_start="09:30", opening_bars=3),
+                WindowConfig(label="A1", opening_start="10:00", opening_bars=3,
+                             is_sequential=True),
+            ],
+        )
+        engine._monitor = Mock()
+        engine._monitor._lock = threading.Lock()
+        return engine
+
+    def _make_watcher(self, ticker, window_label, reentry_type="bullish_reentry"):
+        signal = "BEARISH" if reentry_type == "bearish_reentry" else "BULLISH"
+        return ReentryWatcher(
+            ticker=ticker,
+            reentry_type=reentry_type,
+            primary_signal=signal,
+            or_high=_D("470"), or_low=_D("460"), or_range=_D("10"),
+            midpoint=_D("465"), window_label=window_label, rank=0,
+            window_budget=_D("6000"), primary_exit_bar_time=None,
+        )
+
+    def test_sequential_drain_cancels_prior_window_watchers(self):
+        # When A1 drains and claims M1 capital, pending M1 watchers must be
+        # cancelled so they can't double-spend recycled capital.
+        engine = self._make_two_window_engine()
+        m1_watcher = self._make_watcher("APP", "M1")
+        a1_watcher = self._make_watcher("NVDA", "A1")
+        engine._monitor._reentry_watchers = [m1_watcher, a1_watcher]
+        engine._window_state["A1"]["pending_signals"] = {}
+
+        engine._drain_pending_signals_for_window(engine._windows[1])
+
+        remaining = engine._monitor._reentry_watchers
+        assert len(remaining) == 1
+        assert remaining[0].window_label == "A1"
+
+    def test_first_window_drain_does_not_cancel_its_own_watchers(self):
+        # Morning window has no prior window — watchers must be left untouched.
+        engine = self._make_two_window_engine()
+        watcher = self._make_watcher("APP", "M1")
+        engine._monitor._reentry_watchers = [watcher]
+        engine._window_state["M1"]["pending_signals"] = {}
+
+        engine._drain_pending_signals_for_window(engine._windows[0])
+
+        assert len(engine._monitor._reentry_watchers) == 1
+
+    def test_sequential_drain_cancels_all_reentry_types_from_prior_window(self):
+        # BRU, BRE, and reversal watchers are all cancelled — not just BRU.
+        engine = self._make_two_window_engine()
+        engine._monitor._reentry_watchers = [
+            self._make_watcher("APP", "M1", "bullish_reentry"),
+            self._make_watcher("APP", "M1", "bearish_reentry"),
+            self._make_watcher("APP", "M1", "reversal"),
+        ]
+        engine._window_state["A1"]["pending_signals"] = {}
+
+        engine._drain_pending_signals_for_window(engine._windows[1])
+
+        assert engine._monitor._reentry_watchers == []
+
 
 # ---------------------------------------------------------------------------
 # _enter_position failure paths — open_position_count must be decremented
@@ -4613,6 +4682,30 @@ class TestDoubleDown:
         remaining = engine._monitor._reentry_watchers
         assert len(remaining) == 1
         assert remaining[0].ticker == "SNDK"
+
+    # ── Bug fix: DD fires after all monitors run in a bar group ─────────────
+
+    def test_dd_sees_position_as_stopout_when_it_exits_on_dd_check_bar(self):
+        # When a position's stop fires on the same bar as the DD check time,
+        # DD must identify it as a stopout (not a survivor).  The fix: DD runs
+        # via on_bar_group_complete, after all monitor.on_bar() calls.
+        engine = self._make_engine()
+        winner = self._make_open_pos(rank=0, slot_capital=6000, ticker="SNDK")
+        stopout = self._make_open_pos(rank=1, slot_capital=4000, ticker="CRDO")
+        engine._monitor._positions = [winner, stopout]
+        engine._monitor._reentry_watchers = [self._make_reentry_watcher("CRDO")]
+        engine._signal_engine.get_latest_bar.return_value = self._make_latest_bar()
+
+        # Simulate: CRDO exits (stop fires) before DD check runs
+        stopout.is_closed = True
+        stopout.exit_reason = "hard_stop"
+
+        with patch.object(engine, "_enter_position"), \
+             patch(_NOTIFY_PATH):
+            engine._check_doubledown_for_window(self._make_win())
+
+        # CRDO is a stopout → watcher must be cancelled
+        assert engine._monitor._reentry_watchers == []
 
 
 _MOCK_ENTRY_PRICE_PATH = (

@@ -216,6 +216,8 @@ def compute_today_signals(
                 )
                 ma50 = opening_close["MA50"]
 
+        raw_ratio = row.get("or_vol_ratio", None)
+        or_vol_ratio = float(raw_ratio) if raw_ratio is not None and not pd.isna(raw_ratio) else 1.0
         signals[ticker] = {
             "signal": row["signal"],
             "or_high": float(or_high),
@@ -225,6 +227,7 @@ def compute_today_signals(
             "entry_price": float(entry),
             "entry_vs_mid_pct": float(entry_vs_mid_pct),
             "or_range_pct": float(or_range_pct),
+            "or_vol_ratio": or_vol_ratio,
             "ma20": float(row["ma20"]),
             "ma50": float(ma50) if not pd.isna(ma50) else float("nan"),
             "ma200": float(row["ma200"]),
@@ -233,13 +236,21 @@ def compute_today_signals(
     return signals
 
 
-def score_ticker(signal_dict: dict, ticker_stats: dict) -> float:
+def score_ticker(
+    signal_dict: dict,
+    ticker_stats: dict,
+    score_entry_weight: float = 0.50,
+    score_vol_ratio_weight: float = 0.00,
+) -> float:
     if ticker_stats["ev_trade"] <= 0:
         return 0.0
+    win_pct_weight = 0.30
+    or_range_weight = 1.0 - score_entry_weight - score_vol_ratio_weight - win_pct_weight
     return (
-        signal_dict["entry_vs_mid_pct"] * 0.50
-        + ticker_stats["avg_win_pct"] * 0.30
-        + signal_dict["or_range_pct"] * 0.20
+        signal_dict["entry_vs_mid_pct"] * score_entry_weight
+        + ticker_stats["avg_win_pct"] * win_pct_weight
+        + signal_dict["or_range_pct"] * or_range_weight
+        + signal_dict.get("or_vol_ratio", 1.0) * score_vol_ratio_weight
     )
 
 

@@ -34,10 +34,13 @@ def _signal_dict_from_row(row) -> dict:
     entry = row["entry_price"]
     entry_vs_mid_pct = abs(entry - mid) / mid * 100 if mid != 0 else 0.0
     or_range_pct = or_range / entry * 100 if entry != 0 else 0.0
+    raw_ratio = row.get("or_vol_ratio", None)
+    or_vol_ratio = float(raw_ratio) if raw_ratio is not None and not (isinstance(raw_ratio, float) and raw_ratio != raw_ratio) else 1.0
     return {
         "signal": row["signal"],
         "entry_vs_mid_pct": entry_vs_mid_pct,
         "or_range_pct": or_range_pct,
+        "or_vol_ratio": or_vol_ratio,
     }
 
 
@@ -630,6 +633,9 @@ def run_selector_backtest(
     qqq_extend_max_dd: float = 0.0,
     min_first_bar_range_pct: float = None,
     min_first_bar_volume_mult: float = None,
+    min_or_vol_ratio: float = None,
+    score_entry_weight: float = 0.50,
+    score_vol_ratio_weight: float = 0.00,
 ) -> tuple:
     """
     Walk each trading day in [eval_start, eval_end], apply rolling selector
@@ -733,6 +739,7 @@ def run_selector_backtest(
                 qqq_align_skip_bear=_qqq_sr,
                 min_first_bar_range_pct=min_first_bar_range_pct,
                 min_first_bar_volume_mult=min_first_bar_volume_mult,
+                min_or_vol_ratio=min_or_vol_ratio,
             )
         all_window_results[label] = results_for_window
         print(f"  [{label}] {win['opening_start']} / {win['opening_bars']} bars — done")
@@ -869,7 +876,7 @@ def run_selector_backtest(
                 stats = rolling_stats[ticker]
                 if stats["ev_trade"] < min_ev:
                     continue
-                s = score_ticker(sig, stats)
+                s = score_ticker(sig, stats, score_entry_weight, score_vol_ratio_weight)
                 if s == 0.0:
                     continue
                 if s < min_score:
@@ -2271,6 +2278,28 @@ def _parse_args():
         "E.g. 1.5 means opening bar must be 1.5× the expected per-bar volume. Default: disabled.",
     )
     parser.add_argument(
+        "--min-or-vol-ratio",
+        type=float,
+        default=None,
+        dest="min_or_vol_ratio",
+        help="Skip entry if OR-window mean volume / 20d historical OR-window mean volume < threshold. "
+        "Default: disabled.",
+    )
+    parser.add_argument(
+        "--score-entry-weight",
+        type=float,
+        default=0.50,
+        dest="score_entry_weight",
+        help="Scoring weight for entry_vs_mid_pct (default: 0.50). Must satisfy: entry + vol_ratio + 0.30 + or_range <= 1.0.",
+    )
+    parser.add_argument(
+        "--score-vol-ratio-weight",
+        type=float,
+        default=0.00,
+        dest="score_vol_ratio_weight",
+        help="Scoring weight for or_vol_ratio (default: 0.00). Remainder after entry + vol_ratio + 0.30 goes to or_range_pct.",
+    )
+    parser.add_argument(
         "--min-or-range",
         type=float,
         default=0.0,
@@ -2600,6 +2629,9 @@ if __name__ == "__main__":
         qqq_extend_max_dd=args.qqq_extend_max_dd,
         min_first_bar_range_pct=args.min_first_bar_range_pct,
         min_first_bar_volume_mult=args.min_first_bar_volume_mult,
+        min_or_vol_ratio=args.min_or_vol_ratio,
+        score_entry_weight=args.score_entry_weight,
+        score_vol_ratio_weight=args.score_vol_ratio_weight,
     )
 
     skip_log = _apply_capital_flow(

@@ -146,6 +146,7 @@ class BarReplayDriver:
     replay_date: date
     signal_engine: object  # LiveSignalEngine
     on_bar_injected: Optional[Callable[[str], None]] = None
+    on_bar_group_complete: Optional[Callable[[], None]] = None
     last_bar_time: Optional[datetime] = None
     bars_source: Optional[LiveBarsSource] = None
     exit_time: str = "15:55"
@@ -176,6 +177,8 @@ class BarReplayDriver:
             if self.on_bar_injected:
                 for bar in group_bars:
                     self.on_bar_injected(bar.symbol)
+            if self.on_bar_group_complete:
+                self.on_bar_group_complete()
 
         clear_replay_clock()
         logger.info("Replay %s complete", self.replay_date)

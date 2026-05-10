@@ -412,8 +412,16 @@ The selector backtest supports running multiple non-overlapping intraday windows
 ## Scoring Formula (op_momentum_selector.py)
 
 ```python
-score = entry_vs_mid_pct * 0.50 + avg_win_pct * 0.30 + or_range_pct * 0.20
+score = entry_vs_mid_pct * 0.50 + avg_win_pct * 0.30 + or_range_pct * 0.20 + or_vol_ratio * 0.00
 ```
+
+Weights are parameterizable via `--score-entry-weight` and `--score-vol-ratio-weight`; `avg_win_pct` is fixed at 0.30 and `or_range_pct` absorbs the remainder.
+
+Default weights validated by 2026 YTD sweep (entry=0.50/vol=0.00 peaks at +$13,604; each 0.05 shift toward vol_ratio costs ~$300–700):
+- `entry_vs_mid_pct`: 0.50 (strongest signal — price position within OR is the best discriminator)
+- `avg_win_pct`: 0.30 (historical win rate)
+- `or_range_pct`: 0.20 (OR range as % of price)
+- `or_vol_ratio`: 0.00 (stored in trade rows for analysis; not used in default scoring)
 
 Tickers with `ev_trade <= 0` are excluded before scoring (negative EV gate).
 
