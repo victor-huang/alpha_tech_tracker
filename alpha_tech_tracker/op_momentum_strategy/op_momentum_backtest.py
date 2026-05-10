@@ -696,6 +696,7 @@ def compute_signals_with_backtest(
                 "or_vol_ratio": round(or_vol_ratio, 4) if or_vol_ratio is not None else None,
             }
         )
+        primary_row = rows[-1]
 
         # Reversal / Bearish re-entry — first chronological trigger wins.
         #
@@ -839,6 +840,9 @@ def compute_signals_with_backtest(
                     rev_exit_reason = "end_of_day"
 
             rev_pnl = rev_exit_price - rev_entry_price
+            primary_row["rev_entry_price"] = rev_entry_price
+            primary_row["rev_entry_idx"] = rev_entry_idx
+            primary_row["rev_bars_held"] = rev_bars_held
             rows.append(
                 {
                     "date": date_,
@@ -921,6 +925,9 @@ def compute_signals_with_backtest(
                     br_exit_reason = "end_of_day"
 
             br_pnl = br_entry_price - br_exit_price
+            primary_row["br_entry_price"] = br_entry_price
+            primary_row["br_entry_idx"] = br_entry_idx
+            primary_row["br_bars_held"] = br_bars_held
             rows.append(
                 {
                     "date": date_,
@@ -1035,6 +1042,9 @@ def compute_signals_with_backtest(
                         bru_exit_reason = "end_of_day"
 
                 bru_pnl = bru_exit_price - bru_entry_price
+                primary_row["bru_entry_price"] = bru_entry_price
+                primary_row["bru_entry_idx"] = bru_entry_idx
+                primary_row["bru_bars_held"] = bru_bars_held
                 rows.append(
                     {
                         "date": date_,

@@ -2555,6 +2555,10 @@ class OpMomentumTradeEngine:
 
         initial_capital = self._replay_capital or float(ACCOUNT_BUDGET)
 
+        first_nonsq = next((w for w in self._windows if not w.is_sequential), None)
+        frac = _D(str(first_nonsq.capital_fraction)) if first_nonsq else _D("1")
+        self._initial_capital = _D(str(initial_capital)) * frac
+
         self._monitor = PositionMonitor(
             self._client,
             self._signal_engine,
