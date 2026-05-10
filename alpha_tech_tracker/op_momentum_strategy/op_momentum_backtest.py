@@ -305,6 +305,15 @@ def parse_args():
         "high-low range smaller than this fraction of the bar midpoint "
         "(e.g. 0.015 = 1.5%%). Default: disabled.",
     )
+    parser.add_argument(
+        "--min-first-bar-volume",
+        type=float,
+        default=None,
+        dest="min_first_bar_volume_mult",
+        help="Rule 4: skip M1 entry if the 09:30 bar volume is below MULT × (20d avg daily vol / 78). "
+        "Filters weak-open days with no institutional participation "
+        "(e.g. 1.5 requires 1.5× the average per-bar rate). Default: disabled.",
+    )
     return parser.parse_args()
 
 
@@ -333,6 +342,7 @@ def compute_signals_with_backtest(
     trailing_ma_switch_factor: float = 1.0,
     trailing_ma_switch_period: int = 8,
     min_first_bar_range_pct: float = None,
+    min_first_bar_volume_mult: float = None,
 ) -> pd.DataFrame:
     opening_start_t = datetime.strptime(opening_start_time, "%H:%M").time()
 
@@ -353,6 +363,14 @@ def compute_signals_with_backtest(
     if "MA200" not in df.columns:
         df["MA200"] = df["Close"].rolling(200).mean()
 
+    # Rule 4: pre-compute 20-day rolling average daily volume for the M1 volume gate.
+    # Uses prior-day data only (shift 1) — no lookahead. Only computed when needed.
+    _avg_daily_vol: dict = {}
+    if min_first_bar_volume_mult is not None and opening_start_time == "09:30":
+        daily_vol = df.groupby(df.index.date)["Volume"].sum()
+        rolling_avg = daily_vol.rolling(20, min_periods=5).mean().shift(1)
+        _avg_daily_vol = rolling_avg.to_dict()
+
     rows = []
     for date_, day_df in df.groupby(df.index.date):
         # Bars from opening_start onward define the opening range and post-open window.
@@ -368,15 +386,26 @@ def compute_signals_with_backtest(
         if filter_flat_or and or_range == 0:
             continue
 
-        # Rule 1: first-bar range gate — skip if the opening window's first 5-min bar
-        # has too narrow a range, indicating no directional conviction at open.
-        # Applied to any window; for M1 this checks the 09:30–09:35 bar.
-        if min_first_bar_range_pct is not None:
+        # Rule 1: first-bar range gate — M1 only (09:30 window).
+        # Skip if the 09:30–09:35 bar range is too narrow, indicating no directional
+        # conviction at open. Afternoon windows are excluded; their first bar is not
+        # the market open and the noise signature does not apply.
+        if min_first_bar_range_pct is not None and opening_start_time == "09:30":
             first_bar = opening.iloc[0]
             first_bar_mid = (first_bar["High"] + first_bar["Low"]) / 2
             if first_bar_mid > 0:
                 first_bar_range_pct = (first_bar["High"] - first_bar["Low"]) / first_bar_mid
                 if first_bar_range_pct < min_first_bar_range_pct:
+                    continue
+
+        # Rule 4: first-bar volume gate — M1 only (09:30 window).
+        # Skip if the 09:30–09:35 bar volume is below mult × (20d avg daily vol / 78 bars).
+        # 78 = number of 5-min bars in a full trading session (6.5h × 12 bars/h).
+        # Low opening volume means no institutional participation — move is unlikely to sustain.
+        if min_first_bar_volume_mult is not None and opening_start_time == "09:30":
+            avg_daily_vol = _avg_daily_vol.get(date_)
+            if avg_daily_vol is not None and not pd.isna(avg_daily_vol) and avg_daily_vol > 0:
+                if opening.iloc[0]["Volume"] < min_first_bar_volume_mult * avg_daily_vol / 78:
                     continue
         midpoint = (or_high + or_low) / 2
         bottom_30_threshold = or_low + 0.20 * or_range
@@ -1820,6 +1849,7 @@ def run_backtest(
     trailing_ma_switch_factor: float = 1.0,
     trailing_ma_switch_period: int = 8,
     min_first_bar_range_pct: float = None,
+    min_first_bar_volume_mult: float = None,
 ) -> dict:
     if ticker_dfs is None:
         ticker_dfs = fetch_bars(tickers, start_date, end_date, source=source)
@@ -1854,6 +1884,7 @@ def run_backtest(
             trailing_ma_switch_factor=trailing_ma_switch_factor,
             trailing_ma_switch_period=trailing_ma_switch_period,
             min_first_bar_range_pct=min_first_bar_range_pct,
+            min_first_bar_volume_mult=min_first_bar_volume_mult,
         )
         if not results.empty:
             results = results[results["date"] >= start_date].reset_index(drop=True)
@@ -1951,6 +1982,7 @@ if __name__ == "__main__":
             trailing_ma_switch_factor=args.trailing_ma_switch_factor,
             trailing_ma_switch_period=args.trailing_ma_switch_period,
             min_first_bar_range_pct=args.min_first_bar_range_pct,
+            min_first_bar_volume_mult=args.min_first_bar_volume_mult,
         )
         if not results.empty:
             results = results[results["date"] >= cutoff].reset_index(drop=True)

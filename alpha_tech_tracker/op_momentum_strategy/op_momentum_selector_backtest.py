@@ -629,6 +629,7 @@ def run_selector_backtest(
     qqq_extend_pct: float = 0.05,
     qqq_extend_max_dd: float = 0.0,
     min_first_bar_range_pct: float = None,
+    min_first_bar_volume_mult: float = None,
 ) -> tuple:
     """
     Walk each trading day in [eval_start, eval_end], apply rolling selector
@@ -731,6 +732,7 @@ def run_selector_backtest(
                 qqq_align_skip_bull=_qqq_sb,
                 qqq_align_skip_bear=_qqq_sr,
                 min_first_bar_range_pct=min_first_bar_range_pct,
+                min_first_bar_volume_mult=min_first_bar_volume_mult,
             )
         all_window_results[label] = results_for_window
         print(f"  [{label}] {win['opening_start']} / {win['opening_bars']} bars — done")
@@ -2258,7 +2260,15 @@ def _parse_args():
         dest="min_first_bar_range_pct",
         help="Rule 1: skip entry if the first 5-min bar of the opening window has a "
         "high-low range smaller than this fraction of the bar midpoint "
-        "(e.g. 0.015 = 1.5%%). Applied per-ticker per-window. Default: disabled.",
+        "(e.g. 0.015 = 1.5%%). M1 only. Default: disabled.",
+    )
+    parser.add_argument(
+        "--min-first-bar-volume",
+        type=float,
+        default=None,
+        dest="min_first_bar_volume_mult",
+        help="Rule 4: skip M1 entry if the 09:30 bar volume < mult × (20d avg daily vol / 78). "
+        "E.g. 1.5 means opening bar must be 1.5× the expected per-bar volume. Default: disabled.",
     )
     parser.add_argument(
         "--min-or-range",
@@ -2589,6 +2599,7 @@ if __name__ == "__main__":
         qqq_extend_pct=args.qqq_extend_pct,
         qqq_extend_max_dd=args.qqq_extend_max_dd,
         min_first_bar_range_pct=args.min_first_bar_range_pct,
+        min_first_bar_volume_mult=args.min_first_bar_volume_mult,
     )
 
     skip_log = _apply_capital_flow(
