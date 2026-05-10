@@ -1696,11 +1696,11 @@ class TestReentryWatcher:
 
         assert len(monitor._reentry_watchers) == 0
 
-    def test_pre_armed_reversal_bullish_exits_via_ma20_without_reaching_trailing_arm_price(self):
+    def test_reversal_trailing_does_not_fire_before_arm_price_reached(self):
         """
-        Reversal positions start with hard_stop_armed=True, which immediately enables
-        the MA trailing stop — the price arm threshold is bypassed for reversal (and BRE).
-        bullish_reentry is the exception: it gates on trailing_arm_price (0.1x or_range).
+        Reversal positions gate the MA trailing stop on trailing_arm_price (entry + or_range),
+        matching the backtest's rev_trailing_armed gate. The trailing stop must not fire until
+        price reaches the arm threshold, even though hard_stop_armed=True from bar 1.
         """
         monitor, _, engine = self._make_monitor()
         pos = self._make_bullish_pos()
@@ -1711,13 +1711,55 @@ class TestReentryWatcher:
         pos.reentry_type = "reversal"
         monitor.add_position(pos)
 
-        # close=106 < MA20=108; arm threshold(115) not reached but reentry_type=reversal
-        # → hard_stop_armed bypass applies → trailing_stop_ma20 fires immediately
+        # close=106 < MA20=108 but arm threshold (115) not yet reached → no exit
         _set_latest_bar(engine, "NVDA", close=106.0, ma50=97.0, ma20=108.0)
         monitor.on_bar("NVDA")
 
+        assert pos.is_closed is False
+
+    def test_reversal_trailing_fires_after_arm_price_reached(self):
+        """Once price reaches trailing_arm_price, subsequent MA cross triggers the stop."""
+        monitor, _, engine = self._make_monitor()
+        pos = self._make_bullish_pos()
+        pos.hard_stop_price = _D("98")
+        pos.fallback_price = _D("98")
+        pos.hard_stop_armed = True
+        pos.trailing_arm_price = _D("115")
+        pos.reentry_type = "reversal"
+        monitor.add_position(pos)
+
+        # Bar 1: price reaches arm threshold (116 >= 115) and is above MA20 → arm latches
+        _set_latest_bar(engine, "NVDA", close=116.0, ma50=97.0, ma20=112.0)
+        monitor.on_bar("NVDA")
+        assert pos.is_closed is False
+        assert pos.trailing_arm_reached is True
+
+        # Bar 2: price drops below MA20 → trailing_stop_ma20 fires
+        _set_latest_bar(engine, "NVDA", close=110.0, ma50=97.0, ma20=112.0)
+        monitor.on_bar("NVDA")
         assert pos.is_closed is True
         assert pos.exit_reason == "trailing_stop_ma20"
+
+    def test_reversal_hard_stop_fires_before_arm_price_reached(self):
+        """
+        While the trailing MA stop is inactive (arm price not yet reached), the hard stop
+        is the only protection. It must still fire if price drops below hard_stop_price.
+        """
+        monitor, _, engine = self._make_monitor()
+        pos = self._make_bullish_pos()
+        pos.hard_stop_price = _D("98")
+        pos.fallback_price = _D("98")
+        pos.hard_stop_armed = True
+        pos.trailing_arm_price = _D("115")
+        pos.reentry_type = "reversal"
+        monitor.add_position(pos)
+
+        # close=97 <= hard_stop=98; arm threshold (115) not reached → hard_stop fires
+        _set_latest_bar(engine, "NVDA", close=97.0, ma50=90.0, ma20=93.0)
+        monitor.on_bar("NVDA")
+
+        assert pos.is_closed is True
+        assert pos.exit_reason == "hard_stop"
 
     def test_bru_trailing_does_not_fire_before_0_1x_arm_price_reached(self):
         """
@@ -1829,6 +1871,7 @@ class TestReentryWatcher:
         pos.fallback_price = _D("100")
         pos.hard_stop_armed = True
         pos.trailing_arm_price = _D("85")   # entry(95) - range(10), never reached
+        pos.reentry_type = "bearish_reentry"
         monitor.add_position(pos)
 
         # close=97 > MA20=92; MA20=92 < midpoint(100); arm threshold(85) not reached
@@ -1873,6 +1916,7 @@ class TestReentryWatcher:
         pos.fallback_price = _D("100")
         pos.hard_stop_armed = True
         pos.trailing_arm_price = _D("85")
+        pos.reentry_type = "bearish_reentry"
         monitor.add_position(pos)
 
         # MA20=101 >= midpoint(100) → gate fails → no exit
@@ -1930,6 +1974,7 @@ class TestReentryWatcher:
         pos.fallback_price = _D("100")
         pos.hard_stop_armed = True
         pos.trailing_arm_price = _D("85")   # BRE position
+        pos.reentry_type = "bearish_reentry"
         monitor.add_position(pos)
 
         # MA50=97 < midpoint(100); close=98 > MA50=97 → trailing_stop_ma50
@@ -4255,11 +4300,15 @@ class TestDoubleDownCoClose:
         assert dd.exit_reason == "fallback_20pct"
 
     def test_dd_co_closes_even_when_primary_has_trailing_arm_set(self):
-        primary = self._make_primary(hard_stop=_D("90.0"))
+        # Primary is a BRE (reentry_type set) with trailing_arm not yet reached; the
+        # hard stop fires first. DD must co-close regardless.
+        primary = self._make_primary(hard_stop=_D("102.0"))
         primary.trailing_arm_price = _D("106.0")
-        dd = self._make_dd(hard_stop=_D("90.0"))
+        primary.reentry_type = "bearish_reentry"
+        dd = self._make_dd(hard_stop=_D("102.0"))
         monitor = self._make_monitor(primary, dd)
 
+        # close=101 <= hard_stop=102 → primary hard_stop fires → DD co-closes
         _set_latest_bar(monitor._signal_engine, "TSLA", close=101.0, ma50=99.0, ma20=103.0)
         monitor.on_bar("TSLA")
 

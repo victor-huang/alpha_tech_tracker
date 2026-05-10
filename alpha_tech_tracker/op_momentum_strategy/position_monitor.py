@@ -307,15 +307,14 @@ class PositionMonitor:
         Returns True when the trailing MA stop is allowed to fire.
 
         Primary positions (trailing_arm_price=None): always eligible.
-        BRE and reversal positions start pre-armed (hard_stop_armed=True) and
-        are immediately eligible — the hard stop already guards from bar 1.
-        bullish_reentry positions gate on a price threshold (entry + 0.1 × or_range)
-        AND require close to be above the configured trailing MA at the moment of arming.
-        Other (non-pre-armed) re-entry positions gate behind trailing_arm_price.
+        BRE positions start pre-armed (hard_stop_armed=True) and are immediately eligible —
+        the hard stop already guards from bar 1.
+        Reversal and bullish_reentry positions gate on trailing_arm_price regardless of
+        hard_stop_armed — matching the backtest's rev_trailing_armed gate.
         """
         if pos.trailing_arm_price is None:
             return True
-        if pos.hard_stop_armed and pos.reentry_type != "bullish_reentry":
+        if pos.hard_stop_armed and pos.reentry_type == "bearish_reentry":
             return True
         if not pos.trailing_arm_reached:
             if pos.signal == "BULLISH":
