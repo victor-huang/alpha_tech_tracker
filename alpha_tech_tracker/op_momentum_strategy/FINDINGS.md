@@ -980,3 +980,33 @@ Two optional gates were implemented and swept across 2021–2026:
 - **No filtering gate improves multi-year DD P&L.** The bar-range stop ensures DDs can never lose more than 80% of a single 5-min bar range, which is a natural and proportionate stop without needing additional entry gates.
 - **DD is net-positive overall** even with real losses exposed: the break-even mechanic has been replaced by a tight proportionate stop that still allows the strategy to capture the upside when the survivor continues moving.
 
+
+## Finding 18 — BRU MA50 Guard: Does Requiring Close > MA50 Improve Bullish Re-entry? (2025–2026)
+
+**Question**: After a BULLISH position stops out, should the BRU (bullish re-entry) watcher require `close > MA50` in addition to `close > or_high` before re-entering a CALL — mirroring the BRE MA20 guard?
+
+**Hypothesis**: If a stock breaks above OR high but is still below MA50, the broader trend is not confirmed and re-entering may be fighting the tape.
+
+**Config**: `--regime-filter --regime-ma 8 --weights 50 30 20 --window M1 09:30 3 --window A1 13:15 1 --window A2 15:00 1 --morning-split 100 --reversal --bearish-reentry --bullish-reentry`, pool = V3 (17 tickers)
+
+### Results
+
+| Year | BRU (no guard) | BRU (MA50 guard) | Δ Return | Δ P&L | Picks |
+|---|---|---|---|---|---|
+| 2025 | +130.77% ($23,077) | +130.31% ($23,031) | −0.46 pp | −$46 | 1,674 (both) |
+| 2026 YTD | +82.89% ($18,289) | +82.81% ($18,281) | −0.08 pp | −$8 | 590 (both) |
+
+### Observations
+
+- The MA50 guard has **essentially zero P&L impact** — less than $50 difference over a full year.
+- Pick count is **identical** between guarded and unguarded runs — meaning the guard almost never blocks a BRU trade in practice.
+- This makes sense: the original BULLISH entry signal already requires `close > MA20`. By the time price has recovered above OR high after a stop, it is almost always also above MA50 (a slower, lower barrier).
+- The guard does filter edge cases in theory but they do not occur with meaningful frequency in the V3 ticker pool over 2025–2026.
+
+### Decision
+
+**Guard not applied.** The code was reverted to the simpler `close > or_high` condition for BRU. Adding a guard that never fires adds complexity without benefit.
+
+### Open Question — BRU Fire Rate
+
+BRU trades appear to fire very infrequently in live trading. The condition (`close > or_high` after a BULLISH hard stop within `bullish_reentry_max_bars=5`) requires a fast and large recovery move. The OR high breakout after a hard stop is a rare sequence. **Need to measure actual BRU fire rate across 2025–2026 and assess whether the condition parameters (max_bars, trigger threshold) should be loosened or the feature reconsidered.**

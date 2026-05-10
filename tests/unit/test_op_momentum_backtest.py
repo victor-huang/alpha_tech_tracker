@@ -321,32 +321,6 @@ class TestComputeSignalsBullishReentry:
         assert len(result) == 1
         assert result.iloc[0]["is_bullish_reentry"] == False
 
-    def test_bru_blocked_when_close_above_or_high_but_below_ma50(self):
-        # close=102.5 > or_high=102 but MA50=103.0 → close < MA50 → BRU must not fire.
-        df = _make_bars("2025-01-02", _BULLISH_OPENING + _BULLISH_POST_HARDSTOP + [
-            ("09:55", 103, 103, 102, 102.5, _BULL_MA20, 103.0, _MA200),  # close < MA50
-            ("10:00", 103, 104, 102, 103.0, _BULL_MA20, 103.0, _MA200),
-        ])
-        result = compute_signals_with_backtest(
-            df, opening_bars=3, enable_bullish_reentry=True
-        )
-
-        assert len(result) == 1
-        assert result.iloc[0]["is_bullish_reentry"] == False
-
-    def test_bru_fires_when_close_above_both_or_high_and_ma50(self):
-        # close=103.5 > or_high=102 AND MA50=102.0 → close > MA50 → BRU fires.
-        df = _make_bars("2025-01-02", _BULLISH_OPENING + _BULLISH_POST_HARDSTOP + [
-            ("09:55", 103, 104, 102, 103.5, _BULL_MA20, 102.0, _MA200),  # close > MA50
-            ("10:00", 104, 105, 103, 104.0, _BULL_MA20, 102.0, _MA200),
-        ])
-        result = compute_signals_with_backtest(
-            df, opening_bars=3, enable_bullish_reentry=True
-        )
-
-        assert len(result) == 2
-        assert any(result["is_bullish_reentry"])
-
     def test_bru_does_not_fire_when_primary_held_too_many_bars(self):
         # bullish_reentry_max_bars=0 means bars_held=1 > 0 → ineligible.
         df = _make_bars("2025-01-02", _BULLISH_OPENING + _BULLISH_POST_HARDSTOP + [

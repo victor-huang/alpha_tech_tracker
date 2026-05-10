@@ -209,7 +209,7 @@ class PositionMonitor:
                     self._maybe_create_reentry_watcher(pos, reason)
                     to_close.append((pos, reason, override))
 
-            fired_watchers = self._collect_fired_watchers(ticker, close, bar_time, ma20=ma20_val, ma50=ma50_val)
+            fired_watchers = self._collect_fired_watchers(ticker, close, bar_time, ma20=ma20_val)
 
         # Execute close operations outside the lock so sequential window drains
         # are not blocked in _get_window_budget() during slow API calls.
@@ -548,7 +548,7 @@ class PositionMonitor:
                 pos.bars_held,
             )
 
-    def _collect_fired_watchers(self, ticker: str, close, bar_time, ma20=None, ma50=None) -> list:
+    def _collect_fired_watchers(self, ticker: str, close, bar_time, ma20=None) -> list:
         """Collect and remove watchers that trigger on this bar. Called under self._lock.
 
         When reversal and BRE both fire on the same bar, only the reversal is returned
@@ -564,16 +564,8 @@ class PositionMonitor:
                 continue
             if w.primary_exit_bar_time is not None and bar_time == w.primary_exit_bar_time:
                 continue
-            if w.reentry_type == "reversal":
+            if w.reentry_type in ("reversal", "bullish_reentry"):
                 triggered = close > w.or_high
-            elif w.reentry_type == "bullish_reentry":
-                # BRU requires close above OR high AND above MA50 to confirm the
-                # uptrend is intact before re-entering a CALL.
-                triggered = (
-                    close > w.or_high
-                    and ma50 is not None
-                    and close > ma50
-                )
             else:
                 # BRE requires close below OR low AND below MA20 to avoid
                 # re-entering against the intraday trend when price has recovered.
