@@ -12,6 +12,7 @@ from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import (
     fetch_bars,
     fetch_daily_bars,
 )
+from alpha_tech_tracker.op_momentum_strategy.config import EOD_EXIT_TIME
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector import (
     ACTIVELY_TRADE_TICKERS,
     DEFAULT_TICKERS,
@@ -1267,7 +1268,7 @@ def _print_reentry_subrow(
         sub_entry_min = or_close + (primary_bars + entry_idx + 2) * 5
         exit_reason = row.get(exit_reason_key, "")
         if exit_reason == "end_of_day":
-            sub_exit_str = "16:00"
+            sub_exit_str = EOD_EXIT_TIME
         else:
             sub_exit_min = sub_entry_min + (sub_bars + 1) * 5
             sub_exit_str = fmt_bar_time(sub_exit_min)
@@ -1318,7 +1319,7 @@ def _print_daily_table(
             return "—", "—"
         entry_str = _fmt_bar_time(or_close)
         if row.get("exit_reason") == "end_of_day":
-            exit_str = "16:00"
+            exit_str = EOD_EXIT_TIME
         else:
             exit_str = _fmt_bar_time(or_close + (row.get("bars_held", 0) + 1) * 5)
         return entry_str, exit_str
@@ -1450,7 +1451,7 @@ def _print_daily_table(
             dd_fire_min = row.get("dd_fire_min")
             if dd_fire_min is not None:
                 dd_in_str = _fmt_bar_time(dd_fire_min)
-                dd_out_str = "16:00" if row.get("exit_reason") == "end_of_day" \
+                dd_out_str = EOD_EXIT_TIME if row.get("exit_reason") == "end_of_day" \
                     else _fmt_bar_time(row.get("or_close_min", 0) + (row.get("bars_held", 0) + 1) * 5)
             else:
                 dd_in_str = "—"
@@ -1484,7 +1485,7 @@ def _print_daily_table(
             dd_fire_min = row.get("dd_fire_min")
             if dd_fire_min is not None:
                 opp_in_str = _fmt_bar_time(dd_fire_min)
-                opp_out_str = "16:00" if row.get("exit_reason") == "end_of_day" \
+                opp_out_str = EOD_EXIT_TIME if row.get("exit_reason") == "end_of_day" \
                     else _fmt_bar_time(row.get("or_close_min", 0) + (row.get("bars_held", 0) + 1) * 5)
             else:
                 opp_in_str = "—"

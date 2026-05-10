@@ -2637,15 +2637,8 @@ class OpMomentumTradeEngine:
         # BarReplayDriver.run() clears the replay clock internally.  Re-pin it to the
         # last bar's timestamp so close_all() records the correct exit time and uses
         # bar prices (not wall-clock time / live API quotes) for EOD-closed positions.
-        # When the last bar is the EOD bar (15:55), advance the clock by 5 minutes so
-        # close_all() records 16:00 (the bar's close time) rather than its open time.
         if driver.last_bar_time is not None:
-            eod_h, eod_m = [int(x) for x in EOD_EXIT_TIME.split(":")]
-            if driver.last_bar_time.time() >= _time(eod_h, eod_m):
-                close_ts = driver.last_bar_time + timedelta(minutes=5)
-            else:
-                close_ts = driver.last_bar_time
-            set_replay_clock(lambda ts=close_ts: ts)
+            set_replay_clock(lambda ts=driver.last_bar_time: ts)
         self._monitor.close_all(reason="end_of_day")
         clear_replay_clock()
         enable_notifications()
