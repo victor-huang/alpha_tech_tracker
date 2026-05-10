@@ -1,9 +1,10 @@
 import argparse
 import pandas as pd
-from datetime import date, datetime, time as _time, timedelta
+from datetime import date, datetime, timedelta
 
 from alpaca.data.enums import DataFeed
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import (
+    NO_MORE_NEW_POSITION_AFTER,
     build_bearish_regime_dates,
     build_qqq_extended_dates,
     build_qqq_or_alignment,
@@ -548,7 +549,7 @@ def _annotate_doubledown_addon(
         addon_bar = post_or.iloc[dd_bars]
         if addon_bar.name.hour >= 13:
             continue
-        if addon_bar.name.time() > _time(15, 48):
+        if addon_bar.name.time() > NO_MORE_NEW_POSITION_AFTER:
             continue
         addon_entry = float(addon_bar["Close"])
         if addon_entry == 0:

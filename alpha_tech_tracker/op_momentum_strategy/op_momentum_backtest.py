@@ -17,6 +17,9 @@ from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
 TICKERS = ["NVDA", "CRWD", "COIN", "JNJ", "XOM", "CAT"]
 SUCCESS_BARS = 3  # "long enough" = held correct side for >= 3 bars (15 min)
 
+# No new positions (primary or any re-entry) may be opened after this time.
+NO_MORE_NEW_POSITION_AFTER = _time(15, 48)
+
 _CACHE_DIR = Path(__file__).parent.parent.parent / "market_data" / "cache"
 
 # Extra calendar days before start_date retained for MA warmup (MA200 needs ~3 trading days).
@@ -326,7 +329,7 @@ def compute_signals_with_backtest(
     # Suppress signals when the OR close (entry time) falls after 15:48 ET —
     # too close to the 15:55 EOD cap to be worth trading.
     _or_close_dt = datetime.combine(datetime.min, opening_start_t) + timedelta(minutes=opening_bars * 5)
-    if _or_close_dt.time() > _time(15, 48):
+    if _or_close_dt.time() > NO_MORE_NEW_POSITION_AFTER:
         return pd.DataFrame()
 
     df = df.copy()
@@ -629,7 +632,7 @@ def compute_signals_with_backtest(
             reversal_scan = post_open.iloc[exit_bar_idx + 1:]
 
             for scan_idx, (scan_ts, scan_bar) in enumerate(reversal_scan.iterrows()):
-                if scan_ts.time() > _time(15, 48):
+                if scan_ts.time() > NO_MORE_NEW_POSITION_AFTER:
                     break
                 if scan_bar["Close"] > or_high:
                     rev_entry_price = scan_bar["Close"]
@@ -653,7 +656,7 @@ def compute_signals_with_backtest(
             br_scan = post_open.iloc[exit_bar_idx + 1:]
 
             for scan_idx, (scan_ts, scan_bar) in enumerate(br_scan.iterrows()):
-                if scan_ts.time() > _time(15, 48):
+                if scan_ts.time() > NO_MORE_NEW_POSITION_AFTER:
                     break
                 if rev_entry_idx is not None and scan_idx >= rev_entry_idx:
                     break  # reversal fires here or earlier — stop before this bar
@@ -869,7 +872,7 @@ def compute_signals_with_backtest(
             bru_entry_idx = None
 
             for scan_idx, (scan_ts, scan_bar) in enumerate(bru_scan.iterrows()):
-                if scan_ts.time() > _time(15, 48):
+                if scan_ts.time() > NO_MORE_NEW_POSITION_AFTER:
                     break
                 bar_ma50 = scan_bar.get("MA50") if hasattr(scan_bar, "get") else scan_bar["MA50"]
                 if (

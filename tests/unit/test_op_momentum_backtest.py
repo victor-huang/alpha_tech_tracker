@@ -17,6 +17,7 @@ from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import (
     fetch_bars,
 )
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector_backtest import (
+    _annotate_doubledown_addon,
     _apply_capital_flow,
 )
 
@@ -1480,3 +1481,215 @@ class TestFetchBarsTradeStation:
                        source="tradestation", market_data_client=client)
 
         mock_alpaca.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# TestNoNewPositionAfterCutoff
+# ---------------------------------------------------------------------------
+#
+# Verifies that NO_MORE_NEW_POSITION_AFTER (_time(15, 48)) suppresses all
+# new-position entry points: primary signal, reversal, BRE, BRU, and DD.
+#
+# Bar setup for re-entry tests uses opening_start="15:30" / 1 bar so that:
+#   OR close = 15:35 (well before 15:48 → primary fires)
+#   primary exits at 15:40 (hard_stop at exit_bar_idx=1)
+#   re-entry scan begins at 15:45 (exit_bar_idx + 1)
+# — the entry trigger appears either at 15:45 (≤ 15:48, allowed)
+#   or at 15:50 (> 15:48, suppressed).
+#
+# OR: high=102 low=98 range=4 midpoint=100
+# stop_pct=0.40 (function default):
+#   BEARISH → bear_hard_stop=99.6, bear_fallback=98.8
+#   BULLISH → bull_hard_stop=100.4, bull_fallback=101.2
+#
+# MA constants are set so trailing stops never fire during primary bars:
+#   BEARISH: MA20=102 (above price) — trailing never arms
+#   BULLISH: MA20=98  (below hard_stop) — trailing never arms
+
+# Late-afternoon BEARISH OR: opening at 15:30, 1 bar
+_LATE_BEARISH_OR = [
+    ("15:30", 100, 102, 98, 98.5, _BEAR_MA20, _BEAR_MA50, _MA200),  # BEARISH signal bar
+]
+_LATE_BEARISH_POST_HARDSTOP = [
+    ("15:35",  99,  99.5,  98.5, 99.0, _BEAR_MA20, _BEAR_MA50, _MA200),  # arm
+    ("15:40", 100, 100.0,  99.5, 99.7, _BEAR_MA20, _BEAR_MA50, _MA200),  # hard_stop
+]
+
+# Late-afternoon BULLISH OR: opening at 15:30, 1 bar
+_LATE_BULLISH_OR = [
+    ("15:30", 100, 102, 98, 101.5, _BULL_MA20, _BULL_MA50, _MA200),  # BULLISH signal bar
+]
+_LATE_BULLISH_POST_HARDSTOP = [
+    ("15:35", 102, 103, 101, 102.0, _BULL_MA20, _BULL_MA50, _MA200),  # arm
+    ("15:40", 100, 101,  99, 100.3, _BULL_MA20, _BULL_MA50, _MA200),  # hard_stop
+]
+
+
+class TestNoNewPositionAfterCutoff:
+
+    # ── primary signal suppression ──────────────────────────────────────────
+
+    def test_primary_suppressed_when_or_close_after_cutoff(self):
+        # opening_start="15:45" + 1 bar → OR close=15:50 > 15:48 → empty result
+        df = _make_bars("2025-01-02", [
+            ("15:45", 100, 102, 98, 98.5, _BEAR_MA20, _BEAR_MA50, _MA200),
+            ("15:50",  99, 99.5, 98.5, 99.0, _BEAR_MA20, _BEAR_MA50, _MA200),
+        ])
+        result = compute_signals_with_backtest(
+            df, opening_bars=1, opening_start_time="15:45"
+        )
+        assert result.empty
+
+    def test_primary_suppressed_when_or_close_one_minute_past_cutoff(self):
+        # opening_start="15:44" + 1 bar → OR close=15:49 > 15:48 → suppressed
+        df = _make_bars("2025-01-02", [
+            ("15:44", 100, 102, 98, 98.5, _BEAR_MA20, _BEAR_MA50, _MA200),
+            ("15:49",  99, 99.5, 98.5, 99.0, _BEAR_MA20, _BEAR_MA50, _MA200),
+        ])
+        result = compute_signals_with_backtest(
+            df, opening_bars=1, opening_start_time="15:44"
+        )
+        assert result.empty
+
+    def test_primary_allowed_when_or_close_exactly_at_cutoff(self):
+        # opening_start="15:43" + 1 bar → OR close=15:48 == cutoff → not suppressed
+        df = _make_bars("2025-01-02", [
+            ("15:43", 100, 102, 98, 98.5, _BEAR_MA20, _BEAR_MA50, _MA200),
+            ("15:48",  99, 99.5, 98.5, 99.0, _BEAR_MA20, _BEAR_MA50, _MA200),
+            ("15:53",  99, 99.5, 98.5, 99.2, _BEAR_MA20, _BEAR_MA50, _MA200),
+        ])
+        result = compute_signals_with_backtest(
+            df, opening_bars=1, opening_start_time="15:43"
+        )
+        assert not result.empty
+
+    def test_primary_allowed_when_or_close_before_cutoff(self):
+        # opening_start="15:40" + 1 bar → OR close=15:45 < 15:48 → signals fire
+        df = _make_bars("2025-01-02", [
+            ("15:40", 100, 102, 98, 98.5, _BEAR_MA20, _BEAR_MA50, _MA200),
+            ("15:45",  99, 99.5, 98.5, 99.0, _BEAR_MA20, _BEAR_MA50, _MA200),
+        ])
+        result = compute_signals_with_backtest(
+            df, opening_bars=1, opening_start_time="15:40"
+        )
+        assert not result.empty
+
+    # ── reversal suppression ─────────────────────────────────────────────────
+
+    def test_reversal_suppressed_when_entry_bar_after_cutoff(self):
+        # Reversal trigger at 15:50 (> 15:48) → no reversal row
+        df = _make_bars("2025-01-02", _LATE_BEARISH_OR + _LATE_BEARISH_POST_HARDSTOP + [
+            ("15:45", 100, 101,  99, 100.5, _BEAR_MA20, _BEAR_MA50, _MA200),  # no trigger
+            ("15:50", 103, 104, 102, 103.5, _BEAR_MA20, _BEAR_MA50, _MA200),  # > or_high but > 15:48
+        ])
+        result = compute_signals_with_backtest(
+            df, opening_bars=1, opening_start_time="15:30", enable_reversal=True
+        )
+        assert not any(result["is_reversal"])
+
+    def test_reversal_allowed_when_entry_bar_at_or_before_cutoff(self):
+        # Reversal trigger at 15:45 (≤ 15:48) → reversal fires
+        df = _make_bars("2025-01-02", _LATE_BEARISH_OR + _LATE_BEARISH_POST_HARDSTOP + [
+            ("15:45", 103, 104, 102, 103.5, _BEAR_MA20, _BEAR_MA50, _MA200),  # > or_high at 15:45
+            ("15:50", 103, 104, 102, 103.0, _BEAR_MA20, _BEAR_MA50, _MA200),  # EOD exit bar
+        ])
+        result = compute_signals_with_backtest(
+            df, opening_bars=1, opening_start_time="15:30", enable_reversal=True
+        )
+        assert any(result["is_reversal"])
+        rev = result[result["is_reversal"]].iloc[0]
+        assert rev["entry_price"] == pytest.approx(103.5)
+
+    # ── BRE suppression ──────────────────────────────────────────────────────
+
+    def test_bre_suppressed_when_entry_bar_after_cutoff(self):
+        # BRE trigger at 15:50 (> 15:48) → no BRE row
+        df = _make_bars("2025-01-02", _LATE_BEARISH_OR + _LATE_BEARISH_POST_HARDSTOP + [
+            ("15:45",  99, 100, 98.5, 99.0, _BEAR_MA20, _BEAR_MA50, _MA200),  # no trigger (≥ or_low)
+            ("15:50",  97,  98,  96, 97.0,  _BEAR_MA20, _BEAR_MA50, _MA200),  # < or_low but > 15:48
+        ])
+        result = compute_signals_with_backtest(
+            df, opening_bars=1, opening_start_time="15:30", enable_bearish_reentry=True
+        )
+        assert not any(result["is_bearish_reentry"])
+
+    def test_bre_allowed_when_entry_bar_at_or_before_cutoff(self):
+        # BRE trigger at 15:45 (≤ 15:48) → BRE fires
+        df = _make_bars("2025-01-02", _LATE_BEARISH_OR + _LATE_BEARISH_POST_HARDSTOP + [
+            ("15:45",  97,  98,  96, 97.0, _BEAR_MA20, _BEAR_MA50, _MA200),  # < or_low at 15:45
+            ("15:50",  96,  97,  95, 96.0, _BEAR_MA20, _BEAR_MA50, _MA200),  # EOD exit bar
+        ])
+        result = compute_signals_with_backtest(
+            df, opening_bars=1, opening_start_time="15:30", enable_bearish_reentry=True
+        )
+        assert any(result["is_bearish_reentry"])
+        bre = result[result["is_bearish_reentry"]].iloc[0]
+        assert bre["entry_price"] == pytest.approx(97.0)
+
+    # ── BRU suppression ──────────────────────────────────────────────────────
+
+    def test_bru_suppressed_when_entry_bar_after_cutoff(self):
+        # BRU trigger at 15:50 (> 15:48) → no BRU row
+        df = _make_bars("2025-01-02", _LATE_BULLISH_OR + _LATE_BULLISH_POST_HARDSTOP + [
+            ("15:45", 101, 102, 100, 101.5, _BULL_MA20, _BULL_MA50, _MA200),  # no trigger (< or_high)
+            ("15:50", 103, 104, 102, 103.0, _BULL_MA20, _BULL_MA50, _MA200),  # > or_high but > 15:48
+        ])
+        result = compute_signals_with_backtest(
+            df, opening_bars=1, opening_start_time="15:30", enable_bullish_reentry=True
+        )
+        assert not any(result["is_bullish_reentry"])
+
+    def test_bru_allowed_when_entry_bar_at_or_before_cutoff(self):
+        # BRU trigger at 15:45 (≤ 15:48) → BRU fires
+        df = _make_bars("2025-01-02", _LATE_BULLISH_OR + _LATE_BULLISH_POST_HARDSTOP + [
+            ("15:45", 103, 104, 102, 103.0, _BULL_MA20, _BULL_MA50, _MA200),  # > or_high at 15:45
+            ("15:50", 103, 104, 102, 103.5, _BULL_MA20, _BULL_MA50, _MA200),  # EOD exit bar
+        ])
+        result = compute_signals_with_backtest(
+            df, opening_bars=1, opening_start_time="15:30", enable_bullish_reentry=True
+        )
+        assert any(result["is_bullish_reentry"])
+        bru = result[result["is_bullish_reentry"]].iloc[0]
+        assert bru["entry_price"] == pytest.approx(103.0)
+
+    # ── DD add-on suppression ────────────────────────────────────────────────
+
+    def test_dd_suppressed_when_addon_bar_after_cutoff(self):
+        # Two picks: rank-1 survivor, rank-2 early stopout.
+        # bars_by_date is mocked so addon_bar falls at 15:50 → suppressed by cutoff.
+        d = date(2025, 1, 2)
+        winner_row = {
+            "date": d, "window": "W1", "rank": 1, "ticker": "NVDA",
+            "signal": "BULLISH", "entry_price": 100.0, "exit_price": 102.0,
+            "pnl": 2.0, "exit_reason": "trailing_stop_ma20", "bars_held": 5,
+            "or_close_min": 9 * 60 + 45,
+        }
+        stopout_row = {
+            "date": d, "window": "W1", "rank": 2, "ticker": "CRWD",
+            "signal": "BULLISH", "entry_price": 200.0, "exit_price": 199.0,
+            "pnl": -1.0, "exit_reason": "hard_stop", "bars_held": 0,
+            "or_close_min": 9 * 60 + 45,
+        }
+        trade_rows = [winner_row, stopout_row]
+
+        # Build a bar DataFrame where post_or.iloc[1] (the addon bar) is at 15:50.
+        addon_bar_time = ET.localize(datetime(2025, 1, 2, 15, 50))
+        post_or_start = ET.localize(datetime(2025, 1, 2, 9, 45))
+        bar_index = pd.DatetimeIndex([post_or_start, addon_bar_time])
+        day_bars = pd.DataFrame(
+            [
+                {"Open": 100, "High": 101, "Low": 99, "Close": 100},
+                {"Open": 103, "High": 104, "Low": 102, "Close": 103},
+            ],
+            index=bar_index,
+        )
+        bars_by_date = {"NVDA": {d: day_bars}}
+        window_opening_times = {"W1": ET.localize(datetime(2025, 1, 2, 9, 30)).time()}
+        opening_bars_by_label = {"W1": 3}
+
+        _annotate_doubledown_addon(
+            trade_rows, bars_by_date, window_opening_times, opening_bars_by_label,
+            doubledown_start_min=5,
+        )
+
+        assert "dd_addon_entry" not in winner_row

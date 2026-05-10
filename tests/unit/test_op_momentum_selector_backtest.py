@@ -691,7 +691,7 @@ def _dd_winner_row(exit_price=60.0, bars_held=2):
     }
 
 
-def _dd_stopout_row(bars_held=1):
+def _dd_stopout_row(bars_held=0):
     return {
         "date": _DD_DATE,
         "window": "M1",
@@ -817,7 +817,7 @@ class TestAnnotateDoubledownAddon:
             "date": afternoon_date, "window": "A2", "rank": 2,
             "ticker": "TSLA", "signal": "BULLISH",
             "entry_price": 48.0, "exit_price": 45.0,
-            "exit_reason": "hard_stop", "bars_held": 1,
+            "exit_reason": "hard_stop", "bars_held": 0,
         }
         rows = [winner, stopout]
         _annotate_doubledown_addon(
@@ -847,7 +847,7 @@ class TestAnnotateDoubledownAddon:
             "date": morning_date, "window": "A1", "rank": 2,
             "ticker": "TSLA", "signal": "BULLISH",
             "entry_price": 48.0, "exit_price": 45.0,
-            "exit_reason": "hard_stop", "bars_held": 1,
+            "exit_reason": "hard_stop", "bars_held": 0,
         }
         rows = [winner, stopout]
         _annotate_doubledown_addon(
