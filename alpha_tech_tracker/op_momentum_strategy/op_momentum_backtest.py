@@ -646,7 +646,12 @@ def compute_signals_with_backtest(
             for scan_idx, (_, scan_bar) in enumerate(br_scan.iterrows()):
                 if rev_entry_idx is not None and scan_idx >= rev_entry_idx:
                     break  # reversal fires here or earlier — stop before this bar
-                if scan_bar["Close"] < or_low:
+                bar_ma20 = scan_bar.get("MA20") if hasattr(scan_bar, "get") else scan_bar["MA20"]
+                if (
+                    scan_bar["Close"] < or_low
+                    and not pd.isna(bar_ma20)
+                    and scan_bar["Close"] < bar_ma20
+                ):
                     br_entry_price = scan_bar["Close"]
                     br_entry_idx = scan_idx
                     break
