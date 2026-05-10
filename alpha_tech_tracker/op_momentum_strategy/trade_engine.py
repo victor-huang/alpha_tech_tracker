@@ -1210,7 +1210,10 @@ class OpMomentumTradeEngine:
             return
         dd_entry_price = _D(str(latest_bar["Close"]))
         bar_range = _D(str(latest_bar["High"])) - _D(str(latest_bar["Low"]))
-        dd_hard_stop = winner.hard_stop_price
+        if winner.signal == "BULLISH":
+            dd_hard_stop = dd_entry_price - _D("0.80") * bar_range
+        else:
+            dd_hard_stop = dd_entry_price + _D("0.80") * bar_range
 
         logger.info(
             "DD [%s] firing: winner=%s freed=%.2f from ranks %s entry=%.2f stop=%.2f",

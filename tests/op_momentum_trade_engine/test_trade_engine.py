@@ -4211,10 +4211,15 @@ class TestDoubleDown:
         from alpha_tech_tracker.op_momentum_strategy.models import WindowConfig
         return WindowConfig(label=label, opening_start="09:30", opening_bars=3)
 
-    def _make_latest_bar(self, close=290.0):
+    def _make_latest_bar(self, close=290.0, high=None, low=None):
         import pandas as pd
         return pd.Series(
-            {"Close": close, "High": close + 1.0, "Low": close - 1.0, "MA20": 285.0},
+            {
+                "Close": close,
+                "High": high if high is not None else close + 1.0,
+                "Low": low if low is not None else close - 1.0,
+                "MA20": 285.0,
+            },
             name=datetime.now(ET),
         )
 
@@ -4264,8 +4269,25 @@ class TestDoubleDown:
         assert kw["reentry_type"] == "doubledown"
         assert kw["capital_weight_override"] == _D("1")
         assert kw["initial_hard_stop_armed"] is True
-        # DD stop inherits winner's hard_stop_price (103.5 from _make_active_position)
-        assert kw["hard_stop_override"] == winner.hard_stop_price
+        # DD stop = addon_entry - 0.80 × bar_range (BULLISH): 290.0 - 0.80×2.0 = 288.40
+        assert kw["hard_stop_override"] == _D("288.40")
+
+    def test_dd_stop_uses_bar_range_for_bearish_winner(self):
+        engine = self._make_engine()
+        winner = self._make_open_pos(rank=0, slot_capital=6000, ticker="NVDA", signal="BEARISH")
+        stopout = self._make_stopout_pos(rank=1, slot_capital=4000, ticker="TSLA")
+        engine._monitor._positions = [winner, stopout]
+        # close=242.57, High=245.79, Low=242.43 → bar_range=3.36
+        # BEARISH stop = 242.57 + 0.80×3.36 = 245.258
+        engine._signal_engine.get_latest_bar.return_value = self._make_latest_bar(close=242.57, high=245.79, low=242.43)
+
+        with patch.object(engine, "_enter_position") as mock_enter, \
+             patch(_NOTIFY_PATH):
+            engine._check_doubledown_for_window(self._make_win())
+
+        kw = mock_enter.call_args[1]
+        expected_stop = _D("242.57") + _D("0.80") * (_D("245.79") - _D("242.43"))
+        assert kw["hard_stop_override"] == expected_stop
 
     def test_dd_freed_capital_equals_returned_capital_from_stopout(self):
         engine = self._make_engine()
