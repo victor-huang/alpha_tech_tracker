@@ -4496,6 +4496,45 @@ class TestDoubleDown:
         engine._schedule_dd_check_for_window(self._make_win())
         assert "W1" not in engine._dd_timers
 
+    def test_schedule_dd_skips_when_check_time_at_or_after_1300(self):
+        # Window opens at 13:00/1-bar → OR closes at 13:05.
+        # doubledown_start_min=5 → dd_check_time=13:10 (hour=13) → skip.
+        from alpha_tech_tracker.op_momentum_strategy.models import WindowConfig
+        engine = self._make_engine()
+        afternoon_win = WindowConfig(label="A2", opening_start="13:00", opening_bars=1)
+        mock_now = ET.localize(datetime(2026, 1, 2, 9, 30, 0))
+        with patch(_IS_REPLAY_MODE_PATH, return_value=False), \
+             patch("alpha_tech_tracker.op_momentum_strategy.trade_engine._now_et",
+                   return_value=mock_now), \
+             patch("alpha_tech_tracker.op_momentum_strategy.trade_engine.threading.Timer") as mock_timer:
+            engine._schedule_dd_check_for_window(afternoon_win)
+
+        mock_timer.assert_not_called()
+        assert "A2" not in engine._dd_timers
+
+    def test_schedule_dd_schedules_timer_when_check_time_before_1300(self):
+        # Window opens at 12:30/1-bar → OR closes at 12:35.
+        # doubledown_start_min=5 → dd_check_time=12:40 (hour=12) → timer scheduled.
+        from alpha_tech_tracker.op_momentum_strategy.models import WindowConfig
+        engine = self._make_engine()
+        engine._window_state["A1"] = {
+            "pending_signals": {},
+            "collection_deadline": datetime.now(ET),
+            "open_position_count": 0,
+            "capital_fraction": 1.0,
+        }
+        late_morning_win = WindowConfig(label="A1", opening_start="12:30", opening_bars=1)
+        mock_now = ET.localize(datetime(2026, 1, 2, 9, 30, 0))
+        with patch(_IS_REPLAY_MODE_PATH, return_value=False), \
+             patch("alpha_tech_tracker.op_momentum_strategy.trade_engine._now_et",
+                   return_value=mock_now), \
+             patch("alpha_tech_tracker.op_momentum_strategy.trade_engine.threading.Timer") as mock_timer:
+            mock_timer.return_value = Mock()
+            engine._schedule_dd_check_for_window(late_morning_win)
+
+        mock_timer.assert_called_once()
+        assert "A1" in engine._dd_timers
+
     def _make_reentry_watcher(self, ticker, window_label="W1", rank=1):
         return ReentryWatcher(
             ticker=ticker,

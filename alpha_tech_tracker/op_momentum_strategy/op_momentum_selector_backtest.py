@@ -546,6 +546,8 @@ def _annotate_doubledown_addon(
             continue
 
         addon_bar = post_or.iloc[dd_bars]
+        if addon_bar.name.hour >= 13:
+            continue
         addon_entry = float(addon_bar["Close"])
         if addon_entry == 0:
             continue

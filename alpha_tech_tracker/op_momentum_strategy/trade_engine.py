@@ -1106,6 +1106,13 @@ class OpMomentumTradeEngine:
                 EOD_EXIT_TIME,
             )
             return
+        if dd_check_time.hour >= 13:
+            logger.info(
+                "DD [%s]: check time %s is at/after 13:00 cutoff, skipping",
+                win.label,
+                dd_check_time.strftime("%H:%M"),
+            )
+            return
         delay = (dd_check_time - _now_et()).total_seconds()
         if delay <= 0:
             # Entry threads took longer than expected — fire immediately rather than skip.
