@@ -1188,7 +1188,7 @@ class TestStockPrintSummaryPnl:
             monitor.print_summary()
 
         assert "[stock]" in caplog.text
-        assert "5sh" in caplog.text
+        assert "5.00sh" in caplog.text
 
 
 class TestMockOptionExitPricing:
@@ -3966,7 +3966,7 @@ class TestPrintStatusClosedQty:
         with caplog.at_level(logging.INFO):
             monitor.print_status()
 
-        assert "x15sh" in caplog.text
+        assert "x15.00sh" in caplog.text
 
 
 class TestReconcileTwoCycleRetry:

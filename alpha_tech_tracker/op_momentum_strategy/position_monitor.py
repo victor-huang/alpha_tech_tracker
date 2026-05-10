@@ -1462,7 +1462,7 @@ class PositionMonitor:
                     else ""
                 )
                 if p.trade_type == "stock":
-                    qty_str = f"x{p.shares}sh"
+                    qty_str = f"x{float(p.shares):.2f}sh"
                     sym_str = f"{p.ticker} [stock]"
                 else:
                     qty_str = f"x{p.contracts}"
@@ -1490,7 +1490,7 @@ class PositionMonitor:
                 if pnl is not None:
                     total_pnl += pnl
                 if p.trade_type == "stock":
-                    qty_str = f"x{p.shares}sh"
+                    qty_str = f"x{float(p.shares):.2f}sh"
                     sym_str = f"{p.ticker} [stock]"
                 else:
                     qty_str = f"x{_effective_contracts(p)}"
@@ -1610,7 +1610,7 @@ class PositionMonitor:
             _emit("  DAILY TRADE SUMMARY  [SIMULATE MODE]")
             _emit("=" * width)
             _emit(
-                f"  {'Ticker':<7} {'Signal':<16} {'Instrument':<26} {'Qty':>6}"
+                f"  {'Ticker':<7} {'Signal':<16} {'Instrument':<26} {'Qty':>9}"
                 f"  {'Entry':>5} {'Exit':>5}  {'EntryMid':>9} {'ExitMid':>9} {'P&L':>10}  {'%P&L':>7}  Exit Reason"
             )
             _emit(f"  {'─' * 130}")
@@ -1635,7 +1635,7 @@ class PositionMonitor:
                     pnl_str = entry_str = exit_str = pnl_pct_str = "—"
                 if pos.trade_type == "stock":
                     sym_str = f"{pos.ticker} [stock]"
-                    qty_str = f"{pos.shares}sh"
+                    qty_str = f"{float(pos.shares):.2f}sh"
                 else:
                     sym_str = pos.option_symbol
                     qty_str = str(_effective_contracts(pos))
@@ -1646,7 +1646,7 @@ class PositionMonitor:
                 )
                 _emit(
                     f"  {pos.ticker:<7} {_trade_label(pos):<16} {sym_str:<26} "
-                    f"{qty_str:>6}"
+                    f"{qty_str:>9}"
                     f"  {_fmt_time(pos.entry_time):>5} {_fmt_time(exit_display_time):>5}"
                     f"  {entry_str:>9} {exit_str:>9} {pnl_str:>10}  {pnl_pct_str:>7}"
                     f"  {pos.exit_reason or 'open'}"
