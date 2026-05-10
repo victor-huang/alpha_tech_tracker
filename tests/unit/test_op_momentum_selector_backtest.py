@@ -800,21 +800,21 @@ class TestAnnotateDoubledownAddon:
         winner = next(r for r in rows if r["rank"] == 1)
         assert winner["dd_freed_ranks"] == [2]
 
-    def test_no_addon_when_dd_bar_is_at_or_after_1300(self):
+    def test_addon_fires_for_afternoon_a1_window(self):
         # Window opens at 13:15/1-bar → OR closes at 13:20.
-        # doubledown_start_min=5 → dd_bars=1 → addon_bar at 13:25 (>= 13:00) → skip.
+        # doubledown_start_min=5 → dd_bars=1 → addon_bar at 13:25 → DD fires.
         afternoon_date = date(2025, 1, 2)
         afternoon_date_str = "2025-01-02"
         bars = _make_intraday_bars(afternoon_date_str, ["13:20", "13:25", "13:30"])
         bars_by_date = {"NVDA": {afternoon_date: bars}}
         winner = {
-            "date": afternoon_date, "window": "A2", "rank": 1,
+            "date": afternoon_date, "window": "A1", "rank": 1,
             "ticker": "NVDA", "signal": "BULLISH",
             "entry_price": 48.0, "exit_price": 60.0,
             "exit_reason": "end_of_day", "bars_held": 3,
         }
         stopout = {
-            "date": afternoon_date, "window": "A2", "rank": 2,
+            "date": afternoon_date, "window": "A1", "rank": 2,
             "ticker": "TSLA", "signal": "BULLISH",
             "entry_price": 48.0, "exit_price": 45.0,
             "exit_reason": "hard_stop", "bars_held": 0,
@@ -823,12 +823,12 @@ class TestAnnotateDoubledownAddon:
         _annotate_doubledown_addon(
             rows,
             bars_by_date,
-            {"A2": datetime.strptime("13:15", "%H:%M").time()},
-            {"A2": 1},
+            {"A1": datetime.strptime("13:15", "%H:%M").time()},
+            {"A1": 1},
             doubledown_start_min=5,
         )
 
-        assert "dd_addon_entry" not in winner
+        assert "dd_addon_entry" in winner
 
     def test_addon_fires_when_dd_bar_is_before_1300(self):
         # Window opens at 12:30/1-bar → OR closes at 12:35.

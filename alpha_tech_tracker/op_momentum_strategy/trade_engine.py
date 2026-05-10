@@ -1107,13 +1107,6 @@ class OpMomentumTradeEngine:
                 EOD_EXIT_TIME,
             )
             return
-        if dd_check_time.hour >= 13:
-            logger.info(
-                "DD [%s]: check time %s is at/after 13:00 cutoff, skipping",
-                win.label,
-                dd_check_time.strftime("%H:%M"),
-            )
-            return
         delay = (dd_check_time - _now_et()).total_seconds()
         if delay <= 0:
             # Entry threads took longer than expected — fire immediately rather than skip.
@@ -1312,7 +1305,10 @@ class OpMomentumTradeEngine:
             else:
                 cap_pnl = _D("0")
 
-            is_reentry = pos.trailing_arm_price is not None or pos.is_doubledown_addon
+            # DD add-ons are NOT treated as re-entries here: their slot was deducted
+            # from _window_returned when DD fired, so the full return (slot + pnl)
+            # must be added back — not just the cap_pnl.
+            is_reentry = pos.trailing_arm_price is not None
             returned = cap_pnl if is_reentry else pos.slot_capital + cap_pnl
             with self._returned_lock:
                 self._window_returned.setdefault(pos.window_label, _D("0"))

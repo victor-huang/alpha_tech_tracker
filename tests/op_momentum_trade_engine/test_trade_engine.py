@@ -802,25 +802,23 @@ class TestOnPositionClosed:
         expected = _D("5000") + cap_pnl_primary + cap_pnl_reentry
         assert engine._window_returned["M1"] == expected
 
-    def test_dd_addon_adds_only_cap_pnl_not_slot_capital(self):
+    def test_dd_addon_returns_slot_capital_plus_cap_pnl(self):
         engine = self._make_engine()
         pos = self._make_closed_stock_pos("BULLISH", entry=100, exit_=110, slot_capital=6000)
         pos.is_doubledown_addon = True
 
         engine._on_position_closed(pos)
 
-        # DD add-on is treated as re-entry: only cap_pnl returned, slot_capital not added
+        # DD add-on returns slot_capital + cap_pnl: when DD fires it deducts the full
+        # slot from _window_returned, so the full amount must be returned on close.
         cap_pnl = _D("6000") / _D("100") * _D("10")
-        assert engine._window_returned["M1"] == cap_pnl
-        assert engine._window_closed_primary_deployed.get("M1", _D("0")) == _D("0")
+        assert engine._window_returned["M1"] == _D("6000") + cap_pnl
 
-    def test_dd_addon_does_not_inflate_closed_primary_deployed(self):
-        """Reproduces the 2026-04-21 A1 undersizing bug.
-
-        M1 had: MRVL primary ($6k) + RH primary ($4k) + RH DD add-on ($6k).
-        Before the fix, DD add-on's $6k was added to closed_primary_deployed,
-        making it $16k > initial $10k and triggering the multi-session
-        normalization incorrectly.
+    def test_dd_addon_closed_primary_deployed_includes_slot(self):
+        """DD add-ons are not treated as re-entries so their slot is tracked in
+        closed_primary_deployed. That field is currently unused (dead code) so
+        its value does not affect live engine behaviour — this test just
+        documents the actual accounting.
         """
         engine = self._make_engine()
         engine._replay_capital = 10000
@@ -834,8 +832,8 @@ class TestOnPositionClosed:
         engine._on_position_closed(rh_primary)
         engine._on_position_closed(rh_dd)
 
-        # DD add-on must not count toward closed_primary_deployed
-        assert engine._window_closed_primary_deployed["M1"] == _D("10000")
+        # All three positions are non-re-entries, so all three slot_capitals are summed.
+        assert engine._window_closed_primary_deployed["M1"] == _D("16000")
 
     def test_skips_position_with_no_slot_capital(self):
         engine = self._make_engine()
@@ -4576,25 +4574,32 @@ class TestDoubleDown:
         engine._schedule_dd_check_for_window(self._make_win())
         assert "W1" not in engine._dd_timers
 
-    def test_schedule_dd_skips_when_check_time_at_or_after_1300(self):
+    def test_schedule_dd_schedules_timer_for_afternoon_a1_window(self):
         # Window opens at 13:00/1-bar → OR closes at 13:05.
-        # doubledown_start_min=5 → dd_check_time=13:10 (hour=13) → skip.
+        # doubledown_start_min=5 → dd_check_time=13:10 → timer scheduled (no 13:00 cutoff).
         from alpha_tech_tracker.op_momentum_strategy.models import WindowConfig
         engine = self._make_engine()
+        engine._window_state["A2"] = {
+            "pending_signals": {},
+            "collection_deadline": datetime.now(ET),
+            "open_position_count": 0,
+            "capital_fraction": 1.0,
+        }
         afternoon_win = WindowConfig(label="A2", opening_start="13:00", opening_bars=1)
         mock_now = ET.localize(datetime(2026, 1, 2, 9, 30, 0))
         with patch(_IS_REPLAY_MODE_PATH, return_value=False), \
              patch("alpha_tech_tracker.op_momentum_strategy.trade_engine._now_et",
                    return_value=mock_now), \
              patch("alpha_tech_tracker.op_momentum_strategy.trade_engine.threading.Timer") as mock_timer:
+            mock_timer.return_value = Mock()
             engine._schedule_dd_check_for_window(afternoon_win)
 
-        mock_timer.assert_not_called()
-        assert "A2" not in engine._dd_timers
+        mock_timer.assert_called_once()
+        assert "A2" in engine._dd_timers
 
     def test_schedule_dd_schedules_timer_when_check_time_before_1300(self):
         # Window opens at 12:30/1-bar → OR closes at 12:35.
-        # doubledown_start_min=5 → dd_check_time=12:40 (hour=12) → timer scheduled.
+        # doubledown_start_min=5 → dd_check_time=12:40 → timer scheduled.
         from alpha_tech_tracker.op_momentum_strategy.models import WindowConfig
         engine = self._make_engine()
         engine._window_state["A1"] = {

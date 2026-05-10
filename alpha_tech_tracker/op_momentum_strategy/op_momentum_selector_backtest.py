@@ -513,7 +513,7 @@ def _annotate_doubledown_addon(
         def _is_early_stopout(r):
             return (
                 r.get("exit_reason", "") in stop_reasons
-                and r.get("bars_held", 999) < dd_bars
+                and r.get("bars_held", 999) <= dd_bars
             )
 
         stopouts = [r for r in rows_by_rank if _is_early_stopout(r)]
@@ -550,8 +550,6 @@ def _annotate_doubledown_addon(
             continue
 
         addon_bar = post_or.iloc[dd_bars]
-        if addon_bar.name.hour >= 13:
-            continue
         if addon_bar.name.time() > NO_MORE_NEW_POSITION_AFTER:
             continue
         addon_entry = float(addon_bar["Close"])
