@@ -1217,9 +1217,12 @@ class OpMomentumTradeEngine:
         dd_entry_price = _D(str(latest_bar["Close"]))
         bar_range = _D(str(latest_bar["High"])) - _D(str(latest_bar["Low"]))
         if winner.signal == "BULLISH":
-            dd_hard_stop = dd_entry_price - _D("0.80") * bar_range
+            own_stop = dd_entry_price - _D("0.80") * bar_range
+            # Cap the DD stop at the primary's stop: if the primary fires, DD must too.
+            dd_hard_stop = max(winner.hard_stop_price, own_stop)
         else:
-            dd_hard_stop = dd_entry_price + _D("0.80") * bar_range
+            own_stop = dd_entry_price + _D("0.80") * bar_range
+            dd_hard_stop = min(winner.hard_stop_price, own_stop)
 
         logger.info(
             "DD [%s] firing: winner=%s freed=%.2f from ranks %s entry=%.2f stop=%.2f",

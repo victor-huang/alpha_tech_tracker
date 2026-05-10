@@ -509,7 +509,7 @@ def _annotate_doubledown_addon(
         def _is_early_stopout(r):
             return (
                 r.get("exit_reason", "") in stop_reasons
-                and r.get("bars_held", 999) <= dd_bars
+                and r.get("bars_held", 999) < dd_bars
             )
 
         stopouts = [r for r in rows_by_rank if _is_early_stopout(r)]

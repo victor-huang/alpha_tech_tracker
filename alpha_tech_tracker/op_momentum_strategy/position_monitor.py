@@ -209,6 +209,29 @@ class PositionMonitor:
                     self._maybe_create_reentry_watcher(pos, reason)
                     to_close.append((pos, reason, override))
 
+            # When a primary position (not DD, not re-entry) closes at a hard stop,
+            # co-close any open DD add-on for the same window+ticker at the same price.
+            # Rationale: an adverse move that stops out the primary may continue, so
+            # holding the DD independently past primary exit adds unintended risk.
+            _hard_stop_reasons = {"hard_stop", "fallback_20pct"}
+            for _primary, _reason, _override in list(to_close):
+                if (
+                    not _primary.is_doubledown_addon
+                    and _primary.trailing_arm_price is None
+                    and _reason in _hard_stop_reasons
+                ):
+                    for _pos in self._positions:
+                        if (
+                            _pos.is_doubledown_addon
+                            and not _pos.is_closed
+                            and _pos.ticker == _primary.ticker
+                            and _pos.window_label == _primary.window_label
+                        ):
+                            _pos.is_closed = True
+                            _pos.exit_reason = _reason
+                            _pos.exit_time = _primary.exit_time
+                            to_close.append((_pos, _reason, _override))
+
             fired_watchers = self._collect_fired_watchers(ticker, close, bar_time, ma20=ma20_val)
 
         # Execute close operations outside the lock so sequential window drains
