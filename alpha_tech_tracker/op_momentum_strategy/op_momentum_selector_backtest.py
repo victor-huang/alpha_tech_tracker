@@ -28,6 +28,16 @@ MIN_WINDOW_CAPITAL = 100.0
 INITIAL_CAPITAL = 10_000.0
 DOUBLEDOWN_START_MIN = 5  # min from OR close at which the DD check fires and addon enters
 
+# The replay cutoff feeds bars with open-timestamp < EOD_EXIT_TIME (15:55), so the last
+# bar processed is the 15:50 bar (open 15:50, closes at 15:55).  Display its open-time
+# to match the live engine's exit_time convention (which stamps the bar open, not close).
+_EOD_DISPLAY_TIME = "{:02d}:{:02d}".format(
+    *divmod(
+        int(EOD_EXIT_TIME.split(":")[0]) * 60 + int(EOD_EXIT_TIME.split(":")[1]) - 5,
+        60,
+    )
+)
+
 
 def _signal_dict_from_row(row) -> dict:
     or_range = row["or_high"] - row["or_low"]
@@ -1276,7 +1286,7 @@ def _print_reentry_subrow(
         sub_entry_min = or_close + (primary_bars + entry_idx + 2) * 5
         exit_reason = row.get(exit_reason_key, "")
         if exit_reason == "end_of_day":
-            sub_exit_str = EOD_EXIT_TIME
+            sub_exit_str = _EOD_DISPLAY_TIME
         else:
             sub_exit_min = sub_entry_min + (sub_bars + 1) * 5
             sub_exit_str = fmt_bar_time(sub_exit_min)
@@ -1327,7 +1337,7 @@ def _print_daily_table(
             return "—", "—"
         entry_str = _fmt_bar_time(or_close)
         if row.get("exit_reason") == "end_of_day":
-            exit_str = EOD_EXIT_TIME
+            exit_str = _EOD_DISPLAY_TIME
         else:
             exit_str = _fmt_bar_time(or_close + (row.get("bars_held", 0) + 1) * 5)
         return entry_str, exit_str
@@ -1459,7 +1469,7 @@ def _print_daily_table(
             dd_fire_min = row.get("dd_fire_min")
             if dd_fire_min is not None:
                 dd_in_str = _fmt_bar_time(dd_fire_min)
-                dd_out_str = EOD_EXIT_TIME if row.get("exit_reason") == "end_of_day" \
+                dd_out_str = _EOD_DISPLAY_TIME if row.get("exit_reason") == "end_of_day" \
                     else _fmt_bar_time(row.get("or_close_min", 0) + (row.get("bars_held", 0) + 1) * 5)
             else:
                 dd_in_str = "—"
@@ -1493,7 +1503,7 @@ def _print_daily_table(
             dd_fire_min = row.get("dd_fire_min")
             if dd_fire_min is not None:
                 opp_in_str = _fmt_bar_time(dd_fire_min)
-                opp_out_str = EOD_EXIT_TIME if row.get("exit_reason") == "end_of_day" \
+                opp_out_str = _EOD_DISPLAY_TIME if row.get("exit_reason") == "end_of_day" \
                     else _fmt_bar_time(row.get("or_close_min", 0) + (row.get("bars_held", 0) + 1) * 5)
             else:
                 opp_in_str = "—"

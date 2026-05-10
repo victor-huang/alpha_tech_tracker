@@ -1,12 +1,12 @@
 """
-Tests that EOD exits are recorded and displayed at 15:55 (EOD_EXIT_TIME),
-not the old hardcoded 16:00.
+Tests that EOD exits are recorded and displayed at 15:50 (_EOD_DISPLAY_TIME),
+not the old hardcoded 16:00 or the bar-cutoff time 15:55.
 
 Covers two surfaces:
   1. trade_engine.run_replay — replay clock is pinned to last_bar_time (15:55)
      without a +5-minute offset when close_all fires.
   2. op_momentum_selector_backtest display functions — EOD exit rows render
-     EOD_EXIT_TIME for all exit sites: primary row, reversal subrow, DD row.
+     _EOD_DISPLAY_TIME ("15:50") for all exit sites: primary row, reversal subrow, DD row.
 """
 
 import io
@@ -16,8 +16,8 @@ from unittest.mock import MagicMock, Mock, patch
 
 import pytz
 
-from alpha_tech_tracker.op_momentum_strategy.config import EOD_EXIT_TIME
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector_backtest import (
+    _EOD_DISPLAY_TIME,
     _print_daily_table,
 )
 from alpha_tech_tracker.op_momentum_strategy.replay import clear_replay_clock
@@ -104,7 +104,7 @@ class TestReplayClockPinnedToEodBar:
 
 
 # ---------------------------------------------------------------------------
-# backtest display: EOD exit renders as EOD_EXIT_TIME in all call sites
+# backtest display: EOD exit renders as _EOD_DISPLAY_TIME ("15:50") in all call sites
 # ---------------------------------------------------------------------------
 
 def _base_row(**overrides):
@@ -137,27 +137,27 @@ def _capture(fn, *args, **kwargs) -> str:
 
 
 class TestBacktestPrimaryRowEodTime:
-    def test_eod_primary_row_shows_eod_exit_time(self):
+    def test_eod_primary_row_shows_eod_display_time(self):
         row = _base_row(exit_reason="end_of_day")
         output = _capture(_print_daily_table, [row], n=1)
         assert "16:00" not in output
-        assert EOD_EXIT_TIME in output
+        assert _EOD_DISPLAY_TIME in output
 
-    def test_bullish_eod_primary_row_shows_eod_exit_time(self):
+    def test_bullish_eod_primary_row_shows_eod_display_time(self):
         row = _base_row(signal="BULLISH", pnl=-4.71, exit_reason="end_of_day")
         output = _capture(_print_daily_table, [row], n=1)
         assert "16:00" not in output
-        assert EOD_EXIT_TIME in output
+        assert _EOD_DISPLAY_TIME in output
 
-    def test_non_eod_primary_row_does_not_show_eod_exit_time(self):
+    def test_non_eod_primary_row_does_not_show_eod_display_time(self):
         # bars_held=3, or_close_min=570: exit = 570 + (3+1)*5 = 590 = 09:50
         row = _base_row(exit_reason="trailing_stop_ma20", bars_held=3, or_close_min=570)
         output = _capture(_print_daily_table, [row], n=1)
-        assert EOD_EXIT_TIME not in output
+        assert _EOD_DISPLAY_TIME not in output
 
 
 class TestBacktestReentrySubrowEodTime:
-    def test_reversal_subrow_eod_exit_shows_eod_exit_time(self):
+    def test_reversal_subrow_eod_exit_shows_eod_display_time(self):
         row = _base_row(
             exit_reason="end_of_day",
             rev_entry_price=636.17,
@@ -170,9 +170,9 @@ class TestBacktestReentrySubrowEodTime:
         )
         output = _capture(_print_daily_table, [row], n=1)
         assert "16:00" not in output
-        assert EOD_EXIT_TIME in output
+        assert _EOD_DISPLAY_TIME in output
 
-    def test_reversal_subrow_non_eod_exit_does_not_show_eod_exit_time(self):
+    def test_reversal_subrow_non_eod_exit_does_not_show_eod_display_time(self):
         row = _base_row(
             exit_reason="trailing_stop_ma20",
             rev_entry_price=636.17,
@@ -188,7 +188,7 @@ class TestBacktestReentrySubrowEodTime:
 
 
 class TestBacktestDoubledownEodTime:
-    def test_dd_eod_exit_shows_eod_exit_time(self):
+    def test_dd_eod_exit_shows_eod_display_time(self):
         row = _base_row(
             exit_reason="end_of_day",
             dd_addon_cap_pnl=9.42,
@@ -200,9 +200,9 @@ class TestBacktestDoubledownEodTime:
         )
         output = _capture(_print_daily_table, [row], n=1)
         assert "16:00" not in output
-        assert EOD_EXIT_TIME in output
+        assert _EOD_DISPLAY_TIME in output
 
-    def test_dd_non_eod_exit_does_not_show_eod_exit_time(self):
+    def test_dd_non_eod_exit_does_not_show_eod_display_time(self):
         row = _base_row(
             exit_reason="trailing_stop_ma20",
             dd_addon_cap_pnl=9.42,
