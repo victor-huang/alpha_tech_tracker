@@ -4186,8 +4186,8 @@ class TestDoubleDown:
         assert kw["reentry_type"] == "doubledown"
         assert kw["capital_weight_override"] == _D("1")
         assert kw["initial_hard_stop_armed"] is True
-        # stop = entry - 0.80 * bar_range = 290 - 0.80 * (291 - 289) = 288.40
-        assert kw["hard_stop_override"] == _D("288.40")
+        # DD stop inherits winner's hard_stop_price (103.5 from _make_active_position)
+        assert kw["hard_stop_override"] == winner.hard_stop_price
 
     def test_dd_freed_capital_equals_returned_capital_from_stopout(self):
         engine = self._make_engine()

@@ -4159,3 +4159,137 @@ class TestFillEscMissGuard:
         monitor._reconcile_stuck_positions()
 
         assert callback_called == []
+
+
+class TestDoubleDownCoClose:
+    """DD add-on must be co-closed whenever the primary exits, for any exit reason."""
+
+    @pytest.fixture(autouse=True)
+    def patch_sleep(self, monkeypatch):
+        monkeypatch.setattr(
+            "alpha_tech_tracker.op_momentum_strategy.order_executor.time.sleep",
+            lambda _: None,
+        )
+
+    def _make_primary(self, signal="BULLISH", hard_stop=_D("98.0"), window="M1"):
+        pos = _make_stock_position(
+            signal=signal,
+            or_high=_D("105"),
+            or_low=_D("95"),
+            hard_stop_price=hard_stop,
+            fallback_price=_D("94.0"),
+            shares=100,
+        )
+        pos.ticker = "TSLA"
+        pos.window_label = window
+        pos.hard_stop_armed = True
+        pos.is_doubledown_addon = False
+        return pos
+
+    def _make_dd(self, signal="BULLISH", hard_stop=_D("98.0"), window="M1"):
+        pos = _make_stock_position(
+            signal=signal,
+            or_high=_D("105"),
+            or_low=_D("95"),
+            hard_stop_price=hard_stop,
+            fallback_price=_D("94.0"),
+            shares=150,
+        )
+        pos.ticker = "TSLA"
+        pos.window_label = window
+        pos.hard_stop_armed = True
+        pos.is_doubledown_addon = True
+        return pos
+
+    def _make_monitor(self, *positions):
+        client = _make_alpaca_client()
+        client.place_stock_order.return_value = {"order_id": "close-dd"}
+        client.order_status.return_value = {"status": "filled", "filled_avg_price": 97.0}
+        df = _build_history_df([100.0], ma20=98.0, ma50=98.0, ma200=95.0)
+        engine = _make_signal_engine_with_history("TSLA", df)
+        monitor = PositionMonitor(client, engine, mock_trade_execution=True)
+        monitor._positions = list(positions)
+        return monitor
+
+    def test_dd_co_closes_when_primary_exits_via_hard_stop(self):
+        primary = self._make_primary(hard_stop=_D("98.0"))
+        dd = self._make_dd(hard_stop=_D("98.0"))
+        monitor = self._make_monitor(primary, dd)
+
+        _set_latest_bar(monitor._signal_engine, "TSLA", close=97.5, ma50=99.0)
+        monitor.on_bar("TSLA")
+
+        assert primary.is_closed is True
+        assert primary.exit_reason == "hard_stop"
+        assert dd.is_closed is True
+        assert dd.exit_reason == "hard_stop"
+
+    def test_dd_co_closes_when_primary_exits_via_trailing_stop(self):
+        primary = self._make_primary(hard_stop=_D("90.0"))
+        dd = self._make_dd(hard_stop=_D("90.0"))
+        monitor = self._make_monitor(primary, dd)
+
+        # MA20=103 > close=101 → trailing stop fires on primary; DD must follow
+        _set_latest_bar(monitor._signal_engine, "TSLA", close=101.0, ma50=99.0, ma20=103.0)
+        monitor.on_bar("TSLA")
+
+        assert primary.is_closed is True
+        assert primary.exit_reason == "trailing_stop_ma20"
+        assert dd.is_closed is True
+        assert dd.exit_reason == "trailing_stop_ma20"
+
+    def test_dd_co_closes_when_primary_exits_via_fallback(self):
+        primary = self._make_primary(hard_stop=_D("98.0"))
+        primary.hard_stop_armed = False
+        dd = self._make_dd(hard_stop=_D("98.0"))
+        dd.hard_stop_armed = False
+        monitor = self._make_monitor(primary, dd)
+
+        # close=93.5 < fallback=94.0, hard stop never armed → fallback_20pct
+        _set_latest_bar(monitor._signal_engine, "TSLA", close=93.5, ma50=99.0)
+        monitor.on_bar("TSLA")
+
+        assert primary.is_closed is True
+        assert primary.exit_reason == "fallback_20pct"
+        assert dd.is_closed is True
+        assert dd.exit_reason == "fallback_20pct"
+
+    def test_dd_co_closes_even_when_primary_has_trailing_arm_set(self):
+        primary = self._make_primary(hard_stop=_D("90.0"))
+        primary.trailing_arm_price = _D("106.0")
+        dd = self._make_dd(hard_stop=_D("90.0"))
+        monitor = self._make_monitor(primary, dd)
+
+        _set_latest_bar(monitor._signal_engine, "TSLA", close=101.0, ma50=99.0, ma20=103.0)
+        monitor.on_bar("TSLA")
+
+        assert primary.is_closed is True
+        assert dd.is_closed is True
+        assert dd.exit_reason == primary.exit_reason
+
+    def test_co_close_does_not_self_trigger_when_only_dd_is_open(self):
+        dd = self._make_dd(hard_stop=_D("98.0"))
+        monitor = self._make_monitor(dd)
+
+        _set_latest_bar(monitor._signal_engine, "TSLA", close=97.5, ma50=99.0)
+        monitor.on_bar("TSLA")
+
+        closed = [p for p in monitor._positions if p.is_closed]
+        assert len(closed) == 1
+
+    def test_co_close_scoped_to_matching_window_not_other_window(self):
+        primary_m1 = self._make_primary(hard_stop=_D("98.0"), window="M1")
+        dd_m1 = self._make_dd(hard_stop=_D("98.0"), window="M1")
+        # Give the A1 DD a stop well below the bar close so it doesn't fire on its own;
+        # only the M1 primary's exit should trigger co-close, scoped to M1.
+        dd_a1 = self._make_dd(hard_stop=_D("90.0"), window="A1")
+        monitor = self._make_monitor(primary_m1, dd_m1, dd_a1)
+
+        # ma20=96.0 < close=97.5 so trailing stop does not fire independently;
+        # only the M1 primary's hard_stop (98.0 > close) drives the exit.
+        _set_latest_bar(monitor._signal_engine, "TSLA", close=97.5, ma50=99.0, ma20=96.0)
+        monitor.on_bar("TSLA")
+
+        assert primary_m1.is_closed is True
+        assert dd_m1.is_closed is True
+        assert dd_a1.is_closed is False

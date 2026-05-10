@@ -209,17 +209,14 @@ class PositionMonitor:
                     self._maybe_create_reentry_watcher(pos, reason)
                     to_close.append((pos, reason, override))
 
-            # When a primary position (not DD, not re-entry) closes at a hard stop,
-            # co-close any open DD add-on for the same window+ticker at the same price.
-            # Rationale: an adverse move that stops out the primary may continue, so
-            # holding the DD independently past primary exit adds unintended risk.
-            _hard_stop_reasons = {"hard_stop", "fallback_20pct"}
+            # When a primary position (not DD) closes for any reason, co-close any open
+            # DD add-on for the same window+ticker at the same price.  This ensures the
+            # DD always exits with the primary regardless of exit reason (hard stop,
+            # trailing stop, EOD), matching the backtest formula
+            # effective_exit = max(primary_exit, own_stop) where the DD's own_stop is
+            # set equal to winner.hard_stop_price so it never fires independently.
             for _primary, _reason, _override in list(to_close):
-                if (
-                    not _primary.is_doubledown_addon
-                    and _primary.trailing_arm_price is None
-                    and _reason in _hard_stop_reasons
-                ):
+                if not _primary.is_doubledown_addon:
                     for _pos in self._positions:
                         if (
                             _pos.is_doubledown_addon
