@@ -669,6 +669,19 @@ def _make_intraday_bars(date_str, times):
     return pd.DataFrame(rows, index=pd.DatetimeIndex(index))
 
 
+def _make_intraday_bars_ohlc(date_str, bar_specs):
+    """bar_specs: list of (time_str, close, high, low)."""
+    index = [
+        ET.localize(datetime.strptime(f"{date_str} {t}", "%Y-%m-%d %H:%M"))
+        for t, _, _, _ in bar_specs
+    ]
+    rows = [
+        {"Open": c, "High": h, "Low": l, "Close": c, "Volume": 1000}
+        for _, c, h, l in bar_specs
+    ]
+    return pd.DataFrame(rows, index=pd.DatetimeIndex(index))
+
+
 _DD_DATE = date(2025, 1, 2)
 _DD_DATE_STR = "2025-01-02"
 # OR window: 09:30 start, 3 bars → OR closes at 09:45
@@ -859,6 +872,118 @@ class TestAnnotateDoubledownAddon:
         )
 
         assert "dd_addon_entry" in winner
+
+    # -----------------------------------------------------------------------
+    # Bar-scan stop-breach tests (added 2026-05-10)
+    #
+    # Setup (shared across breach tests):
+    #   post_or.iloc[0] = 09:45, close=50.0, High=101.0, Low=99.0  (not addon bar)
+    #   post_or.iloc[1] = 09:50, close=55.0, High=101.0, Low=99.0  (addon_bar)
+    #     → stop_price (BULLISH) = 55.0 − 0.80 × (101−99) = 55.0 − 1.6 = 53.4
+    #     → stop_price (BEARISH) = 55.0 + 0.80 × (101−99) = 55.0 + 1.6 = 56.6
+    #   post_or.iloc[2] = 09:55                                      (first scanned bar)
+    #
+    # bars_held=2 → bars_after_addon = post_or.iloc[2:3] (one bar scanned)
+    # -----------------------------------------------------------------------
+
+    def test_bullish_stop_not_breached_uses_primary_exit_price(self):
+        bars = _make_intraday_bars_ohlc(_DD_DATE_STR, [
+            ("09:45", 50.0, 101.0, 99.0),
+            ("09:50", 55.0, 101.0, 99.0),  # addon_bar; stop=53.4
+            ("09:55", 65.0, 66.0, 54.0),   # Low=54.0 > 53.4 → no breach
+        ])
+        winner = _dd_winner_row(exit_price=65.0, bars_held=2)
+        rows = [winner, _dd_stopout_row()]
+        _annotate_doubledown_addon(
+            rows, {"NVDA": {_DD_DATE: bars}},
+            self._WINDOW_OPENING_TIMES, self._OPENING_BARS_BY_LABEL,
+            doubledown_start_min=5,
+        )
+        assert winner["dd_addon_stop_breached"] is False
+        assert winner["dd_addon_effective_exit"] == pytest.approx(65.0)
+        assert winner["dd_addon_pnl_pct"] == pytest.approx((65.0 - 55.0) / 55.0)
+
+    def test_bullish_stop_breached_uses_stop_price(self):
+        bars = _make_intraday_bars_ohlc(_DD_DATE_STR, [
+            ("09:45", 50.0, 101.0, 99.0),
+            ("09:50", 55.0, 101.0, 99.0),  # addon_bar; stop=53.4
+            ("09:55", 53.5, 54.0, 52.0),   # Low=52.0 < 53.4 → breach
+        ])
+        winner = _dd_winner_row(exit_price=65.0, bars_held=2)
+        rows = [winner, _dd_stopout_row()]
+        _annotate_doubledown_addon(
+            rows, {"NVDA": {_DD_DATE: bars}},
+            self._WINDOW_OPENING_TIMES, self._OPENING_BARS_BY_LABEL,
+            doubledown_start_min=5,
+        )
+        expected_stop = 55.0 - 0.80 * (101.0 - 99.0)  # 53.4
+        assert winner["dd_addon_stop_breached"] is True
+        assert winner["dd_addon_effective_exit"] == pytest.approx(expected_stop)
+        assert winner["dd_addon_pnl_pct"] == pytest.approx((expected_stop - 55.0) / 55.0)
+
+    def test_bearish_stop_not_breached_uses_primary_exit_price(self):
+        bars = _make_intraday_bars_ohlc(_DD_DATE_STR, [
+            ("09:45", 50.0, 101.0, 99.0),
+            ("09:50", 55.0, 101.0, 99.0),  # addon_bar; stop=56.6
+            ("09:55", 50.0, 56.0, 49.0),   # High=56.0 < 56.6 → no breach
+        ])
+        winner = {
+            "date": _DD_DATE, "window": "M1", "rank": 1,
+            "ticker": "NVDA", "signal": "BEARISH",
+            "entry_price": 58.0, "exit_price": 50.0,
+            "exit_reason": "end_of_day", "bars_held": 2,
+        }
+        rows = [winner, _dd_stopout_row()]
+        _annotate_doubledown_addon(
+            rows, {"NVDA": {_DD_DATE: bars}},
+            self._WINDOW_OPENING_TIMES, self._OPENING_BARS_BY_LABEL,
+            doubledown_start_min=5,
+        )
+        assert winner["dd_addon_stop_breached"] is False
+        assert winner["dd_addon_effective_exit"] == pytest.approx(50.0)
+        assert winner["dd_addon_pnl_pct"] == pytest.approx((55.0 - 50.0) / 55.0)
+
+    def test_bearish_stop_breached_uses_stop_price(self):
+        bars = _make_intraday_bars_ohlc(_DD_DATE_STR, [
+            ("09:45", 50.0, 101.0, 99.0),
+            ("09:50", 55.0, 101.0, 99.0),  # addon_bar; stop=56.6
+            ("09:55", 57.0, 57.5, 56.0),   # High=57.5 > 56.6 → breach
+        ])
+        winner = {
+            "date": _DD_DATE, "window": "M1", "rank": 1,
+            "ticker": "NVDA", "signal": "BEARISH",
+            "entry_price": 58.0, "exit_price": 50.0,
+            "exit_reason": "end_of_day", "bars_held": 2,
+        }
+        rows = [winner, _dd_stopout_row()]
+        _annotate_doubledown_addon(
+            rows, {"NVDA": {_DD_DATE: bars}},
+            self._WINDOW_OPENING_TIMES, self._OPENING_BARS_BY_LABEL,
+            doubledown_start_min=5,
+        )
+        expected_stop = 55.0 + 0.80 * (101.0 - 99.0)  # 56.6
+        assert winner["dd_addon_stop_breached"] is True
+        assert winner["dd_addon_effective_exit"] == pytest.approx(expected_stop)
+        assert winner["dd_addon_pnl_pct"] == pytest.approx((55.0 - expected_stop) / 55.0)
+
+    def test_stop_breach_only_scanned_up_to_bars_held(self):
+        # Winner exits at bars_held=2. A breach occurs at post_or.iloc[3] (bars_held=3).
+        # That bar is outside the scan window → stop_breached must remain False.
+        bars = _make_intraday_bars_ohlc(_DD_DATE_STR, [
+            ("09:45", 50.0, 101.0, 99.0),
+            ("09:50", 55.0, 101.0, 99.0),  # addon_bar; stop=53.4
+            ("09:55", 65.0, 66.0, 54.0),   # Low=54.0 > 53.4 → no breach (scanned)
+            ("10:00", 30.0, 31.0, 20.0),   # Low=20.0 < 53.4 → breach, but NOT scanned
+        ])
+        winner = _dd_winner_row(exit_price=65.0, bars_held=2)
+        rows = [winner, _dd_stopout_row()]
+        _annotate_doubledown_addon(
+            rows, {"NVDA": {_DD_DATE: bars}},
+            self._WINDOW_OPENING_TIMES, self._OPENING_BARS_BY_LABEL,
+            doubledown_start_min=5,
+        )
+        assert winner["dd_addon_stop_breached"] is False
+        assert winner["dd_addon_effective_exit"] == pytest.approx(65.0)
 
 
 # ---------------------------------------------------------------------------
