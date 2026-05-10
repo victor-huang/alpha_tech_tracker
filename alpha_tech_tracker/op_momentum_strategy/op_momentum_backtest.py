@@ -323,6 +323,12 @@ def compute_signals_with_backtest(
 ) -> pd.DataFrame:
     opening_start_t = datetime.strptime(opening_start_time, "%H:%M").time()
 
+    # Suppress signals when the OR close (entry time) falls after 15:48 ET —
+    # too close to the 15:55 EOD cap to be worth trading.
+    _or_close_dt = datetime.combine(datetime.min, opening_start_t) + timedelta(minutes=opening_bars * 5)
+    if _or_close_dt.time() > _time(15, 48):
+        return pd.DataFrame()
+
     df = df.copy()
     fast_ma_col = f"MA{trailing_ma_switch_period}"
     if fast_ma_col not in df.columns:
