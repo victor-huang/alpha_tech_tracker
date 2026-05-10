@@ -212,16 +212,22 @@ for rank-1). Then compare to RP's corresponding rows.
 
 These are recurring gap causes that are **not bugs**. Do not try to fix them.
 
-### 1. DD add-on P&L approximation
+### 1. DD add-on exit path approximation (partially closed)
 
-**BT:** single-bar approximation — `freed_capital × (addon_entry ± 0.80 × bar_range) / addon_entry`
+**BT:** scans bars from DD entry+1 through primary exit bar. If any bar's Low (BULLISH) or
+High (BEARISH) breaches the bar-range stop, `effective_exit = stop_price`. Otherwise the
+add-on exits with the primary. Stop price = `addon_entry ± 0.80 × bar_range` of the check bar.
+(Bar-scan logic added 2026-05-10; prior to this, BT used `max/min(exit_price, stop_price)`
+which never simulated an intrabar stop hit before the primary exited.)
 
-**RP:** full live position — enters at check-bar close, stops at `addon_entry ± 0.80 × bar_range`
-(matched to BT since `ee0aca2`), but exits via trailing MA or EOD if price never hits the stop.
+**RP:** full live position — enters at check-bar close, stops intrabar if Low/High breaches
+the same bar-range stop; otherwise exits via trailing MA or EOD.
 
-**Diverges when:** the DD position runs for many bars and exits via trailing stop rather than
-the hard stop. BT always caps the loss at the bar-range stop; RP can ride the position to a
-profit or larger loss depending on subsequent price action.
+**Residual divergence:** BT uses bar-close prices throughout (no intrabar fill simulation).
+RP fills the stop at approximately `stop_price` but with real tick-level slippage. On days
+where the DD position exits via trailing MA (price runs in favor, never hits stop), BT exits
+at the primary's close while RP uses its own trailing-MA exit — these still diverge when the
+primary and DD add-on reach their trailing exits at different bars.
 
 ### 2. Sequential capital timing
 
@@ -265,6 +271,9 @@ When calling `run_selector_backtest()` directly (Python API), each row dict cont
 | `bru_pnl` | Bullish re-entry P&L (0 if no BRU) |
 | `dd_addon_cap_pnl` | DD add-on P&L added to the winner row (0 if not winner) |
 | `dd_addon_entry` | DD add-on entry price (present only on winner rows where DD fired) |
+| `dd_addon_stop_price` | DD add-on hard-stop price (`addon_entry ± 0.80 × bar_range`) |
+| `dd_addon_stop_breached` | True if bar-scan found the stop hit before primary exit |
+| `dd_addon_effective_exit` | Exit price used for DD P&L computation |
 | `reentry_cancelled_by_dd` | True if this stopout's BRU/BRE watcher was cancelled because DD fired |
 
 > **Note:** `run_selector_backtest()` requires `windows` as a list of dicts:

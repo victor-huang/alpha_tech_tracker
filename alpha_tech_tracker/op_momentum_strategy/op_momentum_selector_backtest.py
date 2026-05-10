@@ -559,19 +559,27 @@ def _annotate_doubledown_addon(
 
         exit_price = float(winner["exit_price"])
         bar_range = float(addon_bar["High"]) - float(addon_bar["Low"])
+        bars_after_addon = post_or.iloc[dd_bars + 1 : winner.get("bars_held", 0) + 1]
         if winner["signal"] == "BULLISH":
             stop_price = addon_entry - 0.80 * bar_range
-            effective_exit = max(exit_price, stop_price)
+            stop_breached = any(
+                float(b["Low"]) < stop_price for _, b in bars_after_addon.iterrows()
+            )
+            effective_exit = stop_price if stop_breached else max(exit_price, stop_price)
             raw_pct = (effective_exit - addon_entry) / addon_entry
         else:
             stop_price = addon_entry + 0.80 * bar_range
-            effective_exit = min(exit_price, stop_price)
+            stop_breached = any(
+                float(b["High"]) > stop_price for _, b in bars_after_addon.iterrows()
+            )
+            effective_exit = stop_price if stop_breached else min(exit_price, stop_price)
             raw_pct = (addon_entry - effective_exit) / addon_entry
 
         winner["dd_addon_pnl_pct"] = raw_pct
         winner["dd_addon_entry"] = addon_entry
         winner["dd_addon_stop_price"] = stop_price
         winner["dd_addon_effective_exit"] = effective_exit
+        winner["dd_addon_stop_breached"] = stop_breached
         winner["dd_freed_ranks"] = freed_ranks
         winner["dd_fire_min"] = winner.get("or_close_min", 0) + dd_bars * 5
 
