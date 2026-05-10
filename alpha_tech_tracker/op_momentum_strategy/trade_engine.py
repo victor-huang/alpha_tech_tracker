@@ -315,6 +315,9 @@ class OpMomentumTradeEngine:
         force_run: bool = False,
         reset_session: bool = False,
         reentry_after_next_window_returned: bool = True,
+        trailing_ma_switch: str = "none",
+        trailing_ma_switch_factor: float = 1.0,
+        trailing_ma_switch_period: int = 8,
     ):
         self._client = alpaca_client
         self._api_key = getattr(alpaca_client, "_api_key", None)
@@ -322,6 +325,9 @@ class OpMomentumTradeEngine:
         self._stop_pct = _D(str(stop_pct))
         self._mock_trade_execution = mock_trade_execution
         self._trailing_ma = trailing_ma
+        self._trailing_ma_switch = trailing_ma_switch
+        self._trailing_ma_switch_factor = trailing_ma_switch_factor
+        self._trailing_ma_switch_period = trailing_ma_switch_period
         self._max_loss_pct = max_loss_pct
         self._daily_max_loss_usd = _D(str(daily_max_loss_usd)) if daily_max_loss_usd is not None else None
         self._daily_realized_pnl = _D("0")
@@ -2341,6 +2347,7 @@ class OpMomentumTradeEngine:
             windows=engine_windows,
             bar_recorder=bar_recorder,
             or_bar_lookback=self._or_bar_lookback,
+            trailing_ma_switch_period=self._trailing_ma_switch_period,
         )
         try:
             account = self._client.get_accounts()
@@ -2369,6 +2376,9 @@ class OpMomentumTradeEngine:
             close_callback=self._on_position_closed,
             exit_retry_callback=self._on_exit_fill_corrected,
             alpaca_feed=self._alpaca_feed,
+            trailing_ma_switch=self._trailing_ma_switch,
+            trailing_ma_switch_factor=self._trailing_ma_switch_factor,
+            trailing_ma_switch_period=self._trailing_ma_switch_period,
         )
 
         if self._option_price_monitor:
@@ -2511,6 +2521,7 @@ class OpMomentumTradeEngine:
             regime_ma=self._regime_ma,
             windows=engine_windows,
             or_bar_lookback=self._or_bar_lookback,
+            trailing_ma_switch_period=self._trailing_ma_switch_period,
         )
         self._signal_engine.start_replay(replay_date, market_data_client=self._market_data_client)
 
@@ -2534,6 +2545,9 @@ class OpMomentumTradeEngine:
             close_callback=self._on_position_closed,
             exit_retry_callback=self._on_exit_fill_corrected,
             alpaca_feed=self._alpaca_feed,
+            trailing_ma_switch=self._trailing_ma_switch,
+            trailing_ma_switch_factor=self._trailing_ma_switch_factor,
+            trailing_ma_switch_period=self._trailing_ma_switch_period,
         )
 
         # In replay mode signals are drained synchronously in _on_bar (no background threads)

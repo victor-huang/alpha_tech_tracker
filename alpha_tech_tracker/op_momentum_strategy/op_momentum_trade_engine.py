@@ -21,6 +21,9 @@ from .config import (
     REGIME_MA,
     STOP_PCT,
     TRAILING_MA,
+    TRAILING_MA_SWITCH,
+    TRAILING_MA_SWITCH_FACTOR,
+    TRAILING_MA_SWITCH_PERIOD,
     _CONFIG_FILE,
     _load_config,
     build_execution_client,
@@ -213,6 +216,30 @@ def parse_args():
         default=TRAILING_MA,
         choices=["ma20", "ma50", "both"],
         help="Trailing MA stop: ma20, ma50, or both (default: ma20)",
+    )
+    parser.add_argument(
+        "--trailing-ma-switch",
+        choices=["none", "after-arm", "after-target"],
+        default=TRAILING_MA_SWITCH,
+        dest="trailing_ma_switch",
+        help="Upgrade trailing stop to a faster MA once a profit threshold is reached. "
+        "after-arm: upgrade when favorable move >= 1x OR range. "
+        "after-target: upgrade at factor x OR range (see --trailing-ma-switch-factor). "
+        f"Default: {TRAILING_MA_SWITCH}.",
+    )
+    parser.add_argument(
+        "--trailing-ma-switch-period",
+        type=int,
+        default=TRAILING_MA_SWITCH_PERIOD,
+        dest="trailing_ma_switch_period",
+        help=f"Period of the fast MA used after the switch threshold is hit (default: {TRAILING_MA_SWITCH_PERIOD}).",
+    )
+    parser.add_argument(
+        "--trailing-ma-switch-factor",
+        type=float,
+        default=TRAILING_MA_SWITCH_FACTOR,
+        dest="trailing_ma_switch_factor",
+        help=f"OR-range multiplier for --trailing-ma-switch after-target (default: {TRAILING_MA_SWITCH_FACTOR}).",
     )
     parser.add_argument(
         "--max-loss-pct",
@@ -837,6 +864,9 @@ if __name__ == "__main__":
             force_run=args.force_run,
             reset_session=args.reset_session,
             reentry_after_next_window_returned=args.reentry_after_next_window_returned,
+            trailing_ma_switch=args.trailing_ma_switch,
+            trailing_ma_switch_factor=args.trailing_ma_switch_factor,
+            trailing_ma_switch_period=args.trailing_ma_switch_period,
         )
         if args.replay_date or (args.replay_start and args.replay_end):
             _warn_replay_feed_mismatch(args)
@@ -963,6 +993,9 @@ if __name__ == "__main__":
             force_run=args.force_run,
             reset_session=args.reset_session,
             reentry_after_next_window_returned=args.reentry_after_next_window_returned,
+            trailing_ma_switch=args.trailing_ma_switch,
+            trailing_ma_switch_factor=args.trailing_ma_switch_factor,
+            trailing_ma_switch_period=args.trailing_ma_switch_period,
         )
         engine.run(tickers_override=args.tickers)
     finally:

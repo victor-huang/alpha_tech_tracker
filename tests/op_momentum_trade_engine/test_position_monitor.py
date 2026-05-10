@@ -485,6 +485,99 @@ class TestPositionMonitor:
         assert pos.exit_reason == "fallback_20pct"
 
 
+class TestTrailingMaSwitchPeriod:
+    """Live engine fast-MA trailing-stop upgrade.
+
+    Setup: BULLISH primary, OR=[95,105], midpoint=100, or_range=10, hard_stop=103.5.
+    after-arm threshold = or_range = 10, so close=110 latches use_ma_fast.
+    Then close drops below the supplied fast MA → fast-MA trailing exit.
+    MA20 is pinned below hard_stop (98) so MA20 trailing can never fire alone.
+    """
+
+    @pytest.fixture(autouse=True)
+    def patch_sleep(self, monkeypatch):
+        monkeypatch.setattr(
+            "alpha_tech_tracker.op_momentum_strategy.order_executor.time.sleep",
+            lambda _: None,
+        )
+
+    @staticmethod
+    def _setup(client, period=8, switch="after-arm", switch_factor=1.0):
+        client.place_option_order.return_value = {"order_id": "close-fast"}
+        client.order_status.return_value = {"status": "filled", "filled_avg_price": 5.25}
+        client.get_option_quote_by_occ.return_value = _make_option_quote(bid=5.0, ask=5.5)
+
+        pos = _make_active_position(
+            signal="BULLISH", or_high=_D("105"), or_low=_D("95"),
+            hard_stop_price=_D("103.5"), fallback_price=_D("103.0"),
+        )
+        df = _build_history_df([100.0, 100.0], ma20=98.0, ma50=98.0, ma200=95.0)
+        df[f"MA{period}"] = [99.0, 99.0]
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(
+            client, engine,
+            trailing_ma_switch=switch,
+            trailing_ma_switch_factor=switch_factor,
+            trailing_ma_switch_period=period,
+        )
+        monitor.add_position(pos)
+        return pos, engine, monitor
+
+    @staticmethod
+    def _push_bar(engine, ticker, close, ma_fast, period):
+        _set_latest_bar(engine, ticker, close=close, ma50=98.0, ma20=98.0)
+        engine._history[ticker].iloc[-1, engine._history[ticker].columns.get_loc(f"MA{period}")] = ma_fast
+
+    def test_use_ma_fast_latches_when_move_reaches_or_range(self):
+        pos, engine, monitor = self._setup(_make_alpaca_client())
+        # close=110 → move = 110 - midpoint(100) = 10 ≥ or_range=10 → latch
+        self._push_bar(engine, "NVDA", close=110.0, ma_fast=109.0, period=8)
+        monitor.on_bar("NVDA")
+        assert pos.use_ma_fast is True
+        assert pos.is_closed is False  # close > MA8, no exit yet
+
+    def test_default_period_8_emits_trailing_stop_ma8_reason(self):
+        pos, engine, monitor = self._setup(_make_alpaca_client(), period=8)
+        self._push_bar(engine, "NVDA", close=110.0, ma_fast=109.0, period=8)  # latch
+        monitor.on_bar("NVDA")
+        self._push_bar(engine, "NVDA", close=108.5, ma_fast=109.0, period=8)  # close < MA8
+        monitor.on_bar("NVDA")
+        assert pos.is_closed is True
+        assert pos.exit_reason == "trailing_stop_ma8"
+
+    def test_period_5_emits_trailing_stop_ma5_reason(self):
+        pos, engine, monitor = self._setup(_make_alpaca_client(), period=5)
+        self._push_bar(engine, "NVDA", close=110.0, ma_fast=109.0, period=5)
+        monitor.on_bar("NVDA")
+        self._push_bar(engine, "NVDA", close=108.5, ma_fast=109.0, period=5)
+        monitor.on_bar("NVDA")
+        assert pos.is_closed is True
+        assert pos.exit_reason == "trailing_stop_ma5"
+
+    def test_switch_none_does_not_latch_or_use_fast_ma(self):
+        pos, engine, monitor = self._setup(_make_alpaca_client(), switch="none")
+        self._push_bar(engine, "NVDA", close=110.0, ma_fast=109.0, period=8)
+        monitor.on_bar("NVDA")
+        assert pos.use_ma_fast is False
+        # Even with close=108.5 < MA8=109, MA20=98 < hard_stop=103.5 → no MA20 trailing
+        self._push_bar(engine, "NVDA", close=108.5, ma_fast=109.0, period=8)
+        monitor.on_bar("NVDA")
+        assert pos.is_closed is False
+
+    def test_use_ma_fast_remains_latched_after_pullback(self):
+        # Move drops below threshold after latch — must NOT un-latch.
+        pos, engine, monitor = self._setup(_make_alpaca_client())
+        self._push_bar(engine, "NVDA", close=110.0, ma_fast=109.0, period=8)  # latch
+        monitor.on_bar("NVDA")
+        assert pos.use_ma_fast is True
+        # close drops to 105 (move=5, well below threshold=10) but latch must hold
+        self._push_bar(engine, "NVDA", close=105.0, ma_fast=109.0, period=8)
+        monitor.on_bar("NVDA")
+        assert pos.use_ma_fast is True
+        assert pos.is_closed is True
+        assert pos.exit_reason == "trailing_stop_ma8"
+
+
 class TestPrintSummaryPnl:
     def test_bullish_call_profit_when_exit_above_entry(self, caplog):
         client = _make_alpaca_client()

@@ -14,6 +14,9 @@ from .config import (
     ARMED_MA20_EXIT,
     MAX_LOSS_PCT,
     TRAILING_MA,
+    TRAILING_MA_SWITCH,
+    TRAILING_MA_SWITCH_FACTOR,
+    TRAILING_MA_SWITCH_PERIOD,
     _notify,
     _fmt_option,
 )
@@ -123,6 +126,9 @@ class PositionMonitor:
         exit_retry_callback: Optional[Callable] = None,
         alpaca_feed=None,
         count_flat_bars_in_held: bool = False,
+        trailing_ma_switch: str = TRAILING_MA_SWITCH,
+        trailing_ma_switch_factor: float = TRAILING_MA_SWITCH_FACTOR,
+        trailing_ma_switch_period: int = TRAILING_MA_SWITCH_PERIOD,
     ):
         self._client = alpaca_client
         self._signal_engine = signal_engine
@@ -143,6 +149,11 @@ class PositionMonitor:
         self._exit_retry_callback = exit_retry_callback
         self._alpaca_feed = alpaca_feed
         self._count_flat_bars_in_held = count_flat_bars_in_held
+        self._trailing_ma_switch = trailing_ma_switch
+        self._trailing_ma_switch_factor = _D(str(trailing_ma_switch_factor))
+        self._trailing_ma_switch_period = trailing_ma_switch_period
+        self._fast_ma_col = f"MA{trailing_ma_switch_period}"
+        self._fast_ma_reason = f"trailing_stop_ma{trailing_ma_switch_period}"
         self._positions: list = []
         self._reentry_watchers: list = []
         self._lock = threading.Lock()
@@ -179,6 +190,8 @@ class PositionMonitor:
         ma20_val = _D(ma20) if ma20 is not None and not pd.isna(ma20) else None
         ma50 = latest.get("MA50")
         ma50_val = _D(ma50) if ma50 is not None and not pd.isna(ma50) else None
+        ma_fast = latest.get(self._fast_ma_col)
+        ma_fast_val = _D(ma_fast) if ma_fast is not None and not pd.isna(ma_fast) else None
 
         to_close = []
         with self._lock:
@@ -187,7 +200,7 @@ class PositionMonitor:
                     continue
                 if pos.entry_bar_time is not None and bar_time == pos.entry_bar_time:
                     continue
-                close_intent = self._evaluate_stop(pos, close, high, low, bar_open, ma20_val, ma50_val, bar_time, bar_volume)
+                close_intent = self._evaluate_stop(pos, close, high, low, bar_open, ma20_val, ma50_val, bar_time, bar_volume, ma_fast=ma_fast_val)
                 if close_intent is not None:
                     reason, override = close_intent
                     pos.is_closed = True
@@ -310,6 +323,7 @@ class PositionMonitor:
         ma50: Optional[object],
         bar_time=None,
         bar_volume=0,
+        ma_fast: Optional[object] = None,
     ):
         exit_reason = None
 
@@ -323,15 +337,40 @@ class PositionMonitor:
             if loss_pct >= _D(str(self._max_loss_pct)):
                 return ("max_loss", None)
 
+        # Trailing-MA-switch: latch use_ma_fast once favorable move reaches threshold.
+        # Primary positions measure move from OR midpoint; re-entries from entry price
+        # (matches op_momentum_backtest.py).
+        if self._trailing_ma_switch != "none":
+            if pos.reentry_type is None:
+                _ref = (pos.or_high + pos.or_low) / _D("2")
+            else:
+                _ref = pos.entry_stock_price
+            move = (close - _ref) if pos.signal == "BULLISH" else (_ref - close)
+            if move > pos.max_favorable_move:
+                pos.max_favorable_move = move
+            if not pos.use_ma_fast:
+                if self._trailing_ma_switch == "after-arm":
+                    threshold = pos.or_range
+                else:  # "after-target"
+                    threshold = self._trailing_ma_switch_factor * pos.or_range
+                if pos.max_favorable_move >= threshold:
+                    pos.use_ma_fast = True
+
+        # When use_ma_fast is latched, substitute the fast MA into the MA20 slot so
+        # the existing trailing-stop logic operates on it. Falls back to MA20 if the
+        # fast MA is not yet computed (NaN during warmup).
+        eff_ma20 = ma_fast if (pos.use_ma_fast and ma_fast is not None) else ma20
+        eff_ma20_reason = self._fast_ma_reason if (pos.use_ma_fast and ma_fast is not None) else "trailing_stop_ma20"
+
         trailing_armed = self._trailing_armed(pos, close, ma20=ma20, ma50=ma50)
 
         if pos.signal == "BULLISH":
             if not pos.hard_stop_armed and close > pos.hard_stop_price:
                 pos.hard_stop_armed = True
             if pos.hard_stop_armed and self._armed_ma20_exit:
-                if ma20 is not None:
-                    if close < ma20:
-                        exit_reason = "trailing_stop_ma20"
+                if eff_ma20 is not None:
+                    if close < eff_ma20:
+                        exit_reason = eff_ma20_reason
                 elif close <= pos.hard_stop_price:
                     exit_reason = "hard_stop"
             elif pos.hard_stop_armed and close <= pos.hard_stop_price:
@@ -341,11 +380,11 @@ class PositionMonitor:
             elif (
                 trailing_armed
                 and self._trailing_ma in ("ma20", "both")
-                and ma20 is not None
-                and ma20 > pos.hard_stop_price
-                and close < ma20
+                and eff_ma20 is not None
+                and eff_ma20 > pos.hard_stop_price
+                and close < eff_ma20
             ):
-                exit_reason = "trailing_stop_ma20"
+                exit_reason = eff_ma20_reason
             elif (
                 trailing_armed
                 and self._trailing_ma in ("ma50", "both")
@@ -366,9 +405,9 @@ class PositionMonitor:
             if not pos.hard_stop_armed and close < pos.hard_stop_price:
                 pos.hard_stop_armed = True
             if pos.hard_stop_armed and self._armed_ma20_exit:
-                if ma20 is not None:
-                    if close > ma20:
-                        exit_reason = "trailing_stop_ma20"
+                if eff_ma20 is not None:
+                    if close > eff_ma20:
+                        exit_reason = eff_ma20_reason
                 elif close >= pos.hard_stop_price:
                     exit_reason = "hard_stop"
             elif pos.hard_stop_armed and close >= pos.hard_stop_price:
@@ -378,11 +417,11 @@ class PositionMonitor:
             elif (
                 trailing_armed
                 and self._trailing_ma in ("ma20", "both")
-                and ma20 is not None
-                and ma20 < _bearish_ma_threshold
-                and close > ma20
+                and eff_ma20 is not None
+                and eff_ma20 < _bearish_ma_threshold
+                and close > eff_ma20
             ):
-                exit_reason = "trailing_stop_ma20"
+                exit_reason = eff_ma20_reason
             elif (
                 trailing_armed
                 and self._trailing_ma in ("ma50", "both")

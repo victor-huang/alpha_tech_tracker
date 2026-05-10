@@ -150,6 +150,61 @@ Parameters that are **opt-in only** (off by default, situational):
 - `--armed-ma20-exit` — hurts in choppy markets
 - `--max-loss-pct` — cap per-trade losses at a % of entry
 - `--time-premium-pct-cap` — override default 1% time premium cap (see contract selection below)
+- `--trailing-ma-switch` — upgrade trailing stop from MA20 to a faster MA after a profit threshold (regime-sensitive — see Trailing-MA Switch below)
+
+---
+
+## Trailing-MA Switch (fast MA profit-taking)
+
+Tightens the trailing stop from MA20 to a configurable fast MA once the trade reaches a profit threshold. Locks in more of a winner at the cost of stopping out earlier on normal pullbacks.
+
+**Flags** (live engine + backtest, identical semantics):
+
+| Flag | Default | Meaning |
+|---|---|---|
+| `--trailing-ma-switch {none,after-arm,after-target}` | `none` | When to upgrade. `after-arm`: when favorable move ≥ 1× OR range. `after-target`: when move ≥ `factor × OR range`. `none`: disabled (no behavior change) |
+| `--trailing-ma-switch-period N` | `8` | Period of the fast MA (e.g. 5, 8, 10, 13). Replaces MA20; never interacts with MA50 |
+| `--trailing-ma-switch-factor F` | `1.0` | OR-range multiplier for `after-target` mode |
+
+**State (per position):** `use_ma_fast` (latched once threshold met — never un-latches) and `max_favorable_move`. Both are persisted in `ActivePosition.to_dict` so behavior survives engine restarts.
+
+**Move reference:** primary positions measure favorable move from OR midpoint; re-entries (reversal/BRE/BRU) measure from entry price. Matches the backtest exactly.
+
+**Exit reason string:** `trailing_stop_ma{period}` (e.g. `trailing_stop_ma8`). Logs and exit-reason CSVs reflect the configured period.
+
+**Regime sensitivity (2025 vs 2026 YTD on Top-2/M1+A1+A2/60-40 weights):**
+
+| Year | Δ Return (after-arm, MA8) | Δ Win rate |
+|---|---|---|
+| 2025 (full year) | **+30.28 pp** | +4.7 pp |
+| 2026 YTD (Jan–May) | **−3.25 pp** | +1.4 pp |
+
+In strong-trend years (2025) MA8 protects winners that would otherwise round-trip; in chop (2026 YTD) it stops out trades the looser MA20 would have ridden back to profit. Do not enable as a default — backtest the year/regime first.
+
+**Example — live engine with MA8 after-arm:**
+
+```bash
+python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine run \
+  --window M1 09:30 3 --window A1 13:15 1 --window A2 15:00 1 --morning-split 100 \
+  --reversal --bearish-reentry --bullish-reentry \
+  --doubledown --doubledown-start 5 \
+  --top 2 --rank-weighted-sizing 60 40 \
+  --trailing-ma-switch after-arm \
+  --trailing-ma-switch-period 8
+```
+
+**Example — selector backtest (sweep periods):**
+
+```bash
+for P in 5 8 10 13; do
+  python alpha_tech_tracker/op_momentum_strategy/op_momentum_selector_backtest.py \
+    --start 2025-01-01 --end 2025-12-31 \
+    --window M1 09:30 3 --window A1 13:15 1 --window A2 15:00 1 --morning-split 100 \
+    --reversal --bearish-reentry --bullish-reentry --doubledown --doubledown-start 5 \
+    --top 2 --weights 60 40 \
+    --trailing-ma-switch after-arm --trailing-ma-switch-period $P
+done
+```
 
 ---
 

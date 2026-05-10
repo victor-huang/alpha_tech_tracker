@@ -55,6 +55,7 @@ class LiveSignalEngine:
         windows: list = None,
         bar_recorder: BarRecorder = None,
         or_bar_lookback: int = 3,
+        trailing_ma_switch_period: int = 8,
     ):
         self._tickers = tickers
         self._bearish_ma200 = bearish_ma200
@@ -98,6 +99,8 @@ class LiveSignalEngine:
             t: {"period_start": None, "bars": []} for t in tickers
         }
         self._or_bar_lookback = or_bar_lookback
+        self._fast_ma_period = trailing_ma_switch_period
+        self._fast_ma_col = f"MA{trailing_ma_switch_period}"
         self._session_date = _now_et().date()
         self._lock = threading.Lock()
         self._bar_recorder = bar_recorder
@@ -122,6 +125,7 @@ class LiveSignalEngine:
         df["MA20"] = df["Close"].rolling(20).mean()
         df["MA50"] = df["Close"].rolling(50).mean()
         df["MA200"] = df["Close"].rolling(200).mean()
+        df[self._fast_ma_col] = df["Close"].rolling(self._fast_ma_period).mean()
         self._history[ticker] = df
         return df.iloc[-1]
 
@@ -637,7 +641,7 @@ class LiveSignalEngine:
         # requested range.  Clip to strictly before replay_date so MA calculations
         # are not influenced by future bars.
         cutoff = pd.Timestamp(replay_date, tz="America/New_York")
-        empty_cols = ["Open", "High", "Low", "Close", "Volume", "MA20", "MA50", "MA200"]
+        empty_cols = ["Open", "High", "Low", "Close", "Volume", "MA20", "MA50", "MA200", self._fast_ma_col]
         for ticker, df in bars_dict.items():
             if df.empty:
                 self._history[ticker] = pd.DataFrame(columns=empty_cols)
@@ -652,6 +656,7 @@ class LiveSignalEngine:
             df["MA20"] = df["Close"].rolling(20).mean()
             df["MA50"] = df["Close"].rolling(50).mean()
             df["MA200"] = df["Close"].rolling(200).mean()
+            df[self._fast_ma_col] = df["Close"].rolling(self._fast_ma_period).mean()
             self._history[ticker] = df
             logger.info(
                 "Replay warmup %-6s — %d bars, last close=%.2f",
@@ -698,10 +703,11 @@ class LiveSignalEngine:
                 df["MA20"] = df["Close"].rolling(20).mean()
                 df["MA50"] = df["Close"].rolling(50).mean()
                 df["MA200"] = df["Close"].rolling(200).mean()
+                df[self._fast_ma_col] = df["Close"].rolling(self._fast_ma_period).mean()
                 last_close = df["Close"].iloc[-1]
             else:
                 df = pd.DataFrame(
-                    columns=["Open", "High", "Low", "Close", "Volume", "MA20", "MA50", "MA200"]
+                    columns=["Open", "High", "Low", "Close", "Volume", "MA20", "MA50", "MA200", self._fast_ma_col]
                 )
                 last_close = float("nan")
             self._history[ticker] = df

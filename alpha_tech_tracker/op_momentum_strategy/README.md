@@ -156,6 +156,10 @@ optional arguments:
   --tickers                 Override ticker universe, e.g. --tickers NVDA TSLA
   --stop-pct                Hard stop as fraction of OR range (default: 0.15)
   --trailing-ma             MA for trailing stop: ma20, ma50, or both (default: ma20)
+  --trailing-ma-switch      Upgrade trailing stop from MA20 to a faster MA after a profit threshold:
+                            none (default) | after-arm (move ≥ 1× OR range) | after-target (move ≥ factor × OR range)
+  --trailing-ma-switch-period   Period of the fast MA used after the switch (default: 8; e.g. 5, 10, 13)
+  --trailing-ma-switch-factor   OR-range multiplier for after-target mode (default: 1.0)
   --max-loss-pct            Per-trade max loss as fraction of entry price (e.g. 0.02)
   --armed-ma20-exit         Use MA20 as trailing exit once hard stop is armed
   --regime-filter           Suppress BULLISH signals on QQQ bearish days

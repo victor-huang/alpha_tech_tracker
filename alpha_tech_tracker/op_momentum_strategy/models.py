@@ -99,6 +99,8 @@ class ActivePosition:
     reconcile_pending_count: int = 0
     closed_contracts: int = 0
     close_alert_sent: bool = False
+    use_ma_fast: bool = False
+    max_favorable_move: Decimal = Decimal("0")
 
     def to_dict(self) -> dict:
         def _ser_dec(v):
@@ -142,6 +144,8 @@ class ActivePosition:
             "slot_capital": _ser_dec(self.slot_capital),
             "last_evaluated_bar_time": _ser_dt(self.last_evaluated_bar_time),
             "is_doubledown_addon": self.is_doubledown_addon,
+            "use_ma_fast": self.use_ma_fast,
+            "max_favorable_move": _ser_dec(self.max_favorable_move),
         }
 
     @classmethod
@@ -187,6 +191,8 @@ class ActivePosition:
             slot_capital=_dec(d.get("slot_capital")),
             last_evaluated_bar_time=_dt(d.get("last_evaluated_bar_time")),
             is_doubledown_addon=d.get("is_doubledown_addon", False),
+            use_ma_fast=d.get("use_ma_fast", False),
+            max_favorable_move=_dec(d.get("max_favorable_move")) or Decimal("0"),
         )
 
 
