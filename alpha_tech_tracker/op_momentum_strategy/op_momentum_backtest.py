@@ -411,9 +411,10 @@ def compute_signals_with_backtest(
             hard_stop_price = or_low if signal == "BULLISH" else or_high
             fallback_price = hard_stop_price
 
-        # All bars from entry through EOD — no forced close at any window boundary.
-        # Trades exit naturally (hard stop, trailing MA, or EOD).
+        # All bars from entry through EOD — cap at 15:55 (5 min before close).
+        # Trades exit naturally (hard stop, trailing MA, or EOD at 15:55).
         post_open = day_from_start.iloc[opening_bars:]
+        post_open = post_open[post_open.index.time < _time(15, 55)]
         bars_held = 0
         max_favorable_move = 0.0
         hard_stop_armed = close_top_pct is not None
