@@ -117,6 +117,7 @@ class PositionSizer:
         capital_weight: Decimal = _D("1"),
         window_budget: Optional[Decimal] = None,
         mock: bool = False,
+        fractional: bool = False,
     ) -> tuple:
         account_buying_power = None
 
@@ -132,7 +133,16 @@ class PositionSizer:
 
         if mid <= _D("0"):
             logger.warning("Mid price is zero for %s, defaulting to 1 share", ticker)
-            return 1, limit_price
+            return _D("1") if fractional else 1, limit_price
+
+        if fractional:
+            frac_shares = budget / mid
+            logger.info(
+                "%s stock: budget=%s (weight=%.2f) mid=%s → %s fractional shares",
+                ticker, budget, float(capital_weight), mid,
+                frac_shares.quantize(_D("0.0001"), rounding=ROUND_HALF_UP),
+            )
+            return frac_shares, limit_price
 
         raw_shares = int(budget / mid)
         if raw_shares == 0 and window_budget is not None:

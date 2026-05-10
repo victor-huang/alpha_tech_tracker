@@ -293,6 +293,51 @@ class TestComputeStock:
         assert shares == 2
 
 
+class TestComputeStockFractional:
+    def test_fractional_returns_exact_budget_divided_by_price(self):
+        client = _make_alpaca_client()
+        sizer = PositionSizer(client)
+        shares, limit_price = sizer.compute_stock(
+            "NVDA", _D("300"), window_budget=_D("1000"), fractional=True
+        )
+        assert shares == _D("1000") / _D("300")
+        assert limit_price == _D("300.00")
+
+    def test_fractional_does_not_raise_when_budget_less_than_one_share(self):
+        client = _make_alpaca_client()
+        sizer = PositionSizer(client)
+        shares, _ = sizer.compute_stock(
+            "NVDA", _D("500"), window_budget=_D("200"), fractional=True
+        )
+        assert shares == _D("200") / _D("500")
+
+    def test_fractional_respects_capital_weight(self):
+        client = _make_alpaca_client()
+        sizer = PositionSizer(client)
+        shares, _ = sizer.compute_stock(
+            "NVDA", _D("100"), capital_weight=_D("0.6"), window_budget=_D("1000"),
+            fractional=True,
+        )
+        assert shares == _D("1000") * _D("0.6") / _D("100")
+
+    def test_fractional_skips_buying_power_check(self):
+        client = _make_alpaca_client()
+        client.get_accounts.return_value = {"buying_power": 10.0}
+        sizer = PositionSizer(client)
+        shares, _ = sizer.compute_stock(
+            "NVDA", _D("500"), window_budget=_D("1000"), fractional=True
+        )
+        client.get_accounts.assert_not_called()
+
+    def test_fractional_zero_price_returns_one(self):
+        client = _make_alpaca_client()
+        sizer = PositionSizer(client)
+        shares, _ = sizer.compute_stock(
+            "NVDA", _D("0"), window_budget=_D("1000"), fractional=True
+        )
+        assert shares == _D("1")
+
+
 class TestMockStockPriceCompute:
     # strike $90 call — ITM when stock=$100 (intrinsic=$10)
     _CALL_SYM = "NVDA260328C00090000"

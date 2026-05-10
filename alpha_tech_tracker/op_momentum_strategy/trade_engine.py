@@ -518,6 +518,7 @@ class OpMomentumTradeEngine:
             shares, limit_price = sizer.compute_stock(
                 event.ticker, event.stock_price, capital_weight, window_budget,
                 mock=self._mock_trade_execution,
+                fractional=is_replay_mode(),
             )
         except InsufficientSlotBudgetError as e:
             logger.warning("Skipping %s [%s] entry: %s", event.ticker, window_label, e)
