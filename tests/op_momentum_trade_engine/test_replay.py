@@ -104,25 +104,26 @@ class TestBarReplayDriverTimeline:
         assert len(timeline) == 1
         assert timeline[0].symbol == "NVDA"
 
-    def test_build_timeline_default_exit_includes_1555_bar(self):
+    def test_build_timeline_default_exit_excludes_1555_bar(self):
         bars = {
             "NVDA": [
                 _bar("NVDA", 15, 50),
-                _bar("NVDA", 15, 55),  # default exit_time — now included (fix: <= cutoff)
-                _bar("NVDA", 16, 0),   # after market close — still excluded
+                _bar("NVDA", 15, 55),  # at cutoff — excluded (strict <) to match BT
+                _bar("NVDA", 16, 0),   # after market close — also excluded
             ],
         }
         driver = BarReplayDriver(tickers=["NVDA"], replay_date=date(2026, 3, 17), signal_engine=MagicMock())
         timeline = driver._build_timeline(bars)
-        assert len(timeline) == 2
+        assert len(timeline) == 1
+        assert timeline[0].timestamp.minute == 50
 
-    def test_build_timeline_full_day_exit_time_includes_afternoon_bars(self):
+    def test_build_timeline_full_day_exit_time_excludes_1555_bar(self):
         bars = {
             "NVDA": [
                 _bar("NVDA", 14, 55),
                 _bar("NVDA", 15, 0),
                 _bar("NVDA", 15, 50),
-                _bar("NVDA", 15, 55),  # EOD_EXIT_TIME — now included (fix: <= cutoff)
+                _bar("NVDA", 15, 55),  # at cutoff — excluded (strict <) to match BT
             ],
         }
         driver = BarReplayDriver(
@@ -132,14 +133,15 @@ class TestBarReplayDriverTimeline:
             exit_time="15:55",
         )
         timeline = driver._build_timeline(bars)
-        assert len(timeline) == 4
-        assert timeline[-1].timestamp.minute == 55
+        assert len(timeline) == 3
+        assert timeline[-1].timestamp.minute == 50
 
-    def test_build_timeline_excludes_bar_strictly_after_exit_time(self):
+    def test_build_timeline_excludes_bar_at_and_after_exit_time(self):
         bars = {
             "NVDA": [
-                _bar("NVDA", 15, 55),
-                _bar("NVDA", 16, 0),   # strictly after exit_time="15:55" — excluded
+                _bar("NVDA", 15, 50),
+                _bar("NVDA", 15, 55),  # at exit_time — excluded by strict <
+                _bar("NVDA", 16, 0),   # after exit_time — also excluded
             ],
         }
         driver = BarReplayDriver(
@@ -150,8 +152,7 @@ class TestBarReplayDriverTimeline:
         )
         timeline = driver._build_timeline(bars)
         assert len(timeline) == 1
-        assert timeline[0].timestamp.hour == 15
-        assert timeline[0].timestamp.minute == 55
+        assert timeline[0].timestamp.minute == 50
 
     def test_build_timeline_full_day_1605_includes_1555_bar(self):
         bars = {

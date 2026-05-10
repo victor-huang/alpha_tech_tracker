@@ -253,6 +253,6 @@ class BarReplayDriver:
             b
             for bars_list in bars_by_ticker.values()
             for b in bars_list
-            if b.timestamp.time() <= cutoff
+            if b.timestamp.time() < cutoff
         ]
         return sorted(all_bars, key=lambda b: b.timestamp)
