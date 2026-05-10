@@ -858,7 +858,12 @@ def compute_signals_with_backtest(
             bru_entry_idx = None
 
             for scan_idx, (_, scan_bar) in enumerate(bru_scan.iterrows()):
-                if scan_bar["Close"] > or_high:
+                bar_ma50 = scan_bar.get("MA50") if hasattr(scan_bar, "get") else scan_bar["MA50"]
+                if (
+                    scan_bar["Close"] > or_high
+                    and not pd.isna(bar_ma50)
+                    and scan_bar["Close"] > bar_ma50
+                ):
                     bru_entry_price = scan_bar["Close"]
                     bru_entry_idx = scan_idx
                     break

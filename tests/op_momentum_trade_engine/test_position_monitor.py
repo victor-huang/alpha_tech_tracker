@@ -1680,6 +1680,75 @@ class TestReentryWatcher:
         assert len(monitor._reentry_watchers) == 1
         assert monitor._reentry_watchers[0].reentry_type == "bullish_reentry"
 
+    def test_bullish_reentry_fires_when_price_crosses_or_high_above_ma50(self):
+        fired = []
+        monitor, _, engine = self._make_monitor(
+            enable_bullish_reentry=True, bullish_reentry_max_bars=5,
+            re_entry_callback=lambda w, price: fired.append((w, price)),
+        )
+        pos = self._make_bullish_pos(bars_held=2)
+        pos.hard_stop_armed = True
+        monitor.add_position(pos)
+
+        _set_latest_bar(engine, "NVDA", close=103.0, ma50=97.0)
+        monitor.on_bar("NVDA")
+
+        # close=106.0 > or_high=105 AND close > MA50=97.0 → BRU fires.
+        _set_latest_bar(engine, "NVDA", close=106.0, ma50=97.0)
+        monitor.on_bar("NVDA")
+
+        assert len(monitor._reentry_watchers) == 0
+        assert len(fired) == 1
+        w, trigger = fired[0]
+        assert w.reentry_type == "bullish_reentry"
+        assert trigger == _D("106.0")
+
+    def test_bullish_reentry_blocked_when_close_below_ma50(self):
+        # close > or_high=105 but close < MA50 — trend not confirmed above MA50.
+        # BRU must not fire.
+        fired = []
+        monitor, _, engine = self._make_monitor(
+            enable_bullish_reentry=True, bullish_reentry_max_bars=5,
+            re_entry_callback=lambda w, price: fired.append((w, price)),
+        )
+        pos = self._make_bullish_pos(bars_held=2)
+        pos.hard_stop_armed = True
+        monitor.add_position(pos)
+
+        _set_latest_bar(engine, "NVDA", close=103.0, ma50=97.0)
+        monitor.on_bar("NVDA")
+
+        # close=106.0 > or_high=105 but MA50=108.0 → close < MA50 → BRU blocked.
+        _set_latest_bar(engine, "NVDA", close=106.0, ma50=108.0)
+        monitor.on_bar("NVDA")
+
+        assert len(fired) == 0
+        assert len(monitor._reentry_watchers) == 1
+
+    def test_bullish_reentry_fires_only_when_close_above_both_or_high_and_ma50(self):
+        fired = []
+        monitor, _, engine = self._make_monitor(
+            enable_bullish_reentry=True, bullish_reentry_max_bars=5,
+            re_entry_callback=lambda w, price: fired.append((w, price)),
+        )
+        pos = self._make_bullish_pos(bars_held=2)
+        pos.hard_stop_armed = True
+        monitor.add_position(pos)
+
+        _set_latest_bar(engine, "NVDA", close=103.0, ma50=97.0)
+        monitor.on_bar("NVDA")
+
+        # close=106.0 > or_high=105 but MA50=108.0 → close < MA50 → still blocked.
+        _set_latest_bar(engine, "NVDA", close=106.0, ma50=108.0)
+        monitor.on_bar("NVDA")
+        assert len(fired) == 0
+
+        # close=109.0 > or_high=105 AND close > MA50=108.0 → BRU fires.
+        _set_latest_bar(engine, "NVDA", close=109.0, ma50=108.0)
+        monitor.on_bar("NVDA")
+        assert len(fired) == 1
+        assert fired[0][0].reentry_type == "bullish_reentry"
+
     def test_watchers_cleared_on_close_all(self):
         monitor, _, engine = self._make_monitor(
             enable_reversal=True, reversal_max_bars=3,
