@@ -510,6 +510,92 @@ class TestTrailingMaSwitchPeriod:
         assert len(result) == 1
 
 
+class TestOrVolRatioAccelerationBoost:
+    """
+    Validates the OR volume acceleration boost in compute_signals_with_backtest.
+
+    Setup: 6 days of data so _hist_or_vol is available (rolling min_periods=5).
+    Days 1-5: flat OR volumes of 1000/bar → hist_or_vol shifts to 1000 for day 6.
+    Day 6 (test day): OR volumes controlled per test case (opening_bars=2).
+
+    Base ratio formula: mean(or_vols) / hist_or_vol
+    Boost fires when EVERY successive OR bar grows by > 8%: ratio *= 1.20
+    """
+
+    def _make_multiday_df(self, or_volumes_by_day):
+        """Each entry is (date_str, [vol_bar0, vol_bar1]) for opening_bars=2."""
+        frames = []
+        for date_str, volumes in or_volumes_by_day:
+            df = _make_bars(date_str, [
+                ("09:30", 100, 101,  99, 100.0, _BULL_MA20, _BULL_MA50, _MA200),
+                ("09:35", 101, 102,  99, 101.5, _BULL_MA20, _BULL_MA50, _MA200),
+                ("09:40", 101, 103, 100, 101.8, _BULL_MA20, _BULL_MA50, _MA200),
+            ])
+            df.loc[df.index[0], "Volume"] = float(volumes[0])
+            df.loc[df.index[1], "Volume"] = float(volumes[1])
+            frames.append(df)
+        return pd.concat(frames)
+
+    _FLAT_WARMUP = [(f"2025-01-0{i}", [1000, 1000]) for i in range(1, 6)]
+
+    def test_boost_fires_when_all_or_bars_grow_above_threshold(self):
+        # OR vols [1000, 1100]: 10% growth > 8% → boost fires.
+        # hist_or_vol = 1000; base = 1050/1000 = 1.05; boosted = 1.05 * 1.20 = 1.26
+        df = self._make_multiday_df(self._FLAT_WARMUP + [("2025-01-06", [1000, 1100])])
+        result = compute_signals_with_backtest(df, opening_bars=2, opening_start_time="09:30")
+        target = result[result["date"] == date(2025, 1, 6)]
+        assert not target.empty
+        assert target.iloc[0]["or_vol_ratio"] == pytest.approx(1.26, rel=0.01)
+
+    def test_boost_does_not_fire_when_volumes_decrease(self):
+        # OR vols [1000, 900]: decreasing → no boost.
+        # base = 950/1000 = 0.95
+        df = self._make_multiday_df(self._FLAT_WARMUP + [("2025-01-06", [1000, 900])])
+        result = compute_signals_with_backtest(df, opening_bars=2, opening_start_time="09:30")
+        target = result[result["date"] == date(2025, 1, 6)]
+        assert not target.empty
+        assert target.iloc[0]["or_vol_ratio"] == pytest.approx(0.95, rel=0.01)
+
+    def test_boost_does_not_fire_when_growth_is_exactly_at_threshold(self):
+        # 8% growth exactly — condition is >, not >=, so no boost.
+        # OR vols [1000, 1080]: 1080 == 1000 * 1.08 exactly → not > → no boost.
+        # base = (1000+1080)/2 / 1000 = 1.04
+        df = self._make_multiday_df(self._FLAT_WARMUP + [("2025-01-06", [1000, 1080])])
+        result = compute_signals_with_backtest(df, opening_bars=2, opening_start_time="09:30")
+        target = result[result["date"] == date(2025, 1, 6)]
+        assert not target.empty
+        assert target.iloc[0]["or_vol_ratio"] == pytest.approx(1.04, rel=0.01)
+
+    def test_boost_magnitude_is_exactly_20_percent(self):
+        # OR vols [1000, 1150]: 15% growth → boost fires; verify multiplier = 1.20.
+        # base = (1000+1150)/2 / 1000 = 1.075; boosted = 1.075 * 1.20 = 1.29
+        df = self._make_multiday_df(self._FLAT_WARMUP + [("2025-01-06", [1000, 1150])])
+        result = compute_signals_with_backtest(df, opening_bars=2, opening_start_time="09:30")
+        target = result[result["date"] == date(2025, 1, 6)]
+        assert not target.empty
+        expected = (1000 + 1150) / 2 / 1000 * 1.20
+        assert target.iloc[0]["or_vol_ratio"] == pytest.approx(expected, rel=0.01)
+
+    def test_single_or_bar_never_gets_boost(self):
+        # With opening_bars=1, len(or_vols)=1 → condition len > 1 fails → no boost.
+        # Build bars where the single OR bar produces a clear BULLISH signal.
+        frames = []
+        flat_vols = [(f"2025-01-0{i}", [1000, 1000]) for i in range(1, 6)]
+        for date_str, volumes in flat_vols + [("2025-01-06", [2000, 1000])]:
+            df = _make_bars(date_str, [
+                ("09:30", 100, 102, 98, 101.5, _BULL_MA20, _BULL_MA50, _MA200),  # BULLISH: close > midpoint=100
+                ("09:35", 101, 103, 100, 101.8, _BULL_MA20, _BULL_MA50, _MA200),
+            ])
+            df.loc[df.index[0], "Volume"] = float(volumes[0])
+            frames.append(df)
+        df = pd.concat(frames)
+        # opening_bars=1 → only the 09:30 bar is OR; Volume=2000 on day 6 → base=2.0, no boost
+        result = compute_signals_with_backtest(df, opening_bars=1, opening_start_time="09:30")
+        target = result[result["date"] == date(2025, 1, 6)]
+        assert not target.empty
+        assert target.iloc[0]["or_vol_ratio"] == pytest.approx(2.0, rel=0.01)
+
+
 class TestOrBarLookbackEffectiveOrRange:
     def test_narrow_or_range_changes_hard_stop_when_lookback_enabled(self):
         df = _make_bars("2025-01-02", _NARROW_OR_PRE_OPEN + _NARROW_OR_OPENING + [

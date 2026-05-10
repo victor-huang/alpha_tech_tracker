@@ -1208,8 +1208,8 @@ class TestPrintReentrySubrowTimes:
         # exit: 620 + (1+1)*5 = 630 → 10:30
         assert "10:30" in out
 
-    def test_bre_end_of_day_shows_1600(self, capsys):
-        # BRE that runs to end of day should show "16:00" for exit, not a computed time.
+    def test_bre_end_of_day_shows_eod_display_time(self, capsys):
+        # BRE that runs to end of day should show _EOD_DISPLAY_TIME (15:50) for exit.
         row = _sub_row(
             or_close_min=585, primary_bars=0,
             ep_key="br_entry_price", ep=150.0,
@@ -1226,7 +1226,7 @@ class TestPrintReentrySubrowTimes:
             multi_window=False, fmt_bar_time=_fmt,
         )
         out = capsys.readouterr().out
-        assert "16:00" in out
+        assert "15:50" in out
 
     def test_rev_afternoon_window_entry_time(self, capsys):
         # A2 window 13:15/1-bar: or_close_min = 13*60+15+5 = 800 (13:20).
@@ -1328,13 +1328,13 @@ class TestDDSubrowTimes:
         # exit = 585 + (7+1)*5 = 625 → 10:25
         assert "10:25" in out
 
-    def test_dd_out_time_is_1600_when_end_of_day(self, capsys):
-        # DD fires at 10:00; primary holds to EOD.
+    def test_dd_out_time_is_eod_display_time_when_end_of_day(self, capsys):
+        # DD fires at 10:00; primary holds to EOD — exit display should be 15:50.
         row = _dd_trade_row(or_close_min=585, bars_held=50, exit_reason="end_of_day", dd_fire_min=600)
         _print_daily_table([row], n=1, multi_window=False)
         out = capsys.readouterr().out
         assert "10:00" in out
-        assert "16:00" in out
+        assert "15:50" in out
 
     def test_dd_in_out_aligned_with_primary_columns(self, capsys):
         # Both the primary row and [DD] sub-row must have In/Out values in their output.

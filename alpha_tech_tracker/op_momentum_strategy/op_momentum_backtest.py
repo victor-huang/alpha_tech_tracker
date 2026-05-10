@@ -20,6 +20,11 @@ SUCCESS_BARS = 3  # "long enough" = held correct side for >= 3 bars (15 min)
 # No new positions (primary or any re-entry) may be opened after this time.
 NO_MORE_NEW_POSITION_AFTER = _time(15, 48)
 
+# OR vol ratio acceleration boost: if every successive OR bar's volume grows by more than
+# this threshold, or_vol_ratio is multiplied by (1 + boost). Validated via 2026 sweep.
+_OR_VOL_ACC_THRESHOLD = 0.08
+_OR_VOL_ACC_BOOST = 0.20
+
 _CACHE_DIR = Path(__file__).parent.parent.parent / "market_data" / "cache"
 
 # Extra calendar days before start_date retained for MA warmup (MA200 needs ~3 trading days).
@@ -431,11 +436,8 @@ def compute_signals_with_backtest(
                     continue
 
         # OR vol ratio gate: compare mean OR-window volume to the 20d historical OR-window avg.
-        # Acceleration boost: if every successive OR bar grows by > 8%, multiply or_vol_ratio by 1.20.
-        # Values (8%, 20%) were validated via a 25-combo 2026 sweep — the default combination
-        # was already optimal; sweeping other combinations produced no improvement.
-        _OR_VOL_ACC_THRESHOLD = 0.08
-        _OR_VOL_ACC_BOOST = 0.20
+        # Acceleration boost: if every successive OR bar grows by > _OR_VOL_ACC_THRESHOLD,
+        # or_vol_ratio is multiplied by (1 + _OR_VOL_ACC_BOOST). Constants are module-level.
         or_vol_ratio = None
         hist_or_vol = _hist_or_vol.get(date_)
         if hist_or_vol is not None and not pd.isna(hist_or_vol) and hist_or_vol > 0:

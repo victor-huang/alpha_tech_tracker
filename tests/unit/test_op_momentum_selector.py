@@ -219,6 +219,28 @@ class TestScoreTicker:
 
         assert score_high > score_low
 
+    def test_raises_when_weights_sum_exceeds_1(self):
+        signal = {"entry_vs_mid_pct": 1.0, "or_range_pct": 1.0}
+        stats = {"ev_trade": 1.0, "avg_win_pct": 1.0}
+
+        with pytest.raises(ValueError, match="exceeds 1.0"):
+            score_ticker(signal, stats, score_entry_weight=0.80, score_vol_ratio_weight=0.20)
+
+    def test_raises_when_entry_weight_alone_exceeds_0_70(self):
+        signal = {"entry_vs_mid_pct": 1.0, "or_range_pct": 1.0}
+        stats = {"ev_trade": 1.0, "avg_win_pct": 1.0}
+
+        with pytest.raises(ValueError, match="exceeds 1.0"):
+            score_ticker(signal, stats, score_entry_weight=0.71, score_vol_ratio_weight=0.00)
+
+    def test_does_not_raise_when_weights_sum_to_exactly_1(self):
+        signal = {"entry_vs_mid_pct": 1.0, "or_range_pct": 1.0}
+        stats = {"ev_trade": 1.0, "avg_win_pct": 1.0}
+
+        # entry=0.50, vol=0.20, win_pct=0.30 → or_range=0.00 (exactly zero, not negative)
+        result = score_ticker(signal, stats, score_entry_weight=0.50, score_vol_ratio_weight=0.20)
+        assert result >= 0.0
+
 
 # ---------------------------------------------------------------------------
 # TestComputeTodaySignals

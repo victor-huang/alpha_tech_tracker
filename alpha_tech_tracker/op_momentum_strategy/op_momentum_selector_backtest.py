@@ -31,12 +31,9 @@ DOUBLEDOWN_START_MIN = 5  # min from OR close at which the DD check fires and ad
 # The replay cutoff feeds bars with open-timestamp < EOD_EXIT_TIME (15:55), so the last
 # bar processed is the 15:50 bar (open 15:50, closes at 15:55).  Display its open-time
 # to match the live engine's exit_time convention (which stamps the bar open, not close).
-_EOD_DISPLAY_TIME = "{:02d}:{:02d}".format(
-    *divmod(
-        int(EOD_EXIT_TIME.split(":")[0]) * 60 + int(EOD_EXIT_TIME.split(":")[1]) - 5,
-        60,
-    )
-)
+_EOD_DISPLAY_TIME = (
+    datetime.strptime(EOD_EXIT_TIME, "%H:%M") - timedelta(minutes=5)
+).strftime("%H:%M")
 
 
 def _signal_dict_from_row(row) -> dict:
@@ -46,6 +43,11 @@ def _signal_dict_from_row(row) -> dict:
     entry_vs_mid_pct = abs(entry - mid) / mid * 100 if mid != 0 else 0.0
     or_range_pct = or_range / entry * 100 if entry != 0 else 0.0
     raw_ratio = row.get("or_vol_ratio", None)
+    # Default to 1.0 (neutral — "exactly average volume") when ratio is unavailable,
+    # e.g. during the first 5 trading days before the rolling window warms up.
+    # With the default score_vol_ratio_weight=0.00 this has no effect on scoring;
+    # callers that set a positive weight should be aware that missing data produces
+    # a neutral 1.0 rather than 0.0 or NaN exclusion.
     or_vol_ratio = float(raw_ratio) if raw_ratio is not None and not (isinstance(raw_ratio, float) and raw_ratio != raw_ratio) else 1.0
     return {
         "signal": row["signal"],

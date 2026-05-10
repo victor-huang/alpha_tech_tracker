@@ -246,6 +246,12 @@ def score_ticker(
         return 0.0
     win_pct_weight = 0.30
     or_range_weight = 1.0 - score_entry_weight - score_vol_ratio_weight - win_pct_weight
+    if or_range_weight < 0:
+        raise ValueError(
+            f"Score weights sum exceeds 1.0: entry={score_entry_weight}, "
+            f"vol_ratio={score_vol_ratio_weight}, win_pct=0.30 — "
+            f"or_range_weight would be {or_range_weight:.3f}"
+        )
     return (
         signal_dict["entry_vs_mid_pct"] * score_entry_weight
         + ticker_stats["avg_win_pct"] * win_pct_weight

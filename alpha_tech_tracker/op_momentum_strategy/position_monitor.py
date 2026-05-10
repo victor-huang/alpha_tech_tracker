@@ -588,6 +588,11 @@ class PositionMonitor:
             else:
                 # BRE requires close below OR low AND below MA20 to avoid
                 # re-entering against the intraday trend when price has recovered.
+                if close < w.or_low and ma20 is None:
+                    logger.debug(
+                        "BRE watcher %s skipped: close=%.2f < or_low=%.2f but MA20 unavailable",
+                        w.ticker, float(close), float(w.or_low),
+                    )
                 triggered = (
                     close < w.or_low
                     and ma20 is not None
