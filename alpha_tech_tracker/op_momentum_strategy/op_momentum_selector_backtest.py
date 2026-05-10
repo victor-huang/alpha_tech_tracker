@@ -628,6 +628,7 @@ def run_selector_backtest(
     qqq_extend_days: int = 0,
     qqq_extend_pct: float = 0.05,
     qqq_extend_max_dd: float = 0.0,
+    min_first_bar_range_pct: float = None,
 ) -> tuple:
     """
     Walk each trading day in [eval_start, eval_end], apply rolling selector
@@ -729,6 +730,7 @@ def run_selector_backtest(
                 filter_flat_or=filter_flat_or,
                 qqq_align_skip_bull=_qqq_sb,
                 qqq_align_skip_bear=_qqq_sr,
+                min_first_bar_range_pct=min_first_bar_range_pct,
             )
         all_window_results[label] = results_for_window
         print(f"  [{label}] {win['opening_start']} / {win['opening_bars']} bars — done")
@@ -2250,6 +2252,15 @@ def _parse_args():
         help="Max bars_held threshold for reversal eligibility (default: 3 = within 4 bars).",
     )
     parser.add_argument(
+        "--min-first-bar-range",
+        type=float,
+        default=None,
+        dest="min_first_bar_range_pct",
+        help="Rule 1: skip entry if the first 5-min bar of the opening window has a "
+        "high-low range smaller than this fraction of the bar midpoint "
+        "(e.g. 0.015 = 1.5%%). Applied per-ticker per-window. Default: disabled.",
+    )
+    parser.add_argument(
         "--min-or-range",
         type=float,
         default=0.0,
@@ -2577,6 +2588,7 @@ if __name__ == "__main__":
         qqq_extend_days=args.qqq_extend_days,
         qqq_extend_pct=args.qqq_extend_pct,
         qqq_extend_max_dd=args.qqq_extend_max_dd,
+        min_first_bar_range_pct=args.min_first_bar_range_pct,
     )
 
     skip_log = _apply_capital_flow(

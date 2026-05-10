@@ -296,6 +296,15 @@ def parse_args():
         default=5,
         help="N-day MA period for QQQ regime filter (default: 5).",
     )
+    parser.add_argument(
+        "--min-first-bar-range",
+        type=float,
+        default=None,
+        dest="min_first_bar_range_pct",
+        help="Rule 1: skip entry if the first 5-min bar of the opening window has a "
+        "high-low range smaller than this fraction of the bar midpoint "
+        "(e.g. 0.015 = 1.5%%). Default: disabled.",
+    )
     return parser.parse_args()
 
 
@@ -323,6 +332,7 @@ def compute_signals_with_backtest(
     trailing_ma_switch: str = "none",
     trailing_ma_switch_factor: float = 1.0,
     trailing_ma_switch_period: int = 8,
+    min_first_bar_range_pct: float = None,
 ) -> pd.DataFrame:
     opening_start_t = datetime.strptime(opening_start_time, "%H:%M").time()
 
@@ -357,6 +367,17 @@ def compute_signals_with_backtest(
         or_range = or_high - or_low
         if filter_flat_or and or_range == 0:
             continue
+
+        # Rule 1: first-bar range gate — skip if the opening window's first 5-min bar
+        # has too narrow a range, indicating no directional conviction at open.
+        # Applied to any window; for M1 this checks the 09:30–09:35 bar.
+        if min_first_bar_range_pct is not None:
+            first_bar = opening.iloc[0]
+            first_bar_mid = (first_bar["High"] + first_bar["Low"]) / 2
+            if first_bar_mid > 0:
+                first_bar_range_pct = (first_bar["High"] - first_bar["Low"]) / first_bar_mid
+                if first_bar_range_pct < min_first_bar_range_pct:
+                    continue
         midpoint = (or_high + or_low) / 2
         bottom_30_threshold = or_low + 0.20 * or_range
 
@@ -1798,6 +1819,7 @@ def run_backtest(
     trailing_ma_switch: str = "none",
     trailing_ma_switch_factor: float = 1.0,
     trailing_ma_switch_period: int = 8,
+    min_first_bar_range_pct: float = None,
 ) -> dict:
     if ticker_dfs is None:
         ticker_dfs = fetch_bars(tickers, start_date, end_date, source=source)
@@ -1831,6 +1853,7 @@ def run_backtest(
             trailing_ma_switch=trailing_ma_switch,
             trailing_ma_switch_factor=trailing_ma_switch_factor,
             trailing_ma_switch_period=trailing_ma_switch_period,
+            min_first_bar_range_pct=min_first_bar_range_pct,
         )
         if not results.empty:
             results = results[results["date"] >= start_date].reset_index(drop=True)
@@ -1927,6 +1950,7 @@ if __name__ == "__main__":
             trailing_ma_switch=args.trailing_ma_switch,
             trailing_ma_switch_factor=args.trailing_ma_switch_factor,
             trailing_ma_switch_period=args.trailing_ma_switch_period,
+            min_first_bar_range_pct=args.min_first_bar_range_pct,
         )
         if not results.empty:
             results = results[results["date"] >= cutoff].reset_index(drop=True)
