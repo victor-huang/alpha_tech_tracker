@@ -628,7 +628,9 @@ def compute_signals_with_backtest(
             reversal_hard_stop = midpoint
             reversal_scan = post_open.iloc[exit_bar_idx + 1:]
 
-            for scan_idx, (_, scan_bar) in enumerate(reversal_scan.iterrows()):
+            for scan_idx, (scan_ts, scan_bar) in enumerate(reversal_scan.iterrows()):
+                if scan_ts.time() > _time(15, 48):
+                    break
                 if scan_bar["Close"] > or_high:
                     rev_entry_price = scan_bar["Close"]
                     rev_entry_idx = scan_idx
@@ -650,7 +652,9 @@ def compute_signals_with_backtest(
             br_hard_stop = midpoint
             br_scan = post_open.iloc[exit_bar_idx + 1:]
 
-            for scan_idx, (_, scan_bar) in enumerate(br_scan.iterrows()):
+            for scan_idx, (scan_ts, scan_bar) in enumerate(br_scan.iterrows()):
+                if scan_ts.time() > _time(15, 48):
+                    break
                 if rev_entry_idx is not None and scan_idx >= rev_entry_idx:
                     break  # reversal fires here or earlier — stop before this bar
                 bar_ma20 = scan_bar.get("MA20") if hasattr(scan_bar, "get") else scan_bar["MA20"]
@@ -864,7 +868,9 @@ def compute_signals_with_backtest(
             bru_entry_price = None
             bru_entry_idx = None
 
-            for scan_idx, (_, scan_bar) in enumerate(bru_scan.iterrows()):
+            for scan_idx, (scan_ts, scan_bar) in enumerate(bru_scan.iterrows()):
+                if scan_ts.time() > _time(15, 48):
+                    break
                 bar_ma50 = scan_bar.get("MA50") if hasattr(scan_bar, "get") else scan_bar["MA50"]
                 if (
                     scan_bar["Close"] > or_high
