@@ -593,6 +593,7 @@ def run_selector_backtest(
     trailing_ma: str = "ma20",
     trailing_ma_switch: str = "none",
     trailing_ma_switch_factor: float = 1.0,
+    trailing_ma_switch_period: int = 8,
     max_loss_pct: float = None,
     armed_ma20_exit: bool = False,
     regime_filter: bool = False,
@@ -708,6 +709,7 @@ def run_selector_backtest(
                 trailing_ma=trailing_ma,
                 trailing_ma_switch=trailing_ma_switch,
                 trailing_ma_switch_factor=trailing_ma_switch_factor,
+                trailing_ma_switch_period=trailing_ma_switch_period,
                 max_loss_pct=max_loss_pct,
                 armed_ma20_exit=armed_ma20_exit,
                 bearish_regime_dates=bearish_regime_dates,
@@ -2127,10 +2129,18 @@ def _parse_args():
         choices=["none", "after-arm", "after-target"],
         default="none",
         dest="trailing_ma_switch",
-        help="Upgrade trailing stop from MA20 to MA8 once a profit threshold is reached. "
+        help="Upgrade trailing stop to a faster MA once a profit threshold is reached. "
         "after-arm: upgrade when price moves 1x OR range past entry. "
         "after-target: upgrade at factor x OR range (see --trailing-ma-switch-factor). "
         "Default: none.",
+    )
+    parser.add_argument(
+        "--trailing-ma-switch-period",
+        type=int,
+        default=8,
+        dest="trailing_ma_switch_period",
+        help="Period of the fast MA used after the switch threshold is hit (default: 8). "
+        "Common choices: 5, 8, 10. Only applies when --trailing-ma-switch is not none.",
     )
     parser.add_argument(
         "--trailing-ma-switch-factor",
@@ -2533,6 +2543,7 @@ if __name__ == "__main__":
         trailing_ma=args.trailing_ma,
         trailing_ma_switch=args.trailing_ma_switch,
         trailing_ma_switch_factor=args.trailing_ma_switch_factor,
+        trailing_ma_switch_period=args.trailing_ma_switch_period,
         max_loss_pct=args.max_loss_pct,
         armed_ma20_exit=args.armed_ma20_exit,
         regime_filter=args.regime_filter,

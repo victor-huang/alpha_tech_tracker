@@ -406,6 +406,82 @@ _NARROW_OR_PRE_OPEN = [
 ]
 
 
+class TestTrailingMaSwitchPeriod:
+    """Configurable fast-MA period for the trailing-stop upgrade.
+
+    Setup (shared across tests):
+      OR: high=102 low=98 range=4 midpoint=100 → bull_hard_stop=100.4 (stop_pct=0.4)
+      Bar 1 (09:45): close=102.5 — arms hard stop, move=2.5 (< or_range)
+      Bar 2 (09:50): close=104.5, fast_MA=103.0 — move=4.5 ≥ or_range → use_ma_fast latches
+      Bar 3 (09:55): close=102.0, fast_MA=103.5 — close<fast_MA → trailing exit
+    MA20 is pinned below hard_stop so MA20 never triggers trailing on its own.
+    """
+
+    _BULL_OPENING = _BULLISH_OPENING
+
+    _BULL_POST_FAST_TRAIL = [
+        ("09:45", 102, 103,  101.5,  102.5, _BULL_MA20, _BULL_MA50, _MA200),
+        ("09:50", 103, 105,  102.5,  104.5, _BULL_MA20, _BULL_MA50, _MA200),
+        ("09:55", 104, 104,  101.5,  102.0, _BULL_MA20, _BULL_MA50, _MA200),
+    ]
+
+    def _make_df_with_fast_ma(self, period, fast_ma_values):
+        df = _make_bars("2025-01-02", self._BULL_OPENING + self._BULL_POST_FAST_TRAIL)
+        df[f"MA{period}"] = fast_ma_values
+        return df
+
+    def test_default_period_8_uses_ma8_in_exit_reason(self):
+        df = self._make_df_with_fast_ma(8, [100.0, 100.0, 100.0, 99.0, 103.0, 103.5])
+        result = compute_signals_with_backtest(
+            df, opening_bars=3, trailing_ma_switch="after-arm",
+        )
+        assert len(result) == 1
+        assert result.iloc[0]["exit_reason"] == "trailing_stop_ma8"
+
+    def test_period_5_uses_ma5_in_exit_reason(self):
+        df = self._make_df_with_fast_ma(5, [100.0, 100.0, 100.0, 99.0, 103.0, 103.5])
+        result = compute_signals_with_backtest(
+            df, opening_bars=3,
+            trailing_ma_switch="after-arm", trailing_ma_switch_period=5,
+        )
+        assert len(result) == 1
+        assert result.iloc[0]["exit_reason"] == "trailing_stop_ma5"
+
+    def test_period_10_uses_ma10_in_exit_reason(self):
+        df = self._make_df_with_fast_ma(10, [100.0, 100.0, 100.0, 99.0, 103.0, 103.5])
+        result = compute_signals_with_backtest(
+            df, opening_bars=3,
+            trailing_ma_switch="after-arm", trailing_ma_switch_period=10,
+        )
+        assert len(result) == 1
+        assert result.iloc[0]["exit_reason"] == "trailing_stop_ma10"
+
+    def test_switch_none_ignores_period_and_does_not_use_fast_ma(self):
+        # MA5 set high enough to fire if used. With switch="none" the fast MA
+        # must never replace MA20, and MA20 (=98) is below hard_stop so no
+        # trailing fires at all → trade rides to end_of_day.
+        df = self._make_df_with_fast_ma(5, [100.0, 100.0, 100.0, 99.0, 103.0, 103.5])
+        result = compute_signals_with_backtest(
+            df, opening_bars=3,
+            trailing_ma_switch="none", trailing_ma_switch_period=5,
+        )
+        assert len(result) == 1
+        assert result.iloc[0]["exit_reason"] != "trailing_stop_ma5"
+        assert result.iloc[0]["exit_reason"] != "trailing_stop_ma20"
+
+    def test_fast_ma_column_computed_when_not_provided(self):
+        # No MA5 column supplied — function must compute it via rolling mean
+        # without raising. With only 6 bars and a rolling(5) window, the last
+        # bar's MA5 is non-NaN and exit reason should reference ma5.
+        df = _make_bars("2025-01-02", self._BULL_OPENING + self._BULL_POST_FAST_TRAIL)
+        assert "MA5" not in df.columns
+        result = compute_signals_with_backtest(
+            df, opening_bars=3,
+            trailing_ma_switch="after-arm", trailing_ma_switch_period=5,
+        )
+        assert len(result) == 1
+
+
 class TestOrBarLookbackEffectiveOrRange:
     def test_narrow_or_range_changes_hard_stop_when_lookback_enabled(self):
         df = _make_bars("2025-01-02", _NARROW_OR_PRE_OPEN + _NARROW_OR_OPENING + [

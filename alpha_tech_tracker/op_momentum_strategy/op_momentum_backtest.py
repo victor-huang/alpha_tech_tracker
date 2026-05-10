@@ -247,10 +247,18 @@ def parse_args():
         choices=["none", "after-arm", "after-target"],
         default="none",
         dest="trailing_ma_switch",
-        help="Upgrade trailing stop from MA20 to MA8 once a profit threshold is reached. "
+        help="Upgrade trailing stop to a faster MA once a profit threshold is reached. "
         "after-arm: upgrade when price moves 1x OR range past entry. "
         "after-target: upgrade at factor x OR range (see --trailing-ma-switch-factor). "
         "Default: none.",
+    )
+    parser.add_argument(
+        "--trailing-ma-switch-period",
+        type=int,
+        default=8,
+        dest="trailing_ma_switch_period",
+        help="Period of the fast MA used after the switch threshold is hit (default: 8). "
+        "Common choices: 5, 8, 10. Only applies when --trailing-ma-switch is not none.",
     )
     parser.add_argument(
         "--trailing-ma-switch-factor",
@@ -311,12 +319,14 @@ def compute_signals_with_backtest(
     qqq_align_skip_bear: set = None,
     trailing_ma_switch: str = "none",
     trailing_ma_switch_factor: float = 1.0,
+    trailing_ma_switch_period: int = 8,
 ) -> pd.DataFrame:
     opening_start_t = datetime.strptime(opening_start_time, "%H:%M").time()
 
     df = df.copy()
-    if "MA8" not in df.columns:
-        df["MA8"] = df["Close"].rolling(8).mean()
+    fast_ma_col = f"MA{trailing_ma_switch_period}"
+    if fast_ma_col not in df.columns:
+        df[fast_ma_col] = df["Close"].rolling(trailing_ma_switch_period).mean()
     if "MA20" not in df.columns:
         df["MA20"] = df["Close"].rolling(20).mean()
     if "MA50" not in df.columns:
@@ -416,11 +426,11 @@ def compute_signals_with_backtest(
             _switch_threshold = effective_or_range
         elif trailing_ma_switch == "after-target":
             _switch_threshold = trailing_ma_switch_factor * effective_or_range
-        use_ma8 = False
+        use_ma_fast = False
 
         for bar_idx, (_, bar) in enumerate(post_open.iterrows()):
             exit_bar_idx = bar_idx  # always tracks the last bar reached
-            bar_ma8 = bar["MA8"]
+            bar_ma_fast = bar[fast_ma_col]
             bar_ma20 = bar["MA20"]
             bar_ma50 = bar["MA50"]
             bar_close = bar["Close"]
@@ -434,13 +444,13 @@ def compute_signals_with_backtest(
                     hard_stop_armed = True
                 move = midpoint - bar_close
 
-            if not use_ma8 and _switch_threshold is not None:
+            if not use_ma_fast and _switch_threshold is not None:
                 if max(max_favorable_move, move) >= _switch_threshold:
-                    use_ma8 = True
-            _eff_trail = bar_ma8 if (use_ma8 and not pd.isna(bar_ma8)) else bar_ma20
-            _eff_trail_reason = "trailing_stop_ma8" if (use_ma8 and not pd.isna(bar_ma8)) else "trailing_stop_ma20"
+                    use_ma_fast = True
+            _eff_trail = bar_ma_fast if (use_ma_fast and not pd.isna(bar_ma_fast)) else bar_ma20
+            _eff_trail_reason = f"trailing_stop_{fast_ma_col.lower()}" if (use_ma_fast and not pd.isna(bar_ma_fast)) else "trailing_stop_ma20"
             _trail_active = (
-                (use_ma8 and not pd.isna(bar_ma8))
+                (use_ma_fast and not pd.isna(bar_ma_fast))
                 or (trailing_ma in ("ma20", "both") and not pd.isna(bar_ma20))
             )
 
@@ -459,7 +469,7 @@ def compute_signals_with_backtest(
             if signal == "BULLISH":
                 fallback_hit = not hard_stop_armed and bar_close <= fallback_price
                 if hard_stop_armed and armed_ma20_exit:
-                    # Armed MA20 mode: MA20 (or MA8 if upgraded) replaces hard_stop as the trailing exit
+                    # Armed MA20 mode: MA20 (or fast MA if upgraded) replaces hard_stop as the trailing exit
                     if _trail_active:
                         ma20_trailing_stop_hit = bar_close < _eff_trail
                         ma20_exit_price, ma20_exit_reason = bar_close, _eff_trail_reason
@@ -656,9 +666,9 @@ def compute_signals_with_backtest(
             remaining_rev_bars = reversal_scan.iloc[rev_entry_idx + 1:]
 
             rev_trailing_armed = False
-            rev_use_ma8 = False
+            rev_use_ma_fast = False
             for _, rev_bar in remaining_rev_bars.iterrows():
-                rev_bar_ma8 = rev_bar["MA8"]
+                rev_bar_ma_fast = rev_bar[fast_ma_col]
                 rev_bar_ma20 = rev_bar["MA20"]
                 rev_bar_ma50 = rev_bar["MA50"]
                 rev_bar_close = rev_bar["Close"]
@@ -667,15 +677,15 @@ def compute_signals_with_backtest(
                 if rev_bar_close >= rev_entry_price + or_range:
                     rev_trailing_armed = True
 
-                if not rev_use_ma8 and trailing_ma_switch != "none":
+                if not rev_use_ma_fast and trailing_ma_switch != "none":
                     if trailing_ma_switch == "after-arm" and rev_trailing_armed:
-                        rev_use_ma8 = True
+                        rev_use_ma_fast = True
                     elif trailing_ma_switch == "after-target" and rev_move >= trailing_ma_switch_factor * or_range:
-                        rev_use_ma8 = True
-                _rev_eff_trail = rev_bar_ma8 if (rev_use_ma8 and not pd.isna(rev_bar_ma8)) else rev_bar_ma20
-                _rev_eff_reason = "trailing_stop_ma8" if (rev_use_ma8 and not pd.isna(rev_bar_ma8)) else "trailing_stop_ma20"
+                        rev_use_ma_fast = True
+                _rev_eff_trail = rev_bar_ma_fast if (rev_use_ma_fast and not pd.isna(rev_bar_ma_fast)) else rev_bar_ma20
+                _rev_eff_reason = f"trailing_stop_{fast_ma_col.lower()}" if (rev_use_ma_fast and not pd.isna(rev_bar_ma_fast)) else "trailing_stop_ma20"
                 _rev_trail_active = (
-                    (rev_use_ma8 and not pd.isna(rev_bar_ma8))
+                    (rev_use_ma_fast and not pd.isna(rev_bar_ma_fast))
                     or (trailing_ma in ("ma20", "both") and not pd.isna(rev_bar_ma20))
                 )
 
@@ -751,11 +761,11 @@ def compute_signals_with_backtest(
             br_exit_price = br_entry_price
             br_exit_reason = "end_of_day"
             br_trailing_armed = False
-            br_use_ma8 = False
+            br_use_ma_fast = False
             remaining_br_bars = br_scan.iloc[br_entry_idx + 1:]
 
             for _, br_bar in remaining_br_bars.iterrows():
-                br_bar_ma8 = br_bar["MA8"]
+                br_bar_ma_fast = br_bar[fast_ma_col]
                 br_bar_ma20 = br_bar["MA20"]
                 br_bar_close = br_bar["Close"]
                 br_move = br_entry_price - br_bar_close
@@ -763,15 +773,15 @@ def compute_signals_with_backtest(
                 if not br_trailing_armed and not pd.isna(br_bar_ma20) and br_bar_ma20 < midpoint:
                     br_trailing_armed = True
 
-                if not br_use_ma8 and trailing_ma_switch != "none":
+                if not br_use_ma_fast and trailing_ma_switch != "none":
                     if trailing_ma_switch == "after-arm" and br_trailing_armed:
-                        br_use_ma8 = True
+                        br_use_ma_fast = True
                     elif trailing_ma_switch == "after-target" and br_move >= trailing_ma_switch_factor * effective_or_range:
-                        br_use_ma8 = True
-                _br_eff_trail = br_bar_ma8 if (br_use_ma8 and not pd.isna(br_bar_ma8)) else br_bar_ma20
-                _br_eff_reason = "trailing_stop_ma8" if (br_use_ma8 and not pd.isna(br_bar_ma8)) else "trailing_stop_ma20"
+                        br_use_ma_fast = True
+                _br_eff_trail = br_bar_ma_fast if (br_use_ma_fast and not pd.isna(br_bar_ma_fast)) else br_bar_ma20
+                _br_eff_reason = f"trailing_stop_{fast_ma_col.lower()}" if (br_use_ma_fast and not pd.isna(br_bar_ma_fast)) else "trailing_stop_ma20"
                 _br_trail_active = (
-                    (br_use_ma8 and not pd.isna(br_bar_ma8))
+                    (br_use_ma_fast and not pd.isna(br_bar_ma_fast))
                     or (trailing_ma in ("ma20", "both") and not pd.isna(br_bar_ma20))
                 )
 
@@ -854,30 +864,30 @@ def compute_signals_with_backtest(
                 bru_exit_price = bru_entry_price
                 bru_exit_reason = "end_of_day"
                 bru_trailing_armed = False
-                bru_use_ma8 = False
+                bru_use_ma_fast = False
                 remaining_bru_bars = bru_scan.iloc[bru_entry_idx + 1:]
 
                 for _, bru_bar in remaining_bru_bars.iterrows():
-                    bru_bar_ma8 = bru_bar["MA8"]
+                    bru_bar_ma_fast = bru_bar[fast_ma_col]
                     bru_bar_ma20 = bru_bar["MA20"]
                     bru_bar_close = bru_bar["Close"]
                     bru_move = bru_bar_close - bru_entry_price
 
                     if not bru_trailing_armed and bru_bar_close >= bru_entry_price + effective_or_range * 0.1:
-                        _bru_arm_ma = bru_bar_ma8 if (bru_use_ma8 and not pd.isna(bru_bar_ma8)) else bru_bar_ma20
+                        _bru_arm_ma = bru_bar_ma_fast if (bru_use_ma_fast and not pd.isna(bru_bar_ma_fast)) else bru_bar_ma20
                         bru_trailing_armed = (
                             not pd.isna(_bru_arm_ma) and bru_bar_close > _bru_arm_ma
                         )
 
-                    if not bru_use_ma8 and trailing_ma_switch != "none":
+                    if not bru_use_ma_fast and trailing_ma_switch != "none":
                         if trailing_ma_switch == "after-arm" and bru_trailing_armed:
-                            bru_use_ma8 = True
+                            bru_use_ma_fast = True
                         elif trailing_ma_switch == "after-target" and bru_move >= trailing_ma_switch_factor * effective_or_range:
-                            bru_use_ma8 = True
-                    _bru_eff_trail = bru_bar_ma8 if (bru_use_ma8 and not pd.isna(bru_bar_ma8)) else bru_bar_ma20
-                    _bru_eff_reason = "trailing_stop_ma8" if (bru_use_ma8 and not pd.isna(bru_bar_ma8)) else "trailing_stop_ma20"
+                            bru_use_ma_fast = True
+                    _bru_eff_trail = bru_bar_ma_fast if (bru_use_ma_fast and not pd.isna(bru_bar_ma_fast)) else bru_bar_ma20
+                    _bru_eff_reason = f"trailing_stop_{fast_ma_col.lower()}" if (bru_use_ma_fast and not pd.isna(bru_bar_ma_fast)) else "trailing_stop_ma20"
                     _bru_trail_active = (
-                        (bru_use_ma8 and not pd.isna(bru_bar_ma8))
+                        (bru_use_ma_fast and not pd.isna(bru_bar_ma_fast))
                         or (trailing_ma in ("ma20", "both") and not pd.isna(bru_bar_ma20))
                     )
 
@@ -1761,6 +1771,7 @@ def run_backtest(
     close_top_pct: float = None,
     trailing_ma_switch: str = "none",
     trailing_ma_switch_factor: float = 1.0,
+    trailing_ma_switch_period: int = 8,
 ) -> dict:
     if ticker_dfs is None:
         ticker_dfs = fetch_bars(tickers, start_date, end_date, source=source)
@@ -1793,6 +1804,7 @@ def run_backtest(
             close_top_pct=close_top_pct,
             trailing_ma_switch=trailing_ma_switch,
             trailing_ma_switch_factor=trailing_ma_switch_factor,
+            trailing_ma_switch_period=trailing_ma_switch_period,
         )
         if not results.empty:
             results = results[results["date"] >= start_date].reset_index(drop=True)
@@ -1886,6 +1898,9 @@ if __name__ == "__main__":
             max_loss_pct=max_loss_pct,
             armed_ma20_exit=armed_ma20_exit,
             bearish_regime_dates=bearish_regime_dates,
+            trailing_ma_switch=args.trailing_ma_switch,
+            trailing_ma_switch_factor=args.trailing_ma_switch_factor,
+            trailing_ma_switch_period=args.trailing_ma_switch_period,
         )
         if not results.empty:
             results = results[results["date"] >= cutoff].reset_index(drop=True)
