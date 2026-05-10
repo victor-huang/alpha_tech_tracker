@@ -455,6 +455,22 @@ class TestSignalSelectionLoop:
             engine._signal_selection_loop_for_window(engine._windows[0])
             mock_enter.assert_not_called()
 
+    def test_skips_tickers_with_zero_ev(self):
+        engine = _make_engine_with_mock_client()
+        engine._window_state["W1"]["collection_deadline"] = datetime.now(
+            ET
+        ) - timedelta(seconds=1)
+        engine._window_state["W1"]["pending_signals"] = {
+            "NVDA": _make_signal_event("NVDA")
+        }
+        engine._rolling_stats = {
+            "NVDA": {"ev_trade": 0.0, "win_rate": 0.5, "avg_win_pct": 1.0}
+        }
+
+        with patch.object(engine, "_enter_position") as mock_enter:
+            engine._signal_selection_loop_for_window(engine._windows[0])
+            mock_enter.assert_not_called()
+
     def test_enters_top_n_scored_signals(self):
         engine = _make_engine_with_mock_client()
         engine._window_state["W1"]["collection_deadline"] = datetime.now(
@@ -2626,9 +2642,8 @@ class TestDrainPendingSignals:
 
         assert "NVDA" in enter_calls
 
-    def test_zero_ev_allowed_when_min_ev_is_zero(self):
-        # ev_trade=0.0 must pass the gate when min_ev=0.0 (default).
-        # Old behaviour was <= 0 which blocked ev_trade=0.0; new is < min_ev.
+    def test_zero_ev_blocked_when_min_ev_is_zero(self):
+        # ev_trade=0.0 must be blocked when min_ev=0.0 (default), matching select_top_n()'s <= 0 gate.
         client = _make_alpaca_client()
         engine = OpMomentumTradeEngine(
             alpaca_client=client, mock_trade_execution=True, min_ev=0.0
@@ -2642,16 +2657,12 @@ class TestDrainPendingSignals:
         engine._rolling_stats = {
             "NVDA": {"ev_trade": 0.0, "win_rate": 0.4, "avg_win_pct": 1.0},
         }
-        enter_calls = []
         with patch(_SCORE_TICKER_PATH, return_value=1.0), \
-             patch.object(
-                 engine, "_enter_position",
-                 side_effect=lambda e, **kw: enter_calls.append(e.ticker),
-             ), \
+             patch.object(engine, "_enter_position") as mock_enter, \
              patch.object(engine, "_get_window_budget", return_value=None):
             engine._drain_pending_signals_for_window(engine._windows[0])
 
-        assert "NVDA" in enter_calls
+        mock_enter.assert_not_called()
 
     def test_zero_ev_blocked_when_min_ev_above_zero(self):
         client = _make_alpaca_client()
@@ -2695,7 +2706,7 @@ class TestDrainPendingSignals:
 
         mock_enter.assert_not_called()
 
-    def test_positive_ev_at_or_above_min_ev_threshold_is_allowed(self):
+    def test_positive_ev_above_min_ev_threshold_is_allowed(self):
         client = _make_alpaca_client()
         engine = OpMomentumTradeEngine(
             alpaca_client=client, mock_trade_execution=True, min_ev=0.5
@@ -2707,7 +2718,7 @@ class TestDrainPendingSignals:
             "NVDA": _make_signal_event("NVDA"),
         }
         engine._rolling_stats = {
-            "NVDA": {"ev_trade": 0.5, "win_rate": 0.5, "avg_win_pct": 2.0},
+            "NVDA": {"ev_trade": 0.6, "win_rate": 0.5, "avg_win_pct": 2.0},
         }
         enter_calls = []
         with patch(_SCORE_TICKER_PATH, return_value=1.0), \

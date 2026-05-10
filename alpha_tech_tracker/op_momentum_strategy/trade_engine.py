@@ -905,9 +905,9 @@ class OpMomentumTradeEngine:
             watcher.window_label, self._rolling_stats
         )
         stats = window_rolling_stats.get(watcher.ticker)
-        if stats and stats.get("ev_trade", 0) < self._min_ev:
+        if stats and stats.get("ev_trade", 0) <= self._min_ev:
             logger.info(
-                "Re-entry [%s] %s: ev_trade=%.3f < min_ev=%.3f — skipping",
+                "Re-entry [%s] %s: ev_trade=%.3f <= min_ev=%.3f — skipping",
                 watcher.reentry_type,
                 watcher.ticker,
                 stats.get("ev_trade", 0),
@@ -1767,9 +1767,9 @@ class OpMomentumTradeEngine:
             if not stats:
                 logger.info("Skipping %s [%s]: no rolling stats", ticker, label)
                 continue
-            if stats.get("ev_trade", 0) < self._min_ev:
+            if stats.get("ev_trade", 0) <= self._min_ev:
                 logger.info(
-                    "Skipping %s [%s]: ev_trade=%.3f < min_ev=%.3f",
+                    "Skipping %s [%s]: ev_trade=%.3f <= min_ev=%.3f",
                     ticker,
                     label,
                     stats.get("ev_trade", 0),
