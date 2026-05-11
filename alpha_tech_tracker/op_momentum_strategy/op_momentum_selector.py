@@ -45,8 +45,8 @@ def _safe_bars_end(target_date: date):
 # removed FANG (structurally weak, +1-2% in Q1/Q2 2025 and Q1 2026), NVDA (fading trend, +0.6% Q4 2024),
 # TSLA (peaked Q2/Q3 2025, declining to +6.5% Q1 2026) — replaced with CLS, MSTR, CRWV, MRVL (2026-04-12)
 DEFAULT_TICKERS = [
-    "SNDK", # price is too high
-    #'CHTR',  # bring in diversification
+    #"SNDK", # price is too high
+    'CHTR',  # bring in diversification
     "APP",
     "SHOP",
     "CVNA",
