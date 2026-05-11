@@ -1279,6 +1279,16 @@ class OpMomentumTradeEngine:
 
         Side-effect-free with respect to logging — used both by _on_position_closed
         (single live position) and _recover_session (batch of closed checkpoint positions).
+
+        Capital return rules by position type:
+          Primary (trailing_arm_price=None, not DD):
+            returned = slot_capital + cap_pnl
+          Re-entry (trailing_arm_price set — reversal / BRE / BRU):
+            returned = cap_pnl only (slot was already returned when the primary closed)
+          DD add-on (is_doubledown_addon=True):
+            returned = slot_capital + cap_pnl
+            The slot was pre-deducted from _window_returned when DD fired, so the full
+            amount must come back here — same accounting as a primary position.
         """
         for pos in positions:
             if pos.slot_capital is None:
@@ -1308,15 +1318,19 @@ class OpMomentumTradeEngine:
             else:
                 cap_pnl = _D("0")
 
-            # DD add-ons are NOT treated as re-entries here: their slot was deducted
-            # from _window_returned when DD fired, so the full return (slot + pnl)
-            # must be added back — not just the cap_pnl.
-            is_reentry = pos.trailing_arm_price is not None
-            returned = cap_pnl if is_reentry else pos.slot_capital + cap_pnl
+            # Re-entry positions (reversal/BRE/BRU) share a slot with the primary:
+            # their slot_capital was already counted when the primary closed, so only
+            # their net P&L flows back. Primary and DD add-ons both return full slot+pnl
+            # (DD pre-deducted its freed slot from _window_returned at fire time).
+            pnl_only_return = pos.trailing_arm_price is not None
+            returned = cap_pnl if pnl_only_return else pos.slot_capital + cap_pnl
             with self._returned_lock:
                 self._window_returned.setdefault(pos.window_label, _D("0"))
                 self._window_returned[pos.window_label] += returned
-                if not is_reentry:
+                # Track closed primary slot for checkpoint normalization.
+                # DD add-ons are excluded: they weren't counted in _window_primary_deployed
+                # (they recycle freed capital, not the original window budget).
+                if not pnl_only_return and not pos.is_doubledown_addon:
                     self._window_closed_primary_deployed.setdefault(pos.window_label, _D("0"))
                     self._window_closed_primary_deployed[pos.window_label] += pos.slot_capital
             with self._pnl_lock:
@@ -1339,10 +1353,8 @@ class OpMomentumTradeEngine:
     def _on_position_closed(self, pos: ActivePosition):
         """Accumulate capital returned by a closed position into _window_returned.
 
-        Re-entry positions (trailing_arm_price set) share a capital slot with their
-        primary trade — they don't deploy fresh capital. Only their net P&L is added
-        to _window_returned so the sequential window budget matches the backtest's
-        capital flow model (available = initial_capital + prior_window_cap_pnl).
+        Delegates to _rebuild_window_returned for the accounting and then logs the
+        result. See _rebuild_window_returned docstring for the per-type return rules.
         """
         if pos.slot_capital is None:
             return
@@ -1376,16 +1388,17 @@ class OpMomentumTradeEngine:
         else:
             cap_pnl = _D("0")
 
-        is_reentry = pos.trailing_arm_price is not None
-        returned = cap_pnl if is_reentry else pos.slot_capital + cap_pnl
+        pnl_only_return = pos.trailing_arm_price is not None
+        returned = cap_pnl if pnl_only_return else pos.slot_capital + cap_pnl
 
         with self._returned_lock:
             total = self._window_returned.get(pos.window_label, _D("0"))
         logger.info(
-            "Capital returned [%s] %s (reentry=%s): slot=%.2f cap_pnl=%.2f returned=%.2f window_total=%.2f",
+            "Capital returned [%s] %s (dd=%s reentry=%s): slot=%.2f cap_pnl=%.2f returned=%.2f window_total=%.2f",
             pos.window_label,
             pos.ticker,
-            is_reentry,
+            pos.is_doubledown_addon,
+            pnl_only_return,
             float(pos.slot_capital),
             float(cap_pnl),
             float(returned),

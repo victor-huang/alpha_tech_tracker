@@ -474,9 +474,10 @@ class PositionMonitor:
     def _maybe_create_reentry_watcher(self, pos: ActivePosition, reason: str):
         if reason not in ("hard_stop", "fallback_20pct"):
             return
-        # Don't cascade: re-entry positions (trailing_arm_price set) don't spawn further watchers.
-        # Backtest only allows one level of re-entry per primary trade.
-        if pos.trailing_arm_price is not None:
+        # Don't cascade: only primary positions can spawn re-entry watchers.
+        # Re-entry positions (trailing_arm_price set) and DD add-ons are both excluded —
+        # backtest allows only one level of re-entry per primary trade.
+        if pos.trailing_arm_price is not None or pos.is_doubledown_addon:
             return
 
         midpoint = (_D(str(pos.or_high)) + _D(str(pos.or_low))) / _D("2")
@@ -492,7 +493,6 @@ class PositionMonitor:
             self._enable_reversal
             and pos.signal == "BEARISH"
             and pos.bars_held <= self._reversal_max_bars
-            and not pos.is_doubledown_addon
         ):
             self._reentry_watchers.append(
                 ReentryWatcher(
@@ -517,7 +517,6 @@ class PositionMonitor:
             self._enable_bearish_reentry
             and pos.signal == "BEARISH"
             and pos.bars_held <= self._bearish_reentry_max_bars
-            and not pos.is_doubledown_addon
         ):
             self._reentry_watchers.append(
                 ReentryWatcher(
@@ -544,7 +543,6 @@ class PositionMonitor:
             self._enable_bullish_reentry
             and pos.signal == "BULLISH"
             and pos.bars_held <= self._bullish_reentry_max_bars
-            and not pos.is_doubledown_addon
         ):
             self._reentry_watchers.append(
                 ReentryWatcher(

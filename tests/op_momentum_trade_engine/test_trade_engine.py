@@ -814,11 +814,10 @@ class TestOnPositionClosed:
         cap_pnl = _D("6000") / _D("100") * _D("10")
         assert engine._window_returned["M1"] == _D("6000") + cap_pnl
 
-    def test_dd_addon_closed_primary_deployed_includes_slot(self):
-        """DD add-ons are not treated as re-entries so their slot is tracked in
-        closed_primary_deployed. That field is currently unused (dead code) so
-        its value does not affect live engine behaviour — this test just
-        documents the actual accounting.
+    def test_dd_addon_excluded_from_closed_primary_deployed(self):
+        """DD add-ons recycle freed capital, not the original window budget, so their
+        slot_capital must NOT appear in _window_closed_primary_deployed. Only true
+        primary positions contribute to that tracker.
         """
         engine = self._make_engine()
         engine._replay_capital = 10000
@@ -832,8 +831,8 @@ class TestOnPositionClosed:
         engine._on_position_closed(rh_primary)
         engine._on_position_closed(rh_dd)
 
-        # All three positions are non-re-entries, so all three slot_capitals are summed.
-        assert engine._window_closed_primary_deployed["M1"] == _D("16000")
+        # Only the two primary positions' slot_capitals are summed; the DD add-on is excluded.
+        assert engine._window_closed_primary_deployed["M1"] == _D("10000")
 
     def test_skips_position_with_no_slot_capital(self):
         engine = self._make_engine()

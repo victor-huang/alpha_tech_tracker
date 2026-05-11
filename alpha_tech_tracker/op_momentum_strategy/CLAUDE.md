@@ -392,8 +392,22 @@ The selector backtest supports running multiple non-overlapping intraday windows
 ### Capital Flow Model
 
 - **First group** (`--morning-split`): simultaneous windows that each deploy `portfolio × split[i]` at the same time
-- **Sequential windows**: each inherits all returned capital (principal + P&L) from the prior window
+- **Sequential windows**: each inherits all returned capital (principal + P&L) from the prior window via `initial_capital + daily_realized_pnl - total_open_position_cost`
 - **Non-overlapping additivity**: M1's cap P&L is identical whether M1 runs alone or combined with afternoon windows — adding windows only adds P&L, never dilutes morning performance
+
+#### Capital return rules per position type (`_rebuild_window_returned`)
+
+| Position type | Identifier | `_window_returned` receives |
+|---|---|---|
+| Primary | `trailing_arm_price=None`, `is_doubledown_addon=False` | `slot_capital + cap_pnl` |
+| Re-entry (reversal / BRE / BRU) | `trailing_arm_price` set | `cap_pnl` only — slot was already counted when primary closed |
+| DD add-on | `is_doubledown_addon=True` | `slot_capital + cap_pnl` — full return, because DD pre-deducted its freed slot from `_window_returned` at fire time |
+
+Re-entry watchers are only created for **primary** positions (`trailing_arm_price=None` and `is_doubledown_addon=False`). DD add-ons and re-entry positions cannot spawn further watchers (one level of re-entry per primary trade, matching the backtest).
+
+#### DD add-on watcher cancellation
+
+When DD fires, it cancels all pending re-entry watchers for the stopped-out tickers. This prevents a watcher from claiming the same freed slot capital that DD is about to redeploy. Conversely, if a re-entry watcher fires before the DD check time, that rank's slot is excluded from `open_reentry_ranks` in DD's eligibility scan, so DD doesn't double-count it.
 
 ### Recommended Live Configs
 
