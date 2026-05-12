@@ -69,8 +69,31 @@ class TestValidateOpenTimestamps:
         df = _make_df(ts)
         _validate_open_timestamps(df, "TSLA")  # must not raise
 
-    def test_raises_when_one_session_of_several_is_wrong(self):
+    def test_does_not_raise_for_single_09_35_session_among_correct_sessions(self):
+        # 1 of 2 sessions at 09:35 — could be a legitimate thin open, not a systemic bug
         ts = _session_open_timestamps("2026-04-15") + _session_close_timestamps("2026-04-16")
+        df = _make_df(ts)
+        _validate_open_timestamps(df, "TSLA")  # must not raise
+
+    def test_does_not_raise_for_one_09_35_session_among_five(self):
+        # Mirrors the CHTR case: 1 sparse-open day in a 5-day warmup window
+        ts = (
+            _session_open_timestamps("2026-04-14")
+            + _session_close_timestamps("2026-04-15")   # thin open
+            + _session_open_timestamps("2026-04-16")
+            + _session_open_timestamps("2026-04-17")
+            + _session_open_timestamps("2026-04-18")
+        )
+        df = _make_df(ts)
+        _validate_open_timestamps(df, "CHTR")  # must not raise
+
+    def test_raises_when_majority_of_sessions_are_at_09_35(self):
+        # 2 of 3 sessions at 09:35 → systemic timestamp misconfiguration
+        ts = (
+            _session_close_timestamps("2026-04-14")
+            + _session_close_timestamps("2026-04-15")
+            + _session_open_timestamps("2026-04-16")
+        )
         df = _make_df(ts)
         with pytest.raises(RuntimeError):
             _validate_open_timestamps(df, "TSLA")

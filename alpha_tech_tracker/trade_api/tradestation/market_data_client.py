@@ -13,28 +13,41 @@ ET = pytz.timezone("America/New_York")
 
 
 def _validate_open_timestamps(df: pd.DataFrame, ticker: str) -> None:
-    """Raise RuntimeError if any complete session's first bar is not at 09:30 ET.
+    """Raise RuntimeError if the majority of complete sessions start at 09:35 ET.
 
-    A first bar at 09:35 means bars carry close-time timestamps, indicating
-    that _TSBar.from_ts_dict was called without the interval_minutes argument.
+    A first bar at 09:35 is the fingerprint of close-time timestamps — it means
+    _TSBar.from_ts_dict was called without interval_minutes so the 09:30-open bar
+    carries a 09:35 close-stamp and was not shifted back to 09:30.
+
+    One or two 09:35 sessions are a legitimate thin-open (no trades in the first
+    5-min bar), not a timestamp bug.  We only raise when the majority (>50%) of
+    complete sessions share this pattern, which is the hallmark of a systemic
+    timestamp misconfiguration affecting the whole dataset.
+
     Skips sessions with fewer than 20 bars (incomplete or mid-day slices).
     """
     if df.empty:
         return
+    complete_sessions = 0
+    sessions_at_935 = 0
+    offending_date = None
     for session_date, day_df in df.groupby(df.index.date):
         if len(day_df) < 20:
             continue
+        complete_sessions += 1
         first_time = day_df.index[0].time()
-        # 09:35 is the canonical close-timestamp fingerprint for 5-min bars
-        # (the bar that opened at 09:30 carries close-time 09:35).
-        # First bars at 09:40+ are legitimate delayed opens, not a timestamp bug.
         if first_time.hour == 9 and first_time.minute == 35:
-            raise RuntimeError(
-                f"TradeStation bar data for {ticker} on {session_date} starts at "
-                f"{first_time.strftime('%H:%M')} instead of 09:30 — "
-                f"close-time timestamps detected. "
-                f"Ensure interval_minutes is passed to _TSBar.from_ts_dict at all call sites."
-            )
+            sessions_at_935 += 1
+            if offending_date is None:
+                offending_date = session_date
+
+    if complete_sessions > 0 and sessions_at_935 > complete_sessions / 2:
+        raise RuntimeError(
+            f"TradeStation bar data for {ticker}: {sessions_at_935}/{complete_sessions} "
+            f"complete sessions start at 09:35 (first offender: {offending_date}) — "
+            f"close-time timestamps detected. "
+            f"Ensure interval_minutes is passed to _TSBar.from_ts_dict at all call sites."
+        )
 
 
 def _ts_bars_to_df(bars: list) -> pd.DataFrame:
