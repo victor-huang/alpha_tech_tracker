@@ -4733,6 +4733,35 @@ class TestDoubleDown:
         # CRDO is a stopout → watcher must be cancelled
         assert engine._monitor._reentry_watchers == []
 
+    def test_dd_notify_not_sent_when_entry_fails(self):
+        engine = self._make_engine()
+        winner = self._make_open_pos(rank=0, slot_capital=6000, ticker="NVDA")
+        stopout = self._make_stopout_pos(rank=1, slot_capital=4000, ticker="TSLA")
+        engine._monitor._positions = [winner, stopout]
+        engine._signal_engine.get_latest_bar.return_value = self._make_latest_bar(close=290.0)
+
+        with patch.object(engine, "_enter_position", return_value=False), \
+             patch(_NOTIFY_PATH) as mock_notify:
+            engine._check_doubledown_for_window(self._make_win())
+
+        dd_messages = [c[0][0] for c in mock_notify.call_args_list if "[DD]" in c[0][0]]
+        assert dd_messages == []
+
+    def test_dd_notify_sent_only_when_entry_succeeds(self):
+        engine = self._make_engine()
+        winner = self._make_open_pos(rank=0, slot_capital=6000, ticker="NVDA")
+        stopout = self._make_stopout_pos(rank=1, slot_capital=4000, ticker="TSLA")
+        engine._monitor._positions = [winner, stopout]
+        engine._signal_engine.get_latest_bar.return_value = self._make_latest_bar(close=290.0)
+
+        with patch.object(engine, "_enter_position", return_value=True), \
+             patch(_NOTIFY_PATH) as mock_notify:
+            engine._check_doubledown_for_window(self._make_win())
+
+        dd_messages = [c[0][0] for c in mock_notify.call_args_list if "[DD]" in c[0][0]]
+        assert len(dd_messages) == 1
+        assert "NVDA" in dd_messages[0]
+
 
 _MOCK_ENTRY_PRICE_PATH = (
     "alpha_tech_tracker.op_momentum_strategy.mock_option_pricer.mock_entry_price"

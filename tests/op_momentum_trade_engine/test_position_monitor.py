@@ -24,6 +24,35 @@ from conftest import (
 import pandas as pd
 
 
+class TestAddPosition:
+    def test_options_position_logs_opt_and_contracts(self, caplog):
+        client = _make_alpaca_client()
+        engine = _make_signal_engine_with_history("NVDA", pd.DataFrame())
+        monitor = PositionMonitor(client, engine)
+        pos = _make_active_position(signal="BULLISH", contracts=3)
+
+        with caplog.at_level(logging.INFO):
+            monitor.add_position(pos)
+
+        assert "opt=NVDA260328C00900000" in caplog.text
+        assert "contracts=3" in caplog.text
+        assert "[stock]" not in caplog.text
+
+    def test_stock_position_logs_shares_not_opt(self, caplog):
+        client = _make_alpaca_client()
+        engine = _make_signal_engine_with_history("NVDA", pd.DataFrame())
+        monitor = PositionMonitor(client, engine)
+        pos = _make_stock_position(signal="BULLISH", shares=47)
+
+        with caplog.at_level(logging.INFO):
+            monitor.add_position(pos)
+
+        assert "[stock]" in caplog.text
+        assert "shares=47" in caplog.text
+        assert "opt=" not in caplog.text
+        assert "contracts=" not in caplog.text
+
+
 class TestPositionMonitor:
     @pytest.fixture(autouse=True)
     def patch_sleep(self, monkeypatch):

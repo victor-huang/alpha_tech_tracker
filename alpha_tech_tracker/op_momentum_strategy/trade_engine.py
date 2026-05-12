@@ -1224,11 +1224,6 @@ class OpMomentumTradeEngine:
             float(dd_entry_price),
             float(dd_hard_stop),
         )
-        _notify(
-            f"[DD] [{label}] ADD-ON {winner.ticker}"
-            f" freed=${float(freed_capital):.0f} from rank(s) {freed_ranks}"
-            f" @ ~${float(dd_entry_price):.2f} stop=${float(dd_hard_stop):.2f}"
-        )
 
         # Subtract freed capital from _window_returned to prevent double-counting
         # with sequential window budgets. The capital is being re-deployed, not free.
@@ -1272,6 +1267,12 @@ class OpMomentumTradeEngine:
                 "DD [%s] entry failed — restored %.2f to _window_returned",
                 label,
                 float(freed_capital),
+            )
+        else:
+            _notify(
+                f"[DD] [{label}] ADD-ON {winner.ticker}"
+                f" freed=${float(freed_capital):.0f} from rank(s) {freed_ranks}"
+                f" @ ~${float(dd_entry_price):.2f} stop=${float(dd_hard_stop):.2f}"
             )
 
     def _rebuild_window_returned(self, positions: list) -> None:

@@ -162,13 +162,21 @@ class PositionMonitor:
     def add_position(self, position: ActivePosition):
         with self._lock:
             self._positions.append(position)
-            logger.info(
-                "Tracking position: %s %s opt=%s contracts=%d",
-                position.ticker,
-                position.signal,
-                position.option_symbol,
-                position.contracts,
-            )
+            if position.option_symbol:
+                logger.info(
+                    "Tracking position: %s %s opt=%s contracts=%d",
+                    position.ticker,
+                    position.signal,
+                    position.option_symbol,
+                    position.contracts,
+                )
+            else:
+                logger.info(
+                    "Tracking position: %s %s [stock] shares=%d",
+                    position.ticker,
+                    position.signal,
+                    position.shares,
+                )
 
     def get_all_positions(self) -> list:
         """Return a thread-safe snapshot of all positions (open and closed)."""
