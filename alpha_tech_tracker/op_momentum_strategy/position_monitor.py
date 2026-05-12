@@ -1013,7 +1013,10 @@ class PositionMonitor:
             else:
                 pos.close_order_failed = False
                 logger.info("Close order placed: %s", pos.exit_order_id)
-                self._poll_exit_fill_price(pos)
+                if last_order.get("avg_fill_price") is not None:
+                    pos.exit_fill_price = last_order["avg_fill_price"]
+                else:
+                    self._poll_exit_fill_price(pos)
         except Exception:
             logger.exception("Failed to place close order for %s", pos.option_symbol)
             if not pos.close_order_reconciled:
@@ -1295,6 +1298,8 @@ class PositionMonitor:
             for order in filled_orders:
                 if order["side"] != close_side:
                     continue
+                if pos.exit_order_id and order.get("order_id") == pos.exit_order_id:
+                    continue
                 if pos.entry_time is not None and order.get("filled_at") is not None:
                     filled_at = order["filled_at"]
                     if hasattr(filled_at, "tzinfo") and filled_at.tzinfo is None:
@@ -1335,6 +1340,8 @@ class PositionMonitor:
             filled_orders = self._client.get_filled_orders(symbol, limit=10)
             for order in filled_orders:
                 if order["side"] != close_side:
+                    continue
+                if pos.exit_order_id and order.get("order_id") == pos.exit_order_id:
                     continue
                 if pos.entry_time is not None and order.get("filled_at") is not None:
                     filled_at = order["filled_at"]

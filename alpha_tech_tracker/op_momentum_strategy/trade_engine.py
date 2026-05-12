@@ -767,11 +767,15 @@ class OpMomentumTradeEngine:
             is_doubledown_addon=(reentry_type == "doubledown"),
         )
         if not self._mock_trade_execution:
-            fill_price, polled_qty = self._poll_entry_fill(order.get("order_id", ""))
-            pos.entry_fill_price = fill_price
-            # contracts_filled is set by _place_entry when tranching; it carries
-            # the total across all tranches. Fall back to polled_qty for single orders.
-            total_filled = order.get("contracts_filled", polled_qty)
+            if order.get("avg_fill_price") is not None:
+                pos.entry_fill_price = order["avg_fill_price"]
+                total_filled = order.get("contracts_filled")
+            else:
+                fill_price, polled_qty = self._poll_entry_fill(order.get("order_id", ""))
+                pos.entry_fill_price = fill_price
+                # contracts_filled is set by _place_entry when tranching; it carries
+                # the total across all tranches. Fall back to polled_qty for single orders.
+                total_filled = order.get("contracts_filled", polled_qty)
             if total_filled is not None:
                 if total_filled == 0:
                     logger.error(

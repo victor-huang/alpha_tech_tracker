@@ -2599,3 +2599,111 @@ class TestPlaceStockOrderPartialFillOnCancel:
 
         calls = client.place_stock_order.call_args_list
         assert len(calls) == 1, "fully filled on attempt-1 must not place a second order"
+
+
+_TRANCHE_MODULE = "alpha_tech_tracker.op_momentum_strategy.order_executor"
+
+
+class TestTrancheWeightedAvgFillPrice:
+    """place_option_order_in_tranches() must embed a weighted-average fill price
+    in last_order["avg_fill_price"] when multiple tranches fill at different prices,
+    so callers can record accurate per-trade entry/exit fill prices.
+    """
+
+    _INNER = f"{_TRANCHE_MODULE}._place_with_fill_escalation"
+
+    def test_two_tranches_different_prices_sets_weighted_avg_fill_price(self):
+        """Tranche 1: 2 contracts @ $30.00, tranche 2: 2 contracts @ $32.00 → avg = $31.00."""
+        client = _make_client()
+        call_num = [0]
+
+        def inner_side_effect(**kw):
+            call_num[0] += 1
+            return ({"order_id": f"ord-00{call_num[0]}"}, 2)
+
+        def order_status_side_effect(order_id):
+            prices = {"ord-001": "30.00", "ord-002": "32.00"}
+            return {"status": "filled", "filled_avg_price": prices.get(order_id, "30.00")}
+
+        client.order_status.side_effect = order_status_side_effect
+
+        with patch(self._INNER, side_effect=inner_side_effect), \
+             patch(f"{_TRANCHE_MODULE}.time.sleep", lambda _: None):
+            order, filled = place_option_order_in_tranches(
+                client=client,
+                ticker=_TICKER,
+                option_symbol=_SYMBOL,
+                option_type=_OPTION_TYPE,
+                contracts=4,
+                order_action="BUY_OPEN",
+                tranche_size=2,
+            )
+
+        assert filled == 4
+        assert order.get("avg_fill_price") == Decimal("31.00")
+
+    def test_three_tranches_unequal_sizes_sets_correct_weighted_avg(self):
+        """3 contracts in tranches of 2+1 filling at $30 and $34 → weighted avg = $31.33."""
+        client = _make_client()
+        call_num = [0]
+
+        def inner_side_effect(**kw):
+            call_num[0] += 1
+            qty = kw.get("contracts", 1)
+            return ({"order_id": f"ord-00{call_num[0]}"}, qty)
+
+        def order_status_side_effect(order_id):
+            prices = {"ord-001": "30.00", "ord-002": "34.00"}
+            return {"status": "filled", "filled_avg_price": prices.get(order_id, "30.00")}
+
+        client.order_status.side_effect = order_status_side_effect
+
+        with patch(self._INNER, side_effect=inner_side_effect), \
+             patch(f"{_TRANCHE_MODULE}.time.sleep", lambda _: None):
+            order, filled = place_option_order_in_tranches(
+                client=client,
+                ticker=_TICKER,
+                option_symbol=_SYMBOL,
+                option_type=_OPTION_TYPE,
+                contracts=3,
+                order_action="BUY_OPEN",
+                tranche_size=2,
+            )
+
+        assert filled == 3
+        expected_avg = (Decimal("30.00") * 2 + Decimal("34.00") * 1) / 3
+        assert order.get("avg_fill_price") == expected_avg
+
+    def test_single_tranche_does_not_set_avg_fill_price(self):
+        """contracts <= tranche_size → single escalation, no avg_fill_price embedded."""
+        client = _make_client()
+        with patch(self._INNER, return_value=({"order_id": "ord-001"}, 2)), \
+             patch(f"{_TRANCHE_MODULE}.time.sleep", lambda _: None):
+            order, filled = place_option_order_in_tranches(
+                client=client,
+                ticker=_TICKER,
+                option_symbol=_SYMBOL,
+                option_type=_OPTION_TYPE,
+                contracts=2,
+                order_action="BUY_OPEN",
+                tranche_size=2,
+            )
+
+        assert "avg_fill_price" not in order
+
+    def test_tranche1_miss_does_not_set_avg_fill_price(self):
+        """First tranche misses → last_order is empty, no avg_fill_price."""
+        client = _make_client()
+        with patch(self._INNER, return_value=({}, 0)), \
+             patch(f"{_TRANCHE_MODULE}.time.sleep", lambda _: None):
+            order, filled = place_option_order_in_tranches(
+                client=client,
+                ticker=_TICKER,
+                option_symbol=_SYMBOL,
+                option_type=_OPTION_TYPE,
+                contracts=4,
+                order_action="BUY_OPEN",
+                tranche_size=2,
+            )
+
+        assert "avg_fill_price" not in order

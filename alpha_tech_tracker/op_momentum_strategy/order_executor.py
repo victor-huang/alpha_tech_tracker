@@ -634,6 +634,8 @@ def place_option_order_in_tranches(
     filled_so_far = 0
     last_order: dict = {}
     tranche_num = 0
+    total_cost = _D("0")
+    total_weighted_filled = 0
 
     while remaining > 0:
         tranche_num += 1
@@ -665,6 +667,23 @@ def place_option_order_in_tranches(
             break
         filled_so_far += confirmed_filled
         remaining -= confirmed_filled
+
+        tranche_order_id = order.get("order_id")
+        if tranche_order_id:
+            try:
+                status = client.order_status(tranche_order_id)
+                price_raw = status.get("filled_avg_price")
+                if price_raw is not None:
+                    total_cost += _D(str(price_raw)) * confirmed_filled
+                    total_weighted_filled += confirmed_filled
+            except Exception:
+                logger.warning(
+                    "TRANCHE %d/%d: could not poll fill price for order %s",
+                    tranche_num, total_tranches, tranche_order_id,
+                )
+
+    if last_order and total_weighted_filled > 0:
+        last_order["avg_fill_price"] = total_cost / total_weighted_filled
 
     return last_order, filled_so_far
 

@@ -4590,3 +4590,120 @@ class TestQtySyncPartialManualClose:
 
         assert closed_positions == []
         assert pos.contracts == 2
+
+
+class TestManualCloseOrderIdExclusion:
+    """_fetch_manual_close_fill_price and _entry_confirmed_filled_no_manual_close
+    must skip filled sell orders whose order_id matches pos.exit_order_id so that
+    the engine's own close orders are never misidentified as manual closes.
+    """
+
+    def _make_monitor(self, pos):
+        df = _build_history_df([104.0], ma20=90.0, ma50=90.0, ma200=85.0)
+        engine = _make_signal_engine_with_history(pos.ticker, df)
+        client = _make_alpaca_client()
+        monitor = PositionMonitor(
+            client,
+            engine,
+            mock_trade_execution=True,
+        )
+        monitor.add_position(pos)
+        return monitor, client
+
+    def _options_pos_with_exit_order(self, exit_order_id="engine-close-99"):
+        pos = _make_active_position(contracts=2)
+        pos.entry_fill_price = _D("22.95")
+        pos.exit_order_id = exit_order_id
+        return pos
+
+    # --- _fetch_manual_close_fill_price ---
+
+    def test_fetch_manual_close_skips_engine_exit_order_id_returns_none(self):
+        """Only filled sell order has order_id == pos.exit_order_id → return None."""
+        pos = self._options_pos_with_exit_order("engine-close-99")
+        monitor, client = self._make_monitor(pos)
+
+        client.get_filled_orders.return_value = [
+            {
+                "side": "sell",
+                "filled_avg_price": "30.00",
+                "order_id": "engine-close-99",
+                "filled_at": None,
+            }
+        ]
+
+        assert monitor._fetch_manual_close_fill_price(pos) is None
+
+    def test_fetch_manual_close_returns_price_when_different_order_id(self):
+        """Sell order with a different order_id is a genuine manual close — return its price."""
+        pos = self._options_pos_with_exit_order("engine-close-99")
+        monitor, client = self._make_monitor(pos)
+
+        client.get_filled_orders.return_value = [
+            {
+                "side": "sell",
+                "filled_avg_price": "30.00",
+                "order_id": "manual-close-1",
+                "filled_at": None,
+            }
+        ]
+
+        assert monitor._fetch_manual_close_fill_price(pos) == _D("30.00")
+
+    def test_fetch_manual_close_skips_engine_order_returns_second_manual_order(self):
+        """Engine order skipped; following manual close order is returned."""
+        pos = self._options_pos_with_exit_order("engine-close-99")
+        monitor, client = self._make_monitor(pos)
+
+        client.get_filled_orders.return_value = [
+            {
+                "side": "sell",
+                "filled_avg_price": "30.00",
+                "order_id": "engine-close-99",
+                "filled_at": None,
+            },
+            {
+                "side": "sell",
+                "filled_avg_price": "28.50",
+                "order_id": "manual-close-1",
+                "filled_at": None,
+            },
+        ]
+
+        assert monitor._fetch_manual_close_fill_price(pos) == _D("28.50")
+
+    # --- _entry_confirmed_filled_no_manual_close ---
+
+    def test_entry_confirmed_filled_skips_engine_exit_order_returns_true(self):
+        """Engine's own exit_order_id must not be treated as a manual close — return True."""
+        pos = self._options_pos_with_exit_order("engine-close-99")
+        monitor, client = self._make_monitor(pos)
+
+        client.order_status.return_value = {"status": "filled"}
+        client.get_filled_orders.return_value = [
+            {
+                "side": "sell",
+                "filled_avg_price": "30.00",
+                "order_id": "engine-close-99",
+                "filled_at": None,
+            }
+        ]
+
+        assert monitor._entry_confirmed_filled_no_manual_close(pos) is True
+
+    def test_entry_confirmed_filled_detects_genuine_manual_close_returns_false(self):
+        """Sell order with a different order_id is correctly identified as a manual close."""
+        pos = self._options_pos_with_exit_order("engine-close-99")
+        monitor, client = self._make_monitor(pos)
+
+        client.order_status.return_value = {"status": "filled"}
+        client.get_filled_orders.return_value = [
+            {
+                "side": "sell",
+                "filled_avg_price": "30.00",
+                "order_id": "manual-sell-77",
+                "filled_at": None,
+            }
+        ]
+
+        assert monitor._entry_confirmed_filled_no_manual_close(pos) is False
