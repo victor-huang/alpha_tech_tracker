@@ -4371,3 +4371,222 @@ class TestDoubleDownCoClose:
         assert primary_m1.is_closed is True
         assert dd_m1.is_closed is True
         assert dd_a1.is_closed is False
+
+
+class TestQtySyncPartialManualClose:
+    """_sync_open_position_qtys: partial manual close detected via broker qty < engine qty."""
+
+    def _make_monitor(self, pos, close_callback=None):
+        df = _build_history_df([104.0], ma20=90.0, ma50=90.0, ma200=85.0)
+        engine = _make_signal_engine_with_history(pos.ticker, df)
+        client = _make_alpaca_client()
+        monitor = PositionMonitor(
+            client,
+            engine,
+            mock_trade_execution=True,
+            close_callback=close_callback,
+        )
+        monitor.add_position(pos)
+        return monitor, client
+
+    def _make_options_pos(self, contracts=2):
+        pos = _make_active_position(contracts=contracts)
+        pos.entry_fill_price = _D("22.95")
+        pos.window_label = "M1"
+        return pos
+
+    def _make_stock_pos(self, shares=100):
+        pos = _make_stock_position(shares=shares)
+        pos.entry_fill_price = _D("200.00")
+        pos.window_label = "M1"
+        return pos
+
+    def test_partial_options_close_fires_close_callback_with_manually_closed_qty(self):
+        closed_positions = []
+        pos = self._make_options_pos(contracts=2)
+        monitor, client = self._make_monitor(pos, close_callback=closed_positions.append)
+
+        client.get_open_positions.return_value = {
+            pos.option_symbol: {"qty": 1},
+        }
+        client.get_filled_orders.return_value = [
+            {
+                "side": "sell",
+                "filled_avg_price": "32.00",
+                "order_id": "manual-sell-1",
+                "filled_at": None,
+            }
+        ]
+
+        monitor._sync_open_position_qtys()
+
+        assert len(closed_positions) == 1
+        closed = closed_positions[0]
+        assert closed.contracts == 1
+        assert closed.exit_fill_price == _D("32.00")
+        assert closed.is_closed is True
+        assert closed.exit_reason == "manual_close"
+
+    def test_partial_options_close_reduces_remaining_contracts_on_original_pos(self):
+        pos = self._make_options_pos(contracts=2)
+        monitor, client = self._make_monitor(pos)
+
+        client.get_open_positions.return_value = {
+            pos.option_symbol: {"qty": 1},
+        }
+        client.get_filled_orders.return_value = [
+            {
+                "side": "sell",
+                "filled_avg_price": "32.00",
+                "order_id": "manual-sell-1",
+                "filled_at": None,
+            }
+        ]
+
+        monitor._sync_open_position_qtys()
+
+        assert pos.contracts == 1
+
+    def test_partial_options_close_no_fill_price_still_reduces_contracts(self):
+        pos = self._make_options_pos(contracts=2)
+        monitor, client = self._make_monitor(pos)
+
+        client.get_open_positions.return_value = {
+            pos.option_symbol: {"qty": 1},
+        }
+        client.get_filled_orders.return_value = []
+
+        monitor._sync_open_position_qtys()
+
+        assert pos.contracts == 1
+
+    def test_partial_options_close_no_fill_price_does_not_fire_close_callback(self):
+        closed_positions = []
+        pos = self._make_options_pos(contracts=2)
+        monitor, client = self._make_monitor(pos, close_callback=closed_positions.append)
+
+        client.get_open_positions.return_value = {
+            pos.option_symbol: {"qty": 1},
+        }
+        client.get_filled_orders.return_value = []
+
+        monitor._sync_open_position_qtys()
+
+        assert closed_positions == []
+
+    def test_partial_options_close_no_fill_price_logs_warning(self, caplog):
+        pos = self._make_options_pos(contracts=2)
+        monitor, client = self._make_monitor(pos)
+
+        client.get_open_positions.return_value = {
+            pos.option_symbol: {"qty": 1},
+        }
+        client.get_filled_orders.return_value = []
+
+        with caplog.at_level(logging.WARNING):
+            monitor._sync_open_position_qtys()
+
+        assert "fill price unknown" in caplog.text.lower() or "fill price not found" in caplog.text.lower()
+
+    def test_partial_options_close_closed_record_copies_entry_data(self):
+        closed_positions = []
+        pos = self._make_options_pos(contracts=2)
+        pos.ticker = "COIN"
+        pos.signal = "BULLISH"
+        pos.option_symbol = "COIN260515C00180000"
+        pos.entry_fill_price = _D("22.95")
+        pos.window_label = "M1"
+        monitor, client = self._make_monitor(pos, close_callback=closed_positions.append)
+
+        client.get_open_positions.return_value = {
+            "COIN260515C00180000": {"qty": 1},
+        }
+        client.get_filled_orders.return_value = [
+            {
+                "side": "sell",
+                "filled_avg_price": "32.00",
+                "order_id": "manual-sell-1",
+                "filled_at": None,
+            }
+        ]
+
+        monitor._sync_open_position_qtys()
+
+        closed = closed_positions[0]
+        assert closed.ticker == "COIN"
+        assert closed.signal == "BULLISH"
+        assert closed.option_symbol == "COIN260515C00180000"
+        assert closed.entry_fill_price == _D("22.95")
+        assert closed.window_label == "M1"
+
+    def test_partial_stock_close_fires_close_callback_with_manually_closed_shares(self):
+        closed_positions = []
+        pos = self._make_stock_pos(shares=100)
+        monitor, client = self._make_monitor(pos, close_callback=closed_positions.append)
+
+        client.get_open_positions.return_value = {
+            pos.ticker: {"qty": 60},
+        }
+        client.get_filled_orders.return_value = [
+            {
+                "side": "sell",
+                "filled_avg_price": "210.50",
+                "order_id": "manual-sell-stk-1",
+                "filled_at": None,
+            }
+        ]
+
+        monitor._sync_open_position_qtys()
+
+        assert len(closed_positions) == 1
+        closed = closed_positions[0]
+        assert closed.shares == 40
+        assert closed.exit_fill_price == _D("210.50")
+        assert closed.is_closed is True
+        assert closed.exit_reason == "manual_close"
+
+    def test_partial_stock_close_reduces_remaining_shares_on_original_pos(self):
+        pos = self._make_stock_pos(shares=100)
+        monitor, client = self._make_monitor(pos)
+
+        client.get_open_positions.return_value = {
+            pos.ticker: {"qty": 60},
+        }
+        client.get_filled_orders.return_value = [
+            {
+                "side": "sell",
+                "filled_avg_price": "210.50",
+                "order_id": "manual-sell-stk-1",
+                "filled_at": None,
+            }
+        ]
+
+        monitor._sync_open_position_qtys()
+
+        assert pos.shares == 60
+
+    def test_no_callback_when_broker_qty_equals_engine_qty(self):
+        closed_positions = []
+        pos = self._make_options_pos(contracts=2)
+        monitor, client = self._make_monitor(pos, close_callback=closed_positions.append)
+
+        client.get_open_positions.return_value = {
+            pos.option_symbol: {"qty": 2},
+        }
+
+        monitor._sync_open_position_qtys()
+
+        assert closed_positions == []
+        assert pos.contracts == 2
+
+    def test_no_callback_when_symbol_absent_from_broker_open_positions(self):
+        closed_positions = []
+        pos = self._make_options_pos(contracts=2)
+        monitor, client = self._make_monitor(pos, close_callback=closed_positions.append)
+
+        client.get_open_positions.return_value = {}
+
+        monitor._sync_open_position_qtys()
+
+        assert closed_positions == []
+        assert pos.contracts == 2

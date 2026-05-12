@@ -1,3 +1,4 @@
+import copy
 import logging
 import threading
 import time
@@ -1120,15 +1121,43 @@ class PositionMonitor:
                 engine_qty = pos.contracts
 
             if broker_qty < engine_qty:
+                manually_closed_qty = engine_qty - broker_qty
                 logger.warning(
                     "QTY SYNC %s: broker qty=%d < engine qty=%d"
                     " — updating to broker qty (partial manual close detected)",
                     lookup_symbol, broker_qty, engine_qty,
                 )
-                _notify(
-                    f"QTY SYNC {lookup_symbol}: engine={engine_qty}"
-                    f" broker={broker_qty} — updated to broker qty"
-                )
+
+                fill_price = self._fetch_manual_close_fill_price(pos)
+                if fill_price is not None:
+                    partial_closed = copy.copy(pos)
+                    if pos.trade_type == "stock":
+                        partial_closed.shares = manually_closed_qty
+                    else:
+                        partial_closed.contracts = manually_closed_qty
+                    partial_closed.exit_fill_price = fill_price
+                    partial_closed.is_closed = True
+                    partial_closed.exit_reason = "manual_close"
+                    partial_closed.exit_time = _now_et()
+                    if self._close_callback:
+                        self._close_callback(partial_closed)
+                    _notify(
+                        f"QTY SYNC {lookup_symbol}: engine={engine_qty}"
+                        f" broker={broker_qty} — recorded manual close"
+                        f" of {manually_closed_qty} @ ${float(fill_price):.2f}"
+                    )
+                else:
+                    logger.warning(
+                        "QTY SYNC %s: fill price not found for manually closed %d"
+                        " — P&L not recorded",
+                        lookup_symbol, manually_closed_qty,
+                    )
+                    _notify(
+                        f"QTY SYNC {lookup_symbol}: engine={engine_qty}"
+                        f" broker={broker_qty} — updated to broker qty"
+                        f" (fill price unknown — P&L not recorded)"
+                    )
+
                 with self._lock:
                     if pos.trade_type == "stock":
                         pos.shares = broker_qty
