@@ -4591,6 +4591,57 @@ class TestQtySyncPartialManualClose:
         assert closed_positions == []
         assert pos.contracts == 2
 
+    def test_partial_close_stored_in_qty_sync_closes(self):
+        pos = self._make_options_pos(contracts=4)
+        monitor, client = self._make_monitor(pos)
+
+        client.get_open_positions.return_value = {
+            pos.option_symbol: {"qty": 2},
+        }
+        client.get_filled_orders.return_value = [
+            {
+                "side": "sell",
+                "filled_avg_price": "9.00",
+                "order_id": "manual-sell-1",
+                "filled_at": None,
+            }
+        ]
+
+        monitor._sync_open_position_qtys()
+
+        assert len(monitor._qty_sync_closes) == 1
+        stored = monitor._qty_sync_closes[0]
+        assert stored.contracts == 2
+        assert stored.exit_fill_price == _D("9.00")
+        assert stored.exit_reason == "manual_close"
+
+    def test_partial_close_appears_in_print_summary_with_manual_close_label(self, caplog):
+        pos = self._make_options_pos(contracts=4)
+        monitor, client = self._make_monitor(pos)
+
+        client.get_open_positions.return_value = {
+            pos.option_symbol: {"qty": 2},
+        }
+        client.get_filled_orders.return_value = [
+            {
+                "side": "sell",
+                "filled_avg_price": "9.00",
+                "order_id": "manual-sell-1",
+                "filled_at": None,
+            }
+        ]
+        monitor._sync_open_position_qtys()
+
+        pos.is_closed = True
+        pos.exit_fill_price = _D("8.35")
+        pos.exit_reason = "fallback_20pct"
+
+        with caplog.at_level(logging.INFO):
+            monitor.print_summary()
+
+        assert "[Manual Close]" in caplog.text
+        assert "manual_close" in caplog.text
+
 
 class TestManualCloseOrderIdExclusion:
     """_fetch_manual_close_fill_price and _entry_confirmed_filled_no_manual_close

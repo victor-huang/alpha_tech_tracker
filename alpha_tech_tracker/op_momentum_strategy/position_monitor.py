@@ -156,6 +156,7 @@ class PositionMonitor:
         self._fast_ma_col = f"MA{trailing_ma_switch_period}"
         self._fast_ma_reason = f"trailing_stop_ma{trailing_ma_switch_period}"
         self._positions: list = []
+        self._qty_sync_closes: list = []
         self._reentry_watchers: list = []
         self._lock = threading.Lock()
         self._stop_event = threading.Event()
@@ -1144,6 +1145,7 @@ class PositionMonitor:
                     partial_closed.exit_time = _now_et()
                     if self._close_callback:
                         self._close_callback(partial_closed)
+                    self._qty_sync_closes.append(copy.copy(partial_closed))
                     _notify(
                         f"QTY SYNC {lookup_symbol}: engine={engine_qty}"
                         f" broker={broker_qty} — recorded manual close"
@@ -1634,6 +1636,8 @@ class PositionMonitor:
             emit(summary)
 
         def _trade_label(pos) -> str:
+            if pos.exit_reason == "manual_close":
+                return "[Manual Close]"
             if pos.is_doubledown_addon:
                 return "[Doubledown]"
             if pos.reentry_type is None:
@@ -1716,7 +1720,13 @@ class PositionMonitor:
                 f"  {'Entry':>5} {'Exit':>5}  {'EntryFill':>9} {'ExitFill':>8} {'P&L':>10}  {'%P&L':>7}  Exit Reason"
             )
             _emit(f"  {'─' * 130}")
-            for pos in self._positions:
+            _min_dt = datetime.min.replace(tzinfo=None)
+            _sort_key = lambda p: (
+                (p.entry_time.replace(tzinfo=None) if p.entry_time else _min_dt),
+                (p.exit_time.replace(tzinfo=None) if p.exit_time else _min_dt),
+            )
+            _all_positions = sorted(self._positions + self._qty_sync_closes, key=_sort_key)
+            for pos in _all_positions:
                 entry_fill = pos.entry_fill_price
                 exit_fill = pos.exit_fill_price
                 pnl = _position_pnl(pos, entry_fill, exit_fill)
@@ -1749,7 +1759,7 @@ class PositionMonitor:
                     f"  {pos.exit_reason or 'open'}"
                 )
             _print_totals(
-                self._positions,
+                _all_positions,
                 lambda p: p.entry_fill_price,
                 lambda p: p.exit_fill_price,
                 _emit,
