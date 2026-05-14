@@ -83,13 +83,26 @@ def _fetch_all_orders(client, target_date: date) -> list:
     resp = client._session.get(url, params=params)
 
     if resp.status_code == 404:
-        # Fall back to today's orders endpoint
         logger.info("Historical orders endpoint returned 404 — falling back to /orders")
         url = client._v3_base_url + f"/brokerage/accounts/{account_key}/orders"
         resp = client._session.get(url, params={"pageSize": 600})
+        data = resp.json()
+        orders = data if isinstance(data, list) else data.get("Orders", [])
+        logger.info("Retrieved %d raw orders", len(orders))
+        return orders
 
     data = resp.json()
     orders = data if isinstance(data, list) else data.get("Orders", [])
+
+    if not orders:
+        # Historical endpoint returned empty — try today's /orders endpoint as fallback
+        # (historicalorders excludes same-day orders on TS)
+        logger.info("Historical orders endpoint returned empty — falling back to /orders")
+        url = client._v3_base_url + f"/brokerage/accounts/{account_key}/orders"
+        resp2 = client._session.get(url, params={"pageSize": 600})
+        data2 = resp2.json()
+        orders = data2 if isinstance(data2, list) else data2.get("Orders", [])
+
     logger.info("Retrieved %d raw orders", len(orders))
     return orders
 
