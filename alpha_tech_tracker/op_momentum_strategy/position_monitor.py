@@ -707,16 +707,37 @@ class PositionMonitor:
                         return
                 broker_qty = int(abs(broker_entry["qty"]))
                 if broker_qty < pos.shares:
+                    manually_closed_qty = pos.shares - broker_qty
                     logger.warning(
                         "PRE-CLOSE SYNC %s [stock]: broker qty=%d < engine qty=%d"
                         " — adjusting (partial manual close detected)",
                         pos.ticker, broker_qty, pos.shares,
                     )
-                    _notify(
-                        f"PARTIAL MANUAL CLOSE {pos.ticker}:"
-                        f" engine={pos.shares} broker={broker_qty} shares"
-                        f" — selling remaining {broker_qty} shares"
-                    )
+                    fill_price = self._fetch_manual_close_fill_price(pos)
+                    if fill_price is not None:
+                        partial_closed = copy.copy(pos)
+                        partial_closed.shares = manually_closed_qty
+                        partial_closed.exit_fill_price = fill_price
+                        partial_closed.is_closed = True
+                        partial_closed.exit_reason = "manual_close"
+                        partial_closed.exit_time = _now_et()
+                        if self._close_callback:
+                            self._close_callback(partial_closed)
+                        self._qty_sync_closes.append(copy.copy(partial_closed))
+                        _notify(
+                            f"PARTIAL MANUAL CLOSE {pos.ticker}:"
+                            f" engine={pos.shares} broker={broker_qty} shares"
+                            f" — recorded manual close of {manually_closed_qty}"
+                            f" @ ${float(fill_price):.2f}"
+                            f" — selling remaining {broker_qty} shares"
+                        )
+                    else:
+                        _notify(
+                            f"PARTIAL MANUAL CLOSE {pos.ticker}:"
+                            f" engine={pos.shares} broker={broker_qty} shares"
+                            f" — fill price unknown, P&L not recorded"
+                            f" — selling remaining {broker_qty} shares"
+                        )
                     pos.shares = broker_qty
             except Exception:
                 logger.warning(
@@ -889,16 +910,37 @@ class PositionMonitor:
                         return
                 broker_qty = int(broker_entry["qty"])
                 if broker_qty < pos.contracts:
+                    manually_closed_qty = pos.contracts - broker_qty
                     logger.warning(
                         "PRE-CLOSE SYNC %s: broker qty=%d < engine qty=%d"
                         " — adjusting (partial manual close detected)",
                         pos.option_symbol, broker_qty, pos.contracts,
                     )
-                    _notify(
-                        f"PARTIAL MANUAL CLOSE {_fmt_option(pos.option_symbol)}:"
-                        f" engine={pos.contracts} broker={broker_qty}"
-                        f" — selling remaining {broker_qty} contracts"
-                    )
+                    fill_price = self._fetch_manual_close_fill_price(pos)
+                    if fill_price is not None:
+                        partial_closed = copy.copy(pos)
+                        partial_closed.contracts = manually_closed_qty
+                        partial_closed.exit_fill_price = fill_price
+                        partial_closed.is_closed = True
+                        partial_closed.exit_reason = "manual_close"
+                        partial_closed.exit_time = _now_et()
+                        if self._close_callback:
+                            self._close_callback(partial_closed)
+                        self._qty_sync_closes.append(copy.copy(partial_closed))
+                        _notify(
+                            f"PARTIAL MANUAL CLOSE {_fmt_option(pos.option_symbol)}:"
+                            f" engine={pos.contracts} broker={broker_qty}"
+                            f" — recorded manual close of {manually_closed_qty}"
+                            f" @ ${float(fill_price):.2f}"
+                            f" — selling remaining {broker_qty} contracts"
+                        )
+                    else:
+                        _notify(
+                            f"PARTIAL MANUAL CLOSE {_fmt_option(pos.option_symbol)}:"
+                            f" engine={pos.contracts} broker={broker_qty}"
+                            f" — fill price unknown, P&L not recorded"
+                            f" — selling remaining {broker_qty} contracts"
+                        )
                     pos.contracts = broker_qty
             except Exception:
                 logger.warning(

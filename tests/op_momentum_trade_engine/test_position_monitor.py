@@ -1,6 +1,6 @@
 import logging
 import pytest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 from alpha_tech_tracker.op_momentum_strategy.position_monitor import (
     PositionMonitor,
@@ -3520,6 +3520,59 @@ class TestPreCloseBrokerQtySync:
         _, kwargs = place_order.call_args
         assert kwargs["contracts"] == 4
 
+    def test_option_partial_close_fires_close_callback_with_manually_closed_qty(self):
+        close_cb = MagicMock()
+        monitor, client, engine, pos = self._make_live_monitor(contracts=6)
+        monitor._close_callback = close_cb
+        client.get_open_positions.return_value = {pos.option_symbol: {"qty": 4.0}}
+        client.get_filled_orders.return_value = [
+            {"order_id": "manual1", "side": "sell", "filled_avg_price": 12.50,
+             "filled_qty": 2.0, "filled_at": None},
+        ]
+        with \
+                patch(self._REPLAY_PATH, return_value=False), \
+                patch(self._PLACE_OPTION_PATH, return_value=({"order_id": "x"}, 4)), \
+                patch(self._NOTIFY_PATH):
+            monitor._close_option_position(pos, "trailing_stop_ma20")
+
+        close_cb.assert_called_once()
+        partial = close_cb.call_args[0][0]
+        assert partial.contracts == 2
+        assert partial.exit_fill_price == _D("12.50")
+        assert partial.exit_reason == "manual_close"
+        assert partial.is_closed is True
+
+    def test_option_partial_close_stored_in_qty_sync_closes(self):
+        monitor, client, engine, pos = self._make_live_monitor(contracts=6)
+        client.get_open_positions.return_value = {pos.option_symbol: {"qty": 4.0}}
+        client.get_filled_orders.return_value = [
+            {"order_id": "manual1", "side": "sell", "filled_avg_price": 12.50,
+             "filled_qty": 2.0, "filled_at": None},
+        ]
+        with \
+                patch(self._REPLAY_PATH, return_value=False), \
+                patch(self._PLACE_OPTION_PATH, return_value=({"order_id": "x"}, 4)), \
+                patch(self._NOTIFY_PATH):
+            monitor._close_option_position(pos, "trailing_stop_ma20")
+
+        assert len(monitor._qty_sync_closes) == 1
+        assert monitor._qty_sync_closes[0].contracts == 2
+
+    def test_option_partial_close_no_fill_price_does_not_fire_close_callback(self):
+        close_cb = MagicMock()
+        monitor, client, engine, pos = self._make_live_monitor(contracts=6)
+        monitor._close_callback = close_cb
+        client.get_open_positions.return_value = {pos.option_symbol: {"qty": 4.0}}
+        client.get_filled_orders.return_value = []
+        client.order_status.return_value = {"status": "filled", "filled_avg_price": "9.00"}
+        with \
+                patch(self._REPLAY_PATH, return_value=False), \
+                patch(self._PLACE_OPTION_PATH, return_value=({"order_id": "x"}, 4)), \
+                patch(self._NOTIFY_PATH):
+            monitor._close_option_position(pos, "trailing_stop_ma20")
+
+        close_cb.assert_not_called()
+
     def test_option_no_adjustment_when_broker_qty_matches_engine(self):
         monitor, client, engine, pos = self._make_live_monitor(contracts=6)
         client.get_open_positions.return_value = {pos.option_symbol: {"qty": 6.0}}
@@ -3613,6 +3666,50 @@ class TestPreCloseBrokerQtySync:
         assert pos.shares == 50
         _, kwargs = place_order.call_args
         assert kwargs["shares"] == 50
+
+    def test_stock_partial_close_fires_close_callback_with_manually_closed_shares(self):
+        close_cb = MagicMock()
+        client = _make_alpaca_client()
+        df = _build_history_df([114.0], ma20=118.0, ma50=118.0, ma200=120.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine, mock_trade_execution=False, close_callback=close_cb)
+        pos = _make_stock_position(signal="BEARISH", shares=104)
+        pos.entry_fill_price = _D("120.00")
+        client.get_open_positions.return_value = {"NVDA": {"qty": -50.0}}
+        client.get_filled_orders.return_value = [
+            {"order_id": "manual1", "side": "buy", "filled_avg_price": 115.00,
+             "filled_qty": 54.0, "filled_at": None},
+        ]
+        with \
+                patch(self._REPLAY_PATH, return_value=False), \
+                patch(self._PLACE_STOCK_PATH, return_value={"order_id": "stk"}), \
+                patch(self._NOTIFY_PATH):
+            monitor._close_stock_position(pos, "hard_stop")
+
+        close_cb.assert_called_once()
+        partial = close_cb.call_args[0][0]
+        assert partial.shares == 54
+        assert partial.exit_fill_price == _D("115.00")
+        assert partial.exit_reason == "manual_close"
+        assert partial.is_closed is True
+
+    def test_stock_partial_close_no_fill_price_does_not_fire_close_callback(self):
+        close_cb = MagicMock()
+        client = _make_alpaca_client()
+        df = _build_history_df([114.0], ma20=118.0, ma50=118.0, ma200=120.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine, mock_trade_execution=False, close_callback=close_cb)
+        pos = _make_stock_position(signal="BEARISH", shares=104)
+        client.get_open_positions.return_value = {"NVDA": {"qty": -50.0}}
+        client.get_filled_orders.return_value = []
+        with \
+                patch(self._REPLAY_PATH, return_value=False), \
+                patch(self._PLACE_STOCK_PATH, return_value={"order_id": "stk"}), \
+                patch(self._NOTIFY_PATH):
+            monitor._close_stock_position(pos, "hard_stop")
+
+        close_cb.assert_not_called()
+        assert pos.shares == 50
 
     def test_option_position_found_at_broker_proceeds_normally(self):
         monitor, client, engine, pos = self._make_live_monitor()
