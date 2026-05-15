@@ -71,7 +71,11 @@ class PositionSizer:
             if account_buying_power is None:
                 try:
                     account = self._client.get_accounts()
-                    account_buying_power = _D(str(account.get("buying_power", 0)))
+                    option_bp = account.get("option_buying_power")
+                    if option_bp is not None:
+                        account_buying_power = _D(str(option_bp))
+                    else:
+                        account_buying_power = _D(str(account.get("buying_power", 0)))
                 except Exception:
                     logger.warning(
                         "Could not fetch buying power for %s — skipping cap check",
@@ -79,7 +83,7 @@ class PositionSizer:
                     )
             if account_buying_power is not None:
                 cost_per_contract = limit_price * _D("100")
-                max_by_bp = int(account_buying_power / cost_per_contract) if cost_per_contract > 0 else 0
+                max_by_bp = max(0, int(account_buying_power / cost_per_contract)) if cost_per_contract > 0 else 0
                 if max_by_bp == 0:
                     raise RuntimeError(
                         "Insufficient buying power for %s: need $%.2f/contract, have $%.2f"

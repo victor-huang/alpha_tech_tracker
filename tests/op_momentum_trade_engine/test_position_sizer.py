@@ -138,6 +138,30 @@ class TestWindowBudgetSizing:
 
         client.get_accounts.assert_not_called()
 
+    def test_prefers_option_buying_power_over_buying_power(self):
+        client = _make_alpaca_client()
+        client.get_accounts.return_value = {
+            "buying_power": 0.0,
+            "option_buying_power": 5000.0,
+        }
+        client.get_option_quote_by_occ.return_value = _make_option_quote(bid=8.00, ask=9.00)
+
+        sizer = PositionSizer(client)
+        # buying_power=0 would raise; option_buying_power=5000 → 5 contracts at $850 each
+        contracts, _ = sizer.compute("NVDA260328C00730000", window_budget=_D("20000"))
+
+        assert contracts == 5
+
+    def test_negative_buying_power_raises_insufficient_error(self):
+        client = _make_alpaca_client()
+        client.get_accounts.return_value = {"buying_power": -1340.0}
+        client.get_option_quote_by_occ.return_value = _make_option_quote(bid=8.00, ask=9.00)
+
+        sizer = PositionSizer(client)
+        import pytest
+        with pytest.raises(RuntimeError, match="Insufficient buying power"):
+            sizer.compute("NVDA260328C00730000", window_budget=_D("20000"))
+
 
 class TestRankWeightedSizing:
     def test_rank_zero_uses_first_weight(self):

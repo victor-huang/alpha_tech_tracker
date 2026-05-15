@@ -135,6 +135,7 @@ class TestGetAccounts:
         result = client.get_accounts()
 
         assert result["buying_power"] == 50000.00
+        assert result["option_buying_power"] == 50000.00
         assert result["cash"] == 48000.00
         assert result["portfolio_value"] == 52000.00
         assert result["equity"] == 52000.00

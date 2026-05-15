@@ -383,10 +383,12 @@ class TradeStationAPIClient(ExecutionClient):
         data = self._parse(response)
         balances = data if isinstance(data, list) else data.get("Balances", [])
         b = balances[0]
+        option_bp_raw = b.get("RealTimeOptionBuyingPower")
         return {
             "account_id": str(account_key),
             "cash": float(b.get("CashBalance", 0)),
             "buying_power": float(b.get("BuyingPower", 0)),
+            "option_buying_power": float(option_bp_raw) if option_bp_raw is not None else None,
             "portfolio_value": float(b.get("Equity", 0)),
             "equity": float(b.get("Equity", 0)),
             "raw_response": b,
