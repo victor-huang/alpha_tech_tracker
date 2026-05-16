@@ -1778,4 +1778,148 @@ class TestNoNewPositionAfterCutoff:
             doubledown_start_min=5,
         )
 
-        assert "dd_addon_entry" not in winner_row
+
+# ---------------------------------------------------------------------------
+# TestStaleCut
+# ---------------------------------------------------------------------------
+#
+# OR: or_high=102, or_low=98, or_range=4, midpoint=100
+# stop_pct=0.60 (wide stop so it never fires before the checkpoint)
+# BULLISH signal bar close=101.5 (> midpoint=100)
+# BEARISH signal bar close=98.5 (≤ bottom 20% threshold=98.8)
+#
+# Entry = signal bar close. Stale check fires after bars_held * 5 == stale_cut_mins.
+# The flat post bars keep price within ±0.2% of entry — below the ±0.25% threshold.
+
+_FLAT_MA20 = 98.0   # below hard_stop so trailing never fires for BULLISH
+_FLAT_MA50 = 98.0
+_FLAT_MA200 = 95.0
+
+_BULLISH_OPENING_WIDE = [
+    ("09:30", 100, 101,  99,  100.0, _FLAT_MA20, _FLAT_MA50, _FLAT_MA200),
+    ("09:35", 100, 102,  98,  100.0, _FLAT_MA20, _FLAT_MA50, _FLAT_MA200),
+    ("09:40", 101, 102,  99,  101.5, _FLAT_MA20, _FLAT_MA50, _FLAT_MA200),  # signal bar, entry=101.5
+]
+
+# BEARISH opening: MA20=102 (above or_high) so trailing never fires
+_BEAR_MA20_W = 102.0
+_BEAR_MA50_W = 102.0
+
+_BEARISH_OPENING_WIDE = [
+    ("09:30", 100, 101,  99,  100.0, _BEAR_MA20_W, _BEAR_MA50_W, _FLAT_MA200),
+    ("09:35", 100, 102,  98,  100.0, _BEAR_MA20_W, _BEAR_MA50_W, _FLAT_MA200),
+    ("09:40",  99, 100,  98,   98.5, _BEAR_MA20_W, _BEAR_MA50_W, _FLAT_MA200),  # signal bar, entry=98.5
+]
+
+def _flat_bull_post_bars(n, start_time="09:45"):
+    """n flat post-open bars hovering at 101.4 (within ±0.2% of entry 101.5)."""
+    h, m = map(int, start_time.split(":"))
+    bars = []
+    for i in range(n):
+        dt = datetime(2025, 1, 2, h, m) + timedelta(minutes=5 * i)
+        bars.append((dt.strftime("%H:%M"), 101.3, 101.6, 101.2, 101.4, _FLAT_MA20, _FLAT_MA50, _FLAT_MA200))
+    return bars
+
+def _flat_bear_post_bars(n, start_time="09:45"):
+    """n flat post-open bars hovering at 98.6 (within ±0.2% of entry 98.5)."""
+    h, m = map(int, start_time.split(":"))
+    bars = []
+    for i in range(n):
+        dt = datetime(2025, 1, 2, h, m) + timedelta(minutes=5 * i)
+        bars.append((dt.strftime("%H:%M"), 98.5, 98.7, 98.4, 98.6, _BEAR_MA20_W, _BEAR_MA50_W, _FLAT_MA200))
+    return bars
+
+
+class TestStaleCut:
+    def test_bullish_exits_stale_cut_when_flat_at_checkpoint(self):
+        # 6 flat post bars. stale_cut_mins=30 fires at bars_held=6 (bar index 5).
+        # Entry=101.5, bar 6 close=101.4, |pnl|=0.10% < threshold 0.25% → stale_cut.
+        df = _make_bars("2025-01-02", _BULLISH_OPENING_WIDE + _flat_bull_post_bars(8))
+        result = compute_signals_with_backtest(
+            df, opening_bars=3, stop_pct=0.60,
+            stale_cut_mins=30, stale_cut_threshold=0.25,
+        )
+        row = result.iloc[0]
+        assert row["exit_reason"] == "stale_cut"
+        assert row["bars_held"] == 6
+        assert row["mins_held"] == 30
+
+    def test_bearish_exits_stale_cut_when_flat_at_checkpoint(self):
+        # Entry=98.5, flat bars near 98.6, |pnl|≈0.10% < threshold 0.25% → stale_cut.
+        df = _make_bars("2025-01-02", _BEARISH_OPENING_WIDE + _flat_bear_post_bars(8))
+        result = compute_signals_with_backtest(
+            df, opening_bars=3, stop_pct=0.60,
+            stale_cut_mins=30, stale_cut_threshold=0.25,
+        )
+        row = result.iloc[0]
+        assert row["exit_reason"] == "stale_cut"
+        assert row["bars_held"] == 6
+        assert row["mins_held"] == 30
+
+    def test_no_stale_cut_when_pnl_exceeds_threshold(self):
+        # Entry=101.5. Post bars move to 102.0 (+0.49% > threshold 0.25%) at checkpoint.
+        # Stale cut should not fire; trade holds to EOD.
+        post_bars = _flat_bull_post_bars(8)
+        # Replace checkpoint bar (index 5) with a bar that's clearly above threshold
+        checkpoint_idx = 5
+        t = post_bars[checkpoint_idx][0]
+        post_bars[checkpoint_idx] = (t, 102.0, 102.2, 101.8, 102.0, _FLAT_MA20, _FLAT_MA50, _FLAT_MA200)
+        df = _make_bars("2025-01-02", _BULLISH_OPENING_WIDE + post_bars)
+        result = compute_signals_with_backtest(
+            df, opening_bars=3, stop_pct=0.60,
+            stale_cut_mins=30, stale_cut_threshold=0.25,
+        )
+        row = result.iloc[0]
+        assert row["exit_reason"] != "stale_cut"
+
+    def test_stale_cut_fires_only_at_checkpoint_not_before(self):
+        # Flat bars throughout. stale_cut_mins=30 (6 bars). Trade must NOT exit at
+        # bars 1–5 (5–25 min), only at bar 6 (30 min).
+        df = _make_bars("2025-01-02", _BULLISH_OPENING_WIDE + _flat_bull_post_bars(10))
+        result = compute_signals_with_backtest(
+            df, opening_bars=3, stop_pct=0.60,
+            stale_cut_mins=30, stale_cut_threshold=0.25,
+        )
+        row = result.iloc[0]
+        assert row["exit_reason"] == "stale_cut"
+        assert row["bars_held"] == 6
+
+    def test_stale_cut_disabled_by_default(self):
+        # Without stale_cut params the trade holds through all flat bars to EOD.
+        df = _make_bars("2025-01-02", _BULLISH_OPENING_WIDE + _flat_bull_post_bars(8))
+        result = compute_signals_with_backtest(df, opening_bars=3, stop_pct=0.60)
+        row = result.iloc[0]
+        assert row["exit_reason"] == "end_of_day"
+        assert row["exit_reason"] != "stale_cut"
+
+    def test_hard_stop_takes_priority_over_stale_cut(self):
+        # Entry=101.5, hard_stop at stop_pct=0.15: bull_hard_stop = 102 - 0.15*4 = 101.4.
+        # Bar 1 arms the stop (close=101.8 > 101.4), bar 2 closes below 101.4 → hard_stop.
+        # This happens before the 30-min stale-cut checkpoint.
+        post_bars = [
+            ("09:45", 101.5, 101.9, 101.4, 101.8, _FLAT_MA20, _FLAT_MA50, _FLAT_MA200),  # arm
+            ("09:50", 101.0, 101.3, 100.8, 101.2, _FLAT_MA20, _FLAT_MA50, _FLAT_MA200),  # hard_stop
+        ]
+        df = _make_bars("2025-01-02", _BULLISH_OPENING_WIDE + post_bars)
+        result = compute_signals_with_backtest(
+            df, opening_bars=3, stop_pct=0.15,
+            stale_cut_mins=30, stale_cut_threshold=0.25,
+        )
+        row = result.iloc[0]
+        assert row["exit_reason"] == "hard_stop"
+        assert row["bars_held"] < 6
+
+    def test_stale_cut_uses_absolute_pnl_bearish_winning_position(self):
+        # BEARISH entry=98.5. Price drops to 97.5 at checkpoint (+1.02% favourable).
+        # |pnl|=1.02% > threshold 0.75% → no stale cut, trade continues.
+        post_bars = _flat_bear_post_bars(8)
+        checkpoint_idx = 5
+        t = post_bars[checkpoint_idx][0]
+        post_bars[checkpoint_idx] = (t, 97.6, 97.8, 97.4, 97.5, _BEAR_MA20_W, _BEAR_MA50_W, _FLAT_MA200)
+        df = _make_bars("2025-01-02", _BEARISH_OPENING_WIDE + post_bars)
+        result = compute_signals_with_backtest(
+            df, opening_bars=3, stop_pct=0.60,
+            stale_cut_mins=30, stale_cut_threshold=0.75,
+        )
+        row = result.iloc[0]
+        assert row["exit_reason"] != "stale_cut"

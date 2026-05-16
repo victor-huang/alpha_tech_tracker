@@ -655,6 +655,9 @@ def run_selector_backtest(
     min_or_vol_ratio: float = None,
     score_entry_weight: float = 0.50,
     score_vol_ratio_weight: float = 0.00,
+    min_hold_bars: int = 0,
+    stale_cut_mins: int = 0,
+    stale_cut_threshold: float = 0.0,
 ) -> tuple:
     """
     Walk each trading day in [eval_start, eval_end], apply rolling selector
@@ -759,6 +762,9 @@ def run_selector_backtest(
                 min_first_bar_range_pct=min_first_bar_range_pct,
                 min_first_bar_volume_mult=min_first_bar_volume_mult,
                 min_or_vol_ratio=min_or_vol_ratio,
+                min_hold_bars=min_hold_bars,
+                stale_cut_mins=stale_cut_mins,
+                stale_cut_threshold=stale_cut_threshold,
             )
         all_window_results[label] = results_for_window
         print(f"  [{label}] {win['opening_start']} / {win['opening_bars']} bars — done")
@@ -1611,6 +1617,10 @@ def _stats_from_trades(trade_rows: list) -> dict:
     opp_losses = opp_total - opp_wins
     opp_net_cap_pnl = sum(r.get("opp_cap_pnl", 0.0) for r in opp_rows)
 
+    short_rows = [r for r in active if r.get("mins_held", 999) <= 15]
+    short_total = len(short_rows)
+    short_wins = sum(1 for r in short_rows if r["success"])
+
     return {
         "total": total,
         "wins": wins,
@@ -1637,6 +1647,8 @@ def _stats_from_trades(trade_rows: list) -> dict:
         "opp_wins": opp_wins,
         "opp_losses": opp_losses,
         "opp_net_cap_pnl": opp_net_cap_pnl,
+        "short_total": short_total,
+        "short_wins": short_wins,
     }
 
 
@@ -1682,6 +1694,9 @@ def _print_stats_block(label: str, stats: dict):
             f"  net cap P&L: {opp_net_str}"
         )
     print(f"  Win rate        : {stats['win_rate'] * 100:.0f}%")
+    if stats.get("short_total", 0):
+        short_wr = stats["short_wins"] / stats["short_total"] * 100
+        print(f"  Short trades    : {stats['short_total']}  (≤15 min)  WR: {short_wr:.0f}%")
     print(f"  Avg win  %      : +{stats['avg_win_pct']:.2f}%  per trade")
     print(f"  Avg loss %      : -{stats['avg_loss_pct']:.2f}%  per trade")
     print(f"  EV / trade      : {ev_str}")
@@ -2191,6 +2206,30 @@ def _parse_args():
         help="Per-trade max loss as a fraction of entry price (e.g. 0.02 = 2%%). Default: disabled.",
     )
     parser.add_argument(
+        "--min-hold-bars",
+        type=int,
+        default=0,
+        dest="min_hold_bars",
+        help="Minimum bars to hold before fallback/hard-stop exits can fire (e.g. 3 = 15 min). "
+        "max-loss-pct still exits immediately. Default: 0 (disabled).",
+    )
+    parser.add_argument(
+        "--stale-cut-mins",
+        type=int,
+        default=0,
+        dest="stale_cut_mins",
+        help="Exit flat trades at this many minutes after entry if |P&L| < --stale-cut-threshold. "
+        "E.g. 30 means check at the 30-min bar. Default: 0 (disabled).",
+    )
+    parser.add_argument(
+        "--stale-cut-threshold",
+        type=float,
+        default=0.0,
+        dest="stale_cut_threshold",
+        help="P&L threshold (as %% of entry) for stale-cut. Trade is cut if |P&L| < threshold "
+        "at --stale-cut-mins. E.g. 0.25 means exit if within ±0.25%% of entry. Default: 0.0 (disabled).",
+    )
+    parser.add_argument(
         "--armed-ma20-exit",
         action="store_true",
         default=False,
@@ -2526,6 +2565,13 @@ if __name__ == "__main__":
     print(
         f"  Max loss pct : {f'{args.max_loss_pct * 100:.1f}%' if args.max_loss_pct else 'disabled'}"
     )
+    print(
+        f"  Min hold     : {f'{args.min_hold_bars} bars ({args.min_hold_bars * 5} min)' if args.min_hold_bars else 'off'}"
+    )
+    if args.stale_cut_mins > 0 and args.stale_cut_threshold > 0.0:
+        print(f"  Stale cut    : exit at {args.stale_cut_mins} min if |P&L| < {args.stale_cut_threshold:.2f}%")
+    else:
+        print(f"  Stale cut    : off")
     print(f"  Armed MA20   : {'on' if args.armed_ma20_exit else 'off'}")
     print(
         f"  Regime filter: {'QQQ MA' + str(args.regime_ma) if args.regime_filter else 'off'}"
@@ -2651,6 +2697,9 @@ if __name__ == "__main__":
         min_or_vol_ratio=args.min_or_vol_ratio,
         score_entry_weight=args.score_entry_weight,
         score_vol_ratio_weight=args.score_vol_ratio_weight,
+        min_hold_bars=args.min_hold_bars,
+        stale_cut_mins=args.stale_cut_mins,
+        stale_cut_threshold=args.stale_cut_threshold,
     )
 
     skip_log = _apply_capital_flow(

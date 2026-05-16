@@ -358,6 +358,9 @@ def compute_signals_with_backtest(
     min_first_bar_range_pct: float = None,
     min_first_bar_volume_mult: float = None,
     min_or_vol_ratio: float = None,
+    min_hold_bars: int = 0,
+    stale_cut_mins: int = 0,
+    stale_cut_threshold: float = 0.0,
 ) -> pd.DataFrame:
     opening_start_t = datetime.strptime(opening_start_time, "%H:%M").time()
 
@@ -570,6 +573,17 @@ def compute_signals_with_backtest(
                     exit_reason = "max_loss"
                     break
 
+            # Min-hold window: suppress fallback and hard-stop exits so the trade can develop.
+            if bar_idx < min_hold_bars:
+                bars_held += 1
+                max_favorable_move = max(max_favorable_move, move)
+                if signal == "BULLISH":
+                    exit_price = max(bar_close, midpoint)
+                else:
+                    exit_price = min(bar_close, midpoint)
+                exit_reason = "end_of_day"
+                continue
+
             if signal == "BULLISH":
                 fallback_hit = not hard_stop_armed and bar_close <= fallback_price
                 if hard_stop_armed and armed_ma20_exit:
@@ -667,6 +681,14 @@ def compute_signals_with_backtest(
                 else:
                     exit_price = min(bar_close, midpoint)
                 exit_reason = "end_of_day"
+
+                # Stale-cut: exit if trade is flat after stale_cut_mins minutes.
+                if stale_cut_mins > 0 and stale_cut_threshold > 0.0 and bars_held * 5 == stale_cut_mins:
+                    current_pnl_pct = abs((bar_close - close) / close * 100)
+                    if current_pnl_pct < stale_cut_threshold:
+                        exit_price = bar_close
+                        exit_reason = "stale_cut"
+                        break
 
         if signal == "BULLISH":
             pnl = exit_price - close
@@ -1909,6 +1931,9 @@ def run_backtest(
     min_first_bar_range_pct: float = None,
     min_first_bar_volume_mult: float = None,
     min_or_vol_ratio: float = None,
+    min_hold_bars: int = 0,
+    stale_cut_mins: int = 0,
+    stale_cut_threshold: float = 0.0,
 ) -> dict:
     if ticker_dfs is None:
         ticker_dfs = fetch_bars(tickers, start_date, end_date, source=source)
@@ -1945,6 +1970,9 @@ def run_backtest(
             min_first_bar_range_pct=min_first_bar_range_pct,
             min_first_bar_volume_mult=min_first_bar_volume_mult,
             min_or_vol_ratio=min_or_vol_ratio,
+            min_hold_bars=min_hold_bars,
+            stale_cut_mins=stale_cut_mins,
+            stale_cut_threshold=stale_cut_threshold,
         )
         if not results.empty:
             results = results[results["date"] >= start_date].reset_index(drop=True)
