@@ -729,6 +729,9 @@ def run_selector_backtest(
     for win in windows:
         label = win["label"]
         results_for_window = {}
+        win_ma_switch = win.get("trailing_ma_switch", trailing_ma_switch)
+        win_ma_switch_period = win.get("trailing_ma_switch_period", trailing_ma_switch_period)
+        win_ma_switch_factor = win.get("trailing_ma_switch_factor", trailing_ma_switch_factor)
         for ticker in tickers:
             df = all_bars.get(ticker, pd.DataFrame())
             if df.empty:
@@ -742,9 +745,9 @@ def run_selector_backtest(
                 stop_pct,
                 opening_start_time=win["opening_start"],
                 trailing_ma=trailing_ma,
-                trailing_ma_switch=trailing_ma_switch,
-                trailing_ma_switch_factor=trailing_ma_switch_factor,
-                trailing_ma_switch_period=trailing_ma_switch_period,
+                trailing_ma_switch=win_ma_switch,
+                trailing_ma_switch_factor=win_ma_switch_factor,
+                trailing_ma_switch_period=win_ma_switch_period,
                 max_loss_pct=max_loss_pct,
                 armed_ma20_exit=armed_ma20_exit,
                 bearish_regime_dates=bearish_regime_dates,
@@ -1767,7 +1770,7 @@ def _print_per_window_stats(
 ):
     n_first = len(morning_split)
     split_pct = " / ".join(f"{s * 100:.0f}%" for s in morning_split)
-    sep = "\u2501" * 80
+    sep = "\u2501" * 96
     print(f"\n{sep}")
     print(
         f"  PER-WINDOW BREAKDOWN  (first group: {split_pct} of portfolio | sequential: inherits all returned capital)"
@@ -1775,9 +1778,9 @@ def _print_per_window_stats(
     print(sep)
     print(
         f"  {'Window':<8} {'Start':<7} {'Bars':<5} {'Group':<12} {'Trades':>7}  {'W/L':<10} "
-        f"{'WinRate':>8}  {'EV/trade':>9}  {'Cap P&L':>10}  {'Return%':>8}"
+        f"{'WinRate':>8}  {'EV/trade':>9}  {'Cap P&L':>10}  {'Return%':>8}  {'Short':>6}  {'Sh%':>5}  {'ShWR':>5}"
     )
-    print(f"  {'─' * 78}")
+    print(f"  {'─' * 94}")
 
     for i, win in enumerate(windows):
         label = win["label"]
@@ -1807,10 +1810,14 @@ def _print_per_window_stats(
             else f"{cap_stats['total_return_pct']:.2f}%"
         )
         wl = f"{stats['wins']}W/{stats['losses']}L"
+        short_total = stats.get("short_total", 0)
+        short_pct = short_total / stats["total"] * 100 if stats["total"] else 0.0
+        short_wr = stats["short_wins"] / short_total * 100 if short_total else 0.0
         print(
             f"  {label:<8} {win['opening_start']:<7} {win['opening_bars']:<5} {group:<10} "
             f"{stats['total']:>7}  {wl:<10} {stats['win_rate'] * 100:>7.0f}%  "
             f"{ev_str:>9}  {cap_pnl_str:>10}  {ret_str:>8}"
+            f"  {short_total:>6}  {short_pct:>4.0f}%  {short_wr:>4.0f}%"
         )
     print(sep)
 
@@ -2131,6 +2138,19 @@ def _parse_args():
         "CLOSE_TOP_PCT is optional: if provided, BULLISH only when close >= OR_high - PCT*OR_range, "
         "BEARISH only when close <= OR_low + PCT*OR_range (overrides --close-top-pct for this window). "
         "Repeat to add multiple windows. When specified, overrides --opening-start/--opening-bars.",
+    )
+    parser.add_argument(
+        "--window-ma-switch",
+        action="append",
+        nargs="+",
+        metavar="PARAM",
+        default=None,
+        dest="window_ma_switch",
+        help="Per-window trailing MA switch override: LABEL MODE [PERIOD] "
+        "(e.g. --window-ma-switch A1 after-arm 8). "
+        "MODE is one of: none, after-arm, after-target. "
+        "PERIOD defaults to --trailing-ma-switch-period if omitted. "
+        "Repeat to configure multiple windows.",
     )
     parser.add_argument(
         "--morning-split",
@@ -2515,6 +2535,22 @@ if __name__ == "__main__":
     resolved_windows = _normalize_windows(
         windows, args.opening_start, args.opening_bars
     )
+
+    # Apply per-window MA switch overrides
+    if args.window_ma_switch:
+        _valid_modes = {"none", "after-arm", "after-target"}
+        _win_by_label = {w["label"]: w for w in resolved_windows}
+        for entry in args.window_ma_switch:
+            if len(entry) < 2:
+                parser.error(f"--window-ma-switch requires LABEL MODE [PERIOD], got: {entry}")
+            wlabel, mode = entry[0], entry[1]
+            if mode not in _valid_modes:
+                parser.error(f"--window-ma-switch mode must be one of {_valid_modes}, got: {mode}")
+            if wlabel not in _win_by_label:
+                parser.error(f"--window-ma-switch label '{wlabel}' not found in defined windows")
+            _win_by_label[wlabel]["trailing_ma_switch"] = mode
+            if len(entry) > 2:
+                _win_by_label[wlabel]["trailing_ma_switch_period"] = int(entry[2])
     n_windows = len(resolved_windows)
 
     # Parse --morning-split: convert percentages to fractions, validate
@@ -2552,8 +2588,11 @@ if __name__ == "__main__":
         cap_str = f"  (~${cap_approx:,.0f})" if cap_approx is not None else ""
         ctp = w.get("close_top_pct")
         ctp_str = f", top/bottom {ctp * 100:.0f}%" if ctp is not None else ""
+        w_switch = w.get("trailing_ma_switch")
+        w_period = w.get("trailing_ma_switch_period", args.trailing_ma_switch_period)
+        ma_switch_str = f", ma-switch={w_switch}/ma{w_period}" if w_switch and w_switch != "none" else ""
         print(
-            f"    [{w['label']}] {w['opening_start']} / {w['opening_bars']} bars{ctp_str}  ({group_desc}){cap_str}"
+            f"    [{w['label']}] {w['opening_start']} / {w['opening_bars']} bars{ctp_str}{ma_switch_str}  ({group_desc}){cap_str}"
         )
     print(f"  Min capital  : ${args.min_window_capital:.0f} per window (skip if below)")
     print(

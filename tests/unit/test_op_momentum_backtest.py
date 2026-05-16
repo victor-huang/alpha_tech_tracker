@@ -19,9 +19,11 @@ from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import (
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector_backtest import (
     _annotate_doubledown_addon,
     _apply_capital_flow,
+    run_selector_backtest,
 )
 
 _M = "alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest"
+_MS = "alpha_tech_tracker.op_momentum_strategy.op_momentum_selector_backtest"
 
 
 ET = pytz.timezone("America/New_York")
@@ -1923,3 +1925,107 @@ class TestStaleCut:
         )
         row = result.iloc[0]
         assert row["exit_reason"] != "stale_cut"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Helpers for TestWindowMaSwitch
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _minimal_bars_df():
+    """Minimal 10-bar DataFrame with Close column for MA pre-computation."""
+    idx = pd.date_range(
+        "2025-01-02 09:30", periods=10, freq="5min",
+        tz=pytz.timezone("America/New_York"),
+    )
+    return pd.DataFrame(
+        {"Open": 100.0, "High": 100.0, "Low": 100.0, "Close": 100.0, "Volume": 1000},
+        index=idx,
+    )
+
+
+def _run_with_windows(windows, global_switch="none", global_period=8):
+    """
+    Call run_selector_backtest with the given windows, patching fetch_bars and
+    compute_signals_with_backtest so no real I/O or computation happens.
+    Returns the mock for compute_signals_with_backtest so callers can inspect calls.
+    """
+    mock_cswb = MagicMock(return_value=pd.DataFrame())
+    with patch(f"{_MS}.compute_signals_with_backtest", mock_cswb), \
+         patch(f"{_MS}.fetch_bars", return_value={"SNDK": _minimal_bars_df()}), \
+         patch(f"{_MS}.build_bearish_regime_dates", return_value=None):
+        run_selector_backtest(
+            n=1,
+            tickers=["SNDK"],
+            eval_start=date(2025, 1, 2),
+            eval_end=date(2025, 1, 2),
+            windows=windows,
+            trailing_ma_switch=global_switch,
+            trailing_ma_switch_period=global_period,
+        )
+    return mock_cswb
+
+
+def _switch_arg(mock_cswb, call_index):
+    """Return the trailing_ma_switch kwarg from the nth call."""
+    return mock_cswb.call_args_list[call_index].kwargs["trailing_ma_switch"]
+
+
+def _period_arg(mock_cswb, call_index):
+    """Return the trailing_ma_switch_period kwarg from the nth call."""
+    return mock_cswb.call_args_list[call_index].kwargs["trailing_ma_switch_period"]
+
+
+class TestWindowMaSwitch:
+    """Per-window trailing MA switch override in run_selector_backtest."""
+
+    def test_per_window_override_replaces_global_switch(self):
+        windows = [{"label": "A1", "opening_start": "12:00", "opening_bars": 3,
+                    "trailing_ma_switch": "after-arm"}]
+        mock = _run_with_windows(windows, global_switch="none")
+        assert _switch_arg(mock, 0) == "after-arm"
+
+    def test_global_switch_used_when_no_per_window_override(self):
+        windows = [{"label": "M1", "opening_start": "09:30", "opening_bars": 3}]
+        mock = _run_with_windows(windows, global_switch="after-arm")
+        assert _switch_arg(mock, 0) == "after-arm"
+
+    def test_two_windows_get_independent_switch_settings(self):
+        windows = [
+            {"label": "M1", "opening_start": "09:30", "opening_bars": 1},
+            {"label": "A1", "opening_start": "12:00", "opening_bars": 3,
+             "trailing_ma_switch": "after-arm"},
+        ]
+        mock = _run_with_windows(windows, global_switch="none")
+        calls_by_start = {
+            call.kwargs["opening_start_time"]: call
+            for call in mock.call_args_list
+        }
+        assert calls_by_start["09:30"].kwargs["trailing_ma_switch"] == "none"
+        assert calls_by_start["12:00"].kwargs["trailing_ma_switch"] == "after-arm"
+
+    def test_per_window_period_overrides_global_period(self):
+        windows = [{"label": "A1", "opening_start": "12:00", "opening_bars": 3,
+                    "trailing_ma_switch": "after-arm",
+                    "trailing_ma_switch_period": 5}]
+        mock = _run_with_windows(windows, global_switch="after-arm", global_period=8)
+        assert _period_arg(mock, 0) == 5
+
+    def test_global_period_used_when_no_per_window_period(self):
+        windows = [{"label": "A1", "opening_start": "12:00", "opening_bars": 3,
+                    "trailing_ma_switch": "after-arm"}]
+        mock = _run_with_windows(windows, global_switch="none", global_period=13)
+        assert _period_arg(mock, 0) == 13
+
+    def test_none_override_suppresses_global_switch_for_that_window(self):
+        windows = [
+            {"label": "M1", "opening_start": "09:30", "opening_bars": 1,
+             "trailing_ma_switch": "none"},
+            {"label": "A1", "opening_start": "12:00", "opening_bars": 3},
+        ]
+        mock = _run_with_windows(windows, global_switch="after-arm")
+        calls_by_start = {
+            call.kwargs["opening_start_time"]: call
+            for call in mock.call_args_list
+        }
+        assert calls_by_start["09:30"].kwargs["trailing_ma_switch"] == "none"
+        assert calls_by_start["12:00"].kwargs["trailing_ma_switch"] == "after-arm"
