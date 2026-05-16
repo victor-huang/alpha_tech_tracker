@@ -629,6 +629,8 @@ def run_selector_backtest(
     dedup: bool = False,
     enable_reversal: bool = False,
     reversal_max_bars_held: int = 3,
+    enable_bearish_reversal: bool = False,
+    bearish_reversal_max_bars_held: int = 3,
     min_or_range: float = 0.0,
     min_or_range_windows: list = None,
     min_ma200_distance: float = 0.0,
@@ -753,6 +755,8 @@ def run_selector_backtest(
                 bearish_regime_dates=bearish_regime_dates,
                 enable_reversal=enable_reversal,
                 reversal_max_bars_held=reversal_max_bars_held,
+                enable_bearish_reversal=enable_bearish_reversal,
+                bearish_reversal_max_bars_held=bearish_reversal_max_bars_held,
                 or_bar_lookback=or_bar_lookback,
                 enable_bearish_reentry=enable_bearish_reentry,
                 bearish_reentry_max_bars=bearish_reentry_max_bars,
@@ -2328,7 +2332,7 @@ def _parse_args():
         action="store_true",
         default=False,
         help="Enable reversal trade: if BEARISH primary stops out within N bars and "
-        "price later crosses above OR high, enter a BULLISH reversal with 15%% OR-range "
+        "price later crosses above OR high, enter a BULLISH reversal with OR-midpoint "
         "hard stop. Default: off.",
     )
     parser.add_argument(
@@ -2337,6 +2341,22 @@ def _parse_args():
         default=3,
         dest="reversal_max_bars",
         help="Max bars_held threshold for reversal eligibility (default: 3 = within 4 bars).",
+    )
+    parser.add_argument(
+        "--bearish-reversal",
+        action="store_true",
+        default=False,
+        dest="bearish_reversal",
+        help="Enable bearish reversal trade: if BULLISH primary stops out within N bars and "
+        "price later crosses below OR low, enter a BEARISH reversal with OR-midpoint "
+        "hard stop. Default: off.",
+    )
+    parser.add_argument(
+        "--bearish-reversal-max-bars",
+        type=int,
+        default=3,
+        dest="bearish_reversal_max_bars",
+        help="Max bars_held threshold for bearish reversal eligibility (default: 3).",
     )
     parser.add_argument(
         "--min-first-bar-range",
@@ -2632,6 +2652,9 @@ if __name__ == "__main__":
         f"  Reversal     : {'on (max bars_held=' + str(args.reversal_max_bars) + ')' if args.reversal else 'off'}"
     )
     print(
+        f"  Bearish Rev  : {'on (max bars_held=' + str(args.bearish_reversal_max_bars) + ')' if args.bearish_reversal else 'off'}"
+    )
+    print(
         f"  Bearish RE   : {'on (max bars_held=' + str(args.bearish_reentry_max_bars) + ')' if args.bearish_reentry else 'off'}"
     )
     print(
@@ -2711,6 +2734,8 @@ if __name__ == "__main__":
         dedup=args.dedup,
         enable_reversal=args.reversal,
         reversal_max_bars_held=args.reversal_max_bars,
+        enable_bearish_reversal=args.bearish_reversal,
+        bearish_reversal_max_bars_held=args.bearish_reversal_max_bars,
         enable_bearish_reentry=args.bearish_reentry,
         bearish_reentry_max_bars=args.bearish_reentry_max_bars,
         enable_bullish_reentry=args.bullish_reentry,

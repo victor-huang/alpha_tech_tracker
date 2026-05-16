@@ -2029,3 +2029,127 @@ class TestWindowMaSwitch:
         }
         assert calls_by_start["09:30"].kwargs["trailing_ma_switch"] == "none"
         assert calls_by_start["12:00"].kwargs["trailing_ma_switch"] == "after-arm"
+
+
+# ---------------------------------------------------------------------------
+# TestBearishReversal
+# ---------------------------------------------------------------------------
+#
+# OR: or_high=102, or_low=98, or_range=4, midpoint=100
+# BULLISH primary hard_stop at bars_held=1 (entry bar idx=1 of post_open)
+# Bearish reversal eligibility: signal==BULLISH, bars_held<=max, exit==hard_stop
+# Entry trigger: Close < or_low=98
+# Hard stop: midpoint=100 (Close >= 100 → exit at 100)
+# Trailing arm: MA20 < midpoint=100
+# Trailing exit: armed AND Close > MA20 (AND MA20 < midpoint)
+
+_BREV_MA20_ABOVE_MID = 101.0   # MA20 above midpoint → trailing never arms
+_BREV_MA20_BELOW_MID = 99.5    # MA20 below midpoint → arms immediately
+
+
+class TestBearishReversal:
+    def test_bearish_reversal_fires_when_bullish_stops_and_price_drops_below_or_low(self):
+        # BULLISH stops at bar 1; scan bar at 09:55 closes at 97.5 < or_low=98 → entry.
+        # MA20=101 (above midpoint=100) keeps trailing unarmed; holds to EOD at 96.0.
+        # pnl = 97.5 - 96.0 = 1.5 (profit).
+        df = _make_bars("2025-01-02", _BULLISH_OPENING + _BULLISH_POST_HARDSTOP + [
+            ("09:55",  97.0, 98.0, 96.5,  97.5, _BREV_MA20_ABOVE_MID, _BULL_MA50, _MA200),
+            ("10:00",  96.0, 97.0, 95.5,  96.0, _BREV_MA20_ABOVE_MID, _BULL_MA50, _MA200),
+        ])
+        result = compute_signals_with_backtest(
+            df, opening_bars=3, enable_bearish_reversal=True
+        )
+
+        assert len(result) == 2
+        rev = result[result["is_reversal"] == True].iloc[0]
+        assert rev["signal"] == "BEARISH"
+        assert rev["entry_price"] == pytest.approx(97.5)
+        assert rev["exit_price"] == pytest.approx(96.0)
+        assert rev["pnl"] == pytest.approx(1.5)
+        assert rev["exit_reason"] == "end_of_day"
+
+    def test_bearish_reversal_does_not_fire_when_disabled(self):
+        df = _make_bars("2025-01-02", _BULLISH_OPENING + _BULLISH_POST_HARDSTOP + [
+            ("09:55",  97.0, 98.0, 96.5,  97.5, _BREV_MA20_ABOVE_MID, _BULL_MA50, _MA200),
+            ("10:00",  96.0, 97.0, 95.5,  96.0, _BREV_MA20_ABOVE_MID, _BULL_MA50, _MA200),
+        ])
+        result = compute_signals_with_backtest(
+            df, opening_bars=3, enable_bearish_reversal=False
+        )
+
+        assert len(result) == 1
+        assert not any(result["is_reversal"])
+
+    def test_bearish_reversal_does_not_fire_when_price_never_drops_below_or_low(self):
+        # Post-stop scan bars stay at 98.5 (above or_low=98) → no trigger.
+        df = _make_bars("2025-01-02", _BULLISH_OPENING + _BULLISH_POST_HARDSTOP + [
+            ("09:55", 98.5, 99.0, 98.0, 98.5, _BREV_MA20_ABOVE_MID, _BULL_MA50, _MA200),
+            ("10:00", 98.5, 99.0, 98.0, 98.5, _BREV_MA20_ABOVE_MID, _BULL_MA50, _MA200),
+        ])
+        result = compute_signals_with_backtest(
+            df, opening_bars=3, enable_bearish_reversal=True
+        )
+
+        assert len(result) == 1
+        assert not any(result["is_reversal"])
+
+    def test_bearish_reversal_does_not_fire_when_primary_held_too_many_bars(self):
+        # bearish_reversal_max_bars_held=0; BULLISH primary bars_held=1 > 0 → ineligible.
+        df = _make_bars("2025-01-02", _BULLISH_OPENING + _BULLISH_POST_HARDSTOP + [
+            ("09:55",  97.0, 98.0, 96.5,  97.5, _BREV_MA20_ABOVE_MID, _BULL_MA50, _MA200),
+            ("10:00",  96.0, 97.0, 95.5,  96.0, _BREV_MA20_ABOVE_MID, _BULL_MA50, _MA200),
+        ])
+        result = compute_signals_with_backtest(
+            df, opening_bars=3, enable_bearish_reversal=True, bearish_reversal_max_bars_held=0
+        )
+
+        assert len(result) == 1
+
+    def test_bearish_reversal_hard_stop_exits_at_midpoint(self):
+        # Entry at 97.5; next bar closes at 100.5 (>= midpoint=100) → hard_stop exit at 100.
+        df = _make_bars("2025-01-02", _BULLISH_OPENING + _BULLISH_POST_HARDSTOP + [
+            ("09:55",  97.0, 98.0, 96.5,  97.5, _BREV_MA20_ABOVE_MID, _BULL_MA50, _MA200),
+            ("10:00", 100.0, 101,  99.5, 100.5, _BREV_MA20_ABOVE_MID, _BULL_MA50, _MA200),
+        ])
+        result = compute_signals_with_backtest(
+            df, opening_bars=3, enable_bearish_reversal=True
+        )
+
+        rev = result[result["is_reversal"] == True].iloc[0]
+        assert rev["exit_reason"] == "hard_stop"
+        assert rev["exit_price"] == pytest.approx(100.0)  # midpoint
+        assert rev["pnl"] < 0
+
+    def test_bearish_reversal_trailing_arms_when_ma20_below_midpoint_and_exits_on_close_above_ma20(self):
+        # Entry at 97.0; MA20=99.5 < midpoint=100 → arms on first remaining bar.
+        # Second remaining bar: close=99.8 > MA20=99.5 → trailing_stop_ma20 exit.
+        df = _make_bars("2025-01-02", _BULLISH_OPENING + _BULLISH_POST_HARDSTOP + [
+            ("09:55",  97.0, 98.0, 96.5,  97.0, _BULL_MA20,          _BULL_MA50, _MA200),
+            ("10:00",  97.5, 98.5, 97.0,  97.5, _BREV_MA20_BELOW_MID, _BULL_MA50, _MA200),
+            ("10:05",  99.5, 100,  98.5,  99.8, _BREV_MA20_BELOW_MID, _BULL_MA50, _MA200),
+        ])
+        result = compute_signals_with_backtest(
+            df, opening_bars=3, enable_bearish_reversal=True
+        )
+
+        rev = result[result["is_reversal"] == True].iloc[0]
+        assert rev["exit_reason"] == "trailing_stop_ma20"
+        assert rev["exit_price"] == pytest.approx(99.8)
+
+    def test_bru_blocked_when_bearish_reversal_fires_first(self):
+        # Bearish reversal fires on scan bar 0 (close=97.5 < or_low=98).
+        # BRU would fire on scan bar 1 (close=103.5 > or_high=102 + above MA50),
+        # but bearish reversal wins same-bar-or-earlier priority.
+        df = _make_bars("2025-01-02", _BULLISH_OPENING + _BULLISH_POST_HARDSTOP + [
+            ("09:55",  97.0, 98.0,  96.5,  97.5, _BREV_MA20_ABOVE_MID, _BULL_MA50, _MA200),
+            ("10:00", 103.0, 104.0, 102.0, 103.5, _BREV_MA20_ABOVE_MID, _BULL_MA50, _MA200),
+        ])
+        result = compute_signals_with_backtest(
+            df, opening_bars=3,
+            enable_bearish_reversal=True,
+            enable_bullish_reentry=True,
+        )
+
+        bearish_reversals = result[(result["is_reversal"] == True) & (result["signal"] == "BEARISH")]
+        assert len(bearish_reversals) == 1
+        assert not any(result["is_bullish_reentry"])

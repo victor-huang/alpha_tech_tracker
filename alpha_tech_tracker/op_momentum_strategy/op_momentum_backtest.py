@@ -343,6 +343,8 @@ def compute_signals_with_backtest(
     bearish_regime_dates: set = None,
     enable_reversal: bool = False,
     reversal_max_bars_held: int = 3,
+    enable_bearish_reversal: bool = False,
+    bearish_reversal_max_bars_held: int = 3,
     or_bar_lookback: int = 0,
     enable_bearish_reentry: bool = False,
     bearish_reentry_max_bars: int = 3,
@@ -979,6 +981,33 @@ def compute_signals_with_backtest(
                 }
             )
 
+        # Bearish reversal: BULLISH primary stopped out within N bars AND price later
+        # crosses below OR low — flip to BEARISH.
+        # Competes with BRU; bearish reversal wins same-bar ties (BRU scan stops
+        # before the bar where bearish reversal fires).
+        brev_entry_price = None
+        brev_entry_idx = None
+        brev_hard_stop = None
+        brev_scan = None
+
+        brev_eligible = enable_bearish_reversal and (
+            signal == "BULLISH"
+            and bars_held <= bearish_reversal_max_bars_held
+            and exit_reason in ("hard_stop", "fallback_20pct")
+            and exit_bar_idx >= 0
+        )
+        if brev_eligible:
+            brev_hard_stop = midpoint
+            brev_scan = post_open.iloc[exit_bar_idx + 1:]
+
+            for scan_idx, (scan_ts, scan_bar) in enumerate(brev_scan.iterrows()):
+                if scan_ts.time() > NO_MORE_NEW_POSITION_AFTER:
+                    break
+                if scan_bar["Close"] < or_low:
+                    brev_entry_price = scan_bar["Close"]
+                    brev_entry_idx = scan_idx
+                    break
+
         # Bullish re-entry: BULLISH primary stopped out within N bars AND price later
         # closes above OR_high — re-enter BULLISH.
         # Hard stop: midpoint (falling back to midpoint = bullish thesis dead).
@@ -1000,6 +1029,8 @@ def compute_signals_with_backtest(
             for scan_idx, (scan_ts, scan_bar) in enumerate(bru_scan.iterrows()):
                 if scan_ts.time() > NO_MORE_NEW_POSITION_AFTER:
                     break
+                if brev_entry_idx is not None and scan_idx >= brev_entry_idx:
+                    break  # bearish reversal fires here or earlier — stop before this bar
                 bar_ma50 = scan_bar.get("MA50") if hasattr(scan_bar, "get") else scan_bar["MA50"]
                 if (
                     scan_bar["Close"] > or_high
@@ -1009,6 +1040,11 @@ def compute_signals_with_backtest(
                     bru_entry_price = scan_bar["Close"]
                     bru_entry_idx = scan_idx
                     break
+
+            # BRU fired on an earlier bar than bearish reversal — cancel bearish reversal.
+            if bru_entry_price is not None:
+                brev_entry_price = None
+                brev_entry_idx = None
 
             if bru_entry_price is not None:
                 bru_bars_held = 0
@@ -1095,6 +1131,90 @@ def compute_signals_with_backtest(
                         "or_vol_ratio": round(or_vol_ratio, 4) if or_vol_ratio is not None else None,
                     }
                 )
+
+        # Bearish reversal simulation (only if bearish reversal won over BRU).
+        if brev_entry_price is not None:
+            brev_bars_held = 0
+            brev_max_favorable_move = 0.0
+            brev_exit_price = brev_entry_price
+            brev_exit_reason = "end_of_day"
+            brev_trailing_armed = False
+            brev_use_ma_fast = False
+            remaining_brev_bars = brev_scan.iloc[brev_entry_idx + 1:]
+
+            for _, brev_bar in remaining_brev_bars.iterrows():
+                brev_bar_ma_fast = brev_bar[fast_ma_col]
+                brev_bar_ma20 = brev_bar["MA20"]
+                brev_bar_close = brev_bar["Close"]
+                brev_move = brev_entry_price - brev_bar_close
+
+                if not brev_trailing_armed and not pd.isna(brev_bar_ma20) and brev_bar_ma20 < midpoint:
+                    brev_trailing_armed = True
+
+                if not brev_use_ma_fast and trailing_ma_switch != "none":
+                    if trailing_ma_switch == "after-arm" and brev_trailing_armed:
+                        brev_use_ma_fast = True
+                    elif trailing_ma_switch == "after-target" and brev_move >= trailing_ma_switch_factor * effective_or_range:
+                        brev_use_ma_fast = True
+                _brev_eff_trail = brev_bar_ma_fast if (brev_use_ma_fast and not pd.isna(brev_bar_ma_fast)) else brev_bar_ma20
+                _brev_eff_reason = f"trailing_stop_{fast_ma_col.lower()}" if (brev_use_ma_fast and not pd.isna(brev_bar_ma_fast)) else "trailing_stop_ma20"
+                _brev_trail_active = (
+                    (brev_use_ma_fast and not pd.isna(brev_bar_ma_fast))
+                    or (trailing_ma in ("ma20", "both") and not pd.isna(brev_bar_ma20))
+                )
+
+                brev_hard_stop_hit = brev_bar_close >= brev_hard_stop
+                brev_ma20_trailing = (
+                    brev_trailing_armed
+                    and not brev_hard_stop_hit
+                    and _brev_trail_active
+                    and _brev_eff_trail < midpoint
+                    and brev_bar_close > _brev_eff_trail
+                )
+                brev_exit_price_candidate = brev_hard_stop if brev_hard_stop_hit else brev_bar_close
+                brev_exit_reason_candidate = "hard_stop" if brev_hard_stop_hit else _brev_eff_reason
+                brev_stop_hit = brev_hard_stop_hit or brev_ma20_trailing
+
+                if brev_stop_hit:
+                    brev_exit_price = brev_exit_price_candidate
+                    brev_exit_reason = brev_exit_reason_candidate
+                    break
+                else:
+                    brev_bars_held += 1
+                    brev_max_favorable_move = max(brev_max_favorable_move, brev_move)
+                    brev_exit_price = brev_bar_close
+                    brev_exit_reason = "end_of_day"
+
+            brev_pnl = brev_entry_price - brev_exit_price
+            primary_row["brev_entry_price"] = brev_entry_price
+            primary_row["brev_entry_idx"] = brev_entry_idx
+            primary_row["brev_bars_held"] = brev_bars_held
+            rows.append(
+                {
+                    "date": date_,
+                    "signal": "BEARISH",
+                    "or_high": round(or_high, 2),
+                    "or_low": round(or_low, 2),
+                    "midpoint": round(midpoint, 2),
+                    "entry_price": round(brev_entry_price, 2),
+                    "exit_price": round(brev_exit_price, 2),
+                    "pnl": round(brev_pnl, 2),
+                    "exit_reason": brev_exit_reason,
+                    "ma20": round(ma20, 2),
+                    "ma200": round(ma200, 2),
+                    "bars_held": brev_bars_held,
+                    "mins_held": brev_bars_held * 5,
+                    "entry_idx": brev_entry_idx,
+                    "max_favorable_move": round(brev_max_favorable_move, 2),
+                    "held_to_close": brev_exit_reason == "end_of_day",
+                    "total_post_bars": len(post_open),
+                    "success": brev_pnl > 0,
+                    "is_reversal": True,
+                    "is_bearish_reentry": False,
+                    "is_bullish_reentry": False,
+                    "or_vol_ratio": round(or_vol_ratio, 4) if or_vol_ratio is not None else None,
+                }
+            )
 
     return pd.DataFrame(rows)
 
