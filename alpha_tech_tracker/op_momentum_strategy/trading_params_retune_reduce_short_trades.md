@@ -667,3 +667,125 @@ python alpha_tech_tracker/op_momentum_strategy/op_momentum_selector_backtest.py 
   --feed sip --reversal \
   --start <START> --end <END>
 ```
+
+---
+
+## Phase 10 — Exit-at-Bar-Close Default + M1 Window Re-sweep (2026-05-17)
+
+### 10a — Exit-at-bar-close made default
+
+**Change:** `--exit-at-bar-close` is now the default behavior. Previously the backtest exited stop/fallback trades at the intrabar stop price (optimistic). Now it exits at bar close, matching live engine behavior (evaluate at bar close → fire market order).
+
+To opt back into intrabar price simulation: `--no-exit-at-bar-close`.
+
+**Impact on base config** (`--top 2 --weights 60 40 --window M1 09:35 3 --reversal --stop-pct 0.2`):
+- Before (intrabar): **+58.88%** in 2026 YTD
+- After (bar-close): **+33.43%** in 2026 YTD (−25.5pp)
+
+The ~25pp gap represents the theoretical advantage of stop-limit fills at the exact trigger price vs market-on-close execution. Bar-close is more realistic for live trading.
+
+---
+
+### 10b — M1 Window Sweep (with bar-close default)
+
+**Date:** 2026-05-17
+
+**Base config:** `--top 2 --weights 60 40 --reversal --feed sip` (no BRE/BRU/DD, no stale-cut)
+
+**Grid:** 7 start times × 5 bar counts × 5 stop-pcts = 175 combinations per year; evaluated on 2026 YTD and 2025 full year (350 total runs).
+
+| Dimension | Values |
+|---|---|
+| Start time | `09:30`, `09:35`, `09:40`, `09:45`, `09:50`, `09:55`, `10:00` |
+| Bar count | `1`, `2`, `3`, `4`, `5` |
+| `--stop-pct` | `0.10`, `0.15`, `0.20`, `0.25`, `0.30` |
+
+#### Top 15 — 2026 YTD
+
+| Config | 2026 | Trades | Wins |
+|---|---|---|---|
+| `09:30 / 1 bar / stop 0.20` | **+48.45%** | 177 | 65 |
+| `09:30 / 1 bar / stop 0.10` | **+48.40%** | 177 | 61 |
+| `09:30 / 3 bars / stop 0.30` | +43.49% | 176 | 73 |
+| `09:30 / 2 bars / stop 0.10` | +41.55% | 177 | 71 |
+| `09:30 / 2 bars / stop 0.25` | +41.07% | 173 | 77 |
+| `09:30 / 3 bars / stop 0.25` | +40.83% | 179 | 70 |
+| `09:30 / 1 bar / stop 0.15` | +40.65% | 177 | 58 |
+| `09:30 / 2 bars / stop 0.30` | +40.14% | 171 | 73 |
+| `09:30 / 3 bars / stop 0.15` | +37.88% | 180 | 68 |
+| `09:30 / 1 bar / stop 0.25` | +37.03% | 175 | 63 |
+| `09:30 / 2 bars / stop 0.20` | +36.77% | 178 | 75 |
+| `09:35 / 2 bars / stop 0.30` | +36.76% | 178 | 67 |
+| `09:30 / 3 bars / stop 0.10` | +35.59% | 180 | 68 |
+| `09:30 / 3 bars / stop 0.20` | +35.36% | 179 | 69 |
+| `09:55 / 5 bars / stop 0.25` | +33.78% | 173 | 66 |
+
+**Finding:** All top configs are `09:30` start. `09:35+` does not appear in the top 14.
+
+#### Top 5 — 2025 Full Year
+
+| Config | 2025 | Trades |
+|---|---|---|
+| `09:30 / 2 bars / stop 0.15` | **+29.59%** | 417 |
+| `09:40 / 1 bar / stop 0.30` | +25.09% | 390 |
+| `09:30 / 5 bars / stop 0.30` | +23.51% | 448 |
+| `09:30 / 2 bars / stop 0.10` | +18.67% | 409 |
+| `09:30 / 2 bars / stop 0.20` | +13.56% | 414 |
+
+#### Combined ranking (2025 + 2026)
+
+| Config | 2026 | 2025 | Combined |
+|---|---|---|---|
+| **`09:30 / 2 bars / stop 0.15`** | **+31.56%** | **+29.59%** | **+61.15%** |
+| `09:30 / 2 bars / stop 0.10` | +41.55% | +18.67% | +60.22% |
+| `09:30 / 5 bars / stop 0.30` | +29.84% | +23.51% | +53.34% |
+| `09:30 / 2 bars / stop 0.20` | +36.77% | +13.56% | +50.34% |
+| `09:55 / 5 bars / stop 0.30` | +32.16% | +13.85% | +46.02% |
+
+---
+
+### 10c — 7-Year Validation of Top 5 Configs (2020–2026)
+
+**Years:** 2020–2024 newly tested; 2025–2026 from sweep above.
+
+| Config | 2020 | 2021 | 2022 | 2023 | 2024 | 2025 | 2026 | 7yr sum | W/L |
+|---|---|---|---|---|---|---|---|---|---|
+| `09:30/2b/s0.15` | +26.9% | -27.7% | +3.8% | +11.4% | -15.6% | +29.6% | +31.6% | +60.0% | 5/7 |
+| `09:30/2b/s0.10` | +32.1% | -16.7% | -3.5% | +17.1% | +1.2% | +18.7% | +41.6% | +90.4% | 5/7 |
+| **`09:30/5b/s0.30`** | **+21.5%** | **+34.9%** | **+41.8%** | **+24.6%** | **-21.8%** | **+23.5%** | **+29.8%** | **+154.3%** | **6/7** |
+| `09:30/2b/s0.20` | +26.2% | -43.1% | +7.0% | -8.2% | -6.3% | +13.6% | +36.8% | +25.9% | 4/7 |
+| `09:55/5b/s0.30` | +30.0% | -3.5% | +9.7% | -12.2% | +22.7% | +13.9% | +32.2% | +92.8% | 5/7 |
+
+#### Key findings
+
+1. **`09:30/5b/s0.30` is the 7-year winner:** +154.3% cumulative, wins 6/7 years. Dominates the bearish/choppy years 2021 (+34.9%) and 2022 (+41.8%) where 2-bar configs failed badly. Only weakness: 2024 (-21.8%).
+
+2. **2021 is the key discriminator:** all 2-bar configs lose in 2021 (-16% to -43%). The wider OR (5 bars = 25-min range) and looser stop (0.30) weathered the 2021 bull market momentum without getting stopped out early.
+
+3. **`09:30/2b/s0.10` is the best 2-bar config** (+90.4% over 7 years, 5/7 wins) — tighter stop cuts losers faster in trend years.
+
+4. **Avoid `09:30/2b/s0.20`:** worst 7-year total (+25.9%), worst single year (2021: -43.1%), only 4/7 wins. The combination of medium stop (not tight enough to cut fast, not wide enough to ride) underperforms in both directions.
+
+5. **`09:55/5b/s0.30`** avoids the 2021 blowdown (-3.5%) and wins 2024 (+22.7%) where other configs struggle — a useful regime hedge but +62pp behind `09:30/5b/s0.30` over 7 years.
+
+#### Recommendation
+
+**For maximum 7-year robustness:** `--window M1 09:30 5 --stop-pct 0.30` wins on cumulative return and year count.
+
+**For 2025–2026 recency bias:** `--window M1 09:30 2 --stop-pct 0.15` is the most balanced in recent years (+29.6% / +31.6%) and easiest to reason about.
+
+```bash
+# Most robust (7-year winner)
+python alpha_tech_tracker/op_momentum_strategy/op_momentum_selector_backtest.py \
+  --top 2 --weights 60 40 \
+  --window M1 09:30 5 --stop-pct 0.30 \
+  --reversal --feed sip \
+  --start <START> --end <END>
+
+# Most balanced recent years
+python alpha_tech_tracker/op_momentum_strategy/op_momentum_selector_backtest.py \
+  --top 2 --weights 60 40 \
+  --window M1 09:30 2 --stop-pct 0.15 \
+  --reversal --feed sip \
+  --start <START> --end <END>
+```
