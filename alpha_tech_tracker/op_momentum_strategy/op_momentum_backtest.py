@@ -328,6 +328,14 @@ def parse_args():
         "Apples-to-apples vs Rule 4: compares OR bars to historical OR bars, not full-session avg. "
         "Default: disabled.",
     )
+    parser.add_argument(
+        "--exit-at-bar-close",
+        dest="exit_at_bar_close",
+        action="store_true",
+        default=False,
+        help="Exit at the 5-min bar close. Matches live engine behaviour. "
+        "Default: exit at the intrabar stop/fallback price.",
+    )
     return parser.parse_args()
 
 
@@ -363,6 +371,7 @@ def compute_signals_with_backtest(
     min_hold_bars: int = 0,
     stale_cut_mins: int = 0,
     stale_cut_threshold: float = 0.0,
+    exit_at_bar_close: bool = False,
 ) -> pd.DataFrame:
     opening_start_t = datetime.strptime(opening_start_time, "%H:%M").time()
 
@@ -595,9 +604,10 @@ def compute_signals_with_backtest(
                         ma20_exit_price, ma20_exit_reason = bar_close, _eff_trail_reason
                     else:
                         ma20_trailing_stop_hit = bar_close <= hard_stop_price
-                        ma20_exit_price, ma20_exit_reason = (
+                        _bull_stop_fill = bar_close if exit_at_bar_close else (
                             hard_stop_price if bar["High"] >= hard_stop_price else bar["Open"]
-                        ), "hard_stop"
+                        )
+                        ma20_exit_price, ma20_exit_reason = _bull_stop_fill, "hard_stop"
                 else:
                     hard_stop_hit = hard_stop_armed and bar_close <= hard_stop_price
                     ma20_trailing_stop_hit = (
@@ -606,11 +616,11 @@ def compute_signals_with_backtest(
                         and _eff_trail > hard_stop_price
                         and bar_close < _eff_trail
                     )
+                    _bull_stop_fill = bar_close if exit_at_bar_close else (
+                        hard_stop_price if bar["High"] >= hard_stop_price else bar["Open"]
+                    )
                     ma20_exit_price, ma20_exit_reason = (
-                        (
-                            hard_stop_price if bar["High"] >= hard_stop_price else bar["Open"],
-                            "hard_stop",
-                        )
+                        (_bull_stop_fill, "hard_stop")
                         if hard_stop_hit
                         else (bar_close, _eff_trail_reason)
                     )
@@ -629,9 +639,10 @@ def compute_signals_with_backtest(
                         ma20_exit_price, ma20_exit_reason = bar_close, _eff_trail_reason
                     else:
                         ma20_trailing_stop_hit = bar_close >= hard_stop_price
-                        ma20_exit_price, ma20_exit_reason = (
+                        _bear_stop_fill = bar_close if exit_at_bar_close else (
                             hard_stop_price if bar["Low"] <= hard_stop_price else bar["Open"]
-                        ), "hard_stop"
+                        )
+                        ma20_exit_price, ma20_exit_reason = _bear_stop_fill, "hard_stop"
                 else:
                     hard_stop_hit = hard_stop_armed and bar_close >= hard_stop_price
                     ma20_trailing_stop_hit = (
@@ -640,11 +651,11 @@ def compute_signals_with_backtest(
                         and _eff_trail < or_low
                         and bar_close > _eff_trail
                     )
+                    _bear_stop_fill = bar_close if exit_at_bar_close else (
+                        hard_stop_price if bar["Low"] <= hard_stop_price else bar["Open"]
+                    )
                     ma20_exit_price, ma20_exit_reason = (
-                        (
-                            hard_stop_price if bar["Low"] <= hard_stop_price else bar["Open"],
-                            "hard_stop",
-                        )
+                        (_bear_stop_fill, "hard_stop")
                         if hard_stop_hit
                         else (bar_close, _eff_trail_reason)
                     )
@@ -657,14 +668,12 @@ def compute_signals_with_backtest(
                 )
 
             if fallback_hit:
-                if signal == "BULLISH":
-                    exit_price = (
-                        fallback_price if bar["High"] >= fallback_price else bar_close
-                    )
+                if exit_at_bar_close:
+                    exit_price = bar_close
+                elif signal == "BULLISH":
+                    exit_price = fallback_price if bar["High"] >= fallback_price else bar_close
                 else:
-                    exit_price = (
-                        fallback_price if bar["Low"] <= fallback_price else bar["Open"]
-                    )
+                    exit_price = fallback_price if bar["Low"] <= fallback_price else bar["Open"]
                 exit_reason = "fallback_20pct"
                 break
             elif ma20_trailing_stop_hit:
@@ -2054,6 +2063,7 @@ def run_backtest(
     min_hold_bars: int = 0,
     stale_cut_mins: int = 0,
     stale_cut_threshold: float = 0.0,
+    exit_at_bar_close: bool = False,
 ) -> dict:
     if ticker_dfs is None:
         ticker_dfs = fetch_bars(tickers, start_date, end_date, source=source)
@@ -2093,6 +2103,7 @@ def run_backtest(
             min_hold_bars=min_hold_bars,
             stale_cut_mins=stale_cut_mins,
             stale_cut_threshold=stale_cut_threshold,
+            exit_at_bar_close=exit_at_bar_close,
         )
         if not results.empty:
             results = results[results["date"] >= start_date].reset_index(drop=True)
@@ -2192,6 +2203,7 @@ if __name__ == "__main__":
             min_first_bar_range_pct=args.min_first_bar_range_pct,
             min_first_bar_volume_mult=args.min_first_bar_volume_mult,
             min_or_vol_ratio=args.min_or_vol_ratio,
+            exit_at_bar_close=args.exit_at_bar_close,
         )
         if not results.empty:
             results = results[results["date"] >= cutoff].reset_index(drop=True)

@@ -660,6 +660,7 @@ def run_selector_backtest(
     min_hold_bars: int = 0,
     stale_cut_mins: int = 0,
     stale_cut_threshold: float = 0.0,
+    exit_at_bar_close: bool = False,
 ) -> tuple:
     """
     Walk each trading day in [eval_start, eval_end], apply rolling selector
@@ -772,6 +773,7 @@ def run_selector_backtest(
                 min_hold_bars=min_hold_bars,
                 stale_cut_mins=stale_cut_mins,
                 stale_cut_threshold=stale_cut_threshold,
+                exit_at_bar_close=exit_at_bar_close,
             )
         all_window_results[label] = results_for_window
         print(f"  [{label}] {win['opening_start']} / {win['opening_bars']} bars — done")
@@ -2526,6 +2528,14 @@ def _parse_args():
             "Requires --doubledown. Default: 0 (disabled)."
         ),
     )
+    parser.add_argument(
+        "--exit-at-bar-close",
+        dest="exit_at_bar_close",
+        action="store_true",
+        default=False,
+        help="Exit at the 5-min bar close. Matches live engine behaviour. "
+        "Default: exit at the intrabar stop/fallback price.",
+    )
     return parser.parse_args()
 
 
@@ -2764,6 +2774,7 @@ if __name__ == "__main__":
         min_hold_bars=args.min_hold_bars,
         stale_cut_mins=args.stale_cut_mins,
         stale_cut_threshold=args.stale_cut_threshold,
+        exit_at_bar_close=args.exit_at_bar_close,
     )
 
     skip_log = _apply_capital_flow(

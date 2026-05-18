@@ -2153,3 +2153,181 @@ class TestBearishReversal:
         bearish_reversals = result[(result["is_reversal"] == True) & (result["signal"] == "BEARISH")]
         assert len(bearish_reversals) == 1
         assert not any(result["is_bullish_reentry"])
+
+
+# ---------------------------------------------------------------------------
+# TestExitAtBarClose
+# ---------------------------------------------------------------------------
+#
+# OR: or_high=102, or_low=98, or_range=4, stop_pct=0.40 (default)
+#   BEARISH: bear_hard_stop = 98 + 0.40×4 = 99.6,  bear_fallback = 98 + 0.20×4 = 98.8
+#   BULLISH: bull_hard_stop = 102 − 0.40×4 = 100.4, bull_fallback = 102 − 0.20×4 = 101.2
+#
+# entry_price (BEARISH) = signal bar close = 98.5
+# entry_price (BULLISH) = signal bar close = 101.5
+#
+# pnl formula: BULLISH → exit − entry; BEARISH → entry − exit
+
+
+class TestExitAtBarClose:
+    # ── BEARISH hard_stop ────────────────────────────────────────────────────
+
+    def test_bearish_hard_stop_intrabar_uses_stop_price_when_flag_off(self):
+        # Arm bar close=99.0 < 99.6 → armed.
+        # Stop bar: low=99.5 ≤ 99.6 (intrabar touch) → exit at hard_stop_price=99.6.
+        df = _make_bars("2025-01-02", _BEARISH_OPENING + [
+            ("09:45",  99.0,  99.5, 98.5,  99.0, _BEAR_MA20, _BEAR_MA50, _MA200),
+            ("09:50",  99.5, 100.5, 99.5, 100.0, _BEAR_MA20, _BEAR_MA50, _MA200),
+        ])
+        result = compute_signals_with_backtest(df, opening_bars=3, exit_at_bar_close=False)
+
+        row = result.iloc[0]
+        assert row["exit_reason"] == "hard_stop"
+        assert row["exit_price"] == pytest.approx(99.6)
+        assert row["pnl"] == pytest.approx(98.5 - 99.6)
+
+    def test_bearish_hard_stop_intrabar_uses_bar_close_when_flag_on(self):
+        # Same bar sequence — with exit_at_bar_close=True, exit at bar_close=100.0.
+        df = _make_bars("2025-01-02", _BEARISH_OPENING + [
+            ("09:45",  99.0,  99.5, 98.5,  99.0, _BEAR_MA20, _BEAR_MA50, _MA200),
+            ("09:50",  99.5, 100.5, 99.5, 100.0, _BEAR_MA20, _BEAR_MA50, _MA200),
+        ])
+        result = compute_signals_with_backtest(df, opening_bars=3, exit_at_bar_close=True)
+
+        row = result.iloc[0]
+        assert row["exit_reason"] == "hard_stop"
+        assert row["exit_price"] == pytest.approx(100.0)
+        assert row["pnl"] == pytest.approx(98.5 - 100.0)
+
+    def test_bearish_hard_stop_gap_uses_bar_open_when_flag_off(self):
+        # Gap bar: low=100.5 > 99.6 (price opened entirely above stop) → exit at bar["Open"]=100.5.
+        df = _make_bars("2025-01-02", _BEARISH_OPENING + [
+            ("09:45",  99.0,  99.5, 98.5,  99.0, _BEAR_MA20, _BEAR_MA50, _MA200),
+            ("09:50", 100.5, 101.0, 100.5, 100.8, _BEAR_MA20, _BEAR_MA50, _MA200),
+        ])
+        result = compute_signals_with_backtest(df, opening_bars=3, exit_at_bar_close=False)
+
+        row = result.iloc[0]
+        assert row["exit_reason"] == "hard_stop"
+        assert row["exit_price"] == pytest.approx(100.5)
+
+    def test_bearish_hard_stop_gap_uses_bar_close_when_flag_on(self):
+        # Same gap bar — with exit_at_bar_close=True, exit at bar_close=100.8.
+        df = _make_bars("2025-01-02", _BEARISH_OPENING + [
+            ("09:45",  99.0,  99.5, 98.5,  99.0, _BEAR_MA20, _BEAR_MA50, _MA200),
+            ("09:50", 100.5, 101.0, 100.5, 100.8, _BEAR_MA20, _BEAR_MA50, _MA200),
+        ])
+        result = compute_signals_with_backtest(df, opening_bars=3, exit_at_bar_close=True)
+
+        row = result.iloc[0]
+        assert row["exit_reason"] == "hard_stop"
+        assert row["exit_price"] == pytest.approx(100.8)
+
+    # ── BEARISH fallback ─────────────────────────────────────────────────────
+
+    def test_bearish_fallback_intrabar_uses_fallback_price_when_flag_off(self):
+        # close=99.7 ≥ 99.6 → hard_stop never arms.
+        # fallback_hit: bar_close=99.7 ≥ fallback=98.8 → True.
+        # bar["Low"]=98.5 ≤ 98.8 → intrabar touch → exit at fallback_price=98.8.
+        df = _make_bars("2025-01-02", _BEARISH_OPENING + [
+            ("09:45", 99.0, 99.8, 98.5, 99.7, _BEAR_MA20, _BEAR_MA50, _MA200),
+        ])
+        result = compute_signals_with_backtest(df, opening_bars=3, exit_at_bar_close=False)
+
+        row = result.iloc[0]
+        assert row["exit_reason"] == "fallback_20pct"
+        assert row["exit_price"] == pytest.approx(98.8)
+        assert row["pnl"] == pytest.approx(98.5 - 98.8)
+
+    def test_bearish_fallback_intrabar_uses_bar_close_when_flag_on(self):
+        # Same bar — with exit_at_bar_close=True, exit at bar_close=99.7.
+        df = _make_bars("2025-01-02", _BEARISH_OPENING + [
+            ("09:45", 99.0, 99.8, 98.5, 99.7, _BEAR_MA20, _BEAR_MA50, _MA200),
+        ])
+        result = compute_signals_with_backtest(df, opening_bars=3, exit_at_bar_close=True)
+
+        row = result.iloc[0]
+        assert row["exit_reason"] == "fallback_20pct"
+        assert row["exit_price"] == pytest.approx(99.7)
+        assert row["pnl"] == pytest.approx(98.5 - 99.7)
+
+    # ── BULLISH hard_stop ────────────────────────────────────────────────────
+
+    def test_bullish_hard_stop_intrabar_uses_stop_price_when_flag_off(self):
+        # Arm bar close=101.8 > 100.4 → armed.
+        # Stop bar: high=101.0 ≥ 100.4 (intrabar touch), close=100.3 ≤ 100.4 → exit at 100.4.
+        df = _make_bars("2025-01-02", _BULLISH_OPENING + [
+            ("09:45", 102.0, 102.0, 101.0, 101.8, _BULL_MA20, _BULL_MA50, _MA200),
+            ("09:50", 100.0, 101.0, 100.0, 100.3, _BULL_MA20, _BULL_MA50, _MA200),
+        ])
+        result = compute_signals_with_backtest(df, opening_bars=3, exit_at_bar_close=False)
+
+        row = result.iloc[0]
+        assert row["exit_reason"] == "hard_stop"
+        assert row["exit_price"] == pytest.approx(100.4)
+        assert row["pnl"] == pytest.approx(100.4 - 101.5)
+
+    def test_bullish_hard_stop_intrabar_uses_bar_close_when_flag_on(self):
+        # Same bar sequence — with exit_at_bar_close=True, exit at bar_close=100.3.
+        df = _make_bars("2025-01-02", _BULLISH_OPENING + [
+            ("09:45", 102.0, 102.0, 101.0, 101.8, _BULL_MA20, _BULL_MA50, _MA200),
+            ("09:50", 100.0, 101.0, 100.0, 100.3, _BULL_MA20, _BULL_MA50, _MA200),
+        ])
+        result = compute_signals_with_backtest(df, opening_bars=3, exit_at_bar_close=True)
+
+        row = result.iloc[0]
+        assert row["exit_reason"] == "hard_stop"
+        assert row["exit_price"] == pytest.approx(100.3)
+        assert row["pnl"] == pytest.approx(100.3 - 101.5)
+
+    def test_bullish_hard_stop_gap_uses_bar_open_when_flag_off(self):
+        # Gap bar: high=99.8 < 100.4 (price opened entirely below stop) → exit at bar["Open"]=99.5.
+        df = _make_bars("2025-01-02", _BULLISH_OPENING + [
+            ("09:45", 102.0, 102.0, 101.0, 101.8, _BULL_MA20, _BULL_MA50, _MA200),
+            ("09:50",  99.5,  99.8,  99.0,  99.2, _BULL_MA20, _BULL_MA50, _MA200),
+        ])
+        result = compute_signals_with_backtest(df, opening_bars=3, exit_at_bar_close=False)
+
+        row = result.iloc[0]
+        assert row["exit_reason"] == "hard_stop"
+        assert row["exit_price"] == pytest.approx(99.5)
+
+    def test_bullish_hard_stop_gap_uses_bar_close_when_flag_on(self):
+        # Same gap bar — with exit_at_bar_close=True, exit at bar_close=99.2.
+        df = _make_bars("2025-01-02", _BULLISH_OPENING + [
+            ("09:45", 102.0, 102.0, 101.0, 101.8, _BULL_MA20, _BULL_MA50, _MA200),
+            ("09:50",  99.5,  99.8,  99.0,  99.2, _BULL_MA20, _BULL_MA50, _MA200),
+        ])
+        result = compute_signals_with_backtest(df, opening_bars=3, exit_at_bar_close=True)
+
+        row = result.iloc[0]
+        assert row["exit_reason"] == "hard_stop"
+        assert row["exit_price"] == pytest.approx(99.2)
+
+    # ── BULLISH fallback ─────────────────────────────────────────────────────
+
+    def test_bullish_fallback_intrabar_uses_fallback_price_when_flag_off(self):
+        # close=100.3 ≤ 100.4 → hard_stop never arms.
+        # fallback_hit: bar_close=100.3 ≤ fallback=101.2 → True.
+        # bar["High"]=101.5 ≥ 101.2 → intrabar touch → exit at fallback_price=101.2.
+        df = _make_bars("2025-01-02", _BULLISH_OPENING + [
+            ("09:45", 100.5, 101.5, 100.0, 100.3, _BULL_MA20, _BULL_MA50, _MA200),
+        ])
+        result = compute_signals_with_backtest(df, opening_bars=3, exit_at_bar_close=False)
+
+        row = result.iloc[0]
+        assert row["exit_reason"] == "fallback_20pct"
+        assert row["exit_price"] == pytest.approx(101.2)
+        assert row["pnl"] == pytest.approx(101.2 - 101.5)
+
+    def test_bullish_fallback_intrabar_uses_bar_close_when_flag_on(self):
+        # Same bar — with exit_at_bar_close=True, exit at bar_close=100.3.
+        df = _make_bars("2025-01-02", _BULLISH_OPENING + [
+            ("09:45", 100.5, 101.5, 100.0, 100.3, _BULL_MA20, _BULL_MA50, _MA200),
+        ])
+        result = compute_signals_with_backtest(df, opening_bars=3, exit_at_bar_close=True)
+
+        row = result.iloc[0]
+        assert row["exit_reason"] == "fallback_20pct"
+        assert row["exit_price"] == pytest.approx(100.3)
+        assert row["pnl"] == pytest.approx(100.3 - 101.5)
