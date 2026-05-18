@@ -329,12 +329,12 @@ def parse_args():
         "Default: disabled.",
     )
     parser.add_argument(
-        "--exit-at-bar-close",
+        "--no-exit-at-bar-close",
         dest="exit_at_bar_close",
-        action="store_true",
-        default=False,
-        help="Exit at the 5-min bar close. Matches live engine behaviour. "
-        "Default: exit at the intrabar stop/fallback price.",
+        action="store_false",
+        default=True,
+        help="Exit at the intrabar stop/fallback price instead of bar close. "
+        "Default: exit at bar close (matches live engine behaviour).",
     )
     return parser.parse_args()
 
@@ -371,7 +371,7 @@ def compute_signals_with_backtest(
     min_hold_bars: int = 0,
     stale_cut_mins: int = 0,
     stale_cut_threshold: float = 0.0,
-    exit_at_bar_close: bool = False,
+    exit_at_bar_close: bool = True,
 ) -> pd.DataFrame:
     opening_start_t = datetime.strptime(opening_start_time, "%H:%M").time()
 
@@ -2063,7 +2063,7 @@ def run_backtest(
     min_hold_bars: int = 0,
     stale_cut_mins: int = 0,
     stale_cut_threshold: float = 0.0,
-    exit_at_bar_close: bool = False,
+    exit_at_bar_close: bool = True,
 ) -> dict:
     if ticker_dfs is None:
         ticker_dfs = fetch_bars(tickers, start_date, end_date, source=source)

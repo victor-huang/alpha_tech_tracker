@@ -660,7 +660,7 @@ def run_selector_backtest(
     min_hold_bars: int = 0,
     stale_cut_mins: int = 0,
     stale_cut_threshold: float = 0.0,
-    exit_at_bar_close: bool = False,
+    exit_at_bar_close: bool = True,
 ) -> tuple:
     """
     Walk each trading day in [eval_start, eval_end], apply rolling selector
@@ -2529,12 +2529,12 @@ def _parse_args():
         ),
     )
     parser.add_argument(
-        "--exit-at-bar-close",
+        "--no-exit-at-bar-close",
         dest="exit_at_bar_close",
-        action="store_true",
-        default=False,
-        help="Exit at the 5-min bar close. Matches live engine behaviour. "
-        "Default: exit at the intrabar stop/fallback price.",
+        action="store_false",
+        default=True,
+        help="Exit at the intrabar stop/fallback price instead of bar close. "
+        "Default: exit at bar close (matches live engine behaviour).",
     )
     return parser.parse_args()
 
