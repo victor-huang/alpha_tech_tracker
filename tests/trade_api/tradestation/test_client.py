@@ -190,6 +190,33 @@ class TestGetAccounts:
         assert "/v3/brokerage/accounts/" in url
         assert "balances" in url
 
+    def test_buying_power_falls_back_to_cash_balance_when_zero(self):
+        client = _make_client()
+        pdt_balances = {
+            "Balances": [
+                {
+                    "AccountID": _ACCOUNT_KEY,
+                    "CashBalance": "26486",
+                    "BuyingPower": "0",
+                    "Equity": "26486",
+                }
+            ]
+        }
+        client._session.get.return_value = _mock_response(pdt_balances)
+
+        result = client.get_accounts()
+
+        assert result["buying_power"] == 26486.0
+        assert result["cash"] == 26486.0
+
+    def test_buying_power_uses_broker_value_when_nonzero(self):
+        client = _make_client()
+        client._session.get.return_value = _mock_response(balances_response)
+
+        result = client.get_accounts()
+
+        assert result["buying_power"] == 50000.0
+
 
 class TestGetStockQuote:
     def test_single_symbol_returns_nested_shape(self):

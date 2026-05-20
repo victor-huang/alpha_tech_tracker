@@ -384,10 +384,14 @@ class TradeStationAPIClient(ExecutionClient):
         balances = data if isinstance(data, list) else data.get("Balances", [])
         b = balances[0]
         option_bp_raw = b.get("RealTimeOptionBuyingPower")
+        cash = float(b.get("CashBalance", 0))
+        # PDT-flagged margin accounts report BuyingPower=0; fall back to CashBalance
+        bp_raw = float(b.get("BuyingPower", 0))
+        buying_power = bp_raw if bp_raw > 0 else cash
         return {
             "account_id": str(account_key),
-            "cash": float(b.get("CashBalance", 0)),
-            "buying_power": float(b.get("BuyingPower", 0)),
+            "cash": cash,
+            "buying_power": buying_power,
             "option_buying_power": float(option_bp_raw) if option_bp_raw is not None else None,
             "portfolio_value": float(b.get("Equity", 0)),
             "equity": float(b.get("Equity", 0)),
