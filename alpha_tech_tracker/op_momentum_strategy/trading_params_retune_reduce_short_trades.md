@@ -789,3 +789,391 @@ python alpha_tech_tracker/op_momentum_strategy/op_momentum_selector_backtest.py 
   --reversal --feed sip \
   --start <START> --end <END>
 ```
+
+---
+
+## Phase 11 — `--no-exit-at-bar-close` Analysis (2026-05-17)
+
+### Why `--no-exit-at-bar-close` shows dramatically higher P&L
+
+Investigation triggered by a large gap on `--window M1 09:30 1 --stop-pct 0.2 --reversal`:
+
+| Mode | Feb 2025 return | Feb 2025 W/L |
+|---|---|---|
+| default (`exit_at_bar_close`) | +1.68% | 10W / 21L |
+| `--no-exit-at-bar-close` | +12.99% | 19W / 17L |
+
+### Root cause: stop level above entry for 1-bar windows
+
+With `--opening-bars 1` and `--stop-pct 0.2`:
+
+```
+bull_hard_stop = or_high − 20% × or_range   (= 80th percentile of OR)
+bull_fallback  = or_high − 20% × or_range   (identical at stop-pct 0.2)
+```
+
+A BULLISH signal only requires `close > midpoint` (50th percentile). If close lands between the **50th–80th percentile** of the OR range, the hard stop sits **above the entry price**. Example from CRDO 2025-02-07:
+
+```
+OR bar: O=80.25  H=82.49  L=80.14  C=81.81  (close at 71st percentile)
+hard_stop = 82.49 − 20% × 2.35 = 82.02  →  ABOVE entry 81.81
+```
+
+### How `--no-exit-at-bar-close` inflates fills
+
+When the stop fires (`bar_close <= hard_stop_price`), the fill formula is:
+
+```python
+_bull_stop_fill = hard_stop_price if bar["High"] >= hard_stop_price else bar["Open"]
+```
+
+Because the stock previously traded up to arm the stop, `bar["High"] >= hard_stop_price` is almost always true. So the fill is at `hard_stop_price` (above entry) — a **WIN** — even though the bar closed below entry.
+
+With `exit_at_bar_close=True`: fill = `bar_close` (below entry) → correctly a **LOSS**.
+
+The same geometry applies to fallback exits: at `stop-pct=0.2`, `fallback_price == hard_stop_price`, so fallback exits hit the same inflated fill.
+
+### Why the effect is large for 1-bar windows
+
+For a 3-bar M1 window, price has moved 15 minutes and entries tend to land near the top of the OR — stop-above-entry is rare. For a 1-bar M2 window, entries frequently land at 50–70% of the range, triggering this pattern on many trades. The inflated fills then change the 60-day rolling selector scores, causing different tickers to be picked.
+
+### Would switching the live engine to 1-min bar monitoring replicate these gains?
+
+**Partially, but not fully — and the backtest can't validate it.**
+
+With 1-min bar detection, the stop fires when a 1-min bar close crosses the stop level. The fill would be at that 1-min bar's close, which could be a few cents below the stop price (not exactly at it). `--no-exit-at-bar-close` fills at the **exact stop price** — a ceiling that 1-min fills can approach but not consistently match.
+
+More critically, the current `--no-exit-at-bar-close` backtest uses the 5-min bar High/Low as a proxy for intrabar price touch. A 1-min-based live strategy needs a **1-min bar backtest** to produce comparable numbers. The `--no-exit-at-bar-close` figures are an upper bound, not a reachable target with today's infrastructure.
+
+### Summary
+
+| | `exit_at_bar_close=True` (default) | `--no-exit-at-bar-close` | 1-min bar live |
+|---|---|---|---|
+| Fill model | 5-min bar close | exact stop price | 1-min bar close |
+| Matches live engine? | **yes** | no (optimistic) | close, but needs 1-min backtest |
+| Correct to use? | **yes** | research upper bound only | requires backtest rebuild |
+
+**`exit_at_bar_close=True` is the correct default** — it matches how the live engine works (bar-close detection → market exit). Do not use `--no-exit-at-bar-close` results as a performance target.
+
+---
+
+## Phase 12 — Full M1 Window Sweep, 2025 (2026-05-17)
+
+### Setup
+
+280 combinations (7 start times × 5 bar counts × 8 stop-pcts), run in parallel of 20.
+
+| Dimension | Values |
+|---|---|
+| Start time | `09:30`, `09:35`, `09:40`, `09:45`, `09:50`, `09:55`, `10:00` |
+| Bar count | `1`, `2`, `3`, `4`, `5` |
+| `--stop-pct` | `0.10`, `0.15`, `0.20`, `0.25`, `0.30`, `0.40`, `0.50`, `0.60` |
+
+**Base config:** `--top 2 --weights 60 40 --reversal --feed sip` (no stale-cut, no BRE/BRU/DD). Exit-at-bar-close default.
+
+### Top 15 — 2025 Full Year
+
+| Rank | Time | Bars | Stop | Return% | Trades | WR% |
+|---|---|---|---|---|---|---|
+| 1 | 09:30 | 2 | 0.15 | **+29.59%** | 417 | 33.6 |
+| 2 | 09:40 | 1 | 0.30 | **+25.09%** | 390 | 32.3 |
+| 3 | 09:30 | 5 | 0.30 | **+23.51%** | 448 | 38.4 |
+| 4 | 09:55 | 5 | 0.50 | +21.26% | 415 | 43.6 |
+| 5 | 09:40 | 1 | 0.40 | +18.94% | 379 | 33.2 |
+| 6 | 09:30 | 2 | 0.10 | +18.67% | 409 | 31.1 |
+| 7 | 09:55 | 5 | 0.40 | +16.63% | 405 | 40.5 |
+| 8 | 09:55 | 5 | 0.60 | +16.43% | 416 | 44.2 |
+| 9 | 09:40 | 1 | 0.10 | +15.74% | 398 | 32.2 |
+| 10 | 09:40 | 1 | 0.15 | +15.34% | 397 | 31.2 |
+| 11 | 09:35 | 2 | 0.20 | +14.71% | 414 | 35.0 |
+| 12 | 09:55 | 5 | 0.30 | +13.85% | 409 | 34.0 |
+| 13 | 09:35 | 3 | 0.10 | +13.84% | 426 | 32.6 |
+| 14 | 09:35 | 1 | 0.50 | +13.77% | 425 | 31.8 |
+| 15 | 09:30 | 2 | 0.20 | +13.56% | 414 | 30.7 |
+
+### Key Findings
+
+**1. `09:30/2b` with tight stops is the clear winner**
+Ranks #1 (stop=0.15, +29.59%), #6 (stop=0.10, +18.67%), #15 (stop=0.20, +13.56%). Entry at 9:40 after a 10-min OR. Consistent with Phase 10 combined ranking.
+
+**2. `09:40/1b` is a strong new cluster**
+Ranks #2, #5, #9, #10, #16 across stop-pcts 0.10–0.40. Single bar at 9:40, entry at 9:45. Did not surface prominently in Phase 10 (which ranked by 2025+2026 combined). Needs 2026 validation before live use.
+
+**3. `09:55/5b` with wide stops is a high-WR alternative**
+Ranks #4, #7, #8, #12 with WR 40–44%. A slow-forming 25-min OR (9:55–10:20 entry) fires fewer but cleaner signals. Very different character from the 09:30 configs — potential regime hedge.
+
+**4. `09:30/1b` (former M2) is essentially dead in 2025**
+Best result: +1.59% at stop=0.40 (rank #78). Mostly negative across all stop-pcts. The strong M2 results from Phases 1–3 were an artifact of `exit_at_bar_close=False` fill inflation. Confirmed disqualified with the correct exit model.
+
+**5. `09:45+` with 2–5 bars is a danger zone**
+Dominates the bottom half of the ranking (ranks 200–280). Avoid.
+
+### Next Step
+
+Validate `09:40/1b` top stop-pcts (0.30, 0.40) against 2026 YTD to confirm cross-year robustness before considering for live config.
+
+---
+
+## Phase 13 — A1 Window Sweep on Top of M1 09:30/1/stop-0.6 (2026-05-17)
+
+### Setup
+
+**Base config:** `--top 2 --weights 60 40 --window M1 09:30 1 --morning-split 100 --stop-pct 0.6 --reversal --feed sip`
+**Period:** 2026-01-01 to 2026-05-15
+**Baseline M1-only:** +62.18% (176 trades, WR=46%, short=29%)
+
+**Sweep grid:** 15 start times × 6 bar counts = 90 A1 combinations (start ≥ 10:00, bars ≥ 3).
+
+Goal: maximize incremental P&L while keeping A1 short trade % low.
+
+### Top 15 Results (sorted by A1 Cap P&L)
+
+| Rank | A1 Time | Bars | A1 P&L$ | A1 Ret% | A1 EV% | A1 Trades | A1 WR% | A1 Sh% | A1 ShWR | Total% | Incr pp |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | 10:00 | 6 | +$1,171 | +11.71% | +0.369% | 113 | 44% | 21% | 4% | +75.08% | **+12.90pp** |
+| 2 | 10:15 | 10 | +$978 | +9.78% | +0.214% | 145 | 47% | 11% | 6% | +71.48% | +9.30pp |
+| 3 | 10:00 | 5 | +$973 | +9.73% | +0.344% | 109 | 42% | 25% | 7% | +73.10% | +10.92pp |
+| 4 | 10:00 | 10 | +$705 | +7.05% | +0.199% | 121 | 50% | 11% | 0% | +68.76% | +6.58pp |
+| 5 | 10:00 | 4 | +$663 | +6.63% | +0.234% | 108 | 43% | 26% | 14% | +71.16% | +8.98pp |
+| 6 | 10:45 | 6 | +$592 | +5.92% | +0.133% | 154 | 42% | 23% | 3% | +67.63% | +5.45pp |
+| 7 | 11:15 | 3 | +$521 | +5.21% | +0.092% | 143 | 41% | 32% | 7% | +66.91% | +4.73pp |
+| 8 | 11:30 | 4 | +$512 | +5.12% | +0.138% | 147 | 44% | 31% | 9% | +66.83% | +4.65pp |
+| 9 | 10:30 | 8 | +$489 | +4.89% | +0.098% | 144 | 38% | 12% | 6% | +66.60% | +4.42pp |
+| 10 | 10:15 | 6 | +$488 | +4.88% | +0.198% | 114 | 42% | 25% | 4% | +67.66% | +5.48pp |
+| 11 | 11:00 | 10 | +$485 | +4.85% | +0.048% | 157 | 47% | 18% | 10% | +66.55% | +4.37pp |
+| 12 | 10:15 | 4 | +$473 | +4.73% | +0.110% | 113 | 42% | 26% | 3% | +68.10% | +5.92pp |
+| 13 | 13:15 | 8 | +$466 | +4.66% | +0.102% | 161 | 41% | 24% | 5% | +66.84% | +4.66pp |
+| 14 | 10:30 | 4 | +$462 | +4.62% | +0.296% | 119 | 44% | 24% | 0% | +66.32% | +4.14pp |
+| 15 | 11:30 | 10 | +$451 | +4.51% | +0.022% | 161 | 43% | 17% | 11% | +67.53% | +5.35pp |
+
+### Key Findings
+
+**1. `10:00/6` is the best overall** — highest incremental (+12.90pp, +$1,171), highest EV/trade (+0.369%), only 21% short trades, ShWR=4% (near-zero: short exits are almost always correct cuts). Entry at 10:30 from a 30-min OR.
+
+**2. `10:15/10` is best for minimizing short trades** — only 11% short trades, WR=47%, +9.30pp. Long OR (50 min, entry ~11:05) filters out noise aggressively. Same 11% short as `10:00/10` but +2.72pp better P&L.
+
+**3. `10:30/8` is the conservative pick** — 12% short, +4.42pp. Consistent with Phase 9 findings and less overlap risk with M1 trades still open at 10:00.
+
+**4. Early window (10:00–10:45) dominates 2026 YTD** — the edge concentrates in this 45-min range. After 11:00 most configs turn neutral to negative; after 13:00 almost all are negative.
+
+**5. Low ShWR is a quality signal** — top configs (10:00/6 ShWR=4%, 10:45/6 ShWR=3%, 10:30/4 ShWR=0%) have near-zero short-trade win rates, confirming quick exits are correct. Configs with ShWR≥10% (10:00/4, 10:00/5) cut some real winners short.
+
+### Recommendation
+
+| Goal | Config | Incr pp | A1 Sh% | A1 ShWR |
+|---|---|---|---|---|
+| Max P&L | `--window A1 10:00 6` | **+12.90pp** | 21% | 4% |
+| Min short trades | `--window A1 10:15 10` | +9.30pp | **11%** | 6% |
+| Conservative / consistent | `--window A1 10:30 8` | +4.42pp | **12%** | 6% |
+
+> **Note:** These results are 2026 YTD only. Validate top candidates across 2025 and prior years before adding to live config.
+
+```bash
+# Best P&L (2026 YTD)
+python alpha_tech_tracker/op_momentum_strategy/op_momentum_selector_backtest.py \
+  --top 2 --weights 60 40 \
+  --window M1 09:30 1 --window A1 10:00 6 \
+  --morning-split 100 \
+  --stop-pct 0.60 --reversal --feed sip \
+  --start <START> --end <END>
+
+# Min short trades
+python alpha_tech_tracker/op_momentum_strategy/op_momentum_selector_backtest.py \
+  --top 2 --weights 60 40 \
+  --window M1 09:30 1 --window A1 10:15 10 \
+  --morning-split 100 \
+  --stop-pct 0.60 --reversal --feed sip \
+  --start <START> --end <END>
+```
+
+---
+
+## Phase 14 — A3 Window Sweep at 12:xx on Top of Top-3 A1 Configs (2026-05-17)
+
+### Setup
+
+For each of the 3 A1 candidates from Phase 13, swept an A3 second sequential window starting in the 12:xx hour.
+
+**Grid:** 4 start times × 6 bar counts = 24 A3 combos per A1 parent (72 total runs).
+
+| Dimension | Values |
+|---|---|
+| A3 start time | `12:00`, `12:15`, `12:30`, `12:45` |
+| A3 bar count | `3`, `4`, `5`, `6`, `8`, `10` |
+
+### Results by A1 Parent
+
+#### A1 = 10:00/6  (M1+A1 baseline: +75.08%)
+
+| Rank | A3 Time | Bars | A3 P&L$ | A3 EV% | A3 Trades | A3 WR% | A3 Sh% | A3 ShWR | Total% | Incr pp |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | 12:00 | 5 | +$394 | +0.027% | 144 | 36% | 29% | 2% | +79.02% | **+3.94pp** |
+| 2 | 12:00 | 3 | +$318 | +0.083% | 133 | 38% | 31% | 7% | +78.26% | +3.18pp |
+| 3 | 12:45 | 4 | +$199 | +0.027% | 120 | 38% | 34% | 12% | +77.07% | +1.99pp |
+| 4 | 12:00 | 6 | +$185 | +0.018% | 147 | 32% | 27% | 3% | +76.93% | +1.85pp |
+| 6 | 12:00 | 10 | +$33 | +0.010% | 152 | 44% | 20% | 3% | +75.41% | +0.33pp |
+
+#### A1 = 10:15/10  (M1+A1 baseline: +71.48%)
+
+| Rank | A3 Time | Bars | A3 P&L$ | A3 EV% | A3 Trades | A3 WR% | A3 Sh% | A3 ShWR | Total% | Incr pp |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | 12:00 | 3 | +$389 | +0.109% | 114 | 37% | 31% | 9% | +75.31% | +3.83pp |
+| 2 | 12:15 | 10 | +$361 | +0.004% | 144 | 41% | 17% | 8% | +75.03% | **+3.55pp** |
+| 3 | 12:45 | 4 | +$343 | +0.030% | 120 | 38% | 35% | 12% | +74.85% | +3.37pp |
+| 4 | 12:45 | 10 | +$240 | +0.006% | 163 | 39% | 14% | 4% | +73.82% | +2.34pp |
+| 7 | 12:00 | 10 | +$82 | -0.016% | 148 | 43% | 21% | 3% | +72.24% | +0.76pp |
+
+#### A1 = 10:30/8  (M1+A1 baseline: +66.60%)
+
+| Rank | A3 Time | Bars | A3 P&L$ | A3 EV% | A3 Trades | A3 WR% | A3 Sh% | A3 ShWR | Total% | Incr pp |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | 12:00 | 3 | +$374 | +0.100% | 114 | 40% | 29% | 9% | +70.34% | **+3.74pp** |
+| 2 | 12:45 | 4 | +$181 | +0.035% | 123 | 39% | 34% | 12% | +68.41% | +1.81pp |
+| 4 | 12:00 | 10 | +$179 | +0.029% | 152 | 44% | 20% | 3% | +68.38% | +1.78pp |
+| 5 | 12:15 | 10 | +$154 | +0.026% | 150 | 42% | 18% | 11% | +68.14% | +1.54pp |
+
+### Cross-Parent Summary
+
+| A3 Config | A1=10:00/6 | A1=10:15/10 | A1=10:30/8 | A3 Sh% | Notes |
+|---|---|---|---|---|---|
+| `12:00/3` | +3.18pp | +3.83pp | +3.74pp | 29–31% | Most consistently positive; higher short trades |
+| `12:00/5` | **+3.94pp** | −1.68pp | −0.14pp | 28–30% | Best for 10:00/6 only; inconsistent |
+| `12:00/10` | +0.33pp | +0.76pp | +1.78pp | 20–21% | **Lowest short, never negative**; modest increment |
+| `12:15/10` | −0.23pp | +3.55pp | +1.54pp | 17–18% | Strong for 10:15/10 parent; weak for 10:00/6 |
+| `12:45/10` | −0.25pp | +2.34pp | +0.20pp | 14% | Lowest short of all; only works with 10:15/10 |
+| `12:30/*` | **all negative** | — | — | — | Avoid entirely |
+
+### Key Findings
+
+1. **`12:00/3` is the most robust A3** — positive for every A1 parent (+3.18 to +3.94pp), though short% is 29–31%.
+
+2. **`12:00/10` is the best low-short A3** — 20–21% short trades, ShWR 0–3%, consistently positive across all parents. Modest but reliable increment (+0.33 to +1.78pp).
+
+3. **`12:00/5` tops only with `A1=10:00/6`** (+3.94pp, 29% short, ShWR=2%) — negative for the other two A1 parents. Only use if committed to `A1=10:00/6`.
+
+4. **`12:30/*` is a dead zone** — every 12:30 config is negative across all A1 parents and bar counts. Avoid.
+
+5. **Best 3-window combo (2026 YTD):** `M1 09:30/1 + A1 10:00/6 + A3 12:00/5` → **+79.02%** total (+16.84pp above M1-only baseline of +62.18%).
+
+### Recommendation
+
+| Priority | A3 Config | Best A1 pairing | Total% | Notes |
+|---|---|---|---|---|
+| Max P&L | `12:00/5` | A1 10:00/6 only | **+79.02%** | Inconsistent with other A1 parents |
+| Most robust | `12:00/3` | any A1 | +70–78% | Always positive; higher short trade |
+| Min short | `12:00/10` | any A1 | +68–75% | 20–21% short, ShWR≤3%, never hurts |
+
+> **Note:** All results are 2026 YTD only. Multi-year validation required before live use.
+
+```bash
+# Max P&L (2026 YTD) — 3-window stack
+python alpha_tech_tracker/op_momentum_strategy/op_momentum_selector_backtest.py \
+  --top 2 --weights 60 40 \
+  --window M1 09:30 1 --window A1 10:00 6 --window A3 12:00 5 \
+  --morning-split 100 \
+  --stop-pct 0.60 --reversal --feed sip \
+  --start <START> --end <END>
+
+# Most robust 3-window stack
+python alpha_tech_tracker/op_momentum_strategy/op_momentum_selector_backtest.py \
+  --top 2 --weights 60 40 \
+  --window M1 09:30 1 --window A1 10:00 6 --window A3 12:00 3 \
+  --morning-split 100 \
+  --stop-pct 0.60 --reversal --feed sip \
+  --start <START> --end <END>
+```
+
+---
+
+## Phase 14 Extended — Full-Range A3 Sweep (12:00–15:15, bars 1–10) (2026-05-17)
+
+### Setup
+
+Expanded the Phase 14 grid: relaxed bar count floor to 1, extended start times through 15:15 in 15-min increments.
+
+**Grid:** 14 start times × 8 bar counts × 3 A1 parents = 336 combos.
+
+| Dimension | Values |
+|---|---|
+| A3 start time | `12:00`–`15:15` in 15-min steps (14 times) |
+| A3 bar count | `1`, `2`, `3`, `4`, `5`, `6`, `8`, `10` |
+
+ERR entries: `15:00/10`, `15:15/8`, `15:15/10` — not enough bars before 3:55 PM EOD cutoff.
+
+### Results by A1 Parent
+
+#### A1 = 10:00/6  (M1+A1 baseline: +75.08%)
+
+| Rank | A3 Time | Bars | Incr pp | A3 Sh% | A3 ShWR | Notes |
+|---|---|---|---|---|---|---|
+| 1 | 15:15 | 1 | **+10.09pp** | 51% | 7% | EOD noise — half trades exit within 15 min |
+| 2 | 13:15 | 8 | **+5.95pp** | 23% | 6% | ← best legitimate |
+| 3 | 15:15 | 5 | +5.93pp | 100% | — | All short (pure EOD) |
+| 4 | 15:15 | 6 | +5.83pp | 100% | — | All short (pure EOD) |
+| … | 15:00 | 8 | — | 100% | — | All short (pure EOD) |
+
+#### A1 = 10:15/10  (M1+A1 baseline: +71.48%)
+
+| Rank | A3 Time | Bars | Incr pp | A3 Sh% | A3 ShWR | Notes |
+|---|---|---|---|---|---|---|
+| 1 | 15:15 | 1 | **+9.63pp** | 51% | — | EOD noise |
+| 2 | 12:45 | 2 | +7.57pp | 43% | — | Marginal short% |
+| 5 | 13:15 | 8 | **+4.78pp** | 24% | 5% | ← best legitimate |
+
+#### A1 = 10:30/8  (M1+A1 baseline: +66.60%)
+
+| Rank | A3 Time | Bars | Incr pp | A3 Sh% | A3 ShWR | Notes |
+|---|---|---|---|---|---|---|
+| 1 | 15:15 | 1 | **+9.77pp** | 51% | — | EOD noise |
+| 5 | 13:15 | 8 | **+5.02pp** | 24% | 5% | ← best legitimate |
+
+### Cross-Parent Summary (Legitimate Configs Only)
+
+| A3 Config | A1=10:00/6 | A1=10:15/10 | A1=10:30/8 | A3 Sh% | A3 ShWR | Notes |
+|---|---|---|---|---|---|---|
+| `13:15/8` | **+5.95pp** | **+4.78pp** | **+5.02pp** | 23–24% | 5–6% | **Best consistent legitimate A3** |
+| `12:00/3` (Phase 14) | +3.18pp | +3.83pp | +3.74pp | 29–31% | 7–9% | Solid but more short trades |
+| `15:15/1` | +10.09pp | +9.63pp | +9.77pp | 51% | 7% | **Disqualify** — EOD noise |
+| `15:15/5-6` | +5.83-5.93pp | — | — | **100%** | — | **Disqualify** — all trades are short exits |
+| `15:00/8+` | — | — | — | **100%** | — | **Disqualify** — pure EOD batch |
+
+### Key Findings
+
+1. **`13:15/8` is the best legitimate A3 across all 3 A1 parents** — consistent +4.78 to +5.95pp increment, 23–24% short trades, ShWR=5–6%. Meaningfully better than `12:00/3` (+0.9–2.2pp more P&L) with slightly fewer short trades.
+
+2. **`15:15/1` tops all tables but is EOD noise** — 51% short trades (nearly half all positions exit within 15 min due to proximity to 3:55 PM force-close). Not a real edge.
+
+3. **`15:00/8` and `15:15/5-6` are 100% short — disqualify** — every single trade exits before the 15-min mark. These are pure EOD-mechanic artifacts, not real signals.
+
+4. **Early-afternoon (12:xx) and `13:15/8` are the two valid bands** — the expanded sweep confirms the edge narrows to: (a) the 12:00–12:45 range (Phase 14 findings) and (b) `13:15/8`. Times between 13:30 and 15:00 (except 15:15/1) are either near-zero or negative.
+
+5. **`13:15/8` is the same as the established A1 window** — this is the proven `A1 13:15/1` config from the main FINDINGS.md, but with 8 bars instead of 1. The wider OR (40-min range) filters noise and reduces short trades from the raw 1-bar config. This aligns the new A3 window with the existing validated intraday edge.
+
+### Updated Recommendation
+
+| Priority | A3 Config | Incr pp (across parents) | A3 Sh% | A3 ShWR | Verdict |
+|---|---|---|---|---|---|
+| **Best overall** | `13:15/8` | +4.78–5.95pp | 23–24% | 5–6% | ← **Recommend** |
+| Robust (lower P&L) | `12:00/3` | +3.18–3.83pp | 29–31% | 7–9% | Alternative |
+| Avoid | `15:15/1` | +9.63–10.09pp | 51% | 7% | EOD artifact |
+| Avoid | `15:15/5-6`, `15:00/8` | +5–6pp | **100%** | — | Pure EOD batch |
+
+> **Conclusion:** `13:15/8` is the validated A3 recommendation. It is consistent across all 3 A1 parents, has the best legitimate P&L increment, and maintains the same low-short profile as the established afternoon window. Multi-year validation still required before live use.
+
+```bash
+# Best legitimate A3 — consistent across all 3 A1 parents
+python alpha_tech_tracker/op_momentum_strategy/op_momentum_selector_backtest.py \
+  --top 2 --weights 60 40 \
+  --window M1 09:30 1 --window A1 10:00 6 --window A3 13:15 8 \
+  --morning-split 100 \
+  --stop-pct 0.60 --reversal --feed sip \
+  --start <START> --end <END>
+
+# With min-short A1 parent
+python alpha_tech_tracker/op_momentum_strategy/op_momentum_selector_backtest.py \
+  --top 2 --weights 60 40 \
+  --window M1 09:30 1 --window A1 10:15 10 --window A3 13:15 8 \
+  --morning-split 100 \
+  --stop-pct 0.60 --reversal --feed sip \
+  --start <START> --end <END>
+```
