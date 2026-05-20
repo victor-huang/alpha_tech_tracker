@@ -783,6 +783,56 @@ class TestPlaceStockOrder:
         with pytest.raises(APIInvalidArgumentError):
             client.place_stock_order("TSLA", 10, order_type="LIMIT")
 
+    def test_sell_short_trade_action_maps_to_sellshort(self):
+        client = _make_client()
+        client._session.post.return_value = _mock_response(place_order_response)
+
+        client.place_stock_order("MU", 10, side="SELL", order_type="MARKET",
+                                 trade_action="SELL_SHORT")
+
+        body = client._session.post.call_args[1]["json"]
+        assert body["TradeAction"] == "SELLSHORT"
+
+    def test_buy_cover_trade_action_maps_to_buytocover(self):
+        client = _make_client()
+        client._session.post.return_value = _mock_response(place_order_response)
+
+        client.place_stock_order("MU", 10, side="BUY", order_type="MARKET",
+                                 trade_action="BUY_COVER")
+
+        body = client._session.post.call_args[1]["json"]
+        assert body["TradeAction"] == "BUYTOCOVER"
+
+    def test_buy_open_trade_action_maps_to_buy(self):
+        client = _make_client()
+        client._session.post.return_value = _mock_response(place_order_response)
+
+        client.place_stock_order("MU", 10, side="BUY", order_type="MARKET",
+                                 trade_action="BUY_OPEN")
+
+        body = client._session.post.call_args[1]["json"]
+        assert body["TradeAction"] == "BUY"
+
+    def test_sell_close_trade_action_maps_to_sell(self):
+        client = _make_client()
+        client._session.post.return_value = _mock_response(place_order_response)
+
+        client.place_stock_order("MU", 10, side="SELL", order_type="MARKET",
+                                 trade_action="SELL_CLOSE")
+
+        body = client._session.post.call_args[1]["json"]
+        assert body["TradeAction"] == "SELL"
+
+    def test_trade_action_none_falls_back_to_side(self):
+        client = _make_client()
+        client._session.post.return_value = _mock_response(place_order_response)
+
+        client.place_stock_order("MU", 10, side="SELL", order_type="MARKET",
+                                 trade_action=None)
+
+        body = client._session.post.call_args[1]["json"]
+        assert body["TradeAction"] == "SELL"
+
 
 class TestOrderStatus:
     def test_fll_maps_to_filled(self):

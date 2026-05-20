@@ -758,6 +758,7 @@ def place_stock_order(
             side=side,
             order_type="LIMIT",
             limit_price=rounded,
+            trade_action=order_action,
         )
 
     def _place_market() -> dict:
@@ -766,6 +767,7 @@ def place_stock_order(
             quantity=_shares_remaining[0],
             side=side,
             order_type="MARKET",
+            trade_action=order_action,
         )
 
     def _check_fill_status(order_id: str):

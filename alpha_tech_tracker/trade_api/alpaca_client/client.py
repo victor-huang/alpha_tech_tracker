@@ -329,6 +329,7 @@ class AlpacaAPIClient(ExecutionClient):
         order_type="MARKET",
         limit_price=None,
         time_in_force="DAY",
+        trade_action=None,
     ):
         order_side = OrderSide.BUY if side.upper() == "BUY" else OrderSide.SELL
         tif = getattr(TimeInForce, time_in_force.upper())

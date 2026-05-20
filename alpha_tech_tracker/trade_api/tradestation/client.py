@@ -675,8 +675,18 @@ class TradeStationAPIClient(ExecutionClient):
         order_type: str = "MARKET",
         limit_price: float = None,
         time_in_force: str = "DAY",
+        trade_action: str = None,
     ) -> dict:
-        trade_action = "BUY" if side.upper() == "BUY" else "SELL"
+        _TS_ACTION_MAP = {
+            "BUY_OPEN": "BUY",
+            "SELL_CLOSE": "SELL",
+            "SELL_SHORT": "SELLSHORT",
+            "BUY_COVER": "BUYTOCOVER",
+        }
+        if trade_action is not None:
+            ts_trade_action = _TS_ACTION_MAP.get(trade_action.upper(), trade_action.upper())
+        else:
+            ts_trade_action = "BUY" if side.upper() == "BUY" else "SELL"
         ts_order_type = "Limit" if order_type.upper() == "LIMIT" else "Market"
 
         if ts_order_type == "Limit" and limit_price is None:
@@ -692,7 +702,7 @@ class TradeStationAPIClient(ExecutionClient):
             "Quantity": str(quantity),
             "OrderType": ts_order_type,
             "TimeInForce": {"Duration": time_in_force.upper()},
-            "TradeAction": trade_action,
+            "TradeAction": ts_trade_action,
             "Route": "Intelligent",
         }
         if ts_order_type == "Limit":

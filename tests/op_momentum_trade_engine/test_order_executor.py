@@ -2707,3 +2707,55 @@ class TestTrancheWeightedAvgFillPrice:
             )
 
         assert "avg_fill_price" not in order
+
+
+# ---------------------------------------------------------------------------
+# TestStockOrderTradeActionForwarding
+# ---------------------------------------------------------------------------
+
+
+class TestStockOrderTradeActionForwarding:
+    """place_stock_order passes trade_action= to client.place_stock_order so that
+    brokers like TradeStation can send SELLSHORT / BUYTOCOVER instead of SELL / BUY."""
+
+    def _run(self, order_action, bid=329.0, ask=330.0):
+        client = _make_stock_client(bid=bid, ask=ask)
+        client.order_status.return_value = {"status": "filled"}
+        with patch(f"{_MODULE}.time.sleep"):
+            place_stock_order(
+                client=client,
+                ticker="MU",
+                shares=10,
+                order_action=order_action,
+            )
+        return client.place_stock_order.call_args_list
+
+    def test_sell_short_forwards_trade_action(self):
+        calls = self._run("SELL_SHORT")
+        assert all(c.kwargs["trade_action"] == "SELL_SHORT" for c in calls)
+
+    def test_buy_cover_forwards_trade_action(self):
+        calls = self._run("BUY_COVER")
+        assert all(c.kwargs["trade_action"] == "BUY_COVER" for c in calls)
+
+    def test_buy_open_forwards_trade_action(self):
+        calls = self._run("BUY_OPEN")
+        assert all(c.kwargs["trade_action"] == "BUY_OPEN" for c in calls)
+
+    def test_sell_close_forwards_trade_action(self):
+        calls = self._run("SELL_CLOSE")
+        assert all(c.kwargs["trade_action"] == "SELL_CLOSE" for c in calls)
+
+    def test_trade_action_forwarded_on_market_order_step3(self):
+        """Step 3 market order must also carry trade_action, not just limit orders."""
+        client = _make_stock_client(bid=329.0, ask=330.0)
+        with patch(f"{_MODULE}.time.sleep"):
+            place_stock_order(
+                client=client,
+                ticker="MU",
+                shares=10,
+                order_action="SELL_SHORT",
+            )
+        market_order = client.place_stock_order.call_args_list[-1]
+        assert market_order.kwargs["order_type"] == "MARKET"
+        assert market_order.kwargs["trade_action"] == "SELL_SHORT"
