@@ -1141,6 +1141,11 @@ class PositionMonitor:
         Detects partial manual closes that happened outside the engine and updates
         pos.contracts / pos.shares so the next exit sells the correct remaining quantity.
         Only reduces qty — never increases — since the engine can't gain contracts externally.
+
+        When multiple engine positions share the same ticker (e.g. primary + DD add-on both
+        short MU), Alpaca reports a single aggregated qty for the symbol. Positions are
+        attributed using FIFO order (oldest entry first) so the correct exit price is
+        matched to each position, mirroring how Alpaca applies fills at the broker level.
         """
         with self._lock:
             open_pos = [p for p in self._positions if not p.is_closed]
@@ -1153,34 +1158,65 @@ class PositionMonitor:
             logger.warning("Could not fetch open positions for qty sync", exc_info=True)
             return
 
+        groups: dict = {}
         for pos in open_pos:
             lookup_symbol = pos.option_symbol if pos.trade_type != "stock" else pos.ticker
+            groups.setdefault(lookup_symbol, []).append(pos)
+
+        for lookup_symbol, group in groups.items():
             broker_entry = open_positions.get(lookup_symbol)
             if broker_entry is None:
                 continue
 
-            if pos.trade_type == "stock":
+            sample_pos = group[0]
+            if sample_pos.trade_type == "stock":
                 broker_qty = int(abs(broker_entry["qty"]))
-                engine_qty = pos.shares
+                total_engine_qty = sum(p.shares for p in group)
             else:
                 broker_qty = int(broker_entry["qty"])
-                engine_qty = pos.contracts
+                total_engine_qty = sum(p.contracts for p in group)
 
-            if broker_qty < engine_qty:
-                manually_closed_qty = engine_qty - broker_qty
-                logger.warning(
-                    "QTY SYNC %s: broker qty=%d < engine qty=%d"
-                    " — updating to broker qty (partial manual close detected)",
-                    lookup_symbol, broker_qty, engine_qty,
-                )
+            if broker_qty >= total_engine_qty:
+                continue
 
-                fill_price = self._fetch_manual_close_fill_price(pos)
+            total_manually_closed = total_engine_qty - broker_qty
+            logger.warning(
+                "QTY SYNC %s: total broker qty=%d < total engine qty=%d"
+                " — FIFO attributing %d manually closed qty across %d position(s)",
+                lookup_symbol, broker_qty, total_engine_qty, total_manually_closed, len(group),
+            )
+
+            close_side = (
+                "buy" if (sample_pos.trade_type == "stock" and sample_pos.signal == "BEARISH")
+                else "sell"
+            )
+            manual_orders = self._fetch_manual_close_fill_orders(group, close_side)
+            order_pool = [
+                {"remaining_qty": o.get("filled_qty", float("inf")), "price": _D(str(o["filled_avg_price"]))}
+                for o in manual_orders
+            ]
+
+            sorted_positions = sorted(
+                group,
+                key=lambda p: p.entry_time or datetime.min.replace(tzinfo=ET),
+            )
+
+            remaining_to_close = total_manually_closed
+            for pos in sorted_positions:
+                if remaining_to_close <= 0:
+                    break
+
+                pos_qty = pos.shares if pos.trade_type == "stock" else pos.contracts
+                close_qty = min(pos_qty, remaining_to_close)
+
+                fill_price = self._consume_fill_orders(order_pool, close_qty)
+
                 if fill_price is not None:
                     partial_closed = copy.copy(pos)
                     if pos.trade_type == "stock":
-                        partial_closed.shares = manually_closed_qty
+                        partial_closed.shares = close_qty
                     else:
-                        partial_closed.contracts = manually_closed_qty
+                        partial_closed.contracts = close_qty
                     partial_closed.exit_fill_price = fill_price
                     partial_closed.is_closed = True
                     partial_closed.exit_reason = "manual_close"
@@ -1189,27 +1225,27 @@ class PositionMonitor:
                         self._close_callback(partial_closed)
                     self._qty_sync_closes.append(copy.copy(partial_closed))
                     _notify(
-                        f"QTY SYNC {lookup_symbol}: engine={engine_qty}"
-                        f" broker={broker_qty} — recorded manual close"
-                        f" of {manually_closed_qty} @ ${float(fill_price):.2f}"
+                        f"QTY SYNC {lookup_symbol}: recorded manual close"
+                        f" of {close_qty} @ ${float(fill_price):.2f}"
                     )
                 else:
                     logger.warning(
                         "QTY SYNC %s: fill price not found for manually closed %d"
                         " — P&L not recorded",
-                        lookup_symbol, manually_closed_qty,
+                        lookup_symbol, close_qty,
                     )
                     _notify(
-                        f"QTY SYNC {lookup_symbol}: engine={engine_qty}"
-                        f" broker={broker_qty} — updated to broker qty"
+                        f"QTY SYNC {lookup_symbol}: updated to broker qty"
                         f" (fill price unknown — P&L not recorded)"
                     )
 
+                remaining_to_close -= close_qty
+                new_pos_qty = pos_qty - close_qty
                 with self._lock:
                     if pos.trade_type == "stock":
-                        pos.shares = broker_qty
+                        pos.shares = new_pos_qty
                     else:
-                        pos.contracts = broker_qty
+                        pos.contracts = new_pos_qty
 
     _MAX_RECONCILE_ATTEMPTS = 8
 
@@ -1370,39 +1406,93 @@ class PositionMonitor:
             )
             return False
 
-    def _fetch_manual_close_fill_price(self, pos: ActivePosition) -> Optional[object]:
-        """Return the actual fill price of a manually placed close order.
+    def _fetch_manual_close_fill_orders(self, group: list, close_side: str) -> list:
+        """Return all manual close fill orders for a group of positions sharing the same ticker.
 
-        Queries order history for the most recent filled sell (or buy-to-cover for stocks)
-        on the position's instrument that was submitted after the engine's entry time.
-        Returns None when no matching order is found — callers must not fall back to a
-        market-mid estimate, as that would misreport capital returned to the window budget.
+        Fetches filled orders for the ticker, filters to the correct side, excludes all
+        engine-placed exit orders, drops orders filled before the earliest entry in the group,
+        and returns the list sorted oldest-first (matching Alpaca's FIFO close attribution).
         """
-        symbol = pos.option_symbol if pos.trade_type != "stock" else pos.ticker
-        close_side = "buy" if (pos.trade_type == "stock" and pos.signal == "BEARISH") else "sell"
+        if not group:
+            return []
+        sample_pos = group[0]
+        symbol = sample_pos.option_symbol if sample_pos.trade_type != "stock" else sample_pos.ticker
+        earliest_entry = min(
+            (p.entry_time for p in group if p.entry_time is not None),
+            default=None,
+        )
+        engine_exit_ids = {p.exit_order_id for p in group if p.exit_order_id}
+
         try:
-            filled_orders = self._client.get_filled_orders(symbol, limit=10)
-            for order in filled_orders:
-                if order["side"] != close_side:
-                    continue
-                if pos.exit_order_id and order.get("order_id") == pos.exit_order_id:
-                    continue
-                if pos.entry_time is not None and order.get("filled_at") is not None:
-                    filled_at = order["filled_at"]
-                    if hasattr(filled_at, "tzinfo") and filled_at.tzinfo is None:
-                        filled_at = ET.localize(filled_at)
-                    if filled_at <= pos.entry_time:
-                        continue
-                price = _D(str(order["filled_avg_price"]))
-                logger.info(
-                    "MANUAL CLOSE FILL %s: found filled %s order %s @ %s (filled_at=%s)",
-                    symbol, close_side, order["order_id"], price, order.get("filled_at"),
-                )
-                return price
+            all_orders = self._client.get_filled_orders(symbol, limit=20)
         except Exception:
             logger.warning("Could not fetch order history for %s", symbol, exc_info=True)
+            return []
 
-        return None
+        manual_orders = []
+        for order in all_orders:
+            if order["side"] != close_side:
+                continue
+            if order.get("order_id") in engine_exit_ids:
+                continue
+            filled_at = order.get("filled_at")
+            if filled_at is not None and earliest_entry is not None:
+                if hasattr(filled_at, "tzinfo") and filled_at.tzinfo is None:
+                    filled_at = ET.localize(filled_at)
+                if filled_at <= earliest_entry:
+                    continue
+            logger.info(
+                "MANUAL CLOSE FILL %s: found filled %s order %s qty=%.0f @ %s (filled_at=%s)",
+                symbol, close_side, order["order_id"],
+                order.get("filled_qty", 0), order["filled_avg_price"], order.get("filled_at"),
+            )
+            manual_orders.append(order)
+
+        manual_orders.sort(key=lambda o: o.get("filled_at") or datetime.min.replace(tzinfo=ET))
+        return manual_orders
+
+    def _consume_fill_orders(self, order_pool: list, qty_needed: int) -> Optional[object]:
+        """Consume fill orders from order_pool (oldest first) to cover qty_needed shares.
+
+        Returns the weighted-average fill price if any orders were consumed, or None when
+        the pool is empty. Modifies order_pool entries in-place by decrementing remaining_qty.
+        """
+        consumed_qty = 0.0
+        total_cost = _D("0")
+
+        for order in order_pool:
+            if consumed_qty >= qty_needed:
+                break
+            remaining = order["remaining_qty"]
+            if remaining <= 0:
+                continue
+            take = min(remaining, qty_needed - consumed_qty)
+            total_cost += _D(str(take)) * order["price"]
+            consumed_qty += take
+            order["remaining_qty"] -= take
+
+        if consumed_qty == 0:
+            return None
+
+        return (total_cost / _D(str(consumed_qty))).quantize(_D("0.01"), rounding=ROUND_HALF_UP)
+
+    def _fetch_manual_close_fill_price(self, pos: ActivePosition) -> Optional[object]:
+        """Return the fill price for a single manually closed position.
+
+        Thin wrapper around _fetch_manual_close_fill_orders / _consume_fill_orders for
+        call sites that deal with one position at a time (PRE-CLOSE SYNC, reconciliation).
+        For multi-position FIFO attribution use _sync_open_position_qtys directly.
+        """
+        close_side = (
+            "buy" if (pos.trade_type == "stock" and pos.signal == "BEARISH") else "sell"
+        )
+        pos_qty = pos.shares if pos.trade_type == "stock" else pos.contracts
+        orders = self._fetch_manual_close_fill_orders([pos], close_side)
+        pool = [
+            {"remaining_qty": o.get("filled_qty", float("inf")), "price": _D(str(o["filled_avg_price"]))}
+            for o in orders
+        ]
+        return self._consume_fill_orders(pool, pos_qty)
 
     def _poll_exit_fill_price(self, pos: ActivePosition, max_attempts: int = 3, interval: float = 5.0):
         """Poll order status after placing an exit order to set pos.exit_fill_price.

@@ -3015,8 +3015,9 @@ class TestReconcileStuckPositions:
         monitor._positions.append(pos)
         return monitor, client, pos
 
-    def _sell_order(self, price=5.00):
-        return {"order_id": "o99", "side": "sell", "filled_avg_price": price, "filled_at": None}
+    def _sell_order(self, price=5.00, qty=2.0):
+        return {"order_id": "o99", "side": "sell", "filled_avg_price": price,
+                "filled_qty": qty, "filled_at": None}
 
     def test_no_action_when_no_stuck_positions(self):
         client = _make_alpaca_client()
@@ -3580,6 +3581,7 @@ class TestPreCloseBrokerQtySync:
     def test_option_partial_manual_close_adjusts_contracts_before_order(self):
         monitor, client, engine, pos = self._make_live_monitor(contracts=6)
         client.get_open_positions.return_value = {pos.option_symbol: {"qty": 4.0}}
+        client.get_filled_orders.return_value = []
         with \
                 patch(self._REPLAY_PATH, return_value=False), \
                 patch(self._PLACE_OPTION_PATH, return_value=({"order_id": "x"}, 4)) as place_order, \
@@ -3726,6 +3728,7 @@ class TestPreCloseBrokerQtySync:
         pos = _make_stock_position(signal="BEARISH", shares=104)
         # Broker shows 50 shares remain (short position, negative qty)
         client.get_open_positions.return_value = {"NVDA": {"qty": -50.0}}
+        client.get_filled_orders.return_value = []
         with \
                 patch(self._REPLAY_PATH, return_value=False), \
                 patch(self._PLACE_STOCK_PATH, return_value={"order_id": "stk-order"}) as place_order, \
@@ -3841,6 +3844,7 @@ class TestPreCloseBrokerQtySync:
         monitor, client, engine, pos = self._make_live_monitor()
         client.get_open_positions.return_value = {}
         client.order_status.return_value = {"status": "canceled"}
+        client.get_filled_orders.return_value = []
         with \
                 patch(self._REPLAY_PATH, return_value=False), \
                 patch(self._PLACE_OPTION_PATH) as place_order, \
@@ -3853,6 +3857,7 @@ class TestPreCloseBrokerQtySync:
         monitor, client, engine, pos = self._make_live_monitor()
         client.get_open_positions.return_value = {}
         client.order_status.side_effect = RuntimeError("API unavailable")
+        client.get_filled_orders.return_value = []
         with \
                 patch(self._REPLAY_PATH, return_value=False), \
                 patch(self._PLACE_OPTION_PATH) as place_order, \
@@ -3893,6 +3898,7 @@ class TestSyncOpenPositionQtys:
     def test_partial_manual_close_updates_contracts(self):
         monitor, client, pos = self._make_monitor_with_open_option(contracts=6)
         client.get_open_positions.return_value = {pos.option_symbol: {"qty": 4.0}}
+        client.get_filled_orders.return_value = []
 
         with patch("alpha_tech_tracker.op_momentum_strategy.position_monitor._notify"):
             monitor._sync_open_position_qtys()
@@ -3902,6 +3908,7 @@ class TestSyncOpenPositionQtys:
     def test_sends_notify_on_partial_close(self):
         monitor, client, pos = self._make_monitor_with_open_option(contracts=6)
         client.get_open_positions.return_value = {pos.option_symbol: {"qty": 4.0}}
+        client.get_filled_orders.return_value = []
 
         with patch(
             "alpha_tech_tracker.op_momentum_strategy.position_monitor._notify"
@@ -3946,6 +3953,7 @@ class TestSyncOpenPositionQtys:
         pos = _make_stock_position(signal="BEARISH", shares=104)
         monitor._positions.append(pos)
         client.get_open_positions.return_value = {"NVDA": {"qty": -50.0}}
+        client.get_filled_orders.return_value = []
 
         with patch("alpha_tech_tracker.op_momentum_strategy.position_monitor._notify"):
             monitor._sync_open_position_qtys()
@@ -4924,3 +4932,143 @@ class TestManualCloseOrderIdExclusion:
         ]
 
         assert monitor._entry_confirmed_filled_no_manual_close(pos) is False
+
+
+class TestFifoQtySyncMultiPosition:
+    """_sync_open_position_qtys FIFO attribution when two engine positions share the same ticker.
+
+    Scenario mirrors the 2026-05-18 MU live trade:
+    - M1 (primary): 10sh BEARISH short, entered first
+    - DD (add-on): 16sh BEARISH short, entered second
+    - Total engine: 26sh; broker shows 13sh (13sh manually covered)
+    - Alpaca applies FIFO: cover hits M1 (oldest) first, then DD
+
+    Expected FIFO attribution:
+    - M1 fully closed: 10sh @ fill price
+    - DD partially closed: 3sh @ fill price
+    - M1.shares → 0; DD.shares → 13
+    """
+
+    def _make_monitor_with_two_positions(self, m1_shares=10, dd_shares=16, close_callback=None):
+        import pytz
+        from datetime import datetime
+        ET = pytz.timezone("America/New_York")
+
+        m1 = _make_stock_position(signal="BEARISH", shares=m1_shares)
+        m1.window_label = "M1"
+        m1.entry_time = ET.localize(datetime(2026, 5, 18, 9, 46, 0))
+
+        dd = _make_stock_position(signal="BEARISH", shares=dd_shares)
+        dd.window_label = "DD"
+        dd.is_doubledown_addon = True
+        dd.entry_time = ET.localize(datetime(2026, 5, 18, 9, 55, 0))
+
+        client = _make_alpaca_client()
+        df = _build_history_df([114.0], ma20=118.0, ma50=118.0, ma200=120.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(
+            client, engine, mock_trade_execution=True, close_callback=close_callback
+        )
+        monitor._positions.extend([m1, dd])
+        return monitor, client, m1, dd
+
+    def test_fifo_m1_fully_closed_dd_partially_closed(self):
+        """13sh manual cover with M1=10 + DD=16: M1 fully consumed, DD gets remaining 3sh."""
+        closed = []
+        monitor, client, m1, dd = self._make_monitor_with_two_positions(
+            m1_shares=10, dd_shares=16, close_callback=closed.append
+        )
+        client.get_open_positions.return_value = {"NVDA": {"qty": -13.0}}
+        client.get_filled_orders.return_value = [
+            {"order_id": "cover1", "side": "buy", "filled_avg_price": 702.80,
+             "filled_qty": 13.0, "filled_at": None},
+        ]
+
+        with patch("alpha_tech_tracker.op_momentum_strategy.position_monitor._notify"):
+            monitor._sync_open_position_qtys()
+
+        assert m1.shares == 0
+        assert dd.shares == 13
+
+    def test_fifo_close_callback_fires_for_m1_and_dd(self):
+        """Both the M1 (10sh) and DD (3sh) partial closes fire the close callback."""
+        closed = []
+        monitor, client, m1, dd = self._make_monitor_with_two_positions(
+            m1_shares=10, dd_shares=16, close_callback=closed.append
+        )
+        client.get_open_positions.return_value = {"NVDA": {"qty": -13.0}}
+        client.get_filled_orders.return_value = [
+            {"order_id": "cover1", "side": "buy", "filled_avg_price": 702.80,
+             "filled_qty": 13.0, "filled_at": None},
+        ]
+
+        with patch("alpha_tech_tracker.op_momentum_strategy.position_monitor._notify"):
+            monitor._sync_open_position_qtys()
+
+        assert len(closed) == 2
+        m1_close = next(p for p in closed if p.window_label == "M1")
+        dd_close = next(p for p in closed if p.window_label == "DD")
+        assert m1_close.shares == 10
+        assert dd_close.shares == 3
+
+    def test_fifo_fill_price_is_weighted_average_across_split_order(self):
+        """One 13sh fill covers M1 (10sh) fully and DD (3sh); both get same price."""
+        closed = []
+        monitor, client, m1, dd = self._make_monitor_with_two_positions(
+            m1_shares=10, dd_shares=16, close_callback=closed.append
+        )
+        client.get_open_positions.return_value = {"NVDA": {"qty": -13.0}}
+        client.get_filled_orders.return_value = [
+            {"order_id": "cover1", "side": "buy", "filled_avg_price": 702.80,
+             "filled_qty": 13.0, "filled_at": None},
+        ]
+
+        with patch("alpha_tech_tracker.op_momentum_strategy.position_monitor._notify"):
+            monitor._sync_open_position_qtys()
+
+        assert all(p.exit_fill_price == _D("702.80") for p in closed)
+
+    def test_fifo_two_separate_orders_attributed_oldest_first(self):
+        """Two fill orders: first 10sh, then 3sh. M1 (oldest) gets first order, DD gets second."""
+        import pytz
+        from datetime import datetime
+        ET = pytz.timezone("America/New_York")
+        closed = []
+        monitor, client, m1, dd = self._make_monitor_with_two_positions(
+            m1_shares=10, dd_shares=5, close_callback=closed.append
+        )
+        client.get_open_positions.return_value = {"NVDA": {"qty": -2.0}}
+        client.get_filled_orders.return_value = [
+            {"order_id": "cover1", "side": "buy", "filled_avg_price": 702.00,
+             "filled_qty": 10.0, "filled_at": ET.localize(datetime(2026, 5, 18, 11, 0))},
+            {"order_id": "cover2", "side": "buy", "filled_avg_price": 668.00,
+             "filled_qty": 3.0, "filled_at": ET.localize(datetime(2026, 5, 18, 14, 44))},
+        ]
+
+        with patch("alpha_tech_tracker.op_momentum_strategy.position_monitor._notify"):
+            monitor._sync_open_position_qtys()
+
+        m1_close = next(p for p in closed if p.window_label == "M1")
+        dd_close = next(p for p in closed if p.window_label == "DD")
+        assert m1_close.shares == 10
+        assert m1_close.exit_fill_price == _D("702.00")
+        assert dd_close.shares == 3
+        assert dd_close.exit_fill_price == _D("668.00")
+        assert m1.shares == 0
+        assert dd.shares == 2
+
+    def test_fifo_no_fill_orders_updates_shares_without_callback(self):
+        """No fill orders found: shares still updated, callback not fired."""
+        closed = []
+        monitor, client, m1, dd = self._make_monitor_with_two_positions(
+            m1_shares=10, dd_shares=16, close_callback=closed.append
+        )
+        client.get_open_positions.return_value = {"NVDA": {"qty": -13.0}}
+        client.get_filled_orders.return_value = []
+
+        with patch("alpha_tech_tracker.op_momentum_strategy.position_monitor._notify"):
+            monitor._sync_open_position_qtys()
+
+        assert closed == []
+        assert m1.shares == 0
+        assert dd.shares == 13
