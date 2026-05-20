@@ -13,10 +13,16 @@ logger = logging.getLogger(__name__)
 class InsufficientSlotBudgetError(RuntimeError):
     """Raised when the per-slot window budget cannot fund a single contract/share.
 
-    Distinct from `RuntimeError("Insufficient buying power...")` so the trade
-    engine can skip the entry quietly (this is an expected path when a window
-    weight × budget is small relative to the option's contract cost) instead of
-    logging a stack trace.
+    Expected path when a window weight x budget is small relative to the option's
+    contract cost -- the trade engine skips the entry quietly without a stack trace.
+    """
+
+
+class InsufficientBuyingPowerError(RuntimeError):
+    """Raised when the broker account has zero buying power for a new position.
+
+    Expected on losing days where the account is drawn down -- the trade engine
+    should skip the entry at WARNING level, not log a full traceback.
     """
 
 
@@ -85,7 +91,7 @@ class PositionSizer:
                 cost_per_contract = limit_price * _D("100")
                 max_by_bp = max(0, int(account_buying_power / cost_per_contract)) if cost_per_contract > 0 else 0
                 if max_by_bp == 0:
-                    raise RuntimeError(
+                    raise InsufficientBuyingPowerError(
                         "Insufficient buying power for %s: need $%.2f/contract, have $%.2f"
                         % (option_symbol, float(cost_per_contract), float(account_buying_power))
                     )
@@ -169,7 +175,7 @@ class PositionSizer:
             if account_buying_power is not None and limit_price > 0:
                 max_by_bp = int(account_buying_power / limit_price)
                 if max_by_bp == 0:
-                    raise RuntimeError(
+                    raise InsufficientBuyingPowerError(
                         "Insufficient buying power for %s stock: need $%.2f/share, have $%.2f"
                         % (ticker, float(limit_price), float(account_buying_power))
                     )

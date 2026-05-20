@@ -2853,6 +2853,46 @@ class TestEnterPositionFailures:
 
         assert engine._window_state["W1"]["open_position_count"] == 0
 
+    def test_returns_false_and_logs_warning_when_sizer_raises_runtime_error(self, caplog):
+        engine = self._make_engine()
+        engine._contract_selector = Mock()
+        engine._contract_selector.select.return_value = "NVDA260411C00170000"
+
+        with patch(_POSITION_SIZER_PATH, side_effect=RuntimeError("Insufficient buying power for NVDA: need $1500/contract, have $-100")), \
+             patch(
+                 "alpha_tech_tracker.op_momentum_strategy.trade_engine.is_replay_mode",
+                 return_value=False,
+             ), \
+             caplog.at_level("WARNING"):
+            result = engine._enter_position(_make_signal_event("NVDA"), window_label="W1")
+
+        assert result is False
+        assert "Insufficient buying power" in caplog.text
+        assert "ERROR" not in caplog.text
+
+    def test_option_entry_fits_capital_returns_false_and_logs_warning_on_runtime_error(self, caplog):
+        engine = self._make_engine()
+        engine._contract_selector = Mock()
+        engine._contract_selector.select.return_value = "NVDA260411C00170000"
+
+        with patch(_POSITION_SIZER_PATH, side_effect=RuntimeError("Insufficient buying power for NVDA")), \
+             patch(
+                 "alpha_tech_tracker.op_momentum_strategy.trade_engine.is_replay_mode",
+                 return_value=False,
+             ), \
+             caplog.at_level("WARNING"):
+            fits, cost = engine._option_entry_fits_capital(
+                _make_signal_event("NVDA"),
+                slot_weight=_D("0.5"),
+                window_budget=_D("5000"),
+                prior_pending_cost=_D("0"),
+            )
+
+        assert fits is False
+        assert cost == _D("0")
+        assert "Insufficient buying power" in caplog.text
+        assert "ERROR" not in caplog.text
+
 
 # ---------------------------------------------------------------------------
 # _window_primary_deployed — primary vs re-entry tracking

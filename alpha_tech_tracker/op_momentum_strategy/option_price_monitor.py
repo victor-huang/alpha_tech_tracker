@@ -433,7 +433,7 @@ class OptionPriceMonitor:
 # Tickers confirmed NOT on the CBOE Penny Pilot Program.
 # Options for these use $0.05 ticks below $3 and $0.10 ticks at $3+.
 # Add a ticker here when live orders show tick-rejection with required=0.1.
-_NON_PENNY_PILOT_TICKERS: frozenset = frozenset({"CRDO", "CLS", "APP", "SNDK", "EXPE"})
+_NON_PENNY_PILOT_TICKERS: frozenset = frozenset({"CRDO", "CLS", "APP", "SNDK", "EXPE", "CHTR"})
 
 
 def ticker_is_penny_pilot(ticker: str) -> bool:

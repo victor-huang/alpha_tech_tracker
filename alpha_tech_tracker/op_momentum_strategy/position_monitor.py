@@ -1487,7 +1487,7 @@ class PositionMonitor:
         now = datetime.now(ET)
         with self._lock:
             open_pos = [p for p in self._positions if not p.is_closed]
-            closed_pos = [p for p in self._positions if p.is_closed]
+            closed_pos = [p for p in self._positions if p.is_closed] + self._qty_sync_closes
 
         has_sim = any(p.simulated_entry_mid is not None for p in self._positions)
 

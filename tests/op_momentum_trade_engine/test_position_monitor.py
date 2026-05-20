@@ -1220,6 +1220,75 @@ class TestStockPrintSummaryPnl:
         assert "5.00sh" in caplog.text
 
 
+class TestPrintStatusQtySyncCloses:
+    def _make_monitor(self):
+        client = _make_alpaca_client()
+        engine = _make_signal_engine_with_history("NVDA", pd.DataFrame())
+        return PositionMonitor(client, engine, mock_trade_execution=False)
+
+    def _make_qty_sync_close(self, ticker="CRWV", entry_fill=10.27, exit_fill=9.15, contracts=2):
+        pos = _make_active_position(signal="BEARISH", contracts=contracts)
+        pos.ticker = ticker
+        pos.is_closed = True
+        pos.exit_reason = "manual_close"
+        pos.entry_fill_price = _D(str(entry_fill))
+        pos.exit_fill_price = _D(str(exit_fill))
+        pos.entry_time = None
+        pos.exit_time = None
+        return pos
+
+    def test_print_status_includes_qty_sync_close_in_closed_positions(self, caplog):
+        monitor = self._make_monitor()
+        engine_close = _make_active_position(signal="BEARISH", contracts=1)
+        engine_close.ticker = "CRWV"
+        engine_close.is_closed = True
+        engine_close.exit_reason = "hard_stop"
+        engine_close.entry_fill_price = _D("10.27")
+        engine_close.exit_fill_price = _D("8.60")
+        monitor.add_position(engine_close)
+        monitor._qty_sync_closes.append(self._make_qty_sync_close())
+
+        with caplog.at_level(logging.INFO):
+            monitor.print_status()
+
+        assert caplog.text.count("CRWV") >= 2
+
+    def test_print_status_running_pnl_includes_qty_sync_close_pnl(self, caplog):
+        monitor = self._make_monitor()
+        engine_close = _make_active_position(signal="BEARISH", contracts=1)
+        engine_close.ticker = "CRWV"
+        engine_close.is_closed = True
+        engine_close.exit_reason = "hard_stop"
+        engine_close.entry_fill_price = _D("10.27")
+        engine_close.exit_fill_price = _D("8.60")
+        monitor.add_position(engine_close)
+        monitor._qty_sync_closes.append(self._make_qty_sync_close())
+
+        with caplog.at_level(logging.INFO):
+            monitor.print_status()
+
+        # engine close: (10.27 - 8.60) * 1 * 100 = +167
+        # qty sync close: (10.27 - 9.15) * 2 * 100 = +224
+        # combined running P&L = +$391 (both are BEARISH profit)
+        assert "391" in caplog.text
+
+    def test_print_status_without_qty_sync_closes_shows_only_engine_pnl(self, caplog):
+        monitor = self._make_monitor()
+        engine_close = _make_active_position(signal="BEARISH", contracts=1)
+        engine_close.ticker = "CRWV"
+        engine_close.is_closed = True
+        engine_close.exit_reason = "hard_stop"
+        engine_close.entry_fill_price = _D("10.27")
+        engine_close.exit_fill_price = _D("8.60")
+        monitor.add_position(engine_close)
+
+        with caplog.at_level(logging.INFO):
+            monitor.print_status()
+
+        assert "167" in caplog.text
+        assert "391" not in caplog.text
+
+
 class TestMockOptionExitPricing:
     # strike $90 call — ITM when stock=$100 (intrinsic=$10)
     _CALL_SYM = "NVDA260328C00090000"
