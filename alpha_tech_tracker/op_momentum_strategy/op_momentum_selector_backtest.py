@@ -661,6 +661,7 @@ def run_selector_backtest(
     stale_cut_mins: int = 0,
     stale_cut_threshold: float = 0.0,
     exit_at_bar_close: bool = True,
+    only_dates: set = None,
 ) -> tuple:
     """
     Walk each trading day in [eval_start, eval_end], apply rolling selector
@@ -787,6 +788,8 @@ def run_selector_backtest(
             if eval_start <= d <= eval_end
         }
     )
+    if only_dates:
+        trading_days = [d for d in trading_days if d in only_dates]
 
     # Pre-group bars by date: replaces O(total_bars) index.date scan with O(1) dict lookup
     # in the or_bar_lookback scoring path, called 16 tickers × N windows × N days.
@@ -2495,6 +2498,14 @@ def _parse_args():
         help="Max bars_held for the primary BULLISH trade to be eligible for re-entry (default: 3).",
     )
     parser.add_argument(
+        "--only-dates",
+        type=str,
+        default=None,
+        dest="only_dates",
+        help="Path to a file with YYYY-MM-DD dates (one per line). Only those trading days "
+             "are evaluated; all others are skipped. Use with --start/--end spanning the full range.",
+    )
+    parser.add_argument(
         "--doubledown",
         action="store_true",
         default=False,
@@ -2721,6 +2732,12 @@ if __name__ == "__main__":
     if args.source == "alpaca":
         print(f"  Alpaca feed  : {args.feed.upper()}")
 
+    only_dates = None
+    if args.only_dates:
+        with open(args.only_dates) as _f:
+            only_dates = {date.fromisoformat(ln.strip()) for ln in _f if ln.strip()}
+        print(f"  Only dates   : {len(only_dates)} days loaded from {args.only_dates}")
+
     trade_rows, all_window_results, trading_days = run_selector_backtest(
         n=args.top,
         tickers=tickers,
@@ -2775,6 +2792,7 @@ if __name__ == "__main__":
         stale_cut_mins=args.stale_cut_mins,
         stale_cut_threshold=args.stale_cut_threshold,
         exit_at_bar_close=args.exit_at_bar_close,
+        only_dates=only_dates,
     )
 
     skip_log = _apply_capital_flow(
