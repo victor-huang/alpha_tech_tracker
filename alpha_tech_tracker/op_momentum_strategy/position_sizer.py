@@ -45,7 +45,11 @@ class PositionSizer:
             budget = window_budget * capital_weight
         else:
             account = self._client.get_accounts()
-            account_buying_power = _D(str(account.get("buying_power", ACCOUNT_BUDGET)))
+            option_bp = account.get("option_buying_power")
+            if option_bp is not None:
+                account_buying_power = _D(str(option_bp))
+            else:
+                account_buying_power = _D(str(account.get("buying_power", ACCOUNT_BUDGET)))
             budget = account_buying_power * MAX_CAPITAL_PERCENTAGE_PER_SYMBOL_IN_WINDOW * capital_weight
 
         ask = _D("0")

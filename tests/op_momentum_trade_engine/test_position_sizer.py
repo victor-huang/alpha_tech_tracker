@@ -152,6 +152,20 @@ class TestWindowBudgetSizing:
 
         assert contracts == 5
 
+    def test_uses_option_buying_power_for_initial_budget_when_no_window_budget(self):
+        client = _make_alpaca_client()
+        client.get_accounts.return_value = {
+            "buying_power": 0.0,
+            "option_buying_power": 10000.0,
+        }
+        client.get_option_quote_by_occ.return_value = _make_option_quote(bid=8.00, ask=9.00)
+
+        sizer = PositionSizer(client)
+        # buying_power=0 → budget=0 → 0 contracts; option_buying_power=10000 → budget should be used
+        contracts, _ = sizer.compute("NVDA260328C00730000", window_budget=None)
+
+        assert contracts >= 1
+
     def test_negative_buying_power_raises_insufficient_error(self):
         client = _make_alpaca_client()
         client.get_accounts.return_value = {"buying_power": -1340.0}
