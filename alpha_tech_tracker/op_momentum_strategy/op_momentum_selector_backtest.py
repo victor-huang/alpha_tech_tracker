@@ -1,5 +1,7 @@
 import argparse
+import numpy as np
 import pandas as pd
+import yfinance as yf
 from datetime import date, datetime, timedelta
 
 from alpaca.data.enums import DataFeed
@@ -27,6 +29,22 @@ from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector import (
 MIN_WINDOW_CAPITAL = 100.0
 INITIAL_CAPITAL = 10_000.0
 DOUBLEDOWN_START_MIN = 5  # min from OR close at which the DD check fires and addon enters
+
+# ── Regime-adaptive config ────────────────────────────────────────────────────
+REGIME_VIX_HI = 22.0
+REGIME_VIX_LO = 17.0
+REGIME_MA_STRONG_SCORE = 3  # min count of MA8/20/50/200 QQQ price is above at 9:40 bar
+
+# (bars, stop_pct) per regime bucket — from 2018-2025 cross-year sweep.
+# See M1_WINDOW_SWEEP_FINDINGS.md "Regime-Segmented Config Sweep" sections.
+REGIME_ADAPTIVE_CONFIGS = {
+    "vix_hi_ma_strong":  (4, 0.4),  # VIX≥22 + MA≥3: high confidence (2020:114d, 2022:90d)
+    "vix_hi_ma_weak":    (5, 0.5),  # VIX≥22 + MA≤2: medium confidence (2022:103d)
+    "vix_mid_ma_strong": (6, 0.7),  # VIX17-22 + MA≥3: medium confidence (2021:69d, 2023:55d)
+    "vix_mid_ma_weak":   (6, 0.5),  # VIX17-22 + MA≤2: medium confidence (2021:67d, 2023:53d)
+    "vix_lo":            (5, 0.5),  # VIX<17 (calm): low confidence — use all-weather default
+}
+# ─────────────────────────────────────────────────────────────────────────────
 
 # The replay cutoff feeds bars with open-timestamp < EOD_EXIT_TIME (15:55), so the last
 # bar processed is the 15:50 bar (open 15:50, closes at 15:55).  Display its open-time
@@ -606,6 +624,93 @@ def _annotate_doubledown_addon(
                 r["reentry_cancelled_by_dd"] = True
 
 
+def _fetch_regime_data(fetch_start, eval_end, source, feed):
+    """
+    Fetch VIX daily data and QQQ 5-min bars for regime classification.
+
+    Returns (vix_prior, qqq_5min):
+      - vix_prior: pd.Series indexed by Timestamp, prior day's VIX close (shifted +1 BDay)
+      - qqq_5min: pd.DataFrame of QQQ 5-min bars with rolling MA8/20/50/200 on Close
+    """
+    print("  [regime] Fetching VIX daily data...")
+    vix_raw = yf.download(
+        "^VIX",
+        start=str(fetch_start),
+        end=str(eval_end + timedelta(days=1)),
+        interval="1d",
+        auto_adjust=True,
+        progress=False,
+    )
+    if hasattr(vix_raw.columns, "get_level_values"):
+        vix_raw.columns = vix_raw.columns.get_level_values(0)
+    vix_series = vix_raw["Close"].dropna()
+    vix_prior = vix_series.shift(1)
+
+    print("  [regime] Fetching QQQ 5-min bars for MA alignment...")
+    qqq_all = fetch_bars(["QQQ"], fetch_start, eval_end, source=source, feed=feed)
+    qqq_5min = qqq_all.get("QQQ", pd.DataFrame()).sort_index()
+    if not qqq_5min.empty:
+        qqq_5min = qqq_5min.copy()
+        qqq_5min["ma8"]   = qqq_5min["Close"].rolling(8).mean()
+        qqq_5min["ma20"]  = qqq_5min["Close"].rolling(20).mean()
+        qqq_5min["ma50"]  = qqq_5min["Close"].rolling(50).mean()
+        qqq_5min["ma200"] = qqq_5min["Close"].rolling(200).mean()
+    return vix_prior, qqq_5min
+
+
+def _classify_day_regime(d, vix_prior, qqq_5min):
+    """
+    Classify trading day d into a regime bucket name.
+    Returns None if VIX or QQQ data is unavailable (caller should use fallback).
+    """
+    ts = pd.Timestamp(d)
+    vix_val = None
+    for offset in range(1, 6):
+        prev = ts - pd.tseries.offsets.BDay(offset)
+        if prev in vix_prior.index:
+            candidate = vix_prior[prev]
+            if not np.isnan(float(candidate)):
+                vix_val = float(candidate)
+                break
+    if vix_val is None:
+        return None
+
+    entry_ts = pd.Timestamp(
+        datetime.combine(d, datetime.strptime("09:40", "%H:%M").time()),
+        tz="America/New_York",
+    )
+    bar_row = qqq_5min.loc[qqq_5min.index == entry_ts] if not qqq_5min.empty else pd.DataFrame()
+    if bar_row.empty:
+        return None
+
+    close_price = bar_row["Close"].iloc[0]
+    ma_vals = [bar_row[col].iloc[0] for col in ("ma8", "ma20", "ma50", "ma200")]
+    if any(np.isnan(v) for v in ma_vals):
+        return None
+
+    ma_score = sum(1 for v in ma_vals if close_price > v)
+
+    if vix_val >= REGIME_VIX_HI:
+        return "vix_hi_ma_strong" if ma_score >= REGIME_MA_STRONG_SCORE else "vix_hi_ma_weak"
+    elif vix_val >= REGIME_VIX_LO:
+        return "vix_mid_ma_strong" if ma_score >= REGIME_MA_STRONG_SCORE else "vix_mid_ma_weak"
+    else:
+        return "vix_lo"
+
+
+def _build_day_config_map(trading_days, vix_prior, qqq_5min, fallback_bars, fallback_stop):
+    """
+    Returns dict[date, (bars, stop_pct)] for each trading day.
+    Days without VIX/QQQ data fall back to (fallback_bars, fallback_stop).
+    """
+    config_map = {}
+    fallback_key = (fallback_bars, fallback_stop)
+    for d in trading_days:
+        bucket = _classify_day_regime(d, vix_prior, qqq_5min)
+        config_map[d] = REGIME_ADAPTIVE_CONFIGS.get(bucket, fallback_key) if bucket else fallback_key
+    return config_map
+
+
 def run_selector_backtest(
     n: int,
     tickers: list,
@@ -662,6 +767,7 @@ def run_selector_backtest(
     stale_cut_threshold: float = 0.0,
     exit_at_bar_close: bool = True,
     only_dates: set = None,
+    regime_adaptive: bool = False,
 ) -> tuple:
     """
     Walk each trading day in [eval_start, eval_end], apply rolling selector
@@ -670,6 +776,8 @@ def run_selector_backtest(
     windows: list of {"label", "opening_start", "opening_bars"} dicts.
              Falls back to single window from opening_start_time/opening_bars if omitted.
     dedup:   if True, skip a ticker in later windows if already picked by an earlier window that day.
+    regime_adaptive: if True, M1 window bars/stop_pct are chosen per day based on
+             prior VIX close and QQQ 5-min MA alignment score (see REGIME_ADAPTIVE_CONFIGS).
 
     Returns (trade_rows, all_window_results, trading_days) where:
       - trade_rows: list of dicts, one per selected trade (includes "window" key)
@@ -833,18 +941,136 @@ def run_selector_backtest(
         for win in windows
     }
 
+    # ── Regime-adaptive: pre-compute M1 signals for each unique (bars, stop) ──
+    day_config_map = {}      # date → (bars, stop_pct) — empty when not adaptive
+    regime_primary = {}      # (bars, stop) → primary_window_results["M1"]
+    regime_by_date = {}      # (bars, stop) → results_by_date["M1"]
+
+    if regime_adaptive:
+        from collections import Counter
+        m1_win = next((w for w in windows if w["label"] == "M1"), windows[0])
+        m1_start = m1_win["opening_start"]
+        fallback_bars = m1_win["opening_bars"]
+        fallback_stop = stop_pct
+
+        vix_prior, qqq_5min = _fetch_regime_data(fetch_start, eval_end, source, feed)
+        day_config_map = _build_day_config_map(
+            trading_days, vix_prior, qqq_5min, fallback_bars, fallback_stop
+        )
+
+        unique_configs = set(day_config_map.values())
+        print(f"  [regime] Pre-computing M1 signals for {len(unique_configs)} regime config(s)...")
+
+        m1_win_ma_switch = m1_win.get("trailing_ma_switch", trailing_ma_switch)
+        m1_win_ma_switch_period = m1_win.get("trailing_ma_switch_period", trailing_ma_switch_period)
+        m1_win_ma_switch_factor = m1_win.get("trailing_ma_switch_factor", trailing_ma_switch_factor)
+        _qqq_sb_m1, _qqq_sr_m1 = qqq_align_by_window.get(m1_win["label"], (None, None))
+
+        for (r_bars, r_stop) in unique_configs:
+            if (r_bars, r_stop) in regime_primary:
+                continue
+            print(f"    bars={r_bars} stop={r_stop}...")
+            m1_results = {}
+            for ticker in tickers:
+                df = all_bars.get(ticker, pd.DataFrame())
+                if df.empty:
+                    m1_results[ticker] = pd.DataFrame()
+                    continue
+                m1_results[ticker] = compute_signals_with_backtest(
+                    df,
+                    r_bars,
+                    bearish_ma200,
+                    r_stop,
+                    opening_start_time=m1_start,
+                    trailing_ma=trailing_ma,
+                    trailing_ma_switch=m1_win_ma_switch,
+                    trailing_ma_switch_factor=m1_win_ma_switch_factor,
+                    trailing_ma_switch_period=m1_win_ma_switch_period,
+                    max_loss_pct=max_loss_pct,
+                    armed_ma20_exit=armed_ma20_exit,
+                    bearish_regime_dates=bearish_regime_dates,
+                    enable_reversal=enable_reversal,
+                    reversal_max_bars_held=reversal_max_bars_held,
+                    enable_bearish_reversal=enable_bearish_reversal,
+                    bearish_reversal_max_bars_held=bearish_reversal_max_bars_held,
+                    or_bar_lookback=or_bar_lookback,
+                    enable_bearish_reentry=enable_bearish_reentry,
+                    bearish_reentry_max_bars=bearish_reentry_max_bars,
+                    enable_bullish_reentry=enable_bullish_reentry,
+                    bullish_reentry_max_bars=bullish_reentry_max_bars,
+                    close_top_pct=m1_win.get("close_top_pct", close_top_pct),
+                    filter_flat_or=filter_flat_or,
+                    qqq_align_skip_bull=_qqq_sb_m1,
+                    qqq_align_skip_bear=_qqq_sr_m1,
+                    min_first_bar_range_pct=min_first_bar_range_pct,
+                    min_first_bar_volume_mult=min_first_bar_volume_mult,
+                    min_or_vol_ratio=min_or_vol_ratio,
+                    min_hold_bars=min_hold_bars,
+                    stale_cut_mins=stale_cut_mins,
+                    stale_cut_threshold=stale_cut_threshold,
+                    exit_at_bar_close=exit_at_bar_close,
+                )
+            regime_primary[(r_bars, r_stop)] = {
+                ticker: (
+                    df[
+                        (df["is_reversal"] != True)           # noqa: E712
+                        & (df["is_bearish_reentry"] != True)  # noqa: E712
+                        & (df["is_bullish_reentry"] != True)  # noqa: E712
+                    ]
+                    if not df.empty else df
+                )
+                for ticker, df in m1_results.items()
+            }
+            regime_by_date[(r_bars, r_stop)] = {
+                ticker: ({d_: g for d_, g in df.groupby("date")} if not df.empty else {})
+                for ticker, df in m1_results.items()
+            }
+        print("  [regime] Pre-computation done.")
+
+        bucket_counts = Counter()
+        for d_, (b_, s_) in day_config_map.items():
+            bucket = next(
+                (k for k, v in REGIME_ADAPTIVE_CONFIGS.items() if v == (b_, s_)),
+                "fallback",
+            )
+            bucket_counts[bucket] += 1
+        print("  [regime] Day distribution:")
+        for bkt, cnt in sorted(bucket_counts.items(), key=lambda x: -x[1]):
+            print(f"    {bkt:<20} {cnt:>3} days")
+    # ── end regime pre-computation ─────────────────────────────────────────────
+
     trade_rows = []
     for d in trading_days:
         lookback_start = d - timedelta(days=lookback_days)
         picked_today = set()
 
+        if regime_adaptive and d in day_config_map:
+            day_key = day_config_map[d]
+            day_regime_bucket = next(
+                (k for k, v in REGIME_ADAPTIVE_CONFIGS.items() if v == day_key),
+                "fallback",
+            )
+        else:
+            day_key = None
+            day_regime_bucket = None
+
         for win in windows:
             label = win["label"]
             full_results = all_window_results[label]
 
+            # Select the right signal sets for this window on this day.
+            if regime_adaptive and label == "M1" and day_key is not None:
+                eff_primary_wr = regime_primary[day_key]
+                eff_by_date    = regime_by_date[day_key]
+                eff_bars       = day_key[0]
+            else:
+                eff_primary_wr = primary_window_results[label]
+                eff_by_date    = results_by_date[label]
+                eff_bars       = win["opening_bars"]
+
             rolling_stats = {}
             for ticker in tickers:
-                primary_results = primary_window_results[label].get(ticker, pd.DataFrame())
+                primary_results = eff_primary_wr.get(ticker, pd.DataFrame())
                 if primary_results.empty:
                     rolling_stats[ticker] = compute_ticker_stats(pd.DataFrame())
                     continue
@@ -859,7 +1085,7 @@ def run_selector_backtest(
             for ticker in tickers:
                 if dedup and ticker in picked_today:
                     continue
-                today_rows = results_by_date[label].get(ticker, {}).get(d)
+                today_rows = eff_by_date.get(ticker, {}).get(d)
                 if today_rows is None or today_rows.empty:
                     continue
                 # Use primary (non-reversal) row for scoring; reversal row carries
@@ -1015,7 +1241,7 @@ def run_selector_backtest(
                     primary_pnl_pct + rev_pnl_pct + br_pnl_pct + bru_pnl_pct
                 )
                 _h, _m = map(int, win["opening_start"].split(":"))
-                _or_close_min = _h * 60 + _m + win["opening_bars"] * 5
+                _or_close_min = _h * 60 + _m + eff_bars * 5
                 _primary_bars = pick["bars_held"]
                 # Compute how many bars from OR close until the slot is fully returned,
                 # accounting for BRE/BRU/REV sub-trades that start after the primary exits.
@@ -1042,6 +1268,7 @@ def run_selector_backtest(
                         "window": label,
                         "rank": rank,
                         "or_close_min": _or_close_min,
+                        "regime": day_regime_bucket,
                         "pnl_pct": round(combined_pnl_pct, 3),
                         "success": combined_pnl_pct > 0,
                         # cap_pnl, window_capital, skipped filled in by _apply_capital_flow
@@ -1226,6 +1453,49 @@ def _weights_label(weights: list, initial_capital: float) -> str:
         return f"${initial_capital * weights[0]:,.0f}/slot × {len(weights)} slots"
     pcts = "/".join(f"{w * 100:.0f}%" for w in weights)
     return f"weighted {pcts} × {len(weights)} slots"
+
+
+def _print_regime_summary(trade_rows: list, trading_days: list):
+    from collections import defaultdict
+    bucket_order = list(REGIME_ADAPTIVE_CONFIGS.keys()) + ["fallback", None]
+    stats = defaultdict(lambda: {"days": 0, "trades": 0, "wins": 0, "pnl": 0.0})
+
+    day_buckets = {}
+    for row in trade_rows:
+        if row.get("window") != "M1" or row.get("skipped"):
+            continue
+        d = row["date"]
+        bucket = row.get("regime") or "fallback"
+        day_buckets[d] = bucket
+        stats[bucket]["trades"] += 1
+        stats[bucket]["wins"] += 1 if row.get("success") else 0
+        stats[bucket]["pnl"] += row.get("cap_pnl", 0.0)
+
+    all_days_set = set(trading_days)
+    traded_days = set(day_buckets.keys())
+    untraded_days = all_days_set - traded_days
+    for d in untraded_days:
+        stats[None]["days"] += 1
+
+    for d, bkt in day_buckets.items():
+        stats[bkt]["days"] += 1
+
+    n_total = len(trading_days)
+    print(f"\n{'─'*70}")
+    print("  Regime Adaptive — M1 Day Distribution")
+    print(f"{'─'*70}")
+    print(f"  {'Bucket':<22} {'Days':>5}  {'Trades':>6}  {'Win%':>6}  {'P&L':>10}")
+    for bkt in bucket_order:
+        s = stats.get(bkt)
+        if not s or s["days"] == 0:
+            continue
+        label = bkt if bkt else "(no trades)"
+        n_trades = s["trades"]
+        wr = f"{s['wins']/n_trades*100:.0f}%" if n_trades else "  —"
+        pnl_str = f"${s['pnl']:>+,.0f}"
+        pct = f"({s['days']/n_total*100:.0f}%)"
+        print(f"  {label:<22} {s['days']:>4}{pct:>4}  {n_trades:>6}  {wr:>6}  {pnl_str:>10}")
+    print(f"{'─'*70}")
 
 
 def _print_skip_log(skip_log: list, windows: list):
@@ -2506,6 +2776,18 @@ def _parse_args():
              "are evaluated; all others are skipped. Use with --start/--end spanning the full range.",
     )
     parser.add_argument(
+        "--regime-adaptive",
+        action="store_true",
+        default=False,
+        dest="regime_adaptive",
+        help=(
+            "Select M1 window bars and stop_pct per day based on prior VIX close and QQQ "
+            "5-min MA alignment score at the 9:40 bar. Uses cross-year validated config table "
+            "(see REGIME_ADAPTIVE_CONFIGS). The bars value in --window M1 is used as a fallback "
+            "when VIX/QQQ data is unavailable. Incompatible with --doubledown."
+        ),
+    )
+    parser.add_argument(
         "--doubledown",
         action="store_true",
         default=False,
@@ -2738,6 +3020,11 @@ if __name__ == "__main__":
             only_dates = {date.fromisoformat(ln.strip()) for ln in _f if ln.strip()}
         print(f"  Only dates   : {len(only_dates)} days loaded from {args.only_dates}")
 
+    if args.regime_adaptive:
+        if args.doubledown:
+            raise SystemExit("--regime-adaptive and --doubledown cannot be used together.")
+        print(f"  Regime adapt : on (VIX_LO={REGIME_VIX_LO} VIX_HI={REGIME_VIX_HI} MA_score≥{REGIME_MA_STRONG_SCORE})")
+
     trade_rows, all_window_results, trading_days = run_selector_backtest(
         n=args.top,
         tickers=tickers,
@@ -2793,6 +3080,7 @@ if __name__ == "__main__":
         stale_cut_threshold=args.stale_cut_threshold,
         exit_at_bar_close=args.exit_at_bar_close,
         only_dates=only_dates,
+        regime_adaptive=args.regime_adaptive,
     )
 
     skip_log = _apply_capital_flow(
@@ -2849,6 +3137,9 @@ if __name__ == "__main__":
     if args.opportunity_capital_pct > 0 and args.doubledown:
         _opp_initial = args.capital * args.opportunity_capital_pct / 100
         _print_opportunity_pool_block(trade_rows, _opp_initial, args.compound)
+
+    if args.regime_adaptive:
+        _print_regime_summary(trade_rows, trading_days)
 
     if args.show_execution_log:
         _print_skip_log(skip_log, resolved_windows)
