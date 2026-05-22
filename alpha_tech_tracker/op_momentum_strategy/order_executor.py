@@ -860,6 +860,11 @@ def place_stock_order(
             return order
         _absorb_partial(order_id, "step1", attempt, filled_qty)
         _cancel_safely(order_id)
+        time.sleep(0.5)
+        _, post_cancel_filled_qty = _check_fill_status(order_id)
+        incremental = post_cancel_filled_qty - filled_qty
+        if incremental > 0:
+            _absorb_partial(order_id, "step1-post-cancel", attempt, incremental)
         if _shares_remaining[0] <= 0:
             return order
     for attempt in range(1, 4):

@@ -1127,15 +1127,26 @@ class TestPlaceStockOrderStep1Loop:
         assert calls[0].kwargs["limit_price"] == 330.0
 
     def test_step1_fills_on_second_attempt_returns_without_escalating(self):
+        # Each step1 attempt now makes 2 order_status calls (pre-cancel + post-cancel).
+        # Call sequence: attempt-1-pre(open), attempt-1-post(open), attempt-2-pre(filled).
         client = _make_stock_client(bid=329.75, ask=330.25)
-        self._run(client, filled_on_step1_attempt=2)
+        open_s = {"status": "open"}
+        filled_s = {"status": "filled"}
+        client.order_status.side_effect = [open_s, open_s, filled_s]
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            place_stock_order(client=client, ticker="FN", shares=1, order_action="BUY_OPEN")
         limit_calls = [c for c in client.place_stock_order.call_args_list if c.kwargs["order_type"] == "LIMIT"]
         assert len(limit_calls) == 2
         assert all(c.kwargs["limit_price"] == 330.0 for c in limit_calls)
 
     def test_step1_fills_on_third_attempt_returns_without_escalating(self):
+        # Call sequence: a1-pre(open), a1-post(open), a2-pre(open), a2-post(open), a3-pre(filled).
         client = _make_stock_client(bid=329.75, ask=330.25)
-        self._run(client, filled_on_step1_attempt=3)
+        open_s = {"status": "open"}
+        filled_s = {"status": "filled"}
+        client.order_status.side_effect = [open_s, open_s, open_s, open_s, filled_s]
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            place_stock_order(client=client, ticker="FN", shares=1, order_action="BUY_OPEN")
         limit_calls = [c for c in client.place_stock_order.call_args_list if c.kwargs["order_type"] == "LIMIT"]
         assert len(limit_calls) == 3
         assert all(c.kwargs["limit_price"] == 330.0 for c in limit_calls)
@@ -1169,7 +1180,7 @@ class TestPlaceStockOrderStep2Loop:
 
         def fake_order_status(order_id):
             attempt_count[0] += 1
-            step2_attempt = attempt_count[0] - 3  # step 2 starts after 3 step1 checks
+            step2_attempt = attempt_count[0] - 6  # step 2 starts after 6 step1 checks (3 pre + 3 post)
             if filled_on_attempt is not None and step2_attempt == filled_on_attempt:
                 return {"status": "filled"}
             return {"status": "open"}
@@ -2452,11 +2463,11 @@ class TestStockOrderEscalationPolicy:
     # ── step1 sleep is 2s ───────────────────────────────────────────────────
 
     def test_step1_sleep_interval_is_two_seconds(self):
+        # Each step1 attempt: 2s (wait for fill) + 0.5s (post-cancel re-check) × 3 attempts.
         sleep_calls = []
         client = _make_stock_client(bid=self._NARROW_BID, ask=self._NARROW_ASK)
         self._run(client, order_action="BUY_OPEN", sleep_calls=sleep_calls)
-        step1_sleeps = sleep_calls[:3]
-        assert step1_sleeps == [2, 2, 2]
+        assert sleep_calls[:6] == [2, 0.5, 2, 0.5, 2, 0.5]
 
 
 # ---------------------------------------------------------------------------
@@ -2599,6 +2610,91 @@ class TestPlaceStockOrderPartialFillOnCancel:
 
         calls = client.place_stock_order.call_args_list
         assert len(calls) == 1, "fully filled on attempt-1 must not place a second order"
+
+
+class TestPlaceStockOrderPostCancelRaceDetection:
+    """
+    After cancelling a step-1 order the engine waits 0.5 s and re-checks fill status.
+    This catches the race where the broker propagates a partial fill between the
+    pre-cancel check (shows 0) and the cancel acknowledgement.
+
+    Real-world failure (2026-05-21, SHOP): step-1 partially filled 101/114 shares;
+    pre-cancel order_status returned 0 (broker propagation lag); step-2 attempted
+    to sell all 114 shares against the 13-share remainder and was rejected.
+    """
+
+    def _make_race_client(self, total_shares, pre_cancel_qty, post_cancel_qty):
+        """
+        pre_cancel_qty: what order_status shows right after the 2s sleep (before cancel)
+        post_cancel_qty: what order_status shows after cancel + 0.5s sleep
+        step-2 fully fills the remaining shares.
+        """
+        client = MagicMock()
+        client.get_stock_quote.return_value = {
+            "QuoteResponse": {
+                "QuoteData": [{"All": {"bid": 103.70, "ask": 103.76, "lastTrade": 103.73}}]
+            }
+        }
+        order_ids = ["order-step1", "order-step2"]
+        place_count = [0]
+
+        def place_side_effect(**kwargs):
+            idx = place_count[0]
+            place_count[0] += 1
+            return {"order_id": order_ids[min(idx, len(order_ids) - 1)], "status": "open", "filled_qty": 0}
+
+        client.place_stock_order.side_effect = place_side_effect
+
+        status_call_count = [0]
+
+        def order_status_side_effect(order_id):
+            status_call_count[0] += 1
+            if order_id == "order-step1":
+                # call 1: pre-cancel (after 2s sleep); call 2: post-cancel (after 0.5s)
+                if status_call_count[0] == 1:
+                    return {"status": "open", "filled_qty": pre_cancel_qty}
+                return {"status": "open", "filled_qty": post_cancel_qty}
+            # order-step2: immediately filled for remaining shares
+            remaining = total_shares - post_cancel_qty
+            return {"status": "filled", "filled_qty": remaining}
+
+        client.order_status.side_effect = order_status_side_effect
+        return client
+
+    def test_post_cancel_race_partial_fill_uses_remaining_for_step2(self):
+        # Pre-cancel shows 0 filled; post-cancel reveals 101 of 114 filled (SHOP scenario).
+        client = self._make_race_client(total_shares=114, pre_cancel_qty=0, post_cancel_qty=101)
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            place_stock_order(client=client, ticker="SHOP", shares=114, order_action="SELL_CLOSE")
+
+        calls = client.place_stock_order.call_args_list
+        assert len(calls) == 2
+        assert calls[0].kwargs["quantity"] == 114
+        assert calls[1].kwargs["quantity"] == 13, (
+            "step-2 must sell only the 13 remaining shares, not all 114"
+        )
+
+    def test_post_cancel_race_full_fill_skips_step2(self):
+        # Post-cancel reveals all 114 shares filled — no step-2 needed.
+        client = self._make_race_client(total_shares=114, pre_cancel_qty=0, post_cancel_qty=114)
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            place_stock_order(client=client, ticker="SHOP", shares=114, order_action="SELL_CLOSE")
+
+        calls = client.place_stock_order.call_args_list
+        assert len(calls) == 1, "all shares filled post-cancel; must not place a second order"
+
+    def test_no_double_count_when_pre_cancel_already_absorbed_partial(self):
+        # Pre-cancel shows 50 filled; post-cancel also shows 50 (no new fill during cancel).
+        # incremental = 50 - 50 = 0, so step-2 uses remaining 64 shares.
+        client = self._make_race_client(total_shares=114, pre_cancel_qty=50, post_cancel_qty=50)
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            place_stock_order(client=client, ticker="SHOP", shares=114, order_action="SELL_CLOSE")
+
+        calls = client.place_stock_order.call_args_list
+        assert len(calls) == 2
+        assert calls[1].kwargs["quantity"] == 64, (
+            "step-2 must use 64 remaining shares; pre-cancel fill must not be double-counted"
+        )
 
 
 _TRANCHE_MODULE = "alpha_tech_tracker.op_momentum_strategy.order_executor"

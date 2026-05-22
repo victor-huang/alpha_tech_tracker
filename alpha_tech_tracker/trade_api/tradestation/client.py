@@ -786,7 +786,10 @@ class TradeStationAPIClient(ExecutionClient):
             if qty == 0:
                 continue
             ts_symbol = p.get("Symbol", "")
-            occ = _ts_to_occ(ts_symbol)
+            try:
+                occ = _ts_to_occ(ts_symbol)
+            except ValueError:
+                continue  # plain stock position, not an option
             result[occ] = {"qty": qty}
         return result
 

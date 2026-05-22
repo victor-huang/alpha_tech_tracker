@@ -1245,6 +1245,59 @@ class TestCancelOrder:
             client.cancel_order("207887821")
 
 
+class TestGetOpenPositions:
+    def test_options_only_account_returns_positions_keyed_by_occ(self):
+        client = _make_client()
+        client._session.get.return_value = _mock_response(
+            {"Positions": [{"Symbol": "TSLA  250420C00240000", "Quantity": "5"}]}
+        )
+        result = client.get_open_positions()
+        assert "TSLA250420C00240000" in result
+        assert result["TSLA250420C00240000"]["qty"] == 5.0
+
+    def test_mixed_account_skips_stock_positions_returns_options(self):
+        client = _make_client()
+        client._session.get.return_value = _mock_response(
+            {
+                "Positions": [
+                    {"Symbol": "MRVL", "Quantity": "41"},
+                    {"Symbol": "TSLA  250420C00240000", "Quantity": "3"},
+                ]
+            }
+        )
+        result = client.get_open_positions()
+        assert "MRVL" not in result
+        assert "TSLA250420C00240000" in result
+        assert result["TSLA250420C00240000"]["qty"] == 3.0
+
+    def test_stock_only_account_returns_empty_dict(self):
+        client = _make_client()
+        client._session.get.return_value = _mock_response(
+            {
+                "Positions": [
+                    {"Symbol": "SHOP", "Quantity": "114"},
+                    {"Symbol": "MRVL", "Quantity": "41"},
+                ]
+            }
+        )
+        result = client.get_open_positions()
+        assert result == {}
+
+    def test_zero_qty_positions_excluded(self):
+        client = _make_client()
+        client._session.get.return_value = _mock_response(
+            {
+                "Positions": [
+                    {"Symbol": "TSLA  250420C00240000", "Quantity": "0"},
+                    {"Symbol": "APP 260522C442.5", "Quantity": "2"},
+                ]
+            }
+        )
+        result = client.get_open_positions()
+        assert "TSLA250420C00240000" not in result
+        assert "APP260522C00442500" in result
+
+
 class TestRestoreSession:
     def test_creates_oauth2_session_from_token_dict(self):
         pass
