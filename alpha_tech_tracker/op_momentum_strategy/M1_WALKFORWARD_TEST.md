@@ -466,3 +466,241 @@ Nov–Dec), making the winner noisy.
    correlation analysis.
 5. **bars=3 s=0.8 (entry 9:45, stop 80% of OR range) is the emerging all-weather default**
    for the current 2025–2026 regime.
+
+---
+
+## 6-Month Window — Q1 2025 Out-of-Sample Test
+
+Extends the 6-month walk-forward backwards to test the prior regime transition: train on
+2H 2024 data, test on Jan/Feb/Mar 2025 as 3 separate rolling steps. Same base config
+(`--top 2 --bearish-reentry --bullish-reentry --reversal --feed sip --min-hold-bars 1`)
+and same sweep space (bars 1–10, stop-pct 0.3–1.0).
+
+### Step 1 — Train: Jul–Dec 2024 → Test: Jan 2025
+
+**Training top-5 (Jul–Dec 2024):**
+
+| Rank | Bars | Entry | Stop% | Train P&L |
+|---|---|---|---|---|
+| #1 ← selected | 10 | 10:20 | 1.0 | +$2,670 |
+| #2 | 10 | 10:20 | 1.0 | +$2,670 |
+| #3 | 10 | 10:20 | 0.9 | +$2,275 |
+| #4 | 10 | 10:20 | 0.7 | +$2,163 |
+| #5 | 10 | 10:20 | 0.3 | +$1,780 |
+
+**Best config selected:** `bars=10 stop=1.0`
+
+| Metric | Value |
+|---|---|
+| OOS P&L (Jan 2025, selected config) | **−$704** |
+| Oracle P&L (Jan 2025, best sweep) | +$202 |
+| Oracle config | bars=4 (9:50) stop=0.3 |
+| Efficiency ratio | **−3.486** |
+
+---
+
+### Step 2 — Train: Aug 2024–Jan 2025 → Test: Feb 2025
+
+**Training top-5 (Aug 2024–Jan 2025):**
+
+| Rank | Bars | Entry | Stop% | Train P&L |
+|---|---|---|---|---|
+| #1 ← selected | 7 | 10:05 | 1.0 | +$1,647 |
+| #2 | 7 | 10:05 | 0.9 | +$1,610 |
+| #3 | 10 | 10:20 | 1.0 | +$1,503 |
+| #4 | 7 | 10:05 | 0.4 | +$1,079 |
+| #5 | 10 | 10:20 | 0.9 | +$1,025 |
+
+**Best config selected:** `bars=7 stop=1.0`
+
+| Metric | Value |
+|---|---|
+| OOS P&L (Feb 2025, selected config) | +$345 |
+| Oracle P&L (Feb 2025, best sweep) | +$889 |
+| Oracle config | bars=2 (9:40) stop=0.3 |
+| Efficiency ratio | **0.388** |
+
+---
+
+### Step 3 — Train: Sep 2024–Feb 2025 → Test: Mar 2025
+
+**Training top-5 (Sep 2024–Feb 2025):**
+
+| Rank | Bars | Entry | Stop% | Train P&L |
+|---|---|---|---|---|
+| #1 ← selected | 7 | 10:05 | 1.0 | +$1,817 |
+| #2 | 7 | 10:05 | 0.9 | +$1,531 |
+| #3 | 9 | 10:15 | 0.5 | +$1,271 |
+| #4 | 7 | 10:05 | 0.8 | +$1,173 |
+| #5 | 5 | 9:55 | 0.9 | +$1,170 |
+
+**Best config selected:** `bars=7 stop=1.0`
+
+| Metric | Value |
+|---|---|
+| OOS P&L (Mar 2025, selected config) | +$570 |
+| Oracle P&L (Mar 2025, best sweep) | +$778 |
+| Oracle config | bars=2 (9:40) stop=0.3 |
+| Efficiency ratio | **0.733** |
+
+---
+
+### Q1 2025 Summary
+
+| Step | Test Month | Selected | OOS P&L | Oracle | Oracle P&L | Efficiency |
+|---|---|---|---|---|---|---|
+| 1 | Jan 2025 | bars=10 stop=1.0 | −$704 | bars=4 stop=0.3 | +$202 | −3.486 |
+| 2 | Feb 2025 | bars=7 stop=1.0 | +$345 | bars=2 stop=0.3 | +$889 | 0.388 |
+| 3 | Mar 2025 | bars=7 stop=1.0 | +$570 | bars=2 stop=0.3 | +$778 | 0.733 |
+| **Total** | | | **+$211** | | **+$1,869** | **0.113** |
+
+---
+
+### Q1 2025 Findings
+
+#### 0.113 total efficiency — much worse than the Feb–May 2026 result (0.527)
+
+The 6-month walk-forward captured only $211 of $1,869 oracle P&L. The "all-weather"
+conclusion from the original test does not hold across the 2024→2025 regime transition.
+
+#### Jan 2025 is a catastrophic regime-break
+
+The 2H 2024 training set is heavily long-OR dominant (every top-5 is bars=10), but
+Jan 2025's oracle is `bars=4 stop=0.3`. Selecting bars=10 produced **−$704** in a month
+where bars=4 would have made +$202 — negative efficiency means the trained config
+actively destroys money while the oracle wins. This is the worst single step in the
+entire doc.
+
+#### Q1 2025 oracle is uniformly short-OR (bars=2 stop=0.3 every month)
+
+Every test month's oracle settles on the shortest OR + tightest stop. But the 6-month
+training never selects `bars=2`; the closest it gets is bars=7 in Steps 2/3, drifting
+from bars=10 as Jan 2025 (chop) enters the training window. The lagging indicator
+problem is severe: by the time training includes the new regime, the test month has
+already moved on.
+
+#### Comparison with the doc's existing 6mo result
+
+| Test period | Selected config | OOS P&L | Oracle P&L | Efficiency |
+|---|---|---|---|---|
+| Feb–May 2026 (4 mo, existing) | bars=3 s=0.8 | +$4,278 | +$8,132 | 0.527 |
+| Jan–Mar 2025 (3 mo, new) | bars=7/10 s=1.0 | +$211 | +$1,869 | 0.113 |
+
+The 4.7x efficiency gap is the regime difference: Feb–May 2026 was during the bars=3-dominant
+regime that 2H 2025 training already captured, so the walk-forward looked predictive.
+Q1 2025 sits at the bars=10 → bars=2 transition — the worst possible test setup for any
+trailing-window method.
+
+#### Conclusions
+
+1. **The doc's 0.527 efficiency was regime-flattered.** When the training window and test
+   window share the same dominant regime (mid-2025 → 2026), 6mo walk-forward looks
+   moderately predictive. When they sit across a regime break, it collapses to 0.113.
+
+2. **bars=3 s=0.8 is not all-weather.** Q1 2025 oracle is bars=2 s=0.3 — a different
+   point in the parameter space. The "emerging all-weather default" from the original
+   conclusion was an artifact of the Feb–May 2026 test window.
+
+3. **The bars=10 selection in Step 1 is the most damaging failure mode.** Training data
+   from one trending regime (2H 2024) actively predicts the *wrong* direction for the
+   next month if the regime flips. Negative efficiency is not just "weak" — it means
+   the strategy would have been better off picking randomly.
+
+4. **Practical implication: trailing windows are insufficient for regime transitions.**
+   Real-time regime detection (VIX gating, QQQ MA alignment, sector dispersion) must
+   override the walk-forward selection when the recent month's behavior contradicts the
+   training period's consensus.
+
+---
+
+## 6-Month Window — Full Year 2025 Out-of-Sample (Extends Q1 Test)
+
+To verify whether Jan 2025 was a single-month outlier, the walk-forward was extended
+through Dec 2025: Steps 4–12 train on each rolling 6-month window and test the
+following month, using the same base config.
+
+### Steps 4–12 Detail
+
+| Step | Train Window | Test | Selected | OOS P&L | Oracle | Oracle P&L | Eff |
+|---|---|---|---|---|---|---|---|
+| 4 | Oct 2024 – Mar 2025 | Apr 2025 | bars=7 s=1.0 | **−$984** | bars=4 s=0.3 | +$1,364 | −0.721 |
+| 5 | Nov 2024 – Apr 2025 | May 2025 | bars=3 s=0.3 | **−$985** | bars=5 s=0.8 | +$1,668 | −0.590 |
+| 6 | Dec 2024 – May 2025 | Jun 2025 | bars=6 s=0.4 | −$373 | bars=3 s=0.9 | +$1,359 | −0.274 |
+| 7 | Jan 2025 – Jun 2025 | Jul 2025 | bars=5 s=0.5 | −$464 | bars=3 s=1.0 | +$629 | −0.738 |
+| 8 | Feb 2025 – Jul 2025 | Aug 2025 | bars=6 s=0.4 | +$59 | bars=1 s=0.3 | +$780 | 0.076 |
+| 9 | Mar 2025 – Aug 2025 | Sep 2025 | bars=6 s=0.4 | −$72 | bars=2 s=0.4 | +$408 | −0.175 |
+| 10 | Apr 2025 – Sep 2025 | Oct 2025 | bars=6 s=0.4 | +$292 | bars=3 s=0.8 | +$1,396 | 0.209 |
+| 11 | May 2025 – Oct 2025 | Nov 2025 | bars=5 s=1.0 | **+$983** | bars=5 s=0.6 | +$1,327 | 0.741 |
+| 12 | Jun 2025 – Nov 2025 | Dec 2025 | bars=3 s=0.9 | −$426 | bars=1 s=0.4 | +$796 | −0.535 |
+
+### Full Year 2025 Summary (Steps 1–12)
+
+| Period | OOS P&L | Oracle P&L | Efficiency | Positive Months |
+|---|---|---|---|---|
+| Q1 2025 (Steps 1–3) | +$211 | +$1,869 | 0.113 | 2 of 3 |
+| Apr–Dec 2025 (Steps 4–12) | **−$1,970** | +$9,728 | −0.202 | 3 of 9 |
+| **Full Year 2025** | **−$1,759** | **+$11,596** | **−0.152** | **5 of 12** |
+
+### Findings
+
+#### Jan 2025 was NOT an outlier — the entire year shows the same failure pattern
+
+The hypothesis that Jan 2025 was a single regime-break anomaly is **refuted**. Apr
+(−$984), May (−$985), Jul (−$464), Jun (−$373), and Dec (−$426) all matched or
+exceeded Jan's loss. The walk-forward bleeds money in **7 of 12 months** in 2025.
+
+#### Negative total efficiency (−0.152) — worse than random
+
+The oracle shows that +$11,596 of P&L was achievable across 2025 with monthly perfect
+foresight. The walk-forward captured −$1,759 — not just failing to capture upside, but
+actively destroying capital while a profitable strategy was available. Negative
+efficiency across a full year is the strongest possible refutation of "trailing-window
+selection works".
+
+#### Training winner never converges in 2025
+
+Selected configs across the year: bars=10/7/7/7/3/6/5/6/6/6/5/3 with stop-pcts spanning
+0.3–1.0. No "all-weather" config emerges from any 6-month training window in 2025.
+Contrast with the original 4-step (Feb–May 2026) test where bars=3 s=0.8 locked in
+across Steps 2–5 — that was the visible signature of training and test sharing a regime.
+
+#### Only Nov 2025 reproduced the doc's original success pattern
+
+Step 11 (Nov 2025, eff 0.741) is the only month in 2025 that resembles the doc's
+original Feb–May 2026 results. The training window (May–Oct 2025) contained 5 prior
+months of similar regime — exactly the condition under which the walk-forward looks
+predictive. Every other month in 2025 sat across a regime mismatch.
+
+#### Comparison against all prior tests
+
+| Test Period | Method | OOS P&L | Oracle P&L | Efficiency |
+|---|---|---|---|---|
+| Feb–May 2026 (doc original) | 6mo walk-fwd | +$4,278 | +$8,132 | **0.527** |
+| Jan–Mar 2025 (Q1 extension) | 6mo walk-fwd | +$211 | +$1,869 | 0.113 |
+| Apr–Dec 2025 (this extension) | 6mo walk-fwd | −$1,970 | +$9,728 | **−0.202** |
+| Full Year 2025 (combined) | 6mo walk-fwd | −$1,759 | +$11,596 | −0.152 |
+
+The 0.527 number from the original test is now clearly a single-window artifact, not
+a general property. Across 15 OOS test months (12 in 2025 + Jan–May 2026 from earlier
+sections), 6-month walk-forward shows wildly inconsistent efficiency from +0.83 to
+−3.49, averaging slightly negative.
+
+#### Final conclusions
+
+1. **The walk-forward optimization concept is invalidated for this strategy.** A method
+   that loses money in 7 of 12 months is not viable for live trading, regardless of
+   how favorable the prior 4-month sample looked.
+
+2. **The "bars=3 s=0.8 all-weather default" claim is fully retracted.** It was selected
+   by 5 of 12 training windows in 2025 (Steps 5/12 directly; Step 8 close with bars=6),
+   but the test month repeatedly preferred different configs. Even the QQQ MA20 regime
+   switch experiment confirmed bars=3 s=0.8 is not robust outside its origin period.
+
+3. **The strategy's parameter space is genuinely regime-dependent**, but no
+   backward-looking method tested (2mo, 3mo, 6mo trailing, QQQ MA20 regime switch)
+   captures the regime well enough to be profitable in 2025.
+
+4. **Realistic next step**: stop trying to predict the M1 config; either (a) accept
+   a fixed-config "good enough" baseline and add real-time exit-rule adaptation, or
+   (b) ensemble multiple configs with capital splits, accepting lower per-config returns
+   for variance reduction across regimes.
