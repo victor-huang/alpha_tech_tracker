@@ -1625,7 +1625,7 @@ Fold   bear_excl   bear_days
 
 **2024 interpretation:** Strongest filter year. Static-default beats WF by +4.3pp here — the grid search overfit to aggressive params (bear_excl=0.55, bear_days=120) that were too conservative for the OOS periods. Q4 2024 was the worst quarter (baseline −15.9%); WF recovered it to −5.5% (+10.4pp). Bear-days: 120 for Q1–Q3 (persistent deep chop), then drops to 60 in Q4 (year-end rally). **Verdict: in deep choppy bear years, high bear_excl (0.55) and long bear_days (120) are the right setting — static-default is surprisingly robust here.**
 
-### Cross-Year Bear-Days Pattern (all years combined)
+### Cross-Year Bear-Days Pattern (2023–2026)
 
 ```
 Year   Q1    Q2    Q3    Q4   Regime description
@@ -1637,7 +1637,7 @@ Year   Q1    Q2    Q3    Q4   Regime description
 
 **The regime ladder is clear: the deeper and more persistent the chop, the longer the optimal lookback.** `bear_days` ranges from 60 (strong trending) to 120 (deep chop), with 90 as the natural middle ground. The drop to 60 always occurs in Q4 or when the market transitions back to trending.
 
-### Cross-Year Bear-Excl Pattern
+### Cross-Year Bear-Excl Pattern (2023–2026)
 
 ```
 Year   Q1     Q2     Q3     Q4
@@ -1670,3 +1670,149 @@ Year     Baseline   Static-def   WF-best    WF Δ    Static Δ
 4. **2026 YTD: essentially flat** — Q1 trend hurt and Apr–May correction helped, cancelling out.
 
 5. **Static-default (bear_excl=0.40, bear_days=90) is a good all-weather compromise** — it improves 2024 by +20pp, 2025 by +15pp, costs −0.2pp in 2026, and is essentially neutral in 2023.
+
+---
+
+## Walk-Forward Parameter Tuning — 2022, 2021, 2020
+
+**Date:** 2026-05-24
+
+Same setup: `neut_excl=0.25` and `bull_days=20` fixed; sweeping `bear_excl` [0.25, 0.40, 0.55] and `bear_days` [60, 90, 120]. 4 quarterly folds per year.
+
+### 2022 OOS Results
+
+```
+Fold   OOS Period           Baseline   Static-def   WF-best   WF vs Base
+1      2022-Q1               -6.80%      +3.47%      +3.47%    +10.3pp
+2      2022-Q2              -13.59%     -10.92%     -10.92%     +2.7pp
+3      2022-Q3               -3.71%      +0.17%      -1.33%     +2.4pp
+4      2022-Q4               -2.44%      +4.74%      +4.74%     +7.2pp
+──────────────────────────────────────────────────────────────────────
+TOTAL                        -26.5%       -2.5%       -4.0%    +22.5pp
+      vs baseline Δ                      +24.0pp     +22.5pp
+```
+
+**Selected params:**
+```
+Fold   bear_excl   bear_days
+1          0.55          60
+2          0.25          60
+3          0.25          60
+4          0.55          90
+```
+
+**2022 interpretation:** 2022 was the Fed-driven bear market — S&P fell 18%, QQQ fell 33%. The strategy's baseline year was −26.5%. Both filters add massive value: static-default rescues the year to −2.5% (+24pp), WF-best reaches −4.0% (+22.5pp). Notably, **static-default beats WF-tuned (+24pp vs +22.5pp)** — the in-sample grid search selected a mix of 0.25 and 0.55 bear_excl that slightly underperformed the middle-ground 0.40 default.
+
+`bear_days=60` dominates (3 of 4 folds) despite 2022 being a bear year. This is because the 2022 bear was fast-moving and trending downward continuously — a 60-day window captures the persistent negative momentum without needing the longer 90-day history. Q4 (the Oct–Dec recovery rally from the Oct lows) uses 90 days, which is consistent with needing more evidence during the choppy reversal.
+
+### 2021 OOS Results
+
+```
+Fold   OOS Period           Baseline   Static-def   WF-best   WF vs Base
+1      2021-Q1               -8.07%     -15.07%     -12.75%     -4.7pp
+2      2021-Q2               -2.06%      +1.32%      -2.16%     -0.1pp
+3      2021-Q3               +4.15%      +5.22%      +5.22%     +1.1pp
+4      2021-Q4              +13.20%     +20.86%     +20.86%     +7.7pp
+──────────────────────────────────────────────────────────────────────
+TOTAL                         +7.2%      +12.3%      +11.2%     +3.9pp
+      vs baseline Δ                       +5.1pp      +3.9pp
+```
+
+**Selected params:**
+```
+Fold   bear_excl   bear_days
+1          0.25          60
+2          0.25          60
+3           0.4          90
+4          0.55          90
+```
+
+**2021 interpretation:** Mixed picture. Static-default helps modestly overall (+5.1pp) but hurts Q1 badly (−7pp). Q1 2021 was the meme-stock/speculative frenzy period — extremely volatile with strong momentum in many names. The filter cut some of those strong picks. Q4 2021 benefits most (+7.7pp WF, +7.7pp static) as the market became choppier heading into the Fed tightening signals.
+
+The WF-selected bear_days trend is 60 → 60 → 90 → 90 across the year — the lookback lengthens as the market transitions from speculative trending (H1) to more cautious/choppy (H2). **Static-default again beats WF (+5.1pp vs +3.9pp)** — 2021's high intra-year regime variance makes overfitting easy.
+
+### 2020 OOS Results
+
+```
+Fold   OOS Period           Baseline   Static-def   WF-best   WF vs Base
+1      2020-Q1               -5.47%      -4.40%     -13.52%     -8.1pp
+2      2020-Q2               +6.83%      +1.81%      +1.04%     -5.8pp
+3      2020-Q3               +7.74%      +6.45%      +2.48%     -5.3pp
+4      2020-Q4              +16.12%      +9.94%     +11.01%     -5.1pp
+──────────────────────────────────────────────────────────────────────
+TOTAL                        +25.2%      +13.8%       +1.0%    -24.2pp
+      vs baseline Δ                      -11.4pp     -24.2pp
+```
+
+**Selected params:**
+```
+Fold   bear_excl   bear_days
+1          0.55          60
+2          0.55         120
+3          0.55         120
+4          0.25          60
+```
+
+**2020 interpretation:** The worst year for the filters. 2020 was the COVID crash (Q1) followed by a near-vertical recovery (Q2–Q4). The strategy's baseline was +25.2% — one of its best years on record. Static-default cuts this to +13.8% (−11.4pp) and WF-best collapses it to +1.0% (−24.2pp).
+
+**Why WF fails catastrophically here:** The in-sample periods for folds 1–3 (2019-H2, the Jan–Mar 2020 crash, and Q1–Q2 2020) all contain the crash or its aftermath. Grid search selects bear_excl=0.55, bear_days=120 — the most conservative combo — because that's what the crash data rewards in-sample. But the OOS quarters (Q2–Q4 2020) are the explosive recovery: momentum tickers were printing massive wins on every BULLISH signal. The aggressive filter excluded exactly those hot tickers, destroying performance.
+
+The pool vote regime detector is too slow to adapt: even in Q2–Q3 2020 with explosive stock moves, only ~6–8 tickers showed positive EV in the 120-day rolling window (which still included the crash), keeping the system in "neutral/bear" regime and maintaining the aggressive filter. This is the fundamental structural limit of a rolling-window regime detector in sharp V-shaped recoveries.
+
+**Only Q4 2020 (fold 4) escapes** — by then, the IS period (Apr–Sep 2020) is purely recovery-phase data, so the grid search finally selects bear_excl=0.25 / bear_days=60 (permissive). That fold WF (+11.0%) beats baseline (+16.1%)... wait, it also hurts, just less so. Even the permissive Q4 params can't fully escape because the in-sample data included some choppy months.
+
+**Key lesson: the adaptive filters are regime-amplifiers, not regime-detectors with a hard override. In a V-shaped recovery, the filters will lag the turn by 1–2 quarters.** The 2020 result is the strongest argument for keeping the filters as opt-in or adding a VIX-based override that bypasses the pool vote in low-VIX environments.
+
+### Cross-Year Bear-Days Pattern (2020–2022)
+
+```
+Year   Q1    Q2    Q3    Q4   Regime description
+2020   60   120   120    60   Crash Q1 → explosive recovery Q2–Q4
+2021   60    60    90    90   Meme frenzy H1 → cautious H2
+2022   60    60    60    90   Fed bear all year → Oct recovery
+```
+
+The `bear_days=120` in 2020 Q2–Q3 is WF selecting the "require longest evidence" setting for what in-sample looks like a bear regime (the crash is still in the 120-day window). In practice, those quarters were explosive bull — illustrating the lag problem in sharp reversals.
+
+### Cross-Year Bear-Excl Pattern (2020–2022)
+
+```
+Year   Q1     Q2     Q3     Q4
+2020  0.55   0.55   0.55   0.25
+2021  0.25   0.25   0.40   0.55
+2022  0.55   0.25   0.25   0.55
+```
+
+No stable pattern for bear_excl across these years — each year is structurally different. 2020 is dominated by the crash/recovery asymmetry. 2021 is speculative trending then chop. 2022 is a continuous bear with a Q4 bounce.
+
+### Cross-Year Summary (2020–2026, all years)
+
+```
+Year     Baseline   Static-def   WF-best    WF Δ    Static Δ
+2020       +25.2%      +13.8%       +1.0%  -24.2pp    -11.4pp
+2021        +7.2%      +12.3%      +11.2%   +3.9pp     +5.1pp
+2022       -26.5%       -2.5%       -4.0%  +22.5pp    +24.0pp
+2023        -0.3%       -0.1%       -4.9%   -4.6pp     +0.2pp
+2024       -26.9%       -6.5%      -10.8%  +16.1pp    +20.4pp
+2025        +9.7%      +24.8%      +31.3%  +21.6pp    +15.1pp
+2026       +50.0%      +49.8%      +49.8%   -0.2pp     -0.2pp
+```
+
+**Complete 7-year verdict:**
+
+| Regime type | Years | Static-def result | WF result |
+|-------------|-------|------------------|-----------|
+| Deep bear (continuous) | 2022, 2024 | +22–24pp | +16–22pp |
+| Trending bull (moderate) | 2025 | +15pp | +22pp |
+| Low-vol grind | 2023 | flat | −5pp |
+| V-shape recovery / pure bull | 2020 | −11pp | −24pp |
+| Strong trending (fast) | 2026 YTD | flat | flat |
+| Mixed / transitional | 2021 | +5pp | +4pp |
+
+**Static-default is strictly better than WF-tuned in 4 of 7 years** (2020, 2022, 2023, 2024). WF wins in 2025 (+6.5pp edge) and ties in 2021/2026. The robustness advantage of the static default comes from avoiding the overfitting that WF incurs on short in-sample windows.
+
+**The filter works best in continuous bear/chop markets (2022, 2024) and deteriorates in V-shaped recoveries (2020) and low-vol grinds (2023).** The 2020 result is the strongest caution: applying the filter in a year that starts with a crash then reverses sharply can cost 11–24pp. A simple VIX gate or macro override (disable filters when QQQ 20-day MA trend is positive for ≥ 2 weeks) would mitigate this without requiring live parameter tuning.
+
+**Recommended production settings remain:**
+- `bear_excl=0.40`, `bear_days=90`, `neut_excl=0.25`, `bull_days=20`
+- Monitor the 7-year track record: static-default adds value in 3 of 7 years (+22pp, +20pp, +5pp), is flat/neutral in 3 years, and costs −11pp in the exceptional 2020 V-recovery case.
