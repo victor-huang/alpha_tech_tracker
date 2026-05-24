@@ -909,7 +909,7 @@ def run_selector_backtest(
     random_seed: int = None,
     ma_momentum_gate: bool = False,
     ma_momentum_gate_in_scoring: bool = False,
-    dynamic_ev_gate: bool = False,
+    dynamic_ev_gate: bool = True,
     dg_mode: str = "percentile",
     dg_bull_threshold: int = 10,
     dg_bear_threshold: int = 5,
@@ -922,7 +922,7 @@ def run_selector_backtest(
     dg_bull_min_wl: float = 1.3,
     dg_neutral_min_wl: float = 1.5,
     dg_bear_min_wl: float = 1.8,
-    adaptive_lookback: bool = False,
+    adaptive_lookback: bool = True,
     al_bull_threshold: int = 10,
     al_bear_threshold: int = 5,
     al_bull_days: int = 20,
@@ -2877,11 +2877,17 @@ def _parse_args():
     parser.add_argument(
         "--dynamic-ev-gate",
         action="store_true",
-        default=False,
+        default=True,
         dest="dynamic_ev_gate",
-        help="Apply regime-adaptive EV filter based on daily pool vote. "
+        help="Apply regime-adaptive EV filter based on daily pool vote (default: on). "
         "Mode 'percentile' (default): exclude bottom N%% of pool by EV, adapts with market. "
         "Mode 'threshold': fixed WR/W/L floors per regime tier.",
+    )
+    parser.add_argument(
+        "--no-dynamic-ev-gate",
+        action="store_false",
+        dest="dynamic_ev_gate",
+        help="Disable the regime-adaptive EV filter (reverts to baseline behavior).",
     )
     parser.add_argument(
         "--dg-mode",
@@ -2917,17 +2923,23 @@ def _parse_args():
     parser.add_argument(
         "--adaptive-lookback",
         action="store_true",
-        default=False,
+        default=True,
         dest="adaptive_lookback",
         help="Shorten lookback window in bull regimes (more responsive) and lengthen in bear regimes "
-        "(require more evidence). Uses same pool-vote signal as --dynamic-ev-gate.",
+        "(require more evidence). Uses same pool-vote signal as --dynamic-ev-gate (default: on).",
+    )
+    parser.add_argument(
+        "--no-adaptive-lookback",
+        action="store_false",
+        dest="adaptive_lookback",
+        help="Disable adaptive lookback (uses fixed --lookback window for all regimes).",
     )
     parser.add_argument("--al-bull-threshold", type=int, default=10, dest="al_bull_threshold",
                         help="Pool vote count for bull regime in adaptive lookback. Default: 10.")
     parser.add_argument("--al-bear-threshold", type=int, default=5, dest="al_bear_threshold",
                         help="Pool vote count for bear regime in adaptive lookback. Default: 5.")
     parser.add_argument("--al-bull-days", type=int, default=20, dest="al_bull_days",
-                        help="Lookback days in bull regime. Default: 30.")
+                        help="Lookback days in bull regime. Default: 20.")
     parser.add_argument("--al-neutral-days", type=int, default=60, dest="al_neutral_days",
                         help="Lookback days in neutral regime. Default: 60.")
     parser.add_argument("--al-bear-days", type=int, default=90, dest="al_bear_days",
