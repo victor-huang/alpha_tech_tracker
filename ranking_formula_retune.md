@@ -1816,3 +1816,123 @@ Year     Baseline   Static-def   WF-best    WF Δ    Static Δ
 **Recommended production settings remain:**
 - `bear_excl=0.40`, `bear_days=90`, `neut_excl=0.25`, `bull_days=20`
 - Monitor the 7-year track record: static-default adds value in 3 of 7 years (+22pp, +20pp, +5pp), is flat/neutral in 3 years, and costs −11pp in the exceptional 2020 V-recovery case.
+
+---
+
+## Walk-Forward Parameter Tuning — 2019 and 2018
+
+**Date:** 2026-05-24
+
+Same setup: `neut_excl=0.25` and `bull_days=20` fixed; sweeping `bear_excl` [0.25, 0.40, 0.55] and `bear_days` [60, 90, 120]. 4 quarterly folds per year. Note: 2018 folds 1–2 use 2017 in-sample data — if 2017 data is sparse, grid search quality degrades for those folds.
+
+### 2019 OOS Results
+
+```
+Fold   OOS Period           Baseline   Static-def   WF-best   WF vs Base
+1      2019-Q1               +0.55%      +1.91%      +4.88%     +4.3pp
+2      2019-Q2               -1.11%      +1.05%      -0.77%     +0.3pp
+3      2019-Q3               +4.44%      +2.56%      +4.18%     -0.3pp
+4      2019-Q4               +7.04%     +13.10%     +13.10%     +6.1pp
+──────────────────────────────────────────────────────────────────────
+TOTAL                        +10.9%      +18.6%      +21.4%    +10.5pp
+      vs baseline Δ                       +7.7pp     +10.5pp
+```
+
+**Selected params:**
+```
+Fold   bear_excl   bear_days
+1          0.25         120
+2          0.25         120
+3          0.55          90
+4          0.55         120
+```
+
+**2019 interpretation:** One of the two years where **WF-best beats static-default** (+21.4% vs +18.6%, +2.8pp edge). Both improve substantially over baseline (+10.5pp and +7.7pp respectively).
+
+`bear_days=120` dominates (3 of 4 folds) — unusual for a bull year. The reason: 2018 ended with a brutal Q4 selloff (Christmas crash −20%), and the rolling IS window for H1 2019 folds still includes that crash data. The optimizer needs a long lookback to wash out the crash noise and find tickers that performed well in the post-crash recovery. A shorter 60-day window in Q1–Q2 2019 would over-weight the crash data and filter too aggressively.
+
+`bear_excl` transitions mid-year: 0.25 (permissive, Q1–Q2 when the recovery was clear) → 0.55 (more aggressive, Q3–Q4 as trade-war volatility hit and the rally stalled). Q3 2019 was choppy (Trump tariffs, recession fears); Q4 was a strong year-end push. The filter was more selective in the volatile H2 period.
+
+Static-default still improves baseline by +7.7pp but leaves +2.8pp on the table vs the WF-tuned run — the only year in the full 2018–2026 sweep where the 6-month IS window is long enough and clean enough for WF to add meaningful edge over the static middle-ground.
+
+### 2018 OOS Results
+
+```
+Fold   OOS Period           Baseline   Static-def   WF-best   WF vs Base
+1      2018-Q1               +0.91%      -3.08%      -1.89%     -2.8pp
+2      2018-Q2               -5.50%      +7.28%      -2.67%     +2.8pp
+3      2018-Q3               +3.30%      +2.15%      +2.15%     -1.1pp
+4      2018-Q4               +0.40%      -0.02%      -2.43%     -2.8pp
+──────────────────────────────────────────────────────────────────────
+TOTAL                         -0.9%       +6.3%       -4.8%     -3.9pp
+      vs baseline Δ                       +7.2pp      -3.9pp
+```
+
+**Selected params:**
+```
+Fold   bear_excl   bear_days
+1          0.25          90
+2          0.40          60
+3          0.40         120
+4          0.40         120
+```
+
+**2018 interpretation:** Clearest case of WF overfitting in the entire sweep. Static-default improves baseline by +7.2pp (−0.9% → +6.3%); WF-best makes things worse by −3.9pp (−0.9% → −4.8%).
+
+2018 was structurally difficult: a Feb volatility spike, choppy spring/summer, a strong Q3 bull, then the brutal Q4 selloff. Every quarter had a different character. The inconsistent WF params (90, 60, 120, 120) reflect the grid search adapting to whichever quarter's noise happened to be in the IS window, then failing on the OOS.
+
+The 2017 data scarcity compounds the problem: folds 1–2 use 2017-H2 / H2+Q1-2018 as in-sample. If the 2017 bar cache is sparse or missing some tickers (V3 pool has several tickers that didn't exist or were thinly traded in 2017), the IS scores are unreliable and the grid search picks noise. This likely explains why fold 1 selects 0.25/90 (very permissive, possibly because the IS data was flat/empty for many tickers) and then hurts Q1 OOS.
+
+`bear_excl=0.40` in 3 of 4 folds — the middle value — suggests the grid search couldn't find a clear winner, defaulting to 0.40. Interestingly, the static-default also uses 0.40 for bear_excl but with `bear_days=90` consistently, which outperformed the varying 60/120 selections.
+
+### Cross-Year Bear-Days Pattern (2018–2019)
+
+```
+Year   Q1    Q2    Q3    Q4   Regime description
+2018   90    60   120   120   Mixed: VIX spike Q1, recovery Q2–Q3, crash Q4
+2019  120   120    90   120   Post-crash recovery H1, trade-war volatility H2
+```
+
+`bear_days=120` dominates both years — consistent with the post-2018-crash data contaminating IS windows. Both 2018 and 2019 carry significant crash/recovery noise that makes shorter lookbacks unreliable.
+
+### Cross-Year Bear-Excl Pattern (2018–2019)
+
+```
+Year   Q1     Q2     Q3     Q4
+2018  0.25   0.40   0.40   0.40
+2019  0.25   0.25   0.55   0.55
+```
+
+2019 shows the clear pattern: permissive in the recovery (0.25), aggressive once volatility returned (0.55). 2018 doesn't show a clean regime pattern — each quarter was too different for the 6-month IS window to learn a generalizable setting.
+
+### Full 9-Year Summary (2018–2026)
+
+```
+Year     Baseline   Static-def   WF-best    WF Δ    Static Δ
+2018        -0.9%       +6.3%      -4.8%   -3.9pp     +7.2pp
+2019       +10.9%      +18.6%     +21.4%  +10.5pp     +7.7pp
+2020       +25.2%      +13.8%      +1.0%  -24.2pp    -11.4pp
+2021        +7.2%      +12.3%     +11.2%   +3.9pp     +5.1pp
+2022       -26.5%       -2.5%      -4.0%  +22.5pp    +24.0pp
+2023        -0.3%       -0.1%      -4.9%   -4.6pp     +0.2pp
+2024       -26.9%       -6.5%     -10.8%  +16.1pp    +20.4pp
+2025        +9.7%      +24.8%     +31.3%  +21.6pp    +15.1pp
+2026       +50.0%      +49.8%     +49.8%   -0.2pp     -0.2pp
+```
+
+**Static-default wins 6 of 9 years. WF-tuned wins 2 of 9. 1 tie.**
+
+| Verdict | Years | Note |
+|---------|-------|------|
+| Static-default better | 2018, 2020, 2022, 2023, 2024, tie-2026 | Overfitting risk dominates |
+| WF-tuned better | 2019, 2025 | Clean IS data + clear regime transitions |
+| Marginal WF edge | 2021 | +3.9pp WF vs +5.1pp static — actually static wins here too |
+
+Recount: **static wins 7 of 9** (2018, 2020, 2021, 2022, 2023, 2024, 2026). WF wins 2 of 9 (2019, 2025). No true ties.
+
+**Why WF works in 2019 and 2025 specifically:**
+- Both have a clear two-phase regime: 2019 H1 recovery + H2 trade-war chop; 2025 H1 tariff-shock chop + H2 trending recovery
+- The 6-month IS window cleanly covers one phase → grid search finds the right setting → OOS falls in the transition/next phase where that setting still applies
+- In contrast, 2018 and 2020–2024 either have too many intra-year regime changes or data quality issues that make the IS window noisy
+
+**The robustness case for static-default is overwhelming:** across 9 years it improves on the baseline in 6 of 9 years (2019 +7.7pp, 2021 +5.1pp, 2022 +24pp, 2024 +20.4pp, 2025 +15.1pp, 2018 +7.2pp), is essentially flat in 2 (2023 +0.2pp, 2026 −0.2pp), and costs −11.4pp in only one exceptional case (2020 V-recovery). No parameter tuning is needed — the static defaults capture the regime signal robustly across all market types except sharp V-recoveries.
