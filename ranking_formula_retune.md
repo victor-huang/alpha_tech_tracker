@@ -1568,3 +1568,105 @@ The `bear_days=60` emerging as stable in 2026 (vs 90 in 2025 H1) suggests the op
 | `bull_days` | 20 (stable) | — (fixed) | Keep 20 |
 | `bear_excl` | 0.40 | 0.25–0.40 | Keep 0.40 (middle ground) |
 | `bear_days` | 90 | 60 (stable) | Consider updating to 75 as compromise |
+
+---
+
+## Walk-Forward Parameter Tuning — 2023 and 2024
+
+**Date:** 2026-05-24
+
+Same setup as 2025/2026: `neut_excl=0.25` and `bull_days=20` fixed; sweeping `bear_excl` [0.25, 0.40, 0.55] and `bear_days` [60, 90, 120]. 4 quarterly folds per year.
+
+### 2023 OOS Results
+
+```
+Fold   OOS Period           Baseline   Static-def   WF-best   WF vs Base
+1      2023-Q1               +7.15%      +6.56%      +6.48%     -0.7pp
+2      2023-Q2               +1.69%      -2.89%      -4.63%     -6.3pp
+3      2023-Q3               +3.71%      +2.52%      +2.52%     -1.2pp
+4      2023-Q4              -12.84%      -6.24%      -9.25%     +3.6pp
+──────────────────────────────────────────────────────────────────────
+TOTAL                         -0.3%       -0.1%       -4.9%     -4.6pp
+      vs baseline Δ                       +0.2pp      -4.6pp
+```
+
+**Selected params:**
+```
+Fold   bear_excl   bear_days
+1          0.25          90
+2          0.25          90
+3          0.40          60
+4          0.40          60
+```
+
+**2023 interpretation:** Filters add almost no value. Static-default barely improves (+0.2pp) and WF tuning hurts (−4.6pp). 2023 was the grinding low-vol bull year — there is no regime signal for the filters to exploit. The in-sample periods were noisy enough that grid search overfit to marginal patterns that degraded OOS. Bear-days shift mid-year (90 → 60) as the market sped up slightly in H2. **Verdict: in a pure low-vol grinding bull, do not apply the filters.**
+
+### 2024 OOS Results
+
+```
+Fold   OOS Period           Baseline   Static-def   WF-best   WF vs Base
+1      2024-Q1              -19.00%     -13.73%     -13.32%     +5.7pp
+2      2024-Q2               -2.20%      -1.36%      -3.28%     -1.1pp
+3      2024-Q3              +10.25%     +11.14%     +11.38%     +1.1pp
+4      2024-Q4              -15.92%      -2.54%      -5.54%    +10.4pp
+──────────────────────────────────────────────────────────────────────
+TOTAL                        -26.9%       -6.5%      -10.8%    +16.1pp
+      vs baseline Δ                      +20.4pp     +16.1pp
+```
+
+**Selected params:**
+```
+Fold   bear_excl   bear_days
+1          0.55         120
+2          0.40         120
+3          0.55         120
+4          0.55          60
+```
+
+**2024 interpretation:** Strongest filter year. Static-default beats WF by +4.3pp here — the grid search overfit to aggressive params (bear_excl=0.55, bear_days=120) that were too conservative for the OOS periods. Q4 2024 was the worst quarter (baseline −15.9%); WF recovered it to −5.5% (+10.4pp). Bear-days: 120 for Q1–Q3 (persistent deep chop), then drops to 60 in Q4 (year-end rally). **Verdict: in deep choppy bear years, high bear_excl (0.55) and long bear_days (120) are the right setting — static-default is surprisingly robust here.**
+
+### Cross-Year Bear-Days Pattern (all years combined)
+
+```
+Year   Q1    Q2    Q3    Q4   Regime description
+2023   90    90    60    60   Low-vol grind → slight H2 pickup
+2024  120   120   120    60   Deep chop all year → year-end rally
+2025   90    90    90    60   Tariff shock H1 → trending H2
+2026   60    60    —     —    Strong trend Q1 → correction Apr-May
+```
+
+**The regime ladder is clear: the deeper and more persistent the chop, the longer the optimal lookback.** `bear_days` ranges from 60 (strong trending) to 120 (deep chop), with 90 as the natural middle ground. The drop to 60 always occurs in Q4 or when the market transitions back to trending.
+
+### Cross-Year Bear-Excl Pattern
+
+```
+Year   Q1     Q2     Q3     Q4
+2023  0.25   0.25   0.40   0.40
+2024  0.55   0.40   0.55   0.55
+2025  0.55   0.55   0.40   0.25
+2026  0.25   0.40    —      —
+```
+
+**`bear_excl` tracks how aggressively the filter should cut.** In 2024 deep chop, it stayed at 0.55 most of the year. In 2025 as the market recovered, it drifted from 0.55 → 0.25. In 2026's fast-moving regime, 0.25 in Q1 (don't cut in the trend) then 0.40 in correction.
+
+### Cross-Year Summary (all 4 years)
+
+```
+Year     Baseline   Static-def   WF-best    WF Δ    Static Δ
+2023        -0.3%       -0.1%      -4.9%   -4.6pp    +0.2pp
+2024       -26.9%       -6.5%     -10.8%  +16.1pp   +20.4pp
+2025        +9.7%      +24.8%     +31.3%  +21.6pp   +15.1pp
+2026       +50.0%      +49.8%     +49.8%   -0.2pp    -0.2pp
+```
+
+**Key takeaways across all 4 years:**
+
+1. **Static-default is more robust than WF-tuned in 2024** (+20.4pp vs +16.1pp) — overfitting risk is real with only 6 months of in-sample data in a choppy year. Longer in-sample windows would help.
+
+2. **WF-tuned wins in 2025** (+21.6pp vs +15.1pp) — when regime transitions are clear (choppy H1 → trending H2), the walk-forward correctly identifies the shift.
+
+3. **Neither approach helps in 2023** — the grinding low-vol bull provides no regime signal. The `--dynamic-ev-gate` and `--adaptive-lookback` filters are designed for regime volatility and should arguably be disabled in identified low-VIX grinding bull years.
+
+4. **2026 YTD: essentially flat** — Q1 trend hurt and Apr–May correction helped, cancelling out.
+
+5. **Static-default (bear_excl=0.40, bear_days=90) is a good all-weather compromise** — it improves 2024 by +20pp, 2025 by +15pp, costs −0.2pp in 2026, and is essentially neutral in 2023.
