@@ -1489,3 +1489,82 @@ Fold   bear_excl   neut_excl   bear_days   bull_days
 | `dg_bull_exclude_pct` | 0.10 | Not tuned; keep conservative |
 
 **Recommended default change:** `--al-bull-days` should be updated from 30 to **20** — it was selected by all 4 folds and never lost to 30 in any top-5.
+
+---
+
+## Walk-Forward Parameter Tuning — 2026 YTD
+
+**Date:** 2026-05-24
+
+**Starting point:** stable params confirmed from 2025 WF (`neut_excl=0.25`, `bull_days=20`) are held fixed. Only the regime-sensitive params are swept.
+
+### Method
+
+2 folds (data through 2026-05-23). 9 combos per fold.
+
+| Fold | In-sample | OOS |
+|------|-----------|-----|
+| 1 | 2025-07-01 → 2025-12-31 | 2026-Q1 (Jan–Mar) |
+| 2 | 2025-10-01 → 2026-03-31 | 2026-Apr–May |
+
+**Grid searched (9 combos — smaller than 2025 since stable params are fixed):**
+
+| Parameter | Values swept |
+|-----------|-------------|
+| `dg_bear_exclude_pct` | 0.25, 0.40, 0.55 |
+| `al_bear_days` | 60, 90, 120 |
+
+### OOS Results
+
+```
+Fold   OOS Period                  Baseline   Static-def   WF-best   WF vs Base
+1      2026-Q1 (Jan–Mar)           +49.17%     +36.89%     +36.89%    -12.3pp
+2      2026-Apr–May                 +0.86%     +12.91%     +12.91%    +12.1pp
+──────────────────────────────────────────────────────────────────────────────
+TOTAL                               +50.0%      +49.8%      +49.8%     -0.2pp
+       vs baseline Δ                            -0.2pp       -0.2pp
+```
+
+### Best params selected per fold
+
+```
+Fold   bear_excl   bear_days   (neut_excl=0.25  bull_days=20 fixed)
+1          0.25          60
+2          0.40          60
+```
+
+**Param stability:**
+- `bear_days` = 60 — **STABLE** across both folds
+- `bear_excl` varies (0.25 → 0.40) — regime-dependent
+
+### Interpretation
+
+**2026 total result is essentially flat vs baseline (−0.2pp).** The two folds tell opposing stories that cancel:
+
+- **Q1 (Jan–Mar): filters hurt −12.3pp** — 2026-Q1 was a strong trending market (the strategy's best quarter on record at +49%). The filters cut good tickers in what turned out to be an excellent period. This is the known structural cost of the filters in pure trending years.
+
+- **Apr–May: filters help +12.1pp** — the tariff-shock correction hit in April. The bear/neutral filters correctly excluded the weaker pool members during the choppy drawdown period. Same pattern as 2025-Q1 and Q2.
+
+**`bear_days=60` stable across both 2026 folds** (down from 90 in 2025). This reflects 2026's faster-moving regime — the strategy needs a shorter lookback to respond quickly to the sharp Q1 trend and the Apr correction. The 90-day window carries too much historical data from the prior choppy period.
+
+**`bear_excl` varies with regime** (0.25 in the trending fold, 0.40 in the choppy fold) — consistent with the 2025 pattern where it drifted 0.55 → 0.25 as the market transitioned from choppy to trending.
+
+### Cross-year parameter evolution
+
+| Period | `bear_excl` | `bear_days` | Regime |
+|--------|------------|------------|--------|
+| 2025-H1 (Q1–Q2) | 0.55 | 90 | Tariff-shock / choppy |
+| 2025-H2 (Q3–Q4) | 0.25–0.40 | 60–90 | Recovery / trending |
+| 2026-Q1 | 0.25 | 60 | Strong trend |
+| 2026-Apr–May | 0.40 | 60 | Correction / choppy |
+
+The `bear_days=60` emerging as stable in 2026 (vs 90 in 2025 H1) suggests the optimal lookback shortens in a faster-moving market. If 2026 continues with high volatility and sharp regime transitions, 60 days may become the new neutral-regime default.
+
+### Updated recommended defaults
+
+| Parameter | 2025 WF default | 2026 WF signal | Recommendation |
+|-----------|----------------|----------------|----------------|
+| `neut_excl` | 0.25 (stable) | — (fixed) | Keep 0.25 |
+| `bull_days` | 20 (stable) | — (fixed) | Keep 20 |
+| `bear_excl` | 0.40 | 0.25–0.40 | Keep 0.40 (middle ground) |
+| `bear_days` | 90 | 60 (stable) | Consider updating to 75 as compromise |
