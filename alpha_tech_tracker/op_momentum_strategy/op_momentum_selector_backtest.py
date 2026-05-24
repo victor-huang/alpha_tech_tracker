@@ -925,7 +925,7 @@ def run_selector_backtest(
     adaptive_lookback: bool = False,
     al_bull_threshold: int = 10,
     al_bear_threshold: int = 5,
-    al_bull_days: int = 30,
+    al_bull_days: int = 20,
     al_neutral_days: int = 60,
     al_bear_days: int = 90,
 ) -> tuple:
@@ -2926,7 +2926,7 @@ def _parse_args():
                         help="Pool vote count for bull regime in adaptive lookback. Default: 10.")
     parser.add_argument("--al-bear-threshold", type=int, default=5, dest="al_bear_threshold",
                         help="Pool vote count for bear regime in adaptive lookback. Default: 5.")
-    parser.add_argument("--al-bull-days", type=int, default=30, dest="al_bull_days",
+    parser.add_argument("--al-bull-days", type=int, default=20, dest="al_bull_days",
                         help="Lookback days in bull regime. Default: 30.")
     parser.add_argument("--al-neutral-days", type=int, default=60, dest="al_neutral_days",
                         help="Lookback days in neutral regime. Default: 60.")
