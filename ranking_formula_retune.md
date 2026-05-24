@@ -1936,3 +1936,35 @@ Recount: **static wins 7 of 9** (2018, 2020, 2021, 2022, 2023, 2024, 2026). WF w
 - In contrast, 2018 and 2020–2024 either have too many intra-year regime changes or data quality issues that make the IS window noisy
 
 **The robustness case for static-default is overwhelming:** across 9 years it improves on the baseline in 6 of 9 years (2019 +7.7pp, 2021 +5.1pp, 2022 +24pp, 2024 +20.4pp, 2025 +15.1pp, 2018 +7.2pp), is essentially flat in 2 (2023 +0.2pp, 2026 −0.2pp), and costs −11.4pp in only one exceptional case (2020 V-recovery). No parameter tuning is needed — the static defaults capture the regime signal robustly across all market types except sharp V-recoveries.
+
+---
+
+## When to Re-Tune Walk-Forward Parameters
+
+### Re-tune when the market has a clear two-phase regime shift
+
+The 9-year sweep shows WF only beats static-default when the IS window covers one coherent regime and the OOS falls in the transition or next phase (2019: crash-recovery → trade-war chop; 2025: tariff-shock chop → trending recovery). The signal:
+
+- QQQ has been in a defined trend or chop for **3+ months** and is visibly transitioning
+- A prolonged choppy/bear period is followed by a clear recovery, or vice versa
+- VIX has shifted regime (e.g., sustained move above/below 22) for multiple weeks
+
+### Re-tune when static-default is visibly underperforming live
+
+If live monthly P&L is consistently worse than backtest baseline with static-default on, the regime may have shifted outside the 0.40/90 middle-ground sweet spot:
+
+- **Lots of false signals in chop** (bear-year pattern) → try `bear_excl=0.55`, `bear_days=120`
+- **Missing good signals in a bull** (over-filtering) → try `bear_excl=0.25`, `bear_days=60`
+
+### Do NOT re-tune when:
+
+- **Low-vol grinding bull** (2023 pattern) — no regime signal exists; WF will overfit to marginal noise
+- **Sharp V-recovery just happened** (2020 pattern) — crash data in the IS window biases toward conservative params exactly when you need permissive ones; the filter will lag the turn by 1–2 quarters regardless of tuning
+- **Less than 3 months of live data** since the last regime change — IS window is too short to be reliable
+
+### Practical cadence
+
+- Run the grid search **at most once per quarter**, using the prior 6 months as IS
+- Only adopt WF-selected params if they are **consistent across at least 2 consecutive folds** — single-fold selections in ambiguous markets are noise (2018 and 2023 both showed this)
+- If WF-selected params match the static defaults, that is confirmation the current setting is correct — no change needed
+- The fixed params (`neut_excl=0.25`, `bull_days=20`) have been stable across all years tested; do not sweep them again unless the ticker pool changes significantly
