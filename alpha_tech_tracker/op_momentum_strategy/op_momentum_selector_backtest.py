@@ -814,6 +814,21 @@ def _build_qqq_scoring_regime(fetch_start: date, eval_end: date) -> dict:
     return result
 
 
+def _compute_rolling_stats(tickers, lookback_start, d, eff_primary_wr, ev_trend_days):
+    rolling_stats = {}
+    for ticker in tickers:
+        primary_results = eff_primary_wr.get(ticker, pd.DataFrame())
+        if primary_results.empty:
+            rolling_stats[ticker] = compute_ticker_stats(pd.DataFrame())
+            continue
+        window_slice = primary_results[
+            (primary_results["date"] >= lookback_start)
+            & (primary_results["date"] < d)
+        ]
+        rolling_stats[ticker] = compute_ticker_stats(window_slice, recent_days=ev_trend_days)
+    return rolling_stats
+
+
 def run_selector_backtest(
     n: int,
     tickers: list,
@@ -894,6 +909,25 @@ def run_selector_backtest(
     random_seed: int = None,
     ma_momentum_gate: bool = False,
     ma_momentum_gate_in_scoring: bool = False,
+    dynamic_ev_gate: bool = False,
+    dg_mode: str = "percentile",
+    dg_bull_threshold: int = 10,
+    dg_bear_threshold: int = 5,
+    dg_bull_exclude_pct: float = 0.10,
+    dg_neutral_exclude_pct: float = 0.25,
+    dg_bear_exclude_pct: float = 0.40,
+    dg_bull_min_wr: float = 0.30,
+    dg_neutral_min_wr: float = 0.33,
+    dg_bear_min_wr: float = 0.38,
+    dg_bull_min_wl: float = 1.3,
+    dg_neutral_min_wl: float = 1.5,
+    dg_bear_min_wl: float = 1.8,
+    adaptive_lookback: bool = False,
+    al_bull_threshold: int = 10,
+    al_bear_threshold: int = 5,
+    al_bull_days: int = 30,
+    al_neutral_days: int = 60,
+    al_bear_days: int = 90,
 ) -> tuple:
     """
     Walk each trading day in [eval_start, eval_end], apply rolling selector
@@ -1216,17 +1250,64 @@ def run_selector_backtest(
                 eff_by_date    = results_by_date[label]
                 eff_bars       = win["opening_bars"]
 
-            rolling_stats = {}
-            for ticker in tickers:
-                primary_results = eff_primary_wr.get(ticker, pd.DataFrame())
-                if primary_results.empty:
-                    rolling_stats[ticker] = compute_ticker_stats(pd.DataFrame())
-                    continue
-                window_slice = primary_results[
-                    (primary_results["date"] >= lookback_start)
-                    & (primary_results["date"] < d)
-                ]
-                rolling_stats[ticker] = compute_ticker_stats(window_slice, recent_days=ev_trend_days)
+            rolling_stats = _compute_rolling_stats(
+                tickers, lookback_start, d, eff_primary_wr, ev_trend_days
+            )
+
+            # Pool vote: # tickers with positive rolling EV (prior-day data only — no lookahead).
+            pool_vote = sum(1 for s in rolling_stats.values() if s["ev_trade"] > 0)
+
+            # Determine dynamic EV gate thresholds for this day.
+            if dynamic_ev_gate:
+                if pool_vote >= dg_bull_threshold:
+                    _dg_regime = "bull"
+                elif pool_vote <= dg_bear_threshold:
+                    _dg_regime = "bear"
+                else:
+                    _dg_regime = "neutral"
+
+                if dg_mode == "percentile":
+                    # Pool-relative: exclude bottom N% of positive-EV candidates by EV.
+                    # Computing only over candidates (ev > min_ev) so the floor moves with
+                    # actual pool performance, not dragged down by perpetually negative tickers.
+                    candidate_evs = sorted(
+                        s["ev_trade"] for s in rolling_stats.values() if s["ev_trade"] > min_ev
+                    )
+                    if _dg_regime == "bull":
+                        _excl_pct = dg_bull_exclude_pct
+                    elif _dg_regime == "bear":
+                        _excl_pct = dg_bear_exclude_pct
+                    else:
+                        _excl_pct = dg_neutral_exclude_pct
+                    if candidate_evs:
+                        cutoff_idx = int(len(candidate_evs) * _excl_pct)
+                        _dg_ev_floor = candidate_evs[cutoff_idx] if cutoff_idx < len(candidate_evs) else candidate_evs[-1]
+                    else:
+                        _dg_ev_floor = min_ev
+                else:
+                    # threshold mode: fixed absolute WR/W/L floors.
+                    if _dg_regime == "bull":
+                        _dg_min_wr = dg_bull_min_wr
+                        _dg_min_wl = dg_bull_min_wl
+                    elif _dg_regime == "bear":
+                        _dg_min_wr = dg_bear_min_wr
+                        _dg_min_wl = dg_bear_min_wl
+                    else:
+                        _dg_min_wr = dg_neutral_min_wr
+                        _dg_min_wl = dg_neutral_min_wl
+
+            # Adaptive lookback: recompute stats with regime-adjusted window.
+            if adaptive_lookback:
+                if pool_vote >= al_bull_threshold:
+                    _al_days = al_bull_days
+                elif pool_vote <= al_bear_threshold:
+                    _al_days = al_bear_days
+                else:
+                    _al_days = al_neutral_days
+                _al_lookback_start = d - timedelta(days=_al_days)
+                rolling_stats = _compute_rolling_stats(
+                    tickers, _al_lookback_start, d, eff_primary_wr, ev_trend_days
+                )
 
             scored = []
             opening_start_t = window_opening_times[label]
@@ -1296,6 +1377,14 @@ def run_selector_backtest(
                     _actual_pnl_pct = 0.0
                     if stats["ev_trade"] < min_ev:
                         continue
+                    if dynamic_ev_gate:
+                        if dg_mode == "percentile":
+                            if stats["ev_trade"] < _dg_ev_floor:
+                                continue
+                        else:
+                            _wl = abs(stats["avg_win_pct"] / stats["avg_loss_pct"]) if stats["avg_loss_pct"] != 0 else 0.0
+                            if stats["win_rate"] < _dg_min_wr or _wl < _dg_min_wl:
+                                continue
                     if direction_split_ev_gate:
                         dir_ev = (
                             stats["ev_trade_bullish"]
@@ -2786,6 +2875,64 @@ def _parse_args():
         help="Seed for --random-picks to make runs reproducible. Default: None (different each run).",
     )
     parser.add_argument(
+        "--dynamic-ev-gate",
+        action="store_true",
+        default=False,
+        dest="dynamic_ev_gate",
+        help="Apply regime-adaptive EV filter based on daily pool vote. "
+        "Mode 'percentile' (default): exclude bottom N%% of pool by EV, adapts with market. "
+        "Mode 'threshold': fixed WR/W/L floors per regime tier.",
+    )
+    parser.add_argument(
+        "--dg-mode",
+        type=str,
+        default="percentile",
+        choices=["percentile", "threshold"],
+        dest="dg_mode",
+        help="Gate mode for --dynamic-ev-gate. 'percentile': pool-relative EV floor (recommended). "
+        "'threshold': fixed absolute WR/W/L floors. Default: percentile.",
+    )
+    parser.add_argument("--dg-bull-threshold", type=int, default=10, dest="dg_bull_threshold",
+                        help="Pool vote count at or above which bull-regime thresholds apply. Default: 10.")
+    parser.add_argument("--dg-bear-threshold", type=int, default=5, dest="dg_bear_threshold",
+                        help="Pool vote count at or below which bear-regime thresholds apply. Default: 5.")
+    parser.add_argument("--dg-bull-exclude-pct", type=float, default=0.10, dest="dg_bull_exclude_pct",
+                        help="[percentile mode] Fraction of pool to exclude from bottom in bull regime. Default: 0.10.")
+    parser.add_argument("--dg-neutral-exclude-pct", type=float, default=0.25, dest="dg_neutral_exclude_pct",
+                        help="[percentile mode] Fraction of pool to exclude from bottom in neutral regime. Default: 0.25.")
+    parser.add_argument("--dg-bear-exclude-pct", type=float, default=0.40, dest="dg_bear_exclude_pct",
+                        help="[percentile mode] Fraction of pool to exclude from bottom in bear regime. Default: 0.40.")
+    parser.add_argument("--dg-bull-min-wr", type=float, default=0.30, dest="dg_bull_min_wr",
+                        help="[threshold mode] Minimum win rate in bull regime. Default: 0.30.")
+    parser.add_argument("--dg-neutral-min-wr", type=float, default=0.33, dest="dg_neutral_min_wr",
+                        help="[threshold mode] Minimum win rate in neutral regime. Default: 0.33.")
+    parser.add_argument("--dg-bear-min-wr", type=float, default=0.38, dest="dg_bear_min_wr",
+                        help="[threshold mode] Minimum win rate in bear regime. Default: 0.38.")
+    parser.add_argument("--dg-bull-min-wl", type=float, default=1.3, dest="dg_bull_min_wl",
+                        help="[threshold mode] Minimum W/L ratio in bull regime. Default: 1.3.")
+    parser.add_argument("--dg-neutral-min-wl", type=float, default=1.5, dest="dg_neutral_min_wl",
+                        help="[threshold mode] Minimum W/L ratio in neutral regime. Default: 1.5.")
+    parser.add_argument("--dg-bear-min-wl", type=float, default=1.8, dest="dg_bear_min_wl",
+                        help="[threshold mode] Minimum W/L ratio in bear regime. Default: 1.8.")
+    parser.add_argument(
+        "--adaptive-lookback",
+        action="store_true",
+        default=False,
+        dest="adaptive_lookback",
+        help="Shorten lookback window in bull regimes (more responsive) and lengthen in bear regimes "
+        "(require more evidence). Uses same pool-vote signal as --dynamic-ev-gate.",
+    )
+    parser.add_argument("--al-bull-threshold", type=int, default=10, dest="al_bull_threshold",
+                        help="Pool vote count for bull regime in adaptive lookback. Default: 10.")
+    parser.add_argument("--al-bear-threshold", type=int, default=5, dest="al_bear_threshold",
+                        help="Pool vote count for bear regime in adaptive lookback. Default: 5.")
+    parser.add_argument("--al-bull-days", type=int, default=30, dest="al_bull_days",
+                        help="Lookback days in bull regime. Default: 30.")
+    parser.add_argument("--al-neutral-days", type=int, default=60, dest="al_neutral_days",
+                        help="Lookback days in neutral regime. Default: 60.")
+    parser.add_argument("--al-bear-days", type=int, default=90, dest="al_bear_days",
+                        help="Lookback days in bear regime. Default: 90.")
+    parser.add_argument(
         "--stale-cut-mins",
         type=int,
         default=0,
@@ -3412,6 +3559,31 @@ if __name__ == "__main__":
     print(
         f"  Close top pct: {f'top/bottom {args.close_top_pct * 100:.0f}% (global default, overridable per window)' if args.close_top_pct is not None else 'disabled (standard midpoint/bottom-30; per-window override via --window LABEL START BARS PCT)'}"
     )
+    if args.dynamic_ev_gate:
+        if args.dg_mode == "percentile":
+            print(
+                f"  Dyn EV gate  : on [{args.dg_mode}]"
+                f"  bull≥{args.dg_bull_threshold} excl={args.dg_bull_exclude_pct:.0%}"
+                f"  neutral excl={args.dg_neutral_exclude_pct:.0%}"
+                f"  bear≤{args.dg_bear_threshold} excl={args.dg_bear_exclude_pct:.0%}"
+            )
+        else:
+            print(
+                f"  Dyn EV gate  : on [{args.dg_mode}]"
+                f"  bull≥{args.dg_bull_threshold} (WR≥{args.dg_bull_min_wr:.0%} W/L≥{args.dg_bull_min_wl})"
+                f"  neutral (WR≥{args.dg_neutral_min_wr:.0%} W/L≥{args.dg_neutral_min_wl})"
+                f"  bear≤{args.dg_bear_threshold} (WR≥{args.dg_bear_min_wr:.0%} W/L≥{args.dg_bear_min_wl})"
+            )
+    else:
+        print(f"  Dyn EV gate  : off")
+    if args.adaptive_lookback:
+        print(
+            f"  Adapt lookback: on  bull≥{args.al_bull_threshold}→{args.al_bull_days}d"
+            f"  neutral→{args.al_neutral_days}d"
+            f"  bear≤{args.al_bear_threshold}→{args.al_bear_days}d"
+        )
+    else:
+        print(f"  Adapt lookback: off")
     print(f"  Source       : {args.source}")
     alpaca_feed = DataFeed.IEX if args.feed == "iex" else DataFeed.SIP
     if args.source == "alpaca":
@@ -3507,6 +3679,25 @@ if __name__ == "__main__":
         random_seed=args.random_seed,
         ma_momentum_gate=args.ma_momentum_gate,
         ma_momentum_gate_in_scoring=args.ma_momentum_gate_in_scoring,
+        dynamic_ev_gate=args.dynamic_ev_gate,
+        dg_mode=args.dg_mode,
+        dg_bull_threshold=args.dg_bull_threshold,
+        dg_bear_threshold=args.dg_bear_threshold,
+        dg_bull_exclude_pct=args.dg_bull_exclude_pct,
+        dg_neutral_exclude_pct=args.dg_neutral_exclude_pct,
+        dg_bear_exclude_pct=args.dg_bear_exclude_pct,
+        dg_bull_min_wr=args.dg_bull_min_wr,
+        dg_neutral_min_wr=args.dg_neutral_min_wr,
+        dg_bear_min_wr=args.dg_bear_min_wr,
+        dg_bull_min_wl=args.dg_bull_min_wl,
+        dg_neutral_min_wl=args.dg_neutral_min_wl,
+        dg_bear_min_wl=args.dg_bear_min_wl,
+        adaptive_lookback=args.adaptive_lookback,
+        al_bull_threshold=args.al_bull_threshold,
+        al_bear_threshold=args.al_bear_threshold,
+        al_bull_days=args.al_bull_days,
+        al_neutral_days=args.al_neutral_days,
+        al_bear_days=args.al_bear_days,
     )
 
     skip_log = _apply_capital_flow(

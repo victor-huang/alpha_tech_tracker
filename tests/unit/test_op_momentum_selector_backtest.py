@@ -8,6 +8,7 @@ from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector_backtest impor
     _annotate_doubledown_addon,
     _apply_capital_flow,
     _apply_opportunity_pool,
+    _compute_rolling_stats,
     _print_daily_table,
     _print_reentry_subrow,
 )
@@ -1346,3 +1347,303 @@ class TestDDSubrowTimes:
         # 13:30 (dd_fire_min=810) and 13:40 (exit = 800+(3+1)*5=820)
         assert "13:30" in lines[0]
         assert "13:40" in lines[0]
+
+
+# ---------------------------------------------------------------------------
+# _compute_rolling_stats
+# ---------------------------------------------------------------------------
+#
+# Verifies the helper slices trade history to [lookback_start, d) (exclusive of d)
+# and returns correct stats per ticker.  Uses small in-memory DataFrames — no
+# file I/O or bar fetching required.
+# ---------------------------------------------------------------------------
+
+_RS_D = date(2024, 6, 1)   # the "today" date (exclusive upper bound)
+_RS_LB = date(2024, 5, 1)  # lookback start
+
+
+def _results_df(rows):
+    """Build a minimal primary-results DataFrame from a list of dicts."""
+    return pd.DataFrame(rows)
+
+
+def _win_row(d, ticker="AMD", entry=100.0, pnl=1.0, signal="BULLISH"):
+    return {
+        "date": d,
+        "ticker": ticker,
+        "entry_price": entry,
+        "pnl": pnl,
+        "success": True,
+        "signal": signal,
+        "midpoint": entry * 0.99,
+        "or_range_pct": 0.5,
+    }
+
+
+def _loss_row(d, ticker="AMD", entry=100.0, pnl=-0.5, signal="BULLISH"):
+    return {
+        "date": d,
+        "ticker": ticker,
+        "entry_price": entry,
+        "pnl": pnl,
+        "success": False,
+        "signal": signal,
+        "midpoint": entry * 0.99,
+        "or_range_pct": 0.5,
+    }
+
+
+class TestComputeRollingStats:
+    def test_returns_stats_for_each_ticker(self):
+        data = {
+            "AMD":  _results_df([_win_row(_RS_D - pd.Timedelta(days=5))]),
+            "TSLA": _results_df([_loss_row(_RS_D - pd.Timedelta(days=5))]),
+        }
+        stats = _compute_rolling_stats(["AMD", "TSLA"], _RS_LB, _RS_D, data, ev_trend_days=15)
+
+        assert set(stats.keys()) == {"AMD", "TSLA"}
+
+    def test_excludes_rows_on_or_after_eval_date(self):
+        # Row on _RS_D itself must not count — window is [lookback_start, d).
+        data = {
+            "AMD": _results_df([
+                _win_row(_RS_D - pd.Timedelta(days=1)),  # included
+                _win_row(_RS_D),                          # excluded (today)
+            ]),
+        }
+        stats = _compute_rolling_stats(["AMD"], _RS_LB, _RS_D, data, ev_trend_days=15)
+
+        assert stats["AMD"]["signals"] == 1
+
+    def test_excludes_rows_before_lookback_start(self):
+        # Row before _RS_LB must not count.
+        data = {
+            "AMD": _results_df([
+                _win_row(_RS_LB - pd.Timedelta(days=1)),  # excluded (too old)
+                _win_row(_RS_LB),                          # included (on boundary)
+            ]),
+        }
+        stats = _compute_rolling_stats(["AMD"], _RS_LB, _RS_D, data, ev_trend_days=15)
+
+        assert stats["AMD"]["signals"] == 1
+
+    def test_empty_history_returns_zero_ev(self):
+        stats = _compute_rolling_stats(["AMD"], _RS_LB, _RS_D, {}, ev_trend_days=15)
+
+        assert stats["AMD"]["ev_trade"] == 0.0
+        assert stats["AMD"]["signals"] == 0
+
+    def test_all_wins_produces_positive_ev(self):
+        data = {
+            "AMD": _results_df([
+                _win_row(_RS_D - pd.Timedelta(days=i)) for i in range(1, 6)
+            ]),
+        }
+        stats = _compute_rolling_stats(["AMD"], _RS_LB, _RS_D, data, ev_trend_days=15)
+
+        assert stats["AMD"]["ev_trade"] > 0.0
+        assert stats["AMD"]["win_rate"] == pytest.approx(1.0)
+
+    def test_all_losses_produces_negative_ev(self):
+        data = {
+            "AMD": _results_df([
+                _loss_row(_RS_D - pd.Timedelta(days=i)) for i in range(1, 6)
+            ]),
+        }
+        stats = _compute_rolling_stats(["AMD"], _RS_LB, _RS_D, data, ev_trend_days=15)
+
+        assert stats["AMD"]["ev_trade"] < 0.0
+        assert stats["AMD"]["win_rate"] == pytest.approx(0.0)
+
+    def test_shorter_lookback_window_excludes_older_trades(self):
+        # 5-day lookback vs 30-day lookback: only the last 5 days' trade should differ.
+        old_win = _win_row(_RS_D - pd.Timedelta(days=20))
+        recent_loss = _loss_row(_RS_D - pd.Timedelta(days=2))
+        data = {"AMD": _results_df([old_win, recent_loss])}
+
+        lb_30 = _RS_D - pd.Timedelta(days=30)
+        lb_5  = _RS_D - pd.Timedelta(days=5)
+
+        stats_30 = _compute_rolling_stats(["AMD"], lb_30, _RS_D, data, ev_trend_days=15)
+        stats_5  = _compute_rolling_stats(["AMD"], lb_5,  _RS_D, data, ev_trend_days=15)
+
+        # 30-day window sees both rows (1 win + 1 loss); 5-day sees only the loss.
+        assert stats_30["AMD"]["signals"] == 2
+        assert stats_5["AMD"]["signals"] == 1
+        assert stats_5["AMD"]["win_rate"] == pytest.approx(0.0)
+
+
+# ---------------------------------------------------------------------------
+# Dynamic EV gate — pool vote regime classification
+#
+# Tests the regime-detection logic (bull / neutral / bear) and the percentile
+# floor calculation, extracted into pure-function helpers that mirror what the
+# daily loop does in run_selector_backtest().
+# ---------------------------------------------------------------------------
+
+
+def _pool_vote(rolling_stats):
+    return sum(1 for s in rolling_stats.values() if s["ev_trade"] > 0)
+
+
+def _dg_ev_floor(rolling_stats, regime, bull_pct, neutral_pct, bear_pct, min_ev=0.0):
+    """Replicate the percentile-floor computation from the daily loop."""
+    candidate_evs = sorted(
+        s["ev_trade"] for s in rolling_stats.values() if s["ev_trade"] > min_ev
+    )
+    if regime == "bull":
+        excl_pct = bull_pct
+    elif regime == "bear":
+        excl_pct = bear_pct
+    else:
+        excl_pct = neutral_pct
+    if not candidate_evs:
+        return min_ev
+    cutoff_idx = int(len(candidate_evs) * excl_pct)
+    return candidate_evs[cutoff_idx] if cutoff_idx < len(candidate_evs) else candidate_evs[-1]
+
+
+def _make_rolling_stats(ev_values):
+    """Build a rolling_stats dict from a list of EV floats, keyed T0..TN."""
+    return {f"T{i}": {"ev_trade": v} for i, v in enumerate(ev_values)}
+
+
+class TestDynamicEvGatePoolVote:
+    def test_pool_vote_counts_only_positive_ev_tickers(self):
+        stats = _make_rolling_stats([0.5, 0.3, -0.1, 0.0, 0.8])
+        assert _pool_vote(stats) == 3  # 0.5, 0.3, 0.8 > 0
+
+    def test_pool_vote_zero_when_all_negative(self):
+        stats = _make_rolling_stats([-0.5, -0.2, -1.0])
+        assert _pool_vote(stats) == 0
+
+    def test_bull_regime_when_vote_at_or_above_threshold(self):
+        # 10 positive-EV tickers → bull tier (threshold=10)
+        stats = _make_rolling_stats([0.1] * 10 + [-0.1] * 4)
+        vote = _pool_vote(stats)
+        assert vote >= 10
+
+    def test_bear_regime_when_vote_at_or_below_threshold(self):
+        # 5 positive-EV tickers → bear tier (threshold=5)
+        stats = _make_rolling_stats([0.1] * 5 + [-0.1] * 9)
+        vote = _pool_vote(stats)
+        assert vote <= 5
+
+    def test_neutral_regime_between_thresholds(self):
+        # 7 positive-EV tickers → neutral tier (bull≥10, bear≤5)
+        stats = _make_rolling_stats([0.1] * 7 + [-0.1] * 7)
+        vote = _pool_vote(stats)
+        assert 5 < vote < 10
+
+
+class TestDynamicEvGatePercentileFloor:
+    # Pool: 10 positive-EV candidates with EV values 0.1, 0.2, ..., 1.0
+    # sorted: [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+
+    def _pool(self):
+        ev_vals = [round(0.1 * i, 1) for i in range(1, 11)]   # 0.1 … 1.0
+        ev_vals += [-0.5, -0.3]  # two negative-EV tickers (should be ignored)
+        return _make_rolling_stats(ev_vals)
+
+    def test_bear_regime_40pct_excludes_bottom_4_of_10(self):
+        # cutoff_idx = int(10 * 0.40) = 4 → floor = sorted[4] = 0.5
+        floor = _dg_ev_floor(self._pool(), "bear", 0.10, 0.25, 0.40)
+        assert floor == pytest.approx(0.5)
+
+    def test_neutral_regime_25pct_excludes_bottom_2_of_10(self):
+        # cutoff_idx = int(10 * 0.25) = 2 → floor = sorted[2] = 0.3
+        floor = _dg_ev_floor(self._pool(), "neutral", 0.10, 0.25, 0.40)
+        assert floor == pytest.approx(0.3)
+
+    def test_bull_regime_10pct_excludes_bottom_1_of_10(self):
+        # cutoff_idx = int(10 * 0.10) = 1 → floor = sorted[1] = 0.2
+        floor = _dg_ev_floor(self._pool(), "bull", 0.10, 0.25, 0.40)
+        assert floor == pytest.approx(0.2)
+
+    def test_negative_ev_tickers_not_counted_in_percentile(self):
+        # Floor computed from 10 positive-EV candidates only, not the full 12-ticker pool.
+        # If negatives were included, sorted[-] would shift the cutoff index downward.
+        floor_with_negatives = _dg_ev_floor(self._pool(), "bear", 0.10, 0.25, 0.40)
+        # Pool with only positive EVs (same 10, no negatives)
+        pure_pool = _make_rolling_stats([round(0.1 * i, 1) for i in range(1, 11)])
+        floor_pure = _dg_ev_floor(pure_pool, "bear", 0.10, 0.25, 0.40)
+        assert floor_with_negatives == pytest.approx(floor_pure)
+
+    def test_floor_above_zero_so_gate_is_stricter_than_min_ev(self):
+        # The percentile floor should always be > 0 when there are positive-EV candidates,
+        # meaning it is strictly tighter than the baseline min_ev=0 gate.
+        floor = _dg_ev_floor(self._pool(), "bear", 0.10, 0.25, 0.40)
+        assert floor > 0.0
+
+    def test_zero_exclude_pct_admits_all_candidates(self):
+        # With 0% exclusion, floor = sorted[0] = 0.1, i.e., all 10 candidates pass.
+        floor = _dg_ev_floor(self._pool(), "bull", 0.0, 0.0, 0.0)
+        assert floor == pytest.approx(0.1)
+
+    def test_empty_candidate_pool_returns_min_ev(self):
+        # All tickers have negative EV → no candidates → floor falls back to min_ev.
+        all_negative = _make_rolling_stats([-0.5, -0.3, -0.1])
+        floor = _dg_ev_floor(all_negative, "bear", 0.10, 0.25, 0.40)
+        assert floor == pytest.approx(0.0)  # default min_ev
+
+
+# ---------------------------------------------------------------------------
+# Adaptive lookback — lookback-day selection by regime
+#
+# Tests the regime → lookback-days mapping, mirroring what the daily loop
+# does in run_selector_backtest() when --adaptive-lookback is active.
+# ---------------------------------------------------------------------------
+
+
+def _al_days(pool_vote, bull_threshold, bear_threshold,
+             bull_days, neutral_days, bear_days):
+    """Replicate the adaptive-lookback day selection from the daily loop."""
+    if pool_vote >= bull_threshold:
+        return bull_days
+    elif pool_vote <= bear_threshold:
+        return bear_days
+    return neutral_days
+
+
+class TestAdaptiveLookbackDaySelection:
+    _BULL_T = 10
+    _BEAR_T = 5
+    _BULL_D = 30
+    _NEUTRAL_D = 60
+    _BEAR_D = 90
+
+    def _days(self, vote):
+        return _al_days(vote, self._BULL_T, self._BEAR_T,
+                        self._BULL_D, self._NEUTRAL_D, self._BEAR_D)
+
+    def test_bull_vote_at_threshold_uses_bull_days(self):
+        assert self._days(10) == 30
+
+    def test_bull_vote_above_threshold_uses_bull_days(self):
+        assert self._days(14) == 30
+
+    def test_bear_vote_at_threshold_uses_bear_days(self):
+        assert self._days(5) == 90
+
+    def test_bear_vote_below_threshold_uses_bear_days(self):
+        assert self._days(2) == 90
+
+    def test_neutral_vote_uses_neutral_days(self):
+        assert self._days(7) == 60
+
+    def test_neutral_boundary_just_above_bear(self):
+        assert self._days(6) == 60
+
+    def test_neutral_boundary_just_below_bull(self):
+        assert self._days(9) == 60
+
+    def test_bull_lookback_shorter_than_neutral(self):
+        assert self._days(12) < self._days(7)
+
+    def test_bear_lookback_longer_than_neutral(self):
+        assert self._days(3) > self._days(7)
+
+    def test_shorter_lookback_in_bull_reflects_more_responsive_window(self):
+        # The entire point of adaptive lookback: bull = recent signal matters more.
+        # Verify the ordering: bull_days < neutral_days < bear_days.
+        assert self._days(10) < self._days(7) < self._days(5)

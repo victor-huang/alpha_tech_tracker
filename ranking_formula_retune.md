@@ -1273,3 +1273,140 @@ Volatility is a prerequisite. High-VIX environments (2018 Q4, 2020 crash-recover
 3. **Use pool vote as a regime switch** — if fewer than 7/pool tickers show positive rolling EV, reduce size or sit out. Consistent signal across all 9 years.
 4. **TSLA, CHTR, AMD are the anchor tickers** — if ever constrained to a smaller pool, these three are the core.
 5. **Don't expect filters to fix bad regime years** — in 2020/2021/2023/2024, even the best tickers were flat or marginally positive. Regime is the dominant variable, not ticker selection.
+
+---
+
+## Dynamic Filter Backtest — 9-Year Validation (2018–2026)
+
+**Date:** 2026-05-24
+
+**Goal:** validate two regime-adaptive CLI flags across all 9 years and confirm they improve the strategy's worst years without destroying the best.
+
+### Flags implemented
+
+**`--dynamic-ev-gate` (mode: `percentile`)** — instead of a fixed EV floor, exclude the bottom N% of positive-EV candidates by their rolling EV score. The exclusion percentage varies by daily pool vote:
+
+| Pool vote | Regime | Exclude bottom |
+|-----------|--------|----------------|
+| ≥ 10/pool | Bull   | 10% of candidates |
+| 6–9/pool  | Neutral| 25% of candidates |
+| ≤ 5/pool  | Bear   | 40% of candidates |
+
+Key property: the floor moves with the market. In a strong year, even the bottom 10% have decent EV → gate is lenient. In a bad year, bottom 40% represents real chronic losers → gate cuts them.
+
+**`--adaptive-lookback`** — recomputes rolling stats with a shorter window in trending regimes (recent signal more predictive) and longer in choppy regimes (require more evidence):
+
+| Pool vote | Regime  | Lookback |
+|-----------|---------|----------|
+| ≥ 10/pool | Bull    | 30 days  |
+| 6–9/pool  | Neutral | 60 days  |
+| ≤ 5/pool  | Bear    | 90 days  |
+
+Both flags use pool vote derived from `date < d` data only — no lookahead.
+
+### 9-Year Results (no-compound, $10k daily reset, M1 09:30/3bars, stop=0.4, ma-momentum-gate)
+
+```
+Year      Baseline    dyn-ev(pct)   adapt-lb     both
+2018         -0.9%       -1.8%       +11.9%      +9.9%
+2019        +10.9%      +17.3%       +13.6%     +21.2%
+2020        +25.2%       +6.0%       +16.4%     +14.8%
+2021         +7.2%       +5.0%        +2.9%      +2.5%
+2022        -26.5%      -18.2%       -21.3%      -6.3%
+2023         -0.3%       -3.0%        -1.3%      -6.0%
+2024        -26.9%      -17.8%       -14.9%     -10.7%
+2025         +9.7%      +22.9%       +11.9%     +24.6%
+2026        +50.0%      +51.0%       +37.7%     +35.7%
+──────────────────────────────────────────────────────
+TOTAL       +48.5%      +61.3%       +56.9%     +85.8%
+Year wins:   3            1            1           4
+```
+
+### Delta vs baseline
+
+```
+Year        dyn-ev Δ    adapt-lb Δ    both Δ
+2018          -0.9pp      +12.8pp     +10.8pp
+2019          +6.4pp       +2.7pp     +10.3pp
+2020         -19.2pp       -8.9pp     -10.4pp
+2021          -2.3pp       -4.3pp      -4.7pp
+2022          +8.3pp       +5.2pp     +20.2pp
+2023          -2.7pp       -1.0pp      -5.7pp
+2024          +9.1pp      +12.0pp     +16.1pp
+2025         +13.2pp       +2.2pp     +14.9pp
+2026          +1.0pp      -12.3pp     -14.3pp
+──────────────────────────────────────────────
+TOTAL         +12.8pp      +8.4pp     +37.3pp
+```
+
+### Interpretation
+
+**Combined (`--dynamic-ev-gate --adaptive-lookback`) is the strongest result at +85.8% cumulative** (+37.3pp over 9-year baseline). The two filters are complementary:
+
+- `dyn-ev` percentile aggressively cuts the weakest pool members in bear/neutral months → big wins in 2022 (+20pp combined), 2024 (+16pp), 2025 (+15pp)
+- `adapt-lb` shortens the lookback window in trending environments so recovering tickers re-qualify faster → helps in 2018 (+13pp) and 2024 (+12pp)
+- Together they reinforce in the same direction in bad-regime years (2022, 2024) and strong momentum years (2019, 2025)
+
+**Known costs:**
+- 2020: −10pp combined — both filters are too restrictive in what turned out to be a massive recovery year (COVID gap-and-reverse)
+- 2023: −6pp combined — chop year where the filters cut candidates that were actually marginally positive
+- 2026 YTD: −14pp combined — YTD strong trending year; adapt-lb shortens the window too aggressively, losing the longer performance track that correctly identified strong tickers
+
+**Prior threshold mode (WR/W/L absolute gates) vs new percentile mode:**
+
+The first implementation used fixed WR ≥ 33% and W/L ≥ 1.5 thresholds. This destroyed 2019 (−12pp) and 2020 (−28pp) because rolling 60-day stats are noisy — in early months of strong years, many tickers show low rolling WR even when their underlying momentum is good. The percentile mode fixes this: the bar moves with the pool, so in a strong year all tickers appear healthy relative to each other and very few get cut.
+
+### How the two filters work
+
+Both filters use the same daily **pool vote** signal as their regime detector — the count of tickers with positive rolling EV that morning, computed from `date < d` data only (no lookahead).
+
+#### `--dynamic-ev-gate` (percentile mode)
+
+Every day before picks are made, the strategy ranks all tickers that currently have positive rolling EV from lowest to highest. It then cuts the bottom N% of that ranked list based on the regime:
+
+- **Bull** (pool vote ≥ 10): cut bottom 10% — roughly 1 ticker out of ~12 candidates
+- **Neutral** (6–9): cut bottom 25% — roughly 3 tickers
+- **Bear** (≤ 5): cut bottom 40% — roughly 4–5 tickers
+
+The floor is **relative to today's pool**, not a fixed absolute number. If the whole market is strong, even the "bottom 10%" have decent EV and the gate barely changes anything. If the whole market is choppy, the bottom 40% are genuinely the weakest performers relative to their peers.
+
+This is what fixed the 2019/2020 problem with the old threshold mode: when WR ≥ 33% was the hard gate, good tickers with a temporarily noisy 60-day WR of 31% got cut. The percentile gate only asks "is this ticker in the bottom N% of today's pool?" — it doesn't care about the absolute number.
+
+#### `--adaptive-lookback`
+
+The rolling stats window (default 60 days) that determines each ticker's EV, WR, and W/L is also adjusted by the same pool vote:
+
+- **Bull** (≥ 10): shrink to 30 days — use only recent performance
+- **Neutral** (6–9): keep at 60 days
+- **Bear** (≤ 5): extend to 90 days — require a longer track record
+
+In a trending year, the shorter 30-day window lets a recovering ticker's recent good trades dominate its stats sooner, instead of being dragged down by a bad period 2 months ago. In a choppy environment, the longer 90-day window filters out tickers that had a lucky 2-week run but lack sustained quality.
+
+#### How they interact together
+
+The two passes happen sequentially in the daily loop:
+
+1. Compute rolling stats with the fixed 60-day lookback → get pool vote
+2. If `--dynamic-ev-gate`: determine bull/neutral/bear tier → compute EV percentile floor from positive-EV candidates
+3. If `--adaptive-lookback`: use pool vote to pick 30/60/90-day window → **recompute** rolling stats with the new window
+4. Score all tickers → apply EV floor gate → pick top 2
+
+Step 3 recomputes the stats, which also updates the EV values the percentile floor is applied against. In a bull regime, the gate fires on 30-day stats (more responsive). In a bear regime, on 90-day stats (more conservative). The two filters reinforce each other in the same direction.
+
+### CLI usage
+
+```bash
+# Recommended combined config
+python alpha_tech_tracker/op_momentum_strategy/op_momentum_selector_backtest.py \
+  --top 2 --window M1 09:30 3 --min-hold-bars 1 --ma-momentum-gate \
+  --reversal --bearish-reentry --bullish-reentry \
+  --feed sip --stop-pct 0.4 \
+  --dynamic-ev-gate --adaptive-lookback \
+  --start 2022-01-01 --end 2024-12-31
+
+# Tune exclusion percentages (default: bull=10%, neutral=25%, bear=40%)
+  --dg-bull-exclude-pct 0.10 --dg-neutral-exclude-pct 0.25 --dg-bear-exclude-pct 0.40
+
+# Use old threshold mode (fixed WR/W/L gates — not recommended)
+  --dynamic-ev-gate --dg-mode threshold
+```
