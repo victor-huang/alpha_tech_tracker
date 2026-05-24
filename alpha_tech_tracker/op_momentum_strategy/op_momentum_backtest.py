@@ -372,6 +372,7 @@ def compute_signals_with_backtest(
     stale_cut_mins: int = 0,
     stale_cut_threshold: float = 0.0,
     exit_at_bar_close: bool = True,
+    ma_momentum_gate: bool = False,
 ) -> pd.DataFrame:
     opening_start_t = datetime.strptime(opening_start_time, "%H:%M").time()
 
@@ -499,6 +500,24 @@ def compute_signals_with_backtest(
             signal = "BEARISH"
         else:
             continue
+
+        if ma_momentum_gate:
+            ma50_gate = last_bar["MA50"]
+            if pd.isna(ma50_gate):
+                continue
+            if signal == "BULLISH":
+                # OR range must overlap or sit above both MA20 and MA50
+                # close > ma20 is already guaranteed; also require close > ma50 or the range reaches it
+                if not (or_high >= ma20 and or_high >= ma50_gate):
+                    continue
+                if not (close > ma20 or close > ma50_gate):
+                    continue
+            else:  # BEARISH
+                # OR range must overlap or sit below both MA20 and MA50
+                if not (or_low <= ma20 and or_low <= ma50_gate):
+                    continue
+                if not (close < ma20):
+                    continue
 
         if (
             bearish_regime_dates
@@ -718,6 +737,7 @@ def compute_signals_with_backtest(
                 "pnl": round(pnl, 2),
                 "exit_reason": exit_reason,
                 "ma20": round(ma20, 2),
+                "ma50": round(float(last_bar["MA50"]), 2),
                 "ma200": round(ma200, 2),
                 "bars_held": bars_held,
                 "mins_held": bars_held * 5,

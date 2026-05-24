@@ -1,4 +1,5 @@
 import argparse
+import random
 import numpy as np
 import pandas as pd
 import yfinance as yf
@@ -54,6 +55,75 @@ _EOD_DISPLAY_TIME = (
 ).strftime("%H:%M")
 
 
+def _consec_streak(close: pd.Series) -> pd.Series:
+    result = np.zeros(len(close))
+    vals = close.values
+    streak = 0
+    for i in range(1, len(vals)):
+        if np.isnan(vals[i]) or np.isnan(vals[i - 1]):
+            streak = 0
+        elif vals[i] > vals[i - 1]:
+            streak = streak + 1 if streak > 0 else 1
+        elif vals[i] < vals[i - 1]:
+            streak = streak - 1 if streak < 0 else -1
+        else:
+            streak = 0
+        result[i] = streak
+    return pd.Series(result, index=close.index)
+
+
+def _build_daily_context(bars_5min: pd.DataFrame) -> dict:
+    """
+    Pre-computes daily features (all prior-day, no lookahead) from 5-min bars.
+    Returns a dict keyed by date → {dist_52w_low_pct, consec_streak,
+    prev_day_vol_ratio, daily_ma200_dist_pct, daily_ma50_dist_pct}.
+    """
+    if bars_5min.empty:
+        return {}
+    mh = bars_5min.between_time("09:30", "16:00")
+    daily = mh.resample("D").agg(
+        Open=("Open", "first"),
+        High=("High", "max"),
+        Low=("Low", "min"),
+        Close=("Close", "last"),
+        Volume=("Volume", "sum"),
+    ).dropna(subset=["Close"])
+    daily.index = daily.index.normalize().tz_localize(None)
+
+    daily["daily_ma200"] = daily["Close"].rolling(200, min_periods=100).mean()
+    daily["daily_ma200_dist_pct"] = (
+        (daily["Open"] - daily["daily_ma200"]) / daily["daily_ma200"] * 100
+    )
+
+    daily["daily_ma50"] = daily["Close"].rolling(50, min_periods=20).mean()
+    daily["daily_ma50_dist_pct"] = (
+        (daily["Open"] - daily["daily_ma50"]) / daily["daily_ma50"] * 100
+    )
+
+    vol_20d_avg = daily["Volume"].rolling(20, min_periods=5).mean().shift(1)
+    daily["prev_day_vol_ratio"] = daily["Volume"].shift(1) / vol_20d_avg
+
+    daily["consec_streak"] = _consec_streak(daily["Close"]).shift(1)
+
+    daily["high_52w"] = daily["High"].rolling(252, min_periods=60).max().shift(1)
+    daily["low_52w"] = daily["Low"].rolling(252, min_periods=60).min().shift(1)
+    daily["dist_52w_low_pct"] = (
+        (daily["Open"] - daily["low_52w"]) / daily["low_52w"] * 100
+    )
+
+    result = {}
+    for ts, row in daily.iterrows():
+        d = ts.date() if hasattr(ts, "date") else ts
+        result[d] = {
+            "dist_52w_low_pct": float(row["dist_52w_low_pct"]),
+            "consec_streak": float(row["consec_streak"]),
+            "prev_day_vol_ratio": float(row["prev_day_vol_ratio"]),
+            "daily_ma200_dist_pct": float(row["daily_ma200_dist_pct"]),
+            "daily_ma50_dist_pct": float(row["daily_ma50_dist_pct"]),
+        }
+    return result
+
+
 def _signal_dict_from_row(row) -> dict:
     or_range = row["or_high"] - row["or_low"]
     mid = row["midpoint"]
@@ -72,6 +142,10 @@ def _signal_dict_from_row(row) -> dict:
         "entry_vs_mid_pct": entry_vs_mid_pct,
         "or_range_pct": or_range_pct,
         "or_vol_ratio": or_vol_ratio,
+        "or_high": float(row["or_high"]),
+        "or_low": float(row["or_low"]),
+        "ma20": float(row["ma20"]),
+        "ma50": float(row.get("ma50", float("nan"))),
     }
 
 
@@ -711,6 +785,35 @@ def _build_day_config_map(trading_days, vix_prior, qqq_5min, fallback_bars, fall
     return config_map
 
 
+def _build_qqq_scoring_regime(fetch_start: date, eval_end: date) -> dict:
+    """
+    Returns {date: 'bull'/'bear'} based on prior-day QQQ close vs 50d MA.
+    No lookahead — shift(1) ensures today's regime uses yesterday's close/MA.
+    """
+    print("  [regime-scoring] Fetching QQQ daily bars for scoring regime...")
+    qqq = yf.download(
+        "QQQ",
+        start=str(fetch_start - timedelta(days=120)),
+        end=str(eval_end + timedelta(days=1)),
+        interval="1d",
+        auto_adjust=True,
+        progress=False,
+    )
+    if qqq.empty:
+        return {}
+    if isinstance(qqq.columns, pd.MultiIndex):
+        qqq.columns = qqq.columns.get_level_values(0)
+    close = qqq["Close"].squeeze().dropna()
+    ma50 = close.rolling(50, min_periods=20).mean()
+    above = (close > ma50).shift(1)
+    result = {}
+    for ts, val in above.items():
+        d = ts.date() if hasattr(ts, "date") else ts
+        if not pd.isna(val):
+            result[d] = "bull" if bool(val) else "bear"
+    return result
+
+
 def run_selector_backtest(
     n: int,
     tickers: list,
@@ -762,12 +865,35 @@ def run_selector_backtest(
     min_or_vol_ratio: float = None,
     score_entry_weight: float = 0.50,
     score_vol_ratio_weight: float = 0.00,
+    score_avg_win_weight: float = 0.30,
+    score_ev_trend_weight: float = 0.00,
+    score_dist_52w_low_weight: float = 0.00,
+    score_streak_weight: float = 0.00,
+    score_prev_day_vol_weight: float = 0.00,
+    score_ma200_dist_weight: float = 0.00,
+    score_ma50_dist_weight: float = 0.00,
+    regime_scoring: bool = False,
+    regime_bull_entry_weight: float = None,
+    regime_bull_vol_ratio_weight: float = None,
+    regime_bull_avg_win_weight: float = None,
+    regime_bull_ma50_dist_weight: float = None,
+    regime_bear_entry_weight: float = None,
+    regime_bear_vol_ratio_weight: float = None,
+    regime_bear_avg_win_weight: float = None,
+    regime_bear_ma50_dist_weight: float = None,
+    ev_trend_days: int = 15,
+    direction_split_ev_gate: bool = False,
+    oracle_picks: bool = False,
     min_hold_bars: int = 0,
     stale_cut_mins: int = 0,
     stale_cut_threshold: float = 0.0,
     exit_at_bar_close: bool = True,
     only_dates: set = None,
     regime_adaptive: bool = False,
+    random_picks: bool = False,
+    random_seed: int = None,
+    ma_momentum_gate: bool = False,
+    ma_momentum_gate_in_scoring: bool = False,
 ) -> tuple:
     """
     Walk each trading day in [eval_start, eval_end], apply rolling selector
@@ -784,6 +910,9 @@ def run_selector_backtest(
       - all_window_results: {window_label: {ticker: results_df}}
       - trading_days: sorted list of date objects in the eval window
     """
+    if random_picks and random_seed is not None:
+        random.seed(random_seed)
+
     windows = _normalize_windows(windows, opening_start_time, opening_bars)
     n_windows = len(windows)
 
@@ -836,6 +965,23 @@ def run_selector_backtest(
         df["MA200"] = df["Close"].rolling(200).mean()
         all_bars[ticker] = df
 
+    daily_context_by_ticker = {}
+    needs_daily_ctx = any([score_dist_52w_low_weight, score_streak_weight,
+                           score_prev_day_vol_weight, score_ma200_dist_weight,
+                           score_ma50_dist_weight, regime_scoring])
+    if needs_daily_ctx:
+        print(f"Pre-computing daily context for {len(tickers)} tickers...")
+        for ticker in tickers:
+            df = all_bars.get(ticker, pd.DataFrame())
+            daily_context_by_ticker[ticker] = _build_daily_context(df)
+
+    qqq_scoring_regime = {}
+    if regime_scoring:
+        qqq_scoring_regime = _build_qqq_scoring_regime(fetch_start, eval_end)
+        bull_days = sum(1 for v in qqq_scoring_regime.values() if v == "bull")
+        bear_days = sum(1 for v in qqq_scoring_regime.values() if v == "bear")
+        print(f"  [regime-scoring] {bull_days} bull days / {bear_days} bear days in range")
+
     print(f"Pre-computing signals for {n_windows} window(s)...")
     all_window_results = {}
     for win in windows:
@@ -883,6 +1029,7 @@ def run_selector_backtest(
                 stale_cut_mins=stale_cut_mins,
                 stale_cut_threshold=stale_cut_threshold,
                 exit_at_bar_close=exit_at_bar_close,
+                ma_momentum_gate=ma_momentum_gate,
             )
         all_window_results[label] = results_for_window
         print(f"  [{label}] {win['opening_start']} / {win['opening_bars']} bars — done")
@@ -1009,6 +1156,7 @@ def run_selector_backtest(
                     stale_cut_mins=stale_cut_mins,
                     stale_cut_threshold=stale_cut_threshold,
                     exit_at_bar_close=exit_at_bar_close,
+                    ma_momentum_gate=ma_momentum_gate,
                 )
             regime_primary[(r_bars, r_stop)] = {
                 ticker: (
@@ -1078,7 +1226,7 @@ def run_selector_backtest(
                     (primary_results["date"] >= lookback_start)
                     & (primary_results["date"] < d)
                 ]
-                rolling_stats[ticker] = compute_ticker_stats(window_slice)
+                rolling_stats[ticker] = compute_ticker_stats(window_slice, recent_days=ev_trend_days)
 
             scored = []
             opening_start_t = window_opening_times[label]
@@ -1137,17 +1285,66 @@ def run_selector_backtest(
                                     else 0.0
                                 )
                 stats = rolling_stats[ticker]
-                if stats["ev_trade"] < min_ev:
-                    continue
-                s = score_ticker(sig, stats, score_entry_weight, score_vol_ratio_weight)
-                if s == 0.0:
-                    continue
-                if s < min_score:
-                    continue
+                if oracle_picks:
+                    _primary_pnl_pct = row["pnl"] / row["entry_price"] * 100 if row["entry_price"] else 0.0
+                    _rev_pnl_pct = (rev_row["pnl"] / rev_row["entry_price"] * 100) if (rev_row is not None and rev_row["entry_price"]) else 0.0
+                    _br_pnl_pct = (br_row["pnl"] / br_row["entry_price"] * 100) if (br_row is not None and br_row["entry_price"]) else 0.0
+                    _bru_pnl_pct = (bru_row["pnl"] / bru_row["entry_price"] * 100) if (bru_row is not None and bru_row["entry_price"]) else 0.0
+                    _actual_pnl_pct = _primary_pnl_pct + _rev_pnl_pct + _br_pnl_pct + _bru_pnl_pct
+                    s = 0.0
+                else:
+                    _actual_pnl_pct = 0.0
+                    if stats["ev_trade"] < min_ev:
+                        continue
+                    if direction_split_ev_gate:
+                        dir_ev = (
+                            stats["ev_trade_bullish"]
+                            if sig["signal"] == "BULLISH"
+                            else stats["ev_trade_bearish"]
+                        )
+                        if dir_ev <= 0:
+                            continue
+                    if random_picks:
+                        if stats["ev_trade"] <= 0:
+                            continue
+                        s = 0.0
+                    else:
+                        if regime_scoring:
+                            regime = qqq_scoring_regime.get(d, "bull")
+                            if regime == "bull":
+                                eff_entry = regime_bull_entry_weight if regime_bull_entry_weight is not None else score_entry_weight
+                                eff_vol   = regime_bull_vol_ratio_weight if regime_bull_vol_ratio_weight is not None else score_vol_ratio_weight
+                                eff_aw    = regime_bull_avg_win_weight if regime_bull_avg_win_weight is not None else score_avg_win_weight
+                                eff_ma50  = regime_bull_ma50_dist_weight if regime_bull_ma50_dist_weight is not None else score_ma50_dist_weight
+                            else:
+                                eff_entry = regime_bear_entry_weight if regime_bear_entry_weight is not None else score_entry_weight
+                                eff_vol   = regime_bear_vol_ratio_weight if regime_bear_vol_ratio_weight is not None else score_vol_ratio_weight
+                                eff_aw    = regime_bear_avg_win_weight if regime_bear_avg_win_weight is not None else score_avg_win_weight
+                                eff_ma50  = regime_bear_ma50_dist_weight if regime_bear_ma50_dist_weight is not None else score_ma50_dist_weight
+                        else:
+                            eff_entry = score_entry_weight
+                            eff_vol   = score_vol_ratio_weight
+                            eff_aw    = score_avg_win_weight
+                            eff_ma50  = score_ma50_dist_weight
+                        s = score_ticker(
+                            sig, stats,
+                            eff_entry, eff_vol,
+                            eff_aw, score_ev_trend_weight,
+                            score_dist_52w_low_weight, score_streak_weight,
+                            score_prev_day_vol_weight, score_ma200_dist_weight,
+                            eff_ma50,
+                            daily_context=daily_context_by_ticker.get(ticker, {}).get(d),
+                            ma_momentum_gate_in_scoring=ma_momentum_gate_in_scoring,
+                        )
+                        if s == 0.0:
+                            continue
+                        if s < min_score:
+                            continue
                 scored.append(
                     {
                         "ticker": ticker,
                         "score": round(s, 3),
+                        "actual_pnl_pct": round(_actual_pnl_pct, 3),
                         "signal": row["signal"],
                         "entry_price": row["entry_price"],
                         "exit_price": row["exit_price"],
@@ -1218,8 +1415,15 @@ def run_selector_backtest(
                     }
                 )
 
-            scored.sort(key=lambda x: x["score"], reverse=True)
-            for rank, pick in enumerate(scored[:n], 1):
+            if oracle_picks:
+                scored.sort(key=lambda x: x["actual_pnl_pct"], reverse=True)
+                picks_today = scored[:n]
+            elif random_picks:
+                picks_today = random.sample(scored, min(n, len(scored)))
+            else:
+                scored.sort(key=lambda x: x["score"], reverse=True)
+                picks_today = scored[:n]
+            for rank, pick in enumerate(picks_today, 1):
                 picked_today.add(pick["ticker"])
                 primary_pnl_pct = pick["pnl"] / pick["entry_price"] * 100
                 rev_pnl_pct = (
@@ -1903,6 +2107,10 @@ def _stats_from_trades(trade_rows: list) -> dict:
     short_total = len(short_rows)
     short_wins = sum(1 for r in short_rows if r["success"])
 
+    vshort_rows = [r for r in active if r.get("mins_held", 999) <= 10]
+    vshort_total = len(vshort_rows)
+    vshort_wins = sum(1 for r in vshort_rows if r["success"])
+
     return {
         "total": total,
         "wins": wins,
@@ -1931,6 +2139,8 @@ def _stats_from_trades(trade_rows: list) -> dict:
         "opp_net_cap_pnl": opp_net_cap_pnl,
         "short_total": short_total,
         "short_wins": short_wins,
+        "vshort_total": vshort_total,
+        "vshort_wins": vshort_wins,
     }
 
 
@@ -1976,7 +2186,14 @@ def _print_stats_block(label: str, stats: dict):
             f"  net cap P&L: {opp_net_str}"
         )
     print(f"  Win rate        : {stats['win_rate'] * 100:.0f}%")
-    if stats.get("short_total", 0):
+    if stats.get("vshort_total", 0):
+        vshort_wr = stats["vshort_wins"] / stats["vshort_total"] * 100
+        short_wr = stats["short_wins"] / stats["short_total"] * 100 if stats.get("short_total") else 0
+        print(
+            f"  Short trades    : {stats['vshort_total']}  (≤10 min)  WR: {vshort_wr:.0f}%"
+            f"  |  {stats['short_total']}  (≤15 min)  WR: {short_wr:.0f}%"
+        )
+    elif stats.get("short_total", 0):
         short_wr = stats["short_wins"] / stats["short_total"] * 100
         print(f"  Short trades    : {stats['short_total']}  (≤15 min)  WR: {short_wr:.0f}%")
     print(f"  Avg win  %      : +{stats['avg_win_pct']:.2f}%  per trade")
@@ -2057,9 +2274,9 @@ def _print_per_window_stats(
     print(sep)
     print(
         f"  {'Window':<8} {'Start':<7} {'Bars':<5} {'Group':<12} {'Trades':>7}  {'W/L':<10} "
-        f"{'WinRate':>8}  {'EV/trade':>9}  {'Cap P&L':>10}  {'Return%':>8}  {'Short':>6}  {'Sh%':>5}  {'ShWR':>5}"
+        f"{'WinRate':>8}  {'EV/trade':>9}  {'Cap P&L':>10}  {'Return%':>8}  {'≤10m':>5}  {'Short':>6}  {'Sh%':>5}  {'ShWR':>5}"
     )
-    print(f"  {'─' * 94}")
+    print(f"  {'─' * 102}")
 
     for i, win in enumerate(windows):
         label = win["label"]
@@ -2092,11 +2309,12 @@ def _print_per_window_stats(
         short_total = stats.get("short_total", 0)
         short_pct = short_total / stats["total"] * 100 if stats["total"] else 0.0
         short_wr = stats["short_wins"] / short_total * 100 if short_total else 0.0
+        vshort_total = stats.get("vshort_total", 0)
         print(
             f"  {label:<8} {win['opening_start']:<7} {win['opening_bars']:<5} {group:<10} "
             f"{stats['total']:>7}  {wl:<10} {stats['win_rate'] * 100:>7.0f}%  "
             f"{ev_str:>9}  {cap_pnl_str:>10}  {ret_str:>8}"
-            f"  {short_total:>6}  {short_pct:>4.0f}%  {short_wr:>4.0f}%"
+            f"  {vshort_total:>5}  {short_total:>6}  {short_pct:>4.0f}%  {short_wr:>4.0f}%"
         )
     print(sep)
 
@@ -2394,6 +2612,31 @@ def _parse_args():
         help="Require price < MA200 for bearish signal",
     )
     parser.add_argument(
+        "--ma-momentum-gate",
+        action="store_true",
+        default=False,
+        dest="ma_momentum_gate",
+        help=(
+            "Gate signals on MA alignment. "
+            "BULLISH: OR range must overlap or be above both 5-min MA20 and MA50, "
+            "and the last OR bar must close above MA20 or MA50. "
+            "BEARISH (mirror): OR range must overlap or be below both MAs, "
+            "and the last OR bar must close below MA20."
+        ),
+    )
+    parser.add_argument(
+        "--ma-momentum-gate-in-scoring",
+        action="store_true",
+        default=False,
+        dest="ma_momentum_gate_in_scoring",
+        help=(
+            "Apply the MA momentum gate at the selector scoring step (score=0 if gate fails), "
+            "rather than filtering signals out of the backtest pool. "
+            "Tickers that fail the gate are skipped by the top-N ranker but their signals "
+            "remain visible in all_window_results. Same alignment rules as --ma-momentum-gate."
+        ),
+    )
+    parser.add_argument(
         "--opening-bars",
         type=int,
         default=OPENING_BARS,
@@ -2455,6 +2698,13 @@ def _parse_args():
         help="Print the window execution log showing which windows ran or were skipped each day. Default: off.",
     )
     parser.add_argument(
+        "--csv-out",
+        type=str,
+        default=None,
+        dest="csv_out",
+        help="Write all non-skipped trade rows to a CSV file at this path.",
+    )
+    parser.add_argument(
         "--compound",
         action="store_true",
         default=False,
@@ -2511,6 +2761,29 @@ def _parse_args():
         dest="min_hold_bars",
         help="Minimum bars to hold before fallback/hard-stop exits can fire (e.g. 3 = 15 min). "
         "max-loss-pct still exits immediately. Default: 0 (disabled).",
+    )
+    parser.add_argument(
+        "--oracle-picks",
+        action="store_true",
+        default=False,
+        dest="oracle_picks",
+        help="Replace scoring with perfect-hindsight selection: pick top-N by actual realized P&L each day. "
+        "No EV gate — includes all tickers with a valid signal. Shows theoretical maximum return.",
+    )
+    parser.add_argument(
+        "--random-picks",
+        action="store_true",
+        default=False,
+        dest="random_picks",
+        help="Replace scoring with random selection from EV-positive tickers. "
+        "Use as a baseline to measure how much the scoring formula contributes.",
+    )
+    parser.add_argument(
+        "--random-seed",
+        type=int,
+        default=None,
+        dest="random_seed",
+        help="Seed for --random-picks to make runs reproducible. Default: None (different each run).",
     )
     parser.add_argument(
         "--stale-cut-mins",
@@ -2670,7 +2943,99 @@ def _parse_args():
         type=float,
         default=0.00,
         dest="score_vol_ratio_weight",
-        help="Scoring weight for or_vol_ratio (default: 0.00). Remainder after entry + vol_ratio + 0.30 goes to or_range_pct.",
+        help="Scoring weight for or_vol_ratio (default: 0.00). Remainder after entry + vol_ratio + avg_win goes to or_range_pct.",
+    )
+    parser.add_argument(
+        "--score-avg-win-weight",
+        type=float,
+        default=0.30,
+        dest="score_avg_win_weight",
+        help="Scoring weight for avg_win_pct (default: 0.30). Remainder after entry + vol_ratio + avg_win + ev_trend goes to or_range_pct.",
+    )
+    parser.add_argument(
+        "--score-ev-trend-weight",
+        type=float,
+        default=0.00,
+        dest="score_ev_trend_weight",
+        help="Scoring weight for ev_trend (recent EV − full-window EV). Positive = rewards accelerating tickers. Default: 0.00.",
+    )
+    parser.add_argument(
+        "--ev-trend-days",
+        type=int,
+        default=15,
+        dest="ev_trend_days",
+        help="Calendar days for the recent EV window in ev_trend computation (default: 15).",
+    )
+    parser.add_argument(
+        "--score-dist-52w-low-weight",
+        type=float,
+        default=0.00,
+        dest="score_dist_52w_low_weight",
+        help="Scoring weight for 52-week low proximity. Higher weight rewards tickers closer to their 52w low. Default: 0.00.",
+    )
+    parser.add_argument(
+        "--score-streak-weight",
+        type=float,
+        default=0.00,
+        dest="score_streak_weight",
+        help="Scoring weight for consecutive-day streak penalty. Penalizes tickers with long up/down streaks (overextension). Default: 0.00.",
+    )
+    parser.add_argument(
+        "--score-prev-day-vol-weight",
+        type=float,
+        default=0.00,
+        dest="score_prev_day_vol_weight",
+        help="Scoring weight for prior-day volume ratio (vol vs 20d avg). Rewards above-average volume activity. Default: 0.00.",
+    )
+    parser.add_argument(
+        "--score-ma200-dist-weight",
+        type=float,
+        default=0.00,
+        dest="score_ma200_dist_weight",
+        help="Scoring weight for daily MA200 distance penalty. Penalizes tickers overextended above their 200-day MA. Default: 0.00.",
+    )
+    parser.add_argument(
+        "--score-ma50-dist-weight",
+        type=float,
+        default=0.00,
+        dest="score_ma50_dist_weight",
+        help="Direction-aware scoring weight for daily MA50 distance. Rewards above-MA50 for BULLISH signals, below-MA50 for BEARISH signals. Default: 0.00.",
+    )
+    parser.add_argument(
+        "--regime-scoring",
+        action="store_true",
+        default=False,
+        dest="regime_scoring",
+        help="Enable regime-adaptive scoring. Applies different weight profiles on bull vs bear days "
+        "(classified by prior-day QQQ close vs 50d MA). Use --bull-* and --bear-* flags to set profiles.",
+    )
+    # Bull regime weight overrides (QQQ prior-close > 50d MA)
+    # Research defaults: add ma50 momentum signal in confirmed uptrends
+    parser.add_argument("--bull-score-entry-weight",    type=float, default=None, dest="regime_bull_entry_weight",
+                        help="Entry weight in bull regime. Default: 0.70 (when --regime-scoring active).")
+    parser.add_argument("--bull-score-vol-ratio-weight", type=float, default=None, dest="regime_bull_vol_ratio_weight",
+                        help="Vol ratio weight in bull regime. Default: 0.15.")
+    parser.add_argument("--bull-score-avg-win-weight",  type=float, default=None, dest="regime_bull_avg_win_weight",
+                        help="Avg-win weight in bull regime. Default: 0.00.")
+    parser.add_argument("--bull-score-ma50-dist-weight", type=float, default=None, dest="regime_bull_ma50_dist_weight",
+                        help="MA50 distance weight in bull regime. Default: 0.10 (reward momentum leaders).")
+    # Bear regime weight overrides (QQQ prior-close <= 50d MA)
+    # Research defaults: fall back to E1 (best for bear/choppy years)
+    parser.add_argument("--bear-score-entry-weight",    type=float, default=None, dest="regime_bear_entry_weight",
+                        help="Entry weight in bear regime. Default: 0.80 (E1 baseline).")
+    parser.add_argument("--bear-score-vol-ratio-weight", type=float, default=None, dest="regime_bear_vol_ratio_weight",
+                        help="Vol ratio weight in bear regime. Default: 0.15.")
+    parser.add_argument("--bear-score-avg-win-weight",  type=float, default=None, dest="regime_bear_avg_win_weight",
+                        help="Avg-win weight in bear regime. Default: 0.00.")
+    parser.add_argument("--bear-score-ma50-dist-weight", type=float, default=None, dest="regime_bear_ma50_dist_weight",
+                        help="MA50 distance weight in bear regime. Default: 0.00 (ignore MA50 in bear).")
+    parser.add_argument(
+        "--direction-split-ev",
+        action="store_true",
+        default=False,
+        dest="direction_split_ev_gate",
+        help="Apply EV gate per signal direction (BULLISH/BEARISH separately). "
+        "Excludes tickers with negative directional EV even if combined EV is positive. Default: off.",
     )
     parser.add_argument(
         "--min-or-range",
@@ -2922,6 +3287,44 @@ if __name__ == "__main__":
         f"  Compounding  : {'on (portfolio carries over)' if args.compound else f'off (reset ${args.capital:,.0f} each day)'}"
     )
     print(f"  Dedup        : {'on' if args.dedup else 'off'}")
+    if args.oracle_picks:
+        print(f"  Picker       : ORACLE  (perfect hindsight — top-N by actual P&L, no EV gate)")
+    elif args.random_picks:
+        seed_str = str(args.random_seed) if args.random_seed is not None else "none (non-deterministic)"
+        print(f"  Picker       : RANDOM  (seed={seed_str})")
+    elif args.regime_scoring:
+        bull_e  = args.regime_bull_entry_weight    if args.regime_bull_entry_weight    is not None else 0.70
+        bull_vr = args.regime_bull_vol_ratio_weight if args.regime_bull_vol_ratio_weight is not None else 0.15
+        bull_aw = args.regime_bull_avg_win_weight   if args.regime_bull_avg_win_weight   is not None else 0.00
+        bull_m5 = args.regime_bull_ma50_dist_weight if args.regime_bull_ma50_dist_weight is not None else 0.10
+        bear_e  = args.regime_bear_entry_weight    if args.regime_bear_entry_weight    is not None else 0.80
+        bear_vr = args.regime_bear_vol_ratio_weight if args.regime_bear_vol_ratio_weight is not None else 0.15
+        bear_aw = args.regime_bear_avg_win_weight   if args.regime_bear_avg_win_weight   is not None else 0.00
+        bear_m5 = args.regime_bear_ma50_dist_weight if args.regime_bear_ma50_dist_weight is not None else 0.00
+        bull_or = round(1.0 - bull_e - bull_vr - bull_aw - bull_m5, 3)
+        bear_or = round(1.0 - bear_e - bear_vr - bear_aw - bear_m5, 3)
+        print(f"  Picker       : REGIME-SCORED  (QQQ prior-close vs 50d MA)")
+        print(f"    Bull (QQQ>MA50): entry={bull_e} avg_win={bull_aw} or_range={bull_or} vol={bull_vr} ma50={bull_m5}")
+        print(f"    Bear (QQQ≤MA50): entry={bear_e} avg_win={bear_aw} or_range={bear_or} vol={bear_vr} ma50={bear_m5}")
+    else:
+        aw = args.score_avg_win_weight
+        ev = args.score_entry_weight
+        vr = args.score_vol_ratio_weight
+        et = args.score_ev_trend_weight
+        d52 = args.score_dist_52w_low_weight
+        sk = args.score_streak_weight
+        pv = args.score_prev_day_vol_weight
+        m2 = args.score_ma200_dist_weight
+        m5 = args.score_ma50_dist_weight
+        or_w = round(1.0 - ev - vr - aw - et - d52 - sk - pv - m2 - m5, 3)
+        print(
+            f"  Picker       : scored  (entry={ev} avg_win={aw} or_range={or_w} vol={vr} "
+            f"ev_trend={et} dist_52w={d52} streak={sk} prev_vol={pv} ma200={m2} ma50={m5})"
+        )
+    if args.direction_split_ev_gate:
+        print(f"  Dir-split EV : on (gate per BULLISH/BEARISH direction separately)")
+    else:
+        print(f"  Dir-split EV : off")
     print(f"  Stop pct     : {args.stop_pct}")
     print(f"  Trailing MA  : {args.trailing_ma}")
     print(
@@ -3075,12 +3478,35 @@ if __name__ == "__main__":
         min_or_vol_ratio=args.min_or_vol_ratio,
         score_entry_weight=args.score_entry_weight,
         score_vol_ratio_weight=args.score_vol_ratio_weight,
+        score_avg_win_weight=args.score_avg_win_weight,
+        score_ev_trend_weight=args.score_ev_trend_weight,
+        score_dist_52w_low_weight=args.score_dist_52w_low_weight,
+        score_streak_weight=args.score_streak_weight,
+        score_prev_day_vol_weight=args.score_prev_day_vol_weight,
+        score_ma200_dist_weight=args.score_ma200_dist_weight,
+        score_ma50_dist_weight=args.score_ma50_dist_weight,
+        regime_scoring=args.regime_scoring,
+        regime_bull_entry_weight=args.regime_bull_entry_weight if args.regime_bull_entry_weight is not None else (0.70 if args.regime_scoring else None),
+        regime_bull_vol_ratio_weight=args.regime_bull_vol_ratio_weight if args.regime_bull_vol_ratio_weight is not None else (0.15 if args.regime_scoring else None),
+        regime_bull_avg_win_weight=args.regime_bull_avg_win_weight if args.regime_bull_avg_win_weight is not None else (0.00 if args.regime_scoring else None),
+        regime_bull_ma50_dist_weight=args.regime_bull_ma50_dist_weight if args.regime_bull_ma50_dist_weight is not None else (0.10 if args.regime_scoring else None),
+        regime_bear_entry_weight=args.regime_bear_entry_weight if args.regime_bear_entry_weight is not None else (0.80 if args.regime_scoring else None),
+        regime_bear_vol_ratio_weight=args.regime_bear_vol_ratio_weight if args.regime_bear_vol_ratio_weight is not None else (0.15 if args.regime_scoring else None),
+        regime_bear_avg_win_weight=args.regime_bear_avg_win_weight if args.regime_bear_avg_win_weight is not None else (0.00 if args.regime_scoring else None),
+        regime_bear_ma50_dist_weight=args.regime_bear_ma50_dist_weight if args.regime_bear_ma50_dist_weight is not None else (0.00 if args.regime_scoring else None),
+        ev_trend_days=args.ev_trend_days,
+        direction_split_ev_gate=args.direction_split_ev_gate,
+        oracle_picks=args.oracle_picks,
         min_hold_bars=args.min_hold_bars,
         stale_cut_mins=args.stale_cut_mins,
         stale_cut_threshold=args.stale_cut_threshold,
         exit_at_bar_close=args.exit_at_bar_close,
         only_dates=only_dates,
         regime_adaptive=args.regime_adaptive,
+        random_picks=args.random_picks,
+        random_seed=args.random_seed,
+        ma_momentum_gate=args.ma_momentum_gate,
+        ma_momentum_gate_in_scoring=args.ma_momentum_gate_in_scoring,
     )
 
     skip_log = _apply_capital_flow(
@@ -3143,3 +3569,8 @@ if __name__ == "__main__":
 
     if args.show_execution_log:
         _print_skip_log(skip_log, resolved_windows)
+
+    if args.csv_out:
+        active = [r for r in trade_rows if not r.get("skipped")]
+        pd.DataFrame(active).to_csv(args.csv_out, index=False)
+        print(f"\nTrade rows written to: {args.csv_out}")

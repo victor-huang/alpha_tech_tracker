@@ -1,4 +1,5 @@
 import argparse
+import numpy as np
 import pandas as pd
 import pytz
 from datetime import date, datetime, timedelta
@@ -92,7 +93,26 @@ OPENING_START_TIME = "09:30"
 STOP_PCT = 0.15
 
 
-def compute_ticker_stats(results_df: pd.DataFrame) -> dict:
+def _compute_ev_from_df(df: pd.DataFrame) -> float:
+    if df.empty:
+        return 0.0
+    total = len(df)
+    wins = df[df["success"]]
+    losses = df[~df["success"]]
+    win_count = len(wins)
+    loss_count = len(losses)
+    win_rate = win_count / total
+    loss_rate = loss_count / total
+    avg_win_pct = (wins["pnl"] / wins["entry_price"] * 100).mean() if win_count else 0.0
+    avg_loss_pct = (
+        (losses["pnl"].abs() / losses["entry_price"] * 100).mean()
+        if loss_count
+        else 0.0
+    )
+    return win_rate * avg_win_pct - loss_rate * avg_loss_pct
+
+
+def compute_ticker_stats(results_df: pd.DataFrame, recent_days: int = 15) -> dict:
     if results_df.empty:
         return {
             "signals": 0,
@@ -101,6 +121,9 @@ def compute_ticker_stats(results_df: pd.DataFrame) -> dict:
             "avg_loss_pct": 0.0,
             "ev_trade": 0.0,
             "avg_entry_vs_mid_pct": 0.0,
+            "ev_trade_bullish": 0.0,
+            "ev_trade_bearish": 0.0,
+            "ev_trend": 0.0,
         }
 
     total = len(results_df)
@@ -126,6 +149,15 @@ def compute_ticker_stats(results_df: pd.DataFrame) -> dict:
     else:
         avg_entry_vs_mid_pct = 0.0
 
+    bull_df = results_df[results_df["signal"] == "BULLISH"]
+    bear_df = results_df[results_df["signal"] == "BEARISH"]
+    ev_trade_bullish = _compute_ev_from_df(bull_df)
+    ev_trade_bearish = _compute_ev_from_df(bear_df)
+
+    recent_cutoff = results_df["date"].max() - timedelta(days=recent_days)
+    recent_df = results_df[results_df["date"] >= recent_cutoff]
+    ev_trend = _compute_ev_from_df(recent_df) - ev_trade
+
     return {
         "signals": total,
         "win_rate": win_rate,
@@ -133,6 +165,9 @@ def compute_ticker_stats(results_df: pd.DataFrame) -> dict:
         "avg_loss_pct": avg_loss_pct,
         "ev_trade": ev_trade,
         "avg_entry_vs_mid_pct": avg_entry_vs_mid_pct,
+        "ev_trade_bullish": ev_trade_bullish,
+        "ev_trade_bearish": ev_trade_bearish,
+        "ev_trend": ev_trend,
     }
 
 
@@ -242,22 +277,87 @@ def score_ticker(
     ticker_stats: dict,
     score_entry_weight: float = 0.50,
     score_vol_ratio_weight: float = 0.00,
+    score_avg_win_weight: float = 0.30,
+    score_ev_trend_weight: float = 0.00,
+    score_dist_52w_low_weight: float = 0.00,
+    score_streak_weight: float = 0.00,
+    score_prev_day_vol_weight: float = 0.00,
+    score_ma200_dist_weight: float = 0.00,
+    score_ma50_dist_weight: float = 0.00,
+    daily_context: dict = None,
+    ma_momentum_gate_in_scoring: bool = False,
 ) -> float:
     if ticker_stats["ev_trade"] <= 0:
         return 0.0
-    win_pct_weight = 0.30
-    or_range_weight = 1.0 - score_entry_weight - score_vol_ratio_weight - win_pct_weight
-    if or_range_weight < 0:
+    _ma_gate_penalty = False
+    if ma_momentum_gate_in_scoring:
+        or_high = signal_dict.get("or_high", float("nan"))
+        or_low = signal_dict.get("or_low", float("nan"))
+        sig_ma20 = signal_dict.get("ma20", float("nan"))
+        sig_ma50 = signal_dict.get("ma50", float("nan"))
+        if not (np.isnan(or_high) or np.isnan(or_low) or np.isnan(sig_ma20) or np.isnan(sig_ma50)):
+            direction = signal_dict.get("signal", "")
+            if direction == "BULLISH":
+                if not (or_high >= sig_ma20 and or_high >= sig_ma50):
+                    _ma_gate_penalty = True
+            elif direction == "BEARISH":
+                if not (or_low <= sig_ma20 and or_low <= sig_ma50):
+                    _ma_gate_penalty = True
+    or_range_weight = (
+        1.0
+        - score_entry_weight
+        - score_vol_ratio_weight
+        - score_avg_win_weight
+        - score_ev_trend_weight
+        - score_dist_52w_low_weight
+        - score_streak_weight
+        - score_prev_day_vol_weight
+        - score_ma200_dist_weight
+        - score_ma50_dist_weight
+    )
+    if or_range_weight < -1e-9:
         raise ValueError(
             f"Score weights sum exceeds 1.0: entry={score_entry_weight}, "
-            f"vol_ratio={score_vol_ratio_weight}, win_pct=0.30 — "
+            f"vol_ratio={score_vol_ratio_weight}, avg_win={score_avg_win_weight}, "
+            f"ev_trend={score_ev_trend_weight}, dist_52w_low={score_dist_52w_low_weight}, "
+            f"streak={score_streak_weight}, prev_day_vol={score_prev_day_vol_weight}, "
+            f"ma200_dist={score_ma200_dist_weight}, ma50_dist={score_ma50_dist_weight} — "
             f"or_range_weight would be {or_range_weight:.3f}"
         )
+    or_range_weight = max(or_range_weight, 0.0)
+    if _ma_gate_penalty:
+        or_range_weight *= 0.5
+
+    ctx = daily_context or {}
+    direction_sign = 1.0 if signal_dict.get("signal") == "BULLISH" else -1.0
+
+    dist_52w_low = ctx.get("dist_52w_low_pct", np.nan)
+    dist_52w_low_term = (-dist_52w_low / 100.0) if not np.isnan(dist_52w_low) else 0.0
+
+    streak = ctx.get("consec_streak", np.nan)
+    streak_term = (-abs(streak)) if not np.isnan(streak) else 0.0
+
+    prev_vol = ctx.get("prev_day_vol_ratio", np.nan)
+    prev_day_vol_term = (prev_vol - 1.0) if not np.isnan(prev_vol) else 0.0
+
+    ma200_dist = ctx.get("daily_ma200_dist_pct", np.nan)
+    ma200_dist_term = (-ma200_dist / 10.0) if not np.isnan(ma200_dist) else 0.0
+
+    # Direction-aware: reward above-MA50 for BULLISH, below-MA50 for BEARISH
+    ma50_dist = ctx.get("daily_ma50_dist_pct", np.nan)
+    ma50_dist_term = (direction_sign * ma50_dist / 10.0) if not np.isnan(ma50_dist) else 0.0
+
     return (
         signal_dict["entry_vs_mid_pct"] * score_entry_weight
-        + ticker_stats["avg_win_pct"] * win_pct_weight
+        + ticker_stats["avg_win_pct"] * score_avg_win_weight
         + signal_dict["or_range_pct"] * or_range_weight
         + signal_dict.get("or_vol_ratio", 1.0) * score_vol_ratio_weight
+        + ticker_stats.get("ev_trend", 0.0) * score_ev_trend_weight
+        + dist_52w_low_term * score_dist_52w_low_weight
+        + streak_term * score_streak_weight
+        + prev_day_vol_term * score_prev_day_vol_weight
+        + ma200_dist_term * score_ma200_dist_weight
+        + ma50_dist_term * score_ma50_dist_weight
     )
 
 
