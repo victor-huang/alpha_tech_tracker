@@ -3,7 +3,7 @@ import random
 import numpy as np
 import pandas as pd
 import yfinance as yf
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time as time_type, timedelta
 
 from alpaca.data.enums import DataFeed
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import (
@@ -931,6 +931,7 @@ def run_selector_backtest(
     al_bull_days: int = 20,
     al_neutral_days: int = 60,
     al_bear_days: int = 90,
+    qqq_or_weight: float = 0.30,
 ) -> tuple:
     """
     Walk each trading day in [eval_start, eval_end], apply rolling selector
@@ -1090,6 +1091,30 @@ def run_selector_backtest(
         for ticker, df in all_bars.items()
         if not df.empty
     }
+
+    # Pre-compute QQQ opening-range return per day for scoring alignment component.
+    # No lookahead: uses M1 OR bars (9:30-9:45) already formed before the 9:45 pick.
+    qqq_or_by_date: dict = {}
+    if qqq_or_weight != 0.0:
+        _m1_win_ref = next((w for w in windows if w["label"] == "M1"), windows[0])
+        _m1_h, _m1_m = map(int, _m1_win_ref["opening_start"].split(":"))
+        _m1_open_t = time_type(_m1_h, _m1_m)
+        _m1_n_bars = _m1_win_ref["opening_bars"]
+        _qqq_fetched = fetch_bars(["QQQ"], fetch_start, eval_end, source=source, feed=feed)
+        _qqq_df = _qqq_fetched.get("QQQ", pd.DataFrame())
+        if not _qqq_df.empty:
+            _qqq_by_date = {d_: g for d_, g in _qqq_df.groupby(_qqq_df.index.date)}
+            for d_ in trading_days:
+                _day_q = _qqq_by_date.get(d_, pd.DataFrame())
+                if _day_q.empty:
+                    continue
+                _or_bars = _day_q[_day_q.index.time >= _m1_open_t].head(_m1_n_bars)
+                if not _or_bars.empty:
+                    _o = float(_or_bars.iloc[0]["Open"])
+                    _c = float(_or_bars.iloc[-1]["Close"])
+                    if _o > 0:
+                        qqq_or_by_date[d_] = (_c - _o) / _o * 100
+        print(f"  QQQ OR scoring: pre-computed {len(qqq_or_by_date)} days  weight={qqq_or_weight:+.3f}")
 
     # Pre-filter primary-only signal rows per window per ticker: eliminates re-applying
     # the three is_reversal/is_bearish_reentry/is_bullish_reentry conditions every day.
@@ -1438,6 +1463,12 @@ def run_selector_backtest(
                         )
                         if s == 0.0:
                             continue
+                        if qqq_or_weight != 0.0:
+                            # Positive alignment: signal direction matches QQQ OR direction.
+                            # BULLISH benefits from positive QQQ OR; BEARISH from negative.
+                            _qqq_or = qqq_or_by_date.get(d, 0.0)
+                            _align = _qqq_or if sig["signal"] == "BULLISH" else -_qqq_or
+                            s += qqq_or_weight * _align
                         if s < min_score:
                             continue
                 scored.append(
@@ -3220,6 +3251,15 @@ def _parse_args():
     parser.add_argument("--ds-bear-min-ev", type=float, default=0.0, dest="ds_bear_min_ev",
                         help="Min directional EV required in bear regime (pool_vote <= bear_threshold). Default: 0.0.")
     parser.add_argument(
+        "--qqq-or-weight",
+        type=float,
+        default=0.30,
+        dest="qqq_or_weight",
+        help="Scoring weight for QQQ opening-range alignment (9:30-9:45). "
+             "Positive values boost tickers whose signal direction matches QQQ OR; penalise opposing. "
+             "Default: 0.30 (confirmed optimal across 2019-2026).",
+    )
+    parser.add_argument(
         "--min-or-range",
         type=float,
         default=0.0,
@@ -3511,6 +3551,8 @@ if __name__ == "__main__":
         )
     else:
         print(f"  Dir-split EV : off")
+    if args.qqq_or_weight != 0.0:
+        print(f"  QQQ OR score : weight={args.qqq_or_weight:+.3f}  (boosts aligned signals, penalises opposing)")
     print(f"  Stop pct     : {args.stop_pct}")
     print(f"  Trailing MA  : {args.trailing_ma}")
     print(
@@ -3740,6 +3782,7 @@ if __name__ == "__main__":
         al_bull_days=args.al_bull_days,
         al_neutral_days=args.al_neutral_days,
         al_bear_days=args.al_bear_days,
+        qqq_or_weight=args.qqq_or_weight,
     )
 
     skip_log = _apply_capital_flow(

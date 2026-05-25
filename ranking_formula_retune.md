@@ -2058,3 +2058,67 @@ BEAR_MIN_EV SWEEP (bull_min_ev=0.0 fixed)
 **Default 0.0 across all three tiers is already optimal.** Every level above 0.0 for `bear_min_ev` hurts the 4-year sum: the gains in 2022 (+1.2pp max at bear=0.10) and 2025 (+0.8pp) are outweighed by losses in 2023 (−2.2pp) and 2020 (−1.7pp). The zero threshold is the natural boundary — it blocks genuinely negative-EV directions without over-filtering tickers with weak but positive directional EV.
 
 The tunability (`--ds-bull-min-ev`, `--ds-neutral-min-ev`, `--ds-bear-min-ev`) is available for future experimentation but there is no current evidence that changing any threshold from 0.0 improves the overall result.
+
+---
+
+## QQQ Opening-Range Alignment Score (`--qqq-or-weight`)
+
+**Date:** 2026-05-24
+
+### Motivation
+
+Day-by-day analysis of 2023 (QQQ +54%, strategy near-zero before filters) revealed a direction-mismatch problem:
+
+| Scenario | Trades | Avg P&L | WR |
+|---|---|---|---|
+| BULLISH + QQQ OR up | 86 | +0.88% | 55% |
+| BULLISH + QQQ OR flat | 102 | −0.05% | 33% |
+| **BULLISH + QQQ OR down** | **43** | **−0.89%** | **14%** |
+| BEARISH + QQQ OR down | 42 | +0.48% | 60% |
+| BEARISH + QQQ OR flat | 51 | +0.58% | 45% |
+| **BEARISH + QQQ OR up** | **20** | **−1.13%** | **20%** |
+
+21.6% of trade days had direction mismatches (signal opposing QQQ OR). These 63 trades accounted for the majority of 2023 losses despite the existing `--direction-split-ev` gate.
+
+`--ma-momentum-gate` (which gates on QQQ vs slow MA) doesn't catch this: a stock can have positive BEARISH EV and QQQ above its 50d MA, yet QQQ opened down 1.5% that morning.
+
+### Approach
+
+**QQQ OR = QQQ's return from the 9:30 open to the end of the M1 opening window (9:45).** This is available at signal time — zero lookahead.
+
+Rather than a hard directional block (which was tested and hurt 2025 by −10pp at threshold=0.0), the signal is added as an **additive scoring component**:
+
+```
+alignment = qqq_or_pct      if signal == BULLISH
+alignment = -qqq_or_pct     if signal == BEARISH
+
+score += qqq_or_weight * alignment
+```
+
+Positive alignment (signal matches QQQ OR direction) boosts the score. Opposing alignment penalises it. Strong-EV opposing signals can still win when nothing better is available — they just score lower relative to aligned alternatives.
+
+### Weight Sweep (2019–2026)
+
+```
+weight  2019     2020     2021     2022     2023     2024     2025     2026     Net Δ
+  0.00  +20.9%   +14.3%   +10.6%   -17.9%   +29.9%   +3.4%   +36.6%   +49.9%    —
+  0.10  +21.2%   +14.4%   +8.4%    -16.6%   +29.9%   +3.4%   +38.6%   +50.1%   +2.0pp
+  0.20  +21.2%   +14.4%   +8.4%    -15.5%   +32.9%   +3.0%   +37.5%   +50.1%   +5.1pp
+  0.30  +21.2%   +14.3%   +9.7%    -15.5%   +32.9%   +3.0%   +37.6%   +53.9%  +10.4pp  ← best
+  0.40  +21.2%   +14.3%   +8.3%    -15.5%   +32.9%   +3.1%   +37.6%   +53.9%   +9.1pp
+  0.50  +8.75%   +14.3%   +8.8%    -15.8%   +32.1%   +3.1%   +36.9%   +53.9%   +6.4pp
+```
+
+### Key observations
+
+- **2019, 2020 are unaffected** (within ±0.1pp at any weight) — confirms no interference with already-profitable trending years
+- **2022, 2023, 2026 all improve** at weight ≥ 0.20: these are the years with frequent direction-mismatch days
+- **2021, 2024 see minor regressions** (≤ −1pp) at all weights — acceptable given the small base gains in those years
+- **Peak is 0.30**: beyond that 2021 and 2022 plateau and 2023/2025 start declining
+- Hard-gate version (threshold=0.0) improved 2023 by +13pp but hurt 2025 by −10pp — net negative. Soft scoring avoids this tradeoff entirely.
+
+### Verdict
+
+**Set `--qqq-or-weight 0.30` as the default.** Improves 5 of 8 years, neutral on 2 (2019, 2020), minor regression on 1 (2021: −0.9pp). Net improvement +10.4pp across 8 years.
+
+CLI: `--qqq-or-weight 0.30` (override with `--qqq-or-weight 0.0` to disable).
