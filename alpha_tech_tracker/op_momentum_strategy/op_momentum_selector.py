@@ -285,6 +285,10 @@ def score_ticker(
     score_ma200_dist_weight: float = 0.00,
     score_ma50_dist_weight: float = 0.00,
     score_win_rate_weight: float = 0.00,
+    score_trend_align_weight: float = 0.00,
+    score_dist_52w_high_weight: float = 0.00,
+    score_frog_weight: float = 0.00,
+    score_rel_strength_weight: float = 0.00,
     daily_context: dict = None,
     ma_momentum_gate_in_scoring: bool = False,
 ) -> float:
@@ -316,15 +320,21 @@ def score_ticker(
         - score_ma200_dist_weight
         - score_ma50_dist_weight
         - score_win_rate_weight
+        - score_trend_align_weight
+        - score_dist_52w_high_weight
+        - score_frog_weight
+        - score_rel_strength_weight
     )
     if or_range_weight < -1e-9:
         raise ValueError(
             f"Score weights sum exceeds 1.0: entry={score_entry_weight}, "
             f"vol_ratio={score_vol_ratio_weight}, avg_win={score_avg_win_weight}, "
             f"ev_trend={score_ev_trend_weight}, dist_52w_low={score_dist_52w_low_weight}, "
-            f"streak={score_streak_weight}, prev_day_vol={score_prev_day_vol_weight}, "
-            f"ma200_dist={score_ma200_dist_weight}, ma50_dist={score_ma50_dist_weight}, "
-            f"win_rate={score_win_rate_weight} — "
+            f"dist_52w_high={score_dist_52w_high_weight}, streak={score_streak_weight}, "
+            f"prev_day_vol={score_prev_day_vol_weight}, ma200_dist={score_ma200_dist_weight}, "
+            f"ma50_dist={score_ma50_dist_weight}, win_rate={score_win_rate_weight}, "
+            f"trend_align={score_trend_align_weight}, frog={score_frog_weight}, "
+            f"rel_strength={score_rel_strength_weight} — "
             f"or_range_weight would be {or_range_weight:.3f}"
         )
     or_range_weight = max(or_range_weight, 0.0)
@@ -337,8 +347,18 @@ def score_ticker(
     dist_52w_low = ctx.get("dist_52w_low_pct", np.nan)
     dist_52w_low_term = (-dist_52w_low / 100.0) if not np.isnan(dist_52w_low) else 0.0
 
+    dist_52w_high = ctx.get("dist_52w_high_pct", np.nan)
+    # George & Hwang (2004): stocks near their 52w high have stronger continuation.
+    # Term maps to [0, 1]: 1.0 at 52w high, decreasing as stock moves further below.
+    # Applied symmetrically: BULLISH (breakout near high) and BEARISH (failing at resistance).
+    dist_52w_high_term = (1.0 + dist_52w_high / 100.0) if not np.isnan(dist_52w_high) else 0.0
+
     streak = ctx.get("consec_streak", np.nan)
     streak_term = (-abs(streak)) if not np.isnan(streak) else 0.0
+    # Direction-aware: reward signal aligned with prior price momentum, penalize counter-trend.
+    # consec_streak > 0 = consecutive up days, < 0 = consecutive down days.
+    # Normalized to [-1, +1] range using 5 as typical max streak.
+    trend_align_term = (direction_sign * streak / 5.0) if not np.isnan(streak) else 0.0
 
     prev_vol = ctx.get("prev_day_vol_ratio", np.nan)
     prev_day_vol_term = (prev_vol - 1.0) if not np.isnan(prev_vol) else 0.0
@@ -349,6 +369,16 @@ def score_ticker(
     # Direction-aware: reward above-MA50 for BULLISH, below-MA50 for BEARISH
     ma50_dist = ctx.get("daily_ma50_dist_pct", np.nan)
     ma50_dist_term = (direction_sign * ma50_dist / 10.0) if not np.isnan(ma50_dist) else 0.0
+
+    frog_score = ctx.get("frog_score", 0.0) or 0.0
+    # Direction-aware: consistent up-days reward BULLISH, consistent down-days reward BEARISH.
+    frog_term = direction_sign * frog_score
+
+    # Cross-sectional relative MA50 strength: ticker's MA50 dist minus pool mean for the day.
+    # Positive = outperforming pool (less beaten down in bear, or more extended in bull).
+    # Direction-aware: rewards BULLISH for outperforming, BEARISH for underperforming pool.
+    rel_ma50_dist = ctx.get("rel_ma50_dist_pct", np.nan)
+    rel_strength_term = (direction_sign * rel_ma50_dist / 10.0) if not np.isnan(rel_ma50_dist) else 0.0
 
     return (
         signal_dict["entry_vs_mid_pct"] * score_entry_weight
@@ -362,6 +392,10 @@ def score_ticker(
         + ma200_dist_term * score_ma200_dist_weight
         + ma50_dist_term * score_ma50_dist_weight
         + ticker_stats["win_rate"] * score_win_rate_weight
+        + trend_align_term * score_trend_align_weight
+        + dist_52w_high_term * score_dist_52w_high_weight
+        + frog_term * score_frog_weight
+        + rel_strength_term * score_rel_strength_weight
     )
 
 

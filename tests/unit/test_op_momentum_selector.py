@@ -192,19 +192,19 @@ class TestComputeTickerStats:
 class TestScoreTicker:
     def test_returns_zero_when_ev_trade_is_negative(self):
         signal = {"entry_vs_mid_pct": 2.0, "or_range_pct": 1.5}
-        stats = {"ev_trade": -0.1, "avg_win_pct": 2.5}
+        stats = {"ev_trade": -0.1, "avg_win_pct": 2.5, "win_rate": 0.0}
 
         assert score_ticker(signal, stats) == 0.0
 
     def test_returns_zero_when_ev_trade_is_exactly_zero(self):
         signal = {"entry_vs_mid_pct": 2.0, "or_range_pct": 1.5}
-        stats = {"ev_trade": 0.0, "avg_win_pct": 2.5}
+        stats = {"ev_trade": 0.0, "avg_win_pct": 2.5, "win_rate": 0.0}
 
         assert score_ticker(signal, stats) == 0.0
 
     def test_formula_weights_entry_vs_mid_heaviest(self):
         signal = {"entry_vs_mid_pct": 2.0, "or_range_pct": 1.0}
-        stats = {"ev_trade": 1.0, "avg_win_pct": 1.0}
+        stats = {"ev_trade": 1.0, "avg_win_pct": 1.0, "win_rate": 0.0}
 
         score = score_ticker(signal, stats)
 
@@ -212,7 +212,7 @@ class TestScoreTicker:
         assert score == pytest.approx(expected)
 
     def test_higher_entry_vs_mid_pct_produces_higher_score(self):
-        stats = {"ev_trade": 1.0, "avg_win_pct": 2.0}
+        stats = {"ev_trade": 1.0, "avg_win_pct": 2.0, "win_rate": 0.0}
 
         score_low = score_ticker({"entry_vs_mid_pct": 0.5, "or_range_pct": 1.0}, stats)
         score_high = score_ticker({"entry_vs_mid_pct": 2.0, "or_range_pct": 1.0}, stats)
@@ -221,25 +221,245 @@ class TestScoreTicker:
 
     def test_raises_when_weights_sum_exceeds_1(self):
         signal = {"entry_vs_mid_pct": 1.0, "or_range_pct": 1.0}
-        stats = {"ev_trade": 1.0, "avg_win_pct": 1.0}
+        stats = {"ev_trade": 1.0, "avg_win_pct": 1.0, "win_rate": 0.0}
 
         with pytest.raises(ValueError, match="exceeds 1.0"):
             score_ticker(signal, stats, score_entry_weight=0.80, score_vol_ratio_weight=0.20)
 
     def test_raises_when_entry_weight_alone_exceeds_0_70(self):
         signal = {"entry_vs_mid_pct": 1.0, "or_range_pct": 1.0}
-        stats = {"ev_trade": 1.0, "avg_win_pct": 1.0}
+        stats = {"ev_trade": 1.0, "avg_win_pct": 1.0, "win_rate": 0.0}
 
         with pytest.raises(ValueError, match="exceeds 1.0"):
             score_ticker(signal, stats, score_entry_weight=0.71, score_vol_ratio_weight=0.00)
 
     def test_does_not_raise_when_weights_sum_to_exactly_1(self):
         signal = {"entry_vs_mid_pct": 1.0, "or_range_pct": 1.0}
-        stats = {"ev_trade": 1.0, "avg_win_pct": 1.0}
+        stats = {"ev_trade": 1.0, "avg_win_pct": 1.0, "win_rate": 0.0}
 
         # entry=0.50, vol=0.20, win_pct=0.30 → or_range=0.00 (exactly zero, not negative)
         result = score_ticker(signal, stats, score_entry_weight=0.50, score_vol_ratio_weight=0.20)
         assert result >= 0.0
+
+    def test_dist_52w_high_zero_weight_does_not_change_score(self):
+        signal = {"entry_vs_mid_pct": 2.0, "or_range_pct": 1.0, "signal": "BULLISH"}
+        stats = {"ev_trade": 1.0, "avg_win_pct": 1.0, "win_rate": 0.0}
+        ctx = {"dist_52w_high_pct": -10.0}
+
+        score_without = score_ticker(signal, stats)
+        score_with_zero = score_ticker(signal, stats, score_dist_52w_high_weight=0.0, daily_context=ctx)
+
+        assert score_without == pytest.approx(score_with_zero)
+
+    def test_near_52w_high_scores_higher_than_far_from_high(self):
+        signal = {"entry_vs_mid_pct": 2.0, "or_range_pct": 1.0, "signal": "BULLISH"}
+        stats = {"ev_trade": 1.0, "avg_win_pct": 1.0, "win_rate": 0.0}
+
+        score_near = score_ticker(
+            signal, stats,
+            score_dist_52w_high_weight=0.10,
+            daily_context={"dist_52w_high_pct": -5.0},
+        )
+        score_far = score_ticker(
+            signal, stats,
+            score_dist_52w_high_weight=0.10,
+            daily_context={"dist_52w_high_pct": -50.0},
+        )
+
+        assert score_near > score_far
+
+    def test_dist_52w_high_at_exactly_high_gives_term_of_one(self):
+        signal = {"entry_vs_mid_pct": 0.0, "or_range_pct": 0.0, "signal": "BULLISH"}
+        stats = {"ev_trade": 1.0, "avg_win_pct": 0.0, "win_rate": 0.0}
+
+        # entry=0, or_range=0, avg_win=0, win_rate=0 → score = dist_52w_high_term * weight
+        # dist=0 → term=1.0 → score = 1.0 * 0.10 = 0.10
+        score = score_ticker(
+            signal, stats,
+            score_entry_weight=0.00,
+            score_avg_win_weight=0.00,
+            score_dist_52w_high_weight=0.10,
+            daily_context={"dist_52w_high_pct": 0.0},
+        )
+
+        assert score == pytest.approx(0.10)
+
+    def test_dist_52w_high_missing_from_context_uses_zero_term(self):
+        signal = {"entry_vs_mid_pct": 2.0, "or_range_pct": 1.0, "signal": "BULLISH"}
+        stats = {"ev_trade": 1.0, "avg_win_pct": 1.0, "win_rate": 0.0}
+
+        score_no_ctx = score_ticker(signal, stats, score_dist_52w_high_weight=0.10)
+        score_empty_ctx = score_ticker(
+            signal, stats,
+            score_dist_52w_high_weight=0.10,
+            daily_context={},
+        )
+
+        assert score_no_ctx == pytest.approx(score_empty_ctx)
+
+    def test_bearish_signal_also_benefits_from_52w_high_proximity(self):
+        signal_near = {"entry_vs_mid_pct": 1.0, "or_range_pct": 1.0, "signal": "BEARISH"}
+        signal_far = {"entry_vs_mid_pct": 1.0, "or_range_pct": 1.0, "signal": "BEARISH"}
+        stats = {"ev_trade": 1.0, "avg_win_pct": 1.0, "win_rate": 0.0}
+
+        score_near = score_ticker(
+            signal_near, stats,
+            score_dist_52w_high_weight=0.10,
+            daily_context={"dist_52w_high_pct": -5.0},
+        )
+        score_far = score_ticker(
+            signal_far, stats,
+            score_dist_52w_high_weight=0.10,
+            daily_context={"dist_52w_high_pct": -50.0},
+        )
+
+        assert score_near > score_far
+
+    def test_dist_52w_high_weight_reduces_or_range_weight(self):
+        signal = {"entry_vs_mid_pct": 0.0, "or_range_pct": 1.0, "signal": "BULLISH"}
+        stats = {"ev_trade": 1.0, "avg_win_pct": 0.0, "win_rate": 0.0}
+
+        # With 52h weight=0.10 and entry=0.60, avg_win=0: or_range_weight = 0.30
+        # With 52h weight=0.00 and entry=0.60, avg_win=0: or_range_weight = 0.40
+        # score_with has a lower or_range contribution and dist term=0 (dist=-100 → term=0)
+        score_without = score_ticker(
+            signal, stats,
+            score_entry_weight=0.60,
+            score_avg_win_weight=0.00,
+            score_dist_52w_high_weight=0.00,
+        )
+        score_with = score_ticker(
+            signal, stats,
+            score_entry_weight=0.60,
+            score_avg_win_weight=0.00,
+            score_dist_52w_high_weight=0.10,
+            daily_context={"dist_52w_high_pct": -100.0},  # term=0.0; only or_range reduced
+        )
+
+        assert score_without > score_with
+
+    def test_raises_when_52w_high_weight_pushes_total_over_1(self):
+        signal = {"entry_vs_mid_pct": 1.0, "or_range_pct": 1.0}
+        stats = {"ev_trade": 1.0, "avg_win_pct": 1.0, "win_rate": 0.0}
+
+        with pytest.raises(ValueError, match="exceeds 1.0"):
+            score_ticker(
+                signal, stats,
+                score_entry_weight=0.60,
+                score_avg_win_weight=0.30,
+                score_win_rate_weight=0.10,
+                score_dist_52w_high_weight=0.10,
+            )
+
+    def test_rel_strength_zero_weight_does_not_change_score(self):
+        signal = {"entry_vs_mid_pct": 2.0, "or_range_pct": 1.0, "signal": "BULLISH"}
+        stats = {"ev_trade": 1.0, "avg_win_pct": 1.0, "win_rate": 0.0}
+        ctx = {"rel_ma50_dist_pct": 5.0}
+
+        score_without = score_ticker(signal, stats)
+        score_with_zero = score_ticker(signal, stats, score_rel_strength_weight=0.0, daily_context=ctx)
+
+        assert score_without == pytest.approx(score_with_zero)
+
+    def test_bullish_outperformer_scores_higher_than_underperformer(self):
+        # In bear market: outperformer has positive rel_ma50_dist_pct; BULLISH should prefer it
+        signal = {"entry_vs_mid_pct": 2.0, "or_range_pct": 1.0, "signal": "BULLISH"}
+        stats = {"ev_trade": 1.0, "avg_win_pct": 1.0, "win_rate": 0.0}
+
+        score_outperformer = score_ticker(
+            signal, stats,
+            score_entry_weight=0.50,
+            score_avg_win_weight=0.30,
+            score_rel_strength_weight=0.10,
+            daily_context={"rel_ma50_dist_pct": 5.0},
+        )
+        score_underperformer = score_ticker(
+            signal, stats,
+            score_entry_weight=0.50,
+            score_avg_win_weight=0.30,
+            score_rel_strength_weight=0.10,
+            daily_context={"rel_ma50_dist_pct": -5.0},
+        )
+
+        assert score_outperformer > score_underperformer
+
+    def test_bearish_underperformer_scores_higher_than_outperformer(self):
+        # BEARISH should prefer the weakest ticker (most below pool mean)
+        signal = {"entry_vs_mid_pct": 2.0, "or_range_pct": 1.0, "signal": "BEARISH"}
+        stats = {"ev_trade": 1.0, "avg_win_pct": 1.0, "win_rate": 0.0}
+
+        score_weak = score_ticker(
+            signal, stats,
+            score_entry_weight=0.50,
+            score_avg_win_weight=0.30,
+            score_rel_strength_weight=0.10,
+            daily_context={"rel_ma50_dist_pct": -5.0},
+        )
+        score_strong = score_ticker(
+            signal, stats,
+            score_entry_weight=0.50,
+            score_avg_win_weight=0.30,
+            score_rel_strength_weight=0.10,
+            daily_context={"rel_ma50_dist_pct": 5.0},
+        )
+
+        assert score_weak > score_strong
+
+    def test_rel_strength_missing_from_context_uses_zero_term(self):
+        signal = {"entry_vs_mid_pct": 2.0, "or_range_pct": 1.0, "signal": "BULLISH"}
+        stats = {"ev_trade": 1.0, "avg_win_pct": 1.0, "win_rate": 0.0}
+
+        score_no_ctx = score_ticker(
+            signal, stats,
+            score_entry_weight=0.50,
+            score_avg_win_weight=0.30,
+            score_rel_strength_weight=0.10,
+        )
+        score_empty_ctx = score_ticker(
+            signal, stats,
+            score_entry_weight=0.50,
+            score_avg_win_weight=0.30,
+            score_rel_strength_weight=0.10,
+            daily_context={},
+        )
+
+        assert score_no_ctx == pytest.approx(score_empty_ctx)
+
+    def test_rel_strength_reduces_or_range_weight(self):
+        signal = {"entry_vs_mid_pct": 0.0, "or_range_pct": 1.0, "signal": "BULLISH"}
+        stats = {"ev_trade": 1.0, "avg_win_pct": 0.0, "win_rate": 0.0}
+
+        # With rel_strength=0.10 and entry=0.60: or_range_weight = 0.30
+        # With rel_strength=0.00 and entry=0.60: or_range_weight = 0.40
+        # rel_ma50_dist_pct=0 → term=0; only or_range contribution differs
+        score_without = score_ticker(
+            signal, stats,
+            score_entry_weight=0.60,
+            score_avg_win_weight=0.00,
+            score_rel_strength_weight=0.00,
+        )
+        score_with = score_ticker(
+            signal, stats,
+            score_entry_weight=0.60,
+            score_avg_win_weight=0.00,
+            score_rel_strength_weight=0.10,
+            daily_context={"rel_ma50_dist_pct": 0.0},
+        )
+
+        assert score_without > score_with
+
+    def test_raises_when_rel_strength_weight_pushes_total_over_1(self):
+        signal = {"entry_vs_mid_pct": 1.0, "or_range_pct": 1.0}
+        stats = {"ev_trade": 1.0, "avg_win_pct": 1.0, "win_rate": 0.0}
+
+        with pytest.raises(ValueError, match="exceeds 1.0"):
+            score_ticker(
+                signal, stats,
+                score_entry_weight=0.60,
+                score_avg_win_weight=0.30,
+                score_win_rate_weight=0.10,
+                score_rel_strength_weight=0.10,
+            )
 
 
 # ---------------------------------------------------------------------------

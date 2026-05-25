@@ -72,7 +72,7 @@ def _consec_streak(close: pd.Series) -> pd.Series:
     return pd.Series(result, index=close.index)
 
 
-def _build_daily_context(bars_5min: pd.DataFrame) -> dict:
+def _build_daily_context(bars_5min: pd.DataFrame, frog_days: int = 60) -> dict:
     """
     Pre-computes daily features (all prior-day, no lookahead) from 5-min bars.
     Returns a dict keyed by date → {dist_52w_low_pct, consec_streak,
@@ -110,16 +110,26 @@ def _build_daily_context(bars_5min: pd.DataFrame) -> dict:
     daily["dist_52w_low_pct"] = (
         (daily["Open"] - daily["low_52w"]) / daily["low_52w"] * 100
     )
+    daily["dist_52w_high_pct"] = (
+        (daily["Open"] - daily["high_52w"]) / daily["high_52w"] * 100
+    )
+
+    daily_dir = daily["Close"].diff().apply(lambda x: 1.0 if x > 0 else (-1.0 if x < 0 else 0.0))
+    daily["frog_score"] = (
+        daily_dir.rolling(frog_days, min_periods=frog_days // 2).mean().shift(1)
+    )
 
     result = {}
     for ts, row in daily.iterrows():
         d = ts.date() if hasattr(ts, "date") else ts
         result[d] = {
             "dist_52w_low_pct": float(row["dist_52w_low_pct"]),
+            "dist_52w_high_pct": float(row["dist_52w_high_pct"]),
             "consec_streak": float(row["consec_streak"]),
             "prev_day_vol_ratio": float(row["prev_day_vol_ratio"]),
             "daily_ma200_dist_pct": float(row["daily_ma200_dist_pct"]),
             "daily_ma50_dist_pct": float(row["daily_ma50_dist_pct"]),
+            "frog_score": float(row["frog_score"]) if not pd.isna(row["frog_score"]) else 0.0,
         }
     return result
 
@@ -883,6 +893,7 @@ def run_selector_backtest(
     score_avg_win_weight: float = 0.30,
     score_ev_trend_weight: float = 0.00,
     score_dist_52w_low_weight: float = 0.00,
+    score_dist_52w_high_weight: float = 0.00,
     score_streak_weight: float = 0.00,
     score_prev_day_vol_weight: float = 0.00,
     score_ma200_dist_weight: float = 0.00,
@@ -933,10 +944,19 @@ def run_selector_backtest(
     al_bear_days: int = 90,
     qqq_or_weight: float = 0.30,
     score_win_rate_weight: float = 0.0,
+    score_trend_align_weight: float = 0.0,
     entry_weight_bull: float = None,
     entry_weight_bear: float = None,
     normalize_or_by_adr: bool = False,
     adr_days: int = 20,
+    min_pool_vote_to_trade: int = 0,
+    direction_regime_filter: bool = False,
+    drf_bull_only_thresh: int = 10,
+    drf_bear_only_thresh: int = 5,
+    ev_shrink_k: float = 0.0,
+    score_frog_weight: float = 0.0,
+    frog_days: int = 60,
+    score_rel_strength_weight: float = 0.0,
 ) -> tuple:
     """
     Walk each trading day in [eval_start, eval_end], apply rolling selector
@@ -1033,14 +1053,36 @@ def run_selector_backtest(
             }
 
     daily_context_by_ticker = {}
-    needs_daily_ctx = any([score_dist_52w_low_weight, score_streak_weight,
-                           score_prev_day_vol_weight, score_ma200_dist_weight,
-                           score_ma50_dist_weight, regime_scoring])
+    needs_daily_ctx = any([score_dist_52w_low_weight, score_dist_52w_high_weight,
+                           score_streak_weight, score_prev_day_vol_weight,
+                           score_ma200_dist_weight, score_ma50_dist_weight, regime_scoring,
+                           score_frog_weight, score_rel_strength_weight])
     if needs_daily_ctx:
         print(f"Pre-computing daily context for {len(tickers)} tickers...")
         for ticker in tickers:
             df = all_bars.get(ticker, pd.DataFrame())
-            daily_context_by_ticker[ticker] = _build_daily_context(df)
+            daily_context_by_ticker[ticker] = _build_daily_context(df, frog_days=frog_days)
+
+    if score_rel_strength_weight:
+        all_ctx_dates = set()
+        for ctx_by_date in daily_context_by_ticker.values():
+            all_ctx_dates.update(ctx_by_date.keys())
+        for d in all_ctx_dates:
+            vals = [
+                daily_context_by_ticker[t][d]["daily_ma50_dist_pct"]
+                for t in tickers
+                if t in daily_context_by_ticker
+                and d in daily_context_by_ticker[t]
+                and not np.isnan(daily_context_by_ticker[t][d]["daily_ma50_dist_pct"])
+            ]
+            if not vals:
+                continue
+            pool_mean_ma50 = sum(vals) / len(vals)
+            for t in tickers:
+                if t in daily_context_by_ticker and d in daily_context_by_ticker[t]:
+                    ctx = daily_context_by_ticker[t][d]
+                    ma50 = ctx.get("daily_ma50_dist_pct", float("nan"))
+                    ctx["rel_ma50_dist_pct"] = (ma50 - pool_mean_ma50) if not np.isnan(ma50) else float("nan")
 
     qqq_scoring_regime = {}
     if regime_scoring:
@@ -1314,6 +1356,10 @@ def run_selector_backtest(
             # Pool vote: # tickers with positive rolling EV (prior-day data only — no lookahead).
             pool_vote = sum(1 for s in rolling_stats.values() if s["ev_trade"] > 0)
 
+            # Skip this window/day if pool health is below threshold.
+            if min_pool_vote_to_trade > 0 and pool_vote < min_pool_vote_to_trade:
+                continue
+
             # Determine dynamic EV gate thresholds for this day.
             if dynamic_ev_gate:
                 if pool_vote >= dg_bull_threshold:
@@ -1365,6 +1411,18 @@ def run_selector_backtest(
                 rolling_stats = _compute_rolling_stats(
                     tickers, _al_lookback_start, d, eff_primary_wr, ev_trend_days
                 )
+
+            # Bayesian shrinkage: pull each ticker's ev_trade toward pool mean.
+            if ev_shrink_k > 0:
+                ev_values = [s["ev_trade"] for s in rolling_stats.values()]
+                pool_ev_mean = sum(ev_values) / len(ev_values) if ev_values else 0.0
+                shrunk = {}
+                for t, s in rolling_stats.items():
+                    n_obs = max(s["signals"], 1)
+                    ev_s = (n_obs * s["ev_trade"] + ev_shrink_k * pool_ev_mean) / (n_obs + ev_shrink_k)
+                    shrunk[t] = dict(s)
+                    shrunk[t]["ev_trade"] = ev_s
+                rolling_stats = shrunk
 
             if direction_split_ev_gate:
                 if pool_vote >= dg_bull_threshold:
@@ -1475,6 +1533,11 @@ def run_selector_backtest(
                         )
                         if dir_ev < _ds_min_ev:
                             continue
+                    if direction_regime_filter:
+                        if pool_vote >= drf_bull_only_thresh and sig["signal"] == "BEARISH":
+                            continue
+                        if pool_vote <= drf_bear_only_thresh and sig["signal"] == "BULLISH":
+                            continue
                     if random_picks:
                         if stats["ev_trade"] <= 0:
                             continue
@@ -1508,6 +1571,10 @@ def run_selector_backtest(
                             score_prev_day_vol_weight, score_ma200_dist_weight,
                             eff_ma50,
                             score_win_rate_weight=score_win_rate_weight,
+                            score_trend_align_weight=score_trend_align_weight,
+                            score_dist_52w_high_weight=score_dist_52w_high_weight,
+                            score_frog_weight=score_frog_weight,
+                            score_rel_strength_weight=score_rel_strength_weight,
                             daily_context=daily_context_by_ticker.get(ticker, {}).get(d),
                             ma_momentum_gate_in_scoring=ma_momentum_gate_in_scoring,
                         )
@@ -3225,6 +3292,13 @@ def _parse_args():
         help="Scoring weight for 52-week low proximity. Higher weight rewards tickers closer to their 52w low. Default: 0.00.",
     )
     parser.add_argument(
+        "--score-dist-52w-high-weight",
+        type=float,
+        default=0.00,
+        dest="score_dist_52w_high_weight",
+        help="Scoring weight for 52-week high proximity (George & Hwang 2004). Rewards tickers near their 52w high for both BULLISH and BEARISH signals. Default: 0.00.",
+    )
+    parser.add_argument(
         "--score-streak-weight",
         type=float,
         default=0.00,
@@ -3309,6 +3383,11 @@ def _parse_args():
              "Positive values boost tickers whose signal direction matches QQQ OR; penalise opposing. "
              "Default: 0.30 (confirmed optimal across 2019-2026).",
     )
+    parser.add_argument("--score-trend-align-weight", type=float, default=0.0,
+                        dest="score_trend_align_weight",
+                        help="Weight for direction-aware consecutive-streak scoring. Positive = reward "
+                             "signals aligned with prior price momentum; penalizes counter-trend picks. "
+                             "Normalized to [-1,+1] via streak/5. Default: 0.0.")
     parser.add_argument("--score-win-rate-weight", type=float, default=0.0,
                         dest="score_win_rate_weight",
                         help="Scoring weight for rolling win rate. Higher values favour consistent "
@@ -3329,6 +3408,51 @@ def _parse_args():
     parser.add_argument("--adr-days", type=int, default=20,
                         dest="adr_days",
                         help="Lookback days for rolling ADR computation used in --normalize-or-by-adr. Default: 20.")
+    parser.add_argument("--min-pool-vote", type=int, default=0,
+                        dest="min_pool_vote_to_trade",
+                        help="Skip trading on days where fewer than N tickers have positive rolling EV. "
+                             "0 = disabled (always trade). Default: 0.")
+    parser.add_argument("--direction-regime-filter", action="store_true", default=False,
+                        dest="direction_regime_filter",
+                        help="In bull regime (pool_vote >= drf-bull-thresh), skip BEARISH picks. "
+                             "In bear regime (pool_vote <= drf-bear-thresh), skip BULLISH picks. Default: off.")
+    parser.add_argument("--drf-bull-thresh", type=int, default=10, dest="drf_bull_only_thresh",
+                        help="Pool vote >= this → only BULLISH picks allowed. Default: 10.")
+    parser.add_argument("--drf-bear-thresh", type=int, default=5, dest="drf_bear_only_thresh",
+                        help="Pool vote <= this → only BEARISH picks allowed. Default: 5.")
+    parser.add_argument(
+        "--ev-shrink-k",
+        type=float,
+        default=0.0,
+        dest="ev_shrink_k",
+        help="Bayesian EV shrinkage factor k. Shrinks each ticker ev_trade toward pool mean: ev_s = (n*ev + k*pool_mean)/(n+k). 0=disabled. Try 5-10. Default: 0.0.",
+    )
+    parser.add_argument(
+        "--score-frog-weight",
+        type=float,
+        default=0.0,
+        dest="score_frog_weight",
+        help="Frog-in-the-Pan path smoothness weight. Rewards tickers with consistent directional daily moves. Direction-aware. Default: 0.0.",
+    )
+    parser.add_argument(
+        "--frog-days",
+        type=int,
+        default=60,
+        dest="frog_days",
+        help="Lookback days for Frog-in-the-Pan smoothness score. Default: 60.",
+    )
+    parser.add_argument(
+        "--score-rel-strength-weight",
+        type=float,
+        default=0.0,
+        dest="score_rel_strength_weight",
+        help=(
+            "Cross-sectional relative MA50 strength weight. Scores each ticker's MA50 distance "
+            "relative to the pool mean that day. Positive = outperforming pool. "
+            "Direction-aware: rewards BULLISH for outperforming, BEARISH for underperforming. "
+            "Most effective in bear/choppy years where pool spread is wide. Default: 0.0."
+        ),
+    )
     parser.add_argument(
         "--min-or-range",
         type=float,
@@ -3604,14 +3728,18 @@ if __name__ == "__main__":
         vr = args.score_vol_ratio_weight
         et = args.score_ev_trend_weight
         d52 = args.score_dist_52w_low_weight
+        d52h = args.score_dist_52w_high_weight
         sk = args.score_streak_weight
         pv = args.score_prev_day_vol_weight
         m2 = args.score_ma200_dist_weight
         m5 = args.score_ma50_dist_weight
-        or_w = round(1.0 - ev - vr - aw - et - d52 - sk - pv - m2 - m5, 3)
+        ta = args.score_trend_align_weight
+        fg = args.score_frog_weight
+        rs = args.score_rel_strength_weight
+        or_w = round(1.0 - ev - vr - aw - et - d52 - d52h - sk - pv - m2 - m5 - ta - fg - rs, 3)
         print(
             f"  Picker       : scored  (entry={ev} avg_win={aw} or_range={or_w} vol={vr} "
-            f"ev_trend={et} dist_52w={d52} streak={sk} prev_vol={pv} ma200={m2} ma50={m5})"
+            f"ev_trend={et} dist_52w_low={d52} dist_52w_high={d52h} streak={sk} prev_vol={pv} ma200={m2} ma50={m5} trend_align={ta} frog={fg} rel_strength={rs})"
         )
     if args.direction_split_ev_gate:
         print(
@@ -3630,6 +3758,16 @@ if __name__ == "__main__":
               f"  (pool_vote thresholds: bull≥{args.dg_bull_threshold} bear≤{args.dg_bear_threshold})")
     if args.normalize_or_by_adr:
         print(f"  OR/ADR norm  : on  adr_days={args.adr_days}  (or_range_pct ÷ rolling ADR)")
+    if args.min_pool_vote_to_trade > 0:
+        print(f"  Min pool vote: {args.min_pool_vote_to_trade}  (skip day if fewer tickers have positive EV)")
+    if args.direction_regime_filter:
+        print(f"  Dir regime   : on  bull≥{args.drf_bull_only_thresh}→BULLISH_only  bear≤{args.drf_bear_only_thresh}→BEARISH_only")
+    if args.ev_shrink_k > 0:
+        print(f"  EV shrinkage : k={args.ev_shrink_k:.1f}  (Bayesian shrink toward pool mean)")
+    if args.score_frog_weight > 0:
+        print(f"  Frog-in-Pan  : weight={args.score_frog_weight:.3f}  days={args.frog_days}  (path smoothness, direction-aware)")
+    if args.score_rel_strength_weight > 0:
+        print(f"  Rel strength : weight={args.score_rel_strength_weight:.3f}  (cross-sectional MA50 vs pool mean, direction-aware)")
     print(f"  Stop pct     : {args.stop_pct}")
     print(f"  Trailing MA  : {args.trailing_ma}")
     print(
@@ -3811,6 +3949,7 @@ if __name__ == "__main__":
         score_avg_win_weight=args.score_avg_win_weight,
         score_ev_trend_weight=args.score_ev_trend_weight,
         score_dist_52w_low_weight=args.score_dist_52w_low_weight,
+        score_dist_52w_high_weight=args.score_dist_52w_high_weight,
         score_streak_weight=args.score_streak_weight,
         score_prev_day_vol_weight=args.score_prev_day_vol_weight,
         score_ma200_dist_weight=args.score_ma200_dist_weight,
@@ -3865,6 +4004,15 @@ if __name__ == "__main__":
         entry_weight_bear=args.entry_weight_bear,
         normalize_or_by_adr=args.normalize_or_by_adr,
         adr_days=args.adr_days,
+        min_pool_vote_to_trade=args.min_pool_vote_to_trade,
+        score_trend_align_weight=args.score_trend_align_weight,
+        direction_regime_filter=args.direction_regime_filter,
+        drf_bull_only_thresh=args.drf_bull_only_thresh,
+        drf_bear_only_thresh=args.drf_bear_only_thresh,
+        ev_shrink_k=args.ev_shrink_k,
+        score_frog_weight=args.score_frog_weight,
+        frog_days=args.frog_days,
+        score_rel_strength_weight=args.score_rel_strength_weight,
     )
 
     skip_log = _apply_capital_flow(
