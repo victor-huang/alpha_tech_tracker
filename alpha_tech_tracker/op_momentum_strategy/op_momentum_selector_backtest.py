@@ -898,6 +898,9 @@ def run_selector_backtest(
     regime_bear_ma50_dist_weight: float = None,
     ev_trend_days: int = 15,
     direction_split_ev_gate: bool = True,
+    ds_bull_min_ev: float = 0.0,
+    ds_neutral_min_ev: float = 0.0,
+    ds_bear_min_ev: float = 0.0,
     oracle_picks: bool = False,
     min_hold_bars: int = 0,
     stale_cut_mins: int = 0,
@@ -1309,6 +1312,14 @@ def run_selector_backtest(
                     tickers, _al_lookback_start, d, eff_primary_wr, ev_trend_days
                 )
 
+            if direction_split_ev_gate:
+                if pool_vote >= dg_bull_threshold:
+                    _ds_min_ev = ds_bull_min_ev
+                elif pool_vote <= dg_bear_threshold:
+                    _ds_min_ev = ds_bear_min_ev
+                else:
+                    _ds_min_ev = ds_neutral_min_ev
+
             scored = []
             opening_start_t = window_opening_times[label]
             for ticker in tickers:
@@ -1391,7 +1402,7 @@ def run_selector_backtest(
                             if sig["signal"] == "BULLISH"
                             else stats["ev_trade_bearish"]
                         )
-                        if dir_ev <= 0:
+                        if dir_ev < _ds_min_ev:
                             continue
                     if random_picks:
                         if stats["ev_trade"] <= 0:
@@ -3202,6 +3213,12 @@ def _parse_args():
         dest="direction_split_ev_gate",
         help="Disable direction-split EV gate (uses combined EV for both directions).",
     )
+    parser.add_argument("--ds-bull-min-ev", type=float, default=0.0, dest="ds_bull_min_ev",
+                        help="Min directional EV required in bull regime (pool_vote >= bull_threshold). Default: 0.0.")
+    parser.add_argument("--ds-neutral-min-ev", type=float, default=0.0, dest="ds_neutral_min_ev",
+                        help="Min directional EV required in neutral regime. Default: 0.0.")
+    parser.add_argument("--ds-bear-min-ev", type=float, default=0.0, dest="ds_bear_min_ev",
+                        help="Min directional EV required in bear regime (pool_vote <= bear_threshold). Default: 0.0.")
     parser.add_argument(
         "--min-or-range",
         type=float,
@@ -3487,7 +3504,11 @@ if __name__ == "__main__":
             f"ev_trend={et} dist_52w={d52} streak={sk} prev_vol={pv} ma200={m2} ma50={m5})"
         )
     if args.direction_split_ev_gate:
-        print(f"  Dir-split EV : on")
+        print(
+            f"  Dir-split EV : on  bull≥{args.dg_bull_threshold} min_ev={args.ds_bull_min_ev:+.3f}"
+            f"  neutral min_ev={args.ds_neutral_min_ev:+.3f}"
+            f"  bear≤{args.dg_bear_threshold} min_ev={args.ds_bear_min_ev:+.3f}"
+        )
     else:
         print(f"  Dir-split EV : off")
     print(f"  Stop pct     : {args.stop_pct}")
@@ -3686,6 +3707,9 @@ if __name__ == "__main__":
         regime_bear_ma50_dist_weight=args.regime_bear_ma50_dist_weight if args.regime_bear_ma50_dist_weight is not None else (0.00 if args.regime_scoring else None),
         ev_trend_days=args.ev_trend_days,
         direction_split_ev_gate=args.direction_split_ev_gate,
+        ds_bull_min_ev=args.ds_bull_min_ev,
+        ds_neutral_min_ev=args.ds_neutral_min_ev,
+        ds_bear_min_ev=args.ds_bear_min_ev,
         oracle_picks=args.oracle_picks,
         min_hold_bars=args.min_hold_bars,
         stale_cut_mins=args.stale_cut_mins,
