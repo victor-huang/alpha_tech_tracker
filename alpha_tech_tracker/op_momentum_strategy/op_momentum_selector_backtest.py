@@ -958,6 +958,10 @@ def run_selector_backtest(
     frog_days: int = 60,
     score_rel_strength_weight: float = 0.0,
     score_dir_ev_weight: float = 0.0,
+    qqq_regime_weight: float = 0.0,
+    qqq_regime_slope_days: int = 5,
+    qqq_regime_full_only: bool = False,
+    qqq_regime_bearish_only: bool = False,
 ) -> tuple:
     """
     Walk each trading day in [eval_start, eval_end], apply rolling selector
@@ -1164,29 +1168,89 @@ def run_selector_backtest(
         if not df.empty
     }
 
+    # Fetch QQQ 5-min bars once; reused by both OR scoring and MA regime scoring.
+    _qqq_df = pd.DataFrame()
+    if qqq_or_weight != 0.0 or qqq_regime_weight != 0.0:
+        _qqq_fetched = fetch_bars(["QQQ"], fetch_start, eval_end, source=source, feed=feed)
+        _qqq_df = _qqq_fetched.get("QQQ", pd.DataFrame())
+
     # Pre-compute QQQ opening-range return per day for scoring alignment component.
     # No lookahead: uses M1 OR bars (9:30-9:45) already formed before the 9:45 pick.
     qqq_or_by_date: dict = {}
-    if qqq_or_weight != 0.0:
+    if qqq_or_weight != 0.0 and not _qqq_df.empty:
         _m1_win_ref = next((w for w in windows if w["label"] == "M1"), windows[0])
         _m1_h, _m1_m = map(int, _m1_win_ref["opening_start"].split(":"))
         _m1_open_t = time_type(_m1_h, _m1_m)
         _m1_n_bars = _m1_win_ref["opening_bars"]
-        _qqq_fetched = fetch_bars(["QQQ"], fetch_start, eval_end, source=source, feed=feed)
-        _qqq_df = _qqq_fetched.get("QQQ", pd.DataFrame())
-        if not _qqq_df.empty:
-            _qqq_by_date = {d_: g for d_, g in _qqq_df.groupby(_qqq_df.index.date)}
-            for d_ in trading_days:
-                _day_q = _qqq_by_date.get(d_, pd.DataFrame())
-                if _day_q.empty:
-                    continue
-                _or_bars = _day_q[_day_q.index.time >= _m1_open_t].head(_m1_n_bars)
-                if not _or_bars.empty:
-                    _o = float(_or_bars.iloc[0]["Open"])
-                    _c = float(_or_bars.iloc[-1]["Close"])
-                    if _o > 0:
-                        qqq_or_by_date[d_] = (_c - _o) / _o * 100
+        _qqq_by_date = {d_: g for d_, g in _qqq_df.groupby(_qqq_df.index.date)}
+        for d_ in trading_days:
+            _day_q = _qqq_by_date.get(d_, pd.DataFrame())
+            if _day_q.empty:
+                continue
+            _or_bars = _day_q[_day_q.index.time >= _m1_open_t].head(_m1_n_bars)
+            if not _or_bars.empty:
+                _o = float(_or_bars.iloc[0]["Open"])
+                _c = float(_or_bars.iloc[-1]["Close"])
+                if _o > 0:
+                    qqq_or_by_date[d_] = (_c - _o) / _o * 100
         print(f"  QQQ OR scoring: pre-computed {len(qqq_or_by_date)} days  weight={qqq_or_weight:+.3f}")
+
+    # Pre-compute QQQ daily MA regime factor per eval day.
+    # No lookahead: uses PRIOR trading day's MA values (shifted by -1 bar in the daily series).
+    # Factor tiers (bearish strength): neutral=0.0, mild=0.33, moderate=0.67, full=1.0.
+    #   0.0  — QQQ >= MA20                       (bullish/neutral, no adjustment)
+    #   0.33 — QQQ < MA20 but >= MA50            (mild bear)
+    #   0.67 — QQQ < MA50, MAs not both falling  (moderate bear)
+    #   1.0  — QQQ < MA50 AND MA20 + MA50 falling (full bear)
+    # Applied as: score += qqq_regime_weight * factor * (+1 for BEARISH, -1 for BULLISH)
+    qqq_regime_by_date: dict = {}
+    if qqq_regime_weight != 0.0 and not _qqq_df.empty:
+        _rbd = {d_: g for d_, g in _qqq_df.groupby(_qqq_df.index.date)}
+        _rdates = sorted(_rbd.keys())
+        _rcloses = [float(_rbd[d_]["Close"].iloc[-1]) for d_ in _rdates]
+        _rclose_s = pd.Series(_rcloses)
+        _rma20 = _rclose_s.rolling(20).mean()
+        _rma50 = _rclose_s.rolling(50).mean()
+        _rma20_slope = _rma20 - _rma20.shift(qqq_regime_slope_days)
+        _rma50_slope = _rma50 - _rma50.shift(qqq_regime_slope_days)
+        _rdate_idx = {d_: i for i, d_ in enumerate(_rdates)}
+        for d_ in trading_days:
+            _ri = _rdate_idx.get(d_)
+            if _ri is None or _ri == 0:
+                continue
+            _pi = _ri - 1  # prior trading day index
+            _rc = _rcloses[_pi]
+            _rm20 = float(_rma20.iloc[_pi])
+            _rm50 = float(_rma50.iloc[_pi])
+            _rm20s = float(_rma20_slope.iloc[_pi])
+            _rm50s = float(_rma50_slope.iloc[_pi])
+            if np.isnan(_rm20) or np.isnan(_rm50):
+                continue
+            if _rc >= _rm20:
+                _factor = 0.0
+            elif qqq_regime_full_only:
+                # Only activate at highest confidence: QQQ < MA50 AND both MAs falling.
+                if (not np.isnan(_rm50) and _rc < _rm50
+                        and not np.isnan(_rm20s) and not np.isnan(_rm50s)
+                        and _rm20s < 0 and _rm50s < 0):
+                    _factor = 1.0
+                else:
+                    _factor = 0.0
+            elif _rc >= _rm50:
+                _factor = 0.33
+            elif np.isnan(_rm20s) or np.isnan(_rm50s) or not (_rm20s < 0 and _rm50s < 0):
+                _factor = 0.67
+            else:
+                _factor = 1.0
+            qqq_regime_by_date[d_] = _factor
+        _rtiers = {0.0: 0, 0.33: 0, 0.67: 0, 1.0: 0}
+        for _v in qqq_regime_by_date.values():
+            _rtiers[_v] += 1
+        print(
+            f"  QQQ MA regime: {len(qqq_regime_by_date)} days  weight={qqq_regime_weight:+.3f}"
+            f"  neutral={_rtiers[0.0]}d  mild_bear={_rtiers[0.33]}d"
+            f"  mod_bear={_rtiers[0.67]}d  full_bear={_rtiers[1.0]}d"
+        )
 
     # Pre-filter primary-only signal rows per window per ticker: eliminates re-applying
     # the three is_reversal/is_bearish_reentry/is_bullish_reentry conditions every day.
@@ -1588,6 +1652,18 @@ def run_selector_backtest(
                             _qqq_or = qqq_or_by_date.get(d, 0.0)
                             _align = _qqq_or if sig["signal"] == "BULLISH" else -_qqq_or
                             s += qqq_or_weight * _align
+                        if qqq_regime_weight != 0.0:
+                            # Bearish regime factor boosts BEARISH signals.
+                            # When bearish_only=False (default), also penalises BULLISH signals.
+                            # Factor 0 = neutral, 1.0 = full bear (QQQ < MA50, both MAs falling).
+                            _rfactor = qqq_regime_by_date.get(d, 0.0)
+                            if _rfactor > 0.0:
+                                if qqq_regime_bearish_only:
+                                    if sig["signal"] == "BEARISH":
+                                        s += qqq_regime_weight * _rfactor
+                                else:
+                                    _ralign = -_rfactor if sig["signal"] == "BULLISH" else _rfactor
+                                    s += qqq_regime_weight * _ralign
                         if s < min_score:
                             continue
                 scored.append(
@@ -3385,6 +3461,48 @@ def _parse_args():
              "Positive values boost tickers whose signal direction matches QQQ OR; penalise opposing. "
              "Default: 0.30 (confirmed optimal across 2019-2026).",
     )
+    parser.add_argument(
+        "--qqq-regime-weight",
+        type=float,
+        default=0.0,
+        dest="qqq_regime_weight",
+        help=(
+            "Scoring weight for QQQ daily MA regime. Boosts BEARISH signals (and penalises BULLISH) "
+            "when QQQ is below its MA20/MA50, with strength scaling by tier: "
+            "below MA20=0.33x, below MA50=0.67x, below MA50 + both MAs falling=1.0x. "
+            "Uses prior trading day's MAs (no lookahead). Default: 0.0."
+        ),
+    )
+    parser.add_argument(
+        "--qqq-regime-slope-days",
+        type=int,
+        default=5,
+        dest="qqq_regime_slope_days",
+        help="Lookback days for QQQ MA slope computation (rising vs falling). Default: 5.",
+    )
+    parser.add_argument(
+        "--qqq-regime-full-only",
+        action="store_true",
+        default=False,
+        dest="qqq_regime_full_only",
+        help=(
+            "Only activate regime boost at the highest-confidence tier: "
+            "QQQ < MA50 AND both MA20+MA50 trending down (factor=1.0). "
+            "Skips the mild (0.33) and moderate (0.67) tiers. "
+            "Reduces false signals during brief corrections in bull years."
+        ),
+    )
+    parser.add_argument(
+        "--qqq-regime-bearish-only",
+        action="store_true",
+        default=False,
+        dest="qqq_regime_bearish_only",
+        help=(
+            "Asymmetric mode: only boost BEARISH signals in bearish regime, "
+            "do not penalise BULLISH signals. "
+            "Preserves bullish signal quality while giving BEARISH picks a better chance."
+        ),
+    )
     parser.add_argument("--score-trend-align-weight", type=float, default=0.0,
                         dest="score_trend_align_weight",
                         help="Weight for direction-aware consecutive-streak scoring. Positive = reward "
@@ -3766,6 +3884,17 @@ if __name__ == "__main__":
         print(f"  Dir-split EV : off")
     if args.qqq_or_weight != 0.0:
         print(f"  QQQ OR score : weight={args.qqq_or_weight:+.3f}  (boosts aligned signals, penalises opposing)")
+    if args.qqq_regime_weight != 0.0:
+        _regime_mode = []
+        if args.qqq_regime_full_only:
+            _regime_mode.append("full_bear_only")
+        if args.qqq_regime_bearish_only:
+            _regime_mode.append("bearish_boost_only")
+        _regime_mode_str = "+".join(_regime_mode) if _regime_mode else "symmetric"
+        print(
+            f"  QQQ MA regime: weight={args.qqq_regime_weight:+.3f}  slope_days={args.qqq_regime_slope_days}"
+            f"  mode={_regime_mode_str}"
+        )
     if args.score_win_rate_weight != 0.0:
         print(f"  Win rate wt  : {args.score_win_rate_weight:+.3f}  (rewards consistent tickers)")
     if args.entry_weight_bull is not None or args.entry_weight_bear is not None:
@@ -4031,6 +4160,10 @@ if __name__ == "__main__":
         frog_days=args.frog_days,
         score_rel_strength_weight=args.score_rel_strength_weight,
         score_dir_ev_weight=args.score_dir_ev_weight,
+        qqq_regime_weight=args.qqq_regime_weight,
+        qqq_regime_slope_days=args.qqq_regime_slope_days,
+        qqq_regime_full_only=args.qqq_regime_full_only,
+        qqq_regime_bearish_only=args.qqq_regime_bearish_only,
     )
 
     skip_log = _apply_capital_flow(

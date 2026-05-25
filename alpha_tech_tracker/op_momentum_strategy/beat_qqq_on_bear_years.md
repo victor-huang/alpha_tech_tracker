@@ -112,6 +112,83 @@ Missed-bearish count: qqq=0.60 → 20 (was 22), qqq=0.80 → 21 (was 22). Minima
 
 ---
 
+## Experiment 18 — QQQ Daily MA Regime Scoring (`--qqq-regime-weight`)
+
+**Hypothesis:** Use QQQ's daily MA position as a multi-day regime signal to boost BEARISH ticker scores when the market is in a confirmed downtrend. Unlike `qqq_or_weight` (same-day intraday OR), this uses prior-day's MA20/MA50 values — no lookahead.
+
+**Implementation:** New `--qqq-regime-weight` CLI flag in `run_selector_backtest()`. Pre-computes daily closes from QQQ 5-min bars, then rolls MA20 and MA50. Uses prior trading day's values to avoid lookahead. Three regime tiers:
+
+| Tier | Condition | Factor |
+|---|---|---|
+| Neutral | QQQ ≥ MA20 | 0.0 (no adjustment) |
+| Mild bear | QQQ < MA20, ≥ MA50 | 0.33 |
+| Moderate bear | QQQ < MA50, MAs not both falling | 0.67 |
+| Full bear | QQQ < MA50 AND MA20+MA50 both falling | 1.0 |
+
+Score adjustment: `s += qqq_regime_weight * factor * (+1 BEARISH / −1 BULLISH)` (symmetric by default).
+
+**Two refinement flags:**
+- `--qqq-regime-full-only`: collapses to binary — only fires at full_bear tier (QQQ < MA50 AND both MAs declining). Skips mild/moderate tiers. Prevents false signals during brief corrections in bull years.
+- `--qqq-regime-bearish-only`: asymmetric mode — only boosts BEARISH signals, does not penalise BULLISH. Preserves bullish signal quality.
+
+**2022 regime distribution (251 eval days):**
+- Neutral (QQQ ≥ MA20): 90 days
+- Mild bear: 13 days
+- Moderate bear: 35 days
+- Full bear: 110 days — 44% of the year in confirmed downtrend
+
+### Symmetric mode sweep (all tiers, penalises BULLISH):
+
+| weight | 2022 Δ | 2020 Δ | 2023 Δ | 2025 Δ | 8yr Δ |
+|---|---|---|---|---|---|
+| 0.10 | +3.1pp | -8.4pp | +0.0pp | +0.5pp | -9.8pp |
+| 0.20 | +3.8pp | -8.4pp | -6.3pp | +0.5pp | -18.8pp |
+| 0.30 | +8.1pp | -8.4pp | -8.6pp | -7.8pp | -26.3pp |
+
+**Result:** Symmetric mode destroys 2020 (COVID crash) and 2023 at any weight. The mild/moderate tiers fire during corrections in bull years, penalising correct bullish picks. Not viable.
+
+### `full+bear` mode sweep (`--qqq-regime-full-only --qqq-regime-bearish-only`):
+
+| weight | 2019 | 2020 | 2021 | 2022 | 2023 | 2024 | 2025 | 2026 | 8yr sum | Δ baseline |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 0.0 (baseline) | +42.0% | +30.9% | +38.7% | -28.4% | +66.8% | +10.9% | +34.3% | +78.1% | +273.2pp | — |
+| 0.20 | +42.0% | +30.9% | +38.7% | -29.4% | +66.8% | +10.9% | +34.3% | +74.5% | +268.5pp | -4.6pp |
+| 0.30 | +42.0% | +30.9% | +38.7% | -29.4% | +66.8% | +10.9% | +34.3% | +74.5% | +268.5pp | -4.6pp |
+| **0.40** | +42.0% | +30.9% | +38.7% | **-26.2%** | +66.8% | +10.9% | +34.3% | +74.5% | +271.8pp | -1.4pp |
+| **0.50** | +42.0% | +30.9% | +38.7% | **-23.9%** | +66.8% | +10.9% | +34.3% | +74.5% | **+274.1pp** | **+0.9pp** |
+| 0.60 | +42.0% | +30.9% | +38.7% | -23.9% | +66.8% | +10.9% | +26.1% | +74.5% | +266.0pp | -7.2pp |
+| 0.70 | +42.0% | +30.9% | +38.7% | -20.1% | +66.8% | +10.9% | +26.1% | +71.0% | +266.3pp | -6.9pp |
+| 0.80 | +42.0% | +30.9% | +38.7% | -20.1% | +66.8% | +9.9% | +26.1% | +71.0% | +265.3pp | -7.9pp |
+| 1.00 | +42.0% | +30.9% | +38.7% | -16.0% | +66.8% | +9.9% | +26.1% | +71.0% | +269.4pp | -3.8pp |
+| 1.20 | +42.0% | +30.9% | +38.7% | -16.0% | +66.8% | +9.9% | +26.1% | +71.0% | +269.4pp | -3.8pp |
+
+**Top 3 configs:**
+1. **`full+bear w=0.50`** — 8yr +274.1pp (+0.9pp) | 2022 improves to -23.9%, 2025/2026 clean
+2. `full+bear w=0.40` — 8yr +271.8pp (-1.4pp) | 2022 -26.2%, cleaner 2026 hit
+3. `full+bear w=1.00/1.20` — 8yr +269.4pp (-3.8pp) | 2022 best (-16.0%) but 2025 drops -8.2pp
+
+### Why the `full+bear` mode has limited impact
+
+**The MA lag problem:** In 2025 (37 full_bear days) and 2026 (30/94 days), the full_bear tier fires during sharp-correction-then-recovery periods. QQQ is still below MA50 with both MAs pointing down even as individual tickers recover. The feature boosts BEARISH picks during these recovery days → some wrong-direction trades → 2026 loses 3.6pp at w=0.50.
+
+This lag is inherent to MA-based regime detection. In sustained bear markets (2022: 110 full_bear days, QQQ below MA50 for most of year), the feature works correctly. In V-shaped recoveries (2025, 2026), the MA50 slope doesn't reset for 4-6 weeks after the actual bottom.
+
+**Why 2019–2024 are clean:** The full_bear tier requires QQQ < MA50 AND both MAs falling simultaneously. In normal bull years, this condition is rarely met (2022 was the main exception). 2020 COVID crash was sharp but brief — by the time MA slope data confirmed "full bear", QQQ was already recovering.
+
+### Conclusion
+
+`full+bear w=0.50` is the **only config that beats the 8yr baseline** (+0.9pp), with surgical impact:
+- 2022 improves: -28.4% → -23.9% (+4.5pp)
+- 2019–2024 unchanged (0.0pp in all non-2022 years)
+- 2025 unchanged (0.0pp)
+- 2026 small cost: -3.6pp
+
+The gain is modest and the 2026 cost is real. The fundamental limitation is MA lag during recoveries. A stronger approach would combine this signal with pool-vote confirmation (only fire when BOTH QQQ is in full_bear AND pool_vote is low), which would avoid firing during individual-ticker recoveries. Not yet implemented.
+
+**Current best-known: Exp 16 baseline at +273.2pp.** `full+bear w=0.50` at +274.1pp is a marginal improvement not worth changing the default. Available as `--qqq-regime-weight 0.50 --qqq-regime-full-only --qqq-regime-bearish-only` for anyone who wants 2022 bear protection with minimal collateral.
+
+---
+
 ## Conclusion
 
 There is no scoring weight adjustment that fixes the 2022 directional miss without degrading other years. The problem is structural:
@@ -119,6 +196,7 @@ There is no scoring weight adjustment that fixes the 2022 directional miss witho
 1. **`entry_vs_mid_pct` at w=0.60 dominates.** In a bear regime, gap-up tickers score extremely well on this metric even though their ORs will fail
 2. **59% of missed-bearish days had bullish QQQ OR** — no QQQ weight adjustment can fix those days
 3. **`dir_ev_weight`** hurts trend years; **higher `qqq_or_weight`** systematically hurts bull years
+4. **QQQ MA regime (Exp 18)** best variant gives only +0.9pp 8yr due to MA lag during recoveries
 
 The 2022 loss (-28.4%) is partially structural — the strategy still beats QQQ that year (-33.7%), confirming the OR momentum approach works even in bear markets. The 22 missed-bearish days represent the remaining improvement ceiling.
 
