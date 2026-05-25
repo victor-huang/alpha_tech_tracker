@@ -932,6 +932,11 @@ def run_selector_backtest(
     al_neutral_days: int = 60,
     al_bear_days: int = 90,
     qqq_or_weight: float = 0.30,
+    score_win_rate_weight: float = 0.0,
+    entry_weight_bull: float = None,
+    entry_weight_bear: float = None,
+    normalize_or_by_adr: bool = False,
+    adr_days: int = 20,
 ) -> tuple:
     """
     Walk each trading day in [eval_start, eval_end], apply rolling selector
@@ -1002,6 +1007,30 @@ def run_selector_backtest(
         df["MA50"] = df["Close"].rolling(50).mean()
         df["MA200"] = df["Close"].rolling(200).mean()
         all_bars[ticker] = df
+
+    # Pre-compute rolling ADR per ticker: prior-N-day average of (H-L)/Close %.
+    # No lookahead: shift(1) ensures today's ADR uses yesterday's close/range.
+    adr_by_ticker_date: dict = {}
+    if normalize_or_by_adr:
+        print(f"Pre-computing {adr_days}-day rolling ADR for {len(tickers)} tickers...")
+        for ticker in tickers:
+            df = all_bars.get(ticker, pd.DataFrame())
+            if df.empty:
+                continue
+            mh = df.between_time("09:30", "16:00")
+            daily = mh.resample("D").agg(
+                High=("High", "max"),
+                Low=("Low", "min"),
+                Close=("Close", "last"),
+            ).dropna(subset=["Close"])
+            daily.index = daily.index.normalize().tz_localize(None)
+            daily["adr_pct"] = (daily["High"] - daily["Low"]) / daily["Close"] * 100
+            rolling_adr = daily["adr_pct"].rolling(adr_days, min_periods=5).mean().shift(1)
+            adr_by_ticker_date[ticker] = {
+                ts.date(): float(v)
+                for ts, v in rolling_adr.items()
+                if not pd.isna(v)
+            }
 
     daily_context_by_ticker = {}
     needs_daily_ctx = any([score_dist_52w_low_weight, score_streak_weight,
@@ -1345,6 +1374,18 @@ def run_selector_backtest(
                 else:
                     _ds_min_ev = ds_neutral_min_ev
 
+            # Adaptive entry weight: loosen in bull (breakouts reliable), tighten in bear.
+            # Uses same pool_vote tiers as dynamic EV gate.
+            if entry_weight_bull is not None or entry_weight_bear is not None:
+                if pool_vote >= dg_bull_threshold:
+                    _adaptive_entry = entry_weight_bull if entry_weight_bull is not None else score_entry_weight
+                elif pool_vote <= dg_bear_threshold:
+                    _adaptive_entry = entry_weight_bear if entry_weight_bear is not None else score_entry_weight
+                else:
+                    _adaptive_entry = score_entry_weight
+            else:
+                _adaptive_entry = None  # sentinel: use existing regime_scoring logic
+
             scored = []
             opening_start_t = window_opening_times[label]
             for ticker in tickers:
@@ -1401,6 +1442,11 @@ def run_selector_backtest(
                                     if entry != 0
                                     else 0.0
                                 )
+                if normalize_or_by_adr:
+                    _adr = adr_by_ticker_date.get(ticker, {}).get(d)
+                    if _adr and _adr > 0:
+                        sig["or_range_pct"] = sig["or_range_pct"] / _adr
+
                 stats = rolling_stats[ticker]
                 if oracle_picks:
                     _primary_pnl_pct = row["pnl"] / row["entry_price"] * 100 if row["entry_price"] else 0.0
@@ -1451,6 +1497,9 @@ def run_selector_backtest(
                             eff_vol   = score_vol_ratio_weight
                             eff_aw    = score_avg_win_weight
                             eff_ma50  = score_ma50_dist_weight
+                        # Pool-vote adaptive entry weight overrides base (not regime_scoring).
+                        if _adaptive_entry is not None and not regime_scoring:
+                            eff_entry = _adaptive_entry
                         s = score_ticker(
                             sig, stats,
                             eff_entry, eff_vol,
@@ -1458,6 +1507,7 @@ def run_selector_backtest(
                             score_dist_52w_low_weight, score_streak_weight,
                             score_prev_day_vol_weight, score_ma200_dist_weight,
                             eff_ma50,
+                            score_win_rate_weight=score_win_rate_weight,
                             daily_context=daily_context_by_ticker.get(ticker, {}).get(d),
                             ma_momentum_gate_in_scoring=ma_momentum_gate_in_scoring,
                         )
@@ -3259,6 +3309,26 @@ def _parse_args():
              "Positive values boost tickers whose signal direction matches QQQ OR; penalise opposing. "
              "Default: 0.30 (confirmed optimal across 2019-2026).",
     )
+    parser.add_argument("--score-win-rate-weight", type=float, default=0.0,
+                        dest="score_win_rate_weight",
+                        help="Scoring weight for rolling win rate. Higher values favour consistent "
+                             "tickers over lottery-style high-EV picks. Default: 0.0.")
+    parser.add_argument("--entry-weight-bull", type=float, default=None,
+                        dest="entry_weight_bull",
+                        help="entry_vs_mid_pct weight in bull regime (pool_vote >= bull_threshold). "
+                             "Default: same as --score-entry-weight.")
+    parser.add_argument("--entry-weight-bear", type=float, default=None,
+                        dest="entry_weight_bear",
+                        help="entry_vs_mid_pct weight in bear regime (pool_vote <= bear_threshold). "
+                             "Reduce to de-prioritise aggressive breakouts in choppy markets. "
+                             "Default: same as --score-entry-weight.")
+    parser.add_argument("--normalize-or-by-adr", action="store_true", default=False,
+                        dest="normalize_or_by_adr",
+                        help="Normalize or_range_pct by each ticker's rolling ADR before scoring. "
+                             "Makes OR magnitude comparable across different-volatility stocks. Default: off.")
+    parser.add_argument("--adr-days", type=int, default=20,
+                        dest="adr_days",
+                        help="Lookback days for rolling ADR computation used in --normalize-or-by-adr. Default: 20.")
     parser.add_argument(
         "--min-or-range",
         type=float,
@@ -3553,6 +3623,13 @@ if __name__ == "__main__":
         print(f"  Dir-split EV : off")
     if args.qqq_or_weight != 0.0:
         print(f"  QQQ OR score : weight={args.qqq_or_weight:+.3f}  (boosts aligned signals, penalises opposing)")
+    if args.score_win_rate_weight != 0.0:
+        print(f"  Win rate wt  : {args.score_win_rate_weight:+.3f}  (rewards consistent tickers)")
+    if args.entry_weight_bull is not None or args.entry_weight_bear is not None:
+        print(f"  Adaptive entry: bull={args.entry_weight_bull or 'default'}  bear={args.entry_weight_bear or 'default'}"
+              f"  (pool_vote thresholds: bull≥{args.dg_bull_threshold} bear≤{args.dg_bear_threshold})")
+    if args.normalize_or_by_adr:
+        print(f"  OR/ADR norm  : on  adr_days={args.adr_days}  (or_range_pct ÷ rolling ADR)")
     print(f"  Stop pct     : {args.stop_pct}")
     print(f"  Trailing MA  : {args.trailing_ma}")
     print(
@@ -3783,6 +3860,11 @@ if __name__ == "__main__":
         al_neutral_days=args.al_neutral_days,
         al_bear_days=args.al_bear_days,
         qqq_or_weight=args.qqq_or_weight,
+        score_win_rate_weight=args.score_win_rate_weight,
+        entry_weight_bull=args.entry_weight_bull,
+        entry_weight_bear=args.entry_weight_bear,
+        normalize_or_by_adr=args.normalize_or_by_adr,
+        adr_days=args.adr_days,
     )
 
     skip_log = _apply_capital_flow(

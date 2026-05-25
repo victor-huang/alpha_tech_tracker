@@ -284,6 +284,7 @@ def score_ticker(
     score_prev_day_vol_weight: float = 0.00,
     score_ma200_dist_weight: float = 0.00,
     score_ma50_dist_weight: float = 0.00,
+    score_win_rate_weight: float = 0.00,
     daily_context: dict = None,
     ma_momentum_gate_in_scoring: bool = False,
 ) -> float:
@@ -314,6 +315,7 @@ def score_ticker(
         - score_prev_day_vol_weight
         - score_ma200_dist_weight
         - score_ma50_dist_weight
+        - score_win_rate_weight
     )
     if or_range_weight < -1e-9:
         raise ValueError(
@@ -321,7 +323,8 @@ def score_ticker(
             f"vol_ratio={score_vol_ratio_weight}, avg_win={score_avg_win_weight}, "
             f"ev_trend={score_ev_trend_weight}, dist_52w_low={score_dist_52w_low_weight}, "
             f"streak={score_streak_weight}, prev_day_vol={score_prev_day_vol_weight}, "
-            f"ma200_dist={score_ma200_dist_weight}, ma50_dist={score_ma50_dist_weight} — "
+            f"ma200_dist={score_ma200_dist_weight}, ma50_dist={score_ma50_dist_weight}, "
+            f"win_rate={score_win_rate_weight} — "
             f"or_range_weight would be {or_range_weight:.3f}"
         )
     or_range_weight = max(or_range_weight, 0.0)
@@ -358,6 +361,7 @@ def score_ticker(
         + prev_day_vol_term * score_prev_day_vol_weight
         + ma200_dist_term * score_ma200_dist_weight
         + ma50_dist_term * score_ma50_dist_weight
+        + ticker_stats["win_rate"] * score_win_rate_weight
     )
 
 
