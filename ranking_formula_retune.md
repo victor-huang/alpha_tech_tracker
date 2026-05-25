@@ -2025,3 +2025,36 @@ Enabled by default (`--no-direction-split-ev` to disable). The 7-year evidence i
 ### Updated walk-forward baseline scripts
 
 The baseline runs in all walk-forward scripts (`/tmp/walkforward_param_tune_*.py`) have been updated to explicitly pass `--no-dynamic-ev-gate --no-adaptive-lookback`. The direction-split flag should also be disabled in baseline runs via `--no-direction-split-ev` if re-running those scripts.
+
+---
+
+## Direction-Split EV Threshold Tuning
+
+**Date:** 2026-05-24
+
+### Question
+
+Is the hardcoded `dir_ev <= 0` threshold optimal, or does raising the floor in bear regimes (requiring a higher positive directional EV) improve results?
+
+### Method
+
+Swept `ds_bear_min_ev` [0.0, 0.05, 0.10, 0.15, 0.20] and `ds_bull_min_ev` [0.0, −0.05] across 4 representative years (2020 V-recovery, 2022 bear, 2023 low-vol bull, 2025 mixed). All runs include the full static-default filter stack (`--dynamic-ev-gate --adaptive-lookback`). 40 total combinations.
+
+### Results
+
+```
+BEAR_MIN_EV SWEEP (bull_min_ev=0.0 fixed)
+  bear=0.00  →  2020 +14.3%  2022 -17.9%  2023 +29.9%  2025 +36.6%  sum +63.0%
+  bear=0.05  →  2020 +13.6%  2022 -17.5%  2023 +29.0%  2025 +36.6%  sum +61.7%
+  bear=0.10  →  2020 +12.6%  2022 -16.7%  2023 +27.7%  2025 +37.4%  sum +61.0%
+  bear=0.15  →  2020 +10.7%  2022 -17.7%  2023 +26.7%  2025 +37.2%  sum +56.9%
+  bear=0.20  →  2020 +11.9%  2022 -17.9%  2023 +26.3%  2025 +34.9%  sum +55.2%
+```
+
+`bull_min_ev=−0.05` adds at most +0.7pp in 2022 and is neutral everywhere else — not material.
+
+### Verdict
+
+**Default 0.0 across all three tiers is already optimal.** Every level above 0.0 for `bear_min_ev` hurts the 4-year sum: the gains in 2022 (+1.2pp max at bear=0.10) and 2025 (+0.8pp) are outweighed by losses in 2023 (−2.2pp) and 2020 (−1.7pp). The zero threshold is the natural boundary — it blocks genuinely negative-EV directions without over-filtering tickers with weak but positive directional EV.
+
+The tunability (`--ds-bull-min-ev`, `--ds-neutral-min-ev`, `--ds-bear-min-ev`) is available for future experimentation but there is no current evidence that changing any threshold from 0.0 improves the overall result.
