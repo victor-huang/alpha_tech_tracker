@@ -67,6 +67,25 @@ The same signal logic drives both **live trading** (`trade_engine.py`) and **bac
 | `backtest_result/second_best_time_window/` | M1 vs M2 overlap analysis |
 | `backtest_result/afternoon_time_window/` | Afternoon window sweep + M1/M2/A1/A2 overlap analysis |
 
+### Analysis Scripts (`analysis_scripts/`)
+
+**Before writing a new analysis script, check this folder first.** Many ad-hoc questions about backtest behaviour, fill models, selector picks, and per-trade decomposition already have a script — reuse or extend rather than duplicate.
+
+| Script | What it answers |
+|---|---|
+| `analysis_scripts/verify_1min_fills.py` | "Would 1-min bar detection recover the optimistic-fill P&L?" — re-fills `hard_stop` / `fallback_20pct` exits using 1-min closes within the same 5-min exit bar. Saves per-trade JSON to `logs/verify_1min_fills_<start>_<end>.json`. |
+| `analysis_scripts/analyze_big_winners.py` | "Which big-gain (≥0.8%) trades are real vs fill-artifact?" — buckets trades by whether the ≥0.8% gain holds under default 5-min, 1-min realistic, and optimistic fills. Reads the JSON produced by verify_1min_fills. |
+| `analysis_scripts/compare_picks_big_winners.py` | "Do optimistic-mode selector picks produce more genuine winners?" — runs default + optimistic backtests, counts genuine ≥0.5% winners by exit reason (primary + REV/BR/BRU legs). |
+| `analysis_scripts/analyze_clean_optimistic_pnl.py` | "After removing noise, what's the actual P&L impact?" — runs the optimistic-mode selector but executes its picks with realistic 5-min bar-close fills. Decomposes Raw Optimistic into Selection benefit + Fill artifact. Supports `--min-hold-bars 0/1`. **Use this for honest "money on the table" estimates.** |
+
+**Guidelines for new analyses:**
+
+1. **Look here first** — search `analysis_scripts/` for relevant patterns (re-filling exits, comparing selectors, decomposing P&L) before writing new code.
+2. **Reuse existing scripts** — if a script almost answers your question, add a CLI flag to it rather than copy-pasting.
+3. **Temporary / one-shot scripts** go in `/tmp/` so they don't clutter the repo. If a script proves useful for a second analysis, **then** promote it to `analysis_scripts/`.
+4. **Caveat patterns**: see the comments at the top of each script for how it computes timestamps, looks up bars, and handles sub-trade legs (REV/BR/BRU). Alpaca's 5-min bar index is the bar OPEN time; the trade log's `exit_time` is the bar's CLOSE time (= next bar's open).
+5. **Findings live alongside scripts**, e.g. `EXIT_FILL_MODEL_1MIN_VERIFICATION.md` summarizes everything those four scripts produced.
+
 ---
 
 ## Strategy: Signal Logic
