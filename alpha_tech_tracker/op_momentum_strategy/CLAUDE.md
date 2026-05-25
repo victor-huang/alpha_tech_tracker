@@ -77,6 +77,7 @@ The same signal logic drives both **live trading** (`trade_engine.py`) and **bac
 | `analysis_scripts/analyze_big_winners.py` | "Which big-gain (≥0.8%) trades are real vs fill-artifact?" — buckets trades by whether the ≥0.8% gain holds under default 5-min, 1-min realistic, and optimistic fills. Reads the JSON produced by verify_1min_fills. |
 | `analysis_scripts/compare_picks_big_winners.py` | "Do optimistic-mode selector picks produce more genuine winners?" — runs default + optimistic backtests, counts genuine ≥0.5% winners by exit reason (primary + REV/BR/BRU legs). |
 | `analysis_scripts/analyze_clean_optimistic_pnl.py` | "After removing noise, what's the actual P&L impact?" — runs the optimistic-mode selector but executes its picks with realistic 5-min bar-close fills. Decomposes Raw Optimistic into Selection benefit + Fill artifact. Supports `--min-hold-bars 0/1`. **Use this for honest "money on the table" estimates.** |
+| `analysis_scripts/sweep_*.py` (23 scripts) | Parameter sweeps that shell out to `op_momentum_selector_backtest.py` in parallel via `subprocess` + `ProcessPoolExecutor`. Each script targets one parameter dimension (window timing, stop-pct, stale-cut, regime filter, reversal max bars, etc.) for a specific date range. Invoke from project root so the embedded relative path `alpha_tech_tracker/op_momentum_strategy/op_momentum_selector_backtest.py` resolves. |
 
 **Guidelines for new analyses:**
 
