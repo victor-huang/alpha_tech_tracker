@@ -289,6 +289,7 @@ def score_ticker(
     score_dist_52w_high_weight: float = 0.00,
     score_frog_weight: float = 0.00,
     score_rel_strength_weight: float = 0.00,
+    score_dir_ev_weight: float = 0.00,
     daily_context: dict = None,
     ma_momentum_gate_in_scoring: bool = False,
 ) -> float:
@@ -324,6 +325,7 @@ def score_ticker(
         - score_dist_52w_high_weight
         - score_frog_weight
         - score_rel_strength_weight
+        - score_dir_ev_weight
     )
     if or_range_weight < -1e-9:
         raise ValueError(
@@ -334,7 +336,7 @@ def score_ticker(
             f"prev_day_vol={score_prev_day_vol_weight}, ma200_dist={score_ma200_dist_weight}, "
             f"ma50_dist={score_ma50_dist_weight}, win_rate={score_win_rate_weight}, "
             f"trend_align={score_trend_align_weight}, frog={score_frog_weight}, "
-            f"rel_strength={score_rel_strength_weight} — "
+            f"rel_strength={score_rel_strength_weight}, dir_ev={score_dir_ev_weight} — "
             f"or_range_weight would be {or_range_weight:.3f}"
         )
     or_range_weight = max(or_range_weight, 0.0)
@@ -380,6 +382,15 @@ def score_ticker(
     rel_ma50_dist = ctx.get("rel_ma50_dist_pct", np.nan)
     rel_strength_term = (direction_sign * rel_ma50_dist / 10.0) if not np.isnan(rel_ma50_dist) else 0.0
 
+    # Direction-specific historical EV: uses ev_trade_bullish for BULLISH signals,
+    # ev_trade_bearish for BEARISH signals. This separates tickers that perform well
+    # in a given direction from those that are just generally active.
+    if signal_dict.get("signal") == "BULLISH":
+        dir_ev = ticker_stats.get("ev_trade_bullish", 0.0) or 0.0
+    else:
+        dir_ev = ticker_stats.get("ev_trade_bearish", 0.0) or 0.0
+    dir_ev_term = dir_ev
+
     return (
         signal_dict["entry_vs_mid_pct"] * score_entry_weight
         + ticker_stats["avg_win_pct"] * score_avg_win_weight
@@ -396,6 +407,7 @@ def score_ticker(
         + dist_52w_high_term * score_dist_52w_high_weight
         + frog_term * score_frog_weight
         + rel_strength_term * score_rel_strength_weight
+        + dir_ev_term * score_dir_ev_weight
     )
 
 

@@ -957,6 +957,7 @@ def run_selector_backtest(
     score_frog_weight: float = 0.0,
     frog_days: int = 60,
     score_rel_strength_weight: float = 0.0,
+    score_dir_ev_weight: float = 0.0,
 ) -> tuple:
     """
     Walk each trading day in [eval_start, eval_end], apply rolling selector
@@ -1575,6 +1576,7 @@ def run_selector_backtest(
                             score_dist_52w_high_weight=score_dist_52w_high_weight,
                             score_frog_weight=score_frog_weight,
                             score_rel_strength_weight=score_rel_strength_weight,
+                            score_dir_ev_weight=score_dir_ev_weight,
                             daily_context=daily_context_by_ticker.get(ticker, {}).get(d),
                             ma_momentum_gate_in_scoring=ma_momentum_gate_in_scoring,
                         )
@@ -3442,6 +3444,18 @@ def _parse_args():
         help="Lookback days for Frog-in-the-Pan smoothness score. Default: 60.",
     )
     parser.add_argument(
+        "--score-dir-ev-weight",
+        type=float,
+        default=0.0,
+        dest="score_dir_ev_weight",
+        help=(
+            "Direction-specific historical EV weight. Uses ev_trade_bullish for BULLISH signals "
+            "and ev_trade_bearish for BEARISH signals. Rewards tickers that historically perform "
+            "well specifically in the direction being scored, not just overall. "
+            "Typical range 0.05-0.20. Default: 0.0."
+        ),
+    )
+    parser.add_argument(
         "--score-rel-strength-weight",
         type=float,
         default=0.0,
@@ -3736,10 +3750,11 @@ if __name__ == "__main__":
         ta = args.score_trend_align_weight
         fg = args.score_frog_weight
         rs = args.score_rel_strength_weight
-        or_w = round(1.0 - ev - vr - aw - et - d52 - d52h - sk - pv - m2 - m5 - ta - fg - rs, 3)
+        de = args.score_dir_ev_weight
+        or_w = round(1.0 - ev - vr - aw - et - d52 - d52h - sk - pv - m2 - m5 - ta - fg - rs - de, 3)
         print(
             f"  Picker       : scored  (entry={ev} avg_win={aw} or_range={or_w} vol={vr} "
-            f"ev_trend={et} dist_52w_low={d52} dist_52w_high={d52h} streak={sk} prev_vol={pv} ma200={m2} ma50={m5} trend_align={ta} frog={fg} rel_strength={rs})"
+            f"ev_trend={et} dist_52w_low={d52} dist_52w_high={d52h} streak={sk} prev_vol={pv} ma200={m2} ma50={m5} trend_align={ta} frog={fg} rel_strength={rs} dir_ev={de})"
         )
     if args.direction_split_ev_gate:
         print(
@@ -3768,6 +3783,8 @@ if __name__ == "__main__":
         print(f"  Frog-in-Pan  : weight={args.score_frog_weight:.3f}  days={args.frog_days}  (path smoothness, direction-aware)")
     if args.score_rel_strength_weight > 0:
         print(f"  Rel strength : weight={args.score_rel_strength_weight:.3f}  (cross-sectional MA50 vs pool mean, direction-aware)")
+    if args.score_dir_ev_weight > 0:
+        print(f"  Dir EV score : weight={args.score_dir_ev_weight:.3f}  (direction-specific EV: bull→ev_bull, bear→ev_bear)")
     print(f"  Stop pct     : {args.stop_pct}")
     print(f"  Trailing MA  : {args.trailing_ma}")
     print(
@@ -4013,6 +4030,7 @@ if __name__ == "__main__":
         score_frog_weight=args.score_frog_weight,
         frog_days=args.frog_days,
         score_rel_strength_weight=args.score_rel_strength_weight,
+        score_dir_ev_weight=args.score_dir_ev_weight,
     )
 
     skip_log = _apply_capital_flow(

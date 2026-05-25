@@ -642,3 +642,4 @@ python alpha_tech_tracker/op_momentum_strategy/op_momentum_selector_backtest.py 
 
 > **Prior baseline (without `--score-rel-strength-weight 0.15`):**
 > 8yr: +248.5% | 2022: -37.2% | 2023: +70.4% | 2025: +29.8%
+
