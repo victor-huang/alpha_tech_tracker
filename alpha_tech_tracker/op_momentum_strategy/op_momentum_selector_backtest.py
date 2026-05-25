@@ -897,7 +897,7 @@ def run_selector_backtest(
     regime_bear_avg_win_weight: float = None,
     regime_bear_ma50_dist_weight: float = None,
     ev_trend_days: int = 15,
-    direction_split_ev_gate: bool = False,
+    direction_split_ev_gate: bool = True,
     oracle_picks: bool = False,
     min_hold_bars: int = 0,
     stale_cut_mins: int = 0,
@@ -3191,10 +3191,16 @@ def _parse_args():
     parser.add_argument(
         "--direction-split-ev",
         action="store_true",
-        default=False,
+        default=True,
         dest="direction_split_ev_gate",
         help="Apply EV gate per signal direction (BULLISH/BEARISH separately). "
-        "Excludes tickers with negative directional EV even if combined EV is positive. Default: off.",
+        "Excludes tickers with negative directional EV even if combined EV is positive. Default: on.",
+    )
+    parser.add_argument(
+        "--no-direction-split-ev",
+        action="store_false",
+        dest="direction_split_ev_gate",
+        help="Disable direction-split EV gate (uses combined EV for both directions).",
     )
     parser.add_argument(
         "--min-or-range",
@@ -3481,7 +3487,7 @@ if __name__ == "__main__":
             f"ev_trend={et} dist_52w={d52} streak={sk} prev_vol={pv} ma200={m2} ma50={m5})"
         )
     if args.direction_split_ev_gate:
-        print(f"  Dir-split EV : on (gate per BULLISH/BEARISH direction separately)")
+        print(f"  Dir-split EV : on")
     else:
         print(f"  Dir-split EV : off")
     print(f"  Stop pct     : {args.stop_pct}")

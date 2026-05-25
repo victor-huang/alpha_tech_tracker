@@ -1968,3 +1968,60 @@ If live monthly P&L is consistently worse than backtest baseline with static-def
 - Only adopt WF-selected params if they are **consistent across at least 2 consecutive folds** — single-fold selections in ambiguous markets are noise (2018 and 2023 both showed this)
 - If WF-selected params match the static defaults, that is confirmation the current setting is correct — no change needed
 - The fixed params (`neut_excl=0.25`, `bull_days=20`) have been stable across all years tested; do not sweep them again unless the ticker pool changes significantly
+
+---
+
+## Direction-Split EV Gate (`--direction-split-ev`)
+
+**Date:** 2026-05-24
+
+### Motivation
+
+The 2023 signal direction split analysis revealed that the strategy's −0.3% baseline in 2023 (QQQ +54%) was entirely caused by BEARISH signals. BULLISH signals alone returned +89.6% that year; BEARISH signals cost −140.0%.
+
+```
+2023 signal direction split (raw baseline, all 17 tickers):
+  BULLISH  1578 trades  35.2% WR  EV +0.057%/trade  Total P&L  +89.6%
+  BEARISH   788 trades  36.4% WR  EV -0.178%/trade  Total P&L -140.0%
+```
+
+The BEARISH WR looked similar (36%) but the avg win ($1.19) was much smaller than avg loss ($0.96) — in a +54% bull year, downside follow-through never materialized. The strategy was buying PUT options on dips in a relentless uptrend.
+
+MSTR was the worst single offender: −127pp from BEARISH alone vs +13pp BULLISH. COIN was −20pp BEARISH vs +14pp BULLISH.
+
+### What the gate does
+
+`--direction-split-ev` gates each ticker on its **directional EV** — the rolling EV computed from BULLISH-only trades or BEARISH-only trades — rather than the combined EV. A ticker with combined EV > 0 but BEARISH EV < 0 will be skipped when it fires a BEARISH signal that day.
+
+The directional EVs (`ev_trade_bullish`, `ev_trade_bearish`) are already computed in `compute_ticker_stats()` and available in `rolling_stats` — no additional data needed.
+
+### 7-year backtest results
+
+```
+Year   Baseline   Dir-split only   Static+Dir-split   Dir-split Δ   Combined Δ
+────────────────────────────────────────────────────────────────────────────────
+2019    +10.9%       +15.6%            +20.9%           +4.7pp       +10.0pp
+2020    +25.2%       +20.6%            +14.3%           -4.6pp       -10.9pp
+2021     +7.2%       +15.9%             +9.2%           +8.7pp        +2.0pp
+2022    -26.5%       -24.9%            -13.3%           +1.7pp       +13.2pp
+2023     -0.3%       +27.3%            +30.6%          +27.5pp       +30.9pp
+2024    -26.9%       -13.5%             +3.4%          +13.4pp       +30.3pp
+2025     +9.7%       +16.6%            +37.0%           +6.9pp       +27.3pp
+────────────────────────────────────────────────────────────────────────────────
+Total                                                  +58.3pp      +102.8pp
+```
+
+- **Dir-split only**: baseline (no dynamic-ev-gate, no adaptive-lookback) + direction-split EV gate alone
+- **Static+Dir-split**: all three filters combined — dynamic-ev-gate + adaptive-lookback (static defaults) + direction-split EV
+
+Direction-split alone adds +58pp across 7 years, helping 6 of 7. Combined with the static-default filters, +103pp cumulative.
+
+**Only 2020 is hurt** (−4.6pp standalone, −11pp combined) — same V-recovery structural limit seen with the other filters. The rolling BEARISH EV in Q2–Q4 2020 is still being dragged down by crash-period losses, causing the gate to suppress BEARISH signals even as the market recovered in both directions.
+
+### Decision
+
+Enabled by default (`--no-direction-split-ev` to disable). The 7-year evidence is the strongest of any filter added so far: +27pp in 2023, +13pp in 2024, +27pp in 2025, at the cost of −11pp in the one exceptional V-recovery year.
+
+### Updated walk-forward baseline scripts
+
+The baseline runs in all walk-forward scripts (`/tmp/walkforward_param_tune_*.py`) have been updated to explicitly pass `--no-dynamic-ev-gate --no-adaptive-lookback`. The direction-split flag should also be disabled in baseline runs via `--no-direction-split-ev` if re-running those scripts.
