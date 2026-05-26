@@ -550,24 +550,24 @@ There is no scoring weight adjustment that fixes the 2022 directional miss witho
 
 **Best-known config (top-1, max 8yr return):** Exp 22 + Exp 23 (bear-ev-only + no-bull + ew=0.30 + ctp0.35) at **+317.5pp** (per-year sum, no-compound).
 
-**Updated baseline (2026-05-25): Exp 22 + ctp0.40 + below-MA200 gate (Exp 26) at +326.43% (9yr sum)**
+**Updated baseline (2026-05-26): Exp 22 + ctp0.30 + below-MA200 gate (Exp 26 + Exp 27 sensitivity) at +330.78% (9yr sum)**
 
-Per-year breakdown (full exp22 + `--qqq-regime-bear-ctp 0.40 --qqq-regime-bear-ctp-below-ma200`):
+Per-year breakdown (full exp22 + `--qqq-regime-bear-ctp 0.30 --qqq-regime-bear-ctp-below-ma200`):
 
 ```
-Year    Return      Δ vs prev baseline
+Year    Return      Δ vs Exp26 baseline
 ------  ----------  ----------------------
-2018    -20.92%     +7.97pp
-2019    +41.97%     +0.36pp
-2020    +28.42%     -4.71pp
-2021    +40.62%     +2.79pp
-2022    +67.51%     +1.71pp
-2023    +66.77%      0.00pp
-2024     +9.20%     +3.25pp
-2025    +28.51%     +6.49pp
-2026*   +64.35%     +7.31pp  (* through 2026-05-23)
+2018    -10.65%     +10.27pp
+2019    +41.97%      +0.36pp
+2020    +28.42%       0.00pp
+2021    +40.62%       0.00pp
+2022    +61.59%      -5.92pp
+2023    +66.77%       0.00pp
+2024     +9.20%       0.00pp
+2025    +28.51%       0.00pp
+2026*   +64.35%       0.00pp  (* through 2026-05-23)
 ------
-SUM     +326.43%    +25.17pp
+SUM     +330.78%     +4.35pp
 ```
 
 ```bash
@@ -598,7 +598,7 @@ python alpha_tech_tracker/op_momentum_strategy/op_momentum_selector_backtest.py 
   --qqq-regime-bearish-ev-only \
   --qqq-regime-no-bullish \
   --qqq-regime-bear-entry-weight 0.30 \
-  --qqq-regime-bear-ctp 0.40 \
+  --qqq-regime-bear-ctp 0.30 \
   --qqq-regime-bear-ctp-below-ma200 \
   --start YYYY-01-01 --end YYYY-12-31
 ```
@@ -862,3 +862,77 @@ python alpha_tech_tracker/op_momentum_strategy/op_momentum_selector_backtest.py 
   --qqq-regime-recovery-floor 0.25 \
   --start YYYY-01-01 --end YYYY-12-31
 ```
+
+---
+
+## Exp 27 — Sensitivity Sweep (2026-05-26)
+
+Full 9-year sensitivity sweep across four parameter dimensions, holding all other flags at the Exp 26 baseline. 207 runs total, all parallelized.
+
+### CTP threshold sweep (`--qqq-regime-bear-ctp`)
+
+```
+Variant   2018     2019     2020     2021     2022     2023     2024     2025     2026    9yr SUM
+--------  -------  -------  -------  -------  -------  -------  -------  -------  -------  --------
+ctp0.30   -10.7%   +42.0%   +28.4%   +40.6%   +61.6%   +66.8%    +9.2%   +28.5%   +64.3%   +330.8pp  ← BEST
+ctp0.35   -15.9%   +42.0%   +28.4%   +40.6%   +64.0%   +66.8%    +9.2%   +28.5%   +64.3%   +328.0pp
+ctp0.40   -20.9%   +42.0%   +28.4%   +40.6%   +67.5%   +66.8%    +9.2%   +28.5%   +64.3%   +326.4pp  (prev)
+ctp0.45   -25.2%   +42.0%   +28.4%   +40.6%   +48.0%   +66.8%    +9.2%   +28.5%   +64.3%   +302.7pp
+ctp0.50   -22.7%   +42.0%   +28.4%   +40.6%   +54.9%   +66.8%    +9.2%   +28.5%   +64.3%   +312.0pp
+ctp0.55   -19.8%   +42.0%   +28.4%   +40.6%   +54.7%   +66.8%    +9.2%   +28.5%   +64.3%   +314.7pp
+```
+
+**Finding:** With the below-MA200 gate providing the structural filter, a lower threshold is better. `ctp0.30` gains +10.2pp in 2018 (moderate bear, fast V-recovery) at the cost of −5.9pp in 2022 (prolonged structural bear). Net: **+4.4pp**. All other years unaffected (gate fires 0 days in non-bear years). The threshold cliff is at 0.45+ — above that, 2022 degrades sharply.
+
+### Stop-pct sweep (`--stop-pct`)
+
+```
+Variant   2018     2019     2020     2021     2022     2023     2024     2025     2026    9yr SUM
+--------  -------  -------  -------  -------  -------  -------  -------  -------  -------  --------
+stop0.20   -6.3%    +8.3%   -20.6%   +28.3%   +19.0%   +45.5%   -24.7%   +22.4%   +34.9%   +106.6pp
+stop0.30  -17.8%   +12.9%    +0.9%   +41.8%   +44.6%   +30.5%   -37.6%   +15.2%   +66.8%   +157.4pp
+stop0.40  -20.9%   +42.0%   +28.4%   +40.6%   +67.5%   +66.8%    +9.2%   +28.5%   +64.3%   +326.4pp  ← BEST by far
+stop0.50  -22.4%   +16.7%   +20.8%    +7.2%   +56.0%    +8.4%   -27.1%    +4.9%   +76.0%   +140.3pp
+stop0.60  -29.7%   +21.3%   +30.3%   -26.6%   +56.0%   +33.9%   -25.8%   +29.8%   +66.8%   +156.0pp
+```
+
+**Finding:** `stop0.40` wins by an enormous margin (+170pp over next best). The parameter is highly optimized — do not change it.
+
+### Regime weight sweep (`--qqq-regime-weight`)
+
+```
+Variant   2018     2019     2020     2021     2022     2023     2024     2025     2026    9yr SUM
+--------  -------  -------  -------  -------  -------  -------  -------  -------  -------  --------
+rw0.40    -20.9%   +42.0%   +28.4%   +40.6%   +64.2%   +66.8%    +9.2%   +28.5%   +64.3%   +323.1pp
+rw0.45    -20.9%   +42.0%   +28.4%   +40.6%   +67.5%   +66.8%    +9.2%   +28.5%   +64.3%   +326.4pp  ← plateaus here
+rw0.50    -20.9%   +42.0%   +28.4%   +40.6%   +67.5%   +66.8%    +9.2%   +28.5%   +64.3%   +326.4pp
+rw0.55    -20.9%   +42.0%   +28.4%   +40.6%   +67.5%   +66.8%    +9.2%   +28.5%   +64.3%   +326.4pp  (current)
+rw0.60    -20.9%   +42.0%   +28.4%   +40.6%   +67.5%   +66.8%    +9.2%   +28.5%   +64.3%   +326.4pp
+rw0.65    -20.9%   +42.0%   +28.4%   +40.6%   +67.5%   +66.8%    +9.2%   +28.5%   +64.3%   +326.4pp
+```
+
+**Finding:** The result is completely flat from 0.45 to 0.65. Once the regime weight exceeds ~0.45, it's strong enough to fully redirect picks on bear days — more weight adds no marginal benefit. Current 0.55 is fine; could lower to 0.45 with no impact.
+
+### Recovery floor sweep (`--qqq-regime-recovery-floor`)
+
+```
+Variant   2018     2019     2020     2021     2022     2023     2024     2025     2026    9yr SUM
+--------  -------  -------  -------  -------  -------  -------  -------  -------  -------  --------
+rf0.00    -20.9%   +42.0%   +28.4%   +40.6%   +63.3%   +66.8%    +9.2%   +28.5%   +64.3%   +322.2pp
+rf0.10    -20.9%   +42.0%   +28.4%   +40.6%   +63.3%   +66.8%    +9.2%   +28.5%   +64.3%   +322.2pp
+rf0.15    -20.9%   +42.0%   +28.4%   +40.6%   +67.5%   +66.8%    +9.2%   +28.5%   +64.3%   +326.4pp
+rf0.25    -20.9%   +42.0%   +28.4%   +40.6%   +67.5%   +66.8%    +9.2%   +28.5%   +64.3%   +326.4pp  (current)
+rf0.35    -20.9%   +42.0%   +28.4%   +40.6%   +68.5%   +66.8%    +9.2%   +28.5%   +64.3%   +327.4pp
+rf0.50    -20.9%   +42.0%   +28.4%   +40.6%   +68.5%   +66.8%    +9.2%   +28.5%   +64.3%   +327.4pp
+```
+
+**Finding:** Floor ≥ 0.15 is required (rf0.00/rf0.10 miss 2022 dead-cat bounce protection). rf0.35+ edges out the current rf0.25 by +1pp (all in 2022). However, combining rf0.35 with ctp0.30 shows no additional benefit — the CTP threshold change absorbs the 2022 difference. Current rf0.25 is confirmed fine.
+
+### Summary
+
+| Parameter | Current | Optimal | Change | Impact |
+|---|---|---|---|---|
+| `--qqq-regime-bear-ctp` | 0.40 | **0.30** | lower | **+4.4pp** — better 2018, slightly worse 2022 |
+| `--stop-pct` | 0.40 | 0.40 | none | confirmed, plateau is enormous |
+| `--qqq-regime-weight` | 0.55 | any ≥ 0.45 | none | flat above 0.45, no change needed |
+| `--qqq-regime-recovery-floor` | 0.25 | 0.25 | none | rf0.35 adds +1pp but cancels with ctp0.30 |
