@@ -602,6 +602,36 @@ python alpha_tech_tracker/op_momentum_strategy/op_momentum_selector_backtest.py 
   --start YYYY-01-01 --end YYYY-12-31
 ```
 
+### ctp0.35 vs ctp0.40 — calibration note
+
+These two configs are nearly identical in 9yr total (−1.06pp). The choice matters year-by-year:
+
+```
+Year    ctp0.35     ctp0.40     Δ(0.35 vs 0.40)
+------  ----------  ----------  ---------------
+2018    -17.30%     -28.89%     +11.59pp  ← 0.35 wins (moderate bear, fast recovery)
+2022    +36.81%     +65.80%     -28.99pp  ← 0.40 wins (prolonged structural bear)
+2025    +30.79%     +22.02%      +8.77pp  ← 0.35 wins (V-shape tariff crash)
+2026*   +64.16%     +57.04%      +7.12pp  ← 0.35 wins (partial year recovery)
+SUM     +300.20%    +301.26%     -1.06pp
+```
+
+**Rule of thumb:**
+- **ctp0.35** (default, safer) — better when bear is short-lived or V-shaped (few full-bear days, fast MA recovery)
+- **ctp0.40** (aggressive) — better when bear is prolonged and structural (many consecutive full-bear days, QQQ stays below MA200 for months)
+
+**How to calibrate before a bear period:**
+
+1. **Count rolling full-bear days YTD** — run `--qqq-regime-bear-ctp 0.01` for the current year and check `Bear CTP dates:` in the output. If already ≥ 40 days by mid-year → lean toward 0.40; if ≤ 20 → stay at 0.35.
+
+2. **Check QQQ depth below MA200** — if QQQ is >8% below its 200-day MA with both MA20 and MA50 slopes steeply negative → structural bear, use 0.40. If <5% below MA200 or slopes are flattening → transitional/V-shape, use 0.35.
+
+3. **Check MA50 slope steepness** — compute `(MA50_today - MA50_30days_ago) / MA50_today`. If < −3% → deep structural decline, favor 0.40. If −1% to −3% → borderline, stick with 0.35.
+
+4. **Run a quick YTD backtest with both values** — compare actual P&L for the current year so far. If ctp0.40 is outperforming (more bearish signals winning), the bear is structural; switch. This is the most reliable signal.
+
+5. **Revert to 0.35 at first sign of recovery** — when QQQ closes above MA50 for 3+ consecutive days, the bear is weakening. Drop back to 0.35 immediately.
+
 ---
 
 ## Exp 23 — `--qqq-regime-bear-ctp` (Bear Close-To-Price threshold expansion)
