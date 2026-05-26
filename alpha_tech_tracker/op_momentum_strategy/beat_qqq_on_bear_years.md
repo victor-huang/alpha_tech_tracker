@@ -719,6 +719,38 @@ The gate fires in only 3 years (2021, 2022, 2025) and **hurts both key years**:
 
 ---
 
+## Exp 25 — `--qqq-regime-bear-ctp-below-ma20-ma50` (Price-Relative Gate)
+
+**Date:** 2026-05-25  
+**Goal:** Replace the full-bear condition (QQQ < MA200 + both slopes negative) with a faster price-relative trigger: CTP activates whenever prior-day QQQ close < MA20 AND close < MA50. Hypothesis: this fires earlier in V-shape crashes before structural bear is confirmed, capturing the highest-quality early-crash CTP dates.
+
+### What it does
+
+Instead of requiring `factor >= 1.0` (QQQ < MA200, both MA slopes negative), the flag uses a simpler price-level condition: prior-day close < MA20 AND close < MA50. No MA200 or slope requirements. Activates on ordinary corrections as well as confirmed bear markets.
+
+### Results (simplified exp22 proxy config, top-1)
+
+```
+Config                  2022 days  2022 return    2025 days  2025 return
+Baseline                    —         -4.54%           —        -22.98%
+ctp0.35 (full-bear)        110        -6.22%          37         +0.77%
+ctp0.35 + below_ma         145        -7.13%          55        -31.33%
+```
+
+### Finding: hypothesis not confirmed — catastrophically worse in 2025
+
+The below-MA mode adds **35 extra CTP days in 2022** and **18 extra days in 2025** vs the full-bear gate. Those additional days are ordinary bull-market corrections (QQQ briefly dips below MA20/MA50 but recovers), not genuine bear-momentum windows. CTP on those days picks mid-zone bearish entries in a bullish context → very low win rate → large losses.
+
+**2025 is −31.33%** (vs +0.77% for plain ctp0.35 and −22.98% baseline). The 18 extra days turn a winning strategy into a disaster worse than doing nothing.
+
+**Why the full-bear condition works:** The MA200 + both-slopes-negative requirement is doing essential work — it ensures CTP only fires during confirmed structural downtrends, not short dips. Removing those requirements floods the strategy with low-quality bearish entries on garden-variety pullbacks in bull markets.
+
+### Best-known config unchanged
+
+`--qqq-regime-bear-ctp 0.35` (no modifier) remains the best configuration. The full-bear gate is necessary and correct. Flag is available for completeness but should not be used.
+
+---
+
 **Previous best-known (Exp 20, more balanced):** **+282.9pp** — better if 2025/2026 bull performance is weighted more:
 ```bash
 source ~/.pyenv/versions/alpha_tech_tracker/bin/activate

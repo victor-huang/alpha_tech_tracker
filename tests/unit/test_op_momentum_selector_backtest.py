@@ -1857,3 +1857,55 @@ class TestComputeBearCtpDates:
                 qqq_regime_bear_ctp_ma_cross=True,
             )
         assert gated == base
+
+    def test_below_ma_mode_fires_when_close_below_both_ma20_and_ma50(self):
+        # Declining series: prior-day close < MA20 and close < MA50 throughout.
+        # below_ma mode should return dates just like the full-bear factor mode
+        # (or more, since it has no MA200/slope requirement).
+        prices = [1000.0 - i * 5 for i in range(65)]
+        df = _make_qqq_df(prices)
+        below_ma_result = _compute_bear_ctp_dates(
+            df,
+            qqq_regime_full_only=True,
+            qqq_regime_ma200=False,
+            qqq_regime_slope_days=5,
+            qqq_regime_bear_ctp_below_ma=True,
+        )
+        assert len(below_ma_result) > 0
+
+    def test_below_ma_mode_does_not_fire_when_close_above_ma20(self):
+        # Flat series: prior-day close == MA20 == MA50 (not below both).
+        # below_ma mode should return empty set.
+        prices = [500.0] * 60
+        df = _make_qqq_df(prices)
+        result = _compute_bear_ctp_dates(
+            df,
+            qqq_regime_full_only=True,
+            qqq_regime_ma200=False,
+            qqq_regime_slope_days=5,
+            qqq_regime_bear_ctp_below_ma=True,
+        )
+        assert result == set()
+
+    def test_below_ma_mode_returns_more_dates_than_full_bear_in_moderate_dip(self):
+        # Series: brief shallow dip (close drops below MA20 and MA50 but not MA200,
+        # slopes not fully negative). Full-bear gate would skip these; below_ma fires.
+        # Construct: 60 flat days at 500, then 5 days declining to 450.
+        prices = [500.0] * 60 + [490.0, 480.0, 470.0, 460.0, 450.0]
+        df = _make_qqq_df(prices)
+        full_bear = _compute_bear_ctp_dates(
+            df,
+            qqq_regime_full_only=True,
+            qqq_regime_ma200=True,
+            qqq_regime_slope_days=5,
+        )
+        below_ma = _compute_bear_ctp_dates(
+            df,
+            qqq_regime_full_only=True,
+            qqq_regime_ma200=True,
+            qqq_regime_slope_days=5,
+            qqq_regime_bear_ctp_below_ma=True,
+        )
+        # full_bear requires MA200 breach — won't fire in a shallow dip.
+        # below_ma only needs close < MA20 AND close < MA50 — fires on dip days.
+        assert len(below_ma) >= len(full_bear)
