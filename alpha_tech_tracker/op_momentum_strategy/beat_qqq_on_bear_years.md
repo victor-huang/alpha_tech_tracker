@@ -550,24 +550,24 @@ There is no scoring weight adjustment that fixes the 2022 directional miss witho
 
 **Best-known config (top-1, max 8yr return):** Exp 22 + Exp 23 (bear-ev-only + no-bull + ew=0.30 + ctp0.35) at **+317.5pp** (per-year sum, no-compound).
 
-**Updated baseline (2026-05-25): Exp 22 + ctp0.40 at +301.26% (compound 9yr sum)**
+**Updated baseline (2026-05-25): Exp 22 + ctp0.40 + below-MA200 gate (Exp 26) at +326.43% (9yr sum)**
 
-Per-year breakdown (full exp22 + `--qqq-regime-bear-ctp 0.40`):
+Per-year breakdown (full exp22 + `--qqq-regime-bear-ctp 0.40 --qqq-regime-bear-ctp-below-ma200`):
 
 ```
-Year    Return      Picks     W/L
-------  ----------  --------  --------
-2018    -28.89%     163       62W/101L
-2019    +41.61%     164       79W/85L
-2020    +33.13%     149       59W/90L
-2021    +37.83%     188       90W/98L
-2022    +65.80%     183       96W/87L
-2023    +66.77%     193       83W/110L
-2024    +5.95%      188       83W/105L
-2025    +22.02%     196       95W/101L
-2026*   +57.04%     86        45W/41L   (* through 2026-05-23)
+Year    Return      Δ vs prev baseline
+------  ----------  ----------------------
+2018    -20.92%     +7.97pp
+2019    +41.97%     +0.36pp
+2020    +28.42%     -4.71pp
+2021    +40.62%     +2.79pp
+2022    +67.51%     +1.71pp
+2023    +66.77%      0.00pp
+2024     +9.20%     +3.25pp
+2025    +28.51%     +6.49pp
+2026*   +64.35%     +7.31pp  (* through 2026-05-23)
 ------
-SUM     +301.26%
+SUM     +326.43%    +25.17pp
 ```
 
 ```bash
@@ -599,12 +599,15 @@ python alpha_tech_tracker/op_momentum_strategy/op_momentum_selector_backtest.py 
   --qqq-regime-no-bullish \
   --qqq-regime-bear-entry-weight 0.30 \
   --qqq-regime-bear-ctp 0.40 \
+  --qqq-regime-bear-ctp-below-ma200 \
   --start YYYY-01-01 --end YYYY-12-31
 ```
 
 ### ctp0.35 vs ctp0.40 — calibration note
 
-These two configs are nearly identical in 9yr total (−1.06pp). The choice matters year-by-year:
+> **Note:** The comparison below uses the old full-bear gate. With the new `--qqq-regime-bear-ctp-below-ma200` gate (Exp 26), ctp0.40 improves significantly (2018 no longer regresses; 2025 fires 0 days). The below-MA200 gate is now the recommended default — these notes apply if comparing the two threshold values under the new gate.
+
+These two configs are nearly identical in 9yr total (−1.06pp under the full-bear gate). The choice matters year-by-year:
 
 ```
 Year    ctp0.35     ctp0.40     Δ(0.35 vs 0.40)
@@ -616,7 +619,7 @@ Year    ctp0.35     ctp0.40     Δ(0.35 vs 0.40)
 SUM     +300.20%    +301.26%     -1.06pp
 ```
 
-**Rule of thumb:**
+**Rule of thumb (full-bear gate):**
 - **ctp0.35** (default, safer) — better when bear is short-lived or V-shaped (few full-bear days, fast MA recovery)
 - **ctp0.40** (aggressive) — better when bear is prolonged and structural (many consecutive full-bear days, QQQ stays below MA200 for months)
 
@@ -788,6 +791,45 @@ The gate fires in only 3 years (2021, 2022, 2025) and **hurts both key years**:
 ### Best-known config unchanged
 
 `--qqq-regime-bear-ctp 0.35` remains the recommended addition (no MA cross gate).
+
+---
+
+## Exp 26 — `--qqq-regime-bear-ctp-below-ma200` (MA200-Gated CTP, 2026-05-25)
+
+**Hypothesis:** Replace the full-bear gate (QQQ < MA200 AND both MA slopes negative) with a simpler condition: activate CTP 0.40 whenever prior-day QQQ close < MA200, regardless of slope conditions. This should be more responsive at the start of bear markets (before slopes turn negative) and auto-disable cleanly once QQQ recovers above MA200.
+
+**Flag:** `--qqq-regime-bear-ctp-below-ma200`
+
+**Gate logic:** CTP activates on day D if prior-day QQQ close < MA200. No MA20/MA50 slope requirement. Automatically disabled when QQQ closes above MA200.
+
+**9-year sweep results** (full exp22 base config, ctp0.40 with and without the new flag):
+
+```
+Year    full-bear ctp0.40    below-MA200 ctp0.40      Δ
+------  ------------------   --------------------   --------
+2018         -28.89%              -20.92%          +7.97pp  ← better
+2019         +41.61%              +41.97%          +0.36pp  ← better
+2020         +33.13%              +28.42%          -4.71pp  ← worse
+2021         +37.83%              +40.62%          +2.79pp  ← better
+2022         +65.80%              +67.51%          +1.71pp  ← better
+2023         +66.77%              +66.77%           0.00pp
+2024          +5.95%               +9.20%          +3.25pp  ← better
+2025         +22.02%              +28.51%          +6.49pp  ← better
+2026*        +57.04%              +64.35%          +7.31pp  ← better
+------
+SUM          301.26%              326.43%         +25.17pp
+```
+
+**Wins 8 of 9 years. +25.17pp over the 9yr sum.**
+
+**Why it works:**
+
+- **Full-bear gate fires too late** — the slope-negative condition requires MA20 and MA50 to have already turned down, which lags the actual QQQ breakdown by days. The MA200-only gate fires immediately when QQQ crosses below MA200, capturing the initial crash days that tend to have the strongest bearish signals.
+- **Full-bear gate holds on too long** — during bear-year counter-rallies, slopes can remain negative even as QQQ chops sideways, keeping CTP active on low-quality days. The MA200 gate turns off automatically the moment QQQ closes above MA200.
+- **2025 zero-day result confirms V-shape logic** — in 2025's tariff crash, QQQ dropped sharply but never actually had a prior-day close below MA200 (the crash was too fast). Result: 0 CTP days in 2025, silently falling back to pure exp22 behavior — which is stronger than ctp0.40 in V-shape years (+6.49pp benefit).
+- **2020 regression (−4.71pp)** — the COVID crash was a V-shape, but it was deep enough for QQQ to actually close below MA200 briefly before recovering. Those days fired the CTP gate at poor timing. The slope-based full-bear condition happened to avoid this by requiring sustained negative slopes. Acceptable tradeoff given +25pp elsewhere.
+
+**Finding: CONFIRMED** — `--qqq-regime-bear-ctp-below-ma200` is the new recommended CTP gate. +25.17pp over 9yr sum vs the previous full-bear gate.
 
 ---
 

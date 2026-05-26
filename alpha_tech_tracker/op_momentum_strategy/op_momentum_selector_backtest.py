@@ -846,6 +846,7 @@ def _compute_bear_ctp_dates(
     qqq_regime_slope_days: int,
     qqq_regime_bear_ctp_ma_cross: bool = False,
     qqq_regime_bear_ctp_below_ma: bool = False,
+    qqq_regime_bear_ctp_below_ma200: bool = False,
 ) -> set:
     """Return the set of dates where CTP should be active.
 
@@ -856,6 +857,10 @@ def _compute_bear_ctp_dates(
         factor — activates whenever prior-day close < MA20 AND close < MA50.
         Fires earlier than the full-bear gate (no MA200/slope requirements),
         capturing fast V-shape crashes before the structural bear is confirmed.
+    qqq_regime_bear_ctp_below_ma200: activates whenever prior-day close < MA200,
+        regardless of slope conditions. Simpler/broader than the full-bear gate
+        (no MA20/MA50 slope requirement). Automatically disabled when QQQ recovers
+        above MA200.
     """
     if qqq_df.empty:
         return set()
@@ -882,6 +887,10 @@ def _compute_bear_ctp_dates(
         rm50s = float(ma50s.iloc[pi])
         rm200 = float(ma200.iloc[pi])
         if np.isnan(rm20) or np.isnan(rm50):
+            continue
+        if qqq_regime_bear_ctp_below_ma200:
+            if not np.isnan(rm200) and rc < rm200:
+                bear_ctp_dates.add(eval_d)
             continue
         if qqq_regime_bear_ctp_below_ma:
             if rc < rm20 and rc < rm50:
@@ -1079,6 +1088,7 @@ def run_selector_backtest(
     qqq_regime_bear_ctp: float = None,
     qqq_regime_bear_ctp_ma_cross: bool = False,
     qqq_regime_bear_ctp_below_ma: bool = False,
+    qqq_regime_bear_ctp_below_ma200: bool = False,
 ) -> tuple:
     """
     Walk each trading day in [eval_start, eval_end], apply rolling selector
@@ -1231,9 +1241,11 @@ def run_selector_backtest(
             qqq_regime_slope_days=qqq_regime_slope_days,
             qqq_regime_bear_ctp_ma_cross=qqq_regime_bear_ctp_ma_cross,
             qqq_regime_bear_ctp_below_ma=qqq_regime_bear_ctp_below_ma,
+            qqq_regime_bear_ctp_below_ma200=qqq_regime_bear_ctp_below_ma200,
         )
         _ctp_mode = (
-            "[below MA20+MA50]" if qqq_regime_bear_ctp_below_ma
+            "[below MA200]" if qqq_regime_bear_ctp_below_ma200
+            else "[below MA20+MA50]" if qqq_regime_bear_ctp_below_ma
             else "[ma_cross gate ON]" if qqq_regime_bear_ctp_ma_cross
             else ""
         )
@@ -3779,6 +3791,20 @@ def _parse_args():
             "Requires --qqq-regime-bear-ctp. Default: off."
         ),
     )
+    parser.add_argument(
+        "--qqq-regime-bear-ctp-below-ma200",
+        action="store_true",
+        default=False,
+        dest="qqq_regime_bear_ctp_below_ma200",
+        help=(
+            "Use MA200-relative condition for --qqq-regime-bear-ctp: CTP activates whenever "
+            "prior-day QQQ close < MA200, regardless of MA20/MA50 slope conditions. "
+            "Broader than the full-bear gate (no slope requirements) but more selective than "
+            "--qqq-regime-bear-ctp-below-ma20-ma50 (requires structural QQQ weakness). "
+            "Automatically disables when QQQ recovers above MA200. "
+            "Requires --qqq-regime-bear-ctp. Default: off."
+        ),
+    )
     parser.add_argument("--score-trend-align-weight", type=float, default=0.0,
                         dest="score_trend_align_weight",
                         help="Weight for direction-aware consecutive-streak scoring. Positive = reward "
@@ -4183,7 +4209,9 @@ if __name__ == "__main__":
         print(f"  QQQ bear-ev  : on  (BEARISH signals bypass combined EV gate on full-bear days; use ev_trade_bearish instead)")
     if args.qqq_regime_bear_ctp is not None:
         _ctp_line = f"  QQQ bear-ctp : {args.qqq_regime_bear_ctp:.2f}  (looser BEARISH OR threshold on full-bear days; BULLISH unaffected)"
-        if args.qqq_regime_bear_ctp_below_ma:
+        if args.qqq_regime_bear_ctp_below_ma200:
+            _ctp_line += "  [below MA200 mode — activates whenever QQQ < MA200, no slope req]"
+        elif args.qqq_regime_bear_ctp_below_ma:
             _ctp_line += "  [below MA20+MA50 mode — price-relative, no MA200/slope req]"
         elif args.qqq_regime_bear_ctp_ma_cross:
             _ctp_line += "  [MA20<MA50 gate ON — death cross only]"
@@ -4465,6 +4493,7 @@ if __name__ == "__main__":
         qqq_regime_bear_ctp=args.qqq_regime_bear_ctp,
         qqq_regime_bear_ctp_ma_cross=args.qqq_regime_bear_ctp_ma_cross,
         qqq_regime_bear_ctp_below_ma=args.qqq_regime_bear_ctp_below_ma,
+        qqq_regime_bear_ctp_below_ma200=args.qqq_regime_bear_ctp_below_ma200,
     )
 
     skip_log = _apply_capital_flow(
