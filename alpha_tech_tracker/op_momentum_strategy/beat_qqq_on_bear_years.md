@@ -1,8 +1,8 @@
 # Research: Beating QQQ in Bear Years
 
-**Goal:** Understand why OR selector underperforms in bear years (2022: -28.4% vs QQQ -33.7%) and find scoring improvements to reduce bear-year drawdowns without hurting bull years.  
-**Baseline config (Exp 16):** `--top 1 --window M1 09:30 3 --min-hold-bars 1 --ma-momentum-gate --feed sip --normalize-or-by-adr --stop-pct 0.4 --reversal --bearish-reentry --bullish-reentry --score-entry-weight 0.60 --score-avg-win-weight 0.00 --score-win-rate-weight 0.10 --score-ev-trend-weight 0.10 --ev-trend-days 15 --min-pool-vote 4 --score-rel-strength-weight 0.15`  
-**Baseline result:** 8yr no-compound **+273.2pp** | 2022: -28.4% | 2023: +66.8% | 2025: +34.3%  
+**Goal:** Understand why OR selector underperforms in bear years (2022: -28.4% vs QQQ -33.7%) and find scoring improvements to reduce bear-year drawdowns without hurting bull years.
+**Baseline config (Exp 16):** `--top 1 --window M1 09:30 3 --min-hold-bars 1 --ma-momentum-gate --feed sip --normalize-or-by-adr --stop-pct 0.4 --reversal --bearish-reentry --bullish-reentry --score-entry-weight 0.60 --score-avg-win-weight 0.00 --score-win-rate-weight 0.10 --score-ev-trend-weight 0.10 --ev-trend-days 15 --min-pool-vote 4 --score-rel-strength-weight 0.15`
+**Baseline result:** 8yr no-compound **+273.2pp** | 2022: -28.4% | 2023: +66.8% | 2025: +34.3%
 **Best-known (Exp 20):** 8yr **+282.9pp** | 2022: -19.7% | 2023: +66.8% | 2025: +38.9%
 
 ---
@@ -14,6 +14,7 @@
 ### Key Finding: Direction Rate is NOT the Problem
 
 With the best-known config (Exp 16):
+
 - Our bear rate in 2022: **52%** of primary trades
 - Oracle bear rate in 2022: **51%** of primary trades
 
@@ -27,37 +28,37 @@ On 22 days in 2022, oracle fires BEARISH but we fire BULLISH.
 
 Per-day breakdown:
 
-| Date | Our Ticker | Our P&L | Oracle | Oracle P&L | QQQ OR | QQQ Dir |
-|---|---|---|---|---|---|---|
-| 2022-01-04 | TSLA | -0.90% | SHOP | +8.52% | -0.112 | BEAR |
-| 2022-01-25 | CVNA | -5.53% | CHTR | +0.88% | -0.052 | BEAR |
-| 2022-02-07 | CVNA | -2.14% | META | +3.85% | +0.379 | BULL |
-| 2022-02-14 | EXPE | -1.39% | JPM | +0.45% | +0.294 | BULL |
-| 2022-02-15 | EXPE | +1.39% | AMD | +2.47% | +0.096 | BULL |
-| 2022-02-22 | AMD | -0.12% | APP | +3.72% | +0.703 | BULL |
-| 2022-02-23 | PLTR | -1.35% | EXPE | +1.25% | -0.305 | BEAR |
-| 2022-05-02 | AMD | -2.57% | CLS | +1.47% | +0.569 | BULL |
-| 2022-05-20 | APP | +1.99% | CLS | +4.23% | +0.082 | BULL |
-| 2022-06-01 | META | -0.47% | MRVL | +2.97% | +0.351 | BULL |
-| 2022-06-06 | CLS | -0.61% | CVNA | +3.70% | -0.100 | BEAR |
-| 2022-07-15 | CRDO | -1.08% | PLTR | +1.01% | +0.081 | BULL |
-| 2022-08-26 | CVNA | -0.15% | SHOP | +4.29% | -0.091 | BEAR |
-| 2022-09-06 | MRVL | -0.68% | EXPE | +1.24% | -0.308 | BEAR |
-| 2022-09-26 | PLTR | +0.66% | CHTR | +3.43% | +0.662 | BULL |
-| 2022-10-27 | SHOP | +0.78% | MU | +3.47% | +0.022 | BULL |
-| 2022-11-03 | JPM | -1.43% | CHTR | +0.23% | -0.338 | BEAR |
-| 2022-11-15 | SHOP | -3.40% | JPM | +0.55% | -0.089 | BEAR |
-| 2022-12-15 | CVNA | +0.00% | MU | +0.86% | -0.301 | BEAR |
-| 2022-12-16 | META | -0.79% | TSLA | +3.41% | +0.116 | BULL |
-| 2022-12-28 | CLS | -0.46% | JPM | -0.23% | +0.536 | BULL |
-| 2022-12-30 | TSLA | -1.63% | MU | -0.24% | +0.121 | BULL |
+| Date       | Our Ticker | Our P&L | Oracle | Oracle P&L | QQQ OR | QQQ Dir |
+| ---------- | ---------- | ------- | ------ | ---------- | ------ | ------- |
+| 2022-01-04 | TSLA       | -0.90%  | SHOP   | +8.52%     | -0.112 | BEAR    |
+| 2022-01-25 | CVNA       | -5.53%  | CHTR   | +0.88%     | -0.052 | BEAR    |
+| 2022-02-07 | CVNA       | -2.14%  | META   | +3.85%     | +0.379 | BULL    |
+| 2022-02-14 | EXPE       | -1.39%  | JPM    | +0.45%     | +0.294 | BULL    |
+| 2022-02-15 | EXPE       | +1.39%  | AMD    | +2.47%     | +0.096 | BULL    |
+| 2022-02-22 | AMD        | -0.12%  | APP    | +3.72%     | +0.703 | BULL    |
+| 2022-02-23 | PLTR       | -1.35%  | EXPE   | +1.25%     | -0.305 | BEAR    |
+| 2022-05-02 | AMD        | -2.57%  | CLS    | +1.47%     | +0.569 | BULL    |
+| 2022-05-20 | APP        | +1.99%  | CLS    | +4.23%     | +0.082 | BULL    |
+| 2022-06-01 | META       | -0.47%  | MRVL   | +2.97%     | +0.351 | BULL    |
+| 2022-06-06 | CLS        | -0.61%  | CVNA   | +3.70%     | -0.100 | BEAR    |
+| 2022-07-15 | CRDO       | -1.08%  | PLTR   | +1.01%     | +0.081 | BULL    |
+| 2022-08-26 | CVNA       | -0.15%  | SHOP   | +4.29%     | -0.091 | BEAR    |
+| 2022-09-06 | MRVL       | -0.68%  | EXPE   | +1.24%     | -0.308 | BEAR    |
+| 2022-09-26 | PLTR       | +0.66%  | CHTR   | +3.43%     | +0.662 | BULL    |
+| 2022-10-27 | SHOP       | +0.78%  | MU     | +3.47%     | +0.022 | BULL    |
+| 2022-11-03 | JPM        | -1.43%  | CHTR   | +0.23%     | -0.338 | BEAR    |
+| 2022-11-15 | SHOP       | -3.40%  | JPM    | +0.55%     | -0.089 | BEAR    |
+| 2022-12-15 | CVNA       | +0.00%  | MU     | +0.86%     | -0.301 | BEAR    |
+| 2022-12-16 | META       | -0.79%  | TSLA   | +3.41%     | +0.116 | BULL    |
+| 2022-12-28 | CLS        | -0.46%  | JPM    | -0.23%     | +0.536 | BULL    |
+| 2022-12-30 | TSLA       | -1.63%  | MU     | -0.24%     | +0.121 | BULL    |
 
 **Root cause — `entry_vs_mid_pct` dominance at w=0.60:**
 
-| Feature | Our BULLISH pick (avg) | Oracle BEARISH pick (avg) | Δ |
-|---|---|---|---|
-| entry_vs_mid_pct | +1.39 | +0.78 | -0.61 |
-| score | higher by ~0.61 | — | — |
+| Feature          | Our BULLISH pick (avg) | Oracle BEARISH pick (avg) | Δ    |
+| ---------------- | ---------------------- | ------------------------- | ----- |
+| entry_vs_mid_pct | +1.39                  | +0.78                     | -0.61 |
+| score            | higher by ~0.61        | —                        | —    |
 
 BULLISH tickers in a bear market often have big gap-up opens — wide ORs with price near the high. These score very high on `entry_vs_mid_pct`. The BEARISH oracle picks have modest OR positioning but represent the correct regime call. The `entry_vs_mid_pct` scoring metric can't distinguish between "strong bullish breakout" and "gap-up that will fail".
 
@@ -66,6 +67,7 @@ BULLISH tickers in a bear market often have big gap-up opens — wide ORs with p
 ### QQQ OR Direction on Missed-Bearish Days
 
 Of the 22 missed-bearish days, QQQ OR itself was:
+
 - **BEARISH (QQQ OR < 0): 9/22 = 41%**
 - **BULLISH (QQQ OR > 0): 13/22 = 59%**
 
@@ -81,13 +83,13 @@ On 59% of the missed days, QQQ itself opened bullish. Increasing `qqq_or_weight`
 
 **Multi-year sweep results (dir_ev combined with rs=0.15):**
 
-| rs | dir_ev | or_range | 2022 | 2023 | 2024 | 2025 | 4yr Δ |
-|---|---|---|---|---|---|---|---|
-| 0.15 | 0.00 | 0.05 | -28.4% | +66.8% | +10.9% | +34.3% | baseline |
-| 0.10 | 0.05 | 0.05 | +0.0pp | -1.2pp | +4.7pp | -5.0pp | -1.5pp |
-| 0.10 | 0.10 | 0.00 | +0.1pp | -1.4pp | +4.3pp | -7.9pp | -4.9pp |
-| 0.05 | 0.10 | 0.05 | +2.7pp | -4.8pp | +4.2pp | -10.8pp | -8.7pp |
-| 0.15 | 0.05 | 0.00 | +1.8pp | -1.7pp | +4.6pp | -17.8pp | -13.2pp |
+| rs   | dir_ev | or_range | 2022   | 2023   | 2024   | 2025    | 4yr Δ   |
+| ---- | ------ | -------- | ------ | ------ | ------ | ------- | -------- |
+| 0.15 | 0.00   | 0.05     | -28.4% | +66.8% | +10.9% | +34.3%  | baseline |
+| 0.10 | 0.05   | 0.05     | +0.0pp | -1.2pp | +4.7pp | -5.0pp  | -1.5pp   |
+| 0.10 | 0.10   | 0.00     | +0.1pp | -1.4pp | +4.3pp | -7.9pp  | -4.9pp   |
+| 0.05 | 0.10   | 0.05     | +2.7pp | -4.8pp | +4.2pp | -10.8pp | -8.7pp   |
+| 0.15 | 0.05   | 0.00     | +1.8pp | -1.7pp | +4.6pp | -17.8pp | -13.2pp  |
 
 **Result:** dir_ev hurts 2025 significantly at any meaningful weight (-5pp to -18pp) with negligible benefit elsewhere. **Not viable. Keeping at default=0.0.**
 
@@ -99,13 +101,13 @@ On 59% of the missed days, QQQ itself opened bullish. Increasing `qqq_or_weight`
 
 **Multi-year sweep (qqq_or_weight vs entry_weight, rs=0.15 fixed):**
 
-| qqq_or | entry | 2019 Δ | 2020 Δ | 2021 Δ | 2022 Δ | 2023 Δ | 2024 Δ | 2025 Δ | 2026 Δ | 8yr Δ |
-|---|---|---|---|---|---|---|---|---|---|---|
-| 0.40 | 0.60 | +42.0% | +30.9% | +38.7% | -28.4% | +66.8% | +10.9% | +34.3% | +78.1% | baseline |
-| 0.50 | 0.50 | +3.0pp | -7.7pp | -7.2pp | +5.8pp | +2.0pp | -2.8pp | +9.5pp | -6.8pp | -4.2pp |
-| 0.55 | 0.45 | +2.4pp | -11.0pp | -15.5pp | +12.5pp | -11.2pp | +0.5pp | +10.6pp | -5.2pp | -16.8pp |
-| 0.60 | 0.40 | +0.4pp | -10.6pp | -19.9pp | +1.3pp | -13.2pp | +0.9pp | +10.2pp | -3.7pp | -34.6pp |
-| 0.70 | 0.30 | -3.8pp | -11.6pp | -20.6pp | +11.9pp | -18.2pp | -10.0pp | +7.2pp | -0.0pp | -45.1pp |
+| qqq_or | entry | 2019 Δ | 2020 Δ | 2021 Δ | 2022 Δ | 2023 Δ | 2024 Δ | 2025 Δ | 2026 Δ | 8yr Δ   |
+| ------ | ----- | ------- | ------- | ------- | ------- | ------- | ------- | ------- | ------- | -------- |
+| 0.40   | 0.60  | +42.0%  | +30.9%  | +38.7%  | -28.4%  | +66.8%  | +10.9%  | +34.3%  | +78.1%  | baseline |
+| 0.50   | 0.50  | +3.0pp  | -7.7pp  | -7.2pp  | +5.8pp  | +2.0pp  | -2.8pp  | +9.5pp  | -6.8pp  | -4.2pp   |
+| 0.55   | 0.45  | +2.4pp  | -11.0pp | -15.5pp | +12.5pp | -11.2pp | +0.5pp  | +10.6pp | -5.2pp  | -16.8pp  |
+| 0.60   | 0.40  | +0.4pp  | -10.6pp | -19.9pp | +1.3pp  | -13.2pp | +0.9pp  | +10.2pp | -3.7pp  | -34.6pp  |
+| 0.70   | 0.30  | -3.8pp  | -11.6pp | -20.6pp | +11.9pp | -18.2pp | -10.0pp | +7.2pp  | -0.0pp  | -45.1pp  |
 
 Missed-bearish count: qqq=0.60 → 20 (was 22), qqq=0.80 → 21 (was 22). Minimal improvement.
 
@@ -119,20 +121,22 @@ Missed-bearish count: qqq=0.60 → 20 (was 22), qqq=0.80 → 21 (was 22). Minima
 
 **Implementation:** New `--qqq-regime-weight` CLI flag in `run_selector_backtest()`. Pre-computes daily closes from QQQ 5-min bars, then rolls MA20 and MA50. Uses prior trading day's values to avoid lookahead. Three regime tiers:
 
-| Tier | Condition | Factor |
-|---|---|---|
-| Neutral | QQQ ≥ MA20 | 0.0 (no adjustment) |
-| Mild bear | QQQ < MA20, ≥ MA50 | 0.33 |
-| Moderate bear | QQQ < MA50, MAs not both falling | 0.67 |
-| Full bear | QQQ < MA50 AND MA20+MA50 both falling | 1.0 |
+| Tier          | Condition                             | Factor              |
+| ------------- | ------------------------------------- | ------------------- |
+| Neutral       | QQQ ≥ MA20                           | 0.0 (no adjustment) |
+| Mild bear     | QQQ < MA20, ≥ MA50                   | 0.33                |
+| Moderate bear | QQQ < MA50, MAs not both falling      | 0.67                |
+| Full bear     | QQQ < MA50 AND MA20+MA50 both falling | 1.0                 |
 
 Score adjustment: `s += qqq_regime_weight * factor * (+1 BEARISH / −1 BULLISH)` (symmetric by default).
 
 **Two refinement flags:**
+
 - `--qqq-regime-full-only`: collapses to binary — only fires at full_bear tier (QQQ < MA50 AND both MAs declining). Skips mild/moderate tiers. Prevents false signals during brief corrections in bull years.
 - `--qqq-regime-bearish-only`: asymmetric mode — only boosts BEARISH signals, does not penalise BULLISH. Preserves bullish signal quality.
 
 **2022 regime distribution (251 eval days):**
+
 - Neutral (QQQ ≥ MA20): 90 days
 - Mild bear: 13 days
 - Moderate bear: 35 days
@@ -140,30 +144,31 @@ Score adjustment: `s += qqq_regime_weight * factor * (+1 BEARISH / −1 BULLISH)
 
 ### Symmetric mode sweep (all tiers, penalises BULLISH):
 
-| weight | 2022 Δ | 2020 Δ | 2023 Δ | 2025 Δ | 8yr Δ |
-|---|---|---|---|---|---|
-| 0.10 | +3.1pp | -8.4pp | +0.0pp | +0.5pp | -9.8pp |
-| 0.20 | +3.8pp | -8.4pp | -6.3pp | +0.5pp | -18.8pp |
-| 0.30 | +8.1pp | -8.4pp | -8.6pp | -7.8pp | -26.3pp |
+| weight | 2022 Δ | 2020 Δ | 2023 Δ | 2025 Δ | 8yr Δ  |
+| ------ | ------- | ------- | ------- | ------- | ------- |
+| 0.10   | +3.1pp  | -8.4pp  | +0.0pp  | +0.5pp  | -9.8pp  |
+| 0.20   | +3.8pp  | -8.4pp  | -6.3pp  | +0.5pp  | -18.8pp |
+| 0.30   | +8.1pp  | -8.4pp  | -8.6pp  | -7.8pp  | -26.3pp |
 
 **Result:** Symmetric mode destroys 2020 (COVID crash) and 2023 at any weight. The mild/moderate tiers fire during corrections in bull years, penalising correct bullish picks. Not viable.
 
 ### `full+bear` mode sweep (`--qqq-regime-full-only --qqq-regime-bearish-only`):
 
-| weight | 2019 | 2020 | 2021 | 2022 | 2023 | 2024 | 2025 | 2026 | 8yr sum | Δ baseline |
-|---|---|---|---|---|---|---|---|---|---|---|
-| 0.0 (baseline) | +42.0% | +30.9% | +38.7% | -28.4% | +66.8% | +10.9% | +34.3% | +78.1% | +273.2pp | — |
-| 0.20 | +42.0% | +30.9% | +38.7% | -29.4% | +66.8% | +10.9% | +34.3% | +74.5% | +268.5pp | -4.6pp |
-| 0.30 | +42.0% | +30.9% | +38.7% | -29.4% | +66.8% | +10.9% | +34.3% | +74.5% | +268.5pp | -4.6pp |
-| **0.40** | +42.0% | +30.9% | +38.7% | **-26.2%** | +66.8% | +10.9% | +34.3% | +74.5% | +271.8pp | -1.4pp |
+| weight         | 2019   | 2020   | 2021   | 2022             | 2023   | 2024   | 2025   | 2026   | 8yr sum            | Δ baseline      |
+| -------------- | ------ | ------ | ------ | ---------------- | ------ | ------ | ------ | ------ | ------------------ | ---------------- |
+| 0.0 (baseline) | +42.0% | +30.9% | +38.7% | -28.4%           | +66.8% | +10.9% | +34.3% | +78.1% | +273.2pp           | —               |
+| 0.20           | +42.0% | +30.9% | +38.7% | -29.4%           | +66.8% | +10.9% | +34.3% | +74.5% | +268.5pp           | -4.6pp           |
+| 0.30           | +42.0% | +30.9% | +38.7% | -29.4%           | +66.8% | +10.9% | +34.3% | +74.5% | +268.5pp           | -4.6pp           |
+| **0.40** | +42.0% | +30.9% | +38.7% | **-26.2%** | +66.8% | +10.9% | +34.3% | +74.5% | +271.8pp           | -1.4pp           |
 | **0.50** | +42.0% | +30.9% | +38.7% | **-23.9%** | +66.8% | +10.9% | +34.3% | +74.5% | **+274.1pp** | **+0.9pp** |
-| 0.60 | +42.0% | +30.9% | +38.7% | -23.9% | +66.8% | +10.9% | +26.1% | +74.5% | +266.0pp | -7.2pp |
-| 0.70 | +42.0% | +30.9% | +38.7% | -20.1% | +66.8% | +10.9% | +26.1% | +71.0% | +266.3pp | -6.9pp |
-| 0.80 | +42.0% | +30.9% | +38.7% | -20.1% | +66.8% | +9.9% | +26.1% | +71.0% | +265.3pp | -7.9pp |
-| 1.00 | +42.0% | +30.9% | +38.7% | -16.0% | +66.8% | +9.9% | +26.1% | +71.0% | +269.4pp | -3.8pp |
-| 1.20 | +42.0% | +30.9% | +38.7% | -16.0% | +66.8% | +9.9% | +26.1% | +71.0% | +269.4pp | -3.8pp |
+| 0.60           | +42.0% | +30.9% | +38.7% | -23.9%           | +66.8% | +10.9% | +26.1% | +74.5% | +266.0pp           | -7.2pp           |
+| 0.70           | +42.0% | +30.9% | +38.7% | -20.1%           | +66.8% | +10.9% | +26.1% | +71.0% | +266.3pp           | -6.9pp           |
+| 0.80           | +42.0% | +30.9% | +38.7% | -20.1%           | +66.8% | +9.9%  | +26.1% | +71.0% | +265.3pp           | -7.9pp           |
+| 1.00           | +42.0% | +30.9% | +38.7% | -16.0%           | +66.8% | +9.9%  | +26.1% | +71.0% | +269.4pp           | -3.8pp           |
+| 1.20           | +42.0% | +30.9% | +38.7% | -16.0%           | +66.8% | +9.9%  | +26.1% | +71.0% | +269.4pp           | -3.8pp           |
 
 **Top 3 configs:**
+
 1. **`full+bear w=0.50`** — 8yr +274.1pp (+0.9pp) | 2022 improves to -23.9%, 2025/2026 clean
 2. `full+bear w=0.40` — 8yr +271.8pp (-1.4pp) | 2022 -26.2%, cleaner 2026 hit
 3. `full+bear w=1.00/1.20` — 8yr +269.4pp (-3.8pp) | 2022 best (-16.0%) but 2025 drops -8.2pp
@@ -179,6 +184,7 @@ This lag is inherent to MA-based regime detection. In sustained bear markets (20
 ### Conclusion
 
 `full+bear w=0.50` is the **only config that beats the 8yr baseline** (+0.9pp), with surgical impact:
+
 - 2022 improves: -28.4% → -23.9% (+4.5pp)
 - 2019–2024 unchanged (0.0pp in all non-2022 years)
 - 2025 unchanged (0.0pp)
@@ -195,6 +201,7 @@ The gain is modest and the 2026 cost is real. The fundamental limitation is MA l
 **Hypothesis:** Exp 18's limitation is MA lag — the MA50 slope stays negative for 4-6 weeks after a market bottom, misfiring during V-shaped recoveries. The root cause is that the 4-tier system treats every "QQQ below MA50 with both MAs falling" day equally, whether it's day 10 of a real bear or day 60 of a recovery.
 
 Two structural improvements based on market microstructure:
+
 1. **Accelerating decline toward MA200:** Once QQQ breaks MA50, the move historically accelerates toward MA200. A 5th tier that gates the highest-conviction signal on MA200 (not just MA50) would avoid false positives in recoveries where QQQ never broke MA200.
 2. **Asymmetric recovery:** Declines are fast, recoveries are slow. Once QQQ has broken below MA200, bearish picks should still receive a partial boost during the recovery phase — even when QQQ technically reclaims MA20 — until the market has structurally stabilized (MA20 slope turns positive).
 
@@ -202,17 +209,18 @@ Two structural improvements based on market microstructure:
 
 **`--qqq-regime-ma200`** — enables 5-tier system:
 
-| Tier | Condition | Factor |
-|---|---|---|
-| Neutral | QQQ ≥ MA20 | 0.0 |
-| Warning | QQQ < MA20, ≥ MA50 | 0.25 |
-| Acceleration | QQQ < MA50, ≥ MA200 | 0.55 |
-| Deep bear | QQQ < MA200, MAs not both falling | 0.75 |
-| True bear | QQQ < MA200 AND both MAs falling | 1.0 |
+| Tier         | Condition                         | Factor |
+| ------------ | --------------------------------- | ------ |
+| Neutral      | QQQ ≥ MA20                       | 0.0    |
+| Warning      | QQQ < MA20, ≥ MA50               | 0.25   |
+| Acceleration | QQQ < MA50, ≥ MA200              | 0.55   |
+| Deep bear    | QQQ < MA200, MAs not both falling | 0.75   |
+| True bear    | QQQ < MA200 AND both MAs falling  | 1.0    |
 
 With `--qqq-regime-full-only`: only the true bear tier (QQQ < MA200 + both MAs falling) fires; all others collapse to 0.
 
 **`--qqq-regime-recovery-floor F`** — recovery latch:
+
 - Activates when prior-day QQQ < MA200 (first break below)
 - Releases when QQQ ≥ MA200 **AND** MA20 slope turns positive (dual-condition)
 - While active: `factor = max(factor, F)` — floors regime signal even on days QQQ recovers above MA20
@@ -225,16 +233,16 @@ With `--qqq-regime-full-only`: only the true bear tier (QQQ < MA200 + both MAs f
 
 Config: `--qqq-regime-full-only --qqq-regime-bearish-only` throughout.
 
-| Config | 2022 | 2025 | Δ 2022 | Δ 2025 | sum Δ |
-|---|---|---|---|---|---|
-| baseline | -28.4% | +34.3% | — | — | — |
-| exp18 fb w=0.50 | -23.9% | +34.3% | +4.5pp | 0.0pp | +4.5pp |
-| ma200 fb w=0.50 | -23.9% | +34.3% | +4.5pp | 0.0pp | +4.5pp |
-| ma200 fb w=0.60 | -23.9% | +26.1% | +4.5pp | -8.1pp | -3.6pp |
-| ma200 fb w=0.70 | -20.1% | +26.1% | +8.3pp | -8.1pp | +0.2pp |
+| Config                      | 2022             | 2025             | Δ 2022          | Δ 2025         | sum Δ           |
+| --------------------------- | ---------------- | ---------------- | ---------------- | --------------- | ---------------- |
+| baseline                    | -28.4%           | +34.3%           | —               | —              | —               |
+| exp18 fb w=0.50             | -23.9%           | +34.3%           | +4.5pp           | 0.0pp           | +4.5pp           |
+| ma200 fb w=0.50             | -23.9%           | +34.3%           | +4.5pp           | 0.0pp           | +4.5pp           |
+| ma200 fb w=0.60             | -23.9%           | +26.1%           | +4.5pp           | -8.1pp          | -3.6pp           |
+| ma200 fb w=0.70             | -20.1%           | +26.1%           | +8.3pp           | -8.1pp          | +0.2pp           |
 | **ma200 fb w=0.50 rf=0.25** | **-19.7%** | **+34.3%** | **+8.7pp** | **0.0pp** | **+8.7pp** |
-| ma200 fb w=0.60 rf=0.25 | -19.7% | +26.1% | +8.7pp | -8.1pp | +0.6pp |
-| ma200 fb w=0.50 rf=0.15 | -23.9% | +34.3% | +4.5pp | 0.0pp | +4.5pp |
+| ma200 fb w=0.60 rf=0.25     | -19.7%           | +26.1%           | +8.7pp           | -8.1pp          | +0.6pp           |
+| ma200 fb w=0.50 rf=0.15     | -23.9%           | +34.3%           | +4.5pp           | 0.0pp           | +4.5pp           |
 
 **Key finding:** `ma200 fb w=0.50 rf=0.25` adds +4.2pp on top of Exp 18 purely through the recovery latch.
 
@@ -246,19 +254,20 @@ Config: `--qqq-regime-full-only --qqq-regime-bearish-only` throughout.
 
 ### Full 8-year sweep
 
-| Config | 2019 | 2020 | 2021 | 2022 | 2023 | 2024 | 2025 | 2026 | 8yr sum | Δbaseline |
-|---|---|---|---|---|---|---|---|---|---|---|
-| baseline | +42.0% | +30.9% | +38.7% | -28.4% | +66.8% | +10.9% | +34.3% | +78.1% | +273.2pp | — |
-| exp18 fb w=0.50 | same | same | same | -23.9% | same | same | same | +74.5% | +274.1pp | +0.9pp |
+| Config                      | 2019           | 2020           | 2021           | 2022             | 2023           | 2024           | 2025           | 2026             | 8yr sum            | Δbaseline       |
+| --------------------------- | -------------- | -------------- | -------------- | ---------------- | -------------- | -------------- | -------------- | ---------------- | ------------------ | ---------------- |
+| baseline                    | +42.0%         | +30.9%         | +38.7%         | -28.4%           | +66.8%         | +10.9%         | +34.3%         | +78.1%           | +273.2pp           | —               |
+| exp18 fb w=0.50             | same           | same           | same           | -23.9%           | same           | same           | same           | +74.5%           | +274.1pp           | +0.9pp           |
 | **ma200 fb w=0.50 rf=0.25** | **same** | **same** | **same** | **-19.7%** | **same** | **same** | **same** | **+74.5%** | **+278.3pp** | **+5.1pp** |
-| ma200 fb w=0.60 rf=0.25 | same | same | same | -19.7% | same | same | +26.1% | +74.5% | +269.8pp | -3.4pp |
-| ma200 fb w=0.70 | same | same | same | -20.1% | same | same | +26.1% | +74.5% | +269.4pp | -3.8pp |
+| ma200 fb w=0.60 rf=0.25     | same           | same           | same           | -19.7%           | same           | same           | +26.1%         | +74.5%           | +269.8pp           | -3.4pp           |
+| ma200 fb w=0.70             | same           | same           | same           | -20.1%           | same           | same           | +26.1%         | +74.5%           | +269.4pp           | -3.8pp           |
 
 **2026 behavior:** For the 2026 YTD run, the cache only spans ~Oct 2025 → May 2026 (~155 days), so MA200 is NaN and both `exp18` and `ma200 rf=0.25` fall back to 4-tier identical behavior (-3.6pp vs baseline). The 30 full_bear days in 2026 are from the April 2026 tariff selloff triggering the old MA50-based condition — not the new MA200 condition. The -3.6pp in 2026 is the same for all `full+bear` configs regardless of MA200/latch flags.
 
 ### 2022 regime distribution with MA200 (5-tier)
 
 From the `--qqq-regime-ma200` run on 2022:
+
 - Neutral (≥ MA20): ~90 days
 - Warning (< MA20, ≥ MA50): ~13 days
 - Acceleration (< MA50, ≥ MA200): ~35 days  ← QQQ breaking MA50 but not yet MA200 (Jan–May 2022)
@@ -270,6 +279,7 @@ With `full+bear` mode the acceleration zone (35 days) is suppressed to 0 — thi
 ### Conclusion
 
 `ma200 fb w=0.50 rf=0.25` is the **new best-known bear-protection config**:
+
 - **2022: -28.4% → -19.7% (+8.7pp)** — nearly halves the 2022 bear-year loss
 - **2019, 2020, 2021, 2023, 2024, 2025: zero impact** — feature is entirely dormant in these years
 - **2026: -3.6pp** — same as Exp 18, driven by April tariff correction (not a new regression)
@@ -278,6 +288,7 @@ With `full+bear` mode the acceleration zone (35 days) is suppressed to 0 — thi
 The mechanism is surgically targeted: it only activates in years where QQQ breaks below MA200 for an extended period (2022 in our 8yr sample). The recovery floor correctly holds the bearish signal through dead-cat bounces without requiring manual tuning of the recovery timing.
 
 **CLI for this config:**
+
 ```bash
 --qqq-regime-weight 0.50 --qqq-regime-full-only --qqq-regime-bearish-only \
 --qqq-regime-ma200 --qqq-regime-recovery-floor 0.25
@@ -288,6 +299,7 @@ The mechanism is surgically targeted: it only activates in years where QQQ break
 ## Experiment 20 — Fine-Tuning: Weight × Floor Grid + Entry Weight Reduction
 
 **Motivation:** Exp 19 established `w=0.50 rf=0.25` as the best config. Two further questions:
+
 1. Is `w=0.50` optimal, or is there a better weight just above or below it?
 2. The oracle analysis showed `entry_vs_mid_pct` dominates the scoring gap (+0.61 avg on 22 missed days). Reducing `score_entry_weight` makes the gap cheaper to overcome — can this unlock more 2022 recovery without regressing other years?
 
@@ -299,13 +311,13 @@ Sweep: weights [0.50–0.80] × floors [0.00–0.50], both years in parallel at 
 
 **Δ 2022 / Δ 2025 (pp vs baseline):**
 
-| w \ rf | 0.00 | 0.15 | 0.25 | 0.35 | 0.50 |
-|---|---|---|---|---|---|
-| 0.50 | +4.5 / 0.0 | +4.5 / 0.0 | **+8.7 / 0.0** ★ | **+8.7 / 0.0** ★ | **+8.7 / 0.0** ★ |
-| **0.55** | +4.5 / +4.7 | +4.5 / +4.7 | **+8.7 / +4.7** ★ | **+8.7 / +4.7** ★ | **+8.7 / +4.7** ★ |
-| 0.60 | +4.5 / -8.1 | +4.5 / -8.1 | +8.7 / -8.1 | +8.7 / -8.1 | +8.7 / -8.1 |
-| 0.70 | +8.3 / -8.1 | +8.3 / -8.1 | +12.5 / -8.1 | +12.5 / -8.1 | +12.5 / -8.1 |
-| 0.80 | +8.3 / -8.1 | +12.5 / -8.1 | +12.5 / -8.1 | +12.5 / -8.1 | +12.5 / -8.1 |
+| w \ rf         | 0.00        | 0.15         | 0.25                     | 0.35                     | 0.50                     |
+| -------------- | ----------- | ------------ | ------------------------ | ------------------------ | ------------------------ |
+| 0.50           | +4.5 / 0.0  | +4.5 / 0.0   | **+8.7 / 0.0** ★  | **+8.7 / 0.0** ★  | **+8.7 / 0.0** ★  |
+| **0.55** | +4.5 / +4.7 | +4.5 / +4.7  | **+8.7 / +4.7** ★ | **+8.7 / +4.7** ★ | **+8.7 / +4.7** ★ |
+| 0.60           | +4.5 / -8.1 | +4.5 / -8.1  | +8.7 / -8.1              | +8.7 / -8.1              | +8.7 / -8.1              |
+| 0.70           | +8.3 / -8.1 | +8.3 / -8.1  | +12.5 / -8.1             | +12.5 / -8.1             | +12.5 / -8.1             |
+| 0.80           | +8.3 / -8.1 | +12.5 / -8.1 | +12.5 / -8.1             | +12.5 / -8.1             | +12.5 / -8.1             |
 
 ★ = Δ2022 > +6pp AND Δ2025 ≥ -3pp
 
@@ -317,36 +329,36 @@ The floor has no additional effect above rf=0.25 — the decisive picks are alre
 
 Sweep: entry_weights [0.60, 0.55, 0.50] × regime_weights [0.50, 0.55, 0.60, 0.70].
 
-| Config | 2022 | 2025 | Δ2022 | Δ2025 | sum Δ |
-|---|---|---|---|---|---|
-| e=0.60 w=0.50 rf=0.25 (Exp19) | -19.7% | +34.3% | +8.7pp | 0.0pp | +8.7pp |
-| e=0.60 w=0.55 rf=0.25 | -19.7% | +38.9% | +8.7pp | +4.7pp | +13.4pp ★ |
-| e=0.55 w=0.55 rf=0.25 | -18.2% | +48.3% | +10.2pp | +14.0pp | +24.2pp ★ |
-| e=0.50 w=0.55 rf=0.25 | -15.1% | +53.3% | +13.3pp | +19.0pp | +32.3pp ★ |
-| e=0.50 w=0.60 rf=0.25 | -14.1% | +53.3% | +14.3pp | +19.0pp | +33.4pp ★ |
+| Config                        | 2022   | 2025   | Δ2022  | Δ2025  | sum Δ     |
+| ----------------------------- | ------ | ------ | ------- | ------- | ---------- |
+| e=0.60 w=0.50 rf=0.25 (Exp19) | -19.7% | +34.3% | +8.7pp  | 0.0pp   | +8.7pp     |
+| e=0.60 w=0.55 rf=0.25         | -19.7% | +38.9% | +8.7pp  | +4.7pp  | +13.4pp ★ |
+| e=0.55 w=0.55 rf=0.25         | -18.2% | +48.3% | +10.2pp | +14.0pp | +24.2pp ★ |
+| e=0.50 w=0.55 rf=0.25         | -15.1% | +53.3% | +13.3pp | +19.0pp | +32.3pp ★ |
+| e=0.50 w=0.60 rf=0.25         | -14.1% | +53.3% | +14.3pp | +19.0pp | +33.4pp ★ |
 
 2-year numbers looked exceptional for e=0.50/0.55 — required 8yr validation.
 
 ### 8-year validation
 
-| Config | 2019 | 2020 | 2021 | 2022 | 2023 | 2024 | 2025 | 2026 | 8yr_sum | Δbaseline |
-|---|---|---|---|---|---|---|---|---|---|---|
-| baseline | +42.0% | +30.9% | +38.7% | -28.4% | +66.8% | +10.9% | +34.3% | +78.1% | +273.2pp | — |
-| Exp19 e=0.60 w=0.50 rf=0.25 | same | same | same | -19.7% | same | same | same | +74.5% | +278.3pp | +5.1pp |
-| **e=0.60 w=0.55 rf=0.25** | **same** | **same** | **same** | **-19.7%** | **same** | **same** | **+38.9%** | **+74.5%** | **+282.9pp** | **+9.8pp** |
-| e=0.55 w=0.55 rf=0.25 | same | +34.2% | +35.3% | -18.2% | +67.7% | +9.6% | +48.3% | +72.0% | +290.8pp | +17.6pp |
-| e=0.50 w=0.55 rf=0.25 | +44.9% | +25.2% | +35.4% | -15.1% | +66.4% | +8.6% | +53.3% | +67.7% | +286.4pp | +13.2pp |
-| e=0.50 w=0.60 rf=0.25 | +44.9% | +25.2% | +35.4% | -14.1% | +66.4% | +8.6% | +53.3% | +67.7% | +287.4pp | +14.2pp |
+| Config                      | 2019           | 2020           | 2021           | 2022             | 2023           | 2024           | 2025             | 2026             | 8yr_sum            | Δbaseline       |
+| --------------------------- | -------------- | -------------- | -------------- | ---------------- | -------------- | -------------- | ---------------- | ---------------- | ------------------ | ---------------- |
+| baseline                    | +42.0%         | +30.9%         | +38.7%         | -28.4%           | +66.8%         | +10.9%         | +34.3%           | +78.1%           | +273.2pp           | —               |
+| Exp19 e=0.60 w=0.50 rf=0.25 | same           | same           | same           | -19.7%           | same           | same           | same             | +74.5%           | +278.3pp           | +5.1pp           |
+| **e=0.60 w=0.55 rf=0.25**   | **same** | **same** | **same** | **-19.7%** | **same** | **same** | **+38.9%** | **+74.5%** | **+282.9pp** | **+9.8pp** |
+| e=0.55 w=0.55 rf=0.25       | same           | +34.2%         | +35.3%         | -18.2%           | +67.7%         | +9.6%          | +48.3%           | +72.0%           | +290.8pp           | +17.6pp          |
+| e=0.50 w=0.55 rf=0.25       | +44.9%         | +25.2%         | +35.4%         | -15.1%           | +66.4%         | +8.6%          | +53.3%           | +67.7%           | +286.4pp           | +13.2pp          |
+| e=0.50 w=0.60 rf=0.25       | +44.9%         | +25.2%         | +35.4%         | -14.1%           | +66.4%         | +8.6%          | +53.3%           | +67.7%           | +287.4pp           | +14.2pp          |
 
 **Per-year Δ vs baseline (! = >5pp change):**
 
-| Config | 2019 | 2020 | 2021 | 2022 | 2023 | 2024 | 2025 | 2026 | sum Δ |
-|---|---|---|---|---|---|---|---|---|---|
-| Exp19 e=0.60 w=0.50 rf=0.25 | 0 | 0 | 0 | +8.7! | 0 | 0 | 0 | -3.6 | +5.1 |
-| **e=0.60 w=0.55 rf=0.25** | **0** | **0** | **0** | **+8.7!** | **0** | **0** | **+4.7** | **-3.6** | **+9.8** |
-| e=0.55 w=0.55 rf=0.25 | 0 | +3.3 | -3.4 | +10.2! | +1.0 | -1.3 | +14.0! | -6.1! | +17.6 |
-| e=0.50 w=0.55 rf=0.25 | +3.0 | -5.7! | -3.3 | +13.3! | -0.4 | -2.3 | +19.0! | -10.4! | +13.2 |
-| e=0.50 w=0.60 rf=0.25 | +3.0 | -5.7! | -3.3 | +14.3! | -0.4 | -2.3 | +19.0! | -10.4! | +14.2 |
+| Config                      | 2019        | 2020        | 2021        | 2022            | 2023        | 2024        | 2025           | 2026           | sum Δ         |
+| --------------------------- | ----------- | ----------- | ----------- | --------------- | ----------- | ----------- | -------------- | -------------- | -------------- |
+| Exp19 e=0.60 w=0.50 rf=0.25 | 0           | 0           | 0           | +8.7!           | 0           | 0           | 0              | -3.6           | +5.1           |
+| **e=0.60 w=0.55 rf=0.25**   | **0** | **0** | **0** | **+8.7!** | **0** | **0** | **+4.7** | **-3.6** | **+9.8** |
+| e=0.55 w=0.55 rf=0.25       | 0           | +3.3        | -3.4        | +10.2!          | +1.0        | -1.3        | +14.0!         | -6.1!          | +17.6          |
+| e=0.50 w=0.55 rf=0.25       | +3.0        | -5.7!       | -3.3        | +13.3!          | -0.4        | -2.3        | +19.0!         | -10.4!         | +13.2          |
+| e=0.50 w=0.60 rf=0.25       | +3.0        | -5.7!       | -3.3        | +14.3!          | -0.4        | -2.3        | +19.0!         | -10.4!         | +14.2          |
 
 ### Why entry weight reduction is rejected
 
@@ -359,6 +371,7 @@ Entry weight reduction is a **global regime change**, not a surgical improvement
 ### Conclusion
 
 **`e=0.60 w=0.55 rf=0.25` is the new best-known config (+9.8pp 8yr = +282.9pp total):**
+
 - 2022: -28.4% → -19.7% (**+8.7pp** bear protection preserved from Exp19)
 - 2025: +34.3% → +38.9% (**+4.7pp** bonus from w=0.55 sweet spot)
 - 2019–2024: **zero impact** on all 6 years — completely surgical
@@ -367,6 +380,7 @@ Entry weight reduction is a **global regime change**, not a surgical improvement
 The `w=0.55` improvement over `w=0.50` comes from the `bearish-only` asymmetry: at w=0.55, the regime boost is large enough to elevate some genuinely profitable bearish picks in 2025 that w=0.50 narrowly missed selecting. Since bullish picks are never penalised (bearish-only flag), this can only help or be neutral — any regime-boosted bearish pick that gets selected either wins or the loss is constrained by the same stop-loss rules.
 
 **CLI for best-known (Exp 20):**
+
 ```bash
 --score-entry-weight 0.60 \
 --qqq-regime-weight 0.55 --qqq-regime-full-only --qqq-regime-bearish-only \
@@ -380,51 +394,54 @@ The `w=0.55` improvement over `w=0.50` comes from the `bearish-only` asymmetry: 
 **Motivation:** Top-2 naturally hedges 2022 better (-11.1% vs -28.4% for top-1) because 2 picks/day tend to split BULLISH/BEARISH. The experiments above all target top-1. This experiment asks: can regime flags further improve top-2 2022 without hurting total 8yr return?
 
 **New flags implemented:**
+
 - `--qqq-regime-no-bullish` — on full-bear days (regime factor = 1.0 per `--qqq-regime-full-only + --qqq-regime-ma200`), exclude all BULLISH signal tickers from selection entirely
 - `--qqq-regime-bear-entry-weight F` — on full-bear days, override `score_entry_weight` to `F`, reducing entry-vs-mid dominance
 
 ### 2022/2025 Sprint Results (top-2 base config)
 
-| Config | 2022 | 2025 | Δ2022 | Δ2025 |
-|---|---|---|---|---|
-| baseline | -11.1% | +45.3% | — | — |
-| exp20 | -8.9% | +38.9% | +2.1p | -6.4p |
-| exp20 + no-bull | +4.9% | +32.6% | +16.0p | -12.7p |
-| exp20 + bear-ew=0.20 | -1.7% | +36.5% | +9.4p | -8.7p |
-| exp20 + bear-ew=0.30 | -3.0% | +38.0% | +8.1p | -7.3p |
-| no-bull only | +6.6% | +32.6% | +17.7p | -12.7p |
-| exp20 + no-bull + ew=0.30 | +6.8% | +31.8% | +17.8p | -13.5p |
-| MA8 after-arm | -6.3% | +28.8% | +4.8p | -16.5p |
-| MA8 + exp20 | -11.3% | +23.6% | -0.2p | -21.7p |
+| Config                    | 2022   | 2025   | Δ2022 | Δ2025 |
+| ------------------------- | ------ | ------ | ------ | ------ |
+| baseline                  | -11.1% | +45.3% | —     | —     |
+| exp20                     | -8.9%  | +38.9% | +2.1p  | -6.4p  |
+| exp20 + no-bull           | +4.9%  | +32.6% | +16.0p | -12.7p |
+| exp20 + bear-ew=0.20      | -1.7%  | +36.5% | +9.4p  | -8.7p  |
+| exp20 + bear-ew=0.30      | -3.0%  | +38.0% | +8.1p  | -7.3p  |
+| no-bull only              | +6.6%  | +32.6% | +17.7p | -12.7p |
+| exp20 + no-bull + ew=0.30 | +6.8%  | +31.8% | +17.8p | -13.5p |
+| MA8 after-arm             | -6.3%  | +28.8% | +4.8p  | -16.5p |
+| MA8 + exp20               | -11.3% | +23.6% | -0.2p  | -21.7p |
 
 Key: MA8 trailing stop is **toxic for top-2** (-16 to -22pp net). The 2025 performance in the CLAUDE.md entry for MA8 was with M1+A1+A2 multi-window; with M1 alone and 2 picks, the 2025 bull bounces get stopped out too early.
 
 ### 8-Year Validation
 
-| Config | 2019 | 2020 | 2021 | 2022 | 2023 | 2024 | 2025 | 2026 | 8yr_sum | Δbase |
-|---|---|---|---|---|---|---|---|---|---|---|
-| top2 baseline | +22.5% | +11.7% | +26.3% | -11.1% | +30.2% | +1.2% | +45.3% | +52.1% | +178.3pp | — |
-| + exp20 | +22.5% | +11.7% | +26.3% | -8.9% | +30.2% | +1.5% | +38.9% | +52.1% | +174.4pp | -4.0pp |
-| + no-bull | +22.5% | +12.0% | +28.4% | +6.6% | +30.2% | -0.8% | +32.6% | +47.1% | +178.7pp | +0.4pp |
-| + exp20 + no-bull | +22.5% | +12.0% | +28.4% | +4.9% | +30.2% | -0.8% | +32.6% | +47.1% | +177.0pp | -1.3pp |
-| + exp20 + bear-ew=0.20 | +22.5% | +11.4% | +27.0% | -1.7% | +30.2% | +0.5% | +36.5% | +50.8% | +177.3pp | -1.0pp |
-| + exp20 + bear-ew=0.30 | +22.5% | +11.4% | +27.0% | -3.0% | +30.2% | +0.5% | +38.0% | +50.8% | +177.5pp | -0.8pp |
-| + exp20 + no-bull + ew=0.30 | +22.5% | +12.0% | +28.4% | +6.8% | +30.2% | -0.8% | +31.8% | +47.5% | +178.5pp | +0.1pp |
+| Config                      | 2019   | 2020   | 2021   | 2022   | 2023   | 2024  | 2025   | 2026   | 8yr_sum  | Δbase |
+| --------------------------- | ------ | ------ | ------ | ------ | ------ | ----- | ------ | ------ | -------- | ------ |
+| top2 baseline               | +22.5% | +11.7% | +26.3% | -11.1% | +30.2% | +1.2% | +45.3% | +52.1% | +178.3pp | —     |
+| + exp20                     | +22.5% | +11.7% | +26.3% | -8.9%  | +30.2% | +1.5% | +38.9% | +52.1% | +174.4pp | -4.0pp |
+| + no-bull                   | +22.5% | +12.0% | +28.4% | +6.6%  | +30.2% | -0.8% | +32.6% | +47.1% | +178.7pp | +0.4pp |
+| + exp20 + no-bull           | +22.5% | +12.0% | +28.4% | +4.9%  | +30.2% | -0.8% | +32.6% | +47.1% | +177.0pp | -1.3pp |
+| + exp20 + bear-ew=0.20      | +22.5% | +11.4% | +27.0% | -1.7%  | +30.2% | +0.5% | +36.5% | +50.8% | +177.3pp | -1.0pp |
+| + exp20 + bear-ew=0.30      | +22.5% | +11.4% | +27.0% | -3.0%  | +30.2% | +0.5% | +38.0% | +50.8% | +177.5pp | -0.8pp |
+| + exp20 + no-bull + ew=0.30 | +22.5% | +12.0% | +28.4% | +6.8%  | +30.2% | -0.8% | +31.8% | +47.5% | +178.5pp | +0.1pp |
 
 ### Finding: Top-2 Regime Filtering is a Break-Even Trade
 
-The no-bullish filter **does turn 2022 profitable** (+6.6% vs -11.1% baseline) — but the 2022 gain is almost entirely consumed by a -12.7pp regression in 2025 and -5pp in 2026. 
+The no-bullish filter **does turn 2022 profitable** (+6.6% vs -11.1% baseline) — but the 2022 gain is almost entirely consumed by a -12.7pp regression in 2025 and -5pp in 2026.
 
 **Why the 2025 regression is so large:** In April-May 2025 (tariff crash), QQQ briefly fell below MA200 with both MAs falling — triggering full-bear. Those same days had powerful V-shaped recoveries with large BULLISH signals. The no-bullish filter excluded those recovery picks.
 
 **Net result across 8 years:** All variants land within ±4pp of the baseline (+178.3pp). The **`no-bull` variant is the only one above baseline (+0.4pp)** — it swaps the -11.1% 2022 for +6.6% without changing the 8yr total meaningfully.
 
 **Decision framework:**
+
 - If year-to-year drawdown profile matters (avoiding a -11% year): use `no-bull` (+0.4pp 8yr, 2022: +6.6%)
 - If maximizing 8yr total: stick with the top-2 baseline (best at +178.3pp among top-2 regime configs)
 - top-1 + exp20 (+282.9pp) remains the best single-pick config for maximizing 8yr returns
 
 **CLI for top-2 + no-bull:**
+
 ```bash
 --top 2 \
 --qqq-regime-weight 0.55 --qqq-regime-full-only --qqq-regime-ma200 \
@@ -443,35 +460,36 @@ The no-bullish filter **does turn 2022 profitable** (+6.6% vs -11.1% baseline) �
 
 ### H1+H2 2022 Sweep Results (top-1)
 
-| Config | H1-2022 | H2-2022 | 2022 | Δfull |
-|---|---|---|---|---|
-| baseline | -25.8% | -2.6% | -28.4% | — |
-| + exp20 | -18.1% | -5.8% | -23.9% | +4.5p |
-| bear-ev-only alone | -18.1% | -5.8% | -23.9% | +4.5p |
-| bear-ev-only + no-bull | +8.9% | +4.6% | +13.5% | **+41.9p ★** |
-| bear-ev-only + bear-ew=0.30 | -2.9% | -2.5% | -5.4% | +23.0p ★ |
-| bear-ev-only + no-bull + bear-ew=0.30 | +16.6% | +4.6% | +21.2% | **+49.6p ★** |
-| top2 + bear-ev-only | -9.7% | +0.8% | -8.9% | +19.5p ★ |
-| top2 + bear-ev-only + no-bull | +1.1% | +2.5% | +3.5% | +31.9p ★ |
+| Config                                | H1-2022 | H2-2022 | 2022   | Δfull              |
+| ------------------------------------- | ------- | ------- | ------ | ------------------- |
+| baseline                              | -25.8%  | -2.6%   | -28.4% | —                  |
+| + exp20                               | -18.1%  | -5.8%   | -23.9% | +4.5p               |
+| bear-ev-only alone                    | -18.1%  | -5.8%   | -23.9% | +4.5p               |
+| bear-ev-only + no-bull                | +8.9%   | +4.6%   | +13.5% | **+41.9p ★** |
+| bear-ev-only + bear-ew=0.30           | -2.9%   | -2.5%   | -5.4%  | +23.0p ★           |
+| bear-ev-only + no-bull + bear-ew=0.30 | +16.6%  | +4.6%   | +21.2% | **+49.6p ★** |
+| top2 + bear-ev-only                   | -9.7%   | +0.8%   | -8.9%  | +19.5p ★           |
+| top2 + bear-ev-only + no-bull         | +1.1%   | +2.5%   | +3.5%  | +31.9p ★           |
 
 Key: `bear-ev-only` alone does nothing (+4.5pp, same as exp20). The flag only unlocks value when combined with `no-bull` — which drops BULLISH picks on full-bear days, forcing selection among BEARISH plays only. The combination turns 2022 profitable for the first time.
 
 ### 8-Year Validation
 
-| Config | 2019 | 2020 | 2021 | 2022 | 2023 | 2024 | 2025 | 2026 | 8yr | Δbase |
-|---|---|---|---|---|---|---|---|---|---|---|
-| top1 baseline | +42.0% | +30.9% | +38.7% | -28.4% | +66.8% | +10.9% | +34.3% | +78.1% | +273.2pp | — |
-| top1 + exp20 | +42.0% | +30.9% | +38.7% | -19.7% | +66.8% | +10.9% | +38.9% | +74.5% | +282.9pp | +9.8pp |
-| top1 + bear-ev-only + no-bull | +42.0% | +30.9% | +40.6% | +20.1% | +66.8% | +9.2% | +29.4% | +64.3% | +303.2pp | **+30.1pp ★** |
-| top1 + bear-ev-only + no-bull + ew=0.30 | +42.0% | +28.4% | +40.6% | +27.7% | +66.8% | +9.2% | +28.5% | +64.3% | +307.5pp | **+34.4pp ★** |
-| top2 baseline | +22.5% | +11.7% | +26.3% | -11.1% | +30.2% | +1.2% | +45.3% | +52.1% | +178.3pp | — |
-| top2 + exp20 | +22.5% | +11.7% | +26.3% | -8.9% | +30.2% | +1.5% | +38.9% | +52.1% | +174.4pp | -4.0pp |
-| top2 + bear-ev-only + no-bull | +22.5% | +12.0% | +28.4% | +4.9% | +30.2% | -0.8% | +32.6% | +47.1% | +177.0pp | -1.3pp |
-| top2 + bear-ev-only + no-bull + ew=0.30 | +22.5% | +12.0% | +28.4% | +6.8% | +30.2% | -0.8% | +31.8% | +47.5% | +178.5pp | +0.1pp |
+| Config                                  | 2019   | 2020   | 2021   | 2022   | 2023   | 2024   | 2025   | 2026   | 8yr      | Δbase               |
+| --------------------------------------- | ------ | ------ | ------ | ------ | ------ | ------ | ------ | ------ | -------- | -------------------- |
+| top1 baseline                           | +42.0% | +30.9% | +38.7% | -28.4% | +66.8% | +10.9% | +34.3% | +78.1% | +273.2pp | —                   |
+| top1 + exp20                            | +42.0% | +30.9% | +38.7% | -19.7% | +66.8% | +10.9% | +38.9% | +74.5% | +282.9pp | +9.8pp               |
+| top1 + bear-ev-only + no-bull           | +42.0% | +30.9% | +40.6% | +20.1% | +66.8% | +9.2%  | +29.4% | +64.3% | +303.2pp | **+30.1pp ★** |
+| top1 + bear-ev-only + no-bull + ew=0.30 | +42.0% | +28.4% | +40.6% | +27.7% | +66.8% | +9.2%  | +28.5% | +64.3% | +307.5pp | **+34.4pp ★** |
+| top2 baseline                           | +22.5% | +11.7% | +26.3% | -11.1% | +30.2% | +1.2%  | +45.3% | +52.1% | +178.3pp | —                   |
+| top2 + exp20                            | +22.5% | +11.7% | +26.3% | -8.9%  | +30.2% | +1.5%  | +38.9% | +52.1% | +174.4pp | -4.0pp               |
+| top2 + bear-ev-only + no-bull           | +22.5% | +12.0% | +28.4% | +4.9%  | +30.2% | -0.8%  | +32.6% | +47.1% | +177.0pp | -1.3pp               |
+| top2 + bear-ev-only + no-bull + ew=0.30 | +22.5% | +12.0% | +28.4% | +6.8%  | +30.2% | -0.8%  | +31.8% | +47.5% | +178.5pp | +0.1pp               |
 
 ### Findings
 
 **Top-1: breakthrough improvement (+34.4pp 8yr, 2022 from -28.4% to +27.7%).** The flag combination surgically targets the root cause — it only fires when:
+
 1. QQQ is confirmed in full-bear regime (below MA200, both MAs falling)
 2. The signal is BEARISH
 3. The combined EV is negative but bearish-specific EV is positive
@@ -483,6 +501,7 @@ Key: `bear-ev-only` alone does nothing (+4.5pp, same as exp20). The flag only un
 **New best-known config (top-1):** 8yr **+307.5pp** (was +282.9pp with exp20 only).
 
 **Full runnable command:**
+
 ```bash
 source ~/.pyenv/versions/alpha_tech_tracker/bin/activate
 PYTHONPATH=/Users/victorhuang/work/alpha_tech_tracker \
@@ -529,7 +548,28 @@ There is no scoring weight adjustment that fixes the 2022 directional miss witho
 7. **Top-2 no-bullish filter (Exp 21)** is break-even over 8yr (+0.4pp). It converts the -11.1% 2022 to +6.6% but the gain is offset by -12.7pp in 2025. Preferred only if avoiding a down year matters more than maximizing total return.
 8. **`--qqq-regime-bearish-ev-only` + no-bull (Exp 22)** achieves **+34.4pp 8yr net** for top-1 by bypassing the combined EV gate for BEARISH signals on confirmed full-bear days. Turns 2022 from -28.4% to +27.7%. The 2025/2026 regressions (-5.8pp / -13.7pp) reflect V-shaped recovery days where BULLISH picks were excluded.
 
-**Best-known config (top-1, max 8yr return):** Exp 22 + Exp 23 (bear-ev-only + no-bull + ew=0.30 + ctp0.35) at **+317.5pp**:
+**Best-known config (top-1, max 8yr return):** Exp 22 + Exp 23 (bear-ev-only + no-bull + ew=0.30 + ctp0.35) at **+317.5pp** (per-year sum, no-compound).
+
+**Updated baseline (2026-05-25): Exp 22 + ctp0.40 at +301.26% (compound 9yr sum)**
+
+Per-year breakdown (full exp22 + `--qqq-regime-bear-ctp 0.40`):
+
+```
+Year    Return      Picks     W/L
+------  ----------  --------  --------
+2018    -28.89%     163       62W/101L
+2019    +41.61%     164       79W/85L
+2020    +33.13%     149       59W/90L
+2021    +37.83%     188       90W/98L
+2022    +65.80%     183       96W/87L
+2023    +66.77%     193       83W/110L
+2024    +5.95%      188       83W/105L
+2025    +22.02%     196       95W/101L
+2026*   +57.04%     86        45W/41L   (* through 2026-05-23)
+------
+SUM     +301.26%
+```
+
 ```bash
 source ~/.pyenv/versions/alpha_tech_tracker/bin/activate
 PYTHONPATH=/Users/victorhuang/work/alpha_tech_tracker \
@@ -558,7 +598,7 @@ python alpha_tech_tracker/op_momentum_strategy/op_momentum_selector_backtest.py 
   --qqq-regime-bearish-ev-only \
   --qqq-regime-no-bullish \
   --qqq-regime-bear-entry-weight 0.30 \
-  --qqq-regime-bear-ctp 0.35 \
+  --qqq-regime-bear-ctp 0.40 \
   --start YYYY-01-01 --end YYYY-12-31
 ```
 
@@ -566,7 +606,7 @@ python alpha_tech_tracker/op_momentum_strategy/op_momentum_selector_backtest.py 
 
 ## Exp 23 — `--qqq-regime-bear-ctp` (Bear Close-To-Price threshold expansion)
 
-**Date:** 2026-05-25  
+**Date:** 2026-05-25
 **Goal:** Improve 2022 bear-year performance by expanding the BEARISH OR signal threshold on confirmed full-bear QQQ days.
 
 ### What it does
@@ -603,12 +643,14 @@ baseline                     +42.0  +30.9  +38.7  -28.4  +66.8  +10.9  +34.3  +7
 Per-day comparison (exp22 vs exp22+ctp0.40) at top-1 for 2025 and 2026:
 
 **2025 (−11.55pp total Δ):**
+
 - `same_ticker` (153 days): Σδ = 0pp — no change
 - `ticker_swap` (27 days): Σδ = **−6.67pp** — CTP displaced a good standard bearish pick with a mid-zone ticker 16/27 times
 - `ctp_new_trade` (6 days): Σδ = −3.00pp — new trades on no-trade bear days (3/6 WR)
 - `base_only_no_ctp` (5 days): Σδ = −1.89pp
 
 **2026 (−24pp total Δ, top-1 pnl-pct sum):**
+
 - `ticker_swap` (9 days): Σδ = −3.98pp (6/9 worse)
 - `ctp_new_trade` (12 days): Σδ = **−9.12pp** — 3/12 WR (25%) on full-bear no-trade days in March–April 2026 tariff crash
 - `base_only_no_ctp` (1 day): Σδ = −10.94pp
@@ -673,7 +715,7 @@ python alpha_tech_tracker/op_momentum_strategy/op_momentum_selector_backtest.py 
 
 ## Exp 24 — `--qqq-regime-bear-ctp-20ma-cross-50ma` (Death Cross Gate)
 
-**Date:** 2026-05-25  
+**Date:** 2026-05-25
 **Goal:** Restrict CTP to dates where prior-day QQQ MA20 < MA50 (death cross confirmed), hypothesising that sustained downtrends (death cross) produce better CTP quality than short V-shape dips.
 
 ### What it does
@@ -719,39 +761,8 @@ The gate fires in only 3 years (2021, 2022, 2025) and **hurts both key years**:
 
 ---
 
-## Exp 25 — `--qqq-regime-bear-ctp-below-ma20-ma50` (Price-Relative Gate)
-
-**Date:** 2026-05-25  
-**Goal:** Replace the full-bear condition (QQQ < MA200 + both slopes negative) with a faster price-relative trigger: CTP activates whenever prior-day QQQ close < MA20 AND close < MA50. Hypothesis: this fires earlier in V-shape crashes before structural bear is confirmed, capturing the highest-quality early-crash CTP dates.
-
-### What it does
-
-Instead of requiring `factor >= 1.0` (QQQ < MA200, both MA slopes negative), the flag uses a simpler price-level condition: prior-day close < MA20 AND close < MA50. No MA200 or slope requirements. Activates on ordinary corrections as well as confirmed bear markets.
-
-### Results (simplified exp22 proxy config, top-1)
-
-```
-Config                  2022 days  2022 return    2025 days  2025 return
-Baseline                    —         -4.54%           —        -22.98%
-ctp0.35 (full-bear)        110        -6.22%          37         +0.77%
-ctp0.35 + below_ma         145        -7.13%          55        -31.33%
-```
-
-### Finding: hypothesis not confirmed — catastrophically worse in 2025
-
-The below-MA mode adds **35 extra CTP days in 2022** and **18 extra days in 2025** vs the full-bear gate. Those additional days are ordinary bull-market corrections (QQQ briefly dips below MA20/MA50 but recovers), not genuine bear-momentum windows. CTP on those days picks mid-zone bearish entries in a bullish context → very low win rate → large losses.
-
-**2025 is −31.33%** (vs +0.77% for plain ctp0.35 and −22.98% baseline). The 18 extra days turn a winning strategy into a disaster worse than doing nothing.
-
-**Why the full-bear condition works:** The MA200 + both-slopes-negative requirement is doing essential work — it ensures CTP only fires during confirmed structural downtrends, not short dips. Removing those requirements floods the strategy with low-quality bearish entries on garden-variety pullbacks in bull markets.
-
-### Best-known config unchanged
-
-`--qqq-regime-bear-ctp 0.35` (no modifier) remains the best configuration. The full-bear gate is necessary and correct. Flag is available for completeness but should not be used.
-
----
-
 **Previous best-known (Exp 20, more balanced):** **+282.9pp** — better if 2025/2026 bull performance is weighted more:
+
 ```bash
 source ~/.pyenv/versions/alpha_tech_tracker/bin/activate
 PYTHONPATH=/Users/victorhuang/work/alpha_tech_tracker \
