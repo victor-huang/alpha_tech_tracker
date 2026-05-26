@@ -529,7 +529,7 @@ There is no scoring weight adjustment that fixes the 2022 directional miss witho
 7. **Top-2 no-bullish filter (Exp 21)** is break-even over 8yr (+0.4pp). It converts the -11.1% 2022 to +6.6% but the gain is offset by -12.7pp in 2025. Preferred only if avoiding a down year matters more than maximizing total return.
 8. **`--qqq-regime-bearish-ev-only` + no-bull (Exp 22)** achieves **+34.4pp 8yr net** for top-1 by bypassing the combined EV gate for BEARISH signals on confirmed full-bear days. Turns 2022 from -28.4% to +27.7%. The 2025/2026 regressions (-5.8pp / -13.7pp) reflect V-shaped recovery days where BULLISH picks were excluded.
 
-**Best-known config (top-1, max 8yr return):** Exp 22 bear-ev-only + no-bull + ew=0.30 at **+307.5pp**:
+**Best-known config (top-1, max 8yr return):** Exp 22 + Exp 23 (bear-ev-only + no-bull + ew=0.30 + ctp0.35) at **+317.5pp**:
 ```bash
 source ~/.pyenv/versions/alpha_tech_tracker/bin/activate
 PYTHONPATH=/Users/victorhuang/work/alpha_tech_tracker \
@@ -558,6 +558,7 @@ python alpha_tech_tracker/op_momentum_strategy/op_momentum_selector_backtest.py 
   --qqq-regime-bearish-ev-only \
   --qqq-regime-no-bullish \
   --qqq-regime-bear-entry-weight 0.30 \
+  --qqq-regime-bear-ctp 0.35 \
   --start YYYY-01-01 --end YYYY-12-31
 ```
 
