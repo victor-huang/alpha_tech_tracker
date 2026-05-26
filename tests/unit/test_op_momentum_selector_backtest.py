@@ -1,4 +1,5 @@
-from datetime import date, datetime
+import unittest.mock
+from datetime import date, datetime, timedelta
 
 import pandas as pd
 import pytest
@@ -8,6 +9,7 @@ from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector_backtest impor
     _annotate_doubledown_addon,
     _apply_capital_flow,
     _apply_opportunity_pool,
+    _compute_bear_ctp_dates,
     _compute_rolling_stats,
     _print_daily_table,
     _print_reentry_subrow,
@@ -1743,8 +1745,115 @@ class TestQqqRegimeFactor:
 
     def test_ma200_nan_falls_back_to_4tier(self):
         # When MA200 is NaN (insufficient history), should use 4-tier logic.
-        import math
         result = _qqq_regime_factor(close=370.0, ma20=385.0, ma50=375.0,
                                     ma20_slope=-2.0, ma50_slope=-1.0,
                                     ma200=float("nan"))
         assert result == pytest.approx(1.0)  # 4-tier full bear
+
+
+# ---------------------------------------------------------------------------
+# _compute_bear_ctp_dates
+# ---------------------------------------------------------------------------
+
+def _make_qqq_df(prices):
+    """Build a minimal QQQ-like DataFrame with one bar per calendar day."""
+    start = datetime(2020, 1, 2, 16, 0, 0, tzinfo=ET)
+    idx = pd.DatetimeIndex([start + timedelta(days=i) for i in range(len(prices))])
+    return pd.DataFrame({"Close": prices}, index=idx)
+
+
+class TestComputeBearCtpDates:
+    """Tests for _compute_bear_ctp_dates helper."""
+
+    def test_returns_empty_set_for_empty_dataframe(self):
+        result = _compute_bear_ctp_dates(
+            pd.DataFrame(),
+            qqq_regime_full_only=True,
+            qqq_regime_ma200=False,
+            qqq_regime_slope_days=5,
+        )
+        assert result == set()
+
+    def test_returns_nonempty_set_in_prolonged_decline(self):
+        # 65 days declining: MA50 is non-NaN from day 51; full-bear condition met.
+        prices = [1000.0 - i * 5 for i in range(65)]
+        df = _make_qqq_df(prices)
+        result = _compute_bear_ctp_dates(
+            df,
+            qqq_regime_full_only=True,
+            qqq_regime_ma200=False,
+            qqq_regime_slope_days=5,
+        )
+        assert len(result) > 0
+
+    def test_ma_cross_gate_is_subset_of_base_result(self):
+        # In a sustained decline MA20 < MA50 throughout, so gate changes nothing.
+        # Result with gate ⊆ result without gate (and equal in this scenario).
+        prices = [1000.0 - i * 5 for i in range(65)]
+        df = _make_qqq_df(prices)
+        base = _compute_bear_ctp_dates(
+            df,
+            qqq_regime_full_only=True,
+            qqq_regime_ma200=False,
+            qqq_regime_slope_days=5,
+            qqq_regime_bear_ctp_ma_cross=False,
+        )
+        gated = _compute_bear_ctp_dates(
+            df,
+            qqq_regime_full_only=True,
+            qqq_regime_ma200=False,
+            qqq_regime_slope_days=5,
+            qqq_regime_bear_ctp_ma_cross=True,
+        )
+        assert gated.issubset(base)
+
+    def test_ma_cross_gate_excludes_dates_when_ma20_above_ma50(self):
+        # Series: 50 flat days then 30 strong rally days.
+        # During rally, MA20 > MA50 because recent prices are higher.
+        # With gate enabled, rally-phase eval dates should be excluded.
+        prices = [100.0] * 50 + [100.0 + i * 10 for i in range(30)]
+        df = _make_qqq_df(prices)
+
+        _patch = "alpha_tech_tracker.op_momentum_strategy.op_momentum_selector_backtest._qqq_regime_factor"
+        with unittest.mock.patch(_patch, return_value=1.0):
+            base = _compute_bear_ctp_dates(
+                df,
+                qqq_regime_full_only=True,
+                qqq_regime_ma200=False,
+                qqq_regime_slope_days=5,
+                qqq_regime_bear_ctp_ma_cross=False,
+            )
+            gated = _compute_bear_ctp_dates(
+                df,
+                qqq_regime_full_only=True,
+                qqq_regime_ma200=False,
+                qqq_regime_slope_days=5,
+                qqq_regime_bear_ctp_ma_cross=True,
+            )
+        # Gate must exclude at least some rally-phase dates where MA20 > MA50.
+        assert len(gated) < len(base)
+        assert gated.issubset(base)
+
+    def test_ma_cross_gate_passes_all_dates_when_ma20_below_ma50(self):
+        # Use a declining-only series; in a sustained decline MA20 < MA50 always.
+        # Gate should filter nothing — result with gate equals result without gate.
+        prices = [1000.0 - i * 5 for i in range(65)]
+        df = _make_qqq_df(prices)
+
+        _patch = "alpha_tech_tracker.op_momentum_strategy.op_momentum_selector_backtest._qqq_regime_factor"
+        with unittest.mock.patch(_patch, return_value=1.0):
+            base = _compute_bear_ctp_dates(
+                df,
+                qqq_regime_full_only=True,
+                qqq_regime_ma200=False,
+                qqq_regime_slope_days=5,
+                qqq_regime_bear_ctp_ma_cross=False,
+            )
+            gated = _compute_bear_ctp_dates(
+                df,
+                qqq_regime_full_only=True,
+                qqq_regime_ma200=False,
+                qqq_regime_slope_days=5,
+                qqq_regime_bear_ctp_ma_cross=True,
+            )
+        assert gated == base

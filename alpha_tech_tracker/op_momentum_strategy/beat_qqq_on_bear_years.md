@@ -671,6 +671,54 @@ python alpha_tech_tracker/op_momentum_strategy/op_momentum_selector_backtest.py 
 
 ---
 
+## Exp 24 — `--qqq-regime-bear-ctp-20ma-cross-50ma` (Death Cross Gate)
+
+**Date:** 2026-05-25  
+**Goal:** Restrict CTP to dates where prior-day QQQ MA20 < MA50 (death cross confirmed), hypothesising that sustained downtrends (death cross) produce better CTP quality than short V-shape dips.
+
+### What it does
+
+When the flag is set alongside `--qqq-regime-bear-ctp`, a full-bear day is only included in the CTP-active set if the prior-day QQQ MA20 is strictly below MA50. In a fast crash (V-shape), MA20 may not yet have crossed below MA50 even though the regime factor is already 1.0 — those dates are excluded by the gate.
+
+### Implementation
+
+- `_compute_bear_ctp_dates()` extracted as a module-level helper (was inline code)
+- New `qqq_regime_bear_ctp_ma_cross: bool = False` parameter added to `run_selector_backtest()`
+- CLI flag: `--qqq-regime-bear-ctp-20ma-cross-50ma`
+- 5 unit tests in `TestComputeBearCtpDates`
+
+### 8-year sweep results (simplified exp22 proxy config, top-1)
+
+Config uses: `--qqq-regime-weight 0.20 --qqq-regime-full-only --qqq-regime-ma200 --qqq-regime-bearish-only --qqq-regime-no-bullish`
+
+```
+Config             2019      2020      2021      2022      2023      2024      2025      2026*     8yr total
+Baseline          +23.86%  +14.36%   +4.11%   -4.54%  +67.77%  -21.71%  -22.98%  +24.75%   +86.40%
++ ctp0.35         +25.97%  +15.47%   +2.12%   -6.22%  +67.77%  -24.52%   +0.77%   +6.18%  +103.14%
++ ctp0.35+gate    +25.97%  +15.47%   +4.11%  -14.04%  +67.77%  -24.52%   -7.78%   +6.18%   +99.09%
+Δ(gate vs ctp)    +0.00pp  +0.00pp  +1.99pp  -7.82pp   0.00pp   0.00pp  -8.55pp   0.00pp    -4.05pp
+```
+
+Bear CTP days: 222 (no gate) → 206 (with gate). Gate removes 16 dates = 7.2% of full-bear days.
+
+### Finding: hypothesis not confirmed
+
+The gate fires in only 3 years (2021, 2022, 2025) and **hurts both key years**:
+
+- **2022**: −7.82pp (−6.22% → −14.04%). The early 2022 crash phase (Jan–Mar, QQQ dropped fast before death cross was confirmed) had productive CTP trades that the gate removes.
+- **2025**: −8.55pp (+0.77% → −7.78%). The April 2025 tariff crash was a V-shape: QQQ briefly fell below MA200 with both MAs turning negative, but MA20 had not yet crossed below MA50. Those 6 dates are exactly the best CTP trades.
+- **2021**: +1.99pp (only partial benefit).
+
+**Root cause:** Death cross is a lagging signal. The strongest short-side momentum trades happen during the initial sharp crash — before MA20 has had time to fall below MA50. By the time death cross is confirmed (MA20 < MA50), the sharpest moves are already over. The gate selectively removes the highest-quality early-crash CTP dates.
+
+**Net 8yr: −4.05pp** vs plain ctp0.35. Flag is available in the codebase for investigation but **should not be used in practice**.
+
+### Best-known config unchanged
+
+`--qqq-regime-bear-ctp 0.35` remains the recommended addition (no MA cross gate).
+
+---
+
 **Previous best-known (Exp 20, more balanced):** **+282.9pp** — better if 2025/2026 bull performance is weighted more:
 ```bash
 source ~/.pyenv/versions/alpha_tech_tracker/bin/activate

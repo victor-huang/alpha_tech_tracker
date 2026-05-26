@@ -839,6 +839,58 @@ def _compute_rolling_stats(tickers, lookback_start, d, eff_primary_wr, ev_trend_
     return rolling_stats
 
 
+def _compute_bear_ctp_dates(
+    qqq_df: "pd.DataFrame",
+    qqq_regime_full_only: bool,
+    qqq_regime_ma200: bool,
+    qqq_regime_slope_days: int,
+    qqq_regime_bear_ctp_ma_cross: bool = False,
+) -> set:
+    """Return the set of dates where the prior-day QQQ regime factor == 1.0.
+
+    When qqq_regime_bear_ctp_ma_cross is True, also requires prior-day MA20 < MA50
+    (death cross condition), so CTP is skipped during short-lived dips where the
+    20-day MA is still above the 50-day MA.
+    """
+    if qqq_df.empty:
+        return set()
+    rbd = {d_: g for d_, g in qqq_df.groupby(qqq_df.index.date)}
+    rdates = sorted(rbd.keys())
+    closes = [float(rbd[d_]["Close"].iloc[-1]) for d_ in rdates]
+    s = pd.Series(closes)
+    ma20 = s.rolling(20).mean()
+    ma50 = s.rolling(50).mean()
+    ma200 = s.rolling(200).mean()
+    ma20s = ma20 - ma20.shift(qqq_regime_slope_days)
+    ma50s = ma50 - ma50.shift(qqq_regime_slope_days)
+    rdate_idx = {d_: i for i, d_ in enumerate(rdates)}
+    bear_ctp_dates = set()
+    for eval_d in rdates:
+        ri = rdate_idx[eval_d]
+        if ri == 0:
+            continue
+        pi = ri - 1
+        rc = closes[pi]
+        rm20 = float(ma20.iloc[pi])
+        rm50 = float(ma50.iloc[pi])
+        rm20s = float(ma20s.iloc[pi])
+        rm50s = float(ma50s.iloc[pi])
+        rm200 = float(ma200.iloc[pi])
+        if np.isnan(rm20) or np.isnan(rm50):
+            continue
+        if qqq_regime_bear_ctp_ma_cross and rm20 >= rm50:
+            continue
+        m200_arg = rm200 if qqq_regime_ma200 else None
+        factor = _qqq_regime_factor(
+            rc, rm20, rm50, rm20s, rm50s,
+            full_only=qqq_regime_full_only,
+            ma200=m200_arg,
+        )
+        if factor >= 1.0:
+            bear_ctp_dates.add(eval_d)
+    return bear_ctp_dates
+
+
 def _qqq_regime_factor(close, ma20, ma50, ma20_slope, ma50_slope,
                        full_only=False, ma200=None):
     """
@@ -1016,6 +1068,7 @@ def run_selector_backtest(
     qqq_regime_bear_entry_weight: float = None,
     qqq_regime_bearish_ev_only: bool = False,
     qqq_regime_bear_ctp: float = None,
+    qqq_regime_bear_ctp_ma_cross: bool = False,
 ) -> tuple:
     """
     Walk each trading day in [eval_start, eval_end], apply rolling selector
@@ -1161,41 +1214,17 @@ def run_selector_backtest(
     # Uses prior-day MA values (no lookahead) with same logic as qqq_regime_by_date.
     _bear_ctp_dates = None
     if qqq_regime_bear_ctp is not None and not _qqq_df.empty:
-        _rbd_ctp = {d_: g for d_, g in _qqq_df.groupby(_qqq_df.index.date)}
-        _rdates_ctp = sorted(_rbd_ctp.keys())
-        _rcloses_ctp = [float(_rbd_ctp[d_]["Close"].iloc[-1]) for d_ in _rdates_ctp]
-        _rs_ctp = pd.Series(_rcloses_ctp)
-        _rma20_ctp = _rs_ctp.rolling(20).mean()
-        _rma50_ctp = _rs_ctp.rolling(50).mean()
-        _rma200_ctp = _rs_ctp.rolling(200).mean()
-        _rma20s_ctp = _rma20_ctp - _rma20_ctp.shift(qqq_regime_slope_days)
-        _rma50s_ctp = _rma50_ctp - _rma50_ctp.shift(qqq_regime_slope_days)
-        _rdate_idx_ctp = {d_: i for i, d_ in enumerate(_rdates_ctp)}
-        _bear_ctp_dates = set()
-        for _eval_d in sorted(_rdate_idx_ctp.keys()):
-            _ri_ctp = _rdate_idx_ctp[_eval_d]
-            if _ri_ctp == 0:
-                continue
-            _pi_ctp = _ri_ctp - 1
-            _rc_ctp = _rcloses_ctp[_pi_ctp]
-            _rm20_ctp = float(_rma20_ctp.iloc[_pi_ctp])
-            _rm50_ctp = float(_rma50_ctp.iloc[_pi_ctp])
-            _rm20s_ctp = float(_rma20s_ctp.iloc[_pi_ctp])
-            _rm50s_ctp = float(_rma50s_ctp.iloc[_pi_ctp])
-            _rm200_ctp = float(_rma200_ctp.iloc[_pi_ctp])
-            if np.isnan(_rm20_ctp) or np.isnan(_rm50_ctp):
-                continue
-            _m200_arg_ctp = _rm200_ctp if qqq_regime_ma200 else None
-            _factor_ctp = _qqq_regime_factor(
-                _rc_ctp, _rm20_ctp, _rm50_ctp, _rm20s_ctp, _rm50s_ctp,
-                full_only=qqq_regime_full_only,
-                ma200=_m200_arg_ctp,
-            )
-            if _factor_ctp >= 1.0:
-                _bear_ctp_dates.add(_eval_d)
+        _bear_ctp_dates = _compute_bear_ctp_dates(
+            _qqq_df,
+            qqq_regime_full_only=qqq_regime_full_only,
+            qqq_regime_ma200=qqq_regime_ma200,
+            qqq_regime_slope_days=qqq_regime_slope_days,
+            qqq_regime_bear_ctp_ma_cross=qqq_regime_bear_ctp_ma_cross,
+        )
         print(
             f"  Bear CTP dates: {len(_bear_ctp_dates)} full-bear days"
             f"  bear_ctp={qqq_regime_bear_ctp:.2f}"
+            + ("  [ma_cross gate ON]" if qqq_regime_bear_ctp_ma_cross else "")
         )
 
     print(f"Pre-computing signals for {n_windows} window(s)...")
@@ -3709,6 +3738,18 @@ def _parse_args():
             "is unaffected. Requires --qqq-regime-ma200 + --qqq-regime-full-only. Default: None (off)."
         ),
     )
+    parser.add_argument(
+        "--qqq-regime-bear-ctp-20ma-cross-50ma",
+        action="store_true",
+        default=False,
+        dest="qqq_regime_bear_ctp_ma_cross",
+        help=(
+            "Restrict --qqq-regime-bear-ctp to dates where the prior-day QQQ MA20 < MA50 "
+            "(death cross active). CTP is disabled automatically once MA20 recovers above MA50, "
+            "avoiding false triggers during short-lived V-shape dips. "
+            "Requires --qqq-regime-bear-ctp. Default: off."
+        ),
+    )
     parser.add_argument("--score-trend-align-weight", type=float, default=0.0,
                         dest="score_trend_align_weight",
                         help="Weight for direction-aware consecutive-streak scoring. Positive = reward "
@@ -4112,7 +4153,10 @@ if __name__ == "__main__":
     if args.qqq_regime_bearish_ev_only:
         print(f"  QQQ bear-ev  : on  (BEARISH signals bypass combined EV gate on full-bear days; use ev_trade_bearish instead)")
     if args.qqq_regime_bear_ctp is not None:
-        print(f"  QQQ bear-ctp : {args.qqq_regime_bear_ctp:.2f}  (looser BEARISH OR threshold on full-bear days; BULLISH unaffected)")
+        _ctp_line = f"  QQQ bear-ctp : {args.qqq_regime_bear_ctp:.2f}  (looser BEARISH OR threshold on full-bear days; BULLISH unaffected)"
+        if args.qqq_regime_bear_ctp_ma_cross:
+            _ctp_line += "  [MA20<MA50 gate ON — death cross only]"
+        print(_ctp_line)
     if args.score_win_rate_weight != 0.0:
         print(f"  Win rate wt  : {args.score_win_rate_weight:+.3f}  (rewards consistent tickers)")
     if args.entry_weight_bull is not None or args.entry_weight_bear is not None:
@@ -4388,6 +4432,7 @@ if __name__ == "__main__":
         qqq_regime_bear_entry_weight=args.qqq_regime_bear_entry_weight,
         qqq_regime_bearish_ev_only=args.qqq_regime_bearish_ev_only,
         qqq_regime_bear_ctp=args.qqq_regime_bear_ctp,
+        qqq_regime_bear_ctp_ma_cross=args.qqq_regime_bear_ctp_ma_cross,
     )
 
     skip_log = _apply_capital_flow(
