@@ -11,6 +11,7 @@ from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector_backtest impor
     _compute_rolling_stats,
     _print_daily_table,
     _print_reentry_subrow,
+    _qqq_regime_factor,
 )
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import (
     _stitch_cache,
@@ -1647,3 +1648,103 @@ class TestAdaptiveLookbackDaySelection:
         # The entire point of adaptive lookback: bull = recent signal matters more.
         # Verify the ordering: bull_days < neutral_days < bear_days.
         assert self._days(10) < self._days(7) < self._days(5)
+
+
+# ---------------------------------------------------------------------------
+# _qqq_regime_factor
+# ---------------------------------------------------------------------------
+
+class TestQqqRegimeFactor:
+    """Tests for the QQQ MA bear-regime intensity tier helper."""
+
+    def test_returns_zero_when_close_above_ma20(self):
+        # Neutral regime — QQQ above MA20, no bear boost.
+        assert _qqq_regime_factor(close=410.0, ma20=400.0, ma50=380.0,
+                                  ma20_slope=2.0, ma50_slope=1.0) == 0.0
+
+    def test_returns_zero_when_close_equals_ma20(self):
+        assert _qqq_regime_factor(close=400.0, ma20=400.0, ma50=380.0,
+                                  ma20_slope=1.0, ma50_slope=0.5) == 0.0
+
+    def test_returns_0_33_when_below_ma20_above_ma50(self):
+        # Mild bear: QQQ dipped below MA20 but still above MA50.
+        assert _qqq_regime_factor(close=390.0, ma20=395.0, ma50=380.0,
+                                  ma20_slope=-1.0, ma50_slope=0.5) == pytest.approx(0.33)
+
+    def test_returns_0_67_when_below_ma50_mas_not_both_falling(self):
+        # Moderate bear: QQQ below MA50 but MA50 slope still positive.
+        assert _qqq_regime_factor(close=370.0, ma20=385.0, ma50=375.0,
+                                  ma20_slope=-1.0, ma50_slope=0.5) == pytest.approx(0.67)
+
+    def test_returns_1_0_when_below_ma50_and_both_mas_falling(self):
+        # Full bear: QQQ below MA50 and both MAs trending down.
+        assert _qqq_regime_factor(close=370.0, ma20=385.0, ma50=375.0,
+                                  ma20_slope=-2.0, ma50_slope=-1.0) == pytest.approx(1.0)
+
+    def test_full_only_returns_zero_for_mild_bear(self):
+        # full_only collapses mild bear (0.33) to 0 — no false signal on brief dips.
+        assert _qqq_regime_factor(close=390.0, ma20=395.0, ma50=380.0,
+                                  ma20_slope=-1.0, ma50_slope=0.5,
+                                  full_only=True) == 0.0
+
+    def test_full_only_returns_zero_for_moderate_bear(self):
+        # full_only collapses moderate bear (0.67) to 0 as well.
+        assert _qqq_regime_factor(close=370.0, ma20=385.0, ma50=375.0,
+                                  ma20_slope=-1.0, ma50_slope=0.5,
+                                  full_only=True) == 0.0
+
+    def test_full_only_returns_1_0_for_full_bear(self):
+        assert _qqq_regime_factor(close=370.0, ma20=385.0, ma50=375.0,
+                                  ma20_slope=-2.0, ma50_slope=-1.0,
+                                  full_only=True) == pytest.approx(1.0)
+
+    # --- 5-tier MA200 system ---
+
+    def test_ma200_returns_0_25_when_below_ma20_above_ma50(self):
+        # Warning tier: QQQ slipped under MA20 but still above MA50.
+        assert _qqq_regime_factor(close=390.0, ma20=395.0, ma50=380.0,
+                                  ma20_slope=-1.0, ma50_slope=0.5,
+                                  ma200=320.0) == pytest.approx(0.25)
+
+    def test_ma200_returns_0_55_when_below_ma50_above_ma200(self):
+        # Acceleration zone: MA50 broken, move accelerating toward MA200.
+        assert _qqq_regime_factor(close=370.0, ma20=385.0, ma50=375.0,
+                                  ma20_slope=-2.0, ma50_slope=-0.5,
+                                  ma200=320.0) == pytest.approx(0.55)
+
+    def test_ma200_returns_0_75_when_below_ma200_mas_not_both_falling(self):
+        # Deep bear but MA50 slope not yet negative — could be sluggish recovery.
+        assert _qqq_regime_factor(close=310.0, ma20=375.0, ma50=365.0,
+                                  ma20_slope=-2.0, ma50_slope=0.1,
+                                  ma200=320.0) == pytest.approx(0.75)
+
+    def test_ma200_returns_1_0_when_below_ma200_both_mas_falling(self):
+        # True bear: QQQ below MA200 AND both MAs trending down.
+        assert _qqq_regime_factor(close=310.0, ma20=375.0, ma50=365.0,
+                                  ma20_slope=-3.0, ma50_slope=-1.5,
+                                  ma200=320.0) == pytest.approx(1.0)
+
+    def test_ma200_full_only_returns_zero_for_acceleration_zone(self):
+        # full_only with MA200: below MA50 but above MA200 — not strict enough, returns 0.
+        assert _qqq_regime_factor(close=370.0, ma20=385.0, ma50=375.0,
+                                  ma20_slope=-2.0, ma50_slope=-0.5,
+                                  full_only=True, ma200=320.0) == 0.0
+
+    def test_ma200_full_only_returns_1_0_only_when_below_ma200_and_both_mas_falling(self):
+        assert _qqq_regime_factor(close=310.0, ma20=375.0, ma50=365.0,
+                                  ma20_slope=-3.0, ma50_slope=-1.5,
+                                  full_only=True, ma200=320.0) == pytest.approx(1.0)
+
+    def test_ma200_full_only_returns_zero_when_below_ma200_but_ma50_slope_positive(self):
+        # Below MA200 but recovery starting — MA50 slope not yet negative, not full bear.
+        assert _qqq_regime_factor(close=310.0, ma20=375.0, ma50=365.0,
+                                  ma20_slope=-1.0, ma50_slope=0.2,
+                                  full_only=True, ma200=320.0) == 0.0
+
+    def test_ma200_nan_falls_back_to_4tier(self):
+        # When MA200 is NaN (insufficient history), should use 4-tier logic.
+        import math
+        result = _qqq_regime_factor(close=370.0, ma20=385.0, ma50=375.0,
+                                    ma20_slope=-2.0, ma50_slope=-1.0,
+                                    ma200=float("nan"))
+        assert result == pytest.approx(1.0)  # 4-tier full bear

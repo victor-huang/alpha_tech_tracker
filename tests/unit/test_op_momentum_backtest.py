@@ -15,6 +15,7 @@ from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import (
     _trim_bars_to_range,
     compute_signals_with_backtest,
     fetch_bars,
+    run_backtest,
 )
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector_backtest import (
     _annotate_doubledown_addon,
@@ -2331,3 +2332,198 @@ class TestExitAtBarClose:
         assert row["exit_reason"] == "fallback_20pct"
         assert row["exit_price"] == pytest.approx(100.3)
         assert row["pnl"] == pytest.approx(100.3 - 101.5)
+
+
+# ---------------------------------------------------------------------------
+# TestBearCtpDates
+# ---------------------------------------------------------------------------
+#
+# --qqq-regime-bear-ctp: apply a looser BEARISH OR threshold only on full-bear
+# dates. BULLISH threshold is always unaffected.
+#
+# OR: high=102, low=98, range=4, midpoint=100.
+# Standard bear threshold (20%): 98 + 0.20*4 = 98.8.
+# bear_ctp=0.40 threshold:       98 + 0.40*4 = 99.6.
+#
+# Mid-zone close=99.4 sits between 98.8 and 99.6:
+#   standard → no signal; bear_ctp=0.40 on a bear date → BEARISH.
+
+
+class TestBearCtpDates:
+    _DATE = date(2025, 1, 2)
+
+    # close=99.4: 30% above or_low — above standard 20% threshold, below 40% threshold
+    _MID_ZONE_OPENING = [
+        ("09:30", 100, 101,  99,  100.0, _BEAR_MA20, _BEAR_MA50, _MA200),
+        ("09:35", 100, 102,  98,  100.0, _BEAR_MA20, _BEAR_MA50, _MA200),
+        ("09:40",  99, 100,  98,   99.4, _BEAR_MA20, _BEAR_MA50, _MA200),
+    ]
+
+    _POST_OPEN = [
+        ("09:45",  99, 99.5, 98.5, 99.0, _BEAR_MA20, _BEAR_MA50, _MA200),
+    ]
+
+    def test_mid_zone_close_produces_no_signal_without_bear_ctp(self):
+        df = _make_bars("2025-01-02", self._MID_ZONE_OPENING + self._POST_OPEN)
+        result = compute_signals_with_backtest(df, opening_bars=3)
+
+        assert result.empty
+
+    def test_mid_zone_close_fires_bearish_on_bear_date(self):
+        df = _make_bars("2025-01-02", self._MID_ZONE_OPENING + self._POST_OPEN)
+        result = compute_signals_with_backtest(
+            df, opening_bars=3,
+            bear_ctp_dates={self._DATE}, bear_ctp=0.40,
+        )
+
+        assert len(result) == 1
+        assert result.iloc[0]["signal"] == "BEARISH"
+
+    def test_mid_zone_close_produces_no_signal_on_non_bear_date(self):
+        # Date 2025-01-02 is NOT in bear_ctp_dates → standard 20% threshold applies.
+        df = _make_bars("2025-01-02", self._MID_ZONE_OPENING + self._POST_OPEN)
+        result = compute_signals_with_backtest(
+            df, opening_bars=3,
+            bear_ctp_dates={date(2025, 1, 3)}, bear_ctp=0.40,
+        )
+
+        assert result.empty
+
+    def test_standard_bearish_signal_still_fires_below_20pct_threshold(self):
+        # Regression: close=98.5 (within bottom 20%) → BEARISH with or without bear_ctp_dates.
+        df = _make_bars("2025-01-02", _BEARISH_OPENING + _BEARISH_POST_HARDSTOP)
+        result = compute_signals_with_backtest(
+            df, opening_bars=3,
+            bear_ctp_dates={self._DATE}, bear_ctp=0.40,
+        )
+
+        assert len(result) >= 1
+        assert result.iloc[0]["signal"] == "BEARISH"
+
+    def test_bullish_threshold_unchanged_on_bear_date(self):
+        # close=101.5 > midpoint=100 → BULLISH; bear_ctp_dates must not change this.
+        df = _make_bars("2025-01-02", _BULLISH_OPENING + _BULLISH_POST_HARDSTOP)
+        result = compute_signals_with_backtest(
+            df, opening_bars=3,
+            bear_ctp_dates={self._DATE}, bear_ctp=0.40,
+        )
+
+        assert len(result) == 1
+        assert result.iloc[0]["signal"] == "BULLISH"
+
+    def test_bear_ctp_not_applied_when_bear_ctp_dates_is_none(self):
+        # bear_ctp=0.40 alone (no bear_ctp_dates) → flag is disabled → no signal.
+        df = _make_bars("2025-01-02", self._MID_ZONE_OPENING + self._POST_OPEN)
+        result = compute_signals_with_backtest(
+            df, opening_bars=3,
+            bear_ctp_dates=None, bear_ctp=0.40,
+        )
+
+        assert result.empty
+
+    def test_close_exactly_at_bear_ctp_boundary_fires_bearish(self):
+        # close = or_low + 0.40*range = 98 + 1.6 = 99.6 → exactly at boundary (<=) → BEARISH.
+        boundary_close = 99.6
+        boundary_opening = [
+            ("09:30", 100, 101,  99,  100.0, _BEAR_MA20, _BEAR_MA50, _MA200),
+            ("09:35", 100, 102,  98,  100.0, _BEAR_MA20, _BEAR_MA50, _MA200),
+            ("09:40",  99, 100,  98,  boundary_close, _BEAR_MA20, _BEAR_MA50, _MA200),
+        ]
+        df = _make_bars("2025-01-02", boundary_opening + self._POST_OPEN)
+        result = compute_signals_with_backtest(
+            df, opening_bars=3,
+            bear_ctp_dates={self._DATE}, bear_ctp=0.40,
+        )
+
+        assert len(result) == 1
+        assert result.iloc[0]["signal"] == "BEARISH"
+
+    def test_close_just_above_bear_ctp_boundary_does_not_fire(self):
+        # close = 99.61 > 99.6 → strictly above bear_ctp threshold → no signal.
+        above_boundary = 99.61
+        boundary_opening = [
+            ("09:30", 100, 101,  99,  100.0, _BEAR_MA20, _BEAR_MA50, _MA200),
+            ("09:35", 100, 102,  98,  100.0, _BEAR_MA20, _BEAR_MA50, _MA200),
+            ("09:40",  99, 100,  98,  above_boundary, _BEAR_MA20, _BEAR_MA50, _MA200),
+        ]
+        df = _make_bars("2025-01-02", boundary_opening + self._POST_OPEN)
+        result = compute_signals_with_backtest(
+            df, opening_bars=3,
+            bear_ctp_dates={self._DATE}, bear_ctp=0.40,
+        )
+
+        assert result.empty
+
+
+# ---------------------------------------------------------------------------
+# TestRunBacktestBearCtpPassthrough
+# ---------------------------------------------------------------------------
+#
+# run_backtest() must pass bear_ctp_dates and bear_ctp through to
+# compute_signals_with_backtest() and produce the correct signals.
+
+
+class TestRunBacktestBearCtpPassthrough:
+    _DATE = date(2025, 1, 2)
+    _TICKER = "TEST"
+
+    _MID_ZONE_OPENING = [
+        ("09:30", 100, 101,  99,  100.0, _BEAR_MA20, _BEAR_MA50, _MA200),
+        ("09:35", 100, 102,  98,  100.0, _BEAR_MA20, _BEAR_MA50, _MA200),
+        ("09:40",  99, 100,  98,   99.4, _BEAR_MA20, _BEAR_MA50, _MA200),
+    ]
+
+    _POST_OPEN = [
+        ("09:45",  99, 99.5, 98.5, 99.0, _BEAR_MA20, _BEAR_MA50, _MA200),
+    ]
+
+    def test_bear_ctp_dates_enables_bearish_signal_on_bear_date(self):
+        ticker_dfs = {
+            self._TICKER: _make_bars("2025-01-02", self._MID_ZONE_OPENING + self._POST_OPEN)
+        }
+        results = run_backtest(
+            [self._TICKER], self._DATE, self._DATE,
+            ticker_dfs=ticker_dfs,
+            opening_bars=3,
+            bear_ctp_dates={self._DATE},
+            bear_ctp=0.40,
+        )
+
+        df = results[self._TICKER]
+        assert len(df) == 1
+        assert df.iloc[0]["signal"] == "BEARISH"
+
+    def test_no_signal_when_date_not_in_bear_ctp_dates(self):
+        ticker_dfs = {
+            self._TICKER: _make_bars("2025-01-02", self._MID_ZONE_OPENING + self._POST_OPEN)
+        }
+        results = run_backtest(
+            [self._TICKER], self._DATE, self._DATE,
+            ticker_dfs=ticker_dfs,
+            opening_bars=3,
+            bear_ctp_dates={date(2025, 1, 3)},  # different date — 2025-01-02 is not a bear day
+            bear_ctp=0.40,
+        )
+
+        df = results[self._TICKER]
+        assert df.empty
+
+    def test_bear_ctp_dates_none_produces_same_result_as_no_flag(self):
+        # Regression: bear_ctp_dates=None must be identical to omitting the parameter.
+        ticker_dfs = {
+            self._TICKER: _make_bars("2025-01-02", _BEARISH_OPENING + _BEARISH_POST_HARDSTOP)
+        }
+        result_baseline = run_backtest(
+            [self._TICKER], self._DATE, self._DATE,
+            ticker_dfs=ticker_dfs, opening_bars=3,
+        )
+        result_explicit_none = run_backtest(
+            [self._TICKER], self._DATE, self._DATE,
+            ticker_dfs=ticker_dfs, opening_bars=3,
+            bear_ctp_dates=None, bear_ctp=None,
+        )
+
+        pd.testing.assert_frame_equal(
+            result_baseline[self._TICKER].reset_index(drop=True),
+            result_explicit_none[self._TICKER].reset_index(drop=True),
+        )

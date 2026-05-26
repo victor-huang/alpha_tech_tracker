@@ -359,6 +359,8 @@ def compute_signals_with_backtest(
     enable_bullish_reentry: bool = False,
     bullish_reentry_max_bars: int = 5,
     close_top_pct: float = None,
+    bear_ctp_dates: set = None,
+    bear_ctp: float = None,
     filter_flat_or: bool = True,
     qqq_align_skip_bull: set = None,
     qqq_align_skip_bear: set = None,
@@ -487,9 +489,18 @@ def compute_signals_with_backtest(
 
         bearish_ma_ok = close < ma20 and (close < ma200 if bearish_ma200 else True)
 
+        _bear_ctp_active = (
+            bear_ctp_dates is not None
+            and bear_ctp is not None
+            and date_ in bear_ctp_dates
+        )
         if close_top_pct is not None:
             bull_ok = close >= or_high - close_top_pct * or_range
-            bear_ok = close <= or_low + close_top_pct * or_range
+            _eff_bear_pct = bear_ctp if _bear_ctp_active else close_top_pct
+            bear_ok = close <= or_low + _eff_bear_pct * or_range
+        elif _bear_ctp_active:
+            bull_ok = close > midpoint
+            bear_ok = close <= or_low + bear_ctp * or_range
         else:
             bull_ok = close > midpoint
             bear_ok = close <= bottom_30_threshold
@@ -2074,6 +2085,8 @@ def run_backtest(
     enable_bullish_reentry: bool = False,
     bullish_reentry_max_bars: int = 5,
     close_top_pct: float = None,
+    bear_ctp_dates: set = None,
+    bear_ctp: float = None,
     trailing_ma_switch: str = "none",
     trailing_ma_switch_factor: float = 1.0,
     trailing_ma_switch_period: int = 8,
@@ -2114,6 +2127,8 @@ def run_backtest(
             enable_bullish_reentry=enable_bullish_reentry,
             bullish_reentry_max_bars=bullish_reentry_max_bars,
             close_top_pct=close_top_pct,
+            bear_ctp_dates=bear_ctp_dates,
+            bear_ctp=bear_ctp,
             trailing_ma_switch=trailing_ma_switch,
             trailing_ma_switch_factor=trailing_ma_switch_factor,
             trailing_ma_switch_period=trailing_ma_switch_period,

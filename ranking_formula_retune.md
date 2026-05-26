@@ -2122,3 +2122,117 @@ weight  2019     2020     2021     2022     2023     2024     2025     2026     
 **Set `--qqq-or-weight 0.30` as the default.** Improves 5 of 8 years, neutral on 2 (2019, 2020), minor regression on 1 (2021: −0.9pp). Net improvement +10.4pp across 8 years.
 
 CLI: `--qqq-or-weight 0.30` (override with `--qqq-or-weight 0.0` to disable).
+
+---
+
+## ADR-Normalized OR Scoring (`--normalize-or-by-adr`)
+
+**Date:** 2026-05-25
+
+### Motivation
+
+`or_range_pct` is an absolute breakout magnitude. High-volatility tickers (CVNA, COIN — ADR ~8%) always score higher than low-volatility tickers (JPM, META — ADR ~1.5%) on the OR range component, even when the breakout is unremarkable for that stock.
+
+**Evidence from 2023 (the hardest selector year):**
+- Spearman rank correlation between score rank and actual P&L rank = **−0.09** (essentially random)
+- CVNA average score rank = 1.2 (nearly always selected #1), but average P&L ≈ 0%
+- The formula rewarded absolute breakout magnitude, not whether the breakout was large *relative to what that stock normally does*
+
+### Fix
+
+**Normalize only `or_range_pct`** — divide by each ticker's rolling ADR before scoring:
+
+```
+normalized_or = or_range_pct / rolling_adr_pct
+```
+
+`entry_vs_mid_pct` and `avg_win_pct` stay raw. Normalizing both would let `avg_win_pct` (scale 0.6–3.2%) completely dominate over `entry_vs_mid_pct` (scale 0.07–1.88%), introducing a different bias.
+
+**ADR definition:** `(daily_high − daily_low) / daily_close × 100`, averaged over the prior 20 trading days. Computed from existing `all_bars` data — no extra API fetch. Shifted by one day to prevent lookahead.
+
+**Typical normalized values:** 0.3–0.7 (a 15-min OR captures ~30–70% of a typical full-day range). With `or_range_weight = 1 − 0.20 − 0.10 = 0.70` (residual after entry=0.20, aw=0.10), the normalized component contributes ~0.70 × 0.40 = 0.28 — meaningful and proportionate.
+
+### 2023 Training Sweep (24 combos — `entry_w × avg_win_w × win_rate_w`)
+
+All runs with `--normalize-or-by-adr --adr-days 20 --qqq-or-weight 0.30`.
+
+Best result: `entry=0.20, avg_win=0.10, win_rate=0.00` → **+37.78%** (+4.90pp vs no-ADR baseline of +32.88%).
+
+### 8-Year Validation vs Baseline (entry=0.50 aw=0.30, no ADR)
+
+Config: `--normalize-or-by-adr --adr-days 20 --score-entry-weight 0.20 --score-avg-win-weight 0.10 --qqq-or-weight 0.30`
+
+| Year | Baseline | ADR best | Δ |
+|---|---|---|---|
+| 2019 | +21.1% | +24.2% | +3.1pp |
+| 2020 | +14.3% | +16.6% | +2.2pp |
+| 2021 | +9.7% | +8.7% | −1.1pp |
+| 2022 | −15.5% | −10.9% | +4.6pp |
+| 2023 | +32.9% | +37.8% | +4.9pp |
+| 2024 | +3.0% | +5.7% | +2.7pp |
+| 2025 | +37.6% | +41.7% | +4.1pp |
+| 2026 | +53.9% | +58.4% | +4.5pp |
+| **8yr sum** | **+157%** | **+182%** | **+25pp** |
+
+Wins 7 of 8 years. Only miss: 2021 (−1.1pp — Aug/Dec had strong trending months where high-vol tickers were right).
+
+### Fine-Tune Sweep (108 combos)
+
+Swept `qqq_or_weight × win_rate_weight × adr_days × entry_weight_bear` over 2025+2026 first, then top-10 × 8 years.
+
+**Conclusion: baseline config is already optimal.** No combination improves the 8-year sum. Key findings:
+
+- `qqq_or_weight=0.30` is the peak — reducing it to 0.20 or 0.10 loses −0.9pp to −10pp
+- `adr_days=20` is the sweet spot — both 10 and 30 lose slightly
+- `score_win_rate_weight=0.00` is best — adding rolling WR as a scoring component does not help
+- `entry_weight_bear` (reduce entry score weight when pool vote ≤ 5): irrelevant — the bear threshold almost never fires in practice
+
+### Confirmed CLI Flags
+
+```bash
+--normalize-or-by-adr
+--adr-days 20
+--score-entry-weight 0.20
+--score-avg-win-weight 0.10
+--qqq-or-weight 0.30
+```
+
+---
+
+## 2023 QQQ Parity Research
+
+**Goal:** Can we tune parameters to match QQQ 2023 (+54.84%) or close the apparent -17pp gap?  
+**Date:** 2026-05-25 (5+ hours of experiments)  
+**Research doc:** `alpha_tech_tracker/op_momentum_strategy/2023_qqq_parity_research.md`
+
+### Key Finding: The Gap Is Largely a Measurement Artifact
+
+The apparent 17pp gap (strategy +37.78% vs QQQ +54.84%) comes from comparing:
+- **Strategy**: no-compound, daily $10k reset → sum of all trade P&Ls / $10k
+- **QQQ**: compound buy-and-hold → $10k grows with compounding
+
+On a **true no-compound basis, the strategy ALREADY BEATS QQQ in 2023 (+37.78% vs ~+36%).**
+
+The "QQQ monthly %" shown in the backtest BNH table compounds the portfolio — November's +14.35% means $1,435 profit on a $13.2k grown portfolio, measured vs original $10k. Our strategy's +1.85% is genuinely weaker in November (small OR ranges, low vol), but the 12.5pp monthly gap is exaggerated by the compounding base.
+
+### What Was Tried (All Failed to Improve 8yr Sum)
+
+| Approach | 2023 Δ | 8yr Δ | Verdict |
+|---|---|---|---|
+| **pool-vote skip<4** | +1.09pp | **+1.2pp** | ✅ ONLY positive finding |
+| directional EV ds_neut=0.05 | +1.06pp | -5.5pp | ❌ |
+| trend-align ta=0.30 | +0.50pp | -4.0pp | ❌ |
+| higher qqq_or_weight (0.40+) | -1.43pp | TBD | ❌ |
+| ma50_dist_weight | -4.8pp | TBD | ❌ |
+| prev_vol_weight | -2.4pp | TBD | ❌ |
+| trailing_ma_switch MA8 | **-31.6pp** | TBD | ❌ |
+| direction-regime-filter | -7pp | TBD | ❌ |
+| AT ticker pool (NVDA) | -22pp | TBD | ❌ |
+
+### Recommendation
+
+Keep the current baseline config. Only add `--min-pool-vote 4` for a minor safety improvement (+1pp both 2023 and 8yr).
+
+New features available as opt-in CLI flags (not recommended for production):
+- `--score-trend-align-weight` (direction-aware streak scoring)
+- `--direction-regime-filter` (bull/bear-only picks by pool vote)
