@@ -634,11 +634,19 @@ baseline                     +22.5  +11.7  +26.3  -11.1  +30.2   +1.2  +45.3  +5
 
 **`ctp0.35` remains best** at top-2 (+14.2pp 8yr), but 2025 costs −19.6pp vs baseline. `ctp0.40+` all hurt 8yr at top-2.
 
+### Is `--qqq-regime-bear-ctp` useful?
+
+**Top-1 — yes, clearly useful.** `ctp0.35` adds a clean +10pp over exp22 (8yr) with 2022 recovering from −28.4% to +36.8% and 2025/2026 staying within −3.5pp / −0.1pp of exp22. The tradeoff is narrow and one-sided in bear years.
+
+**Top-2 — questionable.** The underlying problem at top-2 isn't CTP — it's that `exp22` itself barely helps at top-2 (+0.1pp 8yr). `--qqq-regime-no-bullish` suppresses the second pick on bear days and costs −13.5pp in 2025. CTP adding 2022 benefit on top of an already-impaired base config is a weaker signal.
+
+**The broader question for the live M1+A1+A2 top-2 setup:** the exp22 bear regime settings were tuned at top-1 and don't translate well to top-2. Before leaning on CTP, it's worth asking whether `--qqq-regime-no-bullish` should be dropped — that alone would recover most of the 2025 gap without touching CTP at all. The exp22 base config needs re-evaluation at top-2 before CTP adds reliable value.
+
 ### Recommendation
 
-For **top-1 live strategy**: `--qqq-regime-bear-ctp 0.35` adds a clean +10pp 8yr over exp22, with 2022 recovering fully (+36.8%) and 2025/2026 staying near exp22 baseline.
+For **top-1 M1-only strategy**: `--qqq-regime-bear-ctp 0.35` is a clean addition — +10pp 8yr over exp22, 2022 fully recovered, minimal year damage.
 
-For **top-2 live strategy**: exp22 regime settings need rethinking before adding CTP — the `--qqq-regime-no-bullish` flag is too costly at top-2 in bull-trending years (2025).
+For **top-2 / multi-window live strategy**: hold off on CTP; re-evaluate exp22 base config (specifically `--qqq-regime-no-bullish`) at top-2 first.
 
 ### CLI
 
