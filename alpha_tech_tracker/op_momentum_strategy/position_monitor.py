@@ -784,6 +784,7 @@ class PositionMonitor:
                     quantity=pos.shares,
                     side=close_side,
                     order_type="MARKET",
+                    trade_action=close_order_action,
                 )
             else:
                 logger.info(

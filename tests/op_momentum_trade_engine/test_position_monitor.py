@@ -2433,6 +2433,25 @@ class TestEodMarketOrder:
         assert call_kwargs["order_type"] == "MARKET"
         assert call_kwargs["symbol"] == "NVDA"
 
+    def test_eod_stock_bearish_close_uses_buy_cover_trade_action(self):
+        client = _make_alpaca_client()
+        client.place_stock_order.return_value = {"order_id": "eod-stk-short-1"}
+
+        closes = [100.0]
+        df = _build_history_df(closes, ma20=90.0, ma50=90.0, ma200=85.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine)
+
+        pos = _make_stock_position(signal="BEARISH", shares=20)
+        monitor.add_position(pos)
+
+        with patch("alpha_tech_tracker.op_momentum_strategy.position_monitor._notify"):
+            monitor.close_all(reason="end_of_day")
+
+        call_kwargs = client.place_stock_order.call_args[1]
+        assert call_kwargs["order_type"] == "MARKET"
+        assert call_kwargs["trade_action"] == "BUY_COVER"
+
     def test_intraday_stop_still_uses_fill_escalation(self):
         """Non-EOD exits must still go through place_option_order_in_tranches."""
         client = _make_alpaca_client()
