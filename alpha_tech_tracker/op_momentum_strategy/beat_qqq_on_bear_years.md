@@ -936,3 +936,43 @@ rf0.50    -20.9%   +42.0%   +28.4%   +40.6%   +68.5%   +66.8%    +9.2%   +28.5% 
 | `--stop-pct` | 0.40 | 0.40 | none | confirmed, plateau is enormous |
 | `--qqq-regime-weight` | 0.55 | any ≥ 0.45 | none | flat above 0.45, no change needed |
 | `--qqq-regime-recovery-floor` | 0.25 | 0.25 | none | rf0.35 adds +1pp but cancels with ctp0.30 |
+
+---
+
+## Top-N vs Oracle Analysis (2026-05-27)
+
+9-year comparison of actual selector picks (top-1/2/3) vs perfect-hindsight oracle picks (`--oracle-picks`), using the current best config.
+
+```
+Config           2018     2019     2020     2021     2022     2023     2024     2025     2026    9yr SUM
+─────────────────────────────────────────────────────────────────────────────────────────────────────────
+top1            -10.7%   +42.0%   +28.4%   +40.6%   +61.6%   +66.8%    +9.2%   +28.5%   +64.3%    +330.8pp
+top2-60/40       +2.3%   +26.4%   +15.3%   +30.9%   +33.9%   +37.6%    +1.2%   +31.1%   +50.9%    +229.6pp
+top3-50/30/20    +3.2%   +22.7%   +14.3%   +23.4%   +29.4%   +33.2%    +4.5%   +26.3%   +42.8%    +199.8pp
+
+oracle-top1    +325.4%  +300.1%  +338.9%  +438.4%  +648.6%  +617.1%  +486.3%  +557.4%  +297.7%   +4010.0pp
+oracle-top2    +231.5%  +219.3%  +237.4%  +325.1%  +486.6%  +460.1%  +374.4%  +425.5%  +236.9%   +2996.8pp
+oracle-top3    +186.3%  +177.9%  +191.8%  +269.6%  +412.0%  +388.6%  +317.2%  +365.9%  +206.3%   +2515.6pp
+```
+
+### Findings
+
+**Why top-1 beats top-2 and top-3 (+101pp and +131pp over 9yr):**
+
+The scoring formula is not additive — adding rank-2 and rank-3 dilutes capital into genuinely weaker picks. In the high-return years (2019, 2022, 2023, 2026), top-1 has a dominant winner and rank-2 is mediocre. Equal split just drags performance down. The two years where top-2 outperforms top-1 are 2018 (+13pp) and 2025 (+2.6pp) — choppy/recovery years where spreading risk helps slightly — but this is far outweighed by the other 7 years.
+
+**Oracle top-1 (+4,010pp) vs actual top-1 (+330pp) — only 8% capture rate:**
+
+The oracle shows each year has +300–650% available if you picked the best ticker each day with hindsight. Our formula captures roughly 8% of that theoretical ceiling. This is not a top-N problem — even oracle top-3 is worse than oracle top-1, confirming that with perfect information you still want to concentrate in the single best pick.
+
+**Oracle concentration is also better — diversity does not help even with perfect hindsight:**
+
+- Oracle top-1: +4,010pp
+- Oracle top-2 (60/40): +2,996pp (−1,013pp vs oracle top-1)
+- Oracle top-3 (50/30/20): +2,515pp (−1,494pp vs oracle top-1)
+
+Spreading across 2-3 tickers loses 25-37% of the available oracle P&L. The pool has a fat-tail distribution each day — the best ticker greatly outperforms the 2nd and 3rd best. Concentration wins whether you have perfect information or not.
+
+**Implication: the improvement opportunity is entirely in selector quality, not position count.**
+
+The +3,679pp gap between oracle top-1 and actual top-1 is the full improvement budget. Better scoring (improved rank-1 hit rate) is worth far more than switching to top-2 or top-3. Adding rank-2 when rank-1 is already good just dilutes capital; adding rank-2 when rank-1 is bad doesn't rescue the day because rank-2 is typically also poor on bad days.
