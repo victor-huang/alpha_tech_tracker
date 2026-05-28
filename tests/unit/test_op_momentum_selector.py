@@ -80,6 +80,20 @@ def _loss_row(entry=100.0, pnl=-1.0):
     }
 
 
+def _bear_win_row(entry=100.0, pnl=2.0, d=None):
+    row = _win_row(entry=entry, pnl=pnl)
+    row["signal"] = "BEARISH"
+    row["date"] = d or date(2026, 3, 1)
+    return row
+
+
+def _bear_loss_row(entry=100.0, pnl=-1.0, d=None):
+    row = _loss_row(entry=entry, pnl=pnl)
+    row["signal"] = "BEARISH"
+    row["date"] = d or date(2026, 3, 2)
+    return row
+
+
 def _make_bar_df(target_date, closes, highs=None, lows=None):
     n = len(closes)
     if highs is None:
@@ -182,6 +196,28 @@ class TestComputeTickerStats:
         stats = compute_ticker_stats(df)
 
         assert stats["avg_entry_vs_mid_pct"] == pytest.approx(1.0)
+
+    def test_recent_bear_ev_is_zero_when_no_bearish_trades(self):
+        df = _make_results_df([_win_row()] * 5)
+
+        stats = compute_ticker_stats(df)
+
+        assert stats["recent_bear_ev"] == 0.0
+
+    def test_recent_bear_ev_computed_from_last_n_bearish_trades(self):
+        older_bears = [_bear_loss_row(entry=100.0, pnl=-2.0, d=date(2026, 1, i)) for i in range(1, 6)]
+        recent_bears = [_bear_win_row(entry=100.0, pnl=3.0, d=date(2026, 3, i)) for i in range(1, 4)]
+        df = _make_results_df(older_bears + recent_bears)
+
+        stats = compute_ticker_stats(df, recent_bear_trades=3)
+
+        # Only the 3 recent wins are included → EV = 3.0%
+        assert stats["recent_bear_ev"] == pytest.approx(3.0)
+
+    def test_recent_bear_ev_is_zero_on_empty_dataframe(self):
+        stats = compute_ticker_stats(pd.DataFrame())
+
+        assert stats["recent_bear_ev"] == 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -460,6 +496,182 @@ class TestScoreTicker:
                 score_win_rate_weight=0.10,
                 score_rel_strength_weight=0.10,
             )
+
+    # -- recent_bear_ev -------------------------------------------------------
+
+    def test_recent_bear_ev_zero_weight_does_not_change_score(self):
+        signal = {"entry_vs_mid_pct": 2.0, "or_range_pct": 1.0, "signal": "BEARISH"}
+        stats = {"ev_trade": 1.0, "avg_win_pct": 1.0, "win_rate": 0.0, "recent_bear_ev": 0.5}
+
+        score_without = score_ticker(signal, stats)
+        score_with_zero = score_ticker(signal, stats, score_recent_bear_ev_weight=0.0)
+
+        assert score_without == pytest.approx(score_with_zero)
+
+    def test_higher_recent_bear_ev_produces_higher_score(self):
+        signal = {"entry_vs_mid_pct": 1.0, "or_range_pct": 1.0, "signal": "BEARISH"}
+        base_stats = {"ev_trade": 1.0, "avg_win_pct": 1.0, "win_rate": 0.0}
+
+        score_low = score_ticker(
+            signal,
+            {**base_stats, "recent_bear_ev": 0.2},
+            score_entry_weight=0.50,
+            score_avg_win_weight=0.30,
+            score_recent_bear_ev_weight=0.10,
+        )
+        score_high = score_ticker(
+            signal,
+            {**base_stats, "recent_bear_ev": 1.5},
+            score_entry_weight=0.50,
+            score_avg_win_weight=0.30,
+            score_recent_bear_ev_weight=0.10,
+        )
+
+        assert score_high > score_low
+
+    def test_recent_bear_ev_missing_from_stats_uses_zero(self):
+        signal = {"entry_vs_mid_pct": 1.0, "or_range_pct": 1.0, "signal": "BEARISH"}
+        stats = {"ev_trade": 1.0, "avg_win_pct": 1.0, "win_rate": 0.0}
+
+        score = score_ticker(
+            signal, stats,
+            score_entry_weight=0.50,
+            score_avg_win_weight=0.30,
+            score_recent_bear_ev_weight=0.10,
+        )
+
+        assert score >= 0.0
+
+    # -- or_bar_quality -------------------------------------------------------
+
+    def test_or_bar_quality_zero_weight_does_not_change_score(self):
+        signal = {"entry_vs_mid_pct": 2.0, "or_range_pct": 1.0, "or_bar_quality": 1.0, "signal": "BEARISH"}
+        stats = {"ev_trade": 1.0, "avg_win_pct": 1.0, "win_rate": 0.0}
+
+        score_without = score_ticker(signal, stats)
+        score_with_zero = score_ticker(signal, stats, score_or_bar_quality_weight=0.0)
+
+        assert score_without == pytest.approx(score_with_zero)
+
+    def test_perfect_or_bar_quality_scores_higher_than_poor_quality(self):
+        base_signal = {"entry_vs_mid_pct": 1.0, "or_range_pct": 1.0, "signal": "BEARISH"}
+        stats = {"ev_trade": 1.0, "avg_win_pct": 1.0, "win_rate": 0.0}
+
+        score_perfect = score_ticker(
+            {**base_signal, "or_bar_quality": 1.0},
+            stats,
+            score_entry_weight=0.50,
+            score_avg_win_weight=0.30,
+            score_or_bar_quality_weight=0.10,
+        )
+        score_poor = score_ticker(
+            {**base_signal, "or_bar_quality": 0.0},
+            stats,
+            score_entry_weight=0.50,
+            score_avg_win_weight=0.30,
+            score_or_bar_quality_weight=0.10,
+        )
+
+        assert score_perfect > score_poor
+
+    def test_or_bar_quality_missing_defaults_to_neutral_0_5(self):
+        signal_with = {"entry_vs_mid_pct": 1.0, "or_range_pct": 1.0, "signal": "BEARISH", "or_bar_quality": 0.5}
+        signal_without = {"entry_vs_mid_pct": 1.0, "or_range_pct": 1.0, "signal": "BEARISH"}
+        stats = {"ev_trade": 1.0, "avg_win_pct": 1.0, "win_rate": 0.0}
+
+        score_explicit = score_ticker(
+            signal_with, stats,
+            score_entry_weight=0.50,
+            score_avg_win_weight=0.30,
+            score_or_bar_quality_weight=0.10,
+        )
+        score_missing = score_ticker(
+            signal_without, stats,
+            score_entry_weight=0.50,
+            score_avg_win_weight=0.30,
+            score_or_bar_quality_weight=0.10,
+        )
+
+        assert score_explicit == pytest.approx(score_missing)
+
+    # -- overnight gap --------------------------------------------------------
+
+    def test_gap_zero_weight_does_not_change_score(self):
+        signal = {"entry_vs_mid_pct": 2.0, "or_range_pct": 1.0, "signal": "BEARISH"}
+        stats = {"ev_trade": 1.0, "avg_win_pct": 1.0, "win_rate": 0.0}
+        ctx = {"overnight_gap_pct": -2.0}
+
+        score_without = score_ticker(signal, stats)
+        score_with_zero = score_ticker(signal, stats, score_gap_weight=0.0, daily_context=ctx)
+
+        assert score_without == pytest.approx(score_with_zero)
+
+    def test_gap_up_rewards_bearish_signal(self):
+        # Formula is contrarian: direction_sign * (-gap_pct)
+        # BEARISH (direction_sign=-1) + gap_up (+3%): term = -1 * -3 = +3 → rewards
+        # BEARISH (direction_sign=-1) + gap_down (-3%): term = -1 * +3 = -3 → hurts
+        signal = {"entry_vs_mid_pct": 1.0, "or_range_pct": 1.0, "signal": "BEARISH"}
+        stats = {"ev_trade": 1.0, "avg_win_pct": 1.0, "win_rate": 0.0}
+
+        score_gap_up = score_ticker(
+            signal, stats,
+            score_entry_weight=0.50,
+            score_avg_win_weight=0.30,
+            score_gap_weight=0.10,
+            daily_context={"overnight_gap_pct": +3.0},
+        )
+        score_gap_down = score_ticker(
+            signal, stats,
+            score_entry_weight=0.50,
+            score_avg_win_weight=0.30,
+            score_gap_weight=0.10,
+            daily_context={"overnight_gap_pct": -3.0},
+        )
+
+        assert score_gap_up > score_gap_down
+
+    def test_gap_down_rewards_bullish_signal(self):
+        # BULLISH (direction_sign=+1) + gap_down (-3%): term = +1 * +3 = +3 → rewards
+        # BULLISH (direction_sign=+1) + gap_up (+3%): term = +1 * -3 = -3 → hurts
+        signal = {"entry_vs_mid_pct": 1.0, "or_range_pct": 1.0, "signal": "BULLISH"}
+        stats = {"ev_trade": 1.0, "avg_win_pct": 1.0, "win_rate": 0.0}
+
+        score_gap_down = score_ticker(
+            signal, stats,
+            score_entry_weight=0.50,
+            score_avg_win_weight=0.30,
+            score_gap_weight=0.10,
+            daily_context={"overnight_gap_pct": -3.0},
+        )
+        score_gap_up = score_ticker(
+            signal, stats,
+            score_entry_weight=0.50,
+            score_avg_win_weight=0.30,
+            score_gap_weight=0.10,
+            daily_context={"overnight_gap_pct": +3.0},
+        )
+
+        assert score_gap_down > score_gap_up
+
+    def test_gap_missing_from_context_uses_zero_term(self):
+        signal = {"entry_vs_mid_pct": 1.0, "or_range_pct": 1.0, "signal": "BEARISH"}
+        stats = {"ev_trade": 1.0, "avg_win_pct": 1.0, "win_rate": 0.0}
+
+        score_no_ctx = score_ticker(
+            signal, stats,
+            score_entry_weight=0.50,
+            score_avg_win_weight=0.30,
+            score_gap_weight=0.10,
+        )
+        score_empty_ctx = score_ticker(
+            signal, stats,
+            score_entry_weight=0.50,
+            score_avg_win_weight=0.30,
+            score_gap_weight=0.10,
+            daily_context={},
+        )
+
+        assert score_no_ctx == pytest.approx(score_empty_ctx)
 
 
 # ---------------------------------------------------------------------------

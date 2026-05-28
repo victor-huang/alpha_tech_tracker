@@ -976,3 +976,66 @@ Spreading across 2-3 tickers loses 25-37% of the available oracle P&L. The pool 
 **Implication: the improvement opportunity is entirely in selector quality, not position count.**
 
 The +3,679pp gap between oracle top-1 and actual top-1 is the full improvement budget. Better scoring (improved rank-1 hit rate) is worth far more than switching to top-2 or top-3. Adding rank-2 when rank-1 is already good just dilutes capital; adding rank-2 when rank-1 is bad doesn't rescue the day because rank-2 is typically also poor on bad days.
+
+---
+
+## Exp 28 — New Scoring Features Sweep (2026-05-27)
+
+**Motivation:** Oracle miss analysis on 2022/2026 bear days showed oracle picks often have different characteristics than our picks: lower rolling EV, lower win rate, lower `entry_vs_mid_pct`. Hypothesis: adding 3 new features to the scoring formula could help capture more oracle P&L.
+
+**Three features implemented and tested:**
+
+- **A — Recent bear EV** (`--score-recent-bear-ev-weight`): EV computed from the last N BEARISH-signal trades only (default N=7). Captures serial winner momentum in bear regimes — if a ticker has been winning recently on bearish signals, reward it more.
+- **B — OR bar quality** (`--score-or-bar-quality-weight`): Fraction of OR window bars (3 bars, 9:30–9:45) that closed in signal direction. 0.0 = all bars against direction, 1.0 = all bars confirming.
+- **C — Overnight gap** (`--score-gap-weight`): Direction-aware `(open − prev_close) / prev_close × 100`. Gap down rewards BEARISH signals, gap up rewards BULLISH.
+
+All three features implemented in `op_momentum_selector_backtest.py` and `op_momentum_selector.py`. Each feature weight is taken from `--score-rel-strength-weight` (currently 0.15) to keep total weights at 1.0.
+
+### 9-Year Results (7 configs × 9 years, no-compound, top-1 M1-only)
+
+```
+Year     baseline  bear_ev=0.10  bear_ev=0.15  or_qual=0.10  or_qual=0.15  gap=0.10  gap=0.15
+------------------------------------------------------------------------------------------------
+2018      -10.84%       +1.04%      -13.41%        -4.84%        -2.52%      -3.19%    +3.67%
+2019      +42.24%      +35.49%      +36.86%       +38.85%       +34.39%     +29.38%   +19.69%
+2020      +30.57%      +25.84%      +31.47%       +24.32%       +41.42%     +39.48%   +41.94%
+2021      +43.40%      +43.53%      +48.93%       +29.60%       +28.73%     +39.12%   +31.77%
+2022      +61.59%      +56.92%      +61.95%       +39.19%       +40.17%      -3.50%    +4.01%
+2023      +66.31%      +60.12%      +75.35%       +65.85%       +69.99%     +78.78%   +58.99%
+2024       +8.50%      -11.31%       -3.80%        -5.42%        -4.08%      +4.27%    +8.46%
+2025      +27.72%      +22.33%       +7.79%       +24.95%       +19.90%     +25.08%   +45.55%
+2026      +64.35%      +65.14%      +63.86%       +67.80%       +75.25%     +79.42%   +81.14%
+------------------------------------------------------------------------------------------------
+9yr SUM  +333.84%     +299.10%     +309.00%      +280.30%      +303.25%    +288.84%  +295.22%
+vs base       ---      -34.74pp     -24.84pp      -53.54pp      -30.59pp    -45.00pp  -38.62pp
+```
+
+### Delta vs Baseline (pp)
+
+```
+Year     bear_ev=0.10  bear_ev=0.15  or_qual=0.10  or_qual=0.15  gap=0.10  gap=0.15
+--------------------------------------------------------------------------------------
+2018         +11.88pp       -2.57pp       +6.00pp       +8.32pp    +7.65pp  +14.51pp
+2019          -6.75pp       -5.38pp       -3.39pp       -7.85pp   -12.86pp  -22.55pp
+2020          -4.73pp       +0.90pp       -6.25pp      +10.85pp    +8.91pp  +11.37pp
+2021          +0.13pp       +5.53pp      -13.80pp      -14.67pp    -4.28pp  -11.63pp
+2022          -4.67pp       +0.36pp      -22.40pp      -21.42pp   -65.09pp  -57.58pp
+2023          -6.19pp       +9.04pp       -0.46pp       +3.68pp   +12.47pp   -7.32pp
+2024         -19.81pp      -12.30pp      -13.92pp      -12.58pp    -4.23pp   -0.04pp
+2025          -5.39pp      -19.93pp       -2.77pp       -7.82pp    -2.64pp  +17.83pp
+2026          +0.79pp       -0.49pp       +3.45pp      +10.90pp   +15.07pp  +16.79pp
+```
+
+### Findings
+
+**All 3 features underperform baseline on the 9-year sum.** None is a net improvement at any tested weight.
+
+**Recent bear EV** (−24.8pp at 0.15, −34.7pp at 0.10): Least damaging. Has genuine signal in 2018 (+11.88pp at 0.10), 2021 (+5.53pp at 0.15), 2023 (+9.04pp at 0.15). Fails hard in 2024 (−19.81pp at 0.10) and 2025 (−19.93pp at 0.15). The serial bear momentum signal doesn't generalize across regimes.
+
+**OR bar quality** (−30.6pp at 0.15, −53.5pp at 0.10): Consistently subtracts value. Largest single-year loss in 2022 (−22pp both weights) and 2024 (−13pp). In bear markets, OR bars often "descend" (bearish appearance) but the full-day trade reverses — the OR bar pattern is not a reliable discriminator at this granularity.
+
+**Overnight gap** (−38.6pp at 0.15, −45.0pp at 0.10): Highest variance. Destroys 2022 catastrophically (−65pp at 0.10 / −58pp at 0.15) and hurts 2019 badly (−13pp / −23pp). Strong in 2023 (+12pp at 0.10), 2025 (+18pp at 0.15), 2026 (+15–17pp). Root cause: a gap-down open in a sustained bear trend has already been captured by the OR. Rewarding it further double-counts a signal that already drove the entry price vs midpoint. The feature works in 2026-style volatile crashes but misfires in 2022-style grinding bear markets.
+
+**Why 2026 looked promising and was misleading:** 2026 (Jan–May tariff crash) is a V-shape bear regime where all 3 features added +6–17pp. This prompted the investigation. However, 2022 (the last structural bear year with similar regime characteristics) shows the opposite: gap (−65pp) and or_qual (−22pp) are regime-specific wins that don't generalize.
+
+**Conclusion:** Keep the baseline (`--score-rel-strength-weight 0.15`). The `entry_vs_mid_pct` at 60% and rel_strength at 15% remain the best validated combination. The +3,679pp oracle gap is a pick-quality problem, not a feature-engineering problem at this level of granularity.

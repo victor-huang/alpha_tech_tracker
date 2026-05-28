@@ -112,7 +112,7 @@ def _compute_ev_from_df(df: pd.DataFrame) -> float:
     return win_rate * avg_win_pct - loss_rate * avg_loss_pct
 
 
-def compute_ticker_stats(results_df: pd.DataFrame, recent_days: int = 15) -> dict:
+def compute_ticker_stats(results_df: pd.DataFrame, recent_days: int = 15, recent_bear_trades: int = 7) -> dict:
     if results_df.empty:
         return {
             "signals": 0,
@@ -124,6 +124,7 @@ def compute_ticker_stats(results_df: pd.DataFrame, recent_days: int = 15) -> dic
             "ev_trade_bullish": 0.0,
             "ev_trade_bearish": 0.0,
             "ev_trend": 0.0,
+            "recent_bear_ev": 0.0,
         }
 
     total = len(results_df)
@@ -158,6 +159,9 @@ def compute_ticker_stats(results_df: pd.DataFrame, recent_days: int = 15) -> dic
     recent_df = results_df[results_df["date"] >= recent_cutoff]
     ev_trend = _compute_ev_from_df(recent_df) - ev_trade
 
+    _bear_sorted = bear_df.sort_values("date") if not bear_df.empty else bear_df
+    recent_bear_ev = _compute_ev_from_df(_bear_sorted.tail(recent_bear_trades))
+
     return {
         "signals": total,
         "win_rate": win_rate,
@@ -168,6 +172,7 @@ def compute_ticker_stats(results_df: pd.DataFrame, recent_days: int = 15) -> dic
         "ev_trade_bullish": ev_trade_bullish,
         "ev_trade_bearish": ev_trade_bearish,
         "ev_trend": ev_trend,
+        "recent_bear_ev": recent_bear_ev,
     }
 
 
@@ -290,6 +295,9 @@ def score_ticker(
     score_frog_weight: float = 0.00,
     score_rel_strength_weight: float = 0.00,
     score_dir_ev_weight: float = 0.00,
+    score_recent_bear_ev_weight: float = 0.00,
+    score_or_bar_quality_weight: float = 0.00,
+    score_gap_weight: float = 0.00,
     daily_context: dict = None,
     ma_momentum_gate_in_scoring: bool = False,
 ) -> float:
@@ -326,6 +334,9 @@ def score_ticker(
         - score_frog_weight
         - score_rel_strength_weight
         - score_dir_ev_weight
+        - score_recent_bear_ev_weight
+        - score_or_bar_quality_weight
+        - score_gap_weight
     )
     if or_range_weight < -1e-9:
         raise ValueError(
@@ -336,7 +347,9 @@ def score_ticker(
             f"prev_day_vol={score_prev_day_vol_weight}, ma200_dist={score_ma200_dist_weight}, "
             f"ma50_dist={score_ma50_dist_weight}, win_rate={score_win_rate_weight}, "
             f"trend_align={score_trend_align_weight}, frog={score_frog_weight}, "
-            f"rel_strength={score_rel_strength_weight}, dir_ev={score_dir_ev_weight} — "
+            f"rel_strength={score_rel_strength_weight}, dir_ev={score_dir_ev_weight}, "
+            f"recent_bear_ev={score_recent_bear_ev_weight}, "
+            f"or_bar_quality={score_or_bar_quality_weight}, gap={score_gap_weight} — "
             f"or_range_weight would be {or_range_weight:.3f}"
         )
     or_range_weight = max(or_range_weight, 0.0)
@@ -345,6 +358,12 @@ def score_ticker(
 
     ctx = daily_context or {}
     direction_sign = 1.0 if signal_dict.get("signal") == "BULLISH" else -1.0
+
+    gap_pct = ctx.get("overnight_gap_pct", np.nan)
+    # Contrarian: gap_term = direction_sign * (-gap_pct)
+    # Gap up into a BEARISH signal (stock gapped up but signals weakness) is rewarded.
+    # Gap down into a BULLISH signal (stock gapped down but signals recovery) is rewarded.
+    gap_term = direction_sign * (-gap_pct) if not np.isnan(gap_pct) else 0.0
 
     dist_52w_low = ctx.get("dist_52w_low_pct", np.nan)
     dist_52w_low_term = (-dist_52w_low / 100.0) if not np.isnan(dist_52w_low) else 0.0
@@ -408,6 +427,9 @@ def score_ticker(
         + frog_term * score_frog_weight
         + rel_strength_term * score_rel_strength_weight
         + dir_ev_term * score_dir_ev_weight
+        + ticker_stats.get("recent_bear_ev", 0.0) * score_recent_bear_ev_weight
+        + signal_dict.get("or_bar_quality", 0.5) * score_or_bar_quality_weight
+        + gap_term * score_gap_weight
     )
 
 

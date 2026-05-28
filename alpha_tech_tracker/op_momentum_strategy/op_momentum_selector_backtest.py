@@ -119,6 +119,10 @@ def _build_daily_context(bars_5min: pd.DataFrame, frog_days: int = 60) -> dict:
         daily_dir.rolling(frog_days, min_periods=frog_days // 2).mean().shift(1)
     )
 
+    daily["overnight_gap_pct"] = (
+        (daily["Open"] - daily["Close"].shift(1)) / daily["Close"].shift(1) * 100
+    )
+
     result = {}
     for ts, row in daily.iterrows():
         d = ts.date() if hasattr(ts, "date") else ts
@@ -130,6 +134,7 @@ def _build_daily_context(bars_5min: pd.DataFrame, frog_days: int = 60) -> dict:
             "daily_ma200_dist_pct": float(row["daily_ma200_dist_pct"]),
             "daily_ma50_dist_pct": float(row["daily_ma50_dist_pct"]),
             "frog_score": float(row["frog_score"]) if not pd.isna(row["frog_score"]) else 0.0,
+            "overnight_gap_pct": float(row["overnight_gap_pct"]) if not pd.isna(row["overnight_gap_pct"]) else 0.0,
         }
     return result
 
@@ -824,7 +829,7 @@ def _build_qqq_scoring_regime(fetch_start: date, eval_end: date) -> dict:
     return result
 
 
-def _compute_rolling_stats(tickers, lookback_start, d, eff_primary_wr, ev_trend_days):
+def _compute_rolling_stats(tickers, lookback_start, d, eff_primary_wr, ev_trend_days, recent_bear_trades=7):
     rolling_stats = {}
     for ticker in tickers:
         primary_results = eff_primary_wr.get(ticker, pd.DataFrame())
@@ -835,7 +840,9 @@ def _compute_rolling_stats(tickers, lookback_start, d, eff_primary_wr, ev_trend_
             (primary_results["date"] >= lookback_start)
             & (primary_results["date"] < d)
         ]
-        rolling_stats[ticker] = compute_ticker_stats(window_slice, recent_days=ev_trend_days)
+        rolling_stats[ticker] = compute_ticker_stats(
+            window_slice, recent_days=ev_trend_days, recent_bear_trades=recent_bear_trades
+        )
     return rolling_stats
 
 
@@ -1076,6 +1083,10 @@ def run_selector_backtest(
     frog_days: int = 60,
     score_rel_strength_weight: float = 0.0,
     score_dir_ev_weight: float = 0.0,
+    score_recent_bear_ev_weight: float = 0.00,
+    recent_bear_trades: int = 7,
+    score_or_bar_quality_weight: float = 0.00,
+    score_gap_weight: float = 0.00,
     qqq_regime_weight: float = 0.0,
     qqq_regime_slope_days: int = 5,
     qqq_regime_full_only: bool = False,
@@ -1188,7 +1199,7 @@ def run_selector_backtest(
     needs_daily_ctx = any([score_dist_52w_low_weight, score_dist_52w_high_weight,
                            score_streak_weight, score_prev_day_vol_weight,
                            score_ma200_dist_weight, score_ma50_dist_weight, regime_scoring,
-                           score_frog_weight, score_rel_strength_weight])
+                           score_frog_weight, score_rel_strength_weight, score_gap_weight])
     if needs_daily_ctx:
         print(f"Pre-computing daily context for {len(tickers)} tickers...")
         for ticker in tickers:
@@ -1595,7 +1606,7 @@ def run_selector_backtest(
                 eff_bars       = win["opening_bars"]
 
             rolling_stats = _compute_rolling_stats(
-                tickers, lookback_start, d, eff_primary_wr, ev_trend_days
+                tickers, lookback_start, d, eff_primary_wr, ev_trend_days, recent_bear_trades
             )
 
             # Pool vote: # tickers with positive rolling EV (prior-day data only — no lookahead).
@@ -1654,7 +1665,7 @@ def run_selector_backtest(
                     _al_days = al_neutral_days
                 _al_lookback_start = d - timedelta(days=_al_days)
                 rolling_stats = _compute_rolling_stats(
-                    tickers, _al_lookback_start, d, eff_primary_wr, ev_trend_days
+                    tickers, _al_lookback_start, d, eff_primary_wr, ev_trend_days, recent_bear_trades
                 )
 
             # Bayesian shrinkage: pull each ticker's ev_trade toward pool mean.
@@ -1750,6 +1761,26 @@ def run_selector_backtest(
                     if _adr and _adr > 0:
                         sig["or_range_pct"] = sig["or_range_pct"] / _adr
 
+                sig["or_bar_quality"] = 0.5
+                _day_bars = bars_by_date.get(ticker, {}).get(d)
+                if _day_bars is not None and not _day_bars.empty:
+                    _or_end_t = (
+                        datetime.combine(d, opening_start_t)
+                        + timedelta(minutes=5 * win["opening_bars"])
+                    ).time()
+                    _or_bars = _day_bars[
+                        (_day_bars.index.time >= opening_start_t)
+                        & (_day_bars.index.time < _or_end_t)
+                    ]
+                    if len(_or_bars) > 0:
+                        _direction = sig["signal"]
+                        if _direction == "BEARISH":
+                            _bear_bar_count = int((_or_bars["Close"] < _or_bars["Open"]).sum())
+                            sig["or_bar_quality"] = _bear_bar_count / len(_or_bars)
+                        else:
+                            _bull_bar_count = int((_or_bars["Close"] > _or_bars["Open"]).sum())
+                            sig["or_bar_quality"] = _bull_bar_count / len(_or_bars)
+
                 stats = rolling_stats[ticker]
                 if oracle_picks:
                     _primary_pnl_pct = row["pnl"] / row["entry_price"] * 100 if row["entry_price"] else 0.0
@@ -1835,6 +1866,9 @@ def run_selector_backtest(
                             score_frog_weight=score_frog_weight,
                             score_rel_strength_weight=score_rel_strength_weight,
                             score_dir_ev_weight=score_dir_ev_weight,
+                            score_recent_bear_ev_weight=score_recent_bear_ev_weight,
+                            score_or_bar_quality_weight=score_or_bar_quality_weight,
+                            score_gap_weight=score_gap_weight,
                             daily_context=daily_context_by_ticker.get(ticker, {}).get(d),
                             ma_momentum_gate_in_scoring=ma_momentum_gate_in_scoring,
                         )
@@ -3888,6 +3922,34 @@ def _parse_args():
         ),
     )
     parser.add_argument(
+        "--score-recent-bear-ev-weight",
+        type=float,
+        default=0.00,
+        dest="score_recent_bear_ev_weight",
+        help="Recent bear EV weight. Rewards tickers with strong recent BEARISH trade EV. Default: 0.00.",
+    )
+    parser.add_argument(
+        "--recent-bear-trades",
+        type=int,
+        default=7,
+        dest="recent_bear_trades",
+        help="Number of most recent BEARISH trades used to compute recent_bear_ev. Default: 7.",
+    )
+    parser.add_argument(
+        "--score-or-bar-quality-weight",
+        type=float,
+        default=0.00,
+        dest="score_or_bar_quality_weight",
+        help="OR bar quality weight. Fraction of OR bars that close in signal direction. Default: 0.00.",
+    )
+    parser.add_argument(
+        "--score-gap-weight",
+        type=float,
+        default=0.00,
+        dest="score_gap_weight",
+        help="Overnight gap weight. Direction-aware: gap down rewards BEARISH, gap up rewards BULLISH. Default: 0.00.",
+    )
+    parser.add_argument(
         "--min-or-range",
         type=float,
         default=0.0,
@@ -4171,10 +4233,14 @@ if __name__ == "__main__":
         fg = args.score_frog_weight
         rs = args.score_rel_strength_weight
         de = args.score_dir_ev_weight
-        or_w = round(1.0 - ev - vr - aw - et - d52 - d52h - sk - pv - m2 - m5 - ta - fg - rs - de, 3)
+        rb = args.score_recent_bear_ev_weight
+        oq = args.score_or_bar_quality_weight
+        gp = args.score_gap_weight
+        or_w = round(1.0 - ev - vr - aw - et - d52 - d52h - sk - pv - m2 - m5 - ta - fg - rs - de - rb - oq - gp, 3)
         print(
             f"  Picker       : scored  (entry={ev} avg_win={aw} or_range={or_w} vol={vr} "
-            f"ev_trend={et} dist_52w_low={d52} dist_52w_high={d52h} streak={sk} prev_vol={pv} ma200={m2} ma50={m5} trend_align={ta} frog={fg} rel_strength={rs} dir_ev={de})"
+            f"ev_trend={et} dist_52w_low={d52} dist_52w_high={d52h} streak={sk} prev_vol={pv} ma200={m2} ma50={m5} trend_align={ta} frog={fg} rel_strength={rs} dir_ev={de} "
+            f"recent_bear_ev={rb} or_bar_quality={oq} gap={gp})"
         )
     if args.direction_split_ev_gate:
         print(
@@ -4235,6 +4301,12 @@ if __name__ == "__main__":
         print(f"  Rel strength : weight={args.score_rel_strength_weight:.3f}  (cross-sectional MA50 vs pool mean, direction-aware)")
     if args.score_dir_ev_weight > 0:
         print(f"  Dir EV score : weight={args.score_dir_ev_weight:.3f}  (direction-specific EV: bull→ev_bull, bear→ev_bear)")
+    if args.score_recent_bear_ev_weight > 0:
+        print(f"  Recent bear EV: weight={args.score_recent_bear_ev_weight:.3f}  last={args.recent_bear_trades} bearish trades")
+    if args.score_or_bar_quality_weight > 0:
+        print(f"  OR bar quality: weight={args.score_or_bar_quality_weight:.3f}  (fraction of OR bars in signal direction)")
+    if args.score_gap_weight > 0:
+        print(f"  Overnight gap : weight={args.score_gap_weight:.3f}  (gap aligned with signal direction)")
     print(f"  Stop pct     : {args.stop_pct}")
     print(f"  Trailing MA  : {args.trailing_ma}")
     print(
@@ -4481,6 +4553,10 @@ if __name__ == "__main__":
         frog_days=args.frog_days,
         score_rel_strength_weight=args.score_rel_strength_weight,
         score_dir_ev_weight=args.score_dir_ev_weight,
+        score_recent_bear_ev_weight=args.score_recent_bear_ev_weight,
+        recent_bear_trades=args.recent_bear_trades,
+        score_or_bar_quality_weight=args.score_or_bar_quality_weight,
+        score_gap_weight=args.score_gap_weight,
         qqq_regime_weight=args.qqq_regime_weight,
         qqq_regime_slope_days=args.qqq_regime_slope_days,
         qqq_regime_full_only=args.qqq_regime_full_only,
