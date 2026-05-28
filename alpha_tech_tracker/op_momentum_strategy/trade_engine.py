@@ -2097,8 +2097,11 @@ class OpMomentumTradeEngine:
         it starts at 9:30 AM ET to suppress the spurious pre-market reconnects that fire
         every 10 min before open (TS only emits regular-hours bars).
 
-        Uses _stream_started_at as the baseline when no bar has ever arrived so
-        the watchdog doesn't fire the instant the engine starts up.
+        When no bar has been received yet, uses max(window_open_time, stream_started_at)
+        as the baseline. This prevents a multi-hour pre-market startup gap from
+        immediately tripping the watchdog at 9:30 ET (elapsed measured from 4:29 AM
+        would far exceed the 600s threshold), while still correctly measuring elapsed
+        time for engines that start inside the window.
 
         For local_ts_broadcast: the broadcaster sends a heartbeat every 30s even when
         no bars arrive (pre-market, between bars). A recent heartbeat means the
@@ -2117,9 +2120,19 @@ class OpMomentumTradeEngine:
         engine = self._signal_engine
         if engine is None:
             return
-        last = engine._last_bar_received_at or engine._stream_started_at
+        last = engine._last_bar_received_at
         if last is None:
-            return
+            stream_started = engine._stream_started_at
+            if stream_started is None:
+                return
+            # Use max(window_open_time, stream_started_at) so a multi-hour pre-market
+            # startup gap doesn't immediately trip the watchdog the first time the bar
+            # window opens (e.g. TS engine started at 4:29 AM fires at exactly 9:30 ET).
+            # Engines that start inside the window still get their full timeout grace.
+            window_open = now.replace(
+                hour=bars_start_h, minute=bars_start_m, second=0, microsecond=0
+            )
+            last = max(window_open, stream_started)
         elapsed = (now - last).total_seconds()
 
         # For the broadcaster client, a recent heartbeat means the connection is

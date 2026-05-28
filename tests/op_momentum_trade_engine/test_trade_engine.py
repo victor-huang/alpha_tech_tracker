@@ -3948,6 +3948,52 @@ class TestCheckWsHealth:
 
         engine._signal_engine.reconnect.assert_called_once()
 
+    def test_tradestation_no_reconnect_at_market_open_when_started_premarket(self):
+        # Regression: TS engine started at 4:29 AM, no bar received, first watchdog
+        # check fires at exactly 9:30 ET. Without the fix, elapsed = 5 hours >> 600s
+        # and it reconnected at the worst possible moment (right as M1 bars start).
+        # With the fix, elapsed is measured from 9:30 ET, not from startup.
+        client = _make_alpaca_client()
+        market_data_client = Mock()
+        engine = OpMomentumTradeEngine(
+            alpaca_client=client,
+            mock_trade_execution=True,
+            market_data_client=market_data_client,
+        )
+        engine._ws_reconnect_timeout = 600
+        engine._signal_engine = Mock()
+        engine._signal_engine._last_bar_received_at = None
+        engine._signal_engine._stream_started_at = ET.localize(
+            datetime(2026, 5, 27, 4, 29)  # engine started before market hours
+        )
+        now = ET.localize(datetime(2026, 5, 27, 9, 30, 29))  # 29s into market open
+
+        engine._check_ws_health(now)
+
+        engine._signal_engine.reconnect.assert_not_called()
+
+    def test_tradestation_reconnects_if_no_bar_for_timeout_after_market_open(self):
+        # TS engine started pre-market, window opens at 9:30 ET, but no bar arrives
+        # for longer than the timeout — should reconnect.
+        client = _make_alpaca_client()
+        market_data_client = Mock()
+        engine = OpMomentumTradeEngine(
+            alpaca_client=client,
+            mock_trade_execution=True,
+            market_data_client=market_data_client,
+        )
+        engine._ws_reconnect_timeout = 600
+        engine._signal_engine = Mock()
+        engine._signal_engine._last_bar_received_at = None
+        engine._signal_engine._stream_started_at = ET.localize(
+            datetime(2026, 5, 27, 4, 29)
+        )
+        now = ET.localize(datetime(2026, 5, 27, 9, 41))  # 11 min after open, no bar yet
+
+        engine._check_ws_health(now)
+
+        engine._signal_engine.reconnect.assert_called_once()
+
     def test_no_reconnect_when_broadcaster_heartbeat_is_recent(self):
         # local_ts_broadcast: last bar was 20 min ago but heartbeat arrived 15s ago
         # → broadcaster is alive, no reconnect
