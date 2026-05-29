@@ -800,24 +800,22 @@ def _build_day_config_map(trading_days, vix_prior, qqq_5min, fallback_bars, fall
     return config_map
 
 
-def _build_qqq_scoring_regime(fetch_start: date, eval_end: date) -> dict:
+def _build_qqq_scoring_regime(
+    fetch_start: date, eval_end: date, source: str = "alpaca", feed=None,
+) -> dict:
     """
     Returns {date: 'bull'/'bear'} based on prior-day QQQ close vs 50d MA.
     No lookahead — shift(1) ensures today's regime uses yesterday's close/MA.
+
+    Uses the cached fetch_daily_bars() path so repeated sweeps reuse the
+    on-disk JSON cache instead of re-downloading from the data provider.
     """
     print("  [regime-scoring] Fetching QQQ daily bars for scoring regime...")
-    qqq = yf.download(
-        "QQQ",
-        start=str(fetch_start - timedelta(days=120)),
-        end=str(eval_end + timedelta(days=1)),
-        interval="1d",
-        auto_adjust=True,
-        progress=False,
-    )
+    warmup_start = fetch_start - timedelta(days=120)
+    qqq_map = fetch_daily_bars(["QQQ"], warmup_start, eval_end, source=source, feed=feed)
+    qqq = qqq_map.get("QQQ", pd.DataFrame())
     if qqq.empty:
         return {}
-    if isinstance(qqq.columns, pd.MultiIndex):
-        qqq.columns = qqq.columns.get_level_values(0)
     close = qqq["Close"].squeeze().dropna()
     ma50 = close.rolling(50, min_periods=20).mean()
     above = (close > ma50).shift(1)
@@ -1229,7 +1227,9 @@ def run_selector_backtest(
 
     qqq_scoring_regime = {}
     if regime_scoring:
-        qqq_scoring_regime = _build_qqq_scoring_regime(fetch_start, eval_end)
+        qqq_scoring_regime = _build_qqq_scoring_regime(
+            fetch_start, eval_end, source=source, feed=feed,
+        )
         bull_days = sum(1 for v in qqq_scoring_regime.values() if v == "bull")
         bear_days = sum(1 for v in qqq_scoring_regime.values() if v == "bear")
         print(f"  [regime-scoring] {bull_days} bull days / {bear_days} bear days in range")

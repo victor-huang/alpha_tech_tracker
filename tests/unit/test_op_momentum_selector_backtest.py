@@ -9,6 +9,7 @@ from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector_backtest impor
     _annotate_doubledown_addon,
     _apply_capital_flow,
     _apply_opportunity_pool,
+    _build_qqq_scoring_regime,
     _compute_bear_ctp_dates,
     _compute_rolling_stats,
     _print_daily_table,
@@ -1909,3 +1910,66 @@ class TestComputeBearCtpDates:
         # full_bear requires MA200 breach — won't fire in a shallow dip.
         # below_ma only needs close < MA20 AND close < MA50 — fires on dip days.
         assert len(below_ma) >= len(full_bear)
+
+
+class TestBuildQqqScoringRegime:
+    _PATCH_TARGET = (
+        "alpha_tech_tracker.op_momentum_strategy."
+        "op_momentum_selector_backtest.fetch_daily_bars"
+    )
+
+    def _daily_df(self, closes, start=date(2024, 1, 1)):
+        idx = [start + timedelta(days=i) for i in range(len(closes))]
+        return pd.DataFrame({"Close": closes}, index=idx)
+
+    def test_returns_empty_when_fetch_returns_no_data(self):
+        with unittest.mock.patch(
+            self._PATCH_TARGET, return_value={"QQQ": pd.DataFrame()}
+        ):
+            result = _build_qqq_scoring_regime(date(2025, 1, 1), date(2025, 1, 31))
+        assert result == {}
+
+    def test_returns_empty_when_qqq_key_missing(self):
+        with unittest.mock.patch(self._PATCH_TARGET, return_value={}):
+            result = _build_qqq_scoring_regime(date(2025, 1, 1), date(2025, 1, 31))
+        assert result == {}
+
+    def test_passes_source_and_feed_through_to_fetch_daily_bars(self):
+        fetch_start = date(2025, 6, 1)
+        eval_end = date(2025, 6, 30)
+        sentinel_feed = object()
+        with unittest.mock.patch(
+            self._PATCH_TARGET, return_value={"QQQ": pd.DataFrame()}
+        ) as mock_fetch:
+            _build_qqq_scoring_regime(
+                fetch_start, eval_end, source="alpaca", feed=sentinel_feed
+            )
+        args, kwargs = mock_fetch.call_args
+        assert args[0] == ["QQQ"]
+        assert args[1] == fetch_start - timedelta(days=120)
+        assert args[2] == eval_end
+        assert kwargs == {"source": "alpaca", "feed": sentinel_feed}
+
+    def test_prior_day_above_ma50_maps_to_bull(self):
+        closes = [100.0] * 49 + [120.0, 130.0]
+        df = self._daily_df(closes)
+        with unittest.mock.patch(self._PATCH_TARGET, return_value={"QQQ": df}):
+            result = _build_qqq_scoring_regime(date(2025, 1, 1), date(2025, 1, 31))
+        last_day = df.index[-1]
+        assert result[last_day] == "bull"
+
+    def test_prior_day_below_ma50_maps_to_bear(self):
+        closes = [100.0] * 49 + [80.0, 70.0]
+        df = self._daily_df(closes)
+        with unittest.mock.patch(self._PATCH_TARGET, return_value={"QQQ": df}):
+            result = _build_qqq_scoring_regime(date(2025, 1, 1), date(2025, 1, 31))
+        last_day = df.index[-1]
+        assert result[last_day] == "bear"
+
+    def test_no_lookahead_uses_prior_day_close(self):
+        closes = [100.0] * 49 + [120.0, 70.0]
+        df = self._daily_df(closes)
+        with unittest.mock.patch(self._PATCH_TARGET, return_value={"QQQ": df}):
+            result = _build_qqq_scoring_regime(date(2025, 1, 1), date(2025, 1, 31))
+        last_day = df.index[-1]
+        assert result[last_day] == "bull"
