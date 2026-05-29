@@ -1039,3 +1039,107 @@ Year     bear_ev=0.10  bear_ev=0.15  or_qual=0.10  or_qual=0.15  gap=0.10  gap=0
 **Why 2026 looked promising and was misleading:** 2026 (Jan–May tariff crash) is a V-shape bear regime where all 3 features added +6–17pp. This prompted the investigation. However, 2022 (the last structural bear year with similar regime characteristics) shows the opposite: gap (−65pp) and or_qual (−22pp) are regime-specific wins that don't generalize.
 
 **Conclusion:** Keep the baseline (`--score-rel-strength-weight 0.15`). The `entry_vs_mid_pct` at 60% and rel_strength at 15% remain the best validated combination. The +3,679pp oracle gap is a pick-quality problem, not a feature-engineering problem at this level of granularity.
+
+---
+
+## Exp 29 — Oracle Capture: EV Gate Relaxation and Regime Gate Removal (2026-05-28)
+
+**Motivation:** Oracle miss analysis on 2026 (Jan–May, 98 eval days) classified each missed day into structural categories. Three gates blocked oracle picks:
+
+1. **EV_GATE (35%)**: Oracle picks had rolling `ev_trade` median = −0.316, 26.4% WR historically. The EV gate (`min_ev=0.0`) blocked them. Chronic EV-gate misses: MU (5×), AMD (4×), CRDO (4×).
+2. **NO_SIG_BULL_BLOCKED (17%)**: `--qqq-regime-no-bullish` blocked BULLISH signals on 30 full-bear days. On 17 of those days the oracle's top pick was BULLISH (avg +3.97%).
+3. **NO_TRADE (22%)**: Pool vote + regime gate blocked entire days. March 2026 tariff crash: 12/22 days were NO_TRADE (pool_vote < 4 because tickers had no BEARISH history).
+
+Four approaches were tested to capture more oracle trades.
+
+---
+
+### Approach A — Remove `--qqq-regime-no-bullish`
+
+| Config | Trades | W/L | Win Rate | Return |
+|--------|--------|-----|----------|--------|
+| Baseline (with flag) | 76 | 43W/33L | 57% | +64.35% |
+| Without flag | 89 | 48W/41L | 54% | +69.03% |
+
+Removing the flag adds 13 trades (the blocked BULLISH days) and +4.68pp. Win rate drops 3pp — the extra trades are profitable on net but noisier. The gains come from Jan/Feb 2026 whipsaw BULLISH recoveries that the flag was suppressing. Not validated across other years in this experiment.
+
+---
+
+### Approach B — Lower `--min-ev` (global EV gate)
+
+Tested with `--qqq-regime-no-bullish` kept off. Baseline is the "without flag" result above.
+
+| `--min-ev` | Trades | W/L | Win Rate | Return |
+|-----------|--------|-----|----------|--------|
+| `0.0` (no flag) | 89 | 48W/41L | 54% | +69.03% |
+| `-0.10` | 90 | 49W/41L | 54% | +70.00% |
+| `-0.25` | 90 | 50W/40L | **56%** | **+74.84%** |
+| `-0.50` | 90 | 50W/40L | 56% | +74.84% (saturated) |
+
+**Trade-level diff (`-0.25` vs `0.0`):** Only 4 days changed. On 3 days, the lower-EV ticker displaced the existing pick (2 cases reduced loss size; 1 case flipped a −2.55% loss to a +0.59% win). On 1 day, a new trade was added (WIN +0.52%). Gate saturates at `−0.25` — no additional trades open past that threshold.
+
+**Multi-year validation (with `--qqq-regime-no-bullish` re-enabled):**
+
+| Year | `0.0` baseline | `-0.10` | `-0.25` | `-0.50` |
+|------|---------------|---------|---------|---------|
+| 2026 | +64.35% (76T) | +64.81% | +69.66% | +69.66% |
+| 2022 | +61.59% (181T) | +47.02% | +45.24% | +45.24% |
+| 2025 | +27.72% (191T) | +8.56% | −0.28% | −0.28% |
+
+**Verdict: do not lower `--min-ev`.** The EV gate is load-bearing in trending years. `−0.25` improves 2026 (+5.3pp) but destroys 2022 (−16pp) and 2025 (−27pp). The gate is correctly excluding tickers that are genuinely poor performers over their rolling window.
+
+---
+
+### Approach C — Lower `--ds-bull-min-ev` only (directional EV gate, BULLISH direction)
+
+More surgical than global `--min-ev`: only relaxes the EV gate for BULLISH signals, leaving the BEARISH gate at 0.0. Since 2022 was primarily a BEARISH year, this was expected to protect it better.
+
+| Year | `0.0` baseline | `-0.10` | `-0.25` | `-0.50` |
+|------|---------------|---------|---------|---------|
+| 2026 | +64.35% (76T) | +65.36% (77T) | **+69.04%** (77T) | +68.35% (77T) |
+| 2022 | +61.59% (181T) | +60.53% | +56.26% | +57.14% |
+| 2025 | +27.72% (191T) | +29.45% | +28.61% | +27.06% |
+
+2026 gains (+4.69pp at `−0.25`) but 2022 still regresses (−5.33pp). Even though the BEARISH gate is preserved, 2022 had BULLISH recovery rallies on bear days where relaxing the BULLISH EV gate admitted weaker picks that failed. 2025 is nearly flat (within ±1.7pp). **Not viable — same 2022 regression pattern as global `--min-ev`.**
+
+---
+
+### Approach D — Lower `--min-pool-vote`
+
+The NO_TRADE days in March 2026 were suspected to be pool-vote-limited. Testing pool vote = 2 and 3 vs baseline 4.
+
+| Year | `pv=4` baseline | `pv=3` | `pv=2` |
+|------|----------------|--------|--------|
+| 2026 | +64.35% (76T) | +64.35% (76T) | +64.35% (76T) |
+| 2022 | +61.59% (181T) | +61.21% (185T) | +62.33% (186T) |
+| 2025 | +27.72% (191T) | +28.00% (194T) | +26.94% (196T) |
+
+**2026 is completely unaffected.** The March 2026 NO_TRADE days are blocked by the regime gate (no BEARISH signal), not the pool vote gate. Lowering pool vote adds a few trades in 2022/2025 but net-zero impact. **Not applicable to 2026 oracle misses.**
+
+---
+
+### Approach E — `--adaptive-lookback` ON vs OFF
+
+The adaptive lookback (ON by default) shortens the rolling window to 30 days in bull regimes and extends to 90 days in bear regimes. Hypothesis: turning it off (fixed 60-day window) might help capture crash-recovery picks that would re-qualify sooner.
+
+| Year | `ON` (default) | `OFF` |
+|------|---------------|-------|
+| 2026 | +64.35% (76T) | **+69.88%** (77T) |
+| 2022 | **+61.59%** (181T) | +59.75% (184T) |
+| 2025 | **+27.72%** (191T) | +27.86% (190T) |
+
+Turning adaptive lookback OFF improves 2026 (+5.53pp, +1 trade) but slightly hurts 2022 (−1.84pp) and is flat for 2025. The adaptive lookback is shortening the window on bull-regime days in 2026, which excludes picks that the fixed 60-day window would have qualified. The +5.53pp gain in 2026 comes at the cost of a small 2022 regression.
+
+---
+
+### Summary
+
+| Approach | 2026 Δ | 2022 Δ | 2025 Δ | Verdict |
+|----------|--------|--------|--------|---------|
+| Remove `--qqq-regime-no-bullish` | +4.68pp | not tested | not tested | possible, needs 9yr validation |
+| `--min-ev -0.25` | +5.31pp | **−16.35pp** | **−27.99pp** | rejected |
+| `--ds-bull-min-ev -0.25` | +4.69pp | **−5.33pp** | +0.89pp | rejected |
+| `--min-pool-vote 2` | 0.00pp | +0.74pp | −0.78pp | no effect on target |
+| `--no-adaptive-lookback` | +5.53pp | −1.84pp | +0.14pp | marginal, 2022 cost |
+
+**Conclusion: the oracle misses in 2026 are structurally tied to the crash-recovery regime.** Tickers that look bad on rolling history (negative EV, low WR) happened to win during the April 2026 tariff crash recovery. Every mechanism that lowers the EV barrier to capture those picks also admits the same tickers in 2022 and 2025 where they are genuinely bad performers. The EV gate is correctly doing its job — 2026 is the outlier year, not the norm. All parameters remain at baseline.

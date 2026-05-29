@@ -56,6 +56,7 @@ The same signal logic drives both **live trading** (`trade_engine.py`) and **bac
 | `step_to_create_new_trading_window.md` | 8-step process for evaluating and adding a new intraday window |
 | `TICKER_SELECTION.md` | Ticker pool selection criteria and history |
 | `OP_MOMENTUM_GUIDE.md` | Strategy methodology, signal rules, exit rules |
+| `backtest_params_tunning/overview.md` | When/how to re-tune params & scoring: control-chart envelope, edge-vs-ranking diagnosis, 5-step re-tune protocol, validation gates |
 | `README.md` | Live trade engine setup and daily timeline |
 
 ### Backtest Results
