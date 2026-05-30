@@ -93,22 +93,20 @@ OPENING_START_TIME = "09:30"
 STOP_PCT = 0.15
 
 
-def _compute_ev_from_df(df: pd.DataFrame) -> float:
-    if df.empty:
+def _compute_ev(success: np.ndarray, pnl: np.ndarray, entry_price: np.ndarray) -> float:
+    total = len(success)
+    if total == 0:
         return 0.0
-    total = len(df)
-    wins = df[df["success"]]
-    losses = df[~df["success"]]
-    win_count = len(wins)
-    loss_count = len(losses)
+    win_mask = success
+    loss_mask = ~success
+    win_count = int(win_mask.sum())
+    loss_count = int(loss_mask.sum())
     win_rate = win_count / total
     loss_rate = loss_count / total
-    avg_win_pct = (wins["pnl"] / wins["entry_price"] * 100).mean() if win_count else 0.0
+    avg_win_pct = (pnl[win_mask] / entry_price[win_mask] * 100).mean() if win_count else 0.0
     avg_loss_pct = (
-        (losses["pnl"].abs() / losses["entry_price"] * 100).mean()
-        if loss_count
-        else 0.0
-    )
+        np.abs(pnl[loss_mask]) / entry_price[loss_mask] * 100
+    ).mean() if loss_count else 0.0
     return win_rate * avg_win_pct - loss_rate * avg_loss_pct
 
 
@@ -127,39 +125,44 @@ def compute_ticker_stats(results_df: pd.DataFrame, recent_days: int = 15, recent
             "recent_bear_ev": 0.0,
         }
 
-    total = len(results_df)
-    wins = results_df[results_df["success"]]
-    losses = results_df[~results_df["success"]]
-    win_count = len(wins)
-    loss_count = len(losses)
+    # Extract to numpy once — eliminates per-operation pandas overhead across all EV calls.
+    success = results_df["success"].to_numpy(dtype=bool)
+    pnl = results_df["pnl"].to_numpy(dtype=float)
+    entry_price = results_df["entry_price"].to_numpy(dtype=float)
+    midpoint = results_df["midpoint"].to_numpy(dtype=float)
+    signal = results_df["signal"].to_numpy()
+    dates = results_df["date"].to_numpy()
+
+    total = len(success)
+    win_mask = success
+    loss_mask = ~success
+    win_count = int(win_mask.sum())
+    loss_count = int(loss_mask.sum())
     win_rate = win_count / total
     loss_rate = loss_count / total
 
-    avg_win_pct = (wins["pnl"] / wins["entry_price"] * 100).mean() if win_count else 0.0
+    avg_win_pct = (pnl[win_mask] / entry_price[win_mask] * 100).mean() if win_count else 0.0
     avg_loss_pct = (
-        (losses["pnl"].abs() / losses["entry_price"] * 100).mean()
-        if loss_count
-        else 0.0
-    )
+        np.abs(pnl[loss_mask]) / entry_price[loss_mask] * 100
+    ).mean() if loss_count else 0.0
     ev_trade = win_rate * avg_win_pct - loss_rate * avg_loss_pct
 
-    if win_count:
-        avg_entry_vs_mid_pct = (
-            (wins["entry_price"] - wins["midpoint"]).abs() / wins["midpoint"] * 100
-        ).mean()
-    else:
-        avg_entry_vs_mid_pct = 0.0
+    avg_entry_vs_mid_pct = (
+        np.abs(entry_price[win_mask] - midpoint[win_mask]) / midpoint[win_mask] * 100
+    ).mean() if win_count else 0.0
 
-    bull_df = results_df[results_df["signal"] == "BULLISH"]
-    bear_df = results_df[results_df["signal"] == "BEARISH"]
-    ev_trade_bullish = _compute_ev_from_df(bull_df)
-    ev_trade_bearish = _compute_ev_from_df(bear_df)
+    bull_mask = signal == "BULLISH"
+    bear_mask = signal == "BEARISH"
+    ev_trade_bullish = _compute_ev(success[bull_mask], pnl[bull_mask], entry_price[bull_mask])
+    ev_trade_bearish = _compute_ev(success[bear_mask], pnl[bear_mask], entry_price[bear_mask])
 
-    recent_cutoff = results_df["date"].max() - timedelta(days=recent_days)
-    recent_df = results_df[results_df["date"] >= recent_cutoff]
-    ev_trend = _compute_ev_from_df(recent_df) - ev_trade
+    recent_cutoff = dates.max() - timedelta(days=recent_days)
+    recent_mask = dates >= recent_cutoff
+    ev_trend = _compute_ev(success[recent_mask], pnl[recent_mask], entry_price[recent_mask]) - ev_trade
 
-    recent_bear_ev = _compute_ev_from_df(bear_df.tail(recent_bear_trades))
+    bear_indices = np.where(bear_mask)[0]
+    tail_indices = bear_indices[-recent_bear_trades:] if len(bear_indices) > 0 else bear_indices
+    recent_bear_ev = _compute_ev(success[tail_indices], pnl[tail_indices], entry_price[tail_indices])
 
     return {
         "signals": total,
