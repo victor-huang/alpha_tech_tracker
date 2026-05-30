@@ -1,9 +1,13 @@
 import argparse
+import os
 import random
+import threading
 import numpy as np
 import pandas as pd
+import pytz
 import yfinance as yf
 from datetime import date, datetime, time as time_type, timedelta
+from pathlib import Path
 
 from alpaca.data.enums import DataFeed
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import (
@@ -713,6 +717,46 @@ def _annotate_doubledown_addon(
                 r["reentry_cancelled_by_dd"] = True
 
 
+_VIX_CACHE_DIR = Path(__file__).parent.parent.parent / "market_data" / "cache"
+
+
+def _fetch_vix_daily(start: date, end: date) -> pd.Series:
+    """Return VIX daily Close series for [start, end], using a disk cache.
+
+    Cache file: market_data/cache/yfinance_1d_VIX_{start}_{end}.json
+    Only caches fully-settled historical data (end < today ET).
+    Atomic write (tmp → rename) matches the bar-cache convention.
+    """
+    today = datetime.now(pytz.timezone("America/New_York")).date()
+    cacheable = end < today
+    cache_path = _VIX_CACHE_DIR / f"yfinance_1d_VIX_{start}_{end}.json"
+
+    if cacheable and cache_path.exists():
+        df = pd.read_json(cache_path, orient="split")
+        df.index = pd.to_datetime(df.index)
+        return df["Close"]
+
+    vix_raw = yf.download(
+        "^VIX",
+        start=str(start),
+        end=str(end + timedelta(days=1)),
+        interval="1d",
+        auto_adjust=True,
+        progress=False,
+    )
+    if hasattr(vix_raw.columns, "get_level_values"):
+        vix_raw.columns = vix_raw.columns.get_level_values(0)
+    vix_series = vix_raw["Close"].dropna()
+
+    if cacheable and not vix_series.empty:
+        _VIX_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        tmp = cache_path.with_suffix(f".{os.getpid()}_{threading.get_ident()}.tmp")
+        vix_series.to_frame().to_json(tmp, orient="split", date_format="iso")
+        tmp.replace(cache_path)
+
+    return vix_series
+
+
 def _fetch_regime_data(fetch_start, eval_end, source, feed):
     """
     Fetch VIX daily data and QQQ 5-min bars for regime classification.
@@ -722,17 +766,7 @@ def _fetch_regime_data(fetch_start, eval_end, source, feed):
       - qqq_5min: pd.DataFrame of QQQ 5-min bars with rolling MA8/20/50/200 on Close
     """
     print("  [regime] Fetching VIX daily data...")
-    vix_raw = yf.download(
-        "^VIX",
-        start=str(fetch_start),
-        end=str(eval_end + timedelta(days=1)),
-        interval="1d",
-        auto_adjust=True,
-        progress=False,
-    )
-    if hasattr(vix_raw.columns, "get_level_values"):
-        vix_raw.columns = vix_raw.columns.get_level_values(0)
-    vix_series = vix_raw["Close"].dropna()
+    vix_series = _fetch_vix_daily(fetch_start, eval_end)
     vix_prior = vix_series.shift(1)
 
     print("  [regime] Fetching QQQ 5-min bars for MA alignment...")
@@ -1469,6 +1503,16 @@ def run_selector_backtest(
         for label, results_for_window in all_window_results.items()
     }
 
+    # Pre-group primary-only rows by (window, ticker, date): eliminates the
+    # 3-condition boolean DataFrame filter inside the per-ticker inner loop.
+    primary_results_by_date = {
+        label: {
+            ticker: ({d_: g for d_, g in df.groupby("date")} if not df.empty else {})
+            for ticker, df in pw_results.items()
+        }
+        for label, pw_results in primary_window_results.items()
+    }
+
     # Pre-parse window opening times (avoids strptime on every trading day).
     window_opening_times = {
         win["label"]: datetime.strptime(win["opening_start"], "%H:%M").time()
@@ -1476,9 +1520,10 @@ def run_selector_backtest(
     }
 
     # ── Regime-adaptive: pre-compute M1 signals for each unique (bars, stop) ──
-    day_config_map = {}      # date → (bars, stop_pct) — empty when not adaptive
-    regime_primary = {}      # (bars, stop) → primary_window_results["M1"]
-    regime_by_date = {}      # (bars, stop) → results_by_date["M1"]
+    day_config_map = {}             # date → (bars, stop_pct) — empty when not adaptive
+    regime_primary = {}             # (bars, stop) → primary_window_results["M1"]
+    regime_by_date = {}             # (bars, stop) → results_by_date["M1"]
+    regime_primary_by_date = {}     # (bars, stop) → primary_results_by_date["M1"]
 
     if regime_adaptive:
         from collections import Counter
@@ -1562,6 +1607,10 @@ def run_selector_backtest(
                 ticker: ({d_: g for d_, g in df.groupby("date")} if not df.empty else {})
                 for ticker, df in m1_results.items()
             }
+            regime_primary_by_date[(r_bars, r_stop)] = {
+                ticker: ({d_: g for d_, g in df.groupby("date")} if not df.empty else {})
+                for ticker, df in regime_primary[(r_bars, r_stop)].items()
+            }
         print("  [regime] Pre-computation done.")
 
         bucket_counts = Counter()
@@ -1597,13 +1646,15 @@ def run_selector_backtest(
 
             # Select the right signal sets for this window on this day.
             if regime_adaptive and label == "M1" and day_key is not None:
-                eff_primary_wr = regime_primary[day_key]
-                eff_by_date    = regime_by_date[day_key]
-                eff_bars       = day_key[0]
+                eff_primary_wr      = regime_primary[day_key]
+                eff_by_date         = regime_by_date[day_key]
+                eff_primary_by_date = regime_primary_by_date[day_key]
+                eff_bars            = day_key[0]
             else:
-                eff_primary_wr = primary_window_results[label]
-                eff_by_date    = results_by_date[label]
-                eff_bars       = win["opening_bars"]
+                eff_primary_wr      = primary_window_results[label]
+                eff_by_date         = results_by_date[label]
+                eff_primary_by_date = primary_results_by_date[label]
+                eff_bars            = win["opening_bars"]
 
             rolling_stats = _compute_rolling_stats(
                 tickers, lookback_start, d, eff_primary_wr, ev_trend_days, recent_bear_trades
@@ -1656,6 +1707,8 @@ def run_selector_backtest(
                         _dg_min_wl = dg_neutral_min_wl
 
             # Adaptive lookback: recompute stats with regime-adjusted window.
+            # Skip recompute when the adaptive window equals the standard lookback_start
+            # (common when pool_vote falls in the neutral tier and al_neutral_days == lookback_days).
             if adaptive_lookback:
                 if pool_vote >= al_bull_threshold:
                     _al_days = al_bull_days
@@ -1664,9 +1717,10 @@ def run_selector_backtest(
                 else:
                     _al_days = al_neutral_days
                 _al_lookback_start = d - timedelta(days=_al_days)
-                rolling_stats = _compute_rolling_stats(
-                    tickers, _al_lookback_start, d, eff_primary_wr, ev_trend_days, recent_bear_trades
-                )
+                if _al_lookback_start != lookback_start:
+                    rolling_stats = _compute_rolling_stats(
+                        tickers, _al_lookback_start, d, eff_primary_wr, ev_trend_days, recent_bear_trades
+                    )
 
             # Bayesian shrinkage: pull each ticker's ev_trade toward pool mean.
             if ev_shrink_k > 0:
@@ -1700,29 +1754,28 @@ def run_selector_backtest(
             else:
                 _adaptive_entry = None  # sentinel: use existing regime_scoring logic
 
+            # Cache per-day lookups to avoid repeated dict access inside the ticker loop.
+            _rfactor_d = qqq_regime_by_date.get(d, 0.0)
+            _qqq_or_d = qqq_or_by_date.get(d, 0.0) if qqq_or_weight != 0.0 else 0.0
+            _scoring_regime_d = qqq_scoring_regime.get(d, "bull") if regime_scoring else "bull"
+
             scored = []
             opening_start_t = window_opening_times[label]
             for ticker in tickers:
                 if dedup and ticker in picked_today:
                     continue
-                today_rows = eff_by_date.get(ticker, {}).get(d)
-                if today_rows is None or today_rows.empty:
-                    continue
-                # Use primary (non-reversal) row for scoring; reversal row carries
-                # the extra leg P&L that gets added to the capital sim below.
-                primary_today = today_rows[
-                    (today_rows["is_reversal"] != True)  # noqa: E712
-                    & (today_rows["is_bearish_reentry"] != True)  # noqa: E712
-                    & (today_rows["is_bullish_reentry"] != True)  # noqa: E712
-                ]
-                if primary_today.empty:
+                # Use pre-grouped primary rows (no DataFrame filter needed here).
+                primary_today = eff_primary_by_date.get(ticker, {}).get(d)
+                if primary_today is None or primary_today.empty:
                     continue
                 row = primary_today.iloc[0]
-                rev_today = today_rows[today_rows["is_reversal"] == True]
+                # Fetch all rows only for reversal/reentry leg lookup.
+                today_rows = eff_by_date.get(ticker, {}).get(d)
+                rev_today = today_rows[today_rows["is_reversal"] == True]  # noqa: E712
                 rev_row = rev_today.iloc[0] if not rev_today.empty else None
-                br_today = today_rows[today_rows["is_bearish_reentry"] == True]
+                br_today = today_rows[today_rows["is_bearish_reentry"] == True]  # noqa: E712
                 br_row = br_today.iloc[0] if not br_today.empty else None
-                bru_today = today_rows[today_rows["is_bullish_reentry"] == True]
+                bru_today = today_rows[today_rows["is_bullish_reentry"] == True]  # noqa: E712
                 bru_row = bru_today.iloc[0] if not bru_today.empty else None
                 sig = _signal_dict_from_row(row)
                 if (
@@ -1762,24 +1815,25 @@ def run_selector_backtest(
                         sig["or_range_pct"] = sig["or_range_pct"] / _adr
 
                 sig["or_bar_quality"] = 0.5
-                _day_bars = bars_by_date.get(ticker, {}).get(d)
-                if _day_bars is not None and not _day_bars.empty:
-                    _or_end_t = (
-                        datetime.combine(d, opening_start_t)
-                        + timedelta(minutes=5 * win["opening_bars"])
-                    ).time()
-                    _or_bars = _day_bars[
-                        (_day_bars.index.time >= opening_start_t)
-                        & (_day_bars.index.time < _or_end_t)
-                    ]
-                    if len(_or_bars) > 0:
-                        _direction = sig["signal"]
-                        if _direction == "BEARISH":
-                            _bear_bar_count = int((_or_bars["Close"] < _or_bars["Open"]).sum())
-                            sig["or_bar_quality"] = _bear_bar_count / len(_or_bars)
-                        else:
-                            _bull_bar_count = int((_or_bars["Close"] > _or_bars["Open"]).sum())
-                            sig["or_bar_quality"] = _bull_bar_count / len(_or_bars)
+                if score_or_bar_quality_weight != 0.0:
+                    _day_bars = bars_by_date.get(ticker, {}).get(d)
+                    if _day_bars is not None and not _day_bars.empty:
+                        _or_end_t = (
+                            datetime.combine(d, opening_start_t)
+                            + timedelta(minutes=5 * win["opening_bars"])
+                        ).time()
+                        _or_bars = _day_bars[
+                            (_day_bars.index.time >= opening_start_t)
+                            & (_day_bars.index.time < _or_end_t)
+                        ]
+                        if len(_or_bars) > 0:
+                            _direction = sig["signal"]
+                            if _direction == "BEARISH":
+                                _bear_bar_count = int((_or_bars["Close"] < _or_bars["Open"]).sum())
+                                sig["or_bar_quality"] = _bear_bar_count / len(_or_bars)
+                            else:
+                                _bull_bar_count = int((_or_bars["Close"] > _or_bars["Open"]).sum())
+                                sig["or_bar_quality"] = _bull_bar_count / len(_or_bars)
 
                 stats = rolling_stats[ticker]
                 if oracle_picks:
@@ -1794,7 +1848,7 @@ def run_selector_backtest(
                     _use_dir_ev_only = (
                         qqq_regime_bearish_ev_only
                         and sig["signal"] == "BEARISH"
-                        and qqq_regime_by_date.get(d, 0.0) >= 1.0
+                        and _rfactor_d >= 1.0
                     )
                     if not _use_dir_ev_only and stats["ev_trade"] < min_ev:
                         continue
@@ -1820,8 +1874,7 @@ def run_selector_backtest(
                         if pool_vote <= drf_bear_only_thresh and sig["signal"] == "BULLISH":
                             continue
                     if qqq_regime_no_bullish:
-                        _rfactor_nb = qqq_regime_by_date.get(d, 0.0)
-                        if _rfactor_nb >= 1.0 and sig["signal"] == "BULLISH":
+                        if _rfactor_d >= 1.0 and sig["signal"] == "BULLISH":
                             continue
                     if random_picks:
                         if stats["ev_trade"] <= 0:
@@ -1829,8 +1882,7 @@ def run_selector_backtest(
                         s = 0.0
                     else:
                         if regime_scoring:
-                            regime = qqq_scoring_regime.get(d, "bull")
-                            if regime == "bull":
+                            if _scoring_regime_d == "bull":
                                 eff_entry = regime_bull_entry_weight if regime_bull_entry_weight is not None else score_entry_weight
                                 eff_vol   = regime_bull_vol_ratio_weight if regime_bull_vol_ratio_weight is not None else score_vol_ratio_weight
                                 eff_aw    = regime_bull_avg_win_weight if regime_bull_avg_win_weight is not None else score_avg_win_weight
@@ -1850,8 +1902,7 @@ def run_selector_backtest(
                             eff_entry = _adaptive_entry
                         # QQQ full-bear entry weight override (takes priority over adaptive entry).
                         if qqq_regime_bear_entry_weight is not None:
-                            _rfactor_bew = qqq_regime_by_date.get(d, 0.0)
-                            if _rfactor_bew >= 1.0:
+                            if _rfactor_d >= 1.0:
                                 eff_entry = qqq_regime_bear_entry_weight
                         s = score_ticker(
                             sig, stats,
@@ -1877,20 +1928,18 @@ def run_selector_backtest(
                         if qqq_or_weight != 0.0:
                             # Positive alignment: signal direction matches QQQ OR direction.
                             # BULLISH benefits from positive QQQ OR; BEARISH from negative.
-                            _qqq_or = qqq_or_by_date.get(d, 0.0)
-                            _align = _qqq_or if sig["signal"] == "BULLISH" else -_qqq_or
+                            _align = _qqq_or_d if sig["signal"] == "BULLISH" else -_qqq_or_d
                             s += qqq_or_weight * _align
                         if qqq_regime_weight != 0.0:
                             # Bearish regime factor boosts BEARISH signals.
                             # When bearish_only=False (default), also penalises BULLISH signals.
                             # Factor 0 = neutral, 1.0 = full bear (QQQ < MA50, both MAs falling).
-                            _rfactor = qqq_regime_by_date.get(d, 0.0)
-                            if _rfactor > 0.0:
+                            if _rfactor_d > 0.0:
                                 if qqq_regime_bearish_only:
                                     if sig["signal"] == "BEARISH":
-                                        s += qqq_regime_weight * _rfactor
+                                        s += qqq_regime_weight * _rfactor_d
                                 else:
-                                    _ralign = -_rfactor if sig["signal"] == "BULLISH" else _rfactor
+                                    _ralign = -_rfactor_d if sig["signal"] == "BULLISH" else _rfactor_d
                                     s += qqq_regime_weight * _ralign
                         if s < min_score:
                             continue

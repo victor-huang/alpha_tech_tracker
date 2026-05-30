@@ -159,8 +159,7 @@ def compute_ticker_stats(results_df: pd.DataFrame, recent_days: int = 15, recent
     recent_df = results_df[results_df["date"] >= recent_cutoff]
     ev_trend = _compute_ev_from_df(recent_df) - ev_trade
 
-    _bear_sorted = bear_df.sort_values("date") if not bear_df.empty else bear_df
-    recent_bear_ev = _compute_ev_from_df(_bear_sorted.tail(recent_bear_trades))
+    recent_bear_ev = _compute_ev_from_df(bear_df.tail(recent_bear_trades))
 
     return {
         "signals": total,
