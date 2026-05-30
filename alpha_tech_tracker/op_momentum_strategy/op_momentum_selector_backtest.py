@@ -1350,6 +1350,7 @@ def run_selector_backtest(
                 stale_cut_threshold=stale_cut_threshold,
                 exit_at_bar_close=exit_at_bar_close,
                 ma_momentum_gate=ma_momentum_gate,
+                compute_or_vol_ratio=(score_vol_ratio_weight != 0.0 or min_or_vol_ratio is not None),
             )
         all_window_results[label] = results_for_window
         print(f"  [{label}] {win['opening_start']} / {win['opening_bars']} bars — done")
@@ -1368,11 +1369,15 @@ def run_selector_backtest(
 
     # Pre-group bars by date: replaces O(total_bars) index.date scan with O(1) dict lookup
     # in the or_bar_lookback scoring path, called 16 tickers × N windows × N days.
-    bars_by_date = {
-        ticker: {d_: g for d_, g in df.groupby(df.index.date)}
-        for ticker, df in all_bars.items()
-        if not df.empty
-    }
+    bars_by_date = (
+        {
+            ticker: {d_: g for d_, g in df.groupby(df.index.date)}
+            for ticker, df in all_bars.items()
+            if not df.empty
+        }
+        if or_bar_lookback > 0 or enable_doubledown or score_or_bar_quality_weight != 0.0
+        else {}
+    )
 
     # Pre-compute QQQ opening-range return per day for scoring alignment component.
     # No lookahead: uses M1 OR bars (9:30-9:45) already formed before the 9:45 pick.
@@ -1591,6 +1596,7 @@ def run_selector_backtest(
                     stale_cut_threshold=stale_cut_threshold,
                     exit_at_bar_close=exit_at_bar_close,
                     ma_momentum_gate=ma_momentum_gate,
+                    compute_or_vol_ratio=(score_vol_ratio_weight != 0.0 or min_or_vol_ratio is not None),
                 )
             regime_primary[(r_bars, r_stop)] = {
                 ticker: (

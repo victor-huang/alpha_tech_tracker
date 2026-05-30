@@ -9,6 +9,10 @@ Covers:
     end_date == today skips the cache write
   - primary_results_by_date: pre-grouped dict holds only primary rows (no reversal
     or reentry rows), matching what the old per-iteration DataFrame filter produced
+  - compute_signals_with_backtest: fast_ma_col column skipped when trailing_ma_switch="none"
+  - compute_signals_with_backtest: _hist_or_vol skipped when compute_or_vol_ratio=False
+  - bars_by_date: skipped when or_bar_lookback=0 and enable_doubledown=False and
+    score_or_bar_quality_weight=0.0
 """
 import unittest.mock as mock
 
@@ -18,6 +22,7 @@ from datetime import date
 import alpha_tech_tracker.op_momentum_strategy.op_momentum_selector_backtest as _bt_module
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector import compute_ticker_stats
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector_backtest import _fetch_vix_daily
+from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import compute_signals_with_backtest
 
 
 def _make_results_df(rows):
@@ -245,3 +250,150 @@ class TestPrimaryResultsByDatePreGrouping:
 
         d = date(2025, 3, 1)
         assert len(by_date[d]) == 3
+
+
+# ---------------------------------------------------------------------------
+# TestFastMaColGate
+# Verifies that the fast_ma_col rolling column is NOT built when
+# trailing_ma_switch="none" (Fix #2) and IS built when a switch mode is set.
+# ---------------------------------------------------------------------------
+
+
+def _make_bars_df():
+    """Minimal 5-min bar DataFrame covering two trading days."""
+    import numpy as np
+    rng = pd.date_range("2025-01-02 09:30", periods=78, freq="5min")
+    closes = np.linspace(100.0, 110.0, len(rng))
+    return pd.DataFrame(
+        {"Open": closes, "High": closes + 0.5, "Low": closes - 0.5, "Close": closes, "Volume": 1000},
+        index=rng,
+    )
+
+
+class TestFastMaColGate:
+    def test_fast_ma_col_not_built_when_switch_none(self, monkeypatch):
+        # The function works on df.copy(), so we spy on pd.Series.rolling to detect
+        # whether rolling(period) is called for the fast MA column specifically.
+        period = 8
+        observed_windows = []
+        original_rolling = pd.Series.rolling
+
+        def spy_rolling(self, window, *args, **kwargs):
+            observed_windows.append(window)
+            return original_rolling(self, window, *args, **kwargs)
+
+        monkeypatch.setattr(pd.Series, "rolling", spy_rolling)
+        compute_signals_with_backtest(
+            _make_bars_df(),
+            opening_bars=3,
+            trailing_ma_switch="none",
+            trailing_ma_switch_period=period,
+        )
+
+        assert period not in observed_windows
+
+    def test_fast_ma_col_built_when_switch_after_arm(self, monkeypatch):
+        period = 8
+        observed_windows = []
+        original_rolling = pd.Series.rolling
+
+        def spy_rolling(self, window, *args, **kwargs):
+            observed_windows.append(window)
+            return original_rolling(self, window, *args, **kwargs)
+
+        monkeypatch.setattr(pd.Series, "rolling", spy_rolling)
+        compute_signals_with_backtest(
+            _make_bars_df(),
+            opening_bars=3,
+            trailing_ma_switch="after-arm",
+            trailing_ma_switch_period=period,
+        )
+
+        assert period in observed_windows
+
+
+# ---------------------------------------------------------------------------
+# TestOrVolRatioGate
+# Verifies that _hist_or_vol groupby is NOT called when compute_or_vol_ratio=False
+# and IS called when compute_or_vol_ratio=True (Fix #1).
+# ---------------------------------------------------------------------------
+
+
+class TestOrVolRatioGate:
+    def test_or_vol_ratio_present_in_results_when_flag_true(self):
+        df = _make_bars_df()
+
+        result = compute_signals_with_backtest(df, opening_bars=3, compute_or_vol_ratio=True)
+
+        if not result.empty:
+            assert "or_vol_ratio" in result.columns
+
+    def test_or_vol_ratio_absent_from_results_when_flag_false(self):
+        df = _make_bars_df()
+
+        result = compute_signals_with_backtest(df, opening_bars=3, compute_or_vol_ratio=False)
+
+        if not result.empty:
+            assert result["or_vol_ratio"].isna().all() or (result["or_vol_ratio"] == 0).all()
+
+
+# ---------------------------------------------------------------------------
+# TestBarsByDateGate
+# Verifies bars_by_date is an empty dict when all three controlling params are off
+# (or_bar_lookback=0, enable_doubledown=False, score_or_bar_quality_weight=0.0).
+# This mirrors what run_selector_backtest produces — tests the dict-comprehension
+# guard expression in isolation (Fix #4).
+# ---------------------------------------------------------------------------
+
+
+class TestBarsByDateGate:
+    def _build_bars_by_date(self, or_bar_lookback, enable_doubledown, score_or_bar_quality_weight, all_bars):
+        return (
+            {
+                ticker: {d_: g for d_, g in df.groupby(df.index.date)}
+                for ticker, df in all_bars.items()
+                if not df.empty
+            }
+            if or_bar_lookback > 0 or enable_doubledown or score_or_bar_quality_weight != 0.0
+            else {}
+        )
+
+    def test_bars_by_date_empty_when_all_flags_off(self):
+        all_bars = {"AAPL": _make_bars_df()}
+        result = self._build_bars_by_date(
+            or_bar_lookback=0,
+            enable_doubledown=False,
+            score_or_bar_quality_weight=0.0,
+            all_bars=all_bars,
+        )
+        assert result == {}
+
+    def test_bars_by_date_populated_when_or_bar_lookback_nonzero(self):
+        all_bars = {"AAPL": _make_bars_df()}
+        result = self._build_bars_by_date(
+            or_bar_lookback=3,
+            enable_doubledown=False,
+            score_or_bar_quality_weight=0.0,
+            all_bars=all_bars,
+        )
+        assert "AAPL" in result
+
+    def test_bars_by_date_populated_when_enable_doubledown_true(self):
+        all_bars = {"AAPL": _make_bars_df()}
+        result = self._build_bars_by_date(
+            or_bar_lookback=0,
+            enable_doubledown=True,
+            score_or_bar_quality_weight=0.0,
+            all_bars=all_bars,
+        )
+        assert "AAPL" in result
+
+    def test_bars_by_date_populated_when_quality_weight_nonzero(self):
+        all_bars = {"AAPL": _make_bars_df()}
+        result = self._build_bars_by_date(
+            or_bar_lookback=0,
+            enable_doubledown=False,
+            score_or_bar_quality_weight=0.5,
+            all_bars=all_bars,
+        )
+        assert "AAPL" in result

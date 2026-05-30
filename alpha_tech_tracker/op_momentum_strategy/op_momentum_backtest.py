@@ -375,6 +375,7 @@ def compute_signals_with_backtest(
     stale_cut_threshold: float = 0.0,
     exit_at_bar_close: bool = True,
     ma_momentum_gate: bool = False,
+    compute_or_vol_ratio: bool = True,
 ) -> pd.DataFrame:
     opening_start_t = datetime.strptime(opening_start_time, "%H:%M").time()
 
@@ -386,7 +387,8 @@ def compute_signals_with_backtest(
 
     df = df.copy()
     fast_ma_col = f"MA{trailing_ma_switch_period}"
-    if fast_ma_col not in df.columns:
+    _use_ma_switch = trailing_ma_switch != "none"
+    if _use_ma_switch and fast_ma_col not in df.columns:
         df[fast_ma_col] = df["Close"].rolling(trailing_ma_switch_period).mean()
     if "MA20" not in df.columns:
         df["MA20"] = df["Close"].rolling(20).mean()
@@ -405,15 +407,16 @@ def compute_signals_with_backtest(
 
     # OR vol ratio: 20-day rolling avg of mean OR-window volume for the same time slot.
     # Apples-to-apples: compares today's OR bars to historical OR bars (not full-session avg).
-    # Always computed so or_vol_ratio is available in every trade row for scoring.
     # Shift 1 ensures no lookahead bias.
-    _or_slice = df[df.index.time >= opening_start_t]
-    or_vol_by_date = (
-        _or_slice
-        .groupby(_or_slice.index.date)
-        .apply(lambda g: g.head(opening_bars)["Volume"].mean())
-    )
-    _hist_or_vol: dict = or_vol_by_date.rolling(20, min_periods=5).mean().shift(1).to_dict()
+    _hist_or_vol: dict = {}
+    if compute_or_vol_ratio:
+        _or_slice = df[df.index.time >= opening_start_t]
+        or_vol_by_date = (
+            _or_slice
+            .groupby(_or_slice.index.date)
+            .apply(lambda g: g.head(opening_bars)["Volume"].mean())
+        )
+        _hist_or_vol = or_vol_by_date.rolling(20, min_periods=5).mean().shift(1).to_dict()
 
     rows = []
     for date_, day_df in df.groupby(df.index.date):
@@ -578,7 +581,7 @@ def compute_signals_with_backtest(
 
         for bar_idx, (_, bar) in enumerate(post_open.iterrows()):
             exit_bar_idx = bar_idx  # always tracks the last bar reached
-            bar_ma_fast = bar[fast_ma_col]
+            bar_ma_fast = bar[fast_ma_col] if _use_ma_switch else float("nan")
             bar_ma20 = bar["MA20"]
             bar_ma50 = bar["MA50"]
             bar_close = bar["Close"]
@@ -847,7 +850,7 @@ def compute_signals_with_backtest(
             rev_trailing_armed = False
             rev_use_ma_fast = False
             for _, rev_bar in remaining_rev_bars.iterrows():
-                rev_bar_ma_fast = rev_bar[fast_ma_col]
+                rev_bar_ma_fast = rev_bar[fast_ma_col] if _use_ma_switch else float("nan")
                 rev_bar_ma20 = rev_bar["MA20"]
                 rev_bar_ma50 = rev_bar["MA50"]
                 rev_bar_close = rev_bar["Close"]
@@ -948,7 +951,7 @@ def compute_signals_with_backtest(
             remaining_br_bars = br_scan.iloc[br_entry_idx + 1:]
 
             for _, br_bar in remaining_br_bars.iterrows():
-                br_bar_ma_fast = br_bar[fast_ma_col]
+                br_bar_ma_fast = br_bar[fast_ma_col] if _use_ma_switch else float("nan")
                 br_bar_ma20 = br_bar["MA20"]
                 br_bar_close = br_bar["Close"]
                 br_move = br_entry_price - br_bar_close
@@ -1096,7 +1099,7 @@ def compute_signals_with_backtest(
                 remaining_bru_bars = bru_scan.iloc[bru_entry_idx + 1:]
 
                 for _, bru_bar in remaining_bru_bars.iterrows():
-                    bru_bar_ma_fast = bru_bar[fast_ma_col]
+                    bru_bar_ma_fast = bru_bar[fast_ma_col] if _use_ma_switch else float("nan")
                     bru_bar_ma20 = bru_bar["MA20"]
                     bru_bar_close = bru_bar["Close"]
                     bru_move = bru_bar_close - bru_entry_price
@@ -1183,7 +1186,7 @@ def compute_signals_with_backtest(
             remaining_brev_bars = brev_scan.iloc[brev_entry_idx + 1:]
 
             for _, brev_bar in remaining_brev_bars.iterrows():
-                brev_bar_ma_fast = brev_bar[fast_ma_col]
+                brev_bar_ma_fast = brev_bar[fast_ma_col] if _use_ma_switch else float("nan")
                 brev_bar_ma20 = brev_bar["MA20"]
                 brev_bar_close = brev_bar["Close"]
                 brev_move = brev_entry_price - brev_bar_close
