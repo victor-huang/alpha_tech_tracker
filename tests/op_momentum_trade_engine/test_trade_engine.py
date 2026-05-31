@@ -2616,6 +2616,58 @@ class TestDrainPendingSignals:
 
         assert enter_calls == []
 
+    def test_min_score_floor_skips_negative_score_pick(self):
+        # Matches the backtest, which drops picks with score < min_score (default 0.0).
+        # Without the floor the drain would trade the least-bad negative-score candidate.
+        engine = _make_engine_with_mock_client()
+        engine._min_score = 0.0
+        engine._window_state["W1"]["collection_deadline"] = datetime.now(ET) - timedelta(
+            seconds=1
+        )
+        engine._window_state["W1"]["pending_signals"] = {
+            "AMD": _make_signal_event("AMD"),
+            "NVDA": _make_signal_event("NVDA"),
+        }
+        engine._rolling_stats = {
+            "AMD": {"ev_trade": 0.5, "win_rate": 0.5, "avg_win_pct": 1.0},
+            "NVDA": {"ev_trade": 0.8, "win_rate": 0.6, "avg_win_pct": 2.0},
+        }
+        enter_calls = []
+        # AMD scores positive (kept), NVDA scores negative (dropped by floor).
+        with patch(_SCORE_TICKER_PATH, side_effect=[2.0, -0.5]), \
+             patch.object(
+                 engine, "_enter_position",
+                 side_effect=lambda e, **kw: enter_calls.append(e.ticker),
+             ), \
+             patch.object(engine, "_get_window_budget", return_value=None):
+            engine._drain_pending_signals_for_window(engine._windows[0])
+
+        assert enter_calls == ["AMD"]
+
+    def test_negative_min_score_keeps_negative_score_pick(self):
+        # A very negative floor disables the filter — the negative-score pick is kept.
+        engine = _make_engine_with_mock_client()
+        engine._min_score = -999.0
+        engine._window_state["W1"]["collection_deadline"] = datetime.now(ET) - timedelta(
+            seconds=1
+        )
+        engine._window_state["W1"]["pending_signals"] = {
+            "NVDA": _make_signal_event("NVDA"),
+        }
+        engine._rolling_stats = {
+            "NVDA": {"ev_trade": 0.8, "win_rate": 0.6, "avg_win_pct": 2.0},
+        }
+        enter_calls = []
+        with patch(_SCORE_TICKER_PATH, return_value=-0.5), \
+             patch.object(
+                 engine, "_enter_position",
+                 side_effect=lambda e, **kw: enter_calls.append(e.ticker),
+             ), \
+             patch.object(engine, "_get_window_budget", return_value=None):
+            engine._drain_pending_signals_for_window(engine._windows[0])
+
+        assert enter_calls == ["NVDA"]
+
     def test_none_budget_proceeds_with_entries(self):
         # budget=None means "no tracking" (first-group windows using account balance)
         engine = _make_engine_with_mock_client()

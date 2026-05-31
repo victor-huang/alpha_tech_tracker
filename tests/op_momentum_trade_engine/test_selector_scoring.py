@@ -678,3 +678,29 @@ class TestContextResolvesWhenDataEndsBeforeTarget:
         # ADR resolved from the prior trading day -> normalization applied (not skipped).
         assert scored_sigs[0]["or_range_pct"] < raw_or_range_pct
         assert result["scoring_context"]["AAA"]["adr"] is not None
+
+    def test_rel_strength_resolved_when_target_date_absent_from_bars(self):
+        # Reproduces the Monday/post-holiday bug: a fixed target_date-1 calendar day
+        # would miss the (non-trading) prior day and yield NaN rel-strength. Resolving
+        # the prior *trading* day keeps rel-strength populated.
+        tickers = ["AAA", "BBB"]
+        bars = {t: _make_multi_day_bars() for t in tickers}
+        last_bar_date = bars["AAA"].index[-1].date()
+        target = last_bar_date + timedelta(days=3)  # skip weekend -> no bar on target
+
+        with patch(f"{_SELECTOR_MODULE}.run_backtest",
+                   side_effect=lambda **kw: {t: pd.DataFrame({"date": [last_bar_date]}) for t in tickers}), \
+             patch(f"{_SELECTOR_MODULE}.build_bearish_regime_dates", return_value=None), \
+             patch(f"{_SELECTOR_MODULE}.compute_ticker_stats", return_value=dict(_BASE_STATS)), \
+             patch(f"{_SELECTOR_MODULE}.compute_today_signals",
+                   return_value=_make_today_signals(tickers)):
+
+            result = select_top_n(
+                n=2, tickers=tickers, lookback_days=30, opening_bars=3,
+                bearish_ma200=False, stop_pct=0.15, source="alpaca",
+                target_date=target, ticker_dfs=bars,
+                score_rel_strength_weight=0.15,
+            )
+
+        rel = result["scoring_context"]["AAA"]["rel_ma50_dist_pct"]
+        assert rel is not None and not pd.isna(rel)
