@@ -617,6 +617,17 @@ def parse_args():
         help="Calendar days for the recent EV window used in ev_trend computation. Default: 15.",
     )
     parser.add_argument(
+        "--qqq-or-weight",
+        type=float,
+        default=0.0,
+        dest="qqq_or_weight",
+        help=(
+            "Score bonus/penalty based on QQQ opening-range direction: "
+            "BULLISH signals are boosted when QQQ OR is positive, penalised when negative (and vice-versa). "
+            "Default: 0.0 (off)."
+        ),
+    )
+    parser.add_argument(
         "--feed",
         choices=["sip", "iex"],
         default="sip",
@@ -954,6 +965,7 @@ if __name__ == "__main__":
             normalize_or_by_adr=args.normalize_or_by_adr,
             min_pool_vote_to_trade=args.min_pool_vote_to_trade,
             ev_trend_days=args.ev_trend_days,
+            qqq_or_weight=args.qqq_or_weight,
         )
         if args.replay_date or (args.replay_start and args.replay_end):
             _warn_replay_feed_mismatch(args)
@@ -1092,6 +1104,7 @@ if __name__ == "__main__":
             normalize_or_by_adr=args.normalize_or_by_adr,
             min_pool_vote_to_trade=args.min_pool_vote_to_trade,
             ev_trend_days=args.ev_trend_days,
+            qqq_or_weight=args.qqq_or_weight,
         )
         engine.run(tickers_override=args.tickers)
     finally:

@@ -359,6 +359,7 @@ class OpMomentumTradeEngine:
         normalize_or_by_adr: bool = False,
         min_pool_vote_to_trade: int = 0,
         ev_trend_days: int = 15,
+        qqq_or_weight: float = 0.0,
     ):
         self._client = alpaca_client
         self._api_key = getattr(alpaca_client, "_api_key", None)
@@ -378,6 +379,7 @@ class OpMomentumTradeEngine:
         self._normalize_or_by_adr = normalize_or_by_adr
         self._min_pool_vote_to_trade = min_pool_vote_to_trade
         self._ev_trend_days = ev_trend_days
+        self._qqq_or_weight = qqq_or_weight
         self._max_loss_pct = max_loss_pct
         self._daily_max_loss_usd = _D(str(daily_max_loss_usd)) if daily_max_loss_usd is not None else None
         self._daily_realized_pnl = _D("0")
@@ -1896,8 +1898,20 @@ class OpMomentumTradeEngine:
             sig_dict = {
                 "entry_vs_mid_pct": entry_vs_mid_pct,
                 "or_range_pct": or_range_pct,
+                "signal": event.signal,
             }
-            score = score_ticker(sig_dict, stats)
+            score = score_ticker(
+                sig_dict, stats,
+                score_entry_weight=self._score_entry_weight,
+                score_avg_win_weight=self._score_avg_win_weight,
+                score_win_rate_weight=self._score_win_rate_weight,
+                score_ev_trend_weight=self._score_ev_trend_weight,
+            )
+            if self._qqq_or_weight and self._signal_engine is not None:
+                qqq_or_pct = self._signal_engine.get_qqq_or_pct(label)
+                if qqq_or_pct is not None:
+                    align = qqq_or_pct if event.signal == "BULLISH" else -qqq_or_pct
+                    score += self._qqq_or_weight * align
             scored.append((score, ticker, event))
             logger.info(
                 "Ranked %s [%s]: score=%.3f ev_trade=%.3f",
@@ -2471,8 +2485,11 @@ class OpMomentumTradeEngine:
             )
             market_data_client = AlpacaMarketDataClient(api_key, secret_key, self._alpaca_feed)
 
+        signal_tickers = list(all_tickers)
+        if self._qqq_or_weight and "QQQ" not in signal_tickers:
+            signal_tickers.append("QQQ")
         self._signal_engine = LiveSignalEngine(
-            tickers=all_tickers,
+            tickers=signal_tickers,
             market_data_client=market_data_client,
             bearish_ma200=BEARISH_MA200,
             regime_filter=self._regime_filter,
@@ -2482,6 +2499,7 @@ class OpMomentumTradeEngine:
             or_bar_lookback=self._or_bar_lookback,
             trailing_ma_switch_period=self._trailing_ma_switch_period,
             ma_momentum_gate=self._ma_momentum_gate,
+            qqq_or_weight=self._qqq_or_weight,
         )
         try:
             account = self._client.get_accounts()
@@ -2648,8 +2666,11 @@ class OpMomentumTradeEngine:
                 }
             )
 
+        signal_tickers = list(all_tickers)
+        if self._qqq_or_weight and "QQQ" not in signal_tickers:
+            signal_tickers.append("QQQ")
         self._signal_engine = LiveSignalEngine(
-            tickers=all_tickers,
+            tickers=signal_tickers,
             bearish_ma200=BEARISH_MA200,
             regime_filter=self._regime_filter,
             regime_ma=self._regime_ma,
@@ -2657,6 +2678,7 @@ class OpMomentumTradeEngine:
             or_bar_lookback=self._or_bar_lookback,
             trailing_ma_switch_period=self._trailing_ma_switch_period,
             ma_momentum_gate=self._ma_momentum_gate,
+            qqq_or_weight=self._qqq_or_weight,
         )
         self._signal_engine.start_replay(replay_date, market_data_client=self._market_data_client)
 
@@ -2733,7 +2755,7 @@ class OpMomentumTradeEngine:
                     self._check_doubledown_for_window(win)
 
         driver = BarReplayDriver(
-            tickers=all_tickers,
+            tickers=signal_tickers,
             replay_date=replay_date,
             signal_engine=self._signal_engine,
             on_bar_injected=_on_bar,

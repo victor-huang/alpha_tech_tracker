@@ -57,6 +57,7 @@ class LiveSignalEngine:
         or_bar_lookback: int = 3,
         trailing_ma_switch_period: int = 8,
         ma_momentum_gate: bool = False,
+        qqq_or_weight: float = 0.0,
     ):
         self._tickers = tickers
         self._bearish_ma200 = bearish_ma200
@@ -108,6 +109,11 @@ class LiveSignalEngine:
         self._bar_recorder = bar_recorder
         self._last_bar_received_at: Optional[datetime] = None
         self._stream_started_at: Optional[datetime] = None
+        # QQQ OR tracking: accumulate opening bars per window, compute pct when full.
+        self._qqq_or_state: dict = (
+            {w["label"]: {"bars": [], "pct": None} for w in self._windows}
+            if qqq_or_weight != 0.0 else {}
+        )
 
     def _append_bar(self, ticker: str, bar) -> pd.Series:
         new_row = pd.Series(
@@ -360,8 +366,34 @@ class LiveSignalEngine:
             volume=sum(float(b.volume) for b in bars),
         )
 
+    def _accumulate_qqq_or(self, bar: _FiveMinBar):
+        """Track QQQ's opening-range bars per window. Computes OR-return pct when full."""
+        bar_time = bar.timestamp.astimezone(ET).time()
+        for win in self._windows:
+            state = self._qqq_or_state[win["label"]]
+            if state["pct"] is not None:
+                continue
+            if bar_time < win["_opening_start_t"]:
+                continue
+            bars = state["bars"]
+            if len(bars) < win["opening_bars"]:
+                bars.append(bar)
+            if len(bars) == win["opening_bars"]:
+                first_open = float(bars[0].open)
+                last_close = float(bars[-1].close)
+                if first_open > 0:
+                    state["pct"] = (last_close - first_open) / first_open * 100
+
+    def get_qqq_or_pct(self, window_label: str) -> Optional[float]:
+        """Return QQQ's opening-range return (%) for the given window, or None if not yet computed."""
+        return self._qqq_or_state.get(window_label, {}).get("pct")
+
     def _process_five_min_bar(self, bar: _FiveMinBar):
         ticker = bar.symbol
+        if ticker == "QQQ":
+            if self._qqq_or_state:
+                self._accumulate_qqq_or(bar)
+            return
         latest = self._append_bar(ticker, bar)
 
         bar_time = bar.timestamp.astimezone(ET).time()
