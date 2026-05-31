@@ -455,6 +455,24 @@ def passes_dynamic_ev_gate(stats: dict, gate_state: Optional[dict]) -> bool:
     return stats["win_rate"] >= gate_state["min_wr"] and wl >= gate_state["min_wl"]
 
 
+def passes_direction_split_ev_gate(stats: dict, signal: str, ds_state: Optional[dict]) -> bool:
+    """Return True if the ticker clears the direction-split EV gate (or it's disabled).
+
+    Mirrors op_momentum_selector_backtest: a BULLISH signal must have
+    ev_trade_bullish >= the regime floor; a BEARISH signal must have
+    ev_trade_bearish >= the regime floor. This lets a ticker trade in a
+    direction it performs well in even when its combined EV is marginal.
+    """
+    if not ds_state:
+        return True
+    dir_ev = (
+        stats.get("ev_trade_bullish", 0.0)
+        if signal == "BULLISH"
+        else stats.get("ev_trade_bearish", 0.0)
+    )
+    return dir_ev >= ds_state["min_ev"]
+
+
 def select_top_n(
     n: int,
     tickers: list,
@@ -504,6 +522,10 @@ def select_top_n(
     al_bull_days: int = 20,
     al_neutral_days: int = 60,
     al_bear_days: int = 90,
+    direction_split_ev_gate: bool = False,
+    ds_bull_min_ev: float = 0.0,
+    ds_neutral_min_ev: float = 0.0,
+    ds_bear_min_ev: float = 0.0,
 ) -> list:
     if target_date is None:
         target_date = datetime.now(_ET).date()
@@ -609,6 +631,18 @@ def select_top_n(
                 "min_wl": _dg_min_wl,
             }
 
+    # Direction-split EV gate: regime-dependent floor on the signal-direction EV.
+    # Uses the same pool-vote regime tiers as the dynamic gate.
+    direction_split_ev_state = None
+    if direction_split_ev_gate:
+        if pool_vote >= dg_bull_threshold:
+            _ds_min_ev = ds_bull_min_ev
+        elif pool_vote <= dg_bear_threshold:
+            _ds_min_ev = ds_bear_min_ev
+        else:
+            _ds_min_ev = ds_neutral_min_ev
+        direction_split_ev_state = {"min_ev": _ds_min_ev}
+
     # Adaptive lookback: recompute stats over a regime-adjusted window (shorter in
     # bull, longer in bear). The dynamic-gate floor above stays derived from the
     # standard window, matching the backtest's ordering.
@@ -642,6 +676,7 @@ def select_top_n(
             "negative_ev": [],
             "rolling_stats": rolling_stats,
             "dynamic_ev_gate": dynamic_ev_gate_state,
+            "direction_split_ev": direction_split_ev_state,
             "scoring_context": {},
         }
 
@@ -729,6 +764,10 @@ def select_top_n(
             negative_ev.append(ticker)
             continue
 
+        if not passes_direction_split_ev_gate(stats, sig["signal"], direction_split_ev_state):
+            negative_ev.append(ticker)
+            continue
+
         if normalize_or_by_adr:
             _adr = adr_by_ticker.get(ticker, {}).get(target_date)
             if _adr and _adr > 0:
@@ -769,6 +808,7 @@ def select_top_n(
         "negative_ev": negative_ev,
         "rolling_stats": rolling_stats,
         "dynamic_ev_gate": dynamic_ev_gate_state,
+        "direction_split_ev": direction_split_ev_state,
         "scoring_context": scoring_context,
     }
 

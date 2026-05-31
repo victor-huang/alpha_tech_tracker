@@ -8,6 +8,7 @@ from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector import (
     select_top_n,
     score_ticker,
     passes_dynamic_ev_gate,
+    passes_direction_split_ev_gate,
 )
 
 ET = __import__("pytz").timezone("America/New_York")
@@ -564,3 +565,78 @@ class TestAdaptiveLookback:
     def test_disabled_adaptive_uses_standard_lookback(self):
         captured = self._capture_start(["AAA"], adaptive_lookback=False)
         assert captured["start_date"] == date(2025, 12, 2) - timedelta(days=60)
+
+
+class TestPassesDirectionSplitEvGate:
+    """passes_direction_split_ev_gate: directional EV floor per signal."""
+
+    def test_disabled_gate_passes_everything(self):
+        stats = {"ev_trade_bullish": -1.0, "ev_trade_bearish": -1.0}
+        assert passes_direction_split_ev_gate(stats, "BULLISH", None) is True
+
+    def test_bullish_uses_bullish_ev(self):
+        ds = {"min_ev": 0.0}
+        assert passes_direction_split_ev_gate(
+            {"ev_trade_bullish": 0.1, "ev_trade_bearish": -0.5}, "BULLISH", ds) is True
+
+    def test_bullish_excluded_when_bullish_ev_below_floor(self):
+        ds = {"min_ev": 0.0}
+        assert passes_direction_split_ev_gate(
+            {"ev_trade_bullish": -0.01, "ev_trade_bearish": 0.5}, "BULLISH", ds) is False
+
+    def test_bearish_uses_bearish_ev(self):
+        ds = {"min_ev": 0.0}
+        assert passes_direction_split_ev_gate(
+            {"ev_trade_bullish": -0.5, "ev_trade_bearish": 0.2}, "BEARISH", ds) is True
+
+    def test_bearish_excluded_when_bearish_ev_below_floor(self):
+        ds = {"min_ev": 0.0}
+        assert passes_direction_split_ev_gate(
+            {"ev_trade_bullish": 0.5, "ev_trade_bearish": -0.1}, "BEARISH", ds) is False
+
+
+class TestDirectionSplitEvInSelector:
+    """select_top_n: direction-split EV gate state + exclusion."""
+
+    def test_bearish_ticker_excluded_when_bearish_ev_negative(self):
+        tickers = ["AAA"]
+        # Combined EV positive (passes negative-EV gate) but bearish EV negative.
+        stats = {
+            **_BASE_STATS, "ev_trade": 0.3,
+            "ev_trade_bullish": 0.6, "ev_trade_bearish": -0.2,
+        }
+
+        with patch(f"{_SELECTOR_MODULE}.run_backtest", side_effect=_make_fake_backtest(tickers)), \
+             patch(f"{_SELECTOR_MODULE}.build_bearish_regime_dates", return_value=None), \
+             patch(f"{_SELECTOR_MODULE}.compute_ticker_stats", return_value=stats), \
+             patch(f"{_SELECTOR_MODULE}.compute_today_signals",
+                   return_value=_make_today_signals(tickers, {"AAA": {"signal": "BEARISH"}})):
+
+            result = select_top_n(
+                n=1, tickers=tickers, lookback_days=60, opening_bars=3,
+                bearish_ma200=False, stop_pct=0.15, source="alpaca",
+                target_date=date(2025, 12, 2),
+                ticker_dfs={t: pd.DataFrame() for t in tickers},
+                direction_split_ev_gate=True,
+            )
+
+        assert result["direction_split_ev"] == {"min_ev": 0.0}
+        assert "AAA" in result["negative_ev"]
+        assert result["picks"] == []
+
+    def test_disabled_by_default(self):
+        tickers = ["AAA"]
+        with patch(f"{_SELECTOR_MODULE}.run_backtest", side_effect=_make_fake_backtest(tickers)), \
+             patch(f"{_SELECTOR_MODULE}.build_bearish_regime_dates", return_value=None), \
+             patch(f"{_SELECTOR_MODULE}.compute_ticker_stats", return_value=dict(_BASE_STATS)), \
+             patch(f"{_SELECTOR_MODULE}.compute_today_signals",
+                   return_value=_make_today_signals(tickers)):
+
+            result = select_top_n(
+                n=1, tickers=tickers, lookback_days=60, opening_bars=3,
+                bearish_ma200=False, stop_pct=0.15, source="alpaca",
+                target_date=date(2025, 12, 2),
+                ticker_dfs={t: pd.DataFrame() for t in tickers},
+            )
+
+        assert result["direction_split_ev"] is None

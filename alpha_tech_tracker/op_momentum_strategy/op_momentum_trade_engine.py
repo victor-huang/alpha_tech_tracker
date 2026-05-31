@@ -691,6 +691,24 @@ def parse_args():
     parser.add_argument("--al-bear-days", type=int, default=90, dest="al_bear_days",
                         help="Lookback days in bear regime. Default: 90.")
     parser.add_argument(
+        "--direction-split-ev",
+        action="store_true",
+        default=False,
+        dest="direction_split_ev_gate",
+        help=(
+            "Gate on direction-specific EV: a BULLISH signal requires ev_trade_bullish "
+            ">= floor; a BEARISH signal requires ev_trade_bearish >= floor (regime floors "
+            "via --ds-*-min-ev). Default: off. Pass this to match the backtest, which "
+            "defaults it ON. Regime tiers reuse --dg-bull-threshold / --dg-bear-threshold."
+        ),
+    )
+    parser.add_argument("--ds-bull-min-ev", type=float, default=0.0, dest="ds_bull_min_ev",
+                        help="Min directional EV in bull regime. Default: 0.0.")
+    parser.add_argument("--ds-neutral-min-ev", type=float, default=0.0, dest="ds_neutral_min_ev",
+                        help="Min directional EV in neutral regime. Default: 0.0.")
+    parser.add_argument("--ds-bear-min-ev", type=float, default=0.0, dest="ds_bear_min_ev",
+                        help="Min directional EV in bear regime. Default: 0.0.")
+    parser.add_argument(
         "--feed",
         choices=["sip", "iex"],
         default="sip",
@@ -1048,6 +1066,10 @@ if __name__ == "__main__":
             al_bull_days=args.al_bull_days,
             al_neutral_days=args.al_neutral_days,
             al_bear_days=args.al_bear_days,
+            direction_split_ev_gate=args.direction_split_ev_gate,
+            ds_bull_min_ev=args.ds_bull_min_ev,
+            ds_neutral_min_ev=args.ds_neutral_min_ev,
+            ds_bear_min_ev=args.ds_bear_min_ev,
         )
         if args.replay_date or (args.replay_start and args.replay_end):
             _warn_replay_feed_mismatch(args)
@@ -1206,6 +1228,10 @@ if __name__ == "__main__":
             al_bull_days=args.al_bull_days,
             al_neutral_days=args.al_neutral_days,
             al_bear_days=args.al_bear_days,
+            direction_split_ev_gate=args.direction_split_ev_gate,
+            ds_bull_min_ev=args.ds_bull_min_ev,
+            ds_neutral_min_ev=args.ds_neutral_min_ev,
+            ds_bear_min_ev=args.ds_bear_min_ev,
         )
         engine.run(tickers_override=args.tickers)
     finally:

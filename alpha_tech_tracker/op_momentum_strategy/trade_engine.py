@@ -20,6 +20,7 @@ from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector import (
     score_ticker,
     select_top_n,
     passes_dynamic_ev_gate,
+    passes_direction_split_ev_gate,
 )
 from alpha_tech_tracker.trade_api.execution_client import ExecutionClient
 from alpha_tech_tracker.trade_api.market_data_client import MarketDataClient
@@ -143,6 +144,10 @@ class TickerSelector:
         al_bull_days: int = 20,
         al_neutral_days: int = 60,
         al_bear_days: int = 90,
+        direction_split_ev_gate: bool = False,
+        ds_bull_min_ev: float = 0.0,
+        ds_neutral_min_ev: float = 0.0,
+        ds_bear_min_ev: float = 0.0,
     ):
         self._tickers = tickers
         self._top_n = top_n
@@ -191,9 +196,14 @@ class TickerSelector:
             al_bull_days=al_bull_days,
             al_neutral_days=al_neutral_days,
             al_bear_days=al_bear_days,
+            direction_split_ev_gate=direction_split_ev_gate,
+            ds_bull_min_ev=ds_bull_min_ev,
+            ds_neutral_min_ev=ds_neutral_min_ev,
+            ds_bear_min_ev=ds_bear_min_ev,
         )
         self.rolling_stats: dict = {}
         self.dynamic_ev_gate_state: Optional[dict] = None
+        self.direction_split_ev_state: Optional[dict] = None
         self.scoring_context: dict = {}
 
     def _selector_cache_path(self, target_date: date) -> Path:
@@ -335,6 +345,7 @@ class TickerSelector:
 
         self.rolling_stats = result.get("rolling_stats", {})
         self.dynamic_ev_gate_state = result.get("dynamic_ev_gate")
+        self.direction_split_ev_state = result.get("direction_split_ev")
         self.scoring_context = result.get("scoring_context", {})
         selected = [p["ticker"] for p in picks]
         logger.info(
@@ -433,6 +444,10 @@ class OpMomentumTradeEngine:
         al_bull_days: int = 20,
         al_neutral_days: int = 60,
         al_bear_days: int = 90,
+        direction_split_ev_gate: bool = False,
+        ds_bull_min_ev: float = 0.0,
+        ds_neutral_min_ev: float = 0.0,
+        ds_bear_min_ev: float = 0.0,
     ):
         self._client = alpaca_client
         self._api_key = getattr(alpaca_client, "_api_key", None)
@@ -473,8 +488,13 @@ class OpMomentumTradeEngine:
             al_bull_days=al_bull_days,
             al_neutral_days=al_neutral_days,
             al_bear_days=al_bear_days,
+            direction_split_ev_gate=direction_split_ev_gate,
+            ds_bull_min_ev=ds_bull_min_ev,
+            ds_neutral_min_ev=ds_neutral_min_ev,
+            ds_bear_min_ev=ds_bear_min_ev,
         )
         self._dynamic_ev_gate_by_window: dict = {}
+        self._direction_split_ev_by_window: dict = {}
         self._scoring_context_by_window: dict = {}
         self._max_loss_pct = max_loss_pct
         self._daily_max_loss_usd = _D(str(daily_max_loss_usd)) if daily_max_loss_usd is not None else None
@@ -1966,6 +1986,7 @@ class OpMomentumTradeEngine:
 
         window_rolling_stats = self._rolling_stats_by_window.get(label, self._rolling_stats)
         gate_state = self._dynamic_ev_gate_by_window.get(label)
+        ds_state = self._direction_split_ev_by_window.get(label)
         window_scoring_context = self._scoring_context_by_window.get(label, {})
         scored = []
         for ticker, event in pending.items():
@@ -1989,6 +2010,21 @@ class OpMomentumTradeEngine:
                     label,
                     gate_state,
                     stats.get("ev_trade", 0),
+                )
+                continue
+            if not passes_direction_split_ev_gate(stats, event.signal, ds_state):
+                _dir_ev = (
+                    stats.get("ev_trade_bullish", 0.0)
+                    if event.signal == "BULLISH"
+                    else stats.get("ev_trade_bearish", 0.0)
+                )
+                logger.info(
+                    "Skipping %s [%s]: direction-split EV gate (%s) — %s dir_ev=%.3f",
+                    ticker,
+                    label,
+                    ds_state,
+                    event.signal,
+                    _dir_ev,
                 )
                 continue
             midpoint = (event.or_high + event.or_low) / _D("2")
@@ -2442,6 +2478,9 @@ class OpMomentumTradeEngine:
             self._dynamic_ev_gate_by_window[win.label] = (
                 unique_selectors[config_key].dynamic_ev_gate_state
             )
+            self._direction_split_ev_by_window[win.label] = (
+                unique_selectors[config_key].direction_split_ev_state
+            )
             self._scoring_context_by_window[win.label] = (
                 unique_selectors[config_key].scoring_context
             )
@@ -2548,6 +2587,7 @@ class OpMomentumTradeEngine:
         self._window_closed_primary_deployed = {}
         self._rolling_stats_by_window = {}
         self._dynamic_ev_gate_by_window = {}
+        self._direction_split_ev_by_window = {}
         self._scoring_context_by_window = {}
         self._daily_realized_pnl = _D("0")
         self._dd_timers = {}
@@ -2765,6 +2805,7 @@ class OpMomentumTradeEngine:
         self._window_closed_primary_deployed = {}
         self._rolling_stats_by_window = {}
         self._dynamic_ev_gate_by_window = {}
+        self._direction_split_ev_by_window = {}
         self._scoring_context_by_window = {}
         self._daily_realized_pnl = _D("0")
         self._dd_timers = {}
