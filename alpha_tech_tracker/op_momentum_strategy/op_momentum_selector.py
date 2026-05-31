@@ -680,9 +680,14 @@ def select_top_n(
             "scoring_context": {},
         }
 
-    # Pre-compute 20-day rolling ADR per ticker (prior-day, no lookahead).
+    # Pre-compute 20-day rolling ADR per ticker, resolved for target_date (prior-day,
+    # no lookahead). The value applicable to target_date is the rolling mean of the most
+    # recent trading day strictly before it — equivalent to the backtest's shift(1) keyed
+    # by day, and robust when the live data series ends the day before target_date (a
+    # fixed target_date key would be missing, silently disabling normalization).
     adr_by_ticker = {}
     if normalize_or_by_adr and ticker_dfs:
+        adr_target_ts = pd.Timestamp(target_date)
         for t, df in ticker_dfs.items():
             if df.empty:
                 continue
@@ -694,19 +699,17 @@ def select_top_n(
             ).dropna(subset=["Close"])
             daily.index = daily.index.normalize().tz_localize(None)
             daily["adr_pct"] = (daily["High"] - daily["Low"]) / daily["Close"] * 100
-            rolling_adr = daily["adr_pct"].rolling(adr_days, min_periods=5).mean().shift(1)
-            adr_by_ticker[t] = {
-                ts.date(): float(v)
-                for ts, v in rolling_adr.items()
-                if not pd.isna(v)
-            }
+            rolling_adr = daily["adr_pct"].rolling(adr_days, min_periods=5).mean()
+            prior = rolling_adr[rolling_adr.index < adr_target_ts]
+            if not prior.empty and not pd.isna(prior.iloc[-1]):
+                adr_by_ticker[t] = float(prior.iloc[-1])
 
     # Cross-sectional relative MA50 strength: ticker's prior-day MA50-distance minus
     # the pool mean on target_date - 1 (shift(1) matches backtest daily_context logic).
     rel_strength_by_ticker = {}
     if score_rel_strength_weight and ticker_dfs:
         ma50_dist_vals = {}
-        prev_date = target_date - timedelta(days=1)
+        target_ts = pd.Timestamp(target_date)
         for t, df in ticker_dfs.items():
             if df.empty:
                 continue
@@ -721,9 +724,12 @@ def select_top_n(
             # but we use yesterday's Open as proxy for the OR open (no-lookahead).
             # Match backtest: daily_ma50_dist_pct = (Open - MA50) / MA50 * 100, shift(1).
             dist = (daily["Open"] - ma50) / ma50 * 100
-            prev_ts = pd.Timestamp(prev_date)
-            if prev_ts in dist.index:
-                ma50_dist_vals[t] = float(dist[prev_ts])
+            # Most recent trading day strictly before target_date — matches the
+            # backtest's daily shift(1), and stays correct across weekends/holidays
+            # (a fixed target_date-1 calendar day breaks on Mondays/post-holidays).
+            prior = dist[dist.index < target_ts]
+            if not prior.empty and not np.isnan(prior.iloc[-1]):
+                ma50_dist_vals[t] = float(prior.iloc[-1])
         valid_vals = [v for v in ma50_dist_vals.values() if not np.isnan(v)]
         pool_mean = sum(valid_vals) / len(valid_vals) if valid_vals else 0.0
         for t, v in ma50_dist_vals.items():
@@ -734,7 +740,7 @@ def select_top_n(
     # OR-close drain time (it recomputes only the live OR-derived terms).
     scoring_context = {
         t: {
-            "adr": adr_by_ticker.get(t, {}).get(target_date) if normalize_or_by_adr else None,
+            "adr": adr_by_ticker.get(t) if normalize_or_by_adr else None,
             "rel_ma50_dist_pct": (
                 rel_strength_by_ticker.get(t, float("nan"))
                 if score_rel_strength_weight
@@ -769,7 +775,7 @@ def select_top_n(
             continue
 
         if normalize_or_by_adr:
-            _adr = adr_by_ticker.get(ticker, {}).get(target_date)
+            _adr = adr_by_ticker.get(ticker)
             if _adr and _adr > 0:
                 sig["or_range_pct"] = sig["or_range_pct"] / _adr
 

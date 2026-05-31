@@ -448,6 +448,7 @@ class OpMomentumTradeEngine:
         ds_bull_min_ev: float = 0.0,
         ds_neutral_min_ev: float = 0.0,
         ds_bear_min_ev: float = 0.0,
+        min_score: float = 0.0,
     ):
         self._client = alpaca_client
         self._api_key = getattr(alpaca_client, "_api_key", None)
@@ -493,6 +494,7 @@ class OpMomentumTradeEngine:
             ds_neutral_min_ev=ds_neutral_min_ev,
             ds_bear_min_ev=ds_bear_min_ev,
         )
+        self._min_score = min_score
         self._dynamic_ev_gate_by_window: dict = {}
         self._direction_split_ev_by_window: dict = {}
         self._scoring_context_by_window: dict = {}
@@ -2071,6 +2073,19 @@ class OpMomentumTradeEngine:
                 if qqq_or_pct is not None:
                     align = qqq_or_pct if event.signal == "BULLISH" else -qqq_or_pct
                     score += self._qqq_or_weight * align
+            # Drop low-conviction picks below the score floor, matching the backtest
+            # (which skips s < min_score after the QQQ-OR adjustment; default 0.0 drops
+            # negative scores). Without this the live engine would trade the least-bad
+            # candidate even when every signal scores negative.
+            if score < self._min_score:
+                logger.info(
+                    "Skipping %s [%s]: score=%.3f < min_score=%.3f",
+                    ticker,
+                    label,
+                    score,
+                    self._min_score,
+                )
+                continue
             scored.append((score, ticker, event))
             logger.info(
                 "Ranked %s [%s]: score=%.3f ev_trade=%.3f",

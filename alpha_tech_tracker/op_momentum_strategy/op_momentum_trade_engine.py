@@ -709,6 +709,18 @@ def parse_args():
     parser.add_argument("--ds-bear-min-ev", type=float, default=0.0, dest="ds_bear_min_ev",
                         help="Min directional EV in bear regime. Default: 0.0.")
     parser.add_argument(
+        "--min-score",
+        type=float,
+        default=0.0,
+        dest="min_score",
+        help=(
+            "Skip a pick if its composite score (after QQQ-OR adjustment) is below this "
+            "floor. Matches the backtest, which drops score < min_score by default. "
+            "Default: 0.0 (drops negative-score, low-conviction picks). Set very negative "
+            "to disable."
+        ),
+    )
+    parser.add_argument(
         "--feed",
         choices=["sip", "iex"],
         default="sip",
@@ -1070,6 +1082,7 @@ if __name__ == "__main__":
             ds_bull_min_ev=args.ds_bull_min_ev,
             ds_neutral_min_ev=args.ds_neutral_min_ev,
             ds_bear_min_ev=args.ds_bear_min_ev,
+            min_score=args.min_score,
         )
         if args.replay_date or (args.replay_start and args.replay_end):
             _warn_replay_feed_mismatch(args)
@@ -1232,6 +1245,7 @@ if __name__ == "__main__":
             ds_bull_min_ev=args.ds_bull_min_ev,
             ds_neutral_min_ev=args.ds_neutral_min_ev,
             ds_bear_min_ev=args.ds_bear_min_ev,
+            min_score=args.min_score,
         )
         engine.run(tickers_override=args.tickers)
     finally:

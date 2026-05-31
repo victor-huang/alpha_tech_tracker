@@ -640,3 +640,41 @@ class TestDirectionSplitEvInSelector:
             )
 
         assert result["direction_split_ev"] is None
+
+
+class TestContextResolvesWhenDataEndsBeforeTarget:
+    """ADR + rel-strength must resolve from the prior trading day when the bar data
+    ends the day before target_date (the live/replay case) — not silently disable."""
+
+    def test_adr_resolved_when_target_date_absent_from_bars(self):
+        # Bars end Friday; target is the following Monday (no Monday bars present).
+        bars = _make_multi_day_bars()
+        last_bar_date = bars.index[-1].date()
+        target = last_bar_date + timedelta(days=3)  # skip weekend
+        ticker_dfs = {"AAA": bars}
+        raw_or_range_pct = 2.0
+        scored_sigs = []
+
+        def capture_score(sig, stats, **kwargs):
+            scored_sigs.append(dict(sig))
+            return score_ticker(sig, stats, **kwargs)
+
+        with patch(f"{_SELECTOR_MODULE}.run_backtest",
+                   side_effect=lambda **kw: {"AAA": pd.DataFrame({"date": [last_bar_date]})}), \
+             patch(f"{_SELECTOR_MODULE}.build_bearish_regime_dates", return_value=None), \
+             patch(f"{_SELECTOR_MODULE}.compute_ticker_stats", return_value=dict(_BASE_STATS)), \
+             patch(f"{_SELECTOR_MODULE}.compute_today_signals", return_value={
+                 "AAA": {**_BASE_SIGNAL, "or_range_pct": raw_or_range_pct},
+             }), \
+             patch(f"{_SELECTOR_MODULE}.score_ticker", side_effect=capture_score):
+
+            result = select_top_n(
+                n=1, tickers=["AAA"], lookback_days=30, opening_bars=3,
+                bearish_ma200=False, stop_pct=0.15, source="alpaca",
+                target_date=target, ticker_dfs=ticker_dfs,
+                normalize_or_by_adr=True, adr_days=20,
+            )
+
+        # ADR resolved from the prior trading day -> normalization applied (not skipped).
+        assert scored_sigs[0]["or_range_pct"] < raw_or_range_pct
+        assert result["scoring_context"]["AAA"]["adr"] is not None
