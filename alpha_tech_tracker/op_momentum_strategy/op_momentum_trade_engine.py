@@ -539,6 +539,70 @@ def parse_args():
         help="Skip ticker if rolling ev_trade < threshold (default: 0.0, matches backtest behavior).",
     )
     parser.add_argument(
+        "--ma-momentum-gate",
+        action="store_true",
+        default=False,
+        dest="ma_momentum_gate",
+        help=(
+            "Suppress signals where the OR range does not overlap both MA20 and MA50 "
+            "in the signal direction (BULLISH: or_high >= MA20 and MA50; "
+            "BEARISH: or_low <= MA20 and MA50). Default: off."
+        ),
+    )
+    parser.add_argument(
+        "--normalize-or-by-adr",
+        action="store_true",
+        default=False,
+        dest="normalize_or_by_adr",
+        help=(
+            "Normalize each ticker's OR range pct by its prior 20-day ADR before "
+            "scoring. Levels the playing field between high/low volatility tickers. "
+            "Default: off."
+        ),
+    )
+    parser.add_argument(
+        "--score-entry-weight",
+        type=float,
+        default=0.50,
+        dest="score_entry_weight",
+        help="Scoring weight for entry_vs_mid_pct (default: 0.50).",
+    )
+    parser.add_argument(
+        "--score-avg-win-weight",
+        type=float,
+        default=0.30,
+        dest="score_avg_win_weight",
+        help="Scoring weight for historical avg_win_pct (default: 0.30).",
+    )
+    parser.add_argument(
+        "--score-win-rate-weight",
+        type=float,
+        default=0.0,
+        dest="score_win_rate_weight",
+        help="Scoring weight for rolling win_rate (default: 0.0).",
+    )
+    parser.add_argument(
+        "--score-rel-strength-weight",
+        type=float,
+        default=0.0,
+        dest="score_rel_strength_weight",
+        help=(
+            "Scoring weight for cross-sectional relative MA50 strength vs pool mean. "
+            "Direction-aware: rewards BULLISH outperformers and BEARISH underperformers. "
+            "Default: 0.0."
+        ),
+    )
+    parser.add_argument(
+        "--min-pool-vote",
+        type=int,
+        default=0,
+        dest="min_pool_vote_to_trade",
+        help=(
+            "Skip day if fewer than N tickers in the pool have positive rolling EV. "
+            "Default: 0 (off)."
+        ),
+    )
+    parser.add_argument(
         "--feed",
         choices=["sip", "iex"],
         default="sip",
@@ -867,6 +931,13 @@ if __name__ == "__main__":
             trailing_ma_switch=args.trailing_ma_switch,
             trailing_ma_switch_factor=args.trailing_ma_switch_factor,
             trailing_ma_switch_period=args.trailing_ma_switch_period,
+            ma_momentum_gate=args.ma_momentum_gate,
+            score_entry_weight=args.score_entry_weight,
+            score_avg_win_weight=args.score_avg_win_weight,
+            score_win_rate_weight=args.score_win_rate_weight,
+            score_rel_strength_weight=args.score_rel_strength_weight,
+            normalize_or_by_adr=args.normalize_or_by_adr,
+            min_pool_vote_to_trade=args.min_pool_vote_to_trade,
         )
         if args.replay_date or (args.replay_start and args.replay_end):
             _warn_replay_feed_mismatch(args)
@@ -996,6 +1067,13 @@ if __name__ == "__main__":
             trailing_ma_switch=args.trailing_ma_switch,
             trailing_ma_switch_factor=args.trailing_ma_switch_factor,
             trailing_ma_switch_period=args.trailing_ma_switch_period,
+            ma_momentum_gate=args.ma_momentum_gate,
+            score_entry_weight=args.score_entry_weight,
+            score_avg_win_weight=args.score_avg_win_weight,
+            score_win_rate_weight=args.score_win_rate_weight,
+            score_rel_strength_weight=args.score_rel_strength_weight,
+            normalize_or_by_adr=args.normalize_or_by_adr,
+            min_pool_vote_to_trade=args.min_pool_vote_to_trade,
         )
         engine.run(tickers_override=args.tickers)
     finally:

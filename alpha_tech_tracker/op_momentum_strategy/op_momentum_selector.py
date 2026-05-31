@@ -454,6 +454,13 @@ def select_top_n(
     max_loss_pct: float = None,
     armed_ma20_exit: bool = False,
     feed: DataFeed = None,
+    score_entry_weight: float = 0.50,
+    score_avg_win_weight: float = 0.30,
+    score_win_rate_weight: float = 0.0,
+    score_rel_strength_weight: float = 0.0,
+    normalize_or_by_adr: bool = False,
+    adr_days: int = 20,
+    min_pool_vote_to_trade: int = 0,
 ) -> list:
     if target_date is None:
         target_date = datetime.now(_ET).date()
@@ -510,6 +517,65 @@ def select_top_n(
         bearish_regime_dates=_bearish_regime_dates,
     )
 
+    if min_pool_vote_to_trade > 0:
+        pool_vote = sum(1 for s in rolling_stats.values() if s["ev_trade"] > 0)
+        if pool_vote < min_pool_vote_to_trade:
+            return {
+                "picks": [],
+                "no_signal": list(tickers),
+                "negative_ev": [],
+                "rolling_stats": rolling_stats,
+            }
+
+    # Pre-compute 20-day rolling ADR per ticker (prior-day, no lookahead).
+    adr_by_ticker = {}
+    if normalize_or_by_adr and ticker_dfs:
+        for t, df in ticker_dfs.items():
+            if df.empty:
+                continue
+            mh = df.between_time("09:30", "16:00")
+            daily = mh.resample("D").agg(
+                High=("High", "max"),
+                Low=("Low", "min"),
+                Close=("Close", "last"),
+            ).dropna(subset=["Close"])
+            daily.index = daily.index.normalize().tz_localize(None)
+            daily["adr_pct"] = (daily["High"] - daily["Low"]) / daily["Close"] * 100
+            rolling_adr = daily["adr_pct"].rolling(adr_days, min_periods=5).mean().shift(1)
+            adr_by_ticker[t] = {
+                ts.date(): float(v)
+                for ts, v in rolling_adr.items()
+                if not pd.isna(v)
+            }
+
+    # Cross-sectional relative MA50 strength: ticker's prior-day MA50-distance minus
+    # the pool mean on target_date - 1 (shift(1) matches backtest daily_context logic).
+    rel_strength_by_ticker = {}
+    if score_rel_strength_weight and ticker_dfs:
+        ma50_dist_vals = {}
+        prev_date = target_date - timedelta(days=1)
+        for t, df in ticker_dfs.items():
+            if df.empty:
+                continue
+            mh = df.between_time("09:30", "16:00")
+            daily = mh.resample("D").agg(
+                Open=("Open", "first"),
+                Close=("Close", "last"),
+            ).dropna(subset=["Close"])
+            daily.index = daily.index.normalize().tz_localize(None)
+            ma50 = daily["Close"].rolling(50, min_periods=20).mean()
+            # shift(1): today's dist uses yesterday's close for MA50 computation,
+            # but we use yesterday's Open as proxy for the OR open (no-lookahead).
+            # Match backtest: daily_ma50_dist_pct = (Open - MA50) / MA50 * 100, shift(1).
+            dist = (daily["Open"] - ma50) / ma50 * 100
+            prev_ts = pd.Timestamp(prev_date)
+            if prev_ts in dist.index:
+                ma50_dist_vals[t] = float(dist[prev_ts])
+        valid_vals = [v for v in ma50_dist_vals.values() if not np.isnan(v)]
+        pool_mean = sum(valid_vals) / len(valid_vals) if valid_vals else 0.0
+        for t, v in ma50_dist_vals.items():
+            rel_strength_by_ticker[t] = (v - pool_mean) if not np.isnan(v) else float("nan")
+
     scored = []
     no_signal = []
     negative_ev = []
@@ -519,14 +585,30 @@ def select_top_n(
             no_signal.append(ticker)
             continue
 
-        sig = today_signals[ticker]
+        sig = dict(today_signals[ticker])  # copy — normalize_or_by_adr mutates or_range_pct
         stats = rolling_stats.get(ticker, compute_ticker_stats(pd.DataFrame()))
 
         if stats["ev_trade"] <= 0:
             negative_ev.append(ticker)
             continue
 
-        s = score_ticker(sig, stats)
+        if normalize_or_by_adr:
+            _adr = adr_by_ticker.get(ticker, {}).get(target_date)
+            if _adr and _adr > 0:
+                sig["or_range_pct"] = sig["or_range_pct"] / _adr
+
+        daily_ctx = None
+        if score_rel_strength_weight:
+            daily_ctx = {"rel_ma50_dist_pct": rel_strength_by_ticker.get(ticker, float("nan"))}
+
+        s = score_ticker(
+            sig, stats,
+            score_entry_weight=score_entry_weight,
+            score_avg_win_weight=score_avg_win_weight,
+            score_win_rate_weight=score_win_rate_weight,
+            score_rel_strength_weight=score_rel_strength_weight,
+            daily_context=daily_ctx,
+        )
         scored.append(
             {
                 "ticker": ticker,

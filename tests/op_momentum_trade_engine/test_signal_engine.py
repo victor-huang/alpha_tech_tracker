@@ -1654,3 +1654,131 @@ class TestOnBarWarmupPeriodGuard:
 
         assert engine._minute_buf["APP"]["bars"] != []
 
+
+class TestMaMomentumGate:
+    """ma_momentum_gate=True: suppress signals where OR range doesn't overlap MA20+MA50."""
+
+    def _make_engine(self, gate: bool = True):
+        fired = []
+        engine = LiveSignalEngine(
+            tickers=["NVDA"],
+            opening_bars=3,
+            on_signal=fired.append,
+            ma_momentum_gate=gate,
+        )
+        return engine, fired
+
+    def _set_history(self, engine, close, ma20, ma50, ma200=None):
+        today = datetime.now(ET).date()
+        timestamps = [
+            ET.localize(datetime.combine(today, datetime.min.time()) + timedelta(hours=9, minutes=30 + i * 5))
+            for i in range(3)
+        ]
+        closes = [close - 2.0, close - 1.0, close]
+        ma200_val = ma200 if ma200 is not None else close - 20.0
+        df = pd.DataFrame(
+            {
+                "Open": closes,
+                "High": [c + 1.0 for c in closes],
+                "Low": [c - 1.0 for c in closes],
+                "Close": closes,
+                "Volume": [1000.0] * 3,
+                "MA20": [ma20] * 3,
+                "MA50": [ma50] * 3,
+                "MA200": [ma200_val] * 3,
+                "MA8": [close - 0.5] * 3,
+            },
+            index=timestamps,
+        )
+        engine._history["NVDA"] = df
+
+    def _make_or_buf(self, or_high, or_low):
+        return _make_mock_bars("NVDA", highs=[or_high] * 3, lows=[or_low] * 3)
+
+    def test_bullish_gate_passes_when_or_high_above_both_mas(self):
+        engine, fired = self._make_engine(gate=True)
+        # close=106 > midpoint=100, MA20=100, MA50=98 → bullish
+        # or_high=107 >= MA20=100 and >= MA50=98 → gate passes
+        self._set_history(engine, close=106.0, ma20=100.0, ma50=98.0)
+        engine._opening_buf["W1"]["NVDA"] = self._make_or_buf(107.0, 93.0)
+        engine._try_fire_signal("NVDA", engine._history["NVDA"].iloc[-1], engine._windows[0])
+
+        assert len(fired) == 1
+        assert fired[0].signal == "BULLISH"
+
+    def test_bullish_gate_suppresses_when_or_high_below_ma50(self):
+        engine, fired = self._make_engine(gate=True)
+        # close=106 > midpoint, MA20=100, MA50=110 → or_high=107 < MA50=110
+        self._set_history(engine, close=106.0, ma20=100.0, ma50=110.0)
+        engine._opening_buf["W1"]["NVDA"] = self._make_or_buf(107.0, 93.0)
+        engine._try_fire_signal("NVDA", engine._history["NVDA"].iloc[-1], engine._windows[0])
+
+        assert len(fired) == 0
+
+    def test_bullish_gate_suppresses_when_or_high_below_ma20(self):
+        engine, fired = self._make_engine(gate=True)
+        # close=106, MA20=112, MA50=98: or_high=107 < MA20=112
+        self._set_history(engine, close=106.0, ma20=112.0, ma50=98.0, ma200=85.0)
+        engine._opening_buf["W1"]["NVDA"] = self._make_or_buf(107.0, 93.0)
+        engine._try_fire_signal("NVDA", engine._history["NVDA"].iloc[-1], engine._windows[0])
+
+        assert len(fired) == 0
+
+    def test_bearish_gate_passes_when_or_low_below_both_mas(self):
+        engine, fired = self._make_engine(gate=True)
+        # OR: high=105, low=95; close=96 <= bottom_30=97; MA20=105, MA50=108, MA200=110
+        # bearish: close < ma20 ✓; or_low=95 <= MA20=105 and MA50=108 → gate passes
+        self._set_history(engine, close=96.0, ma20=105.0, ma50=108.0, ma200=110.0)
+        engine._opening_buf["W1"]["NVDA"] = self._make_or_buf(105.0, 95.0)
+        engine._try_fire_signal("NVDA", engine._history["NVDA"].iloc[-1], engine._windows[0])
+
+        assert len(fired) == 1
+        assert fired[0].signal == "BEARISH"
+
+    def test_bearish_gate_suppresses_when_or_low_above_ma50(self):
+        engine, fired = self._make_engine(gate=True)
+        # OR: high=105, low=95; close=96 <= bottom_30; MA20=105, MA50=90
+        # or_low=95 > MA50=90 → gate suppresses
+        self._set_history(engine, close=96.0, ma20=105.0, ma50=90.0, ma200=110.0)
+        engine._opening_buf["W1"]["NVDA"] = self._make_or_buf(105.0, 95.0)
+        engine._try_fire_signal("NVDA", engine._history["NVDA"].iloc[-1], engine._windows[0])
+
+        assert len(fired) == 0
+
+    def test_gate_off_by_default_does_not_suppress(self):
+        engine, fired = self._make_engine(gate=False)
+        # Same setup that would be suppressed if gate=True (BULLISH: or_high=107 < MA50=110)
+        self._set_history(engine, close=106.0, ma20=100.0, ma50=110.0)
+        engine._opening_buf["W1"]["NVDA"] = self._make_or_buf(107.0, 93.0)
+        engine._try_fire_signal("NVDA", engine._history["NVDA"].iloc[-1], engine._windows[0])
+
+        assert len(fired) == 1
+
+    def test_gate_suppresses_when_ma50_is_nan(self):
+        engine, fired = self._make_engine(gate=True)
+        today = datetime.now(ET).date()
+        timestamps = [
+            ET.localize(datetime.combine(today, datetime.min.time()) + timedelta(hours=9, minutes=30 + i * 5))
+            for i in range(3)
+        ]
+        closes = [104.0, 105.0, 106.0]
+        df = pd.DataFrame(
+            {
+                "Open": closes,
+                "High": [c + 1.0 for c in closes],
+                "Low": [c - 1.0 for c in closes],
+                "Close": closes,
+                "Volume": [1000.0] * 3,
+                "MA20": [100.0] * 3,
+                "MA50": [float("nan")] * 3,
+                "MA200": [85.0] * 3,
+                "MA8": [105.0] * 3,
+            },
+            index=timestamps,
+        )
+        engine._history["NVDA"] = df
+        engine._opening_buf["W1"]["NVDA"] = self._make_or_buf(107.0, 93.0)
+        engine._try_fire_signal("NVDA", df.iloc[-1], engine._windows[0])
+
+        assert len(fired) == 0
+

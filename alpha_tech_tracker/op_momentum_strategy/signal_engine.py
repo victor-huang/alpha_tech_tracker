@@ -56,9 +56,11 @@ class LiveSignalEngine:
         bar_recorder: BarRecorder = None,
         or_bar_lookback: int = 3,
         trailing_ma_switch_period: int = 8,
+        ma_momentum_gate: bool = False,
     ):
         self._tickers = tickers
         self._bearish_ma200 = bearish_ma200
+        self._ma_momentum_gate = ma_momentum_gate
         self._regime_filter = regime_filter
         self._regime_ma = regime_ma
         self._bearish_regime_dates: set = set()
@@ -205,6 +207,29 @@ class LiveSignalEngine:
                 win["label"],
             )
             return
+
+        if self._ma_momentum_gate:
+            if pd.isna(ma50):
+                logger.info(
+                    "%s [%s]: ma_momentum_gate: MA50 not ready, skipping signal",
+                    ticker, win["label"],
+                )
+                return
+            ma50_d = _D(ma50)
+            if signal == "BULLISH":
+                if not (or_high >= ma20_d and or_high >= ma50_d):
+                    logger.info(
+                        "%s [%s]: ma_momentum_gate: BULLISH suppressed — OR high %.4f below MA20 %.4f or MA50 %.4f",
+                        ticker, win["label"], float(or_high), float(ma20_d), float(ma50_d),
+                    )
+                    return
+            else:
+                if not (or_low <= ma20_d and or_low <= ma50_d):
+                    logger.info(
+                        "%s [%s]: ma_momentum_gate: BEARISH suppressed — OR low %.4f above MA20 %.4f or MA50 %.4f",
+                        ticker, win["label"], float(or_low), float(ma20_d), float(ma50_d),
+                    )
+                    return
 
         ma50_val = _D(ma50) if not pd.isna(ma50) else close
 

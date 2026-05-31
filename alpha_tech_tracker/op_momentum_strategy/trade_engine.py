@@ -113,6 +113,13 @@ class TickerSelector:
         trailing_ma: str = "ma20",
         max_loss_pct: Optional[float] = None,
         armed_ma20_exit: bool = False,
+        ma_momentum_gate: bool = False,
+        score_entry_weight: float = 0.50,
+        score_avg_win_weight: float = 0.30,
+        score_win_rate_weight: float = 0.0,
+        score_rel_strength_weight: float = 0.0,
+        normalize_or_by_adr: bool = False,
+        min_pool_vote_to_trade: int = 0,
     ):
         self._tickers = tickers
         self._top_n = top_n
@@ -129,6 +136,13 @@ class TickerSelector:
         self._trailing_ma = trailing_ma
         self._max_loss_pct = max_loss_pct
         self._armed_ma20_exit = armed_ma20_exit
+        self._ma_momentum_gate = ma_momentum_gate
+        self._score_entry_weight = score_entry_weight
+        self._score_avg_win_weight = score_avg_win_weight
+        self._score_win_rate_weight = score_win_rate_weight
+        self._score_rel_strength_weight = score_rel_strength_weight
+        self._normalize_or_by_adr = normalize_or_by_adr
+        self._min_pool_vote_to_trade = min_pool_vote_to_trade
         self.rolling_stats: dict = {}
 
     def _selector_cache_path(self, target_date: date) -> Path:
@@ -173,6 +187,15 @@ class TickerSelector:
 
         source = "tradestation" if self._market_data_client is not None else "alpaca"
 
+        _scoring_kwargs = dict(
+            score_entry_weight=self._score_entry_weight,
+            score_avg_win_weight=self._score_avg_win_weight,
+            score_win_rate_weight=self._score_win_rate_weight,
+            score_rel_strength_weight=self._score_rel_strength_weight,
+            normalize_or_by_adr=self._normalize_or_by_adr,
+            min_pool_vote_to_trade=self._min_pool_vote_to_trade,
+        )
+
         if is_replay_mode():
             # In replay mode, recompute selector scores fresh using the replay
             # date as target_date so the 60-day lookback matches the backtest.
@@ -195,6 +218,7 @@ class TickerSelector:
                 max_loss_pct=self._max_loss_pct,
                 armed_ma20_exit=self._armed_ma20_exit,
                 feed=self._score_feed,
+                **_scoring_kwargs,
             )
             picks = result["picks"]
         else:
@@ -216,6 +240,7 @@ class TickerSelector:
                 max_loss_pct=self._max_loss_pct,
                 armed_ma20_exit=self._armed_ma20_exit,
                 feed=self._score_feed,
+                **_scoring_kwargs,
             )
             picks = result["picks"]
 
@@ -246,6 +271,7 @@ class TickerSelector:
                     max_loss_pct=self._max_loss_pct,
                     armed_ma20_exit=self._armed_ma20_exit,
                     feed=self._score_feed,
+                    **_scoring_kwargs,
                 )
                 picks = result["picks"]
 
@@ -318,6 +344,13 @@ class OpMomentumTradeEngine:
         trailing_ma_switch: str = "none",
         trailing_ma_switch_factor: float = 1.0,
         trailing_ma_switch_period: int = 8,
+        ma_momentum_gate: bool = False,
+        score_entry_weight: float = 0.50,
+        score_avg_win_weight: float = 0.30,
+        score_win_rate_weight: float = 0.0,
+        score_rel_strength_weight: float = 0.0,
+        normalize_or_by_adr: bool = False,
+        min_pool_vote_to_trade: int = 0,
     ):
         self._client = alpaca_client
         self._api_key = getattr(alpaca_client, "_api_key", None)
@@ -328,6 +361,13 @@ class OpMomentumTradeEngine:
         self._trailing_ma_switch = trailing_ma_switch
         self._trailing_ma_switch_factor = trailing_ma_switch_factor
         self._trailing_ma_switch_period = trailing_ma_switch_period
+        self._ma_momentum_gate = ma_momentum_gate
+        self._score_entry_weight = score_entry_weight
+        self._score_avg_win_weight = score_avg_win_weight
+        self._score_win_rate_weight = score_win_rate_weight
+        self._score_rel_strength_weight = score_rel_strength_weight
+        self._normalize_or_by_adr = normalize_or_by_adr
+        self._min_pool_vote_to_trade = min_pool_vote_to_trade
         self._max_loss_pct = max_loss_pct
         self._daily_max_loss_usd = _D(str(daily_max_loss_usd)) if daily_max_loss_usd is not None else None
         self._daily_realized_pnl = _D("0")
@@ -2216,6 +2256,13 @@ class OpMomentumTradeEngine:
                     trailing_ma=self._trailing_ma,
                     max_loss_pct=self._max_loss_pct,
                     armed_ma20_exit=self._armed_ma20_exit,
+                    ma_momentum_gate=self._ma_momentum_gate,
+                    score_entry_weight=self._score_entry_weight,
+                    score_avg_win_weight=self._score_avg_win_weight,
+                    score_win_rate_weight=self._score_win_rate_weight,
+                    score_rel_strength_weight=self._score_rel_strength_weight,
+                    normalize_or_by_adr=self._normalize_or_by_adr,
+                    min_pool_vote_to_trade=self._min_pool_vote_to_trade,
                 )
                 if first_config_key is None:
                     first_config_key = config_key
@@ -2422,6 +2469,7 @@ class OpMomentumTradeEngine:
             bar_recorder=bar_recorder,
             or_bar_lookback=self._or_bar_lookback,
             trailing_ma_switch_period=self._trailing_ma_switch_period,
+            ma_momentum_gate=self._ma_momentum_gate,
         )
         try:
             account = self._client.get_accounts()
@@ -2596,6 +2644,7 @@ class OpMomentumTradeEngine:
             windows=engine_windows,
             or_bar_lookback=self._or_bar_lookback,
             trailing_ma_switch_period=self._trailing_ma_switch_period,
+            ma_momentum_gate=self._ma_momentum_gate,
         )
         self._signal_engine.start_replay(replay_date, market_data_client=self._market_data_client)
 
