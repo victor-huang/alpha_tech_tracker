@@ -344,3 +344,81 @@ class TestRelStrengthWeight:
             assert ctx is not None
             assert "rel_ma50_dist_pct" in ctx
             assert isinstance(ctx["rel_ma50_dist_pct"], float)
+
+
+class TestEvTrend:
+    """score_ev_trend_weight and ev_trend_days flow through select_top_n."""
+
+    def test_ev_trend_weight_passed_to_score_ticker(self):
+        tickers = ["AAA"]
+        captured_kwargs = []
+
+        def capture(sig, stats, **kwargs):
+            captured_kwargs.append(kwargs)
+            return score_ticker(sig, stats, **kwargs)
+
+        with patch(f"{_SELECTOR_MODULE}.run_backtest", side_effect=_make_fake_backtest(tickers)), \
+             patch(f"{_SELECTOR_MODULE}.build_bearish_regime_dates", return_value=None), \
+             patch(f"{_SELECTOR_MODULE}.compute_ticker_stats", return_value=dict(_BASE_STATS)), \
+             patch(f"{_SELECTOR_MODULE}.compute_today_signals",
+                   return_value=_make_today_signals(tickers)), \
+             patch(f"{_SELECTOR_MODULE}.score_ticker", side_effect=capture):
+
+            select_top_n(
+                n=1, tickers=tickers, lookback_days=30, opening_bars=3,
+                bearish_ma200=False, stop_pct=0.15, source="alpaca",
+                target_date=date(2025, 12, 2), ticker_dfs={t: pd.DataFrame() for t in tickers},
+                score_ev_trend_weight=0.15,
+            )
+
+        assert len(captured_kwargs) == 1
+        assert captured_kwargs[0]["score_ev_trend_weight"] == 0.15
+
+    def test_ev_trend_days_passed_to_compute_ticker_stats(self):
+        tickers = ["AAA"]
+        captured_recent_days = []
+
+        def fake_stats(df, **kwargs):
+            captured_recent_days.append(kwargs.get("recent_days"))
+            return dict(_BASE_STATS)
+
+        with patch(f"{_SELECTOR_MODULE}.run_backtest",
+                   side_effect=lambda **kw: {"AAA": pd.DataFrame({"date": [date(2025, 12, 1)]})}), \
+             patch(f"{_SELECTOR_MODULE}.build_bearish_regime_dates", return_value=None), \
+             patch(f"{_SELECTOR_MODULE}.compute_ticker_stats", side_effect=fake_stats), \
+             patch(f"{_SELECTOR_MODULE}.compute_today_signals",
+                   return_value=_make_today_signals(tickers)):
+
+            select_top_n(
+                n=1, tickers=tickers, lookback_days=30, opening_bars=3,
+                bearish_ma200=False, stop_pct=0.15, source="alpaca",
+                target_date=date(2025, 12, 2), ticker_dfs={t: pd.DataFrame() for t in tickers},
+                ev_trend_days=7,
+            )
+
+        # First call is from the rolling_stats dict comprehension
+        assert captured_recent_days[0] == 7
+
+    def test_ev_trend_default_weight_is_zero(self):
+        tickers = ["AAA"]
+        captured_kwargs = []
+
+        def capture(sig, stats, **kwargs):
+            captured_kwargs.append(kwargs)
+            return score_ticker(sig, stats, **kwargs)
+
+        with patch(f"{_SELECTOR_MODULE}.run_backtest", side_effect=_make_fake_backtest(tickers)), \
+             patch(f"{_SELECTOR_MODULE}.build_bearish_regime_dates", return_value=None), \
+             patch(f"{_SELECTOR_MODULE}.compute_ticker_stats", return_value=dict(_BASE_STATS)), \
+             patch(f"{_SELECTOR_MODULE}.compute_today_signals",
+                   return_value=_make_today_signals(tickers)), \
+             patch(f"{_SELECTOR_MODULE}.score_ticker", side_effect=capture):
+
+            select_top_n(
+                n=1, tickers=tickers, lookback_days=30, opening_bars=3,
+                bearish_ma200=False, stop_pct=0.15, source="alpaca",
+                target_date=date(2025, 12, 2), ticker_dfs={t: pd.DataFrame() for t in tickers},
+            )
+
+        assert len(captured_kwargs) == 1
+        assert captured_kwargs[0]["score_ev_trend_weight"] == 0.0

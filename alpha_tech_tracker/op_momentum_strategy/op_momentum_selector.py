@@ -458,9 +458,11 @@ def select_top_n(
     score_avg_win_weight: float = 0.30,
     score_win_rate_weight: float = 0.0,
     score_rel_strength_weight: float = 0.0,
+    score_ev_trend_weight: float = 0.0,
     normalize_or_by_adr: bool = False,
     adr_days: int = 20,
     min_pool_vote_to_trade: int = 0,
+    ev_trend_days: int = 15,
 ) -> list:
     if target_date is None:
         target_date = datetime.now(_ET).date()
@@ -500,7 +502,8 @@ def select_top_n(
 
     rolling_stats = {
         ticker: compute_ticker_stats(
-            df[df["date"] < target_date] if not df.empty else df
+            df[df["date"] < target_date] if not df.empty else df,
+            recent_days=ev_trend_days,
         )
         for ticker, df in all_results.items()
     }
@@ -607,6 +610,7 @@ def select_top_n(
             score_avg_win_weight=score_avg_win_weight,
             score_win_rate_weight=score_win_rate_weight,
             score_rel_strength_weight=score_rel_strength_weight,
+            score_ev_trend_weight=score_ev_trend_weight,
             daily_context=daily_ctx,
         )
         scored.append(

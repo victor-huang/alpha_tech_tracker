@@ -118,8 +118,10 @@ class TickerSelector:
         score_avg_win_weight: float = 0.30,
         score_win_rate_weight: float = 0.0,
         score_rel_strength_weight: float = 0.0,
+        score_ev_trend_weight: float = 0.0,
         normalize_or_by_adr: bool = False,
         min_pool_vote_to_trade: int = 0,
+        ev_trend_days: int = 15,
     ):
         self._tickers = tickers
         self._top_n = top_n
@@ -141,8 +143,10 @@ class TickerSelector:
         self._score_avg_win_weight = score_avg_win_weight
         self._score_win_rate_weight = score_win_rate_weight
         self._score_rel_strength_weight = score_rel_strength_weight
+        self._score_ev_trend_weight = score_ev_trend_weight
         self._normalize_or_by_adr = normalize_or_by_adr
         self._min_pool_vote_to_trade = min_pool_vote_to_trade
+        self._ev_trend_days = ev_trend_days
         self.rolling_stats: dict = {}
 
     def _selector_cache_path(self, target_date: date) -> Path:
@@ -192,8 +196,10 @@ class TickerSelector:
             score_avg_win_weight=self._score_avg_win_weight,
             score_win_rate_weight=self._score_win_rate_weight,
             score_rel_strength_weight=self._score_rel_strength_weight,
+            score_ev_trend_weight=self._score_ev_trend_weight,
             normalize_or_by_adr=self._normalize_or_by_adr,
             min_pool_vote_to_trade=self._min_pool_vote_to_trade,
+            ev_trend_days=self._ev_trend_days,
         )
 
         if is_replay_mode():
@@ -349,8 +355,10 @@ class OpMomentumTradeEngine:
         score_avg_win_weight: float = 0.30,
         score_win_rate_weight: float = 0.0,
         score_rel_strength_weight: float = 0.0,
+        score_ev_trend_weight: float = 0.0,
         normalize_or_by_adr: bool = False,
         min_pool_vote_to_trade: int = 0,
+        ev_trend_days: int = 15,
     ):
         self._client = alpaca_client
         self._api_key = getattr(alpaca_client, "_api_key", None)
@@ -366,8 +374,10 @@ class OpMomentumTradeEngine:
         self._score_avg_win_weight = score_avg_win_weight
         self._score_win_rate_weight = score_win_rate_weight
         self._score_rel_strength_weight = score_rel_strength_weight
+        self._score_ev_trend_weight = score_ev_trend_weight
         self._normalize_or_by_adr = normalize_or_by_adr
         self._min_pool_vote_to_trade = min_pool_vote_to_trade
+        self._ev_trend_days = ev_trend_days
         self._max_loss_pct = max_loss_pct
         self._daily_max_loss_usd = _D(str(daily_max_loss_usd)) if daily_max_loss_usd is not None else None
         self._daily_realized_pnl = _D("0")
@@ -2261,8 +2271,10 @@ class OpMomentumTradeEngine:
                     score_avg_win_weight=self._score_avg_win_weight,
                     score_win_rate_weight=self._score_win_rate_weight,
                     score_rel_strength_weight=self._score_rel_strength_weight,
+                    score_ev_trend_weight=self._score_ev_trend_weight,
                     normalize_or_by_adr=self._normalize_or_by_adr,
                     min_pool_vote_to_trade=self._min_pool_vote_to_trade,
+                    ev_trend_days=self._ev_trend_days,
                 )
                 if first_config_key is None:
                     first_config_key = config_key

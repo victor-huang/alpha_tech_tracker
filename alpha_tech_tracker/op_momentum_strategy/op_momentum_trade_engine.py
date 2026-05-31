@@ -603,6 +603,20 @@ def parse_args():
         ),
     )
     parser.add_argument(
+        "--score-ev-trend-weight",
+        type=float,
+        default=0.0,
+        dest="score_ev_trend_weight",
+        help="Scoring weight for ev_trend (recent EV minus full-window EV). Default: 0.0 (off).",
+    )
+    parser.add_argument(
+        "--ev-trend-days",
+        type=int,
+        default=15,
+        dest="ev_trend_days",
+        help="Calendar days for the recent EV window used in ev_trend computation. Default: 15.",
+    )
+    parser.add_argument(
         "--feed",
         choices=["sip", "iex"],
         default="sip",
@@ -936,8 +950,10 @@ if __name__ == "__main__":
             score_avg_win_weight=args.score_avg_win_weight,
             score_win_rate_weight=args.score_win_rate_weight,
             score_rel_strength_weight=args.score_rel_strength_weight,
+            score_ev_trend_weight=args.score_ev_trend_weight,
             normalize_or_by_adr=args.normalize_or_by_adr,
             min_pool_vote_to_trade=args.min_pool_vote_to_trade,
+            ev_trend_days=args.ev_trend_days,
         )
         if args.replay_date or (args.replay_start and args.replay_end):
             _warn_replay_feed_mismatch(args)
@@ -1072,8 +1088,10 @@ if __name__ == "__main__":
             score_avg_win_weight=args.score_avg_win_weight,
             score_win_rate_weight=args.score_win_rate_weight,
             score_rel_strength_weight=args.score_rel_strength_weight,
+            score_ev_trend_weight=args.score_ev_trend_weight,
             normalize_or_by_adr=args.normalize_or_by_adr,
             min_pool_vote_to_trade=args.min_pool_vote_to_trade,
+            ev_trend_days=args.ev_trend_days,
         )
         engine.run(tickers_override=args.tickers)
     finally:
