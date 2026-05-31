@@ -377,13 +377,14 @@ def _apply_capital_flow(
                 }
             )
             win_pnl = 0.0
+            eff_w = _effective_weights(weights, len(rows))
             for row in rows:
                 row["window_capital"] = win_capital
                 if skipped:
                     row["cap_pnl"] = 0.0
                     row["skipped"] = True
                 else:
-                    slot_capital = win_capital * weights[row["rank"] - 1]
+                    slot_capital = win_capital * eff_w[row["rank"] - 1]
                     row["slot_capital"] = slot_capital
                     if row.get("reentry_cancelled_by_dd"):
                         row["cap_pnl"] = _compute_primary_cap_pnl(row, slot_capital)
@@ -549,13 +550,14 @@ def _apply_capital_flow(
                 }
             )
             win_pnl = 0.0
+            eff_w = _effective_weights(weights, len(rows))
             for row in rows:
                 row["window_capital"] = available
                 if skipped:
                     row["cap_pnl"] = 0.0
                     row["skipped"] = True
                 else:
-                    slot_capital = available * weights[row["rank"] - 1]
+                    slot_capital = available * eff_w[row["rank"] - 1]
                     row["slot_capital"] = slot_capital
                     if row.get("reentry_cancelled_by_dd"):
                         row["cap_pnl"] = _compute_primary_cap_pnl(row, slot_capital)
@@ -2248,6 +2250,23 @@ def _collect_baseline(
     if not frames:
         return pd.DataFrame()
     return pd.concat(frames, ignore_index=True)
+
+
+def _effective_weights(weights: list, n_picks: int) -> list:
+    """Redistribute weights when fewer picks than configured top-N.
+
+    When a day has fewer picks than the configured top-N (e.g. 2 picks with
+    top-5 and weights [0.2, 0.2, 0.2, 0.2, 0.2]), redeploy the full window
+    capital proportionally across the actual picks instead of leaving idle
+    capital.  Weights are renormalized to sum to 1.0 over the actual picks.
+    """
+    if n_picks == 0 or n_picks >= len(weights):
+        return weights
+    slice_ = weights[:n_picks]
+    total = sum(slice_)
+    if total <= 0:
+        return [1.0 / n_picks] * n_picks
+    return [w / total for w in slice_]
 
 
 def _parse_weights(weights_input: list, n: int) -> list:
