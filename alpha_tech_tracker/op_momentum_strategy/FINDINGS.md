@@ -981,6 +981,20 @@ Two optional gates were implemented and swept across 2021–2026:
 - **DD is net-positive overall** even with real losses exposed: the break-even mechanic has been replaced by a tight proportionate stop that still allows the strategy to capture the upside when the survivor continues moving.
 
 
+## Findings 19–21 — Bull Regime Parameter Fine-Tuning (May 2026)
+
+**Date**: 2026-05-30  
+**Moved to**: [`bull_case_param_fine_tune_05_2026.md`](bull_case_param_fine_tune_05_2026.md)
+
+Three sessions of oracle gap analysis, OR bar count sweep, and stop-pct sweep for the May 2026 bull regime. Key outcomes:
+- Remove CHTR from pool when QQQ > MA50 (+5.12pp May)
+- Change `--stop-pct 0.40` → `--stop-pct 0.45` (+3.26pp May, neutral Apr+May)
+- Keep 3 OR bars and top=1 (robust defaults confirmed)
+
+Tuned config: May 2026 **+12.26%** vs +3.28% original and +9.52% QQQ B&H.
+
+---
+
 ## Finding 18 — BRU MA50 Guard: Does Requiring Close > MA50 Improve Bullish Re-entry? (2025–2026)
 
 **Question**: After a BULLISH position stops out, should the BRU (bullish re-entry) watcher require `close > MA50` in addition to `close > or_high` before re-entering a CALL — mirroring the BRE MA20 guard?

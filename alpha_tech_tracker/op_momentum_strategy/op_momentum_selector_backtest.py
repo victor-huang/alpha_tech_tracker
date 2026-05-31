@@ -1132,6 +1132,8 @@ def run_selector_backtest(
     qqq_regime_bear_ctp_ma_cross: bool = False,
     qqq_regime_bear_ctp_below_ma: bool = False,
     qqq_regime_bear_ctp_below_ma200: bool = False,
+    min_entry_vs_mid: float = 0.0,
+    score_gap_tiebreak: float = 0.0,
 ) -> tuple:
     """
     Walk each trading day in [eval_start, eval_end], apply rolling selector
@@ -2030,7 +2032,12 @@ def run_selector_backtest(
             elif random_picks:
                 picks_today = random.sample(scored, min(n, len(scored)))
             else:
+                if min_entry_vs_mid > 0.0:
+                    scored = [s for s in scored if s["entry_vs_mid_pct"] > min_entry_vs_mid]
                 scored.sort(key=lambda x: x["score"], reverse=True)
+                if score_gap_tiebreak > 0.0 and len(scored) >= 2:
+                    if scored[0]["score"] - scored[1]["score"] < score_gap_tiebreak:
+                        scored.sort(key=lambda x: x["entry_vs_mid_pct"], reverse=True)
                 picks_today = scored[:n]
             for rank, pick in enumerate(picks_today, 1):
                 picked_today.add(pick["ticker"])
@@ -4005,6 +4012,22 @@ def _parse_args():
         help="Overnight gap weight. Direction-aware: gap down rewards BEARISH, gap up rewards BULLISH. Default: 0.00.",
     )
     parser.add_argument(
+        "--min-entry-vs-mid",
+        type=float,
+        default=0.0,
+        dest="min_entry_vs_mid",
+        help="Skip ticker if entry_vs_mid_pct <= threshold. Filters weak-entry (near-midpoint) trades that "
+             "tend to stall and exit via fallback. Default: 0.0 (disabled). Recommended: 0.80.",
+    )
+    parser.add_argument(
+        "--score-gap-tiebreak",
+        type=float,
+        default=0.0,
+        dest="score_gap_tiebreak",
+        help="When score gap between #1 and #2 is < threshold, tiebreak by entry_vs_mid_pct instead. "
+             "Default: 0.0 (disabled). Recommended: 0.50.",
+    )
+    parser.add_argument(
         "--min-or-range",
         type=float,
         default=0.0,
@@ -4427,6 +4450,10 @@ if __name__ == "__main__":
     else:
         min_or_range_desc = "disabled"
     print(f"  Min OR range : {min_or_range_desc}")
+    if args.min_entry_vs_mid > 0:
+        print(f"  Entry gate   : entry_vs_mid_pct > {args.min_entry_vs_mid:.2f} (skip weak-entry stall trades)")
+    if args.score_gap_tiebreak > 0:
+        print(f"  Gap tiebreak : score gap < {args.score_gap_tiebreak:.2f} → tiebreak by entry_vs_mid_pct")
     if args.min_ma200_distance > 0:
         ma200_wins_str = (
             ",".join(args.min_ma200_distance_windows)
@@ -4625,6 +4652,8 @@ if __name__ == "__main__":
         qqq_regime_bear_ctp_ma_cross=args.qqq_regime_bear_ctp_ma_cross,
         qqq_regime_bear_ctp_below_ma=args.qqq_regime_bear_ctp_below_ma,
         qqq_regime_bear_ctp_below_ma200=args.qqq_regime_bear_ctp_below_ma200,
+        min_entry_vs_mid=args.min_entry_vs_mid,
+        score_gap_tiebreak=args.score_gap_tiebreak,
     )
 
     skip_log = _apply_capital_flow(
