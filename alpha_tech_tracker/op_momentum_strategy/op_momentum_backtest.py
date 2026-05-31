@@ -2100,6 +2100,7 @@ def run_backtest(
     stale_cut_mins: int = 0,
     stale_cut_threshold: float = 0.0,
     exit_at_bar_close: bool = True,
+    ma_momentum_gate: bool = False,
 ) -> dict:
     if ticker_dfs is None:
         ticker_dfs = fetch_bars(tickers, start_date, end_date, source=source)
@@ -2142,6 +2143,7 @@ def run_backtest(
             stale_cut_mins=stale_cut_mins,
             stale_cut_threshold=stale_cut_threshold,
             exit_at_bar_close=exit_at_bar_close,
+            ma_momentum_gate=ma_momentum_gate,
         )
         if not results.empty:
             results = results[results["date"] >= start_date].reset_index(drop=True)

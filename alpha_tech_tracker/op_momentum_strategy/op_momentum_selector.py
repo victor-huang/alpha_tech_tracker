@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 import pytz
 from datetime import date, datetime, timedelta
+from typing import Optional
 
 from alpaca.data.enums import DataFeed
 
@@ -435,6 +436,25 @@ def score_ticker(
     )
 
 
+def passes_dynamic_ev_gate(stats: dict, gate_state: Optional[dict]) -> bool:
+    """Return True if the ticker clears the dynamic EV gate (or the gate is disabled).
+
+    Mirrors the per-ticker exclusion in op_momentum_selector_backtest:
+    - percentile mode: skip when ev_trade is below the pool-derived EV floor.
+    - threshold mode: skip when win_rate or win/loss ratio is below the regime floor.
+    """
+    if not gate_state:
+        return True
+    if gate_state["mode"] == "percentile":
+        return stats["ev_trade"] >= gate_state["ev_floor"]
+    wl = (
+        abs(stats["avg_win_pct"] / stats["avg_loss_pct"])
+        if stats.get("avg_loss_pct")
+        else 0.0
+    )
+    return stats["win_rate"] >= gate_state["min_wr"] and wl >= gate_state["min_wl"]
+
+
 def select_top_n(
     n: int,
     tickers: list,
@@ -463,17 +483,47 @@ def select_top_n(
     adr_days: int = 20,
     min_pool_vote_to_trade: int = 0,
     ev_trend_days: int = 15,
+    ma_momentum_gate: bool = False,
+    min_ev: float = 0.0,
+    dynamic_ev_gate: bool = False,
+    dg_mode: str = "percentile",
+    dg_bull_threshold: int = 10,
+    dg_bear_threshold: int = 5,
+    dg_bull_exclude_pct: float = 0.10,
+    dg_neutral_exclude_pct: float = 0.25,
+    dg_bear_exclude_pct: float = 0.40,
+    dg_bull_min_wr: float = 0.30,
+    dg_neutral_min_wr: float = 0.33,
+    dg_bear_min_wr: float = 0.38,
+    dg_bull_min_wl: float = 1.3,
+    dg_neutral_min_wl: float = 1.5,
+    dg_bear_min_wl: float = 1.8,
+    adaptive_lookback: bool = False,
+    al_bull_threshold: int = 10,
+    al_bear_threshold: int = 5,
+    al_bull_days: int = 20,
+    al_neutral_days: int = 60,
+    al_bear_days: int = 90,
 ) -> list:
     if target_date is None:
         target_date = datetime.now(_ET).date()
 
     lookback_start = target_date - timedelta(days=lookback_days)
+    # Adaptive lookback may slice stats over a longer window (al_bear_days) than the
+    # standard lookback; the backtest must cover the widest possible window so those
+    # slices are not silently truncated.
+    backtest_lookback_days = (
+        max(lookback_days, al_bull_days, al_neutral_days, al_bear_days)
+        if adaptive_lookback
+        else lookback_days
+    )
+    backtest_start = target_date - timedelta(days=backtest_lookback_days)
 
     if ticker_dfs is None:
         # Single fetch covering both the rolling lookback and MA warmup windows.
         # MA warmup needs 30 days; use min() so a longer lookback_days still works.
         ma_warmup_start = target_date - timedelta(days=30)
-        fetch_start = min(lookback_start, ma_warmup_start)
+        fetch_start = min(backtest_start, ma_warmup_start)
         ticker_dfs = fetch_bars(
             tickers,
             fetch_start,
@@ -483,7 +533,7 @@ def select_top_n(
 
     all_results = run_backtest(
         tickers=tickers,
-        start_date=lookback_start,
+        start_date=backtest_start,
         end_date=target_date,
         opening_bars=opening_bars,
         bearish_ma200=bearish_ma200,
@@ -498,15 +548,80 @@ def select_top_n(
         trailing_ma=trailing_ma,
         max_loss_pct=max_loss_pct,
         armed_ma20_exit=armed_ma20_exit,
+        ma_momentum_gate=ma_momentum_gate,
     )
 
-    rolling_stats = {
-        ticker: compute_ticker_stats(
-            df[df["date"] < target_date] if not df.empty else df,
-            recent_days=ev_trend_days,
-        )
-        for ticker, df in all_results.items()
-    }
+    def _stats_over(start):
+        return {
+            ticker: compute_ticker_stats(
+                df[(df["date"] >= start) & (df["date"] < target_date)]
+                if not df.empty
+                else df,
+                recent_days=ev_trend_days,
+            )
+            for ticker, df in all_results.items()
+        }
+
+    rolling_stats = _stats_over(lookback_start)
+
+    # Pool vote (# tickers with positive rolling EV) drives both the dynamic EV gate
+    # regime and the adaptive lookback window. Computed from the standard-lookback
+    # stats, matching run_selector_backtest (no lookahead — prior-day data only).
+    pool_vote = sum(1 for s in rolling_stats.values() if s["ev_trade"] > 0)
+
+    # Dynamic EV gate: derive the per-day floor (percentile) or WR/W-L thresholds
+    # from the standard-lookback stats, before any adaptive-lookback recompute.
+    dynamic_ev_gate_state = None
+    if dynamic_ev_gate:
+        if pool_vote >= dg_bull_threshold:
+            _dg_regime = "bull"
+        elif pool_vote <= dg_bear_threshold:
+            _dg_regime = "bear"
+        else:
+            _dg_regime = "neutral"
+        if dg_mode == "percentile":
+            candidate_evs = sorted(
+                s["ev_trade"] for s in rolling_stats.values() if s["ev_trade"] > min_ev
+            )
+            _excl_pct = {"bull": dg_bull_exclude_pct, "bear": dg_bear_exclude_pct}.get(
+                _dg_regime, dg_neutral_exclude_pct
+            )
+            if candidate_evs:
+                cutoff_idx = int(len(candidate_evs) * _excl_pct)
+                _dg_ev_floor = (
+                    candidate_evs[cutoff_idx]
+                    if cutoff_idx < len(candidate_evs)
+                    else candidate_evs[-1]
+                )
+            else:
+                _dg_ev_floor = min_ev
+            dynamic_ev_gate_state = {"mode": "percentile", "ev_floor": _dg_ev_floor}
+        else:
+            _dg_min_wr = {"bull": dg_bull_min_wr, "bear": dg_bear_min_wr}.get(
+                _dg_regime, dg_neutral_min_wr
+            )
+            _dg_min_wl = {"bull": dg_bull_min_wl, "bear": dg_bear_min_wl}.get(
+                _dg_regime, dg_neutral_min_wl
+            )
+            dynamic_ev_gate_state = {
+                "mode": "threshold",
+                "min_wr": _dg_min_wr,
+                "min_wl": _dg_min_wl,
+            }
+
+    # Adaptive lookback: recompute stats over a regime-adjusted window (shorter in
+    # bull, longer in bear). The dynamic-gate floor above stays derived from the
+    # standard window, matching the backtest's ordering.
+    if adaptive_lookback:
+        if pool_vote >= al_bull_threshold:
+            _al_days = al_bull_days
+        elif pool_vote <= al_bear_threshold:
+            _al_days = al_bear_days
+        else:
+            _al_days = al_neutral_days
+        _al_lookback_start = target_date - timedelta(days=_al_days)
+        if _al_lookback_start != lookback_start:
+            rolling_stats = _stats_over(_al_lookback_start)
 
     _bearish_regime_dates = (
         build_bearish_regime_dates(lookback_start, target_date, source, regime_ma, feed=feed)
@@ -520,15 +635,15 @@ def select_top_n(
         bearish_regime_dates=_bearish_regime_dates,
     )
 
-    if min_pool_vote_to_trade > 0:
-        pool_vote = sum(1 for s in rolling_stats.values() if s["ev_trade"] > 0)
-        if pool_vote < min_pool_vote_to_trade:
-            return {
-                "picks": [],
-                "no_signal": list(tickers),
-                "negative_ev": [],
-                "rolling_stats": rolling_stats,
-            }
+    if min_pool_vote_to_trade > 0 and pool_vote < min_pool_vote_to_trade:
+        return {
+            "picks": [],
+            "no_signal": list(tickers),
+            "negative_ev": [],
+            "rolling_stats": rolling_stats,
+            "dynamic_ev_gate": dynamic_ev_gate_state,
+            "scoring_context": {},
+        }
 
     # Pre-compute 20-day rolling ADR per ticker (prior-day, no lookahead).
     adr_by_ticker = {}
@@ -579,6 +694,21 @@ def select_top_n(
         for t, v in ma50_dist_vals.items():
             rel_strength_by_ticker[t] = (v - pool_mean) if not np.isnan(v) else float("nan")
 
+    # Per-ticker scoring context resolved for target_date — exposed so the live trade
+    # engine can reproduce the exact ADR normalization and rel-strength scoring at
+    # OR-close drain time (it recomputes only the live OR-derived terms).
+    scoring_context = {
+        t: {
+            "adr": adr_by_ticker.get(t, {}).get(target_date) if normalize_or_by_adr else None,
+            "rel_ma50_dist_pct": (
+                rel_strength_by_ticker.get(t, float("nan"))
+                if score_rel_strength_weight
+                else float("nan")
+            ),
+        }
+        for t in tickers
+    }
+
     scored = []
     no_signal = []
     negative_ev = []
@@ -592,6 +722,10 @@ def select_top_n(
         stats = rolling_stats.get(ticker, compute_ticker_stats(pd.DataFrame()))
 
         if stats["ev_trade"] <= 0:
+            negative_ev.append(ticker)
+            continue
+
+        if not passes_dynamic_ev_gate(stats, dynamic_ev_gate_state):
             negative_ev.append(ticker)
             continue
 
@@ -634,6 +768,8 @@ def select_top_n(
         "no_signal": no_signal,
         "negative_ev": negative_ev,
         "rolling_stats": rolling_stats,
+        "dynamic_ev_gate": dynamic_ev_gate_state,
+        "scoring_context": scoring_context,
     }
 
 

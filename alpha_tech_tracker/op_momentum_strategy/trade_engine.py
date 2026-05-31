@@ -19,6 +19,7 @@ from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector import (
 
     score_ticker,
     select_top_n,
+    passes_dynamic_ev_gate,
 )
 from alpha_tech_tracker.trade_api.execution_client import ExecutionClient
 from alpha_tech_tracker.trade_api.market_data_client import MarketDataClient
@@ -122,6 +123,26 @@ class TickerSelector:
         normalize_or_by_adr: bool = False,
         min_pool_vote_to_trade: int = 0,
         ev_trend_days: int = 15,
+        min_ev: float = 0.0,
+        dynamic_ev_gate: bool = False,
+        dg_mode: str = "percentile",
+        dg_bull_threshold: int = 10,
+        dg_bear_threshold: int = 5,
+        dg_bull_exclude_pct: float = 0.10,
+        dg_neutral_exclude_pct: float = 0.25,
+        dg_bear_exclude_pct: float = 0.40,
+        dg_bull_min_wr: float = 0.30,
+        dg_neutral_min_wr: float = 0.33,
+        dg_bear_min_wr: float = 0.38,
+        dg_bull_min_wl: float = 1.3,
+        dg_neutral_min_wl: float = 1.5,
+        dg_bear_min_wl: float = 1.8,
+        adaptive_lookback: bool = False,
+        al_bull_threshold: int = 10,
+        al_bear_threshold: int = 5,
+        al_bull_days: int = 20,
+        al_neutral_days: int = 60,
+        al_bear_days: int = 90,
     ):
         self._tickers = tickers
         self._top_n = top_n
@@ -147,7 +168,33 @@ class TickerSelector:
         self._normalize_or_by_adr = normalize_or_by_adr
         self._min_pool_vote_to_trade = min_pool_vote_to_trade
         self._ev_trend_days = ev_trend_days
+        self._adaptive_lookback = adaptive_lookback
+        self._al_bear_days = al_bear_days
+        self._dynamic_ev_gate_kwargs = dict(
+            min_ev=min_ev,
+            dynamic_ev_gate=dynamic_ev_gate,
+            dg_mode=dg_mode,
+            dg_bull_threshold=dg_bull_threshold,
+            dg_bear_threshold=dg_bear_threshold,
+            dg_bull_exclude_pct=dg_bull_exclude_pct,
+            dg_neutral_exclude_pct=dg_neutral_exclude_pct,
+            dg_bear_exclude_pct=dg_bear_exclude_pct,
+            dg_bull_min_wr=dg_bull_min_wr,
+            dg_neutral_min_wr=dg_neutral_min_wr,
+            dg_bear_min_wr=dg_bear_min_wr,
+            dg_bull_min_wl=dg_bull_min_wl,
+            dg_neutral_min_wl=dg_neutral_min_wl,
+            dg_bear_min_wl=dg_bear_min_wl,
+            adaptive_lookback=adaptive_lookback,
+            al_bull_threshold=al_bull_threshold,
+            al_bear_threshold=al_bear_threshold,
+            al_bull_days=al_bull_days,
+            al_neutral_days=al_neutral_days,
+            al_bear_days=al_bear_days,
+        )
         self.rolling_stats: dict = {}
+        self.dynamic_ev_gate_state: Optional[dict] = None
+        self.scoring_context: dict = {}
 
     def _selector_cache_path(self, target_date: date) -> Path:
         tickers_hash = hashlib.md5(",".join(sorted(self._tickers)).encode()).hexdigest()[:8]
@@ -166,7 +213,10 @@ class TickerSelector:
     def fetch_bars(self) -> dict:
         """Fetch and return bar data without running the selector. Can be passed to select()."""
         today = _now_et().date()
-        fetch_start = today - timedelta(days=max(self._lookback_days, 30) + 5)
+        _eff_lookback = max(self._lookback_days, 30)
+        if self._adaptive_lookback:
+            _eff_lookback = max(_eff_lookback, self._al_bear_days)
+        fetch_start = today - timedelta(days=_eff_lookback + 5)
         bars_end = today - timedelta(days=1)
         if self._market_data_client is not None:
             return fetch_bars(
@@ -200,6 +250,8 @@ class TickerSelector:
             normalize_or_by_adr=self._normalize_or_by_adr,
             min_pool_vote_to_trade=self._min_pool_vote_to_trade,
             ev_trend_days=self._ev_trend_days,
+            ma_momentum_gate=self._ma_momentum_gate,
+            **self._dynamic_ev_gate_kwargs,
         )
 
         if is_replay_mode():
@@ -282,6 +334,8 @@ class TickerSelector:
                 picks = result["picks"]
 
         self.rolling_stats = result.get("rolling_stats", {})
+        self.dynamic_ev_gate_state = result.get("dynamic_ev_gate")
+        self.scoring_context = result.get("scoring_context", {})
         selected = [p["ticker"] for p in picks]
         logger.info(
             "Selector picks: %s | no_signal: %s | negative_ev: %s",
@@ -360,6 +414,25 @@ class OpMomentumTradeEngine:
         min_pool_vote_to_trade: int = 0,
         ev_trend_days: int = 15,
         qqq_or_weight: float = 0.0,
+        dynamic_ev_gate: bool = False,
+        dg_mode: str = "percentile",
+        dg_bull_threshold: int = 10,
+        dg_bear_threshold: int = 5,
+        dg_bull_exclude_pct: float = 0.10,
+        dg_neutral_exclude_pct: float = 0.25,
+        dg_bear_exclude_pct: float = 0.40,
+        dg_bull_min_wr: float = 0.30,
+        dg_neutral_min_wr: float = 0.33,
+        dg_bear_min_wr: float = 0.38,
+        dg_bull_min_wl: float = 1.3,
+        dg_neutral_min_wl: float = 1.5,
+        dg_bear_min_wl: float = 1.8,
+        adaptive_lookback: bool = False,
+        al_bull_threshold: int = 10,
+        al_bear_threshold: int = 5,
+        al_bull_days: int = 20,
+        al_neutral_days: int = 60,
+        al_bear_days: int = 90,
     ):
         self._client = alpaca_client
         self._api_key = getattr(alpaca_client, "_api_key", None)
@@ -380,6 +453,29 @@ class OpMomentumTradeEngine:
         self._min_pool_vote_to_trade = min_pool_vote_to_trade
         self._ev_trend_days = ev_trend_days
         self._qqq_or_weight = qqq_or_weight
+        self._dynamic_ev_gate_kwargs = dict(
+            dynamic_ev_gate=dynamic_ev_gate,
+            dg_mode=dg_mode,
+            dg_bull_threshold=dg_bull_threshold,
+            dg_bear_threshold=dg_bear_threshold,
+            dg_bull_exclude_pct=dg_bull_exclude_pct,
+            dg_neutral_exclude_pct=dg_neutral_exclude_pct,
+            dg_bear_exclude_pct=dg_bear_exclude_pct,
+            dg_bull_min_wr=dg_bull_min_wr,
+            dg_neutral_min_wr=dg_neutral_min_wr,
+            dg_bear_min_wr=dg_bear_min_wr,
+            dg_bull_min_wl=dg_bull_min_wl,
+            dg_neutral_min_wl=dg_neutral_min_wl,
+            dg_bear_min_wl=dg_bear_min_wl,
+            adaptive_lookback=adaptive_lookback,
+            al_bull_threshold=al_bull_threshold,
+            al_bear_threshold=al_bear_threshold,
+            al_bull_days=al_bull_days,
+            al_neutral_days=al_neutral_days,
+            al_bear_days=al_bear_days,
+        )
+        self._dynamic_ev_gate_by_window: dict = {}
+        self._scoring_context_by_window: dict = {}
         self._max_loss_pct = max_loss_pct
         self._daily_max_loss_usd = _D(str(daily_max_loss_usd)) if daily_max_loss_usd is not None else None
         self._daily_realized_pnl = _D("0")
@@ -1869,6 +1965,8 @@ class OpMomentumTradeEngine:
         )
 
         window_rolling_stats = self._rolling_stats_by_window.get(label, self._rolling_stats)
+        gate_state = self._dynamic_ev_gate_by_window.get(label)
+        window_scoring_context = self._scoring_context_by_window.get(label, {})
         scored = []
         for ticker, event in pending.items():
             stats = window_rolling_stats.get(ticker)
@@ -1884,6 +1982,15 @@ class OpMomentumTradeEngine:
                     self._min_ev,
                 )
                 continue
+            if not passes_dynamic_ev_gate(stats, gate_state):
+                logger.info(
+                    "Skipping %s [%s]: dynamic EV gate (%s) — ev_trade=%.3f",
+                    ticker,
+                    label,
+                    gate_state,
+                    stats.get("ev_trade", 0),
+                )
+                continue
             midpoint = (event.or_high + event.or_low) / _D("2")
             entry_vs_mid_pct = (
                 float(abs(event.entry_price - midpoint) / midpoint * 100)
@@ -1895,6 +2002,20 @@ class OpMomentumTradeEngine:
                 if event.entry_price != 0
                 else 0.0
             )
+            # Reproduce the selector's full scoring: ADR-normalize the OR range and
+            # supply the rel-strength daily context so live drain scores match the
+            # backtest (which applies both). Context is resolved by select_top_n for
+            # the target date and carried over per window.
+            ticker_ctx = window_scoring_context.get(ticker, {})
+            if self._normalize_or_by_adr:
+                _adr = ticker_ctx.get("adr")
+                if _adr and _adr > 0:
+                    or_range_pct = or_range_pct / _adr
+            daily_ctx = None
+            if self._score_rel_strength_weight:
+                daily_ctx = {
+                    "rel_ma50_dist_pct": ticker_ctx.get("rel_ma50_dist_pct", float("nan"))
+                }
             sig_dict = {
                 "entry_vs_mid_pct": entry_vs_mid_pct,
                 "or_range_pct": or_range_pct,
@@ -1906,6 +2027,8 @@ class OpMomentumTradeEngine:
                 score_avg_win_weight=self._score_avg_win_weight,
                 score_win_rate_weight=self._score_win_rate_weight,
                 score_ev_trend_weight=self._score_ev_trend_weight,
+                score_rel_strength_weight=self._score_rel_strength_weight,
+                daily_context=daily_ctx,
             )
             if self._qqq_or_weight and self._signal_engine is not None:
                 qqq_or_pct = self._signal_engine.get_qqq_or_pct(label)
@@ -2289,6 +2412,8 @@ class OpMomentumTradeEngine:
                     normalize_or_by_adr=self._normalize_or_by_adr,
                     min_pool_vote_to_trade=self._min_pool_vote_to_trade,
                     ev_trend_days=self._ev_trend_days,
+                    min_ev=self._min_ev,
+                    **self._dynamic_ev_gate_kwargs,
                 )
                 if first_config_key is None:
                     first_config_key = config_key
@@ -2314,6 +2439,12 @@ class OpMomentumTradeEngine:
         for win in self._windows:
             config_key = (win.opening_start, win.opening_bars)
             self._rolling_stats_by_window[win.label] = unique_selectors[config_key].rolling_stats
+            self._dynamic_ev_gate_by_window[win.label] = (
+                unique_selectors[config_key].dynamic_ev_gate_state
+            )
+            self._scoring_context_by_window[win.label] = (
+                unique_selectors[config_key].scoring_context
+            )
 
         first_win = self._windows[0]
         return config_picks[(first_win.opening_start, first_win.opening_bars)]
@@ -2416,6 +2547,8 @@ class OpMomentumTradeEngine:
         self._window_primary_deployed = {}
         self._window_closed_primary_deployed = {}
         self._rolling_stats_by_window = {}
+        self._dynamic_ev_gate_by_window = {}
+        self._scoring_context_by_window = {}
         self._daily_realized_pnl = _D("0")
         self._dd_timers = {}
         self._dd_fired = set()
@@ -2631,6 +2764,8 @@ class OpMomentumTradeEngine:
         self._window_primary_deployed = {}
         self._window_closed_primary_deployed = {}
         self._rolling_stats_by_window = {}
+        self._dynamic_ev_gate_by_window = {}
+        self._scoring_context_by_window = {}
         self._daily_realized_pnl = _D("0")
         self._dd_timers = {}
         self._dd_fired = set()

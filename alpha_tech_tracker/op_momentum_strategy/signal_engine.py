@@ -110,10 +110,19 @@ class LiveSignalEngine:
         self._last_bar_received_at: Optional[datetime] = None
         self._stream_started_at: Optional[datetime] = None
         # QQQ OR tracking: accumulate opening bars per window, compute pct when full.
+        # All windows share a single QQQ OR — the M1 (or first) window's opening-range
+        # return — used as a market-regime signal, matching op_momentum_selector_backtest
+        # (which derives one qqq_or_by_date per day from the M1 window).
         self._qqq_or_state: dict = (
             {w["label"]: {"bars": [], "pct": None} for w in self._windows}
             if qqq_or_weight != 0.0 else {}
         )
+        self._qqq_or_ref_label: Optional[str] = None
+        if qqq_or_weight != 0.0 and self._windows:
+            _ref_win = next(
+                (w for w in self._windows if w["label"] == "M1"), self._windows[0]
+            )
+            self._qqq_or_ref_label = _ref_win["label"]
 
     def _append_bar(self, ticker: str, bar) -> pd.Series:
         new_row = pd.Series(
@@ -384,9 +393,16 @@ class LiveSignalEngine:
                 if first_open > 0:
                     state["pct"] = (last_close - first_open) / first_open * 100
 
-    def get_qqq_or_pct(self, window_label: str) -> Optional[float]:
-        """Return QQQ's opening-range return (%) for the given window, or None if not yet computed."""
-        return self._qqq_or_state.get(window_label, {}).get("pct")
+    def get_qqq_or_pct(self, window_label: str = None) -> Optional[float]:
+        """Return QQQ's opening-range return (%).
+
+        All windows share the M1/first-window QQQ OR (a market-regime signal),
+        matching the backtest's single qqq_or_by_date per day. The window_label
+        argument is accepted for call-site symmetry but ignored.
+        """
+        if self._qqq_or_ref_label is None:
+            return None
+        return self._qqq_or_state.get(self._qqq_or_ref_label, {}).get("pct")
 
     def _process_five_min_bar(self, bar: _FiveMinBar):
         ticker = bar.symbol

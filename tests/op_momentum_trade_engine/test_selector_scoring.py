@@ -4,7 +4,11 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector import select_top_n, score_ticker
+from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector import (
+    select_top_n,
+    score_ticker,
+    passes_dynamic_ev_gate,
+)
 
 ET = __import__("pytz").timezone("America/New_York")
 
@@ -422,3 +426,141 @@ class TestEvTrend:
 
         assert len(captured_kwargs) == 1
         assert captured_kwargs[0]["score_ev_trend_weight"] == 0.0
+
+
+def _stats_cycle(evs):
+    return cycle([{**_BASE_STATS, "ev_trade": ev} for ev in evs])
+
+
+class TestPassesDynamicEvGate:
+    """passes_dynamic_ev_gate: per-ticker exclusion mirroring the backtest."""
+
+    def test_disabled_gate_passes_everything(self):
+        assert passes_dynamic_ev_gate({"ev_trade": -5.0}, None) is True
+
+    def test_percentile_passes_at_or_above_floor(self):
+        gate = {"mode": "percentile", "ev_floor": 0.3}
+        assert passes_dynamic_ev_gate({"ev_trade": 0.3}, gate) is True
+
+    def test_percentile_excludes_below_floor(self):
+        gate = {"mode": "percentile", "ev_floor": 0.3}
+        assert passes_dynamic_ev_gate({"ev_trade": 0.29}, gate) is False
+
+    def test_threshold_passes_when_wr_and_wl_meet_floors(self):
+        gate = {"mode": "threshold", "min_wr": 0.33, "min_wl": 1.5}
+        stats = {"win_rate": 0.4, "avg_win_pct": 0.6, "avg_loss_pct": -0.3}
+        assert passes_dynamic_ev_gate(stats, gate) is True
+
+    def test_threshold_excludes_on_low_win_rate(self):
+        gate = {"mode": "threshold", "min_wr": 0.33, "min_wl": 1.5}
+        stats = {"win_rate": 0.30, "avg_win_pct": 0.6, "avg_loss_pct": -0.3}
+        assert passes_dynamic_ev_gate(stats, gate) is False
+
+    def test_threshold_excludes_on_low_win_loss_ratio(self):
+        gate = {"mode": "threshold", "min_wr": 0.33, "min_wl": 1.5}
+        stats = {"win_rate": 0.4, "avg_win_pct": 0.3, "avg_loss_pct": -0.3}
+        assert passes_dynamic_ev_gate(stats, gate) is False
+
+
+class TestDynamicEvGateInSelector:
+    """select_top_n: dynamic EV gate floor derivation and exclusion."""
+
+    def test_percentile_floor_excludes_bottom_tickers(self):
+        tickers = ["AAA", "BBB", "CCC", "DDD", "EEE"]
+        evs = [0.5, 0.4, 0.3, 0.2, 0.1]
+
+        with patch(f"{_SELECTOR_MODULE}.run_backtest", side_effect=_make_fake_backtest(tickers)), \
+             patch(f"{_SELECTOR_MODULE}.build_bearish_regime_dates", return_value=None), \
+             patch(f"{_SELECTOR_MODULE}.compute_ticker_stats", side_effect=_stats_cycle(evs)), \
+             patch(f"{_SELECTOR_MODULE}.compute_today_signals",
+                   return_value=_make_today_signals(tickers)):
+
+            result = select_top_n(
+                n=5, tickers=tickers, lookback_days=60, opening_bars=3,
+                bearish_ma200=False, stop_pct=0.15, source="alpaca",
+                target_date=date(2025, 12, 2),
+                ticker_dfs={t: pd.DataFrame() for t in tickers},
+                dynamic_ev_gate=True, dg_mode="percentile",
+                dg_bull_threshold=100, dg_bear_threshold=0,  # force neutral regime
+            )
+
+        # neutral excl 0.25; sorted [0.1,0.2,0.3,0.4,0.5], cutoff=int(5*0.25)=1 → floor=0.2
+        assert result["dynamic_ev_gate"] == {"mode": "percentile", "ev_floor": 0.2}
+        assert "EEE" in result["negative_ev"]
+        picked = {p["ticker"] for p in result["picks"]}
+        assert "EEE" not in picked
+        assert "AAA" in picked
+
+    def test_threshold_mode_returns_regime_floors(self):
+        tickers = ["AAA", "BBB", "CCC"]
+
+        with patch(f"{_SELECTOR_MODULE}.run_backtest", side_effect=_make_fake_backtest(tickers)), \
+             patch(f"{_SELECTOR_MODULE}.build_bearish_regime_dates", return_value=None), \
+             patch(f"{_SELECTOR_MODULE}.compute_ticker_stats", return_value=dict(_BASE_STATS)), \
+             patch(f"{_SELECTOR_MODULE}.compute_today_signals",
+                   return_value=_make_today_signals(tickers)):
+
+            result = select_top_n(
+                n=3, tickers=tickers, lookback_days=60, opening_bars=3,
+                bearish_ma200=False, stop_pct=0.15, source="alpaca",
+                target_date=date(2025, 12, 2),
+                ticker_dfs={t: pd.DataFrame() for t in tickers},
+                dynamic_ev_gate=True, dg_mode="threshold",
+                dg_bull_threshold=100, dg_bear_threshold=0,  # force neutral regime
+            )
+
+        assert result["dynamic_ev_gate"] == {
+            "mode": "threshold", "min_wr": 0.33, "min_wl": 1.5,
+        }
+
+    def test_gate_disabled_by_default(self):
+        tickers = ["AAA", "BBB"]
+
+        with patch(f"{_SELECTOR_MODULE}.run_backtest", side_effect=_make_fake_backtest(tickers)), \
+             patch(f"{_SELECTOR_MODULE}.build_bearish_regime_dates", return_value=None), \
+             patch(f"{_SELECTOR_MODULE}.compute_ticker_stats", return_value=dict(_BASE_STATS)), \
+             patch(f"{_SELECTOR_MODULE}.compute_today_signals",
+                   return_value=_make_today_signals(tickers)):
+
+            result = select_top_n(
+                n=2, tickers=tickers, lookback_days=60, opening_bars=3,
+                bearish_ma200=False, stop_pct=0.15, source="alpaca",
+                target_date=date(2025, 12, 2),
+                ticker_dfs={t: pd.DataFrame() for t in tickers},
+            )
+
+        assert result["dynamic_ev_gate"] is None
+
+
+class TestAdaptiveLookback:
+    """select_top_n: adaptive lookback extends the backtest range."""
+
+    def _capture_start(self, tickers, **kwargs):
+        captured = {}
+
+        def fake_bt(**bt_kwargs):
+            captured.update(bt_kwargs)
+            return {t: pd.DataFrame({"date": [date(2025, 12, 1)]}) for t in tickers}
+
+        with patch(f"{_SELECTOR_MODULE}.run_backtest", side_effect=fake_bt), \
+             patch(f"{_SELECTOR_MODULE}.build_bearish_regime_dates", return_value=None), \
+             patch(f"{_SELECTOR_MODULE}.compute_ticker_stats", return_value=dict(_BASE_STATS)), \
+             patch(f"{_SELECTOR_MODULE}.compute_today_signals",
+                   return_value=_make_today_signals(tickers)):
+
+            select_top_n(
+                n=1, tickers=tickers, lookback_days=60, opening_bars=3,
+                bearish_ma200=False, stop_pct=0.15, source="alpaca",
+                target_date=date(2025, 12, 2),
+                ticker_dfs={t: pd.DataFrame() for t in tickers},
+                **kwargs,
+            )
+        return captured
+
+    def test_adaptive_extends_backtest_to_longest_window(self):
+        captured = self._capture_start(["AAA"], adaptive_lookback=True, al_bear_days=90)
+        assert captured["start_date"] == date(2025, 12, 2) - timedelta(days=90)
+
+    def test_disabled_adaptive_uses_standard_lookback(self):
+        captured = self._capture_start(["AAA"], adaptive_lookback=False)
+        assert captured["start_date"] == date(2025, 12, 2) - timedelta(days=60)

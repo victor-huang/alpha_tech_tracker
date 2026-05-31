@@ -628,6 +628,69 @@ def parse_args():
         ),
     )
     parser.add_argument(
+        "--dynamic-ev-gate",
+        action="store_true",
+        default=False,
+        dest="dynamic_ev_gate",
+        help=(
+            "Apply regime-adaptive EV filter based on daily pool vote (default: off). "
+            "Mode 'percentile' (default): exclude bottom N%% of pool by EV. "
+            "Mode 'threshold': fixed WR/W-L floors per regime tier. "
+            "Pass this to match the backtest, which defaults it ON."
+        ),
+    )
+    parser.add_argument(
+        "--dg-mode",
+        type=str,
+        default="percentile",
+        choices=["percentile", "threshold"],
+        dest="dg_mode",
+        help="Gate mode for --dynamic-ev-gate. Default: percentile.",
+    )
+    parser.add_argument("--dg-bull-threshold", type=int, default=10, dest="dg_bull_threshold",
+                        help="Pool vote at/above which bull-regime thresholds apply. Default: 10.")
+    parser.add_argument("--dg-bear-threshold", type=int, default=5, dest="dg_bear_threshold",
+                        help="Pool vote at/below which bear-regime thresholds apply. Default: 5.")
+    parser.add_argument("--dg-bull-exclude-pct", type=float, default=0.10, dest="dg_bull_exclude_pct",
+                        help="[percentile] Bottom fraction of pool excluded in bull regime. Default: 0.10.")
+    parser.add_argument("--dg-neutral-exclude-pct", type=float, default=0.25, dest="dg_neutral_exclude_pct",
+                        help="[percentile] Bottom fraction excluded in neutral regime. Default: 0.25.")
+    parser.add_argument("--dg-bear-exclude-pct", type=float, default=0.40, dest="dg_bear_exclude_pct",
+                        help="[percentile] Bottom fraction excluded in bear regime. Default: 0.40.")
+    parser.add_argument("--dg-bull-min-wr", type=float, default=0.30, dest="dg_bull_min_wr",
+                        help="[threshold] Minimum win rate in bull regime. Default: 0.30.")
+    parser.add_argument("--dg-neutral-min-wr", type=float, default=0.33, dest="dg_neutral_min_wr",
+                        help="[threshold] Minimum win rate in neutral regime. Default: 0.33.")
+    parser.add_argument("--dg-bear-min-wr", type=float, default=0.38, dest="dg_bear_min_wr",
+                        help="[threshold] Minimum win rate in bear regime. Default: 0.38.")
+    parser.add_argument("--dg-bull-min-wl", type=float, default=1.3, dest="dg_bull_min_wl",
+                        help="[threshold] Minimum W/L ratio in bull regime. Default: 1.3.")
+    parser.add_argument("--dg-neutral-min-wl", type=float, default=1.5, dest="dg_neutral_min_wl",
+                        help="[threshold] Minimum W/L ratio in neutral regime. Default: 1.5.")
+    parser.add_argument("--dg-bear-min-wl", type=float, default=1.8, dest="dg_bear_min_wl",
+                        help="[threshold] Minimum W/L ratio in bear regime. Default: 1.8.")
+    parser.add_argument(
+        "--adaptive-lookback",
+        action="store_true",
+        default=False,
+        dest="adaptive_lookback",
+        help=(
+            "Shorten the rolling lookback in bull regimes and lengthen it in bear regimes, "
+            "using the same pool-vote signal as --dynamic-ev-gate (default: off). "
+            "Pass this to match the backtest, which defaults it ON."
+        ),
+    )
+    parser.add_argument("--al-bull-threshold", type=int, default=10, dest="al_bull_threshold",
+                        help="Pool vote for bull regime in adaptive lookback. Default: 10.")
+    parser.add_argument("--al-bear-threshold", type=int, default=5, dest="al_bear_threshold",
+                        help="Pool vote for bear regime in adaptive lookback. Default: 5.")
+    parser.add_argument("--al-bull-days", type=int, default=20, dest="al_bull_days",
+                        help="Lookback days in bull regime. Default: 20.")
+    parser.add_argument("--al-neutral-days", type=int, default=60, dest="al_neutral_days",
+                        help="Lookback days in neutral regime. Default: 60.")
+    parser.add_argument("--al-bear-days", type=int, default=90, dest="al_bear_days",
+                        help="Lookback days in bear regime. Default: 90.")
+    parser.add_argument(
         "--feed",
         choices=["sip", "iex"],
         default="sip",
@@ -966,6 +1029,25 @@ if __name__ == "__main__":
             min_pool_vote_to_trade=args.min_pool_vote_to_trade,
             ev_trend_days=args.ev_trend_days,
             qqq_or_weight=args.qqq_or_weight,
+            dynamic_ev_gate=args.dynamic_ev_gate,
+            dg_mode=args.dg_mode,
+            dg_bull_threshold=args.dg_bull_threshold,
+            dg_bear_threshold=args.dg_bear_threshold,
+            dg_bull_exclude_pct=args.dg_bull_exclude_pct,
+            dg_neutral_exclude_pct=args.dg_neutral_exclude_pct,
+            dg_bear_exclude_pct=args.dg_bear_exclude_pct,
+            dg_bull_min_wr=args.dg_bull_min_wr,
+            dg_neutral_min_wr=args.dg_neutral_min_wr,
+            dg_bear_min_wr=args.dg_bear_min_wr,
+            dg_bull_min_wl=args.dg_bull_min_wl,
+            dg_neutral_min_wl=args.dg_neutral_min_wl,
+            dg_bear_min_wl=args.dg_bear_min_wl,
+            adaptive_lookback=args.adaptive_lookback,
+            al_bull_threshold=args.al_bull_threshold,
+            al_bear_threshold=args.al_bear_threshold,
+            al_bull_days=args.al_bull_days,
+            al_neutral_days=args.al_neutral_days,
+            al_bear_days=args.al_bear_days,
         )
         if args.replay_date or (args.replay_start and args.replay_end):
             _warn_replay_feed_mismatch(args)
@@ -1105,6 +1187,25 @@ if __name__ == "__main__":
             min_pool_vote_to_trade=args.min_pool_vote_to_trade,
             ev_trend_days=args.ev_trend_days,
             qqq_or_weight=args.qqq_or_weight,
+            dynamic_ev_gate=args.dynamic_ev_gate,
+            dg_mode=args.dg_mode,
+            dg_bull_threshold=args.dg_bull_threshold,
+            dg_bear_threshold=args.dg_bear_threshold,
+            dg_bull_exclude_pct=args.dg_bull_exclude_pct,
+            dg_neutral_exclude_pct=args.dg_neutral_exclude_pct,
+            dg_bear_exclude_pct=args.dg_bear_exclude_pct,
+            dg_bull_min_wr=args.dg_bull_min_wr,
+            dg_neutral_min_wr=args.dg_neutral_min_wr,
+            dg_bear_min_wr=args.dg_bear_min_wr,
+            dg_bull_min_wl=args.dg_bull_min_wl,
+            dg_neutral_min_wl=args.dg_neutral_min_wl,
+            dg_bear_min_wl=args.dg_bear_min_wl,
+            adaptive_lookback=args.adaptive_lookback,
+            al_bull_threshold=args.al_bull_threshold,
+            al_bear_threshold=args.al_bear_threshold,
+            al_bull_days=args.al_bull_days,
+            al_neutral_days=args.al_neutral_days,
+            al_bear_days=args.al_bear_days,
         )
         engine.run(tickers_override=args.tickers)
     finally:
