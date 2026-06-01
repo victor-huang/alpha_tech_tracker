@@ -21,6 +21,7 @@ from alpha_tech_tracker.op_momentum_strategy.ma_open_range_momentum_screener imp
     _print_backtest_table,
     _scan_ticker,
     _compute_qqq_context,
+    _window_label,
     compute_or_ma_signals,
     format_sms,
     run_range_analysis,
@@ -998,3 +999,150 @@ class TestRangeAnalysis:
         output = buf.getvalue()
         for label in ["+15m", "+30m", "+1h", "+2h", "+3h", "+6h", "+7h", "EOD"]:
             assert label in output
+
+
+class TestWindowLabel:
+    def test_standard_window(self):
+        assert _window_label("09:30", 3) == "09:30/3b"
+
+    def test_afternoon_window(self):
+        assert _window_label("13:15", 1) == "13:15/1b"
+
+    def test_single_bar_window(self):
+        assert _window_label("15:00", 1) == "15:00/1b"
+
+    def test_multi_bar_window(self):
+        assert _window_label("09:30", 5) == "09:30/5b"
+
+
+class TestRangeAnalysisMultiWindow:
+    _MODULE = "alpha_tech_tracker.op_momentum_strategy.ma_open_range_momentum_screener"
+
+    def _make_df(self, target_date):
+        """Minimal bar DataFrame for the target date (used as a stub for fetch_bars)."""
+        ts = [ET.localize(datetime.combine(target_date, dtime(9, 30)))]
+        return pd.DataFrame(
+            {"Open": [100.0], "High": [101.0], "Low": [99.0],
+             "Close": [100.0], "Volume": [1_000_000]},
+            index=ts,
+        )
+
+    def _bull_signal(self, ticker, date_str, bar_time="09:45"):
+        return {
+            "ticker": ticker,
+            "direction": "BULL",
+            "signal_bar_time": bar_time,
+            "or_high": 102.0, "or_low": 98.0, "or_mid": 100.0, "or_range": 4.0,
+            "close": 101.0,
+            "overlapping_mas": ["MA20"],
+            "ma20_5m": 100.0, "ma50_5m": 99.0, "ma200_5m": 95.0,
+            "collection_vol": 2_000_000, "vol_20day_avg": 1_000_000,
+            "daily_ma20": None, "daily_ma50": None, "daily_ma200": None,
+            "prev_close": 98.0,
+            "qqq_vol_ratio": 1.2, "qqq_regime": "Very Bullish",
+            "date": date_str,
+        }
+
+    def _run(self, tickers, windows, signals_by_call):
+        """
+        Run run_range_analysis with mocked data. signals_by_call is a list of
+        signal lists returned by successive compute_or_ma_signals calls.
+        Returns captured stdout.
+        """
+        target = date(2026, 5, 20)
+        df = self._make_df(target)
+
+        with patch(f"{self._MODULE}.fetch_bars",
+                   return_value={t: df for t in tickers + ["QQQ"]}), \
+             patch(f"{self._MODULE}.fetch_daily_bars",
+                   return_value={t: pd.DataFrame() for t in tickers + ["QQQ"]}), \
+             patch(f"{self._MODULE}.compute_or_ma_signals",
+                   side_effect=signals_by_call):
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                run_range_analysis(
+                    start_date=target, end_date=target,
+                    tickers=tickers, windows=windows, min_vol_ratio=2.0,
+                )
+        return buf.getvalue()
+
+    def test_window_label_appears_in_detail_row(self):
+        target = date(2026, 5, 20)
+        sig = self._bull_signal("TSLA", str(target))
+        output = self._run(["TSLA"], [("09:30", 3)], [[sig]])
+        assert "09:30/3b" in output
+
+    def test_single_window_no_aggregate_block(self):
+        target = date(2026, 5, 20)
+        sig = self._bull_signal("TSLA", str(target))
+        output = self._run(["TSLA"], [("09:30", 3)], [[sig]])
+        assert "aggregate" not in output.lower()
+
+    def test_multiple_windows_produce_per_window_summary(self):
+        target = date(2026, 5, 20)
+        sig1 = self._bull_signal("TSLA", str(target), bar_time="09:45")
+        sig2 = self._bull_signal("META", str(target), bar_time="13:15")
+        output = self._run(["TSLA", "META"],
+                           [("09:30", 3), ("13:15", 1)],
+                           [[sig1], [sig2]])
+        assert "Window 09:30/3b" in output
+        assert "Window 13:15/1b" in output
+
+    def test_multiple_windows_produce_aggregate_block(self):
+        target = date(2026, 5, 20)
+        sig1 = self._bull_signal("TSLA", str(target))
+        sig2 = self._bull_signal("META", str(target))
+        output = self._run(["TSLA", "META"],
+                           [("09:30", 3), ("13:15", 1)],
+                           [[sig1], [sig2]])
+        assert "aggregate" in output.lower()
+
+    def test_compute_or_ma_signals_called_once_per_window_per_day(self):
+        target = date(2026, 5, 20)
+        df = self._make_df(target)
+
+        with patch(f"{self._MODULE}.fetch_bars",
+                   return_value={"TSLA": df, "QQQ": df}), \
+             patch(f"{self._MODULE}.fetch_daily_bars",
+                   return_value={"TSLA": pd.DataFrame(), "QQQ": pd.DataFrame()}), \
+             patch(f"{self._MODULE}.compute_or_ma_signals",
+                   return_value=[]) as mock_compute:
+            with contextlib.redirect_stdout(io.StringIO()):
+                run_range_analysis(
+                    start_date=target, end_date=target,
+                    tickers=["TSLA"],
+                    windows=[("09:30", 3), ("13:15", 1), ("15:00", 1)],
+                    min_vol_ratio=2.0,
+                )
+        # 1 trading day × 3 windows = 3 calls
+        assert mock_compute.call_count == 3
+
+    def test_windows_none_falls_back_to_or_start_or_bars(self):
+        target = date(2026, 5, 20)
+        df = self._make_df(target)
+
+        with patch(f"{self._MODULE}.fetch_bars",
+                   return_value={"TSLA": df, "QQQ": df}), \
+             patch(f"{self._MODULE}.fetch_daily_bars",
+                   return_value={"TSLA": pd.DataFrame(), "QQQ": pd.DataFrame()}), \
+             patch(f"{self._MODULE}.compute_or_ma_signals",
+                   return_value=[]) as mock_compute:
+            with contextlib.redirect_stdout(io.StringIO()):
+                run_range_analysis(
+                    start_date=target, end_date=target,
+                    tickers=["TSLA"],
+                    windows=None, or_start="13:15", or_bars=1,
+                    min_vol_ratio=2.0,
+                )
+        # windows=None → falls back to or_start/or_bars; called once with "13:15", 1
+        call_args = mock_compute.call_args
+        assert call_args[0][2] == "13:15"   # or_start positional arg
+        assert call_args[0][3] == 1          # or_bars positional arg
+
+    def test_window_label_in_banner(self):
+        target = date(2026, 5, 20)
+        output = self._run(["TSLA"],
+                           [("09:30", 3), ("13:15", 1)],
+                           [[], []])
+        assert "09:30/3b" in output
+        assert "13:15/1b" in output

@@ -806,10 +806,42 @@ def _forward_pct(day_df: pd.DataFrame, signal_time, signal_date: date, hold_min)
     return (exit_price - entry_price) / entry_price * 100
 
 
+def _window_label(or_start, or_bars):
+    """Short label used in table and summary, e.g. '09:30/3b'."""
+    return f"{or_start}/{or_bars}b"
+
+
+def _print_summary_block(results_subset, label):
+    """Print one summary block (one window or aggregate) for the given result rows."""
+    n = len(results_subset)
+    print(f"\n{label}  ({n} signal(s))")
+    print(f"  {'Hold':<8} {'Count':>6} {'Win Rate':>10} {'Avg Gain':>10} {'Avg Win':>10} {'Avg Loss':>10} {'Exp Value':>10} {'Total P&L':>10}")
+    print("  " + "-" * 84)
+    for mins in _HOLD_WINDOWS_MIN:
+        key = f"pct_{_hold_label(mins)}"
+        pcts = [r[key] for r in results_subset if r.get(key) is not None]
+        if not pcts:
+            continue
+        wins = [p for p in pcts if p > 0]
+        losses = [p for p in pcts if p <= 0]
+        win_rate = len(wins) / len(pcts) * 100
+        avg_gain = sum(pcts) / len(pcts)
+        avg_win = sum(wins) / len(wins) if wins else 0.0
+        avg_loss = sum(losses) / len(losses) if losses else 0.0
+        exp_val = (win_rate / 100) * avg_win + (1 - win_rate / 100) * avg_loss
+        total_pnl = sum(pcts)
+        print(
+            f"  {_hold_label(mins):<8} {len(pcts):>6} {win_rate:>9.1f}% "
+            f"{avg_gain:>+10.2f}% {avg_win:>+10.2f}% {avg_loss:>+10.2f}% "
+            f"{exp_val:>+10.2f}% {total_pnl:>+10.2f}%"
+        )
+
+
 def run_range_analysis(
     start_date,
     end_date,
     tickers,
+    windows=None,
     or_bars=_DEFAULT_OR_BARS,
     or_start=_DEFAULT_OR_START,
     collection_bars=3,
@@ -819,17 +851,18 @@ def run_range_analysis(
 ):
     """
     Run OR/MA signal analysis over a date range. Filters to BULL signals with
-    collection_vol >= min_vol_ratio * vol_20day_avg and reports forward P&L at
-    15/30/45/60 min after signal time.
+    collection_vol >= min_vol_ratio * vol_20day_avg and reports forward P&L.
 
-    Prints a per-day/per-ticker detail table followed by a win-rate/expected-gain
-    summary table.
+    windows: list of (or_start, or_bars) tuples. When provided, all windows
+             are scanned per day and results are broken out per window in the
+             summary. Falls back to [(or_start, or_bars)] if not supplied.
     """
+    effective_windows = windows if windows else [(or_start, or_bars)]
+
     disable_notifications()
     effective_feed = feed if feed is not None else DataFeed.SIP
     all_tickers = list(tickers) + (["QQQ"] if "QQQ" not in tickers else [])
 
-    # Fetch bars covering the range + warmup (extra 30 calendar days for 20 trading days)
     warmup_start = start_date - timedelta(days=30)
     daily_start = start_date - timedelta(days=_DAILY_LOOKBACK_DAYS)
 
@@ -851,98 +884,98 @@ def run_range_analysis(
     })
 
     col_w = 9
-    table_width = 12 + 6 + 6 + 7 + 7 + 4 + len(_HOLD_WINDOWS_MIN) * (col_w + 2)
+    # Window column width: max label length, at least 8
+    win_col_w = max(len(_window_label(s, b)) for s, b in effective_windows)
+    win_col_w = max(win_col_w, 8)
+    table_width = 12 + 1 + 6 + 1 + win_col_w + 1 + 6 + 7 + 2 + 7 + 2 + len(_HOLD_WINDOWS_MIN) * (col_w + 2)
     header_cols = "  ".join(f"{_hold_label(m):>{col_w}}" for m in _HOLD_WINDOWS_MIN)
+
+    win_labels_str = ", ".join(_window_label(s, b) for s, b in effective_windows)
     print(f"\n{'=' * table_width}")
     print(
         f"Signal Analysis — {start_date} to {end_date}  |  BULL only  |  "
         f"Vol ≥ {min_vol_ratio:.1f}x 20dAvg"
     )
-    print(f"OR: {or_start} / {or_bars} bars  |  Collection: {collection_bars} bars  |  "
-          f"Tickers: {len(tickers)}")
+    print(
+        f"Windows: {win_labels_str}  |  Collection: {collection_bars} bars  |  "
+        f"Tickers: {len(tickers)}"
+    )
     print("=" * table_width)
-    print(f"{'Date':<12} {'Ticker':<6} {'At':<6} {'Entry':>7}  {'Vol/20d':>7}  {header_cols}")
+    print(
+        f"{'Date':<12} {'Ticker':<6} {'Window':<{win_col_w}} {'At':<6} "
+        f"{'Entry':>7}  {'Vol/20d':>7}  {header_cols}"
+    )
     print("-" * table_width)
 
     results = []
 
     for day in trading_days:
-        signals = compute_or_ma_signals(
-            ticker_bars_5m, qqq_bars_5m, or_start, or_bars, day,
-            daily_bars={t: daily_bars[t] for t in tickers if t in daily_bars},
-            collection_bars=collection_bars,
-        )
-
-        qualifying = [
-            s for s in signals
-            if s["direction"] == "BULL"
-            and s.get("vol_20day_avg")
-            and s["collection_vol"] / s["vol_20day_avg"] >= min_vol_ratio
-        ]
-
-        for sig in qualifying:
-            ticker = sig["ticker"]
-            signal_time = datetime.strptime(sig["signal_bar_time"], "%H:%M").time()
-            entry_price = sig["close"]
-            vol_ratio = sig["collection_vol"] / sig["vol_20day_avg"]
-
-            day_df = ticker_bars_5m.get(ticker, pd.DataFrame())
-            day_df = day_df[day_df.index.date == day] if not day_df.empty else day_df
-
-            row = {
-                "date": day,
-                "ticker": ticker,
-                "signal_time": sig["signal_bar_time"],
-                "entry": entry_price,
-                "vol_ratio": vol_ratio,
-            }
-            hold_cols = []
-            for mins in _HOLD_WINDOWS_MIN:
-                key = f"pct_{_hold_label(mins)}"
-                pct = _forward_pct(day_df, signal_time, day, mins)
-                row[key] = pct
-                if pct is None:
-                    hold_cols.append(f"{'N/A':>{col_w}}")
-                else:
-                    tag = "W" if pct > 0 else "L"
-                    cell = f"{pct:>+6.2f}%{tag}"
-                    hold_cols.append(f"{cell:>{col_w}}")
-            results.append(row)
-            print(
-                f"{str(day):<12} {ticker:<6} {sig['signal_bar_time']:<6} "
-                f"{entry_price:>7.2f}  {vol_ratio:>6.2f}x  "
-                + "  ".join(hold_cols)
+        for w_start, w_bars in effective_windows:
+            win_lbl = _window_label(w_start, w_bars)
+            signals = compute_or_ma_signals(
+                ticker_bars_5m, qqq_bars_5m, w_start, w_bars, day,
+                daily_bars={t: daily_bars[t] for t in tickers if t in daily_bars},
+                collection_bars=collection_bars,
             )
+            qualifying = [
+                s for s in signals
+                if s["direction"] == "BULL"
+                and s.get("vol_20day_avg")
+                and s["collection_vol"] / s["vol_20day_avg"] >= min_vol_ratio
+            ]
+            for sig in qualifying:
+                ticker = sig["ticker"]
+                signal_time = datetime.strptime(sig["signal_bar_time"], "%H:%M").time()
+                entry_price = sig["close"]
+                vol_ratio = sig["collection_vol"] / sig["vol_20day_avg"]
+
+                day_df = ticker_bars_5m.get(ticker, pd.DataFrame())
+                day_df = day_df[day_df.index.date == day] if not day_df.empty else day_df
+
+                row = {
+                    "date": day,
+                    "ticker": ticker,
+                    "window": win_lbl,
+                    "signal_time": sig["signal_bar_time"],
+                    "entry": entry_price,
+                    "vol_ratio": vol_ratio,
+                }
+                hold_cols = []
+                for mins in _HOLD_WINDOWS_MIN:
+                    key = f"pct_{_hold_label(mins)}"
+                    pct = _forward_pct(day_df, signal_time, day, mins)
+                    row[key] = pct
+                    if pct is None:
+                        hold_cols.append(f"{'N/A':>{col_w}}")
+                    else:
+                        tag = "W" if pct > 0 else "L"
+                        cell = f"{pct:>+6.2f}%{tag}"
+                        hold_cols.append(f"{cell:>{col_w}}")
+                results.append(row)
+                print(
+                    f"{str(day):<12} {ticker:<6} {win_lbl:<{win_col_w}} "
+                    f"{sig['signal_bar_time']:<6} "
+                    f"{entry_price:>7.2f}  {vol_ratio:>6.2f}x  "
+                    + "  ".join(hold_cols)
+                )
 
     if not results:
         print("\nNo qualifying BULL signals found in date range.")
         return
 
-    # Summary
+    # Per-window summary blocks, then aggregate
     n = len(results)
-    print(f"\n{'='*86}")
+    print(f"\n{'='*88}")
     print(f"Summary — {n} qualifying signal(s) across {len(trading_days)} trading day(s)")
-    print(f"{'Hold':<8} {'Count':>6} {'Win Rate':>10} {'Avg Gain':>10} {'Avg Win':>10} {'Avg Loss':>10} {'Exp Value':>10} {'Total P&L':>10}")
-    print("-" * 86)
-    for mins in _HOLD_WINDOWS_MIN:
-        key = f"pct_{_hold_label(mins)}"
-        label = _hold_label(mins)
-        pcts = [r[key] for r in results if r.get(key) is not None]
-        if not pcts:
-            continue
-        wins = [p for p in pcts if p > 0]
-        losses = [p for p in pcts if p <= 0]
-        win_rate = len(wins) / len(pcts) * 100
-        avg_gain = sum(pcts) / len(pcts)
-        avg_win = sum(wins) / len(wins) if wins else 0.0
-        avg_loss = sum(losses) / len(losses) if losses else 0.0
-        exp_val = (win_rate / 100) * avg_win + (1 - win_rate / 100) * avg_loss
-        total_pnl = sum(pcts)
-        print(
-            f"{label:<8} {len(pcts):>6} {win_rate:>9.1f}% "
-            f"{avg_gain:>+10.2f}% {avg_win:>+10.2f}% {avg_loss:>+10.2f}% "
-            f"{exp_val:>+10.2f}% {total_pnl:>+10.2f}%"
-        )
+
+    window_labels = [_window_label(s, b) for s, b in effective_windows]
+    for win_lbl in window_labels:
+        subset = [r for r in results if r["window"] == win_lbl]
+        if subset:
+            _print_summary_block(subset, f"Window {win_lbl}")
+
+    if len(effective_windows) > 1:
+        _print_summary_block(results, "All windows (aggregate)")
 
 
 # ─── CLI ───────────────────────────────────────────────────────────────────────
@@ -1007,6 +1040,11 @@ def main():
         "--min-vol-ratio", type=float, default=2.0,
         help="Minimum vol/20dAvg ratio to qualify for range analysis (default: 2.0)"
     )
+    parser.add_argument(
+        "--window", nargs=2, metavar=("HH:MM", "BARS"), action="append", dest="windows",
+        help="OR window for range analysis: start time and bar count (repeatable). "
+             "Overrides --or-start/--or-bars when used with --start/--end."
+    )
     args = parser.parse_args()
 
     tickers = args.tickers if args.tickers else list(DEFAULT_TICKERS)
@@ -1024,10 +1062,16 @@ def main():
             dry_run=args.dry_run,
         )
     elif args.start and args.end:
+        windows = (
+            [(w[0], int(w[1])) for w in args.windows]
+            if args.windows
+            else None
+        )
         run_range_analysis(
             start_date=date.fromisoformat(args.start),
             end_date=date.fromisoformat(args.end),
             tickers=tickers,
+            windows=windows,
             or_bars=args.or_bars,
             or_start=args.or_start,
             collection_bars=args.collection_bars,
