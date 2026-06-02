@@ -1,6 +1,11 @@
 import argparse
 import logging
+import logging.handlers
+import math
 import os
+import signal
+import statistics
+import sys
 import time
 from datetime import date, datetime, timedelta
 from typing import Optional
@@ -605,6 +610,16 @@ def run_backtest(
         collection_bars=collection_bars,
     )
 
+    ranked = _rank_tickers_by_eod_win_rate(ticker_bars_5m, target_date, or_start, or_bars)
+    ranking_block = _format_top2_ranking(ranked, target_date, or_start, or_bars)
+    wr_table = _format_ticker_win_rate_table(ranked)
+    if ranking_block:
+        print(ranking_block)
+    if wr_table:
+        print(wr_table)
+    if ranking_block or wr_table:
+        print()
+
     _print_backtest_table(
         signals, list(tickers), ticker_bars_5m, or_start, or_bars, target_date, print_all,
         collection_bars=collection_bars,
@@ -616,6 +631,19 @@ def run_backtest(
         "bars_1m": bars_1m,
         "daily_bars": daily_bars,
     }
+
+
+def _count_collection_bars(df, or_start_time, or_bars, collection_bars, target_date):
+    """Return how many collection bars have arrived so far for target_date."""
+    if df is None or df.empty:
+        return 0
+    day = df[df.index.date == target_date]
+    if day.empty:
+        return 0
+    from_or = day[day.index.time >= or_start_time]
+    if len(from_or) < or_bars:
+        return 0
+    return min(len(from_or) - or_bars + 1, collection_bars)
 
 
 # ─── Live polling entry point ──────────────────────────────────────────────────
@@ -640,15 +668,15 @@ def run_live(
         disable_notifications()
 
     or_start_time = datetime.strptime(or_start, "%H:%M").time()
-    or_close_time = (
-        datetime.combine(date.today(), or_start_time) + timedelta(minutes=or_bars * 5)
-    ).time()
+    or_close_minutes = or_bars * 5
     eod_time = datetime.strptime(_EOD_TIME, "%H:%M").time()
 
     all_tickers = list(tickers) + (["QQQ"] if "QQQ" not in tickers else [])
 
     # Pre-warm from Alpaca historical data (prior days only — safe to cache)
-    yesterday = (_now_et() - timedelta(days=1)).date()
+    now_init = _now_et()
+    print(f"Current ET time: {now_init.strftime('%Y-%m-%d %H:%M:%S %Z')}")
+    yesterday = (now_init - timedelta(days=1)).date()
     warmup_start = yesterday - timedelta(days=_5MIN_WARMUP_DAYS)
     daily_start = yesterday - timedelta(days=_DAILY_LOOKBACK_DAYS)
 
@@ -667,40 +695,72 @@ def run_live(
     }
 
     already_notified = set()
+    tracking_alerted = {}   # ticker -> direction when 60% SMS was sent
     summary_sent = False
     session_signals = []
     current_day = None
 
+    or_close_str = (
+        datetime.combine(now_init.date(), or_start_time) + timedelta(minutes=or_close_minutes)
+    ).strftime("%H:%M")
     print(
         f"Live polling started. OR: {or_start}/{or_bars} bars "
-        f"(closes {or_close_time.strftime('%H:%M')}). "
+        f"(closes {or_close_str} ET). "
         f"Poll: {poll_interval_sec}s. Dry-run: {dry_run}."
     )
 
     while True:
         now_et = _now_et()
         today = now_et.date()
-        now_time = now_et.time()
+        # Compute OR close time in ET for today
+        or_close_dt = ET.localize(
+            datetime.combine(today, or_start_time) + timedelta(minutes=or_close_minutes)
+        )
 
         if current_day != today:
             current_day = today
             already_notified = set()
+            tracking_alerted = {}
             summary_sent = False
+            ranking_sent = False
             session_signals = []
-            print(f"\n--- {today} ---")
+            print(f"\n--- {today} (ET) ---")
 
-        if now_time < or_close_time:
+        # 9:35 ranking: always fires once per day using warmup bars (prior days only)
+        ranking_time = ET.localize(
+            datetime.combine(today, datetime.strptime("09:25", "%H:%M").time())
+        )
+        if not ranking_sent and now_et >= ranking_time:
+            warmup_ticker_bars = {t: df for t, df in warmup_bars.items() if t != "QQQ"}
+            ranked = _rank_tickers_by_eod_win_rate(
+                warmup_ticker_bars, today, or_start, or_bars
+            )
+            ranking_block = _format_top2_ranking(ranked, today, or_start, or_bars)
+            wr_table = _format_ticker_win_rate_table(ranked)
+            if ranking_block:
+                print(ranking_block)
+            if wr_table:
+                print(wr_table)
+            sms_parts = [p for p in [ranking_block, wr_table] if p]
+            if sms_parts:
+                _notify("\n".join(sms_parts))
+            ranking_sent = True
+
+        if now_et < or_close_dt:
+            print(f"[{now_et.strftime('%H:%M:%S %Z')}] Waiting for OR to close at {or_close_dt.strftime('%H:%M')} ET...")
             time.sleep(poll_interval_sec)
             continue
 
-        if now_time >= eod_time:
+        if now_et.time() >= eod_time:
             if not summary_sent:
                 _send_session_summary(session_signals, today)
                 summary_sent = True
+            print(f"[{now_et.strftime('%H:%M:%S %Z')}] EOD — next poll in 60s")
             time.sleep(60)
             continue
 
         # Fetch today's live bars from TradeStation
+        print(f"[{now_et.strftime('%H:%M:%S %Z')}] Fetching 5-min bars for {len(all_tickers)} tickers...")
         try:
             today_start = datetime.combine(today, datetime.min.time())
             today_end = datetime.combine(today + timedelta(days=1), datetime.min.time())
@@ -724,9 +784,65 @@ def run_live(
                 merged = merged[~merged.index.duplicated(keep="last")]
             if not merged.empty:
                 merged_bars[ticker] = _add_ma_columns(merged)
+                today_bar_count = len(today_raw.get(ticker, pd.DataFrame()))
+                last_bar_time = merged_bars[ticker].index[-1].strftime("%H:%M") if not merged_bars[ticker].empty else "n/a"
+                print(f"  {ticker}: {today_bar_count} today bars, last={last_bar_time}, total={len(merged_bars[ticker])}")
 
         qqq_bars_5m = merged_bars.get("QQQ", pd.DataFrame())
         ticker_bars_5m = {t: df for t, df in merged_bars.items() if t != "QQQ"}
+
+        # Early notification: fire after 60% of collection bars arrive, then update every bar
+        or_start_time_obj = datetime.strptime(or_start, "%H:%M").time()
+        min_bars_to_notify = math.ceil(0.6 * collection_bars)
+        for ticker in tickers:
+            if ticker in already_notified:
+                continue
+            df = merged_bars.get(ticker)
+            if df is None:
+                continue
+            n_bars = _count_collection_bars(df, or_start_time_obj, or_bars, collection_bars, today)
+            if n_bars < min_bars_to_notify:
+                print(f"  {ticker}: {n_bars}/{collection_bars} collection bars — waiting for {min_bars_to_notify}")
+                continue
+            # Evaluate signal on available bars (partial is fine)
+            partial_signals = compute_or_ma_signals(
+                {ticker: df},
+                qqq_bars_5m,
+                or_start,
+                or_bars,
+                today,
+                daily_bars={ticker: daily_bars[ticker]} if ticker in daily_bars else {},
+                collection_bars=n_bars,
+            )
+            if partial_signals:
+                sig = partial_signals[0]
+                direction = sig["direction"]
+                bar_label = f"{n_bars}/{collection_bars} bars"
+                if ticker not in tracking_alerted:
+                    tracking_alerted[ticker] = direction
+                    sms = (
+                        f"EARLY {direction}: {ticker} at {sig['signal_bar_time']} "
+                        f"({bar_label}) | close={sig['close']} OR_mid={sig['or_mid']} "
+                        f"| {','.join(sig['overlapping_mas'])} in OR"
+                    )
+                    hist = _compute_hold_history(
+                        merged_bars.get(ticker), today, or_start, or_bars
+                    )
+                    hist_line = _format_hold_history(hist)
+                    if hist_line:
+                        sms += f"\n{hist_line.strip()}"
+                    print(f"[{now_et.strftime('%H:%M:%S %Z')}] {sms}")
+                    _notify(sms)
+                else:
+                    print(
+                        f"  [{now_et.strftime('%H:%M:%S %Z')}] UPDATE {direction} {ticker} "
+                        f"{sig['signal_bar_time']} ({bar_label}): close={sig['close']}"
+                    )
+            else:
+                print(
+                    f"  [{now_et.strftime('%H:%M:%S %Z')}] WATCH {ticker} "
+                    f"{n_bars}/{collection_bars} bars — no signal yet"
+                )
 
         new_signals = compute_or_ma_signals(
             ticker_bars_5m,
@@ -743,6 +859,12 @@ def run_live(
                 already_notified.add(sig["ticker"])
                 session_signals.append(sig)
                 sms = format_sms(sig)
+                hist = _compute_hold_history(
+                    ticker_bars_5m.get(sig["ticker"]), today, or_start, or_bars
+                )
+                hist_line = _format_hold_history(hist)
+                if hist_line:
+                    sms += f"\n{hist_line.strip()}"
                 print(f"SIGNAL: {sms}")
                 _notify(sms)
 
@@ -804,6 +926,192 @@ def _forward_pct(day_df: pd.DataFrame, signal_time, signal_date: date, hold_min)
         exit_price = float(exit_bars.iloc[0]["Close"] if not exit_bars.empty
                            else day_df.iloc[-1]["Close"])
     return (exit_price - entry_price) / entry_price * 100
+
+
+_HIST_HOLD_MIN = [15, 30, 60, 120, 300, None]
+
+
+def _compute_hold_history(df_5m, target_date, or_start, or_bars, lookback=20):
+    """
+    For the past `lookback` trading days before target_date, compute the average
+    forward return from the OR-close bar at +15m, +30m, +1h, +2h, and the average
+    absolute daily move (|last_close - first_open| / first_open).
+    Returns a dict or None if insufficient data.
+    """
+    if df_5m is None or df_5m.empty:
+        return None
+    or_close_time = (
+        datetime.strptime(or_start, "%H:%M") + timedelta(minutes=or_bars * 5)
+    ).time()
+
+    past_days = sorted(
+        {d for d in df_5m.index.date if d < target_date}, reverse=True
+    )[:lookback]
+    if not past_days:
+        return None
+
+    sums = {h: [] for h in _HIST_HOLD_MIN}
+    daily_moves = []
+
+    for day in past_days:
+        day_df = df_5m[df_5m.index.date == day]
+        if day_df.empty:
+            continue
+        entry_bars = day_df[day_df.index.time == or_close_time]
+        if entry_bars.empty:
+            continue
+        entry_price = float(entry_bars.iloc[0]["Close"])
+        for h in _HIST_HOLD_MIN:
+            if h is None:
+                exit_price = float(day_df.iloc[-1]["Close"])
+                sums[h].append((exit_price - entry_price) / entry_price * 100)
+            else:
+                exit_time = (
+                    datetime.combine(day, or_close_time) + timedelta(minutes=h)
+                ).time()
+                exit_bars = day_df[day_df.index.time >= exit_time]
+                if not exit_bars.empty:
+                    sums[h].append(
+                        (float(exit_bars.iloc[0]["Close"]) - entry_price) / entry_price * 100
+                    )
+        first_open = float(day_df.iloc[0]["Open"])
+        if first_open > 0:
+            daily_moves.append(
+                abs(float(day_df.iloc[-1]["Close"]) - first_open) / first_open * 100
+            )
+
+    holds = {h: (sum(v) / len(v)) for h, v in sums.items() if v}
+    if not holds:
+        return None
+    win_rates = {
+        h: 100 * sum(1 for x in v if x > 0) / len(v)
+        for h, v in sums.items() if v
+    }
+    medians = {h: statistics.median(v) for h, v in sums.items() if v}
+    eod_returns = sums.get(None, [])
+    eod_range = (min(eod_returns), max(eod_returns)) if eod_returns else None
+    return {
+        "holds": holds,
+        "win_rates": win_rates,
+        "medians": medians,
+        "eod_range": eod_range,
+        "daily_move": sum(daily_moves) / len(daily_moves) if daily_moves else None,
+        "n": len(past_days),
+    }
+
+
+def _format_hold_history(hist):
+    """Format _compute_hold_history result into a compact annotation line."""
+    if not hist:
+        return None
+    labels = {15: "+15m", 30: "+30m", 60: "+1h", 120: "+2h", 300: "+5h", None: "EOD"}
+    parts = [
+        f"{labels[h]} {hist['win_rates'][h]:.0f}%W {hist['holds'][h]:+.1f}%"
+        for h in _HIST_HOLD_MIN
+        if h in hist["holds"]
+    ]
+    daily = f"  |  avg daily ±{hist['daily_move']:.1f}%" if hist["daily_move"] else ""
+    return f"  [{hist['n']}d hist: {('  '.join(parts))}{daily}]"
+
+
+def _rank_tickers_by_eod_win_rate(ticker_bars_5m, target_date, or_start, or_bars, lookback=20):
+    """
+    Compute hold history for every ticker and return the full list sorted by
+    EOD win rate descending. Tickers with no computable history are excluded.
+    """
+    ranked = []
+    for ticker, df in ticker_bars_5m.items():
+        hist = _compute_hold_history(df, target_date, or_start, or_bars, lookback)
+        if hist and None in hist["win_rates"]:
+            ranked.append((ticker, hist))
+    ranked.sort(key=lambda x: -x[1]["win_rates"][None])
+    return ranked
+
+
+def _format_top2_ranking(ranked, target_date, or_start, or_bars):
+    """
+    Format the top-2 tickers (by EOD win rate) into a display/SMS block.
+    Shows win rate + median return at each hold window, plus EOD gain range.
+    """
+    labels = {15: "+15m", 30: "+30m", 60: "+1h", 120: "+2h", 300: "+5h", None: "EOD"}
+    top2 = ranked[:2]
+    if not top2:
+        return None
+    lines = [
+        f"Pre-session top-2 (9:25, 20d EOD win rate) — {target_date}  "
+        f"OR: {or_start}/{or_bars}b"
+    ]
+    for rank, (ticker, hist) in enumerate(top2, 1):
+        parts = [
+            f"{labels[h]} {hist['win_rates'][h]:.0f}%W {hist['medians'][h]:+.1f}%"
+            for h in _HIST_HOLD_MIN
+            if h in hist["medians"]
+        ]
+        eod_r = hist.get("eod_range")
+        range_str = f"  EOD range {eod_r[0]:+.1f}% → {eod_r[1]:+.1f}%" if eod_r else ""
+        lines.append(f"  #{rank} {ticker:<6} " + "  ".join(parts) + range_str)
+    return "\n".join(lines)
+
+
+def _format_ticker_win_rate_table(ranked):
+    """
+    Format all ranked tickers into a win-rate table showing win % and median
+    return at each hold window, plus the EOD gain range. Sorted by EOD win rate.
+    """
+    if not ranked:
+        return None
+    labels = {15: "+15m", 30: "+30m", 60: "+1h", 120: "+2h", 300: "+5h", None: "EOD"}
+    col_w = 12  # width per hold column "60%W +1.3%"
+    header_cols = "  ".join(f"{labels[h]:>{col_w}}" for h in _HIST_HOLD_MIN)
+    sep = "-" * (8 + 4 + len(_HIST_HOLD_MIN) * (col_w + 2) + 22)
+    lines = [
+        f"  {'Ticker':<6}  {'N':>2}  {header_cols}  {'EOD range':>18}",
+        f"  {sep}",
+    ]
+    for ticker, hist in ranked:
+        cols = "  ".join(
+            f"{hist['win_rates'][h]:.0f}%W {hist['medians'][h]:+.1f}%"
+            if h in hist["win_rates"] else f"{'—':>{col_w}}"
+            for h in _HIST_HOLD_MIN
+        )
+        eod_r = hist.get("eod_range")
+        range_str = f"{eod_r[0]:+.1f}% → {eod_r[1]:+.1f}%" if eod_r else "—"
+        lines.append(f"  {ticker:<6}  {hist['n']:>2}  {cols}  {range_str:>18}")
+    return "\n".join(lines)
+
+
+def _build_presession_picks_rows(ticker_bars_5m, trading_days, or_start, or_bars):
+    """
+    For each trading day return the top-2 tickers (by 20d EOD win rate) with
+    their actual forward returns from the OR-close bar — regardless of whether
+    a signal fired. Used to build the pre-session performance table.
+    """
+    or_close_time = (
+        datetime.strptime(or_start, "%H:%M") + timedelta(minutes=or_bars * 5)
+    ).time()
+    rows = []
+    for day in trading_days:
+        ranked = _rank_tickers_by_eod_win_rate(ticker_bars_5m, day, or_start, or_bars)
+        for rank_idx, (ticker, _hist) in enumerate(ranked[:2], 1):
+            day_df = ticker_bars_5m.get(ticker, pd.DataFrame())
+            if not day_df.empty:
+                day_df = day_df[day_df.index.date == day]
+            entry_bars = day_df[day_df.index.time == or_close_time] if not day_df.empty else pd.DataFrame()
+            if entry_bars.empty:
+                continue
+            entry_price = float(entry_bars.iloc[0]["Close"])
+            row = {
+                "date": day,
+                "ticker": ticker,
+                "rank": rank_idx,
+                "signal_time": or_close_time.strftime("%H:%M"),
+                "entry": entry_price,
+            }
+            for mins in _HOLD_WINDOWS_MIN:
+                key = f"pct_{_hold_label(mins)}"
+                row[key] = _forward_pct(day_df, or_close_time, day, mins)
+            rows.append(row)
+    return rows
 
 
 def _window_label(or_start, or_bars):
@@ -890,7 +1198,54 @@ def run_range_analysis(
     table_width = 12 + 1 + 6 + 1 + win_col_w + 1 + 6 + 7 + 2 + 7 + 2 + len(_HOLD_WINDOWS_MIN) * (col_w + 2)
     header_cols = "  ".join(f"{_hold_label(m):>{col_w}}" for m in _HOLD_WINDOWS_MIN)
 
+    # ── Pre-session rankings (separate section, outside signal table) ────────────
     win_labels_str = ", ".join(_window_label(s, b) for s, b in effective_windows)
+    print(f"\n{'=' * table_width}")
+    print(f"Pre-Session Rankings (9:25) — {start_date} to {end_date}  |  20d lookback")
+    print("=" * table_width)
+    for day in trading_days:
+        ranked = _rank_tickers_by_eod_win_rate(ticker_bars_5m, day, or_start, or_bars)
+        ranking_block = _format_top2_ranking(ranked, day, or_start, or_bars)
+        wr_table = _format_ticker_win_rate_table(ranked)
+        if ranking_block:
+            print(ranking_block)
+        if wr_table:
+            print(wr_table)
+
+    # ── Pre-session top-2 performance table ──────────────────────────────────
+    picks_rows = _build_presession_picks_rows(ticker_bars_5m, trading_days, or_start, or_bars)
+    if picks_rows:
+        print(f"\n{'=' * table_width}")
+        print(
+            f"Pre-Session Top-2 Performance — {start_date} to {end_date}  |  "
+            f"Unconditional OR-close entry  |  OR: {or_start}/{or_bars}b"
+        )
+        print("=" * table_width)
+        print(
+            f"{'Date':<12} {'Ticker':<6} {'Rank':<5} {'At':<6} "
+            f"{'Entry':>7}  {header_cols}"
+        )
+        print("-" * table_width)
+        for row in picks_rows:
+            hold_cols = []
+            for mins in _HOLD_WINDOWS_MIN:
+                pct = row.get(f"pct_{_hold_label(mins)}")
+                if pct is None:
+                    hold_cols.append(f"{'N/A':>{col_w}}")
+                else:
+                    tag = "W" if pct > 0 else "L"
+                    hold_cols.append(f"{f'{pct:>+6.2f}%{tag}':>{col_w}}")
+            print(
+                f"{str(row['date']):<12} {row['ticker']:<6} {'#'+str(row['rank']):<5} "
+                f"{row['signal_time']:<6} {row['entry']:>7.2f}  "
+                + "  ".join(hold_cols)
+            )
+        n_picks = len(picks_rows)
+        print(f"\n{'='*88}")
+        print(f"Pre-session picks summary — {n_picks} pick(s) across {len(trading_days)} trading day(s)")
+        _print_summary_block(picks_rows, "Top-2 picks (all days)")
+
+    # ── Signal table ──────────────────────────────────────────────────────────
     print(f"\n{'=' * table_width}")
     print(
         f"Signal Analysis — {start_date} to {end_date}  |  BULL only  |  "
@@ -981,22 +1336,153 @@ def run_range_analysis(
 # ─── CLI ───────────────────────────────────────────────────────────────────────
 
 
+_LOG_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "logs")
+_PID_FILE = os.path.join(_LOG_DIR, "ma_or_screener.pid")
+
+
+def _screener_log_file():
+    return os.path.join(_LOG_DIR, f"ma_or_screener_{date.today()}.log")
+
+
+def _make_log_handler(log_file):
+    import re
+    handler = logging.handlers.TimedRotatingFileHandler(
+        log_file, when="midnight", backupCount=30, encoding="utf-8"
+    )
+    handler.namer = lambda name: re.sub(
+        r'(ma_or_screener)_[\d-]+(\.log)\.(\d{4}-\d{2}-\d{2})$', r'\1_\3\2', name
+    )
+    return handler
+
+
+def _write_pid(pid_file):
+    with open(pid_file, "w") as f:
+        f.write(str(os.getpid()))
+
+
+def _read_pid(pid_file):
+    try:
+        with open(pid_file) as f:
+            return int(f.read().strip())
+    except (FileNotFoundError, ValueError):
+        return None
+
+
+def _remove_pid(pid_file):
+    try:
+        os.remove(pid_file)
+    except FileNotFoundError:
+        pass
+
+
+def _is_running(pid):
+    try:
+        os.kill(pid, 0)
+        return True
+    except (OSError, ProcessLookupError):
+        return False
+
+
+def _daemonize(log_file):
+    """Double-fork to detach from terminal."""
+    pid = os.fork()
+    if pid > 0:
+        sys.exit(0)
+    os.setsid()
+    pid = os.fork()
+    if pid > 0:
+        sys.exit(0)
+    sys.stdout.flush()
+    sys.stderr.flush()
+    with open(os.devnull) as dev_null:
+        os.dup2(dev_null.fileno(), sys.stdin.fileno())
+    log_fd = open(log_file, "a")
+    os.dup2(log_fd.fileno(), sys.stdout.fileno())
+    os.dup2(log_fd.fileno(), sys.stderr.fileno())
+    log_fd.close()
+
+
+def _daemon_stop(pid_file, log_file):
+    pid = _read_pid(pid_file)
+    if pid is None or not _is_running(pid):
+        print("Screener daemon is not running.")
+        _remove_pid(pid_file)
+        return
+    print(f"Stopping screener daemon (PID {pid})...")
+    os.kill(pid, signal.SIGTERM)
+    for _ in range(20):
+        time.sleep(0.5)
+        if not _is_running(pid):
+            break
+    else:
+        os.kill(pid, signal.SIGKILL)
+        print(f"Daemon (PID {pid}) force-killed.")
+        _remove_pid(pid_file)
+        return
+    _remove_pid(pid_file)
+    print(f"Screener daemon stopped (PID {pid}).")
+
+
+def _setup_logging(log_file, level="INFO", foreground=False):
+    fmt = logging.Formatter(
+        "%(asctime)s %(levelname)s %(name)s — %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    root = logging.getLogger()
+    root.setLevel(getattr(logging, level))
+    root.handlers.clear()
+    fh = _make_log_handler(log_file)
+    fh.setFormatter(fmt)
+    root.addHandler(fh)
+    if foreground:
+        sh = logging.StreamHandler()
+        sh.setFormatter(fmt)
+        root.addHandler(sh)
+    for noisy in ("urllib3", "requests", "requests_oauthlib", "oauthlib", "websockets"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
+
+
 def _build_live_market_data_client():
+    from alpha_tech_tracker.op_momentum_strategy.config import (
+        _TRADESTATION_SESSION_TOKENS,
+        TRADESTATION_ENVIRONMENT,
+        _load_config,
+    )
+    from alpha_tech_tracker.trade_api.tradestation.client import TradeStationAPIClient
     from alpha_tech_tracker.trade_api.tradestation.market_data_client import (
         TradeStationMarketDataClient,
     )
-    return TradeStationMarketDataClient()
+    _load_config()
+    if not _TRADESTATION_SESSION_TOKENS.get("access_token"):
+        raise RuntimeError(
+            "TradeStation session not found — run tradestation_auth.py first"
+        )
+    ts_client = TradeStationAPIClient(environment=TRADESTATION_ENVIRONMENT)
+    ts_client.restore_session(_TRADESTATION_SESSION_TOKENS)
+    if not ts_client.verify_session():
+        raise RuntimeError(
+            "TradeStation session invalid — run tradestation_auth.py first"
+        )
+    return TradeStationMarketDataClient(ts_client)
 
 
-def main():
-    parser = argparse.ArgumentParser(
-        description="MA Open Range Momentum Screener"
+def _build_arg_parser():
+    parser = argparse.ArgumentParser(description="MA Open Range Momentum Screener")
+    parser.add_argument(
+        "action",
+        nargs="?",
+        default="backtest",
+        choices=["run", "start", "stop", "status", "restart", "logs", "backtest", "analyze"],
+        help=(
+            "run: live foreground | start: live daemon | stop | status | restart | "
+            "logs: tail the log file | backtest: single-date backtest (default) | analyze: date-range analysis"
+        ),
     )
     parser.add_argument(
         "--date", default=None,
         help="Target date YYYY-MM-DD for backtest (default: today)"
     )
-    parser.add_argument("--live", action="store_true", help="Run in live polling mode")
+    parser.add_argument("--live", action="store_true", help=argparse.SUPPRESS)  # legacy alias for 'run'
     parser.add_argument(
         "--or-bars", type=int, default=_DEFAULT_OR_BARS,
         help=f"5-min bars in the opening range (default {_DEFAULT_OR_BARS})"
@@ -1007,7 +1493,7 @@ def main():
     )
     parser.add_argument(
         "--collection-bars", type=int, default=3,
-        help="Bars to scan for signals starting at OR close (default 3 = 15 min window)"
+        help="Bars to scan for signals starting at OR close (default 3)"
     )
     parser.add_argument(
         "--tickers", nargs="+", default=None,
@@ -1042,30 +1528,112 @@ def main():
     )
     parser.add_argument(
         "--window", nargs=2, metavar=("HH:MM", "BARS"), action="append", dest="windows",
-        help="OR window for range analysis: start time and bar count (repeatable). "
-             "Overrides --or-start/--or-bars when used with --start/--end."
+        help="OR window for range analysis: start time and bar count (repeatable)."
     )
+    parser.add_argument(
+        "--pid-file", default=_PID_FILE,
+        help=f"PID file path for daemon mode (default: {_PID_FILE})"
+    )
+    parser.add_argument(
+        "--log-file", default=None,
+        help="Log file path (default: logs/ma_or_screener_YYYY-MM-DD.log)"
+    )
+    parser.add_argument(
+        "--log-level", default="INFO",
+        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
+        help="Log level (default: INFO)"
+    )
+    return parser
+
+
+def _run_live(args, tickers):
+    market_data_client = _build_live_market_data_client()
+    run_live(
+        tickers=tickers,
+        or_bars=args.or_bars,
+        or_start=args.or_start,
+        collection_bars=args.collection_bars,
+        market_data_client=market_data_client,
+        poll_interval_sec=args.poll_interval,
+        dry_run=args.dry_run,
+    )
+
+
+def main():
+    parser = _build_arg_parser()
     args = parser.parse_args()
+
+    # Backwards-compat: bare --live flag maps to "run" action
+    if getattr(args, "live", False) and args.action == "backtest":
+        args.action = "run"
 
     tickers = args.tickers if args.tickers else list(DEFAULT_TICKERS)
     feed = DataFeed.SIP if args.feed == "sip" else DataFeed.IEX
+    log_file = args.log_file or _screener_log_file()
+    os.makedirs(os.path.dirname(os.path.abspath(log_file)), exist_ok=True)
 
-    if args.live:
-        market_data_client = _build_live_market_data_client()
-        run_live(
-            tickers=tickers,
-            or_bars=args.or_bars,
-            or_start=args.or_start,
-            collection_bars=args.collection_bars,
-            market_data_client=market_data_client,
-            poll_interval_sec=args.poll_interval,
-            dry_run=args.dry_run,
-        )
-    elif args.start and args.end:
+    # ── logs ──────────────────────────────────────────────────────────────────
+    if args.action == "logs":
+        if not os.path.exists(log_file):
+            print(f"No log file found: {log_file}")
+            sys.exit(1)
+        print(f"==> {log_file} <==")
+        try:
+            os.execvp("tail", ["tail", "-f", log_file])
+        except Exception as exc:
+            print(f"tail failed: {exc}")
+            sys.exit(1)
+
+    # ── status ────────────────────────────────────────────────────────────────
+    if args.action == "status":
+        pid = _read_pid(args.pid_file)
+        if pid and _is_running(pid):
+            print(f"Screener daemon running (PID {pid}) — log: {log_file}")
+        else:
+            print("Screener daemon is not running.")
+        sys.exit(0)
+
+    # ── stop ──────────────────────────────────────────────────────────────────
+    if args.action == "stop":
+        _daemon_stop(args.pid_file, log_file)
+        sys.exit(0)
+
+    # ── restart ───────────────────────────────────────────────────────────────
+    if args.action == "restart":
+        _daemon_stop(args.pid_file, log_file)
+
+    # ── run (foreground live) ─────────────────────────────────────────────────
+    if args.action == "run":
+        _setup_logging(log_file, level=args.log_level, foreground=True)
+        logger.info("Starting screener in foreground — log: %s", log_file)
+        _run_live(args, tickers)
+        sys.exit(0)
+
+    # ── start / restart (daemon) ──────────────────────────────────────────────
+    if args.action in ("start", "restart"):
+        existing_pid = _read_pid(args.pid_file)
+        if existing_pid and _is_running(existing_pid):
+            print(f"Screener daemon already running (PID {existing_pid}). Use 'restart' or 'stop' first.")
+            sys.exit(1)
+        print(f"Starting screener daemon — log: {log_file}")
+        _daemonize(log_file)
+        # daemon process only beyond this point
+        _write_pid(args.pid_file)
+        _setup_logging(log_file, level=args.log_level, foreground=False)
+        logger.info("Screener daemon started (PID %d)", os.getpid())
+        try:
+            _run_live(args, tickers)
+        except Exception:
+            logger.exception("Screener daemon crashed")
+        finally:
+            _remove_pid(args.pid_file)
+        sys.exit(0)
+
+    # ── analyze (date-range) ──────────────────────────────────────────────────
+    if args.action == "analyze" or (args.start and args.end):
         windows = (
             [(w[0], int(w[1])) for w in args.windows]
-            if args.windows
-            else None
+            if args.windows else None
         )
         run_range_analysis(
             start_date=date.fromisoformat(args.start),
@@ -1079,18 +1647,20 @@ def main():
             source=args.source,
             feed=feed,
         )
-    else:
-        target_date = date.fromisoformat(args.date) if args.date else date.today()
-        run_backtest(
-            target_date=target_date,
-            tickers=tickers,
-            or_bars=args.or_bars,
-            or_start=args.or_start,
-            collection_bars=args.collection_bars,
-            source=args.source,
-            feed=feed,
-            print_all=args.print_all,
-        )
+        return
+
+    # ── backtest (default) ────────────────────────────────────────────────────
+    target_date = date.fromisoformat(args.date) if args.date else date.today()
+    run_backtest(
+        target_date=target_date,
+        tickers=tickers,
+        or_bars=args.or_bars,
+        or_start=args.or_start,
+        collection_bars=args.collection_bars,
+        source=args.source,
+        feed=feed,
+        print_all=args.print_all,
+    )
 
 
 if __name__ == "__main__":

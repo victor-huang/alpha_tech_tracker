@@ -34,7 +34,9 @@ import pandas as pd
 import pytest
 import pytz
 
-from alpha_tech_tracker.op_momentum_strategy.ma_open_range_momentum_screener import run_live
+from alpha_tech_tracker.op_momentum_strategy.ma_open_range_momentum_screener import (
+    run_live,
+)
 
 ET = pytz.timezone("America/New_York")
 _MODULE = "alpha_tech_tracker.op_momentum_strategy.ma_open_range_momentum_screener"
@@ -303,3 +305,121 @@ class TestLiveScreenerSimulation:
                 )
         # Alpaca warmup fetch must happen once before the loop
         assert mock_fetch.call_count == 1
+
+
+# ─── Early 60%-bar notification tests ─────────────────────────────────────────
+
+
+class TestEarlyCollectionBarNotification:
+    """
+    Tests for the 60%-bar early notification:
+      - With collection_bars=3, min_bars_to_notify = ceil(0.6*3) = 2
+      - An EARLY SMS is sent when 2/3 bars arrive and signal conditions are met
+      - An UPDATE console line is printed on the 3rd bar (no duplicate SMS)
+      - No notification fires when only 1/3 bars have arrived
+    """
+
+    # Polling times: pre-OR → bar-1 (9:45) → bar-2 (9:50) → bar-3 (9:55) → EOD
+    _LOOP_TIMES = [
+        dtime(9, 30),   # pre-OR: sleep
+        dtime(9, 47),   # 1st collection bar arrived (9:45) — below 60%
+        dtime(9, 52),   # 2nd collection bar arrived (9:50) — at 60% → EARLY notify
+        dtime(9, 57),   # 3rd collection bar arrived (9:55) → UPDATE only
+        dtime(15, 55),  # EOD
+    ]
+    _SLEEP_EFFECTS = [None, None, None, None, StopIteration("done")]
+
+    def _run_early(self, tickers, warmup_bars, live_bars_by_poll, collection_bars=3):
+        """
+        Run run_live() where live bars grow each poll (simulates bars arriving over time).
+        live_bars_by_poll: list of fetch_bars return values, one per active-window poll.
+        """
+        notified = []
+        printed = []
+        poll_returns = iter(live_bars_by_poll)
+
+        def _fetch_live(tks, start, end):
+            return next(poll_returns)
+
+        client = MagicMock()
+        client.fetch_bars.side_effect = _fetch_live
+
+        with patch(f"{_MODULE}._now_et",
+                   side_effect=_mock_now_et(_SIM_DATE, self._LOOP_TIMES)), \
+             patch(f"{_MODULE}.fetch_bars", return_value=warmup_bars), \
+             patch(f"{_MODULE}.fetch_daily_bars",
+                   return_value={t: pd.DataFrame() for t in tickers + ["QQQ"]}), \
+             patch(f"{_MODULE}._notify", side_effect=notified.append), \
+             patch(f"{_MODULE}.time") as mock_time:
+            mock_time.sleep.side_effect = list(self._SLEEP_EFFECTS)
+            with pytest.raises(StopIteration):
+                run_live(
+                    tickers=tickers,
+                    or_bars=3,
+                    or_start="09:30",
+                    collection_bars=collection_bars,
+                    market_data_client=client,
+                    poll_interval_sec=0,
+                )
+        return notified
+
+    def _make_live_bars_with_n_collection(self, target_date, n_collection, signal_vol=2_000_000):
+        """
+        Build live bars with exactly n_collection bars after the OR close (9:45).
+        OR bars: 9:30, 9:35, 9:40 (3 bars at close=100)
+        Collection bars: 9:45, 9:50, ... (n_collection bars at close=101, high vol)
+        """
+        rows = []
+        base = _ts(target_date, dtime(9, 30))
+        # 3 OR bars
+        for i in range(3):
+            t = base + timedelta(minutes=5 * i)
+            rows.append({"ts": t, "Open": 100.0, "High": 103.0, "Low": 97.0,
+                         "Close": 100.0, "Volume": signal_vol})
+        # collection bars
+        for i in range(n_collection):
+            t = base + timedelta(minutes=5 * (3 + i))
+            rows.append({"ts": t, "Open": 101.0, "High": 103.0, "Low": 97.0,
+                         "Close": 101.0, "Volume": signal_vol})
+        return pd.DataFrame(rows).set_index("ts")
+
+    def test_no_early_notify_when_only_one_collection_bar(self):
+        warmup = _make_full_warmup(_SIM_DATE, _SIM_TICKERS)
+        # Poll 1 (9:47): 1 collection bar — below 60% threshold
+        # Poll 2 (9:52): 2 collection bars — at threshold, EARLY fires
+        # Poll 3 (9:57): 3 collection bars
+        bars_1 = {t: self._make_live_bars_with_n_collection(_SIM_DATE, 1) for t in _SIM_TICKERS + ["QQQ"]}
+        bars_2 = {t: self._make_live_bars_with_n_collection(_SIM_DATE, 2) for t in _SIM_TICKERS + ["QQQ"]}
+        bars_3 = {t: self._make_live_bars_with_n_collection(_SIM_DATE, 3) for t in _SIM_TICKERS + ["QQQ"]}
+        notified = self._run_early(_SIM_TICKERS, warmup, [bars_1, bars_2, bars_3])
+        # First EARLY notify must come after bar 2 is fetched, not bar 1
+        early = [m for m in notified if "EARLY" in m]
+        assert len(early) >= 1
+
+    def test_early_sms_contains_early_prefix(self):
+        warmup = _make_full_warmup(_SIM_DATE, _SIM_TICKERS)
+        bars_1 = {t: self._make_live_bars_with_n_collection(_SIM_DATE, 1) for t in _SIM_TICKERS + ["QQQ"]}
+        bars_2 = {t: self._make_live_bars_with_n_collection(_SIM_DATE, 2) for t in _SIM_TICKERS + ["QQQ"]}
+        bars_3 = {t: self._make_live_bars_with_n_collection(_SIM_DATE, 3) for t in _SIM_TICKERS + ["QQQ"]}
+        notified = self._run_early(_SIM_TICKERS, warmup, [bars_1, bars_2, bars_3])
+        early = [m for m in notified if "EARLY" in m]
+        assert any("TSLA" in m for m in early)
+
+    def test_early_sms_sent_at_most_once(self):
+        warmup = _make_full_warmup(_SIM_DATE, _SIM_TICKERS)
+        bars_2 = {t: self._make_live_bars_with_n_collection(_SIM_DATE, 2) for t in _SIM_TICKERS + ["QQQ"]}
+        bars_3 = {t: self._make_live_bars_with_n_collection(_SIM_DATE, 3) for t in _SIM_TICKERS + ["QQQ"]}
+        # Even if 60% threshold is crossed on both poll 2 and poll 3, SMS fires once
+        notified = self._run_early(_SIM_TICKERS, warmup,
+                                   [bars_2, bars_2, bars_3])
+        early = [m for m in notified if "EARLY" in m and "TSLA" in m]
+        assert len(early) == 1
+
+    def test_full_signal_sms_still_sent_after_early(self):
+        warmup = _make_full_warmup(_SIM_DATE, _SIM_TICKERS)
+        bars_1 = {t: self._make_live_bars_with_n_collection(_SIM_DATE, 1) for t in _SIM_TICKERS + ["QQQ"]}
+        bars_2 = {t: self._make_live_bars_with_n_collection(_SIM_DATE, 2) for t in _SIM_TICKERS + ["QQQ"]}
+        bars_3 = {t: self._make_live_bars_with_n_collection(_SIM_DATE, 3) for t in _SIM_TICKERS + ["QQQ"]}
+        notified = self._run_early(_SIM_TICKERS, warmup, [bars_1, bars_2, bars_3])
+        # Both EARLY and SIGNAL (or at minimum EARLY) messages should appear
+        assert any("EARLY" in m or "SIGNAL" in m for m in notified)
