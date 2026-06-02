@@ -1247,6 +1247,24 @@ class OpMomentumTradeEngine:
             return False, cost
         return True, cost
 
+    def _stock_entry_fits_capital(
+        self,
+        event,
+        slot_weight: _D,
+        window_budget: _D,
+    ) -> Tuple[bool, _D]:
+        """Check whether the slot budget can fund at least 1 share.
+
+        Mirrors the InsufficientSlotBudgetError guard in PositionSizer.compute_stock
+        so the drain loop can skip to the next candidate before committing.
+        """
+        stock_price = _D(str(event.stock_price))
+        if stock_price <= _D("0"):
+            return True, _D("0")
+        slot_budget = window_budget * slot_weight
+        fits = int(slot_budget / stock_price) >= 1
+        return fits, slot_budget if fits else _D("0")
+
     def _available_capital(self) -> Optional[_D]:
         """Bankroll currently free to deploy: initial + realized P&L − open cost."""
         if self._initial_capital is None:
@@ -2111,16 +2129,14 @@ class OpMomentumTradeEngine:
             )
             return
 
-        # Collect top-N selections. For options, advance to the next-ranked
-        # candidate when a slot can't fund the contract (slot weight × budget
-        # smaller than 1 contract, or bankroll cap exceeded). For stock and for
-        # tests without a window_budget, behaviour is unchanged.
+        # Collect top-N selections. Advance to the next-ranked candidate when a
+        # slot can't fund the position (options: 1 contract > slot or bankroll cap
+        # exceeded; stock: share price > slot budget). Skip pre-check only when
+        # there is no window_budget to check against.
         selections = []
         candidate_iter = iter(scored)
         pending_cost = _D("0")
-        should_pre_check = (
-            self._trade_type == "options" and window_budget is not None
-        )
+        should_pre_check = window_budget is not None
         for rank in range(self._top_n):
             if self._is_circuit_breaker_tripped():
                 logger.warning(
@@ -2147,9 +2163,14 @@ class OpMomentumTradeEngine:
                 except StopIteration:
                     break
                 if should_pre_check:
-                    fits, est_cost = self._option_entry_fits_capital(
-                        event, slot_weight, window_budget, pending_cost,
-                    )
+                    if self._trade_type == "options":
+                        fits, est_cost = self._option_entry_fits_capital(
+                            event, slot_weight, window_budget, pending_cost,
+                        )
+                    else:
+                        fits, est_cost = self._stock_entry_fits_capital(
+                            event, slot_weight, window_budget,
+                        )
                     if not fits:
                         logger.info(
                             "Slot rank=%d [%s]: %s does not fit slot/bankroll"
@@ -2180,8 +2201,8 @@ class OpMomentumTradeEngine:
             selections.append((rank, event))
 
         # Fire all selected entries in parallel — each thread is independent.
-        # On failure the thread decrements open_position_count and stops; no
-        # fallback to the next-ranked ticker.
+        # Capital-fit failures are caught in the drain loop above; post-selection
+        # failures (order rejection, API error) decrement open_position_count and stop.
         def _enter_one(rank: int, event: SignalEvent):
             success = self._enter_position(
                 event, rank=rank, window_label=label, window_budget=window_budget

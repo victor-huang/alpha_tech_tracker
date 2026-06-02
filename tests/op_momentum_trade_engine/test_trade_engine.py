@@ -2849,6 +2849,73 @@ class TestDrainPendingSignals:
 
         assert engine._monitor._reentry_watchers == []
 
+    def test_stock_rank0_budget_miss_falls_through_to_rank1_candidate(self):
+        # MU (rank=0) price exceeds the slot budget; engine should promote JPM
+        # (rank=1) and enter it rather than leaving the slot empty.
+        client = _make_alpaca_client()
+        engine = OpMomentumTradeEngine(
+            alpaca_client=client,
+            mock_trade_execution=True,
+            trade_type="stock",
+            top_n=1,
+        )
+        engine._window_state["W1"]["collection_deadline"] = datetime.now(ET) - timedelta(
+            seconds=1
+        )
+        # MU inserted first → scored first → rank=0; slot budget $400 < $1000/share
+        # JPM inserted second → scored second → rank=1; slot budget $400 ≥ $200/share
+        engine._window_state["W1"]["pending_signals"] = {
+            "MU": _make_signal_event("MU", entry=1000.0),
+            "JPM": _make_signal_event("JPM", entry=200.0),
+        }
+        engine._rolling_stats = {
+            "MU": {"ev_trade": 0.8, "win_rate": 0.6, "avg_win_pct": 2.0},
+            "JPM": {"ev_trade": 0.5, "win_rate": 0.4, "avg_win_pct": 1.0},
+        }
+        enter_calls = []
+        with patch(_SCORE_TICKER_PATH, side_effect=[3.0, 1.5]), \
+             patch.object(
+                 engine,
+                 "_enter_position",
+                 side_effect=lambda e, **kw: enter_calls.append(e.ticker),
+             ), \
+             patch.object(engine, "_get_window_budget", return_value=_D("400")):
+            engine._drain_pending_signals_for_window(engine._windows[0])
+
+        assert enter_calls == ["JPM"]
+
+    def test_stock_all_candidates_too_expensive_leaves_slot_empty(self):
+        # Both candidates exceed the slot budget — slot should be left empty.
+        client = _make_alpaca_client()
+        engine = OpMomentumTradeEngine(
+            alpaca_client=client,
+            mock_trade_execution=True,
+            trade_type="stock",
+            top_n=1,
+        )
+        engine._window_state["W1"]["collection_deadline"] = datetime.now(ET) - timedelta(
+            seconds=1
+        )
+        engine._window_state["W1"]["pending_signals"] = {
+            "MU": _make_signal_event("MU", entry=1000.0),
+            "MRVL": _make_signal_event("MRVL", entry=800.0),
+        }
+        engine._rolling_stats = {
+            "MU": {"ev_trade": 0.8, "win_rate": 0.6, "avg_win_pct": 2.0},
+            "MRVL": {"ev_trade": 0.5, "win_rate": 0.4, "avg_win_pct": 1.0},
+        }
+        enter_calls = []
+        with patch(_SCORE_TICKER_PATH, side_effect=[3.0, 1.5]), \
+             patch.object(
+                 engine,
+                 "_enter_position",
+                 side_effect=lambda e, **kw: enter_calls.append(e.ticker),
+             ), \
+             patch.object(engine, "_get_window_budget", return_value=_D("400")):
+            engine._drain_pending_signals_for_window(engine._windows[0])
+
+        assert enter_calls == []
+
 
 # ---------------------------------------------------------------------------
 # _enter_position failure paths — open_position_count must be decremented
