@@ -373,6 +373,24 @@ class TestGetCurrentRegime:
                 regime = engine.get_current_regime()
         assert regime.direction == "NO_POSITION"
 
+    def test_as_of_date_overrides_today_month(self):
+        # Verify replay mode correctness: as_of_date=May date → LONG (month 5),
+        # even if _today_month would return June (NEUTRAL).
+        with tempfile.TemporaryDirectory() as tmpdir:
+            engine = RegimeEngine(data_dir=tmpdir)
+            with patch("alpha_tech_tracker.op_momentum_strategy.regime_engine._today_month", return_value=6):
+                regime_today = engine.get_current_regime()
+                regime_replay = engine.get_current_regime(as_of_date=date(2026, 5, 19))
+        assert regime_today.direction == "NEUTRAL"  # June seasonal
+        assert regime_replay.direction == "LONG"     # May seasonal
+
+    def test_as_of_date_none_falls_back_to_today_month(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            engine = RegimeEngine(data_dir=tmpdir)
+            with patch("alpha_tech_tracker.op_momentum_strategy.regime_engine._today_month", return_value=9):
+                regime = engine.get_current_regime(as_of_date=None)
+        assert regime.direction == "SHORT"  # September seasonal
+
 
 class TestSummaryStr:
     def test_returns_non_empty_string(self):
@@ -390,6 +408,13 @@ class TestSummaryStr:
                 s = engine.summary_str()
         assert "LONG" in s
         assert "EOD" in s
+
+    def test_as_of_date_reflected_in_summary_str(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            engine = RegimeEngine(data_dir=tmpdir)
+            with patch("alpha_tech_tracker.op_momentum_strategy.regime_engine._today_month", return_value=6):
+                s = engine.summary_str(as_of_date=date(2026, 5, 19))
+        assert "LONG" in s  # May seasonal, not June NEUTRAL
 
 
 class TestJsonPersistence:

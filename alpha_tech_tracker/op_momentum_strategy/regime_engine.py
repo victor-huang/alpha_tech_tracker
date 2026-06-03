@@ -322,12 +322,18 @@ class RegimeEngine:
     # Public interface
     # ------------------------------------------------------------------
 
-    def get_current_regime(self, presession_top2_wr: float = None) -> RegimeState:
+    def get_current_regime(
+        self,
+        presession_top2_wr: float = None,
+        as_of_date: date = None,
+    ) -> RegimeState:
         """
         Apply layers 1–3 in order. Layer 3 (transition) has highest priority.
         presession_top2_wr is Layer 4 input used only in screener run_live().
+        as_of_date overrides today's date for month-based seasonal prior — pass
+        the replay clock date in replay mode so the correct seasonal prior is used.
         """
-        month = _today_month()
+        month = as_of_date.month if as_of_date is not None else _today_month()
 
         seasonal = self._seasonal_prior(month)
         rolling = self._rolling_check(self._history)
@@ -339,8 +345,8 @@ class RegimeEngine:
             return rolling
         return seasonal
 
-    def summary_str(self) -> str:
-        regime = self.get_current_regime()
+    def summary_str(self, as_of_date: date = None) -> str:
+        regime = self.get_current_regime(as_of_date=as_of_date)
         hold = f" | Hold: {regime.hold_window}" if regime.hold_window else ""
         return f"Regime: {regime.direction}{hold} [{regime.regime_type}] — {regime.notes}"
 

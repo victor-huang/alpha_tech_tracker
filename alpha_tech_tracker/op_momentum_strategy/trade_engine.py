@@ -2602,16 +2602,19 @@ class OpMomentumTradeEngine:
         shared_ticker_dfs = unique_selectors[first_config_key].fetch_bars()
 
         # Regime engine: compute prior-day metrics then resolve today's regime.
+        # Pass as_of_date so replay mode uses the replay date's month for the
+        # seasonal prior instead of the wall-clock month at run time.
         if self._regime_engine is not None:
-            yesterday = _now_et().date() - timedelta(days=1)
+            today = _now_et().date()
+            yesterday = today - timedelta(days=1)
             first_win = self._windows[0]
             self._regime_engine.compute_and_add_metrics(
                 shared_ticker_dfs, yesterday,
                 first_win.opening_start, first_win.opening_bars,
                 collection_bars=first_win.opening_bars,
             )
-            self._current_regime = self._regime_engine.get_current_regime()
-            logger.info("Regime: %s", self._regime_engine.summary_str())
+            self._current_regime = self._regime_engine.get_current_regime(as_of_date=today)
+            logger.info("Regime: %s", self._regime_engine.summary_str(as_of_date=today))
 
         regime_direction = self._current_regime.direction if self._current_regime else "LONG"
 
