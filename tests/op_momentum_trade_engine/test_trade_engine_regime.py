@@ -120,6 +120,8 @@ class TestWinRateTickerSelector:
         sel.select(sel.fetch_bars())
         assert "AAPL" in sel.rolling_stats
         assert sel.rolling_stats["AAPL"]["ev_trade"] == 1.0
+        assert "avg_win_pct" in sel.rolling_stats["AAPL"]
+        assert "win_rate" in sel.rolling_stats["AAPL"]
 
 
 # ─── Direction filter in _on_signal_for_window ───────────────────────────────
@@ -363,9 +365,12 @@ class TestSelectorType:
         )
         sel = WinRateTickerSelector(tickers=["AAPL", "TSLA"], top_n=2)
         sel.select(sel.fetch_bars(), direction="LONG")
-        assert "AAPL" in sel.rolling_stats
-        assert "TSLA" in sel.rolling_stats
-        assert sel.rolling_stats["AAPL"]["ev_trade"] == 1.0
+        # All three keys score_ticker() reads with [] must be present
+        for ticker in ("AAPL", "TSLA"):
+            assert ticker in sel.rolling_stats
+            assert sel.rolling_stats[ticker]["ev_trade"] == 1.0
+            assert "avg_win_pct" in sel.rolling_stats[ticker]
+            assert "win_rate" in sel.rolling_stats[ticker]
 
 
 # ─── Timed exit wired into positions at entry ─────────────────────────────────

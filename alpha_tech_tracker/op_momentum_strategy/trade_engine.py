@@ -429,9 +429,14 @@ class WinRateTickerSelector:
             picks = [t for t, _ in list(reversed(ranked[-self._top_n:]))]
         else:
             picks = [t for t, _ in ranked[:self._top_n]]
-        # Populate rolling_stats so the signal drain's EV gate doesn't skip picks.
-        # ev_trade=1.0 is a sentinel that always passes the default min_ev=0.0 gate.
-        self.rolling_stats = {ticker: {"ev_trade": 1.0} for ticker in picks}
+        # Populate rolling_stats so the signal drain can gate and score picks.
+        # score_ticker() reads ev_trade, avg_win_pct, win_rate directly with [].
+        # ev_trade=1.0 ensures every pick passes the default min_ev=0.0 gate;
+        # avg_win_pct/win_rate=0.0 lets the drain rank purely by entry position.
+        self.rolling_stats = {
+            ticker: {"ev_trade": 1.0, "avg_win_pct": 0.0, "win_rate": 0.0}
+            for ticker in picks
+        }
         logger.info("WinRateTickerSelector [%s] top-%d: %s", direction, self._top_n, picks)
         return picks
 
