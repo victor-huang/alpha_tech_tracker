@@ -230,6 +230,162 @@ class TestDirectionFilter:
         assert "AAPL" in engine._window_state["W1"]["pending_signals"]
 
 
+# ─── Effective-N capital allocation in drain ─────────────────────────────────
+
+class TestEffectiveNCapitalAllocation:
+    """When fewer tickers pass filters than top_n, capital is split by actual count."""
+
+    def _make_engine(self, top_n=3):
+        client = _make_client()
+        return OpMomentumTradeEngine(
+            alpaca_client=client,
+            mock_trade_execution=True,
+            top_n=top_n,
+            trade_type="stock",
+        )
+
+    def _make_event(self, ticker="AAPL"):
+        return SignalEvent(
+            ticker=ticker,
+            signal="BULLISH",
+            entry_price=_D("150"),
+            stock_price=_D("150"),
+            or_high=_D("152"),
+            or_low=_D("148"),
+            or_range=_D("4"),
+            ma50_at_signal=_D("149"),
+        )
+
+    def test_single_pick_gets_full_capital(self, mocker):
+        """1 scored candidate with top_n=3 → slot_weight = 1/1, not 1/3."""
+        mocker.patch(
+            "alpha_tech_tracker.op_momentum_strategy.trade_engine._now_et",
+            return_value=ET.localize(datetime(2026, 5, 29, 9, 46)),
+        )
+        captured_weights = []
+
+        def _capture(*args, **kwargs):
+            captured_weights.append(kwargs.get("capital_weight_override"))
+            return True
+
+        engine = self._make_engine(top_n=3)
+        mocker.patch.object(engine, "_enter_position", side_effect=_capture)
+        mocker.patch.object(engine, "_get_window_budget", return_value=_D("50000"))
+        mocker.patch.object(engine, "_is_circuit_breaker_tripped", return_value=False)
+
+        engine._rolling_stats = {"AAPL": {"ev_trade": 1.0, "avg_win_pct": 0.5, "win_rate": 0.6}}
+        engine._rolling_stats_by_window["W1"] = engine._rolling_stats
+        engine._window_state["W1"]["pending_signals"] = {"AAPL": self._make_event("AAPL")}
+
+        from alpha_tech_tracker.op_momentum_strategy.models import WindowConfig
+        win = WindowConfig(label="W1", opening_start="09:30", opening_bars=3)
+        engine._windows = [win]
+        engine._drain_pending_signals_for_window(win)
+
+        assert len(captured_weights) == 1
+        assert captured_weights[0] == _D("1")  # 1/1 full capital
+
+    def test_two_picks_get_half_capital_each(self, mocker):
+        """2 scored candidates with top_n=3 → slot_weight = 1/2 each."""
+        mocker.patch(
+            "alpha_tech_tracker.op_momentum_strategy.trade_engine._now_et",
+            return_value=ET.localize(datetime(2026, 5, 29, 9, 46)),
+        )
+        captured_weights = []
+
+        def _capture(*args, **kwargs):
+            captured_weights.append(kwargs.get("capital_weight_override"))
+            return True
+
+        engine = self._make_engine(top_n=3)
+        mocker.patch.object(engine, "_enter_position", side_effect=_capture)
+        mocker.patch.object(engine, "_get_window_budget", return_value=_D("50000"))
+        mocker.patch.object(engine, "_is_circuit_breaker_tripped", return_value=False)
+
+        stats = {"ev_trade": 1.0, "avg_win_pct": 0.5, "win_rate": 0.6}
+        engine._rolling_stats_by_window["W1"] = {"AAPL": stats, "TSLA": stats}
+        engine._window_state["W1"]["pending_signals"] = {
+            "AAPL": self._make_event("AAPL"),
+            "TSLA": self._make_event("TSLA"),
+        }
+
+        from alpha_tech_tracker.op_momentum_strategy.models import WindowConfig
+        win = WindowConfig(label="W1", opening_start="09:30", opening_bars=3)
+        engine._windows = [win]
+        engine._drain_pending_signals_for_window(win)
+
+        assert len(captured_weights) == 2
+        assert all(w == _D("1") / _D("2") for w in captured_weights)
+
+    def test_three_picks_get_third_capital_each(self, mocker):
+        """3 scored candidates with top_n=3 → unchanged 1/3 behavior."""
+        mocker.patch(
+            "alpha_tech_tracker.op_momentum_strategy.trade_engine._now_et",
+            return_value=ET.localize(datetime(2026, 5, 29, 9, 46)),
+        )
+        captured_weights = []
+
+        def _capture(*args, **kwargs):
+            captured_weights.append(kwargs.get("capital_weight_override"))
+            return True
+
+        engine = self._make_engine(top_n=3)
+        mocker.patch.object(engine, "_enter_position", side_effect=_capture)
+        mocker.patch.object(engine, "_get_window_budget", return_value=_D("50000"))
+        mocker.patch.object(engine, "_is_circuit_breaker_tripped", return_value=False)
+
+        stats = {"ev_trade": 1.0, "avg_win_pct": 0.5, "win_rate": 0.6}
+        engine._rolling_stats_by_window["W1"] = {t: stats for t in ("AAPL", "TSLA", "NVDA")}
+        engine._window_state["W1"]["pending_signals"] = {
+            t: self._make_event(t) for t in ("AAPL", "TSLA", "NVDA")
+        }
+
+        from alpha_tech_tracker.op_momentum_strategy.models import WindowConfig
+        win = WindowConfig(label="W1", opening_start="09:30", opening_bars=3)
+        engine._windows = [win]
+        engine._drain_pending_signals_for_window(win)
+
+        assert len(captured_weights) == 3
+        assert all(w == _D("1") / _D("3") for w in captured_weights)
+
+    def test_rank_weights_not_affected(self, mocker):
+        """Explicit rank_weights bypass effective_n — rank 0 always gets its configured weight."""
+        mocker.patch(
+            "alpha_tech_tracker.op_momentum_strategy.trade_engine._now_et",
+            return_value=ET.localize(datetime(2026, 5, 29, 9, 46)),
+        )
+        captured_weights = []
+
+        def _capture(*args, **kwargs):
+            captured_weights.append(kwargs.get("capital_weight_override"))
+            return True
+
+        client = _make_client()
+        engine = OpMomentumTradeEngine(
+            alpaca_client=client,
+            mock_trade_execution=True,
+            top_n=3,
+            rank_weights=[50, 30, 20],
+            trade_type="stock",
+        )
+        mocker.patch.object(engine, "_enter_position", side_effect=_capture)
+        mocker.patch.object(engine, "_get_window_budget", return_value=_D("50000"))
+        mocker.patch.object(engine, "_is_circuit_breaker_tripped", return_value=False)
+
+        stats = {"ev_trade": 1.0, "avg_win_pct": 0.5, "win_rate": 0.6}
+        engine._rolling_stats_by_window["W1"] = {"AAPL": stats}
+        engine._window_state["W1"]["pending_signals"] = {"AAPL": self._make_event("AAPL")}
+
+        from alpha_tech_tracker.op_momentum_strategy.models import WindowConfig
+        win = WindowConfig(label="W1", opening_start="09:30", opening_bars=3)
+        engine._windows = [win]
+        engine._drain_pending_signals_for_window(win)
+
+        assert len(captured_weights) == 1
+        # rank_weights[0] = 50 / (50+30+20) = 0.5 — not boosted to 1.0
+        assert captured_weights[0] == _D("0.5")
+
+
 # ─── Regime engine called in _run_window_selectors ───────────────────────────
 
 class TestRunWindowSelectorsRegime:

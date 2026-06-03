@@ -2258,6 +2258,24 @@ class OpMomentumTradeEngine:
         # slot can't fund the position (options: 1 contract > slot or bankroll cap
         # exceeded; stock: share price > slot budget). Skip pre-check only when
         # there is no window_budget to check against.
+        #
+        # effective_n: the number of candidates available after all filters.
+        # When fewer tickers fired than top_n (e.g. win-rate selector with
+        # LONG regime filtering out bearish picks), each remaining pick gets
+        # capital / effective_n rather than capital / top_n so the full
+        # budget is deployed across however many picks exist.
+        # rank_weights (explicit percent sizing) bypass this adjustment.
+        effective_n = (
+            max(min(len(scored), self._top_n), 1)
+            if not self._rank_weights
+            else self._top_n
+        )
+        if effective_n < self._top_n:
+            logger.info(
+                "Drain [%s]: %d candidate(s) < top_n=%d — allocating capital/%d per pick",
+                label, effective_n, self._top_n, effective_n,
+            )
+
         selections = []
         candidate_iter = iter(scored)
         pending_cost = _D("0")
@@ -2279,7 +2297,7 @@ class OpMomentumTradeEngine:
             if self._rank_weights and rank < len(self._rank_weights):
                 slot_weight = self._rank_weights[rank]
             else:
-                slot_weight = _D("1") / _D(str(self._top_n))
+                slot_weight = _D("1") / _D(str(effective_n))
 
             chosen = None
             while True:
@@ -2317,28 +2335,30 @@ class OpMomentumTradeEngine:
             with self._signal_lock:
                 state["open_position_count"] += 1
             logger.info(
-                "Selecting %s from buffer [%s] (score=%.3f rank=%d)",
+                "Selecting %s from buffer [%s] (score=%.3f rank=%d slot_weight=%.3f)",
                 ticker,
                 label,
                 score,
                 rank,
+                float(slot_weight),
             )
-            selections.append((rank, event))
+            selections.append((rank, event, slot_weight))
 
         # Fire all selected entries in parallel — each thread is independent.
         # Capital-fit failures are caught in the drain loop above; post-selection
         # failures (order rejection, API error) decrement open_position_count and stop.
-        def _enter_one(rank: int, event: SignalEvent):
+        def _enter_one(rank: int, event: SignalEvent, slot_weight: _D):
             success = self._enter_position(
-                event, rank=rank, window_label=label, window_budget=window_budget
+                event, rank=rank, window_label=label, window_budget=window_budget,
+                capital_weight_override=slot_weight,
             )
             if not success:
                 with self._signal_lock:
                     self._window_state[label]["open_position_count"] -= 1
 
         threads = [
-            threading.Thread(target=_enter_one, args=(rank, event), daemon=True)
-            for rank, event in selections
+            threading.Thread(target=_enter_one, args=(rank, event, slot_weight), daemon=True)
+            for rank, event, slot_weight in selections
         ]
         for t in threads:
             t.start()
