@@ -659,6 +659,9 @@ def run_live(
     market_data_client=None,
     poll_interval_sec=30,
     dry_run=False,
+    enable_regime_engine=False,
+    regime_data_dir="market_data/regime_state",
+    _stop_after_iterations=None,
 ):
     """
     Poll live 5-min bars from TradeStation and fire SMS on OR/MA overlap signals.
@@ -696,11 +699,22 @@ def run_live(
         if not df.empty
     }
 
+    # Regime engine — lazy import to avoid circular dependency with regime_engine.py
+    regime_engine = None
+    regime = None
+    if enable_regime_engine:
+        from .regime_engine import RegimeEngine  # noqa: PLC0415
+        regime_engine = RegimeEngine(data_dir=regime_data_dir)
+        regime_engine.compute_and_add_metrics(
+            warmup_bars, yesterday, or_start, or_bars, collection_bars
+        )
+
     already_notified = set()
     tracking_alerted = {}   # ticker -> direction when 60% SMS was sent
     summary_sent = False
     session_signals = []
     current_day = None
+    _iteration_count = 0
 
     or_close_str = (
         datetime.combine(now_init.date(), or_start_time) + timedelta(minutes=or_close_minutes)
@@ -744,12 +758,23 @@ def run_live(
             if wr_table:
                 print(wr_table)
             sms_parts = [p for p in [ranking_block, wr_table] if p]
+            if regime_engine is not None:
+                presession_top2_wr = (
+                    ranked[0][1]["win_rates"][None] / 100 if ranked else None
+                )
+                regime = regime_engine.get_current_regime(presession_top2_wr=presession_top2_wr)
+                regime_sms = f"Regime: {regime.direction} | Hold: {regime.hold_window} | {regime.notes}"
+                logger.info("%s", regime_engine.summary_str())
+                sms_parts.append(regime_sms)
             if sms_parts:
                 _notify("\n".join(sms_parts))
             ranking_sent = True
 
         if now_et < or_close_dt:
             print(f"[{now_et.strftime('%H:%M:%S %Z')}] Waiting for OR to close at {or_close_dt.strftime('%H:%M')} ET...")
+            _iteration_count += 1
+            if _stop_after_iterations is not None and _iteration_count >= _stop_after_iterations:
+                raise StopIteration
             time.sleep(poll_interval_sec)
             continue
 
@@ -758,6 +783,9 @@ def run_live(
                 _send_session_summary(session_signals, today)
                 summary_sent = True
             print(f"[{now_et.strftime('%H:%M:%S %Z')}] EOD — next poll in 60s")
+            _iteration_count += 1
+            if _stop_after_iterations is not None and _iteration_count >= _stop_after_iterations:
+                raise StopIteration
             time.sleep(60)
             continue
 
@@ -858,6 +886,12 @@ def run_live(
 
         for sig in new_signals:
             if sig["ticker"] not in already_notified:
+                if regime is not None and not _passes_regime_filter(sig, regime):
+                    logger.info(
+                        "Regime filter: skipping %s %s signal (%s regime)",
+                        sig["direction"], sig["ticker"], regime.direction,
+                    )
+                    continue
                 already_notified.add(sig["ticker"])
                 session_signals.append(sig)
                 sms = format_sms(sig)
@@ -867,10 +901,37 @@ def run_live(
                 hist_line = _format_hold_history(hist)
                 if hist_line:
                     sms += f"\n{hist_line.strip()}"
+                if regime is not None:
+                    hold_line = _regime_hold_line(regime)
+                    if hold_line:
+                        sms += f"\n{hold_line}"
                 print(f"SIGNAL: {sms}")
                 _notify(sms)
 
+        _iteration_count += 1
+        if _stop_after_iterations is not None and _iteration_count >= _stop_after_iterations:
+            raise StopIteration
+
         time.sleep(poll_interval_sec)
+
+
+def _passes_regime_filter(sig: dict, regime) -> bool:
+    """Return False if the signal direction conflicts with the current regime."""
+    direction = regime.direction
+    if direction == "NO_POSITION":
+        return False
+    if direction == "SHORT" and sig["direction"] == "BULL":
+        return False
+    if direction == "LONG" and sig["direction"] == "BEAR":
+        return False
+    return True
+
+
+def _regime_hold_line(regime) -> str:
+    """Return a one-line hold annotation for the signal SMS, or empty string."""
+    if not regime.hold_window:
+        return ""
+    return f"Hold: {regime.hold_window} [{regime.regime_type}]"
 
 
 def _send_session_summary(signals: list, target_date: date):
