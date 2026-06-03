@@ -4,7 +4,7 @@
 
 Add a **RegimeEngine** that sits on top of the MA/OR screener's existing signal output.
 It consumes daily signal results (win rates, hold curves), applies the 4-layer ruleset
-documented in `backtest_result/MASTER_REGIME_SUMMARY.md`, and produces two decisions per
+documented in `op_momentum_screener_analysis/MASTER_REGIME_SUMMARY.md`, and produces two decisions per
 session: **which direction to trade** (LONG / SHORT / NEUTRAL / NO_POSITION) and **when
 to exit** (+15m / +30m / +1h / +2h / +3h / +5h / EOD).
 
@@ -241,12 +241,31 @@ keeping the data consistent with the selector's bars.
 
 ### Import boundary
 
-`regime_engine.py` imports from `ma_open_range_momentum_screener.py`:
-- `compute_or_ma_signals` — signal scan
-- `_forward_pct` — per-hold-window return computation
+`trade_engine.py` currently has **zero imports** from `ma_open_range_momentum_screener.py`
+and this must stay zero. To enforce that:
 
-The screener and trade engine import `RegimeEngine` from `regime_engine.py`. There are
-no circular imports.
+- `_forward_pct` and `_rank_tickers_by_eod_win_rate` are **moved** from
+  `ma_open_range_momentum_screener.py` into `regime_engine.py`. The screener
+  imports them back from `regime_engine.py` after the move.
+- `regime_engine.py` imports from `ma_open_range_momentum_screener.py` only:
+  `compute_or_ma_signals` (signal scan).
+- `trade_engine.py` imports from `regime_engine.py` only: `RegimeEngine`,
+  `_rank_tickers_by_eod_win_rate` (used by `ScreenerTickerSelector`).
+
+Dependency graph (no cycles):
+
+```
+ma_open_range_momentum_screener.py
+    └── imports compute_or_ma_signals (stays local)
+    └── imports _forward_pct, _rank_tickers_by_eod_win_rate ← from regime_engine.py
+
+regime_engine.py
+    └── imports compute_or_ma_signals ← from ma_open_range_momentum_screener.py
+
+trade_engine.py
+    └── imports RegimeEngine, _rank_tickers_by_eod_win_rate ← from regime_engine.py
+    (zero imports from ma_open_range_momentum_screener.py)
+```
 
 ---
 
@@ -287,7 +306,8 @@ _notify(f"Regime: {regime.direction} | Hold: {regime.hold_window} | {regime.note
       ↳ QQQ fetched internally if absent; cache hit skips recomputation
       ↳ _rank_tickers_by_eod_win_rate NOT called — not used in trade engine
 3. regime_engine.get_current_regime()    ← layers 1–3 only (no presession_top2_wr)
-4. selector.select(ticker_dfs)           ← top-N by scoring_selector OR by win_rate_selector
+4. selector.select(ticker_dfs, direction=regime.direction)
+      ← scoring_selector ignores direction kwarg; win_rate_selector uses it for top-N vs bottom-N
 5. LiveSignalEngine.start()
 ```
 
@@ -349,9 +369,10 @@ class ScreenerTickerSelector:
     def fetch_bars(self) -> dict:
         # same fetch logic as TickerSelector.fetch_bars() — Alpaca or TradeStation
 
-    def select(self, ticker_dfs: dict = None) -> list[str]:
+    def select(self, ticker_dfs: dict = None, direction: str = "LONG") -> list[str]:
         # calls _rank_tickers_by_eod_win_rate(ticker_dfs, today, or_start, or_bars, lookback_days)
-        # returns top-N ticker names by EOD win rate
+        # direction="LONG"  → returns top-N tickers by EOD win rate
+        # direction="SHORT" → returns bottom-N tickers by EOD win rate
 ```
 
 Comparison with `TickerSelector`:
@@ -464,8 +485,10 @@ the regime recommends a long hold (EOD) and price reverses.
 17. `ScreenerTickerSelector` class in `trade_engine.py` — `fetch_bars()`, `select()` via
     `_rank_tickers_by_eod_win_rate`; `rolling_stats` returns empty dict
 18. `--selector {scoring_selector,win_rate_selector}` CLI flag in `op_momentum_trade_engine.py`
-19. `timed_exit_minutes` and `disable_ma_stop` fields on `ActivePosition` +
-    `to_dict`/`from_dict` persistence
+19. `timed_exit_minutes: Optional[int] = None` and `disable_ma_stop: bool = False` fields
+    on `ActivePosition`. In `to_dict`: serialize both. In `from_dict`: use
+    `d.get("timed_exit_minutes", None)` and `d.get("disable_ma_stop", False)` — never
+    direct key access — so sessions saved before this change restore without `KeyError`.
 20. Timed exit check in `PositionMonitor._check_exit()`; trailing MA check skipped when
     `pos.disable_ma_stop` is set
 21. `regime_engine` and `disable_ma_stops_for_regime_hold` parameters on
@@ -487,22 +510,28 @@ the regime recommends a long hold (EOD) and price reverses.
 
 ### Flags (trade engine — `op_momentum_trade_engine.py`)
 
+> **Note:** The existing `--regime-filter` / `--regime-ma` flags control the **QQQ
+> MA-based regime filter** inside `TickerSelector.select_top_n()` — an unrelated system
+> that checks whether QQQ is above/below a moving average to tighten the ticker pool.
+> The flags below are the **MASTER_REGIME_SUMMARY pattern-based regime engine** and are
+> fully independent. Both can be active at the same time without conflict.
+
 | Flag | Values | Default | Effect |
 |---|---|---|---|
-| `--regime-direction` | *(present/absent)* | off | Instantiates `RegimeEngine`; direction filter applied to all signals |
-| `--regime-hold` | *(present/absent)* | off | Timed exit from regime hold window; requires `--regime-direction` |
+| `--enable-regime-engine` | *(present/absent)* | off | Instantiates `RegimeEngine`; direction filter applied to all signals |
+| `--regime-hold` | *(present/absent)* | off | Timed exit from regime hold window; requires `--enable-regime-engine` |
 | `--disable-ma-stops-for-regime-hold-only` | *(present/absent)* | off | Disables trailing MA stop (MA20/MA50) when `--regime-hold` is active; hard stop remains armed; requires `--regime-hold` |
 | `--selector` | `scoring_selector`, `win_rate_selector` | `scoring_selector` | Ticker selection strategy |
 
 ### Dependencies
 
-`--regime-hold` requires `--regime-direction` — without a regime there is no hold window
+`--regime-hold` requires `--enable-regime-engine` — without a regime there is no hold window
 to apply.
 
 `--disable-ma-stops-for-regime-hold-only` requires `--regime-hold` — disabling trailing
 MA only makes sense when the timed exit is the intended exit mechanism.
 
-`--selector win_rate_selector` requires `--regime-direction` — without it the selector
+`--selector win_rate_selector` requires `--enable-regime-engine` — without it the selector
 has no direction source and can only default to LONG (top-N), losing bear/bottom-N
 selection entirely.
 
@@ -511,12 +540,12 @@ selection entirely.
 | Flags | Selector | Regime active | Behavior |
 |---|---|---|---|
 | *(none)* | `scoring_selector` | No | Current behavior unchanged |
-| `--regime-direction` | `scoring_selector` | Yes (layers 1–3) | Composite score picks; direction filter suppresses wrong-direction signals; timed exit off |
-| `--regime-direction --regime-hold` | `scoring_selector` | Yes | Composite score picks; direction filter + timed exit; trailing MA still active |
-| `--regime-direction --regime-hold --disable-ma-stops-for-regime-hold-only` | `scoring_selector` | Yes | Composite score picks; direction filter + timed exit; trailing MA disabled; hard stop only |
-| `--selector win_rate_selector --regime-direction` | `win_rate_selector` | Yes | EOD WR top-N (LONG) or bottom-N (SHORT); direction filter; timed exit off |
-| `--selector win_rate_selector --regime-direction --regime-hold` | `win_rate_selector` | Yes | EOD WR selection + direction filter + timed exit; trailing MA still active |
-| `--selector win_rate_selector --regime-direction --regime-hold --disable-ma-stops-for-regime-hold-only` | `win_rate_selector` | Yes | Full screener-style regime mode; timed exit + hard stop only; trailing MA disabled |
+| `--enable-regime-engine` | `scoring_selector` | Yes (layers 1–3) | Composite score picks; direction filter suppresses wrong-direction signals; timed exit off |
+| `--enable-regime-engine --regime-hold` | `scoring_selector` | Yes | Composite score picks; direction filter + timed exit; trailing MA still active |
+| `--enable-regime-engine --regime-hold --disable-ma-stops-for-regime-hold-only` | `scoring_selector` | Yes | Composite score picks; direction filter + timed exit; trailing MA disabled; hard stop only |
+| `--selector win_rate_selector --enable-regime-engine` | `win_rate_selector` | Yes | EOD WR top-N (LONG) or bottom-N (SHORT); direction filter; timed exit off |
+| `--selector win_rate_selector --enable-regime-engine --regime-hold` | `win_rate_selector` | Yes | EOD WR selection + direction filter + timed exit; trailing MA still active |
+| `--selector win_rate_selector --enable-regime-engine --regime-hold --disable-ma-stops-for-regime-hold-only` | `win_rate_selector` | Yes | Full screener-style regime mode; timed exit + hard stop only; trailing MA disabled |
 
 ### Bear selection behavior by selector
 
@@ -560,12 +589,21 @@ selection entirely.
 
 | File | Change |
 |---|---|
-| `regime_engine.py` (new) | `DailyRegimeMetrics`, `RegimeState`, `RegimeEngine` including `compute_and_add_metrics()` |
-| `ma_open_range_momentum_screener.py` | `run_live()` startup: instantiate `RegimeEngine`, call `compute_and_add_metrics`, direction filter, hold annotation |
-| `trade_engine.py` | `ScreenerTickerSelector` class; `regime_engine` + `disable_ma_stops_for_regime_hold` params on `OpMomentumTradeEngine`; startup sequence; direction filter in signal callback (Phase 4) |
-| `op_momentum_trade_engine.py` | `--selector {scoring_selector,win_rate_selector}`, `--regime-direction`, `--regime-hold`, `--disable-ma-stops-for-regime-hold-only` CLI flags (Phase 4) |
-| `models.py` | `timed_exit_minutes` and `disable_ma_stop` fields on `ActivePosition` (Phase 4) |
+| `regime_engine.py` (new) | `DailyRegimeMetrics`, `RegimeState`, `RegimeEngine` including `compute_and_add_metrics()`; receives `_forward_pct` and `_rank_tickers_by_eod_win_rate` moved from screener |
+| `ma_open_range_momentum_screener.py` | Remove `_forward_pct` and `_rank_tickers_by_eod_win_rate` (moved to `regime_engine.py`); import them back from `regime_engine`; `run_live()` startup: instantiate `RegimeEngine`, call `compute_and_add_metrics`, direction filter, hold annotation |
+| `trade_engine.py` | `ScreenerTickerSelector` class (imports `_rank_tickers_by_eod_win_rate` from `regime_engine.py`); `regime_engine` + `disable_ma_stops_for_regime_hold` params on `OpMomentumTradeEngine`; startup sequence; direction filter in signal callback (Phase 4) |
+| `op_momentum_trade_engine.py` | `--selector {scoring_selector,win_rate_selector}`, `--enable-regime-engine`, `--regime-hold`, `--disable-ma-stops-for-regime-hold-only` CLI flags (Phase 4) |
+| `models.py` | `timed_exit_minutes: Optional[int] = None` and `disable_ma_stop: bool = False` fields on `ActivePosition`; `from_dict` uses `.get()` for both fields for backward-compatible session restore (Phase 4) |
 | `position_monitor.py` | timed exit check + trailing MA suppression via `disable_ma_stop` in `_check_exit()` (Phase 4) |
 | `tests/op_momentum_trade_engine/test_regime_engine.py` (new) | Phase 1–2 unit tests |
 | `tests/op_momentum_trade_engine/test_trade_engine.py` | Phase 4: `ScreenerTickerSelector`, direction filter tests |
 | `tests/op_momentum_trade_engine/test_position_monitor.py` | Phase 4: timed exit tests |
+
+### Analysis and reference docs
+
+All screener P&L findings, per-year regime analysis, and backtest logs live in:
+```
+alpha_tech_tracker/op_momentum_strategy/op_momentum_screener_analysis/
+```
+Key files: `MASTER_REGIME_SUMMARY.md` (regime rules source of truth), `{YEAR}_REGIME_ANALYSIS.md`
+(per-year breakdown), `logs/` (raw backtest run output).
