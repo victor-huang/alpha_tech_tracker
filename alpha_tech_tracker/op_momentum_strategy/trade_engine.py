@@ -2608,7 +2608,7 @@ class OpMomentumTradeEngine:
             self._regime_engine.compute_and_add_metrics(
                 shared_ticker_dfs, yesterday,
                 first_win.opening_start, first_win.opening_bars,
-                collection_bars=3,
+                collection_bars=first_win.opening_bars,
             )
             self._current_regime = self._regime_engine.get_current_regime()
             logger.info("Regime: %s", self._regime_engine.summary_str())

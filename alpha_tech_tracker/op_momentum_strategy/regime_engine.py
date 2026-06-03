@@ -18,10 +18,8 @@ from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import fetch_b
 
 logger = logging.getLogger(__name__)
 
-_HOLD_WINDOWS = ["+15m", "+30m", "+1h", "+2h", "+3h", "+5h", "EOD"]
-
 # Minutes per hold window, None = EOD
-_HIST_HOLD_MIN = [15, 30, 60, 120, 300, None]
+_HIST_HOLD_MIN = [15, 30, 60, 120, 180, 300, None]
 
 # Mapping from hold_min to hold label used in hold_curve dict
 _HOLD_WINDOW_LABELS: Dict[Optional[int], str] = {
@@ -29,6 +27,7 @@ _HOLD_WINDOW_LABELS: Dict[Optional[int], str] = {
     30: "+30m",
     60: "+1h",
     120: "+2h",
+    180: "+3h",
     300: "+5h",
     None: "EOD",
 }

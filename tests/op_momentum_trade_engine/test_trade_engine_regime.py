@@ -297,3 +297,116 @@ class TestTimedExitWiredOnEntry:
         assert _HOLD_WINDOW_MINUTES["+15m"] == 15
         assert _HOLD_WINDOW_MINUTES["+1h"] == 60
         assert _HOLD_WINDOW_MINUTES["EOD"] is None
+
+    def test_active_position_gets_timed_exit_from_regime(self, mocker):
+        """_enter_stock_position propagates regime hold_window → ActivePosition.timed_exit_minutes."""
+        mocker.patch(
+            "alpha_tech_tracker.op_momentum_strategy.trade_engine._now_et",
+            return_value=ET.localize(datetime(2026, 5, 29, 9, 46)),
+        )
+        mocker.patch(
+            "alpha_tech_tracker.op_momentum_strategy.trade_engine.place_stock_order",
+            return_value={"order_id": "sim-stock-AAPL", "status": "simulated"},
+        )
+        captured = []
+
+        def _capture_position(pos):
+            captured.append(pos)
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            client = _make_client()
+            engine = OpMomentumTradeEngine(
+                alpaca_client=client,
+                mock_trade_execution=True,
+                enable_regime_engine=True,
+                regime_hold=True,
+                disable_ma_stops_for_regime_hold=True,
+                regime_data_dir=tmpdir,
+            )
+            engine._current_regime = _regime_state(direction="LONG", hold_window="+1h")
+            from unittest.mock import MagicMock
+            monitor = MagicMock()
+            monitor.add_position.side_effect = _capture_position
+            engine._monitor = monitor
+
+            event = SignalEvent(
+                ticker="AAPL",
+                signal="BULLISH",
+                entry_price=_D("150"),
+                stock_price=_D("150"),
+                or_high=_D("152"),
+                or_low=_D("148"),
+                or_range=_D("4"),
+                ma50_at_signal=_D("149"),
+            )
+            engine._enter_stock_position(
+                event=event,
+                rank=0,
+                window_label="W1",
+                window_budget=_D("10000"),
+                capital_weight=_D("0.5"),
+                bull_hard_stop=_D("147"),
+                bear_hard_stop=_D("153"),
+                bull_fallback=_D("148.8"),
+                bear_fallback=_D("151.2"),
+                entry_bar_time=None,
+            )
+
+        assert len(captured) == 1
+        pos = captured[0]
+        assert pos.timed_exit_minutes == 60
+        assert pos.disable_ma_stop is True
+
+    def test_active_position_no_timed_exit_when_regime_hold_disabled(self, mocker):
+        """With regime_hold=False, timed_exit_minutes is always None regardless of regime."""
+        mocker.patch(
+            "alpha_tech_tracker.op_momentum_strategy.trade_engine._now_et",
+            return_value=ET.localize(datetime(2026, 5, 29, 9, 46)),
+        )
+        mocker.patch(
+            "alpha_tech_tracker.op_momentum_strategy.trade_engine.place_stock_order",
+            return_value={"order_id": "sim-stock-AAPL", "status": "simulated"},
+        )
+        captured = []
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            client = _make_client()
+            engine = OpMomentumTradeEngine(
+                alpaca_client=client,
+                mock_trade_execution=True,
+                enable_regime_engine=True,
+                regime_hold=False,
+                regime_data_dir=tmpdir,
+            )
+            engine._current_regime = _regime_state(direction="LONG", hold_window="+1h")
+            from unittest.mock import MagicMock
+            monitor = MagicMock()
+            monitor.add_position.side_effect = lambda pos: captured.append(pos)
+            engine._monitor = monitor
+
+            event = SignalEvent(
+                ticker="AAPL",
+                signal="BULLISH",
+                entry_price=_D("150"),
+                stock_price=_D("150"),
+                or_high=_D("152"),
+                or_low=_D("148"),
+                or_range=_D("4"),
+                ma50_at_signal=_D("149"),
+            )
+            engine._enter_stock_position(
+                event=event,
+                rank=0,
+                window_label="W1",
+                window_budget=_D("10000"),
+                capital_weight=_D("0.5"),
+                bull_hard_stop=_D("147"),
+                bear_hard_stop=_D("153"),
+                bull_fallback=_D("148.8"),
+                bear_fallback=_D("151.2"),
+                entry_bar_time=None,
+            )
+
+        assert len(captured) == 1
+        assert captured[0].timed_exit_minutes is None
+        assert captured[0].disable_ma_stop is False
