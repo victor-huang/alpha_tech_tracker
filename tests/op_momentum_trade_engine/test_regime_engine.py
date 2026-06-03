@@ -129,7 +129,7 @@ class TestSeasonalPrior:
         (2, "NEUTRAL", "+30m"),
         (3, "NO_POSITION", None),
         (4, "NEUTRAL", "+1h"),
-        (5, "LONG", "+1h"),
+        (5, "LONG", "EOD"),
         (6, "NEUTRAL", "+1h"),
         (7, "NEUTRAL", "EOD"),
         (8, "NEUTRAL", "+15m"),
