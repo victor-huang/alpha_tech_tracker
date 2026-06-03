@@ -1392,11 +1392,11 @@ class TestComputeHoldHistory:
     _OR_START = "09:30"
     _OR_BARS = 3
     # bar index within a day's 5-min series (starting 09:30) for each exit
-    # +5h (300m) from 09:45 → 14:45 = index 63; EOD uses last bar so no fixed index
-    _EXIT_IDX = {15: 6, 30: 9, 60: 15, 120: 27, 300: 63}
+    # anchor = last OR bar = 09:40 (index 2); +5h from 09:40 → 14:40 = index 62
+    _EXIT_IDX = {15: 5, 30: 8, 60: 14, 120: 26, 300: 62}
 
     def _day_closes(self, entry, exits):
-        """80-element close list (09:30–16:05): entry at index 3, override specific exit indices."""
+        """80-element close list (09:30–16:05): entry at index 2, override specific exit indices."""
         closes = [entry] * 80
         for hold_min, exit_close in exits.items():
             if hold_min is None:
@@ -1807,12 +1807,12 @@ class TestFormatTickerWinRateTable:
 class TestBuildPresessionPicksRows:
     _OR_START = "09:30"
     _OR_BARS = 3
-    # OR close bar = 09:45 (index 3), +15m exit = 10:00 (index 6)
+    # OR close bar = 09:40 (index 2), +15m exit = 09:55 (index 5)
 
     def _make_full_day(self, target_date, or_close=100.0, exit_15m=102.0):
-        """80-bar day: OR close bar at index 3 = or_close, +15m bar at index 6 = exit_15m."""
+        """80-bar day: OR close bar at index 2 = or_close, +15m bar at index 5 = exit_15m."""
         closes = [or_close] * 80
-        closes[6] = exit_15m
+        closes[5] = exit_15m
         return _make_5min_bars(closes, target_date=target_date)
 
     def _make_prior_days(self, target_date, n=20, entry=100.0, eod=101.0):
@@ -1883,7 +1883,7 @@ class TestBuildPresessionPicksRows:
 
     def test_skips_ticker_with_no_or_close_bar_on_target_date(self):
         prior = self._make_prior_days(_TARGET_DATE, eod=102.0)
-        # today has only 2 bars — OR close bar (09:45) is missing
+        # today has only 2 bars — OR close bar (09:40) is missing
         short_today = _make_5min_bars([100.0] * 2, target_date=_TARGET_DATE)
         bars = {"APP": self._combine(prior, short_today)}
         result = _build_presession_picks_rows(bars, [_TARGET_DATE], self._OR_START, self._OR_BARS)
@@ -1915,9 +1915,9 @@ class TestBuildPresessionPicksRows:
             assert f"pct_{_hold_label(mins)}" in result[0]
 
     def test_signal_time_is_or_close_bar_time(self):
-        # OR: 09:30 start, 3 bars → close bar at 09:45
+        # OR: 09:30 start, 3 bars → last OR bar opens at 09:40 (index 2)
         prior = self._make_prior_days(_TARGET_DATE, eod=102.0)
         today = self._make_full_day(_TARGET_DATE)
         bars = {"APP": self._combine(prior, today)}
         result = _build_presession_picks_rows(bars, [_TARGET_DATE], self._OR_START, self._OR_BARS)
-        assert result[0]["signal_time"] == "09:45"
+        assert result[0]["signal_time"] == "09:40"

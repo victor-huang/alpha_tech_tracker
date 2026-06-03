@@ -329,15 +329,17 @@ def _scan_ticker(
         logger.warning("%s %s: insufficient history for vol_20day_avg, skipping", ticker, target_date)
         return None
 
-    # Collection window volume today (mean across the scan bars)
-    scan_slice = from_or.iloc[or_bars - 1 : or_bars - 1 + collection_bars]
-    collection_vol = float(scan_slice["Volume"].mean()) if not scan_slice.empty else None
-    if collection_vol is None:
-        return None
-
     scan_start = or_bars - 1
     scan_end = scan_start + collection_bars
-    for idx, bar in from_or.iloc[scan_start:scan_end].iterrows():
+    scan_bars = from_or.iloc[scan_start:scan_end]
+    if scan_bars.empty:
+        return None
+
+    # collection_vol is computed incrementally per bar to avoid lookahead: on bar i we
+    # only use volumes from bars 0..i of the collection window, matching live behaviour.
+    for i, (idx, bar) in enumerate(scan_bars.iterrows()):
+        collection_vol = float(scan_bars.iloc[: i + 1]["Volume"].mean())
+
         close = _nanfloat(bar.get("Close"))
         ma20 = _nanfloat(bar.get("MA20"))
         ma50 = _nanfloat(bar.get("MA50"))
@@ -940,8 +942,10 @@ def _compute_hold_history(df_5m, target_date, or_start, or_bars, lookback=20):
     """
     if df_5m is None or df_5m.empty:
         return None
+    # Anchor at the last OR bar (or_bars-1 bars in), matching _scan_ticker's first
+    # collection bar — not the bar after OR closes.
     or_close_time = (
-        datetime.strptime(or_start, "%H:%M") + timedelta(minutes=or_bars * 5)
+        datetime.strptime(or_start, "%H:%M") + timedelta(minutes=(or_bars - 1) * 5)
     ).time()
 
     past_days = sorted(
@@ -1070,7 +1074,7 @@ def _format_ticker_win_rate_table(ranked):
     ]
     for ticker, hist in ranked:
         cols = "  ".join(
-            f"{hist['win_rates'][h]:.0f}%W {hist['medians'][h]:+.1f}%"
+            f"{hist['win_rates'][h]:.0f}%W {hist['medians'][h]:+.1f}%".rjust(col_w)
             if h in hist["win_rates"] else f"{'—':>{col_w}}"
             for h in _HIST_HOLD_MIN
         )
@@ -1086,8 +1090,9 @@ def _build_presession_picks_rows(ticker_bars_5m, trading_days, or_start, or_bars
     their actual forward returns from the OR-close bar — regardless of whether
     a signal fired. Used to build the pre-session performance table.
     """
+    # Anchor at the last OR bar (or_bars-1 bars in), consistent with _compute_hold_history.
     or_close_time = (
-        datetime.strptime(or_start, "%H:%M") + timedelta(minutes=or_bars * 5)
+        datetime.strptime(or_start, "%H:%M") + timedelta(minutes=(or_bars - 1) * 5)
     ).time()
     rows = []
     for day in trading_days:
@@ -1123,8 +1128,10 @@ def _print_summary_block(results_subset, label):
     """Print one summary block (one window or aggregate) for the given result rows."""
     n = len(results_subset)
     print(f"\n{label}  ({n} signal(s))")
-    print(f"  {'Hold':<8} {'Count':>6} {'Win Rate':>10} {'Avg Gain':>10} {'Avg Win':>10} {'Avg Loss':>10} {'Exp Value':>10} {'Total P&L':>10}")
-    print("  " + "-" * 84)
+    # Column widths: Hold=8, Count=6, WinRate=10(9+%), AvgGain=10(9+%), AvgWin=10(9+%),
+    # AvgLoss=10(9+%), ProfitFactor=12, SumRet=10(9+%) — separators are 1 space each → 73 dashes
+    print(f"  {'Hold':<8} {'Count':>6} {'Win Rate':>10} {'Avg Gain':>10} {'Avg Win':>10} {'Avg Loss':>10} {'ProfitFactor':>12} {'Sum Ret%':>10}")
+    print("  " + "-" * 73)
     for mins in _HOLD_WINDOWS_MIN:
         key = f"pct_{_hold_label(mins)}"
         pcts = [r[key] for r in results_subset if r.get(key) is not None]
@@ -1136,12 +1143,14 @@ def _print_summary_block(results_subset, label):
         avg_gain = sum(pcts) / len(pcts)
         avg_win = sum(wins) / len(wins) if wins else 0.0
         avg_loss = sum(losses) / len(losses) if losses else 0.0
-        exp_val = (win_rate / 100) * avg_win + (1 - win_rate / 100) * avg_loss
-        total_pnl = sum(pcts)
+        gross_loss = abs(sum(losses))
+        profit_factor = sum(wins) / gross_loss if gross_loss > 0 else float("inf")
+        profit_factor_str = f"{profit_factor:.2f}x" if profit_factor != float("inf") else "∞"
+        sum_ret = sum(pcts)
         print(
             f"  {_hold_label(mins):<8} {len(pcts):>6} {win_rate:>9.1f}% "
-            f"{avg_gain:>+10.2f}% {avg_win:>+10.2f}% {avg_loss:>+10.2f}% "
-            f"{exp_val:>+10.2f}% {total_pnl:>+10.2f}%"
+            f"{avg_gain:>+9.2f}% {avg_win:>+9.2f}% {avg_loss:>+9.2f}% "
+            f"{profit_factor_str:>12} {sum_ret:>+9.2f}%"
         )
 
 
@@ -1171,7 +1180,7 @@ def run_range_analysis(
     effective_feed = feed if feed is not None else DataFeed.SIP
     all_tickers = list(tickers) + (["QQQ"] if "QQQ" not in tickers else [])
 
-    warmup_start = start_date - timedelta(days=30)
+    warmup_start = start_date - timedelta(days=45)  # 45 calendar days ≥ 20 trading days even across holiday clusters
     daily_start = start_date - timedelta(days=_DAILY_LOOKBACK_DAYS)
 
     print(f"Fetching 5-min bars ({warmup_start} → {end_date}) [{source}]...")
@@ -1202,6 +1211,7 @@ def run_range_analysis(
     win_labels_str = ", ".join(_window_label(s, b) for s, b in effective_windows)
     print(f"\n{'=' * table_width}")
     print(f"Pre-Session Rankings (9:25) — {start_date} to {end_date}  |  20d lookback")
+    print(f"(Unconditional hold from OR close — no signal or vol filter)")
     print("=" * table_width)
     for day in trading_days:
         ranked = _rank_tickers_by_eod_win_rate(ticker_bars_5m, day, or_start, or_bars)
