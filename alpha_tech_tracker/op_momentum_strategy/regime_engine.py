@@ -34,22 +34,23 @@ _HOLD_WINDOW_LABELS: Dict[Optional[int], str] = {
 
 # Seasonal defaults: (direction, hold_window or None)
 _SEASONAL = {
-    1:  ("LONG",        "EOD"),
-    2:  ("NEUTRAL",     "+30m"),
-    3:  ("NO_POSITION", None),
-    4:  ("NEUTRAL",     "+1h"),
-    5:  ("LONG",        "EOD"),
-    6:  ("NEUTRAL",     "+1h"),
-    7:  ("NEUTRAL",     "EOD"),
-    8:  ("NEUTRAL",     "+15m"),
-    9:  ("SHORT",       "+30m"),
-    10: ("LONG",        "EOD"),
-    11: ("NEUTRAL",     None),
-    12: ("SHORT",       "+2h"),
+    1:  ("LONG",        "EOD"),   # Jan: reliable bull; verify by day-3
+    2:  ("NEUTRAL",     "EOD"),   # Feb: follow Jan direction; AM-pop-fade risk
+    3:  ("CAUTION",     "+15m"),  # Mar: no new entries until day-3 confirms; +15m exit if any
+    4:  ("NEUTRAL",     "EOD"),   # Apr: no assumption; confirm from first 2-3 days
+    5:  ("LONG",        "EOD"),   # May: mild bull; check EV not just WR
+    6:  ("NEUTRAL",     "EOD"),   # Jun: follow May shape if rising-curve bull
+    7:  ("NEUTRAL",     "EOD"),   # Jul: follow Jun; EOD if Jun was rising-curve bull
+    8:  ("CAUTION",     "+15m"),  # Aug: extend to EOD only if Jul was rising-curve bull
+    9:  ("SHORT",       "+30m"),  # Sep: AM-pop-fade dominant; override to LONG only if EV > 1.5×
+    10: ("LONG",        "EOD"),   # Oct: strongest seasonal; hold +3h–EOD
+    11: ("NEUTRAL",     None),    # Nov: WAIT — check week-1 EV before committing direction
+    12: ("SHORT",       "EOD"),   # Dec: persistent bear; override only with named macro catalyst
 }
 
 _SEASONAL_NOTES = {
-    3:  "NO_POSITION — wait for day-3 confirmation before trading",
+    3:  "CAUTION — take +15m exits only; wait for day-3 confirmation before extending hold",
+    8:  "CAUTION — take +15m exits only; extend to EOD only if July was rising-curve bull",
     11: "NEUTRAL — wait for week-1 EV check before applying rolling regime",
 }
 
@@ -95,7 +96,7 @@ class DailyRegimeMetrics:
 
 @dataclass
 class RegimeState:
-    direction: str    # "LONG" | "SHORT" | "NEUTRAL" | "NO_POSITION"
+    direction: str    # "LONG" | "SHORT" | "NEUTRAL" | "CAUTION" | "NO_POSITION"
     hold_window: str  # "+15m" | "+30m" | "+1h" | "+2h" | "+3h" | "+5h" | "EOD" | ""
     regime_type: str  # e.g. "Rising Bull", "AM Pop-Fade", "Seasonal Default", ...
     source: str       # "seasonal" | "rolling_confirmed" | "transition"

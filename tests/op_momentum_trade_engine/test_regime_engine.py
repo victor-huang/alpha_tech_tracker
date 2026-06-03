@@ -126,17 +126,17 @@ class TestAddDailyResult:
 class TestSeasonalPrior:
     @pytest.mark.parametrize("month,expected_direction,expected_hold", [
         (1, "LONG", "EOD"),
-        (2, "NEUTRAL", "+30m"),
-        (3, "NO_POSITION", None),
-        (4, "NEUTRAL", "+1h"),
+        (2, "NEUTRAL", "EOD"),
+        (3, "CAUTION", "+15m"),
+        (4, "NEUTRAL", "EOD"),
         (5, "LONG", "EOD"),
-        (6, "NEUTRAL", "+1h"),
+        (6, "NEUTRAL", "EOD"),
         (7, "NEUTRAL", "EOD"),
-        (8, "NEUTRAL", "+15m"),
+        (8, "CAUTION", "+15m"),
         (9, "SHORT", "+30m"),
         (10, "LONG", "EOD"),
         (11, "NEUTRAL", None),
-        (12, "SHORT", "+2h"),
+        (12, "SHORT", "EOD"),
     ])
     def test_seasonal_prior_direction(self, month, expected_direction, expected_hold):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -146,11 +146,12 @@ class TestSeasonalPrior:
             if expected_hold is not None:
                 assert regime.hold_window == expected_hold
 
-    def test_march_returns_no_position(self):
+    def test_march_returns_caution_with_15m_hold(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             engine = RegimeEngine(data_dir=tmpdir)
             regime = engine._seasonal_prior(3)
-            assert regime.direction == "NO_POSITION"
+            assert regime.direction == "CAUTION"
+            assert regime.hold_window == "+15m"
             assert regime.source == "seasonal"
 
     def test_november_returns_neutral_with_wait_note(self):
@@ -368,12 +369,13 @@ class TestGetCurrentRegime:
                 regime = engine.get_current_regime()
         assert regime.direction == "NEUTRAL"
 
-    def test_no_position_march_day_1_through_3(self):
+    def test_caution_march_takes_positions_with_short_hold(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             engine = RegimeEngine(data_dir=tmpdir)
             with patch("alpha_tech_tracker.op_momentum_strategy.regime_engine._today_month", return_value=3):
                 regime = engine.get_current_regime()
-        assert regime.direction == "NO_POSITION"
+        assert regime.direction == "CAUTION"
+        assert regime.hold_window == "+15m"
 
     def test_as_of_date_overrides_today_month(self):
         # Verify replay mode correctness: as_of_date=May date → LONG (month 5),

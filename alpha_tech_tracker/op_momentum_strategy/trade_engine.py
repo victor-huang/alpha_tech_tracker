@@ -1982,6 +1982,7 @@ class OpMomentumTradeEngine:
             if direction == "NO_POSITION":
                 logger.info("Regime filter: NO_POSITION — skipping %s signal for %s", event.signal, event.ticker)
                 return
+            # CAUTION: enter positions but hold_window limits exit — no direction filter applied
             if direction == "SHORT" and event.signal == "BULLISH":
                 logger.info("Regime filter: skipping BULLISH signal for %s (SHORT regime)", event.ticker)
                 return
