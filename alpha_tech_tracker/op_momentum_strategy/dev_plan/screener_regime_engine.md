@@ -250,7 +250,7 @@ and this must stay zero. To enforce that:
 - `regime_engine.py` imports from `ma_open_range_momentum_screener.py` only:
   `compute_or_ma_signals` (signal scan).
 - `trade_engine.py` imports from `regime_engine.py` only: `RegimeEngine`,
-  `_rank_tickers_by_eod_win_rate` (used by `ScreenerTickerSelector`).
+  `_rank_tickers_by_eod_win_rate` (used by `WinRateTickerSelector`).
 
 Dependency graph (no cycles):
 
@@ -301,7 +301,7 @@ _notify(f"Regime: {regime.direction} | Hold: {regime.hold_window} | {regime.note
 ### Startup sequence (`OpMomentumTradeEngine.run()`)
 
 ```
-1. selector.fetch_bars()                 ← TickerSelector or ScreenerTickerSelector
+1. selector.fetch_bars()                 ← TickerSelector or WinRateTickerSelector
 2. regime_engine.compute_and_add_metrics(ticker_dfs, yesterday, ...)
       ↳ QQQ fetched internally if absent; cache hit skips recomputation
       ↳ _rank_tickers_by_eod_win_rate NOT called — not used in trade engine
@@ -348,13 +348,13 @@ Parts 1–3 must be running in live screener mode for at least one week before P
 implemented. Regime decisions should be validated against actual screener signal outcomes
 before wiring into capital-deploying trade execution.
 
-### 4a — `ScreenerTickerSelector`
+### 4a — `WinRateTickerSelector`
 
 A new selector class in `trade_engine.py` that uses the screener's EOD win rate ranking
 instead of the composite score. Enabled via `--selector win_rate_selector` CLI flag.
 
 ```python
-class ScreenerTickerSelector:
+class WinRateTickerSelector:
     def __init__(
         self,
         tickers: list,
@@ -377,7 +377,7 @@ class ScreenerTickerSelector:
 
 Comparison with `TickerSelector`:
 
-| | `TickerSelector` (`scoring_selector`) | `ScreenerTickerSelector` (`win_rate_selector`) |
+| | `TickerSelector` (`scoring_selector`) | `WinRateTickerSelector` (`win_rate_selector`) |
 |---|---|---|
 | Ranking metric | Composite score (EV, win rate, OR range) | EOD win rate, unconditional OR-close hold |
 | Lookback | 60 days rolling | 20 days rolling |
@@ -387,7 +387,7 @@ Comparison with `TickerSelector`:
 | `rolling_stats` | Populated — used for re-entry EV gating | Empty dict — re-entry EV gate skipped |
 
 **`rolling_stats` fallback:** `OpMomentumTradeEngine._enter_reentry()` checks
-`rolling_stats.get(ticker)` for EV gating. When `ScreenerTickerSelector` is active,
+`rolling_stats.get(ticker)` for EV gating. When `WinRateTickerSelector` is active,
 `rolling_stats` is an empty dict — the EV gate condition evaluates to `ev_trade=0`,
 which passes the `> min_ev` check when `min_ev=0.0` (the default). No code change
 needed; behavior is correct by default. If `--min-ev` is explicitly set above 0, the
@@ -395,7 +395,7 @@ caller is opting into EV gating and should use `TickerSelector` instead.
 
 **CLI flag:** `--selector {scoring_selector,win_rate_selector}` on `op_momentum_trade_engine.py`.
 Default is `scoring_selector` (no behavioral change). When `win_rate_selector` is set,
-`ScreenerTickerSelector` is instantiated in place of `TickerSelector`.
+`WinRateTickerSelector` is instantiated in place of `TickerSelector`.
 
 `OpMomentumTradeEngine.__init__` accepts either selector via duck typing — both expose
 `fetch_bars()` and `select()` with identical signatures. No base class required.
@@ -482,7 +482,7 @@ the regime recommends a long hold (EOD) and price reverses.
 
 ### Phase 4 — Trade engine integration (separate PR, after Phase 3 validated)
 
-17. `ScreenerTickerSelector` class in `trade_engine.py` — `fetch_bars()`, `select()` via
+17. `WinRateTickerSelector` class in `trade_engine.py` — `fetch_bars()`, `select()` via
     `_rank_tickers_by_eod_win_rate`; `rolling_stats` returns empty dict
 18. `--selector {scoring_selector,win_rate_selector}` CLI flag in `op_momentum_trade_engine.py`
 19. `timed_exit_minutes: Optional[int] = None` and `disable_ma_stop: bool = False` fields
@@ -498,7 +498,7 @@ the regime recommends a long hold (EOD) and price reverses.
 23. `timed_exit_minutes` and `disable_ma_stop` wiring in `_enter_position` — set when
     `--regime-hold` and `--disable-ma-stops-for-regime-hold-only` are both active
 24. `--disable-ma-stops-for-regime-hold-only` CLI flag in `op_momentum_trade_engine.py`
-25. Tests: `test_trade_engine.py` — `ScreenerTickerSelector` returns top-N by EOD WR;
+25. Tests: `test_trade_engine.py` — `WinRateTickerSelector` returns top-N by EOD WR;
     BULLISH signal skipped in SHORT regime; BEARISH signal skipped in LONG regime;
     `test_position_monitor.py` — timed exit fires before EOD; hard stop fires before
     timed exit; trailing MA skipped when `disable_ma_stop=True`; trailing MA fires when
@@ -591,12 +591,12 @@ selection entirely.
 |---|---|
 | `regime_engine.py` (new) | `DailyRegimeMetrics`, `RegimeState`, `RegimeEngine` including `compute_and_add_metrics()`; receives `_forward_pct` and `_rank_tickers_by_eod_win_rate` moved from screener |
 | `ma_open_range_momentum_screener.py` | Remove `_forward_pct` and `_rank_tickers_by_eod_win_rate` (moved to `regime_engine.py`); import them back from `regime_engine`; `run_live()` startup: instantiate `RegimeEngine`, call `compute_and_add_metrics`, direction filter, hold annotation |
-| `trade_engine.py` | `ScreenerTickerSelector` class (imports `_rank_tickers_by_eod_win_rate` from `regime_engine.py`); `regime_engine` + `disable_ma_stops_for_regime_hold` params on `OpMomentumTradeEngine`; startup sequence; direction filter in signal callback (Phase 4) |
+| `trade_engine.py` | `WinRateTickerSelector` class (imports `_rank_tickers_by_eod_win_rate` from `regime_engine.py`); `regime_engine` + `disable_ma_stops_for_regime_hold` params on `OpMomentumTradeEngine`; startup sequence; direction filter in signal callback (Phase 4) |
 | `op_momentum_trade_engine.py` | `--selector {scoring_selector,win_rate_selector}`, `--enable-regime-engine`, `--regime-hold`, `--disable-ma-stops-for-regime-hold-only` CLI flags (Phase 4) |
 | `models.py` | `timed_exit_minutes: Optional[int] = None` and `disable_ma_stop: bool = False` fields on `ActivePosition`; `from_dict` uses `.get()` for both fields for backward-compatible session restore (Phase 4) |
 | `position_monitor.py` | timed exit check + trailing MA suppression via `disable_ma_stop` in `_check_exit()` (Phase 4) |
 | `tests/op_momentum_trade_engine/test_regime_engine.py` (new) | Phase 1–2 unit tests |
-| `tests/op_momentum_trade_engine/test_trade_engine.py` | Phase 4: `ScreenerTickerSelector`, direction filter tests |
+| `tests/op_momentum_trade_engine/test_trade_engine.py` | Phase 4: `WinRateTickerSelector`, direction filter tests |
 | `tests/op_momentum_trade_engine/test_position_monitor.py` | Phase 4: timed exit tests |
 
 ### Analysis and reference docs
