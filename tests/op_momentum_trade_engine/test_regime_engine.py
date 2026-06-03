@@ -133,10 +133,10 @@ class TestSeasonalPrior:
         (6, "NEUTRAL", "+1h"),
         (7, "NEUTRAL", "EOD"),
         (8, "NEUTRAL", "+15m"),
-        (9, "SHORT", "+15m"),
+        (9, "SHORT", "+30m"),
         (10, "LONG", "EOD"),
         (11, "NEUTRAL", None),
-        (12, "SHORT", "+1h"),
+        (12, "SHORT", "+2h"),
     ])
     def test_seasonal_prior_direction(self, month, expected_direction, expected_hold):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -163,8 +163,9 @@ class TestSeasonalPrior:
 
 class TestRollingCheck:
     def test_rising_bull_detected(self):
+        # eod_wr=0.55 is below the 0.60 Rolling Long threshold so hold-curve shape drives the result
         history = [
-            _metrics(date(2026, 1, d), eod_wr=0.65, hold_curve=_rising_bull_curve())
+            _metrics(date(2026, 1, d), eod_wr=0.55, hold_curve=_rising_bull_curve())
             for d in range(2, 6)
         ]
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -175,8 +176,9 @@ class TestRollingCheck:
         assert regime.regime_type == "Rising Bull"
 
     def test_am_pop_fade_detected(self):
+        # eod_wr=0.55 is below the 0.60 Rolling Long threshold so the fade pattern is tested directly
         history = [
-            _metrics(date(2026, 1, d), hold_curve=_am_pop_fade_curve())
+            _metrics(date(2026, 1, d), eod_wr=0.55, hold_curve=_am_pop_fade_curve())
             for d in range(2, 6)
         ]
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -223,10 +225,10 @@ class TestRollingCheck:
         assert regime.hold_window == "+5h"
 
     def test_u_curve_detected(self):
-        # AM negative, midday bear, EOD recovery
+        # AM negative, midday bear, EOD recovery — eod_wr=0.55 keeps Rolling Long from firing first
         u_curve = {"+15m": 0.38, "+30m": 0.35, "+1h": 0.32, "+2h": 0.35, "+3h": 0.42, "+5h": 0.50, "EOD": 0.62}
         history = [
-            _metrics(date(2026, 1, d), eod_wr=0.62, hold_curve=u_curve)
+            _metrics(date(2026, 1, d), eod_wr=0.55, hold_curve=u_curve)
             for d in range(2, 6)
         ]
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -647,3 +649,110 @@ class TestComputeAndAddMetrics:
                 _TARGET, _OR_START, _OR_BARS, _COLL_BARS,
             )
             assert any(m.date == _TARGET for m in engine._history)
+
+
+class TestRollingLong:
+    def test_wr_above_60_positive_ev_returns_rolling_long_eod(self):
+        # Flat hold curve — Rolling Long fires, not Rising Bull
+        flat_curve = {"+15m": 0.62, "+30m": 0.61, "+1h": 0.60, "+2h": 0.60, "+3h": 0.60, "+5h": 0.60, "EOD": 0.62}
+        history = [
+            _metrics(date(2026, 1, d), eod_wr=0.63, avg_gain=0.4, hold_curve=flat_curve)
+            for d in range(2, 6)
+        ]
+        with tempfile.TemporaryDirectory() as tmpdir:
+            engine = RegimeEngine(data_dir=tmpdir)
+            regime = engine._rolling_check(history)
+        assert regime.regime_type == "Rolling Long"
+        assert regime.direction == "LONG"
+        assert regime.hold_window == "EOD"
+
+    def test_wr_above_60_positive_ev_with_rising_curve_upgrades_to_5h(self):
+        history = [
+            _metrics(date(2026, 1, d), eod_wr=0.65, avg_gain=0.6, hold_curve=_rising_bull_curve())
+            for d in range(2, 6)
+        ]
+        with tempfile.TemporaryDirectory() as tmpdir:
+            engine = RegimeEngine(data_dir=tmpdir)
+            regime = engine._rolling_check(history)
+        assert regime.regime_type == "Rolling Long + Rising Bull"
+        assert regime.direction == "LONG"
+        assert regime.hold_window == "+5h"
+
+    def test_high_wr_trap_takes_priority_over_rolling_long(self):
+        # WR ≥ 60% but avg_gain ≤ 0 — High-WR Trap wins over Rolling Long
+        history = [
+            _metrics(date(2026, 1, d), eod_wr=0.62, avg_gain=-0.1, hold_curve=_rising_bull_curve())
+            for d in range(2, 6)
+        ]
+        with tempfile.TemporaryDirectory() as tmpdir:
+            engine = RegimeEngine(data_dir=tmpdir)
+            regime = engine._rolling_check(history)
+        assert regime.regime_type == "High-WR Trap"
+
+    def test_wr_below_60_does_not_trigger_rolling_long(self):
+        # WR=0.58, positive EV — should not match Rolling Long
+        flat_curve = {"+15m": 0.58, "+30m": 0.57, "+1h": 0.56, "+2h": 0.55, "+3h": 0.54, "+5h": 0.53, "EOD": 0.52}
+        history = [
+            _metrics(date(2026, 1, d), eod_wr=0.58, avg_gain=0.3, hold_curve=flat_curve)
+            for d in range(2, 6)
+        ]
+        with tempfile.TemporaryDirectory() as tmpdir:
+            engine = RegimeEngine(data_dir=tmpdir)
+            regime = engine._rolling_check(history)
+        # Should fall through to None or catch a different pattern, not Rolling Long
+        assert regime is None or regime.regime_type != "Rolling Long"
+
+
+class TestPresessionOverride:
+    def test_wr_above_60_overrides_short_regime(self):
+        # Persistent Bear rolling → would be SHORT, but presession WR 65% flips it
+        history = [
+            _metrics(date(2026, 1, d), eod_wr=0.30, hold_curve=_bear_curve())
+            for d in range(2, 6)
+        ]
+        with tempfile.TemporaryDirectory() as tmpdir:
+            engine = RegimeEngine(data_dir=tmpdir)
+            for m in history:
+                engine.add_daily_result(m)
+            with patch("alpha_tech_tracker.op_momentum_strategy.regime_engine._today_month", return_value=1):
+                regime = engine.get_current_regime(presession_top2_wr=0.65)
+        assert regime.direction == "LONG"
+        assert regime.regime_type == "Pre-Session Override"
+
+    def test_wr_above_60_overrides_neutral_seasonal(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            engine = RegimeEngine(data_dir=tmpdir)
+            with patch("alpha_tech_tracker.op_momentum_strategy.regime_engine._today_month", return_value=6):
+                regime = engine.get_current_regime(presession_top2_wr=0.62)
+        assert regime.direction == "LONG"
+        assert regime.regime_type == "Pre-Session Override"
+
+    def test_wr_above_60_overrides_no_position_march(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            engine = RegimeEngine(data_dir=tmpdir)
+            with patch("alpha_tech_tracker.op_momentum_strategy.regime_engine._today_month", return_value=3):
+                regime = engine.get_current_regime(presession_top2_wr=0.61)
+        assert regime.direction == "LONG"
+        assert regime.regime_type == "Pre-Session Override"
+
+    def test_wr_below_60_does_not_override(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            engine = RegimeEngine(data_dir=tmpdir)
+            with patch("alpha_tech_tracker.op_momentum_strategy.regime_engine._today_month", return_value=6):
+                regime = engine.get_current_regime(presession_top2_wr=0.55)
+        assert regime.direction == "NEUTRAL"
+
+    def test_none_wr_has_no_effect(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            engine = RegimeEngine(data_dir=tmpdir)
+            with patch("alpha_tech_tracker.op_momentum_strategy.regime_engine._today_month", return_value=6):
+                regime = engine.get_current_regime(presession_top2_wr=None)
+        assert regime.direction == "NEUTRAL"
+
+    def test_does_not_override_existing_long(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            engine = RegimeEngine(data_dir=tmpdir)
+            with patch("alpha_tech_tracker.op_momentum_strategy.regime_engine._today_month", return_value=10):
+                regime = engine.get_current_regime(presession_top2_wr=0.70)
+        assert regime.direction == "LONG"
+        assert regime.regime_type != "Pre-Session Override"  # October seasonal LONG is kept as-is

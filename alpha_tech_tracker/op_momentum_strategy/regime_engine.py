@@ -42,10 +42,10 @@ _SEASONAL = {
     6:  ("NEUTRAL",     "+1h"),
     7:  ("NEUTRAL",     "EOD"),
     8:  ("NEUTRAL",     "+15m"),
-    9:  ("SHORT",       "+15m"),
+    9:  ("SHORT",       "+30m"),
     10: ("LONG",        "EOD"),
     11: ("NEUTRAL",     None),
-    12: ("SHORT",       "+1h"),
+    12: ("SHORT",       "+2h"),
 }
 
 _SEASONAL_NOTES = {
@@ -193,6 +193,14 @@ class RegimeEngine:
             return RegimeState("LONG", "+15m", "High-WR Trap", "rolling_confirmed",
                                "EOD WR ≥ 55% but avg_gain ≤ 0 — exit early")
 
+        # Rolling Long: EOD WR ≥ 60% + positive EV — genuine bull regime
+        if self._all_match(recent, self._is_rolling_long):
+            if self._all_match(recent, self._is_rising_bull):
+                return RegimeState("LONG", "+5h", "Rolling Long + Rising Bull", "rolling_confirmed",
+                                   "EOD WR ≥ 60% + positive EV + rising hold curve — maximize hold to +5h")
+            return RegimeState("LONG", "EOD", "Rolling Long", "rolling_confirmed",
+                               "EOD WR ≥ 60% + positive EV — LONG regime, hold to EOD")
+
         # Persistent Bear: EOD WR < 40% AND hold curve declining
         if self._all_match(recent, self._is_persistent_bear):
             return RegimeState("SHORT", "EOD", "Persistent Bear", "rolling_confirmed",
@@ -222,6 +230,9 @@ class RegimeEngine:
 
     def _all_match(self, days, predicate) -> bool:
         return len(days) >= 3 and all(predicate(d) for d in days)
+
+    def _is_rolling_long(self, m: DailyRegimeMetrics) -> bool:
+        return m.eod_wr >= 0.60 and m.avg_gain > 0
 
     def _is_rising_bull(self, m: DailyRegimeMetrics) -> bool:
         c = m.hold_curve
@@ -311,6 +322,24 @@ class RegimeEngine:
             return False
         return abs(last.avg_loss) / last.avg_win > 0.80
 
+    # ------------------------------------------------------------------
+    # Layer 4 — Pre-session top-2 independence rule
+    # ------------------------------------------------------------------
+
+    def _apply_presession_override(
+        self, regime: RegimeState, presession_top2_wr: float
+    ) -> RegimeState:
+        """Positive divergence: pre-session top-2 EOD WR ≥ 60% overrides fade/bear/neutral."""
+        if presession_top2_wr < 0.60:
+            return regime
+        if regime.direction == "LONG":
+            return regime
+        return RegimeState(
+            "LONG", "EOD", "Pre-Session Override", "transition",
+            f"Pre-session top-2 EOD WR {presession_top2_wr:.1%} ≥ 60% overrides "
+            f"{regime.direction} [{regime.regime_type}] — LONG EOD",
+        )
+
     def _curve_fully_declining(self, m: DailyRegimeMetrics) -> bool:
         c = m.hold_curve
         return (
@@ -340,10 +369,16 @@ class RegimeEngine:
         transition = self._transition_check(self._history)
 
         if transition is not None:
-            return transition
-        if rolling is not None:
-            return rolling
-        return seasonal
+            regime = transition
+        elif rolling is not None:
+            regime = rolling
+        else:
+            regime = seasonal
+
+        if presession_top2_wr is not None:
+            regime = self._apply_presession_override(regime, presession_top2_wr)
+
+        return regime
 
     def summary_str(self, as_of_date: date = None) -> str:
         regime = self.get_current_regime(as_of_date=as_of_date)
