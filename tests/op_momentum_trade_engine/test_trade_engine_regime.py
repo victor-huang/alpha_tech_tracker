@@ -107,7 +107,7 @@ class TestWinRateTickerSelector:
         result = sel.select(sel.fetch_bars())
         assert result == ["AAPL"]
 
-    def test_rolling_stats_always_empty(self, mocker):
+    def test_rolling_stats_populated_after_select(self, mocker):
         mocker.patch(
             "alpha_tech_tracker.op_momentum_strategy.trade_engine.fetch_bars",
             return_value={"AAPL": _minimal_ticker_df()},
@@ -118,7 +118,8 @@ class TestWinRateTickerSelector:
         )
         sel = WinRateTickerSelector(tickers=["AAPL"], top_n=1)
         sel.select(sel.fetch_bars())
-        assert sel.rolling_stats == {}
+        assert "AAPL" in sel.rolling_stats
+        assert sel.rolling_stats["AAPL"]["ev_trade"] == 1.0
 
 
 # ─── Direction filter in _on_signal_for_window ───────────────────────────────
@@ -286,6 +287,85 @@ class TestRunWindowSelectorsRegime:
         )
         engine._run_window_selectors(["AAPL"])
         mock_compute.assert_not_called()
+
+
+# ─── Selector type switching ─────────────────────────────────────────────────
+
+class TestSelectorType:
+    def test_score_rank_uses_ticker_selector(self, mocker):
+        mocker.patch(
+            "alpha_tech_tracker.op_momentum_strategy.trade_engine._now_et",
+            return_value=ET.localize(datetime(2026, 5, 29, 9, 20)),
+        )
+        mocker.patch(
+            "alpha_tech_tracker.op_momentum_strategy.trade_engine.fetch_bars",
+            return_value={"AAPL": _minimal_ticker_df()},
+        )
+        mocker.patch(
+            "alpha_tech_tracker.op_momentum_strategy.trade_engine.select_top_n",
+            return_value={"picks": [{"ticker": "AAPL", "score": 1.0, "ev_trade": 1.0}],
+                          "rolling_stats": {}, "dynamic_ev_gate_state": None,
+                          "direction_split_ev_state": None, "scoring_context": {}},
+        )
+        from alpha_tech_tracker.op_momentum_strategy.trade_engine import TickerSelector
+        spy = mocker.patch.object(TickerSelector, "select", return_value=["AAPL"])
+        client = _make_client()
+        engine = OpMomentumTradeEngine(
+            alpaca_client=client,
+            mock_trade_execution=True,
+            selector_type="score-rank",
+        )
+        engine._run_window_selectors(["AAPL"])
+        spy.assert_called_once()
+
+    def test_win_rate_uses_win_rate_selector(self, mocker):
+        mocker.patch(
+            "alpha_tech_tracker.op_momentum_strategy.trade_engine._now_et",
+            return_value=ET.localize(datetime(2026, 5, 29, 9, 20)),
+        )
+        mocker.patch(
+            "alpha_tech_tracker.op_momentum_strategy.trade_engine.fetch_bars",
+            return_value={"AAPL": _minimal_ticker_df()},
+        )
+        mocker.patch(
+            "alpha_tech_tracker.op_momentum_strategy.trade_engine._rank_tickers_by_eod_win_rate",
+            return_value=[("AAPL", {"win_rates": {None: 0.65}})],
+        )
+        from alpha_tech_tracker.op_momentum_strategy.trade_engine import WinRateTickerSelector
+        spy = mocker.patch.object(WinRateTickerSelector, "select", return_value=["AAPL"])
+        client = _make_client()
+        engine = OpMomentumTradeEngine(
+            alpaca_client=client,
+            mock_trade_execution=True,
+            selector_type="win-rate",
+        )
+        engine._run_window_selectors(["AAPL"])
+        spy.assert_called_once()
+
+    def test_win_rate_rolling_stats_populated_for_drain(self, mocker):
+        mocker.patch(
+            "alpha_tech_tracker.op_momentum_strategy.trade_engine.fetch_bars",
+            return_value={
+                "AAPL": _minimal_ticker_df(),
+                "TSLA": _minimal_ticker_df(),
+            },
+        )
+        mocker.patch(
+            "alpha_tech_tracker.op_momentum_strategy.trade_engine._rank_tickers_by_eod_win_rate",
+            return_value=[
+                ("AAPL", {"win_rates": {None: 0.70}}),
+                ("TSLA", {"win_rates": {None: 0.55}}),
+            ],
+        )
+        mocker.patch(
+            "alpha_tech_tracker.op_momentum_strategy.trade_engine._now_et",
+            return_value=ET.localize(datetime(2026, 5, 29, 9, 20)),
+        )
+        sel = WinRateTickerSelector(tickers=["AAPL", "TSLA"], top_n=2)
+        sel.select(sel.fetch_bars(), direction="LONG")
+        assert "AAPL" in sel.rolling_stats
+        assert "TSLA" in sel.rolling_stats
+        assert sel.rolling_stats["AAPL"]["ev_trade"] == 1.0
 
 
 # ─── Timed exit wired into positions at entry ─────────────────────────────────

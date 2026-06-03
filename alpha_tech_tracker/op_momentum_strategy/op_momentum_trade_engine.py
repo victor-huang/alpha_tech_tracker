@@ -304,6 +304,18 @@ def parse_args():
         ),
     )
     parser.add_argument(
+        "--selector",
+        choices=["score-rank", "win-rate"],
+        default="score-rank",
+        dest="selector",
+        help=(
+            "Ticker selector algorithm. "
+            "'score-rank' (default): composite score from 60-day rolling backtest. "
+            "'win-rate': rank by historical EOD win rate; LONG=top-N, SHORT=bottom-N. "
+            "Pair with --enable-regime-engine for direction-aware win-rate selection."
+        ),
+    )
+    parser.add_argument(
         "--rank-weighted-sizing",
         type=int,
         nargs="+",
@@ -1112,6 +1124,7 @@ if __name__ == "__main__":
             enable_regime_engine=args.enable_regime_engine,
             regime_hold=args.regime_hold,
             disable_ma_stops_for_regime_hold=args.disable_ma_stops_for_regime_hold,
+            selector_type=args.selector,
         )
         if args.replay_date or (args.replay_start and args.replay_end):
             _warn_replay_feed_mismatch(args)
@@ -1278,6 +1291,7 @@ if __name__ == "__main__":
             enable_regime_engine=args.enable_regime_engine,
             regime_hold=args.regime_hold,
             disable_ma_stops_for_regime_hold=args.disable_ma_stops_for_regime_hold,
+            selector_type=args.selector,
         )
         engine.run(tickers_override=args.tickers)
     finally:

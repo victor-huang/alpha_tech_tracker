@@ -370,8 +370,12 @@ _HOLD_WINDOW_MINUTES: dict = {
 class WinRateTickerSelector:
     """
     Selects tickers by historical EOD win rate instead of composite score.
-    LONG direction → top-N. SHORT direction → bottom-N.
-    rolling_stats is always empty — re-entry EV gate skipped at default min_ev=0.0.
+    LONG direction → top-N. SHORT direction → bottom-N (worst-first).
+
+    Duck-typed with TickerSelector: exposes fetch_bars(), select(), and the
+    same stat attrs so _run_window_selectors works identically for both.
+    rolling_stats is populated with sentinel ev_trade=1.0 for each picked
+    ticker so the drain's EV gate passes without filtering any picks.
     """
 
     def __init__(
@@ -395,6 +399,9 @@ class WinRateTickerSelector:
         self._score_feed = score_feed or self._alpaca_feed
         self._market_data_client = market_data_client
         self.rolling_stats: dict = {}
+        self.dynamic_ev_gate_state = None
+        self.direction_split_ev_state = None
+        self.scoring_context: dict = {}
 
     def fetch_bars(self) -> dict:
         today = _now_et().date()
@@ -422,6 +429,9 @@ class WinRateTickerSelector:
             picks = [t for t, _ in list(reversed(ranked[-self._top_n:]))]
         else:
             picks = [t for t, _ in ranked[:self._top_n]]
+        # Populate rolling_stats so the signal drain's EV gate doesn't skip picks.
+        # ev_trade=1.0 is a sentinel that always passes the default min_ev=0.0 gate.
+        self.rolling_stats = {ticker: {"ev_trade": 1.0} for ticker in picks}
         logger.info("WinRateTickerSelector [%s] top-%d: %s", direction, self._top_n, picks)
         return picks
 
@@ -522,6 +532,7 @@ class OpMomentumTradeEngine:
         regime_data_dir: str = "market_data/regime_state",
         regime_hold: bool = False,
         disable_ma_stops_for_regime_hold: bool = False,
+        selector_type: str = "score-rank",
     ):
         self._client = alpaca_client
         self._api_key = getattr(alpaca_client, "_api_key", None)
@@ -642,6 +653,7 @@ class OpMomentumTradeEngine:
         self._regime_hold = regime_hold
         self._disable_ma_stops_for_regime_hold = disable_ma_stops_for_regime_hold
         self._current_regime = None
+        self._selector_type = selector_type
 
         if windows:
             self._windows = windows
@@ -2556,45 +2568,60 @@ class OpMomentumTradeEngine:
 
             time.sleep(30)
 
+    def _make_selector(self, win: WindowConfig, all_tickers: list):
+        """Instantiate the configured selector type for a given window."""
+        if self._selector_type == "win-rate":
+            return WinRateTickerSelector(
+                tickers=all_tickers,
+                top_n=self._top_n,
+                or_start=win.opening_start,
+                or_bars=win.opening_bars,
+                lookback_days=self._lookback_days,
+                alpaca_feed=self._alpaca_feed,
+                score_feed=self._score_feed,
+                market_data_client=self._market_data_client,
+            )
+        return TickerSelector(
+            tickers=all_tickers,
+            top_n=self._top_n,
+            stop_pct=float(self._stop_pct),
+            opening_start_time=win.opening_start,
+            opening_bars=win.opening_bars,
+            lookback_days=self._lookback_days,
+            regime_filter=self._regime_filter,
+            regime_ma=self._regime_ma,
+            alpaca_feed=self._alpaca_feed,
+            score_feed=self._score_feed,
+            market_data_client=self._market_data_client,
+            or_bar_lookback=self._or_bar_lookback,
+            trailing_ma=self._trailing_ma,
+            max_loss_pct=self._max_loss_pct,
+            armed_ma20_exit=self._armed_ma20_exit,
+            ma_momentum_gate=self._ma_momentum_gate,
+            score_entry_weight=self._score_entry_weight,
+            score_avg_win_weight=self._score_avg_win_weight,
+            score_win_rate_weight=self._score_win_rate_weight,
+            score_rel_strength_weight=self._score_rel_strength_weight,
+            score_ev_trend_weight=self._score_ev_trend_weight,
+            normalize_or_by_adr=self._normalize_or_by_adr,
+            min_pool_vote_to_trade=self._min_pool_vote_to_trade,
+            ev_trend_days=self._ev_trend_days,
+            min_ev=self._min_ev,
+            **self._dynamic_ev_gate_kwargs,
+        )
+
     def _run_window_selectors(self, all_tickers: list) -> list:
         """
         Fetch bars once, then score all unique window configs in parallel.
         Returns the pre-market picks for the first window.
         """
         # Deduplicate windows by (opening_start, opening_bars).
-        unique_selectors = {}   # config_key -> TickerSelector
+        unique_selectors = {}   # config_key -> selector
         first_config_key = None
         for win in self._windows:
             config_key = (win.opening_start, win.opening_bars)
             if config_key not in unique_selectors:
-                unique_selectors[config_key] = TickerSelector(
-                    tickers=all_tickers,
-                    top_n=self._top_n,
-                    stop_pct=float(self._stop_pct),
-                    opening_start_time=win.opening_start,
-                    opening_bars=win.opening_bars,
-                    lookback_days=self._lookback_days,
-                    regime_filter=self._regime_filter,
-                    regime_ma=self._regime_ma,
-                    alpaca_feed=self._alpaca_feed,
-                    score_feed=self._score_feed,
-                    market_data_client=self._market_data_client,
-                    or_bar_lookback=self._or_bar_lookback,
-                    trailing_ma=self._trailing_ma,
-                    max_loss_pct=self._max_loss_pct,
-                    armed_ma20_exit=self._armed_ma20_exit,
-                    ma_momentum_gate=self._ma_momentum_gate,
-                    score_entry_weight=self._score_entry_weight,
-                    score_avg_win_weight=self._score_avg_win_weight,
-                    score_win_rate_weight=self._score_win_rate_weight,
-                    score_rel_strength_weight=self._score_rel_strength_weight,
-                    score_ev_trend_weight=self._score_ev_trend_weight,
-                    normalize_or_by_adr=self._normalize_or_by_adr,
-                    min_pool_vote_to_trade=self._min_pool_vote_to_trade,
-                    ev_trend_days=self._ev_trend_days,
-                    min_ev=self._min_ev,
-                    **self._dynamic_ev_gate_kwargs,
-                )
+                unique_selectors[config_key] = self._make_selector(win, all_tickers)
                 if first_config_key is None:
                     first_config_key = config_key
 
