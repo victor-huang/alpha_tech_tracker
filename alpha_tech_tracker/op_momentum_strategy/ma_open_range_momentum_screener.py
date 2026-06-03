@@ -561,6 +561,8 @@ def run_backtest(
     source="alpaca",
     feed=None,
     print_all=False,
+    enable_regime_engine=False,
+    regime_data_dir="market_data/regime_state",
 ):
     """
     Fetch historical data for target_date and run the OR/MA signal scan.
@@ -622,6 +624,32 @@ def run_backtest(
     if ranking_block or wr_table:
         print()
 
+    regime = None
+    if enable_regime_engine:
+        from .regime_engine import RegimeEngine  # noqa: PLC0415
+        regime_engine = RegimeEngine(data_dir=regime_data_dir)
+        yesterday = target_date - timedelta(days=1)
+        regime_engine.compute_and_add_metrics(
+            bars_5m, yesterday, or_start, or_bars, collection_bars
+        )
+        presession_top2_wr = (
+            ranked[0][1]["win_rates"][None] / 100 if ranked else None
+        )
+        regime = regime_engine.get_current_regime(presession_top2_wr=presession_top2_wr)
+        print(f"\n{'─'*60}")
+        print(f"REGIME ENGINE  {target_date}")
+        print(f"  Direction : {regime.direction}")
+        print(f"  Hold      : {regime.hold_window or '—'}")
+        print(f"  Type      : {regime.regime_type}")
+        print(f"  Source    : {regime.source}")
+        print(f"  Notes     : {regime.notes}")
+        filtered = [s for s in signals if not _passes_regime_filter(s, regime)]
+        passed   = [s for s in signals if _passes_regime_filter(s, regime)]
+        if filtered:
+            print(f"  Filtered  : {[s['ticker']+'/'+s['direction'] for s in filtered]}")
+        print(f"  Passed    : {[s['ticker']+'/'+s['direction'] for s in passed] or '—'}")
+        print(f"{'─'*60}\n")
+
     _print_backtest_table(
         signals, list(tickers), ticker_bars_5m, or_start, or_bars, target_date, print_all,
         collection_bars=collection_bars,
@@ -632,6 +660,7 @@ def run_backtest(
         "bars_5m": ticker_bars_5m,
         "bars_1m": bars_1m,
         "daily_bars": daily_bars,
+        "regime": regime,
     }
 
 
@@ -1584,6 +1613,10 @@ def _build_arg_parser():
         help="Seconds between live polls (default: 30)"
     )
     parser.add_argument("--dry-run", action="store_true", help="Suppress SMS in live mode")
+    parser.add_argument(
+        "--enable-regime-engine", action="store_true",
+        help="Enable MASTER_REGIME_SUMMARY pattern-based regime engine (direction filter + hold window)"
+    )
     parser.add_argument("--print-all", action="store_true",
                         help="Print non-signal tickers in backtest output")
     parser.add_argument(
@@ -1628,6 +1661,7 @@ def _run_live(args, tickers):
         market_data_client=market_data_client,
         poll_interval_sec=args.poll_interval,
         dry_run=args.dry_run,
+        enable_regime_engine=args.enable_regime_engine,
     )
 
 
@@ -1732,6 +1766,7 @@ def main():
         source=args.source,
         feed=feed,
         print_all=args.print_all,
+        enable_regime_engine=args.enable_regime_engine,
     )
 
 
