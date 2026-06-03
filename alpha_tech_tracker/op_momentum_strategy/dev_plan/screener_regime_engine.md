@@ -242,29 +242,32 @@ keeping the data consistent with the selector's bars.
 ### Import boundary
 
 `trade_engine.py` currently has **zero imports** from `ma_open_range_momentum_screener.py`
-and this must stay zero. To enforce that:
+and this must stay zero.
 
-- `_forward_pct` and `_rank_tickers_by_eod_win_rate` are **moved** from
-  `ma_open_range_momentum_screener.py` into `regime_engine.py`. The screener
-  imports them back from `regime_engine.py` after the move.
-- `regime_engine.py` imports from `ma_open_range_momentum_screener.py` only:
-  `compute_or_ma_signals` (signal scan).
-- `trade_engine.py` imports from `regime_engine.py` only: `RegimeEngine`,
-  `_rank_tickers_by_eod_win_rate` (used by `WinRateTickerSelector`).
+`_forward_pct` and `_rank_tickers_by_eod_win_rate` **stay in the screener** — moving them
+caused a circular import because `regime_engine.py` also imports `compute_or_ma_signals`
+from the screener at module level (two-way module-level dependency = `ImportError`).
+Instead, `regime_engine.py` imports both functions from the screener and re-exports
+`_rank_tickers_by_eod_win_rate` (marked `# noqa: F401`) so `trade_engine.py` can import
+it from `regime_engine.py` without touching the screener.
 
-Dependency graph (no cycles):
+Actual dependency graph (no cycles):
 
 ```
 ma_open_range_momentum_screener.py
-    └── imports compute_or_ma_signals (stays local)
-    └── imports _forward_pct, _rank_tickers_by_eod_win_rate ← from regime_engine.py
+    └── defines _forward_pct, _rank_tickers_by_eod_win_rate (stay here)
+    └── defines compute_or_ma_signals, _add_ma_columns (stay here)
+    └── zero imports from regime_engine.py
 
 regime_engine.py
-    └── imports compute_or_ma_signals ← from ma_open_range_momentum_screener.py
+    └── imports _forward_pct, _rank_tickers_by_eod_win_rate,
+              compute_or_ma_signals, _add_ma_columns
+        ← all from ma_open_range_momentum_screener.py
+    └── re-exports _rank_tickers_by_eod_win_rate  # noqa: F401
 
 trade_engine.py
     └── imports RegimeEngine, _rank_tickers_by_eod_win_rate ← from regime_engine.py
-    (zero imports from ma_open_range_momentum_screener.py)
+    (zero imports from ma_open_range_momentum_screener.py ✓)
 ```
 
 ---
@@ -589,8 +592,8 @@ selection entirely.
 
 | File | Change |
 |---|---|
-| `regime_engine.py` (new) | `DailyRegimeMetrics`, `RegimeState`, `RegimeEngine` including `compute_and_add_metrics()`; receives `_forward_pct` and `_rank_tickers_by_eod_win_rate` moved from screener |
-| `ma_open_range_momentum_screener.py` | Remove `_forward_pct` and `_rank_tickers_by_eod_win_rate` (moved to `regime_engine.py`); import them back from `regime_engine`; `run_live()` startup: instantiate `RegimeEngine`, call `compute_and_add_metrics`, direction filter, hold annotation |
+| `regime_engine.py` (new) | `DailyRegimeMetrics`, `RegimeState`, `RegimeEngine` including `compute_and_add_metrics()`; imports `_forward_pct` and `_rank_tickers_by_eod_win_rate` from screener and re-exports the latter for `trade_engine.py` |
+| `ma_open_range_momentum_screener.py` | `_forward_pct` and `_rank_tickers_by_eod_win_rate` stay here (circular import if moved); `run_live()` startup: instantiate `RegimeEngine`, call `compute_and_add_metrics`, direction filter, hold annotation |
 | `trade_engine.py` | `WinRateTickerSelector` class (imports `_rank_tickers_by_eod_win_rate` from `regime_engine.py`); `regime_engine` + `disable_ma_stops_for_regime_hold` params on `OpMomentumTradeEngine`; startup sequence; direction filter in signal callback (Phase 4) |
 | `op_momentum_trade_engine.py` | `--selector {scoring_selector,win_rate_selector}`, `--enable-regime-engine`, `--regime-hold`, `--disable-ma-stops-for-regime-hold-only` CLI flags (Phase 4) |
 | `models.py` | `timed_exit_minutes: Optional[int] = None` and `disable_ma_stop: bool = False` fields on `ActivePosition`; `from_dict` uses `.get()` for both fields for backward-compatible session restore (Phase 4) |
