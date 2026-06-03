@@ -2,12 +2,36 @@ import json
 import logging
 import os
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime, timedelta
 from typing import Dict, List, Optional
+
+import pandas as pd
+from alpaca.data.enums import DataFeed
+
+from alpha_tech_tracker.op_momentum_strategy.ma_open_range_momentum_screener import (
+    _add_ma_columns,
+    _forward_pct,
+    _rank_tickers_by_eod_win_rate,  # noqa: F401 — re-exported for trade_engine.py
+    compute_or_ma_signals,
+)
+from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import fetch_bars
 
 logger = logging.getLogger(__name__)
 
 _HOLD_WINDOWS = ["+15m", "+30m", "+1h", "+2h", "+3h", "+5h", "EOD"]
+
+# Minutes per hold window, None = EOD
+_HIST_HOLD_MIN = [15, 30, 60, 120, 300, None]
+
+# Mapping from hold_min to hold label used in hold_curve dict
+_HOLD_WINDOW_LABELS: Dict[Optional[int], str] = {
+    15: "+15m",
+    30: "+30m",
+    60: "+1h",
+    120: "+2h",
+    300: "+5h",
+    None: "EOD",
+}
 
 # Seasonal defaults: (direction, hold_window or None)
 _SEASONAL = {
@@ -33,6 +57,7 @@ _SEASONAL_NOTES = {
 
 def _today_month() -> int:
     return date.today().month
+
 
 
 @dataclass
@@ -319,3 +344,111 @@ class RegimeEngine:
         regime = self.get_current_regime()
         hold = f" | Hold: {regime.hold_window}" if regime.hold_window else ""
         return f"Regime: {regime.direction}{hold} [{regime.regime_type}] — {regime.notes}"
+
+    # ------------------------------------------------------------------
+    # Phase 2 — daily metrics computation
+    # ------------------------------------------------------------------
+
+    def compute_and_add_metrics(
+        self,
+        warmup_bars: dict,
+        target_date: date,
+        or_start: str,
+        or_bars: int,
+        collection_bars: int,
+        source: str = "alpaca",
+        feed: DataFeed = DataFeed.SIP,
+    ) -> Optional[DailyRegimeMetrics]:
+        """
+        Compute DailyRegimeMetrics for target_date using warmup_bars.
+
+        Returns cached record immediately if target_date already in history.
+        Returns None if fewer than 3 signals fired on target_date.
+        QQQ is resolved from warmup_bars["QQQ"] if present, otherwise fetched
+        internally using fetch_bars(["QQQ"], ...).
+        """
+        cached = next((m for m in self._history if m.date == target_date), None)
+        if cached is not None:
+            logger.debug("Regime metrics cache hit for %s", target_date)
+            return cached
+
+        # Resolve QQQ bars
+        if "QQQ" in warmup_bars:
+            qqq_bars = warmup_bars["QQQ"]
+        else:
+            logger.info("QQQ not in warmup_bars — fetching internally for %s", target_date)
+            dates_list = [
+                df.index.min().date() for df in warmup_bars.values()
+                if df is not None and not df.empty and hasattr(df.index, "date")
+            ]
+            fetch_start = min(dates_list) if dates_list else target_date - timedelta(days=45)
+            qqq_raw = fetch_bars(["QQQ"], fetch_start, target_date, source=source, feed=feed)
+            qqq_raw_df = qqq_raw.get("QQQ", pd.DataFrame())
+            qqq_bars = _add_ma_columns(qqq_raw_df) if not qqq_raw_df.empty else pd.DataFrame()
+
+        # Build ticker bars with MA columns; exclude QQQ from signal scan
+        ticker_bars = {}
+        for t, df in warmup_bars.items():
+            if t == "QQQ" or df is None or df.empty:
+                continue
+            ticker_bars[t] = _add_ma_columns(df)
+
+        signals = compute_or_ma_signals(
+            ticker_bars,
+            qqq_bars,
+            or_start,
+            or_bars,
+            target_date,
+            collection_bars=collection_bars,
+        )
+
+        if len(signals) < 3:
+            logger.info(
+                "Only %d signals on %s — insufficient for regime metrics (need ≥3)",
+                len(signals), target_date,
+            )
+            return None
+
+        # Aggregate forward returns per hold window
+        hold_returns: Dict[Optional[int], List[float]] = {h: [] for h in _HIST_HOLD_MIN}
+        for sig in signals:
+            ticker = sig["ticker"]
+            signal_time = datetime.strptime(sig["signal_bar_time"], "%H:%M").time()
+            signal_date = date.fromisoformat(sig["date"])
+            day_df = ticker_bars.get(ticker)
+            if day_df is None or day_df.empty:
+                continue
+            day_only = day_df[day_df.index.date == signal_date] if hasattr(day_df.index, "date") else day_df
+            for hold_min in _HIST_HOLD_MIN:
+                ret = _forward_pct(day_only, signal_time, signal_date, hold_min)
+                if ret is not None:
+                    hold_returns[hold_min].append(ret)
+
+        eod_rets = hold_returns[None]
+        if not eod_rets:
+            return None
+
+        wins = [r for r in eod_rets if r > 0]
+        losses = [r for r in eod_rets if r <= 0]
+        eod_wr = len(wins) / len(eod_rets)
+        avg_gain = sum(eod_rets) / len(eod_rets)
+        avg_win = sum(wins) / len(wins) if wins else 0.0
+        avg_loss = sum(losses) / len(losses) if losses else 0.0
+
+        hold_curve = {
+            _HOLD_WINDOW_LABELS[h]: len([r for r in hold_returns[h] if r > 0]) / len(hold_returns[h])
+            for h in _HIST_HOLD_MIN
+            if hold_returns[h]
+        }
+
+        metrics = DailyRegimeMetrics(
+            date=target_date,
+            signal_count=len(signals),
+            eod_wr=eod_wr,
+            avg_gain=avg_gain,
+            avg_win=avg_win,
+            avg_loss=avg_loss,
+            hold_curve=hold_curve,
+        )
+        self.add_daily_result(metrics)
+        return metrics

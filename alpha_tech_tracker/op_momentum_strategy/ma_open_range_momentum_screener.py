@@ -906,6 +906,9 @@ def _hold_label(mins):
     return f"+{mins}m"
 
 
+_HIST_HOLD_MIN = [15, 30, 60, 120, 300, None]
+
+
 def _forward_pct(day_df: pd.DataFrame, signal_time, signal_date: date, hold_min):
     """
     Return % change from signal bar close to the close N minutes later.
@@ -928,9 +931,6 @@ def _forward_pct(day_df: pd.DataFrame, signal_time, signal_date: date, hold_min)
         exit_price = float(exit_bars.iloc[0]["Close"] if not exit_bars.empty
                            else day_df.iloc[-1]["Close"])
     return (exit_price - entry_price) / entry_price * 100
-
-
-_HIST_HOLD_MIN = [15, 30, 60, 120, 300, None]
 
 
 def _compute_hold_history(df_5m, target_date, or_start, or_bars, lookback=20):
@@ -1016,6 +1016,7 @@ def _format_hold_history(hist):
     ]
     daily = f"  |  avg daily ±{hist['daily_move']:.1f}%" if hist["daily_move"] else ""
     return f"  [{hist['n']}d hist: {('  '.join(parts))}{daily}]"
+
 
 
 def _rank_tickers_by_eod_win_rate(ticker_bars_5m, target_date, or_start, or_bars, lookback=20):
