@@ -278,6 +278,32 @@ def parse_args():
         help=f"N-day MA period for QQQ regime filter (default: {REGIME_MA}).",
     )
     parser.add_argument(
+        "--enable-regime-engine",
+        action="store_true",
+        default=False,
+        help=(
+            "Enable MASTER_REGIME_SUMMARY pattern-based regime engine. "
+            "Instantiates RegimeEngine; direction filter applied to all signals. "
+            "Unrelated to --regime-filter (QQQ MA). Default: off."
+        ),
+    )
+    parser.add_argument(
+        "--regime-hold",
+        action="store_true",
+        default=False,
+        help="Apply regime hold window as timed exit. Requires --enable-regime-engine. Default: off.",
+    )
+    parser.add_argument(
+        "--disable-ma-stops-for-regime-hold-only",
+        action="store_true",
+        default=False,
+        dest="disable_ma_stops_for_regime_hold",
+        help=(
+            "Disable trailing MA stop (MA20/MA50) when --regime-hold is active. "
+            "Hard stop always remains armed. Requires --regime-hold. Default: off."
+        ),
+    )
+    parser.add_argument(
         "--rank-weighted-sizing",
         type=int,
         nargs="+",
@@ -1083,6 +1109,9 @@ if __name__ == "__main__":
             ds_neutral_min_ev=args.ds_neutral_min_ev,
             ds_bear_min_ev=args.ds_bear_min_ev,
             min_score=args.min_score,
+            enable_regime_engine=args.enable_regime_engine,
+            regime_hold=args.regime_hold,
+            disable_ma_stops_for_regime_hold=args.disable_ma_stops_for_regime_hold,
         )
         if args.replay_date or (args.replay_start and args.replay_end):
             _warn_replay_feed_mismatch(args)
@@ -1246,6 +1275,9 @@ if __name__ == "__main__":
             ds_neutral_min_ev=args.ds_neutral_min_ev,
             ds_bear_min_ev=args.ds_bear_min_ev,
             min_score=args.min_score,
+            enable_regime_engine=args.enable_regime_engine,
+            regime_hold=args.regime_hold,
+            disable_ma_stops_for_regime_hold=args.disable_ma_stops_for_regime_hold,
         )
         engine.run(tickers_override=args.tickers)
     finally:

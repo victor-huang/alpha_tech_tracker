@@ -5091,3 +5091,152 @@ class TestFifoQtySyncMultiPosition:
         assert closed == []
         assert m1.shares == 0
         assert dd.shares == 13
+
+
+# ─── Phase 4 — timed exit + trailing MA suppression ──────────────────────────
+
+from datetime import date, datetime, time as dtime
+import pytz as _pytz
+ET = _pytz.timezone("America/New_York")
+
+class TestTimedExit:
+    """timed_exit_minutes ceiling — fires after hold window, yields to hard stop."""
+
+    @pytest.fixture(autouse=True)
+    def patch_sleep(self, monkeypatch):
+        monkeypatch.setattr(
+            "alpha_tech_tracker.op_momentum_strategy.order_executor.time.sleep",
+            lambda _: None,
+        )
+
+    def _make_pos_with_timed_exit(self, minutes, entry_hour=9, entry_min=40):
+        pos = _make_active_position(signal="BULLISH")
+        pos.hard_stop_armed = True
+        pos.timed_exit_minutes = minutes
+        pos.entry_time = ET.localize(
+            datetime.combine(datetime.now(ET).date(), dtime(entry_hour, entry_min))
+        )
+        return pos
+
+    def _make_monitor(self):
+        client = _make_alpaca_client()
+        client.place_option_order.return_value = {"order_id": "close-t"}
+        client.order_status.return_value = {"status": "filled", "filled_avg_price": 5.0}
+        client.get_option_quote_by_occ.return_value = _make_option_quote(bid=4.9, ask=5.1)
+        df = _build_history_df([104.0], ma20=90.0, ma50=90.0, ma200=85.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        return PositionMonitor(client, engine), engine
+
+    def test_timed_exit_fires_when_window_reached(self):
+        monitor, engine = self._make_monitor()
+        pos = self._make_pos_with_timed_exit(minutes=15, entry_hour=9, entry_min=40)
+        monitor.add_position(pos)
+        # Bar at 09:56 — 16 minutes after entry at 09:40 → past 15-min window
+        bar_ts = ET.localize(
+            datetime.combine(datetime.now(ET).date(), dtime(9, 56))
+        )
+        _set_latest_bar(engine, "NVDA", close=105.0, ma50=90.0, ma20=90.0)
+        engine._history["NVDA"].index = engine._history["NVDA"].index[:-1].tolist() + [bar_ts]
+        monitor.on_bar("NVDA")
+        assert pos.is_closed is True
+        assert pos.exit_reason == "timed_exit"
+
+    def test_timed_exit_does_not_fire_before_window(self):
+        monitor, engine = self._make_monitor()
+        pos = self._make_pos_with_timed_exit(minutes=30, entry_hour=9, entry_min=40)
+        monitor.add_position(pos)
+        # Bar at 09:50 — only 10 minutes in, 30-min window not yet reached
+        bar_ts = ET.localize(
+            datetime.combine(datetime.now(ET).date(), dtime(9, 50))
+        )
+        _set_latest_bar(engine, "NVDA", close=105.0, ma50=90.0, ma20=90.0)
+        engine._history["NVDA"].index = engine._history["NVDA"].index[:-1].tolist() + [bar_ts]
+        monitor.on_bar("NVDA")
+        assert pos.is_closed is False
+
+    def test_hard_stop_fires_before_timed_exit(self):
+        monitor, engine = self._make_monitor()
+        pos = self._make_pos_with_timed_exit(minutes=15, entry_hour=9, entry_min=40)
+        monitor.add_position(pos)
+        # Bar at 09:56 (past 15-min window) but price also hits hard stop
+        bar_ts = ET.localize(
+            datetime.combine(datetime.now(ET).date(), dtime(9, 56))
+        )
+        # close ≤ hard_stop_price=103.5 → hard stop fires first
+        _set_latest_bar(engine, "NVDA", close=103.0, ma50=90.0, ma20=90.0)
+        engine._history["NVDA"].index = engine._history["NVDA"].index[:-1].tolist() + [bar_ts]
+        monitor.on_bar("NVDA")
+        assert pos.is_closed is True
+        assert pos.exit_reason == "hard_stop"
+
+    def test_timed_exit_none_never_fires(self):
+        monitor, engine = self._make_monitor()
+        pos = _make_active_position(signal="BULLISH")
+        pos.hard_stop_armed = True
+        pos.timed_exit_minutes = None
+        pos.entry_time = ET.localize(
+            datetime.combine(datetime.now(ET).date(), dtime(9, 40))
+        )
+        monitor.add_position(pos)
+        bar_ts = ET.localize(
+            datetime.combine(datetime.now(ET).date(), dtime(14, 0))
+        )
+        _set_latest_bar(engine, "NVDA", close=105.0, ma50=90.0, ma20=90.0)
+        engine._history["NVDA"].index = engine._history["NVDA"].index[:-1].tolist() + [bar_ts]
+        monitor.on_bar("NVDA")
+        assert pos.is_closed is False
+
+
+class TestDisableMaStop:
+    """disable_ma_stop suppresses trailing MA; hard stop always active."""
+
+    @pytest.fixture(autouse=True)
+    def patch_sleep(self, monkeypatch):
+        monkeypatch.setattr(
+            "alpha_tech_tracker.op_momentum_strategy.order_executor.time.sleep",
+            lambda _: None,
+        )
+
+    def _make_monitor(self, trailing_ma="ma20"):
+        client = _make_alpaca_client()
+        client.place_option_order.return_value = {"order_id": "close-d"}
+        client.order_status.return_value = {"status": "filled", "filled_avg_price": 5.0}
+        client.get_option_quote_by_occ.return_value = _make_option_quote(bid=4.9, ask=5.1)
+        df = _build_history_df([104.0], ma20=106.0, ma50=90.0, ma200=85.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        return PositionMonitor(client, engine, trailing_ma=trailing_ma), engine
+
+    def test_trailing_ma_skipped_when_disable_ma_stop_true(self):
+        monitor, engine = self._make_monitor()
+        pos = _make_active_position(signal="BULLISH", hard_stop_price=_D("100.0"), fallback_price=_D("99.0"))
+        pos.hard_stop_armed = True
+        pos.disable_ma_stop = True
+        monitor.add_position(pos)
+        # close=104 < MA20=106 — would trigger trailing stop if enabled
+        _set_latest_bar(engine, "NVDA", close=104.0, ma50=90.0, ma20=106.0)
+        monitor.on_bar("NVDA")
+        assert pos.is_closed is False
+
+    def test_trailing_ma_fires_when_disable_ma_stop_false(self):
+        monitor, engine = self._make_monitor()
+        pos = _make_active_position(signal="BULLISH", hard_stop_price=_D("100.0"), fallback_price=_D("99.0"))
+        pos.hard_stop_armed = True
+        pos.disable_ma_stop = False
+        monitor.add_position(pos)
+        # close=104 < MA20=106 → trailing stop fires
+        _set_latest_bar(engine, "NVDA", close=104.0, ma50=90.0, ma20=106.0)
+        monitor.on_bar("NVDA")
+        assert pos.is_closed is True
+        assert pos.exit_reason == "trailing_stop_ma20"
+
+    def test_hard_stop_fires_even_when_disable_ma_stop_true(self):
+        monitor, engine = self._make_monitor()
+        pos = _make_active_position(signal="BULLISH", hard_stop_price=_D("103.5"), fallback_price=_D("103.0"))
+        pos.hard_stop_armed = True
+        pos.disable_ma_stop = True
+        monitor.add_position(pos)
+        # close ≤ hard_stop → hard stop fires regardless of disable_ma_stop
+        _set_latest_bar(engine, "NVDA", close=103.0, ma50=90.0, ma20=106.0)
+        monitor.on_bar("NVDA")
+        assert pos.is_closed is True
+        assert pos.exit_reason == "hard_stop"

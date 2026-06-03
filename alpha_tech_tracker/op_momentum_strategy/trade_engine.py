@@ -14,6 +14,10 @@ import pytz
 from alpaca.data.enums import DataFeed
 
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import fetch_bars
+from alpha_tech_tracker.op_momentum_strategy.regime_engine import (
+    RegimeEngine,
+    _rank_tickers_by_eod_win_rate,
+)
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector import (
     ROLLING_LOOKBACK_DAYS,
 
@@ -244,7 +248,7 @@ class TickerSelector:
             feed=self._score_feed,
         )
 
-    def select(self, ticker_dfs: dict = None) -> list:
+    def select(self, ticker_dfs: dict = None, direction: str = "LONG") -> list:
         today = _now_et().date()
         if ticker_dfs is None:
             ticker_dfs = self.fetch_bars()
@@ -357,6 +361,71 @@ class TickerSelector:
         return selected
 
 
+_HOLD_WINDOW_MINUTES: dict = {
+    "+15m": 15, "+30m": 30, "+1h": 60,
+    "+2h": 120, "+3h": 180, "+5h": 300, "EOD": None,
+}
+
+
+class WinRateTickerSelector:
+    """
+    Selects tickers by historical EOD win rate instead of composite score.
+    LONG direction → top-N. SHORT direction → bottom-N.
+    rolling_stats is always empty — re-entry EV gate skipped at default min_ev=0.0.
+    """
+
+    def __init__(
+        self,
+        tickers: list,
+        top_n: int,
+        or_start: str = OPENING_START_TIME,
+        or_bars: int = OPENING_BARS,
+        lookback_days: int = 20,
+        alpaca_feed=None,
+        score_feed=None,
+        market_data_client=None,
+    ):
+        from alpaca.data.enums import DataFeed
+        self._tickers = tickers
+        self._top_n = top_n
+        self._or_start = or_start
+        self._or_bars = or_bars
+        self._lookback_days = lookback_days
+        self._alpaca_feed = alpaca_feed or DataFeed.SIP
+        self._score_feed = score_feed or self._alpaca_feed
+        self._market_data_client = market_data_client
+        self.rolling_stats: dict = {}
+
+    def fetch_bars(self) -> dict:
+        today = _now_et().date()
+        fetch_start = today - timedelta(days=self._lookback_days + 5)
+        bars_end = today - timedelta(days=1)
+        if self._market_data_client is not None:
+            return fetch_bars(
+                self._tickers, fetch_start, bars_end,
+                source="tradestation", market_data_client=self._market_data_client,
+            )
+        return fetch_bars(
+            self._tickers, fetch_start, bars_end,
+            source="alpaca", feed=self._score_feed,
+        )
+
+    def select(self, ticker_dfs: dict = None, direction: str = "LONG") -> list:
+        if ticker_dfs is None:
+            ticker_dfs = self.fetch_bars()
+        today = _now_et().date()
+        ranked = _rank_tickers_by_eod_win_rate(
+            ticker_dfs, today, self._or_start, self._or_bars, self._lookback_days
+        )
+        if direction == "SHORT":
+            # bottom-N by EOD WR, worst first
+            picks = [t for t, _ in list(reversed(ranked[-self._top_n:]))]
+        else:
+            picks = [t for t, _ in ranked[:self._top_n]]
+        logger.info("WinRateTickerSelector [%s] top-%d: %s", direction, self._top_n, picks)
+        return picks
+
+
 class OpMomentumTradeEngine:
     """
     Main orchestrator for the opening-range momentum options strategy.
@@ -449,6 +518,10 @@ class OpMomentumTradeEngine:
         ds_neutral_min_ev: float = 0.0,
         ds_bear_min_ev: float = 0.0,
         min_score: float = 0.0,
+        enable_regime_engine: bool = False,
+        regime_data_dir: str = "market_data/regime_state",
+        regime_hold: bool = False,
+        disable_ma_stops_for_regime_hold: bool = False,
     ):
         self._client = alpaca_client
         self._api_key = getattr(alpaca_client, "_api_key", None)
@@ -562,6 +635,13 @@ class OpMomentumTradeEngine:
         self._rolling_stats_by_window: dict = {}
         # Per-window state: {label: {pending_signals, collection_deadline, open_position_count, capital_fraction}}
         self._window_state: dict = {}
+        # Regime engine (MASTER_REGIME_SUMMARY pattern-based, independent of --regime-filter QQQ MA)
+        self._regime_engine: Optional[RegimeEngine] = (
+            RegimeEngine(data_dir=regime_data_dir) if enable_regime_engine else None
+        )
+        self._regime_hold = regime_hold
+        self._disable_ma_stops_for_regime_hold = disable_ma_stops_for_regime_hold
+        self._current_regime = None
 
         if windows:
             self._windows = windows
@@ -789,6 +869,14 @@ class OpMomentumTradeEngine:
             window_budget=window_budget,
             slot_capital=slot_capital,
             is_doubledown_addon=(reentry_type == "doubledown"),
+            timed_exit_minutes=(
+                _HOLD_WINDOW_MINUTES.get(self._current_regime.hold_window)
+                if self._regime_hold and self._current_regime else None
+            ),
+            disable_ma_stop=(
+                self._disable_ma_stops_for_regime_hold
+                if self._regime_hold and self._current_regime else False
+            ),
         )
         if not self._mock_trade_execution:
             fill_price, filled_qty = self._poll_entry_fill(order.get("order_id", ""))
@@ -944,6 +1032,14 @@ class OpMomentumTradeEngine:
             window_budget=window_budget,
             slot_capital=slot_capital,
             is_doubledown_addon=(reentry_type == "doubledown"),
+            timed_exit_minutes=(
+                _HOLD_WINDOW_MINUTES.get(self._current_regime.hold_window)
+                if self._regime_hold and self._current_regime else None
+            ),
+            disable_ma_stop=(
+                self._disable_ma_stops_for_regime_hold
+                if self._regime_hold and self._current_regime else False
+            ),
         )
         if not self._mock_trade_execution:
             if order.get("avg_fill_price") is not None:
@@ -1864,6 +1960,18 @@ class OpMomentumTradeEngine:
             return None
 
     def _on_signal_for_window(self, window_label: str, event: SignalEvent):
+        if self._current_regime is not None:
+            direction = self._current_regime.direction
+            if direction == "NO_POSITION":
+                logger.info("Regime filter: NO_POSITION — skipping %s signal for %s", event.signal, event.ticker)
+                return
+            if direction == "SHORT" and event.signal == "BULLISH":
+                logger.info("Regime filter: skipping BULLISH signal for %s (SHORT regime)", event.ticker)
+                return
+            if direction == "LONG" and event.signal == "BEARISH":
+                logger.info("Regime filter: skipping BEARISH signal for %s (LONG regime)", event.ticker)
+                return
+
         now = _now_et()
         state = self._window_state[window_label]
         # Read outside the lock to avoid lock-ordering inversion with signal_engine's lock.
@@ -2493,19 +2601,33 @@ class OpMomentumTradeEngine:
         # Fetch bar data once; all windows share the same date range.
         shared_ticker_dfs = unique_selectors[first_config_key].fetch_bars()
 
+        # Regime engine: compute prior-day metrics then resolve today's regime.
+        if self._regime_engine is not None:
+            yesterday = _now_et().date() - timedelta(days=1)
+            first_win = self._windows[0]
+            self._regime_engine.compute_and_add_metrics(
+                shared_ticker_dfs, yesterday,
+                first_win.opening_start, first_win.opening_bars,
+                collection_bars=3,
+            )
+            self._current_regime = self._regime_engine.get_current_regime()
+            logger.info("Regime: %s", self._regime_engine.summary_str())
+
+        regime_direction = self._current_regime.direction if self._current_regime else "LONG"
+
         # Score unique window configs in parallel.
         config_picks = {}
         if len(unique_selectors) > 1:
             with ThreadPoolExecutor(max_workers=len(unique_selectors)) as executor:
                 future_to_key = {
-                    executor.submit(sel.select, shared_ticker_dfs): key
+                    executor.submit(sel.select, shared_ticker_dfs, regime_direction): key
                     for key, sel in unique_selectors.items()
                 }
                 for fut, key in [(f, future_to_key[f]) for f in future_to_key]:
                     config_picks[key] = fut.result()
         else:
             for key, sel in unique_selectors.items():
-                config_picks[key] = sel.select(shared_ticker_dfs)
+                config_picks[key] = sel.select(shared_ticker_dfs, regime_direction)
 
         # Map rolling stats back to each window label (including duplicates).
         for win in self._windows:

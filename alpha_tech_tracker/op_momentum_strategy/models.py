@@ -101,6 +101,8 @@ class ActivePosition:
     close_alert_sent: bool = False
     use_ma_fast: bool = False
     max_favorable_move: Decimal = Decimal("0")
+    timed_exit_minutes: Optional[int] = None
+    disable_ma_stop: bool = False
 
     def to_dict(self) -> dict:
         def _ser_dec(v):
@@ -146,6 +148,8 @@ class ActivePosition:
             "is_doubledown_addon": self.is_doubledown_addon,
             "use_ma_fast": self.use_ma_fast,
             "max_favorable_move": _ser_dec(self.max_favorable_move),
+            "timed_exit_minutes": self.timed_exit_minutes,
+            "disable_ma_stop": self.disable_ma_stop,
         }
 
     @classmethod
@@ -193,6 +197,8 @@ class ActivePosition:
             is_doubledown_addon=d.get("is_doubledown_addon", False),
             use_ma_fast=d.get("use_ma_fast", False),
             max_favorable_move=_dec(d.get("max_favorable_move")) or Decimal("0"),
+            timed_exit_minutes=d.get("timed_exit_minutes", None),
+            disable_ma_stop=d.get("disable_ma_stop", False),
         )
 
 

@@ -391,7 +391,7 @@ class PositionMonitor:
         eff_ma20 = ma_fast if (pos.use_ma_fast and ma_fast is not None) else ma20
         eff_ma20_reason = self._fast_ma_reason if (pos.use_ma_fast and ma_fast is not None) else "trailing_stop_ma20"
 
-        trailing_armed = self._trailing_armed(pos, close, ma20=ma20, ma50=ma50)
+        trailing_armed = self._trailing_armed(pos, close, ma20=ma20, ma50=ma50) if not pos.disable_ma_stop else False
 
         if pos.signal == "BULLISH":
             if not pos.hard_stop_armed and close > pos.hard_stop_price:
@@ -459,6 +459,13 @@ class PositionMonitor:
                 and close > ma50
             ):
                 exit_reason = "trailing_stop_ma50"
+
+        if not exit_reason and pos.timed_exit_minutes is not None and pos.entry_time is not None:
+            if bar_time is not None:
+                bar_dt = bar_time if hasattr(bar_time, "tzinfo") else bar_time.to_pydatetime()
+                timed_exit_dt = pos.entry_time + timedelta(minutes=pos.timed_exit_minutes)
+                if bar_dt >= timed_exit_dt:
+                    exit_reason = "timed_exit"
 
         if exit_reason:
             override = None
