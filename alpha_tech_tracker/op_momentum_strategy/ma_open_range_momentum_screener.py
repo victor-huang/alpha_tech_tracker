@@ -1220,12 +1220,13 @@ def _print_summary_block(results_subset, label):
     n = len(results_subset)
     print(f"\n{label}  ({n} signal(s))")
     # Column widths: Hold=8, Count=6, WinRate=10(9+%), AvgGain=10(9+%), AvgWin=10(9+%),
-    # AvgLoss=10(9+%), ProfitFactor=12, SumRet=10(9+%) — separators are 1 space each → 73 dashes
-    print(f"  {'Hold':<8} {'Count':>6} {'Win Rate':>10} {'Avg Gain':>10} {'Avg Win':>10} {'Avg Loss':>10} {'ProfitFactor':>12} {'Sum Ret%':>10}")
-    print("  " + "-" * 73)
+    # AvgLoss=10(9+%), ProfitFactor=12, PosWtRet=26 — separators are 1 space each → 89 dashes
+    print(f"  {'Hold':<8} {'Count':>6} {'Win Rate':>10} {'Avg Gain':>10} {'Avg Win':>10} {'Avg Loss':>10} {'ProfitFactor':>12} {'Position Weighted Return%':>26}")
+    print("  " + "-" * 89)
     for mins in _HOLD_WINDOWS_MIN:
         key = f"pct_{_hold_label(mins)}"
-        pcts = [r[key] for r in results_subset if r.get(key) is not None]
+        rows_with_pct = [r for r in results_subset if r.get(key) is not None]
+        pcts = [r[key] for r in rows_with_pct]
         if not pcts:
             continue
         wins = [p for p in pcts if p > 0]
@@ -1237,11 +1238,17 @@ def _print_summary_block(results_subset, label):
         gross_loss = abs(sum(losses))
         profit_factor = sum(wins) / gross_loss if gross_loss > 0 else float("inf")
         profit_factor_str = f"{profit_factor:.2f}x" if profit_factor != float("inf") else "∞"
-        sum_ret = sum(pcts)
+        # Portfolio return: equal capital per signal per day.
+        # Average signals within each day first so a 6-signal day and a 1-signal day
+        # contribute equally to the total, matching actual capital allocation.
+        by_day = {}
+        for r in rows_with_pct:
+            by_day.setdefault(r["date"], []).append(r[key])
+        port_ret = sum(sum(v) / len(v) for v in by_day.values())
         print(
             f"  {_hold_label(mins):<8} {len(pcts):>6} {win_rate:>9.1f}% "
             f"{avg_gain:>+9.2f}% {avg_win:>+9.2f}% {avg_loss:>+9.2f}% "
-            f"{profit_factor_str:>12} {sum_ret:>+9.2f}%"
+            f"{profit_factor_str:>12} {port_ret:>+25.2f}%"
         )
 
 
