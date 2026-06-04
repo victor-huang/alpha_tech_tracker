@@ -76,6 +76,25 @@ Examples (May 2026): SNDK May 1 negative mid-day → **+6.97% EOD** · DDOG May 
 index recovery over intraday OR setups. 2022 was the strongest alpha year (+90.9%) — bear market
 regime correctly blocked BULLISH signals while capturing short-side setups.
 
+### Sharpe Ratio interpretation
+
+Sharpe = `(mean daily return / std daily return) × √252`. It measures how much return is earned
+per unit of daily volatility — higher is better.
+
+| Range | Grade | Typical context |
+|---|---|---|
+| < 1 | Poor | Most buy-and-hold passive funds |
+| 1 – 2 | Acceptable | Diversified equity portfolios |
+| 2 – 3 | Good | Top-performing mutual funds |
+| > 3 | Excellent | Professional hedge fund threshold |
+| > 4 | Exceptional | Rare; quant strategies with tight risk control |
+
+All nine years score **above 2.70**, with six of nine **above 4.0**. A Sharpe of 4–5 means the
+strategy earns roughly 4–5× its own daily volatility as annualized return — indicating consistent,
+low-drawdown gains rather than a handful of outsized wins. The 2020 dip to 2.70 reflects COVID
+whipsaw (wider daily swings, lower mean return); 2019's 5.49 is the peak because returns were
+steady with very few losing weeks.
+
 ---
 
 ## Daily & Weekly Drawdown / Gain by Year
