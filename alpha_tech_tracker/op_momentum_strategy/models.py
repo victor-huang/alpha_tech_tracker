@@ -44,6 +44,11 @@ class SignalEvent:
     or_range: Decimal
     ma50_at_signal: Decimal
     signal_bar_time: Optional[object] = None  # bar timestamp at signal fire time
+    # Populated in screener-signal mode (win-rate selector)
+    overlapping_mas: Optional[list] = None
+    collection_vol: Optional[float] = None
+    vol_20day_avg: Optional[float] = None
+    prev_close: Optional[float] = None
 
 
 @dataclass

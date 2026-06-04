@@ -5252,3 +5252,171 @@ class TestEntryMissedNotification:
 
         assert result is False
         engine._monitor.add_position.assert_not_called()
+
+
+class TestWinRateSignalDrainRanking:
+    """
+    _drain_pending_signals_for_window with selector_type='win-rate' should rank
+    buffered signals by (up_pct_from_prev_close, ma_count, vol_ratio) descending
+    instead of the composite score_ticker score.
+    """
+
+    _NOTIFY_PATH = "alpha_tech_tracker.op_momentum_strategy.trade_engine._notify"
+
+    def _make_engine(self, top_n=2):
+        client = _make_alpaca_client()
+        engine = OpMomentumTradeEngine(
+            alpaca_client=client,
+            mock_trade_execution=True,
+            selector_type="win-rate",
+            top_n=top_n,
+        )
+        return engine
+
+    def _make_wr_event(
+        self, ticker, signal="BULLISH", entry=105.0,
+        overlapping_mas=None, collection_vol=2000.0,
+        vol_20day_avg=1000.0, prev_close=100.0,
+    ):
+        from alpha_tech_tracker.op_momentum_strategy.models import SignalEvent
+        or_range = _D("10")
+        return SignalEvent(
+            ticker=ticker,
+            signal=signal,
+            entry_price=_D(str(entry)),
+            stock_price=_D(str(entry)),
+            or_high=_D(str(entry + 5)),
+            or_low=_D(str(entry - 5)),
+            or_range=or_range,
+            ma50_at_signal=_D("100"),
+            overlapping_mas=overlapping_mas or ["MA20"],
+            collection_vol=collection_vol,
+            vol_20day_avg=vol_20day_avg,
+            prev_close=prev_close,
+        )
+
+    def _run_drain(self, engine, pending, mocker):
+        """Inject pending signals and drain; return list of (ticker, rank) entered."""
+        from alpha_tech_tracker.op_momentum_strategy.models import WindowConfig
+        win = WindowConfig(label="W1", opening_start="09:30", opening_bars=3,
+                           capital_fraction=1.0, is_sequential=False)
+        engine._windows = [win]
+        engine._window_state["W1"] = {
+            "pending_signals": dict(pending),
+            "collection_deadline": datetime.now(ET),
+            "open_position_count": 0,
+            "capital_fraction": 1.0,
+            "drain_timer_scheduled": False,
+        }
+        # Provide sentinel rolling_stats so EV gate passes for all tickers
+        engine._rolling_stats_by_window["W1"] = {
+            t: {"ev_trade": 1.0, "avg_win_pct": 0.0, "win_rate": 0.0}
+            for t in pending
+        }
+
+        entered = []
+
+        def fake_enter(event, rank=0, window_label="W1", **kwargs):
+            entered.append((event.ticker, rank))
+            return True
+
+        mocker.patch.object(engine, "_enter_position", side_effect=fake_enter)
+        mocker.patch.object(engine, "_get_window_budget", return_value=_D("10000"))
+        mocker.patch.object(engine, "_is_circuit_breaker_tripped", return_value=False)
+        mocker.patch.object(engine, "_option_entry_fits_capital", return_value=(True, _D("500")))
+        mocker.patch.object(engine, "_stock_entry_fits_capital", return_value=(True, _D("500")))
+
+        with patch(self._NOTIFY_PATH):
+            engine._drain_pending_signals_for_window(win)
+
+        return entered
+
+    def test_higher_up_pct_ranks_first(self, mocker):
+        engine = self._make_engine()
+        pending = {
+            "AMD": self._make_wr_event("AMD", entry=106.0, prev_close=100.0),   # up_pct=6%
+            "NVDA": self._make_wr_event("NVDA", entry=103.0, prev_close=100.0), # up_pct=3%
+        }
+
+        entered = self._run_drain(engine, pending, mocker)
+
+        assert [t for t, _ in entered] == ["AMD", "NVDA"]
+
+    def test_more_overlapping_mas_breaks_up_pct_tie(self, mocker):
+        engine = self._make_engine()
+        pending = {
+            "AMD": self._make_wr_event("AMD", entry=105.0, prev_close=100.0,
+                                       overlapping_mas=["MA20"]),          # 1 MA
+            "NVDA": self._make_wr_event("NVDA", entry=105.0, prev_close=100.0,
+                                        overlapping_mas=["MA20", "MA50"]), # 2 MAs
+        }
+
+        entered = self._run_drain(engine, pending, mocker)
+
+        assert [t for t, _ in entered] == ["NVDA", "AMD"]
+
+    def test_higher_vol_ratio_breaks_tie_after_up_pct_and_ma_count(self, mocker):
+        engine = self._make_engine()
+        pending = {
+            "AMD": self._make_wr_event("AMD", collection_vol=1500.0, vol_20day_avg=1000.0,
+                                       entry=105.0, prev_close=100.0),   # vol_ratio=1.5
+            "NVDA": self._make_wr_event("NVDA", collection_vol=3000.0, vol_20day_avg=1000.0,
+                                        entry=105.0, prev_close=100.0),  # vol_ratio=3.0
+        }
+
+        entered = self._run_drain(engine, pending, mocker)
+
+        assert [t for t, _ in entered] == ["NVDA", "AMD"]
+
+    def test_only_top_n_are_entered(self, mocker):
+        engine = self._make_engine(top_n=2)
+        pending = {
+            "A": self._make_wr_event("A", entry=106.0, prev_close=100.0),
+            "B": self._make_wr_event("B", entry=105.0, prev_close=100.0),
+            "C": self._make_wr_event("C", entry=104.0, prev_close=100.0),
+        }
+
+        entered = self._run_drain(engine, pending, mocker)
+
+        assert len(entered) == 2
+        assert [t for t, _ in entered] == ["A", "B"]
+
+    def test_score_rank_selector_still_uses_score_ticker(self, mocker):
+        """selector_type='score-rank' must still call score_ticker, not the win-rate key."""
+        client = _make_alpaca_client()
+        engine = OpMomentumTradeEngine(
+            alpaca_client=client,
+            mock_trade_execution=True,
+            selector_type="score-rank",
+            top_n=1,
+        )
+        event = _make_signal_event("AMD", entry=105.0)
+        # No overlapping_mas → falls through to score_ticker path
+        pending = {"AMD": event}
+        engine._rolling_stats_by_window["W1"] = {
+            "AMD": {"ev_trade": 1.0, "avg_win_pct": 1.0, "win_rate": 0.5,
+                    "ev_trend": 0.0}
+        }
+        mock_score = mocker.patch(
+            "alpha_tech_tracker.op_momentum_strategy.trade_engine.score_ticker",
+            return_value=0.9,
+        )
+
+        from alpha_tech_tracker.op_momentum_strategy.models import WindowConfig
+        win = WindowConfig("W1", "09:30", 3, 1.0, False)
+        engine._windows = [win]
+        engine._window_state["W1"] = {
+            "pending_signals": dict(pending),
+            "collection_deadline": datetime.now(ET),
+            "open_position_count": 0,
+            "capital_fraction": 1.0,
+            "drain_timer_scheduled": False,
+        }
+        mocker.patch.object(engine, "_enter_position", return_value=True)
+        mocker.patch.object(engine, "_get_window_budget", return_value=_D("10000"))
+        mocker.patch.object(engine, "_is_circuit_breaker_tripped", return_value=False)
+
+        with patch(self._NOTIFY_PATH):
+            engine._drain_pending_signals_for_window(win)
+
+        mock_score.assert_called_once()

@@ -1782,3 +1782,417 @@ class TestMaMomentumGate:
 
         assert len(fired) == 0
 
+
+
+_VOL_AVG_PATH = "alpha_tech_tracker.op_momentum_strategy.signal_engine.LiveSignalEngine._compute_collection_vol_20day_avg"
+
+
+class TestWinRateSignalMode:
+    """Tests for win_rate_signal_mode in LiveSignalEngine."""
+
+    SESSION_DATE = date(2026, 5, 12)
+    OR_DATE = datetime(2026, 5, 12, 9, 30)
+
+    # ── helpers ──────────────────────────────────────────────────────────────
+
+    def _make_engine(self, on_signal=None, collection_bars=3):
+        engine = LiveSignalEngine(
+            tickers=["AMD"],
+            opening_bars=3,
+            on_signal=on_signal,
+            win_rate_signal_mode=True,
+            collection_bars=collection_bars,
+        )
+        engine._session_date = self.SESSION_DATE
+        engine._bearish_regime_dates = set()
+        return engine
+
+    def _or_bars(self, or_high=108.0, or_low=92.0):
+        """Three mock OR bars that give the specified high/low range."""
+        mid = (or_high + or_low) / 2.0
+        bars = []
+        for i in range(3):
+            b = Mock()
+            b.high = or_high
+            b.low = or_low
+            b.open = mid
+            b.close = mid
+            b.volume = 1000.0
+            b.timestamp = ET.localize(datetime(2026, 5, 12, 9, 30 + i * 5))
+            bars.append(b)
+        return bars
+
+    def _latest(self, close, ma20, ma50=None, ma200=None):
+        return pd.Series({
+            "Close": close,
+            "MA20": ma20,
+            "MA50": ma50 if ma50 is not None else float("nan"),
+            "MA200": ma200 if ma200 is not None else float("nan"),
+        })
+
+    def _set_or_complete(self, engine, label="W1", ticker="AMD"):
+        engine._opening_buf[label][ticker] = self._or_bars()
+        engine._or_complete[label][ticker] = True
+
+    def _make_collection_bar(self, close, volume=2000.0, minute_offset=0):
+        b = Mock()
+        b.symbol = "AMD"
+        b.high = close + 1.0
+        b.low = close - 1.0
+        b.open = close
+        b.close = close
+        b.volume = volume
+        b.timestamp = ET.localize(
+            datetime(2026, 5, 12, 9, 40 + minute_offset * 5)
+        )
+        return b
+
+    # ── _compute_collection_vol_20day_avg ─────────────────────────────────────
+
+    def test_vol_20day_avg_returns_mean_across_prior_days(self):
+        engine = self._make_engine()
+        timestamps = []
+        volumes = []
+        for day_offset in range(1, 22):
+            d = self.SESSION_DATE - timedelta(days=day_offset)
+            ts = ET.localize(datetime.combine(d, datetime.min.time())
+                             + timedelta(hours=9, minutes=40))
+            timestamps.append(ts)
+            volumes.append(float(day_offset * 1000))
+        df = pd.DataFrame(
+            {"Open": [100.0] * 21, "High": [101.0] * 21,
+             "Low": [99.0] * 21, "Close": [100.0] * 21,
+             "Volume": volumes},
+            index=timestamps,
+        )
+        engine._history["AMD"] = df
+
+        result = engine._compute_collection_vol_20day_avg(
+            "AMD",
+            datetime.strptime("09:30", "%H:%M").time(),
+            3,
+            self.SESSION_DATE,
+        )
+
+        assert result is not None
+        expected = sum(range(1, 21)) * 1000 / 20
+        assert abs(result - expected) < 1.0
+
+    def test_vol_20day_avg_returns_none_when_no_history(self):
+        engine = self._make_engine()
+
+        result = engine._compute_collection_vol_20day_avg(
+            "AMD",
+            datetime.strptime("09:30", "%H:%M").time(),
+            3,
+            self.SESSION_DATE,
+        )
+
+        assert result is None
+
+    def test_vol_20day_avg_uses_at_most_20_prior_days(self):
+        engine = self._make_engine()
+        timestamps = []
+        volumes = []
+        for day_offset in range(1, 30):
+            d = self.SESSION_DATE - timedelta(days=day_offset)
+            ts = ET.localize(datetime.combine(d, datetime.min.time())
+                             + timedelta(hours=9, minutes=40))
+            timestamps.append(ts)
+            volumes.append(100_000.0 if day_offset <= 20 else 999_999.0)
+        df = pd.DataFrame(
+            {"Open": [100.0] * 29, "High": [101.0] * 29,
+             "Low": [99.0] * 29, "Close": [100.0] * 29,
+             "Volume": volumes},
+            index=timestamps,
+        )
+        engine._history["AMD"] = df
+
+        result = engine._compute_collection_vol_20day_avg(
+            "AMD",
+            datetime.strptime("09:30", "%H:%M").time(),
+            3,
+            self.SESSION_DATE,
+        )
+
+        assert result == 100_000.0
+
+    # ── _get_prev_close ───────────────────────────────────────────────────────
+
+    def test_get_prev_close_returns_last_bar_before_session(self):
+        engine = self._make_engine()
+        prev_day = self.SESSION_DATE - timedelta(days=1)
+        timestamps = [
+            ET.localize(datetime.combine(prev_day, datetime.min.time())
+                        + timedelta(hours=9, minutes=30 + i * 5))
+            for i in range(5)
+        ]
+        closes = [100.0, 101.0, 102.0, 103.0, 104.0]
+        df = pd.DataFrame(
+            {"Open": closes, "High": closes, "Low": closes, "Close": closes,
+             "Volume": [1000.0] * 5},
+            index=timestamps,
+        )
+        engine._history["AMD"] = df
+
+        result = engine._get_prev_close("AMD", self.SESSION_DATE)
+
+        assert result == 104.0
+
+    def test_get_prev_close_returns_none_when_no_history(self):
+        engine = self._make_engine()
+
+        assert engine._get_prev_close("AMD", self.SESSION_DATE) is None
+
+    # ── _try_fire_win_rate_signal ─────────────────────────────────────────────
+
+    def test_bull_signal_fires_when_conditions_met(self, mocker):
+        fired = []
+        engine = self._make_engine(on_signal=fired.append)
+        self._set_or_complete(engine)
+        mocker.patch.object(engine, "_compute_collection_vol_20day_avg", return_value=1000.0)
+        mocker.patch.object(engine, "_get_prev_close", return_value=99.0)
+        # OR: high=108, low=92, mid=100 — MA50=101 is inside range; close=105 > mid=100
+        latest = self._latest(close=105.0, ma20=95.0, ma50=101.0, ma200=90.0)
+        cbuf = [self._make_collection_bar(close=105.0, volume=1500.0)]
+
+        fired_result = engine._try_fire_win_rate_signal("AMD", latest, engine._windows[0], cbuf)
+
+        assert fired_result is True
+        assert len(fired) == 1
+        assert fired[0].signal == "BULLISH"
+
+    def test_bear_signal_fires_when_conditions_met(self, mocker):
+        fired = []
+        engine = self._make_engine(on_signal=fired.append)
+        self._set_or_complete(engine)
+        mocker.patch.object(engine, "_compute_collection_vol_20day_avg", return_value=2000.0)
+        mocker.patch.object(engine, "_get_prev_close", return_value=102.0)
+        # OR: high=108, low=92, mid=100 — MA20=105 is inside range; close=91 < mid
+        # close=91 < MA20=105, vol=500 < avg=2000
+        latest = self._latest(close=91.0, ma20=105.0, ma50=104.0, ma200=103.0)
+        cbuf = [self._make_collection_bar(close=91.0, volume=500.0)]
+
+        fired_result = engine._try_fire_win_rate_signal("AMD", latest, engine._windows[0], cbuf)
+
+        assert fired_result is True
+        assert fired[0].signal == "BEARISH"
+
+    def test_no_signal_when_no_ma_in_or_range(self, mocker):
+        fired = []
+        engine = self._make_engine(on_signal=fired.append)
+        self._set_or_complete(engine)
+        mocker.patch.object(engine, "_compute_collection_vol_20day_avg", return_value=1000.0)
+        # All MAs are outside OR range (92-108): MA20=50 and MA200=40 are far below
+        latest = self._latest(close=110.0, ma20=50.0, ma50=45.0, ma200=40.0)
+        cbuf = [self._make_collection_bar(close=110.0, volume=2000.0)]
+
+        fired_result = engine._try_fire_win_rate_signal("AMD", latest, engine._windows[0], cbuf)
+
+        assert fired_result is False
+        assert len(fired) == 0
+
+    def test_no_signal_when_vol_avg_is_none(self, mocker):
+        fired = []
+        engine = self._make_engine(on_signal=fired.append)
+        self._set_or_complete(engine)
+        mocker.patch.object(engine, "_compute_collection_vol_20day_avg", return_value=None)
+        latest = self._latest(close=105.0, ma20=100.0, ma50=101.0, ma200=90.0)
+        cbuf = [self._make_collection_bar(close=105.0, volume=2000.0)]
+
+        fired_result = engine._try_fire_win_rate_signal("AMD", latest, engine._windows[0], cbuf)
+
+        assert fired_result is False
+        assert len(fired) == 0
+
+    def test_bull_no_signal_when_vol_below_avg(self, mocker):
+        fired = []
+        engine = self._make_engine(on_signal=fired.append)
+        self._set_or_complete(engine)
+        mocker.patch.object(engine, "_compute_collection_vol_20day_avg", return_value=5000.0)
+        mocker.patch.object(engine, "_get_prev_close", return_value=99.0)
+        # close > OR_mid but vol (500) < avg (5000) → no bull signal
+        latest = self._latest(close=105.0, ma20=95.0, ma50=101.0, ma200=90.0)
+        cbuf = [self._make_collection_bar(close=105.0, volume=500.0)]
+
+        fired_result = engine._try_fire_win_rate_signal("AMD", latest, engine._windows[0], cbuf)
+
+        assert fired_result is False
+
+    def test_bear_no_signal_when_vol_above_avg(self, mocker):
+        fired = []
+        engine = self._make_engine(on_signal=fired.append)
+        self._set_or_complete(engine)
+        mocker.patch.object(engine, "_compute_collection_vol_20day_avg", return_value=500.0)
+        mocker.patch.object(engine, "_get_prev_close", return_value=102.0)
+        # close < OR_mid but vol (5000) > avg (500) → no bear signal
+        latest = self._latest(close=91.0, ma20=105.0, ma50=104.0, ma200=103.0)
+        cbuf = [self._make_collection_bar(close=91.0, volume=5000.0)]
+
+        fired_result = engine._try_fire_win_rate_signal("AMD", latest, engine._windows[0], cbuf)
+
+        assert fired_result is False
+
+    def test_bear_no_signal_when_close_above_ma20(self, mocker):
+        fired = []
+        engine = self._make_engine(on_signal=fired.append)
+        self._set_or_complete(engine)
+        mocker.patch.object(engine, "_compute_collection_vol_20day_avg", return_value=2000.0)
+        # close < OR_mid, vol ok, MA50=101 in range — but close (91) > MA20 (88)? No:
+        # let's make close=91, MA20=95 — close < MA20, but let's try close=95, MA20=90
+        # We want: close < OR_mid=100 BUT close >= MA20 → no signal
+        latest = self._latest(close=95.0, ma20=90.0, ma50=95.0, ma200=103.0)
+        cbuf = [self._make_collection_bar(close=95.0, volume=500.0)]
+
+        fired_result = engine._try_fire_win_rate_signal("AMD", latest, engine._windows[0], cbuf)
+
+        assert fired_result is False
+
+    def test_signal_carries_win_rate_metadata(self, mocker):
+        fired = []
+        engine = self._make_engine(on_signal=fired.append)
+        self._set_or_complete(engine)
+        mocker.patch.object(engine, "_compute_collection_vol_20day_avg", return_value=1000.0)
+        mocker.patch.object(engine, "_get_prev_close", return_value=99.0)
+        latest = self._latest(close=105.0, ma20=80.0, ma50=101.0, ma200=90.0)
+        cbuf = [self._make_collection_bar(close=105.0, volume=1500.0)]
+
+        engine._try_fire_win_rate_signal("AMD", latest, engine._windows[0], cbuf)
+
+        event = fired[0]
+        assert event.overlapping_mas == ["MA50"]
+        assert event.collection_vol == 1500.0
+        assert event.vol_20day_avg == 1000.0
+        assert event.prev_close == 99.0
+
+    def test_bull_signal_suppressed_by_bearish_regime_date(self, mocker):
+        fired = []
+        engine = self._make_engine(on_signal=fired.append)
+        engine._bearish_regime_dates = {self.SESSION_DATE}
+        self._set_or_complete(engine)
+        mocker.patch.object(engine, "_compute_collection_vol_20day_avg", return_value=1000.0)
+        mocker.patch.object(engine, "_get_prev_close", return_value=99.0)
+        latest = self._latest(close=105.0, ma20=95.0, ma50=101.0, ma200=90.0)
+        cbuf = [self._make_collection_bar(close=105.0, volume=1500.0)]
+
+        fired_result = engine._try_fire_win_rate_signal("AMD", latest, engine._windows[0], cbuf)
+
+        assert fired_result is False
+        assert len(fired) == 0
+
+    # ── collection window scanning (_process_five_min_bar) ───────────────────
+
+    def test_signal_fires_on_first_collection_bar_when_conditions_met(self, mocker):
+        """Last OR bar is collection bar 1; signal fires immediately if conditions are met."""
+        fired = []
+        engine = self._make_engine(on_signal=fired.append)
+        mocker.patch.object(engine, "_compute_collection_vol_20day_avg", return_value=1000.0)
+        mocker.patch.object(engine, "_get_prev_close", return_value=99.0)
+        engine._history["AMD"] = self._make_minimal_history(ma20=95.0, ma50=101.0, ma200=90.0)
+
+        or_bars = [
+            _FiveMinBar("AMD", ET.localize(datetime(2026, 5, 12, 9, 30)), 100, 108, 92, 104, 1000),
+            _FiveMinBar("AMD", ET.localize(datetime(2026, 5, 12, 9, 35)), 104, 109, 103, 105, 1000),
+            _FiveMinBar("AMD", ET.localize(datetime(2026, 5, 12, 9, 40)), 105, 110, 104, 105, 1500),
+        ]
+        for b in or_bars:
+            engine._process_five_min_bar(b)
+
+        assert engine._or_complete["W1"]["AMD"] is True
+        assert engine._signal_fired["W1"]["AMD"] is True
+        assert len(fired) == 1
+        assert fired[0].signal == "BULLISH"
+
+    def test_signal_fires_on_second_collection_bar_when_first_is_neutral(self, mocker):
+        fired = []
+        engine = self._make_engine(on_signal=fired.append)
+        # First call (bar at 9:40): return low vol → no bull signal
+        # Second call (bar at 9:45): return high vol → bull signal
+        mocker.patch.object(
+            engine, "_compute_collection_vol_20day_avg",
+            side_effect=[1000.0, 1000.0],
+        )
+        mocker.patch.object(engine, "_get_prev_close", return_value=99.0)
+        engine._history["AMD"] = self._make_minimal_history(ma20=95.0, ma50=101.0, ma200=90.0)
+
+        or_bars = [
+            _FiveMinBar("AMD", ET.localize(datetime(2026, 5, 12, 9, 30)), 100, 108, 92, 100, 500),
+            _FiveMinBar("AMD", ET.localize(datetime(2026, 5, 12, 9, 35)), 100, 108, 92, 100, 500),
+            # Last OR bar: close=100 == mid=100 → neutral (neither strictly above nor below)
+            _FiveMinBar("AMD", ET.localize(datetime(2026, 5, 12, 9, 40)), 100, 108, 92, 100, 500),
+        ]
+        for b in or_bars:
+            engine._process_five_min_bar(b)
+
+        assert engine._or_complete["W1"]["AMD"] is True
+        assert engine._signal_fired["W1"]["AMD"] is False
+        assert len(fired) == 0
+
+        # Second collection bar: close=105 > mid=100, vol=2000 > avg=1000
+        bar4 = _FiveMinBar("AMD", ET.localize(datetime(2026, 5, 12, 9, 45)), 105, 110, 103, 105, 2000)
+        engine._process_five_min_bar(bar4)
+
+        assert engine._signal_fired["W1"]["AMD"] is True
+        assert len(fired) == 1
+        assert fired[0].signal == "BULLISH"
+
+    def test_signal_stops_after_collection_window_exhausted_with_no_fire(self, mocker):
+        """After collection_bars are scanned with no signal, signal_fired is set to prevent re-evaluation."""
+        fired = []
+        engine = self._make_engine(on_signal=fired.append, collection_bars=2)
+        mocker.patch.object(engine, "_compute_collection_vol_20day_avg", return_value=10_000.0)
+        engine._history["AMD"] = self._make_minimal_history(ma20=95.0, ma50=101.0, ma200=90.0)
+
+        or_bars = [
+            _FiveMinBar("AMD", ET.localize(datetime(2026, 5, 12, 9, 30)), 100, 108, 92, 100, 500),
+            _FiveMinBar("AMD", ET.localize(datetime(2026, 5, 12, 9, 35)), 100, 108, 92, 100, 500),
+            # vol=500 << avg=10000 so no bull; close=100 = mid so no bear either
+            _FiveMinBar("AMD", ET.localize(datetime(2026, 5, 12, 9, 40)), 100, 108, 92, 100, 500),
+        ]
+        for b in or_bars:
+            engine._process_five_min_bar(b)
+
+        # Second (last) collection bar — also no signal
+        bar4 = _FiveMinBar("AMD", ET.localize(datetime(2026, 5, 12, 9, 45)), 100, 108, 92, 100, 500)
+        engine._process_five_min_bar(bar4)
+
+        assert engine._signal_fired["W1"]["AMD"] is True
+        assert len(fired) == 0
+
+    def test_standard_mode_still_uses_try_fire_signal(self):
+        """win_rate_signal_mode=False preserves existing _try_fire_signal behaviour."""
+        engine = LiveSignalEngine(tickers=["AMD"], opening_bars=3)
+        engine._history["AMD"] = self._make_minimal_history(ma20=95.0, ma50=101.0, ma200=90.0)
+
+        bars = [
+            _FiveMinBar("AMD", ET.localize(datetime(2026, 5, 12, 9, 30)), 100, 108, 92, 104, 1000),
+            _FiveMinBar("AMD", ET.localize(datetime(2026, 5, 12, 9, 35)), 104, 109, 103, 105, 1000),
+            _FiveMinBar("AMD", ET.localize(datetime(2026, 5, 12, 9, 40)), 105, 110, 104, 106, 1000),
+        ]
+        with patch.object(engine, "_try_fire_signal") as mock_fire, \
+             patch.object(engine, "_try_fire_win_rate_signal") as mock_wr_fire:
+            for b in bars:
+                engine._process_five_min_bar(b)
+
+        mock_fire.assert_called_once()
+        mock_wr_fire.assert_not_called()
+
+    # ── helper ───────────────────────────────────────────────────────────────
+
+    def _make_minimal_history(self, ma20, ma50, ma200, n=25):
+        """A small prior-day history df so _append_bar can compute rolling MAs."""
+        prev_day = self.SESSION_DATE - timedelta(days=1)
+        timestamps = [
+            ET.localize(datetime.combine(prev_day, datetime.min.time())
+                        + timedelta(hours=9, minutes=30 + i * 5))
+            for i in range(n)
+        ]
+        closes = [100.0] * n
+        df = pd.DataFrame(
+            {"Open": closes, "High": [c + 1 for c in closes],
+             "Low": [c - 1 for c in closes], "Close": closes,
+             "Volume": [1000.0] * n,
+             "MA20": ma20, "MA50": ma50, "MA200": ma200, "MA8": ma20},
+            index=timestamps,
+        )
+        return df

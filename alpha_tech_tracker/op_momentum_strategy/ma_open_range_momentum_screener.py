@@ -29,7 +29,7 @@ ET = pytz.timezone("America/New_York")
 _DEFAULT_OR_START = "09:30"
 _DEFAULT_OR_BARS = 3
 _EOD_TIME = "15:55"
-_5MIN_WARMUP_DAYS = 14    # guarantees 200+ 5-min bars across holiday gaps
+_5MIN_WARMUP_DAYS = 30    # 30 calendar days guarantees 20 trading days for vol_20day_avg lookback
 _DAILY_LOOKBACK_DAYS = 365  # ~260 trading days for daily MA200
 
 

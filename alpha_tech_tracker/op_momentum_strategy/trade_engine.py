@@ -2173,63 +2173,77 @@ class OpMomentumTradeEngine:
                     _dir_ev,
                 )
                 continue
-            midpoint = (event.or_high + event.or_low) / _D("2")
-            entry_vs_mid_pct = (
-                float(abs(event.entry_price - midpoint) / midpoint * 100)
-                if midpoint != 0
-                else 0.0
-            )
-            or_range_pct = (
-                float(event.or_range / event.entry_price * 100)
-                if event.entry_price != 0
-                else 0.0
-            )
-            # Reproduce the selector's full scoring: ADR-normalize the OR range and
-            # supply the rel-strength daily context so live drain scores match the
-            # backtest (which applies both). Context is resolved by select_top_n for
-            # the target date and carried over per window.
-            ticker_ctx = window_scoring_context.get(ticker, {})
-            if self._normalize_or_by_adr:
-                _adr = ticker_ctx.get("adr")
-                if _adr and _adr > 0:
-                    or_range_pct = or_range_pct / _adr
-            daily_ctx = None
-            if self._score_rel_strength_weight:
-                daily_ctx = {
-                    "rel_ma50_dist_pct": ticker_ctx.get("rel_ma50_dist_pct", float("nan"))
-                }
-            sig_dict = {
-                "entry_vs_mid_pct": entry_vs_mid_pct,
-                "or_range_pct": or_range_pct,
-                "signal": event.signal,
-            }
-            score = score_ticker(
-                sig_dict, stats,
-                score_entry_weight=self._score_entry_weight,
-                score_avg_win_weight=self._score_avg_win_weight,
-                score_win_rate_weight=self._score_win_rate_weight,
-                score_ev_trend_weight=self._score_ev_trend_weight,
-                score_rel_strength_weight=self._score_rel_strength_weight,
-                daily_context=daily_ctx,
-            )
-            if self._qqq_or_weight and self._signal_engine is not None:
-                qqq_or_pct = self._signal_engine.get_qqq_or_pct(label)
-                if qqq_or_pct is not None:
-                    align = qqq_or_pct if event.signal == "BULLISH" else -qqq_or_pct
-                    score += self._qqq_or_weight * align
-            # Drop low-conviction picks below the score floor, matching the backtest
-            # (which skips s < min_score after the QQQ-OR adjustment; default 0.0 drops
-            # negative scores). Without this the live engine would trade the least-bad
-            # candidate even when every signal scores negative.
-            if score < self._min_score:
-                logger.info(
-                    "Skipping %s [%s]: score=%.3f < min_score=%.3f",
-                    ticker,
-                    label,
-                    score,
-                    self._min_score,
+            if self._selector_type == "win-rate" and event.overlapping_mas is not None:
+                # Win-rate sort key: rank by (up_pct_from_prev_close, MA_count_in_OR, vol_ratio)
+                prev = event.prev_close or 0.0
+                up_pct = (
+                    (float(event.entry_price) - prev) / prev * 100 if prev else 0.0
                 )
-                continue
+                ma_count = len(event.overlapping_mas)
+                vol_ratio = (
+                    event.collection_vol / event.vol_20day_avg
+                    if event.vol_20day_avg else 0.0
+                )
+                score = (up_pct, ma_count, vol_ratio)
+                logger.info(
+                    "Win-rate-ranked %s [%s]: up_pct=%.2f%% ma_count=%d vol_ratio=%.2fx",
+                    ticker, label, up_pct, ma_count, vol_ratio,
+                )
+            else:
+                midpoint = (event.or_high + event.or_low) / _D("2")
+                entry_vs_mid_pct = (
+                    float(abs(event.entry_price - midpoint) / midpoint * 100)
+                    if midpoint != 0
+                    else 0.0
+                )
+                or_range_pct = (
+                    float(event.or_range / event.entry_price * 100)
+                    if event.entry_price != 0
+                    else 0.0
+                )
+                # Reproduce the selector's full scoring: ADR-normalize the OR range and
+                # supply the rel-strength daily context so live drain scores match the
+                # backtest (which applies both). Context is resolved by select_top_n for
+                # the target date and carried over per window.
+                ticker_ctx = window_scoring_context.get(ticker, {})
+                if self._normalize_or_by_adr:
+                    _adr = ticker_ctx.get("adr")
+                    if _adr and _adr > 0:
+                        or_range_pct = or_range_pct / _adr
+                daily_ctx = None
+                if self._score_rel_strength_weight:
+                    daily_ctx = {
+                        "rel_ma50_dist_pct": ticker_ctx.get("rel_ma50_dist_pct", float("nan"))
+                    }
+                sig_dict = {
+                    "entry_vs_mid_pct": entry_vs_mid_pct,
+                    "or_range_pct": or_range_pct,
+                    "signal": event.signal,
+                }
+                score = score_ticker(
+                    sig_dict, stats,
+                    score_entry_weight=self._score_entry_weight,
+                    score_avg_win_weight=self._score_avg_win_weight,
+                    score_win_rate_weight=self._score_win_rate_weight,
+                    score_ev_trend_weight=self._score_ev_trend_weight,
+                    score_rel_strength_weight=self._score_rel_strength_weight,
+                    daily_context=daily_ctx,
+                )
+                if self._qqq_or_weight and self._signal_engine is not None:
+                    qqq_or_pct = self._signal_engine.get_qqq_or_pct(label)
+                    if qqq_or_pct is not None:
+                        align = qqq_or_pct if event.signal == "BULLISH" else -qqq_or_pct
+                        score += self._qqq_or_weight * align
+                # Drop low-conviction picks below the score floor
+                if score < self._min_score:
+                    logger.info(
+                        "Skipping %s [%s]: score=%.3f < min_score=%.3f",
+                        ticker,
+                        label,
+                        score,
+                        self._min_score,
+                    )
+                    continue
             scored.append((score, ticker, event))
             logger.info(
                 "Ranked %s [%s]: score=%.3f ev_trade=%.3f",
@@ -2887,6 +2901,7 @@ class OpMomentumTradeEngine:
             trailing_ma_switch_period=self._trailing_ma_switch_period,
             ma_momentum_gate=self._ma_momentum_gate,
             qqq_or_weight=self._qqq_or_weight,
+            win_rate_signal_mode=self._selector_type == "win-rate",
         )
         try:
             account = self._client.get_accounts()
@@ -3069,6 +3084,7 @@ class OpMomentumTradeEngine:
             trailing_ma_switch_period=self._trailing_ma_switch_period,
             ma_momentum_gate=self._ma_momentum_gate,
             qqq_or_weight=self._qqq_or_weight,
+            win_rate_signal_mode=self._selector_type == "win-rate",
         )
         self._signal_engine.start_replay(replay_date, market_data_client=self._market_data_client)
 

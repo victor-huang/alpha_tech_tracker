@@ -1,6 +1,6 @@
 import logging
 import threading
-from datetime import datetime, timedelta
+from datetime import date, datetime, timedelta
 from typing import Optional
 
 import pandas as pd
@@ -58,6 +58,8 @@ class LiveSignalEngine:
         trailing_ma_switch_period: int = 8,
         ma_momentum_gate: bool = False,
         qqq_or_weight: float = 0.0,
+        win_rate_signal_mode: bool = False,
+        collection_bars: int = 3,
     ):
         self._tickers = tickers
         self._bearish_ma200 = bearish_ma200
@@ -90,6 +92,8 @@ class LiveSignalEngine:
                 }
             ]
 
+        self._win_rate_signal_mode = win_rate_signal_mode
+        self._collection_bars = collection_bars
         self._history: dict = {}
         self._opening_buf: dict = {
             w["label"]: {t: [] for t in tickers} for w in self._windows
@@ -98,6 +102,14 @@ class LiveSignalEngine:
             w["label"]: {t: False for t in tickers} for w in self._windows
         }
         self._opening_catchup_done: dict = {w["label"]: False for w in self._windows}
+        # Screener-mode state: tracks OR completion and per-bar collection window
+        if win_rate_signal_mode:
+            self._or_complete: dict = {
+                w["label"]: {t: False for t in tickers} for w in self._windows
+            }
+            self._collection_buf: dict = {
+                w["label"]: {t: [] for t in tickers} for w in self._windows
+            }
         self._minute_buf: dict = {
             t: {"period_start": None, "bars": []} for t in tickers
         }
@@ -145,6 +157,168 @@ class LiveSignalEngine:
         df[self._fast_ma_col] = df["Close"].rolling(self._fast_ma_period).mean()
         self._history[ticker] = df
         return df.iloc[-1]
+
+    def _compute_collection_vol_20day_avg(
+        self,
+        ticker: str,
+        or_start_time,
+        or_bars: int,
+        session_date: date,
+        lookback: int = 20,
+    ) -> Optional[float]:
+        """Average volume across the collection-window time slots over the past 20 trading days."""
+        df = self._history.get(ticker)
+        if df is None or df.empty:
+            return None
+        or_start_dt = datetime.combine(date.today(), or_start_time)
+        collection_start = (or_start_dt + timedelta(minutes=(or_bars - 1) * 5)).time()
+        collection_end = (
+            or_start_dt + timedelta(minutes=(or_bars - 1 + self._collection_bars - 1) * 5)
+        ).time()
+        prior_dates = sorted(
+            {d for d in df.index.date if d < session_date}, reverse=True
+        )[:lookback]
+        if not prior_dates:
+            return None
+        daily_avgs = []
+        for d in prior_dates:
+            day = df[df.index.date == d]
+            window = day[
+                (day.index.time >= collection_start) & (day.index.time <= collection_end)
+            ]
+            if not window.empty:
+                daily_avgs.append(float(window["Volume"].mean()))
+        return sum(daily_avgs) / len(daily_avgs) if daily_avgs else None
+
+    def _get_prev_close(self, ticker: str, session_date: date) -> Optional[float]:
+        """Return the last bar close from the trading day before session_date."""
+        df = self._history.get(ticker)
+        if df is None or df.empty:
+            return None
+        prior = df[df.index.date < session_date]
+        if prior.empty:
+            return None
+        return float(prior["Close"].iloc[-1])
+
+    def _try_fire_win_rate_signal(
+        self, ticker: str, latest: pd.Series, win: dict, cbuf: list
+    ) -> bool:
+        """
+        Evaluate win-rate selector signal conditions on the current collection bar.
+
+        Uses OR-range MA overlap + volume-ratio gate (mirroring compute_or_ma_signals):
+          BULL: close > OR_mid AND collection_vol > vol_20day_avg AND any MA in OR range
+          BEAR: close < OR_mid AND collection_vol < vol_20day_avg AND close < MA20
+                AND close < MA200 AND any MA in OR range
+
+        Returns True when a signal fires; the caller should set _signal_fired after.
+        """
+        label = win["label"]
+        or_buf = self._opening_buf[label][ticker]
+        or_high = float(max(b.high for b in or_buf))
+        or_low = float(min(b.low for b in or_buf))
+        or_range = or_high - or_low
+        if or_range == 0:
+            return False
+
+        or_mid = (or_high + or_low) / 2.0
+        close = float(latest["Close"])
+        ma20 = latest["MA20"]
+        ma50 = latest["MA50"]
+        ma200 = latest["MA200"]
+
+        if pd.isna(ma20):
+            return False
+
+        overlapping_mas = [
+            name for name, val in [("MA20", ma20), ("MA50", ma50), ("MA200", ma200)]
+            if not pd.isna(val) and or_low <= float(val) <= or_high
+        ]
+        if not overlapping_mas:
+            logger.debug("%s [%s]: win-rate — no MA in OR range", ticker, label)
+            return False
+
+        or_start_time = win["_opening_start_t"]
+        or_bars = win["opening_bars"]
+        vol_20day_avg = self._compute_collection_vol_20day_avg(
+            ticker, or_start_time, or_bars, self._session_date
+        )
+        if vol_20day_avg is None:
+            logger.debug("%s [%s]: win-rate — no vol history", ticker, label)
+            return False
+
+        # Incremental mean: only bars seen so far (no lookahead)
+        collection_vol = sum(b.volume for b in cbuf) / len(cbuf)
+
+        bull = close > or_mid and collection_vol > vol_20day_avg
+        ma20_f = float(ma20)
+        ma200_f = float(ma200) if not pd.isna(ma200) else None
+        bear = (
+            close < or_mid
+            and collection_vol < vol_20day_avg
+            and close < ma20_f
+            and (ma200_f is None or close < ma200_f)
+        )
+
+        if not bull and not bear:
+            logger.debug(
+                "%s [%s]: win-rate NEUTRAL close=%.2f or_mid=%.2f col_vol=%.0f avg=%.0f",
+                ticker, label, close, or_mid, collection_vol, vol_20day_avg,
+            )
+            return False
+
+        signal = "BULLISH" if bull else "BEARISH"
+
+        if signal == "BULLISH" and self._session_date in self._bearish_regime_dates:
+            logger.info(
+                "%s [%s]: win-rate BULLISH suppressed by regime filter", ticker, label
+            )
+            return False
+
+        # Effective OR range for stop calculation (or_bar_lookback adjustment)
+        or_range_d = _D(str(or_range))
+        effective_or_range = or_range_d
+        if self._or_bar_lookback > 0:
+            hist = self._history.get(ticker)
+            if hist is not None and not hist.empty:
+                day_bars = hist[hist.index.date == self._session_date]
+                pre_opening = day_bars[
+                    day_bars.index.time < win["_opening_start_t"]
+                ].tail(self._or_bar_lookback)
+                if not pre_opening.empty:
+                    avg_recent = float(
+                        (pre_opening["High"] - pre_opening["Low"]).mean()
+                    )
+                    if float(or_range_d) < avg_recent / 4:
+                        effective_or_range = _D(str(avg_recent))
+
+        close_d = _D(str(close))
+        ma50_val = _D(str(ma50)) if not pd.isna(ma50) else close_d
+        prev_close = self._get_prev_close(ticker, self._session_date)
+
+        event = SignalEvent(
+            ticker=ticker,
+            signal=signal,
+            entry_price=close_d,
+            stock_price=close_d,
+            or_high=_D(str(or_high)),
+            or_low=_D(str(or_low)),
+            or_range=effective_or_range,
+            ma50_at_signal=ma50_val,
+            overlapping_mas=overlapping_mas,
+            collection_vol=collection_vol,
+            vol_20day_avg=vol_20day_avg,
+            prev_close=prev_close,
+        )
+        logger.info(
+            "WIN-RATE SIGNAL [%s] %s %s close=%.2f or_mid=%.2f MAs=%s vol=%.0f avg=%.0f",
+            label, ticker, signal, close, or_mid, overlapping_mas,
+            collection_vol, vol_20day_avg,
+        )
+        on_signal = win.get("on_signal")
+        if on_signal:
+            on_signal(event)
+        return True
 
     def _try_fire_signal(self, ticker: str, latest: pd.Series, win: dict):
         buf = self._opening_buf[win["label"]][ticker]
@@ -311,10 +485,19 @@ class LiveSignalEngine:
             label, ticker, bar.timestamp.strftime("%H:%M"), bar.close,
         )
         if len(buf) == win["opening_bars"]:
-            self._signal_fired[label][ticker] = True
             hist = self._history.get(ticker)
-            if hist is not None and not hist.empty:
-                self._try_fire_signal(ticker, hist.iloc[-1], win)
+            if self._win_rate_signal_mode:
+                self._or_complete[label][ticker] = True
+                cbuf = self._collection_buf[label][ticker]
+                cbuf.append(bar)
+                if hist is not None and not hist.empty:
+                    fired = self._try_fire_win_rate_signal(ticker, hist.iloc[-1], win, cbuf)
+                    if fired or len(cbuf) >= self._collection_bars:
+                        self._signal_fired[label][ticker] = True
+            else:
+                self._signal_fired[label][ticker] = True
+                if hist is not None and not hist.empty:
+                    self._try_fire_signal(ticker, hist.iloc[-1], win)
 
     def _fill_or_gaps_with_flat_bars(
         self, ticker: str, label: str, or_bar_period_starts: list, win: dict
@@ -421,20 +604,38 @@ class LiveSignalEngine:
             if bar_time < win["_opening_start_t"]:
                 continue
 
-            buf = self._opening_buf[label][ticker]
-            if len(buf) < win["opening_bars"]:
-                buf.append(bar)
-                logger.debug(
-                    "%s [%s]: opening bar %d/%d",
-                    ticker,
-                    label,
-                    len(buf),
-                    win["opening_bars"],
-                )
+            if self._win_rate_signal_mode and self._or_complete[label].get(ticker):
+                # Collection-window phase: scan up to collection_bars bars
+                cbuf = self._collection_buf[label][ticker]
+                if len(cbuf) < self._collection_bars:
+                    cbuf.append(bar)
+                    fired = self._try_fire_win_rate_signal(ticker, latest, win, cbuf)
+                    if fired or len(cbuf) >= self._collection_bars:
+                        self._signal_fired[label][ticker] = True
+            else:
+                buf = self._opening_buf[label][ticker]
+                if len(buf) < win["opening_bars"]:
+                    buf.append(bar)
+                    logger.debug(
+                        "%s [%s]: opening bar %d/%d",
+                        ticker,
+                        label,
+                        len(buf),
+                        win["opening_bars"],
+                    )
 
-            if len(buf) == win["opening_bars"]:
-                self._signal_fired[label][ticker] = True
-                self._try_fire_signal(ticker, latest, win)
+                if len(buf) == win["opening_bars"]:
+                    if self._win_rate_signal_mode:
+                        # OR complete — last OR bar is also the first collection bar
+                        self._or_complete[label][ticker] = True
+                        cbuf = self._collection_buf[label][ticker]
+                        cbuf.append(bar)
+                        fired = self._try_fire_win_rate_signal(ticker, latest, win, cbuf)
+                        if fired or len(cbuf) >= self._collection_bars:
+                            self._signal_fired[label][ticker] = True
+                    else:
+                        self._signal_fired[label][ticker] = True
+                        self._try_fire_signal(ticker, latest, win)
 
     def _catch_up_opening_bars_for_window(self, today, win: dict):
         label = win["label"]
