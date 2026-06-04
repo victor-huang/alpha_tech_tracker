@@ -57,6 +57,7 @@ The same signal logic drives both **live trading** (`trade_engine.py`) and **bac
 | `TICKER_SELECTION.md` | Ticker pool selection criteria and history |
 | `OP_MOMENTUM_GUIDE.md` | Strategy methodology, signal rules, exit rules |
 | `WIN_RATE_SELECTOR_MODE.md` | All params and examples for `--selector win-rate` mode; screener parity guide |
+| `WIN_RATE_SELECTOR_BACKTEST.md` | Full 2018–2026 backtest results for win-rate selector; config, monthly P&L, stop-loss impact, screener return waterfall |
 | `backtest_params_tunning/overview.md` | When/how to re-tune params & scoring: control-chart envelope, edge-vs-ranking diagnosis, 5-step re-tune protocol, validation gates |
 | `README.md` | Live trade engine setup and daily timeline |
 
