@@ -214,8 +214,8 @@ def parse_args():
         "--trailing-ma",
         type=str,
         default=TRAILING_MA,
-        choices=["ma20", "ma50", "both"],
-        help="Trailing MA stop: ma20, ma50, or both (default: ma20)",
+        choices=["ma20", "ma50", "both", "none"],
+        help="Trailing MA stop: ma20, ma50, both, or none to disable (default: ma20)",
     )
     parser.add_argument(
         "--trailing-ma-switch",
