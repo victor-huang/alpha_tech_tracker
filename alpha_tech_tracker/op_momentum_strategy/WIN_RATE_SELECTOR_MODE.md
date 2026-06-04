@@ -274,3 +274,113 @@ Signal buffered → drain at collection deadline
   └─ rank by (up_pct_from_prev_close, MA_count_in_OR, vol_ratio) descending
   └─ enter top-N
 ```
+
+---
+
+## Worked example — 2026-05-19
+
+This walkthrough traces a single day end-to-end: screener signals, engine pre-selection,
+regime filter, drain, entry, and exit. All output is from actual replays against the
+Alpaca SIP feed.
+
+### Step 1 — Screener (reference signal list)
+
+```
+$ python -m alpha_tech_tracker.op_momentum_strategy.ma_open_range_momentum_screener \
+    --tickers SNDK APP META SNOW SNPS SPOT MU LLY MRVL CRWD QCOM PLTR CHTR TSLA AVGO ARM AMD DDOG RDDT \
+    --date 2026-05-19
+
+========================================================================================
+MA Open Range Momentum Screener — 2026-05-19  OR: 09:30 / 3 bars  Collection: 3 bars
+========================================================================================
+Ticker   Dir    Signal at  OR Low-High        Close    Up%     MAs in OR          Vol/20dAvg
+----------------------------------------------------------------------------------------
+DDOG     BULL   09:50      207.10-213.00      213.69   +2.33%  MA20/MA50          1.01x
+CRWD     BULL   09:40      615.02-629.00      622.02   +0.52%  MA20               1.92x
+MU       BULL   09:40      663.00-701.14      683.83   +0.34%  MA20/MA50          1.16x
+APP      BEAR   09:40      482.01-503.78      485.70   -1.36%  MA20/MA50/MA200    0.56x
+AMD      BEAR   09:45      410.70-428.75      413.84   -1.70%  MA20/MA50          0.54x
+QCOM     BEAR   09:40      196.20-201.50      197.70   -2.92%  MA20/MA50/MA200    0.52x
+
+Signals: 6 total (3 BULL, 1 BEAR)
+QQQ: Bearish | vol 1.00x 20dAvg
+```
+
+Six signals across the pool: 3 BULL, 3 BEAR.
+
+### Step 2 — Engine pre-market selection (before 9:30 AM)
+
+The `WinRateTickerSelector` ranks the pool by 20-day EOD win rate and picks the top-2:
+
+```
+WinRateTickerSelector [LONG] top-2: ['AMD', 'SPOT']
+Replay 2026-05-19 — pre-market picks: ['AMD', 'SPOT']
+```
+
+Both AMD and SPOT are watched for signals. The regime engine reads May as a seasonal
+LONG month: `Regime: LONG | Hold: EOD [Seasonal Default]`.
+
+### Step 3 — Signal collection (9:30–9:50 AM)
+
+Every ticker's bars are fed through the signal engine. All 6 screener signals fire
+in the engine with identical conditions:
+
+```
+WIN-RATE SIGNAL [M1] APP  BEARISH  close=485.70 or_mid=492.89 MAs=['MA20','MA50','MA200'] vol=49789  avg=88746
+WIN-RATE SIGNAL [M1] MU   BULLISH  close=683.83 or_mid=682.07 MAs=['MA20','MA50']         vol=1384447 avg=1189446
+WIN-RATE SIGNAL [M1] CRWD BULLISH  close=622.02 or_mid=622.01 MAs=['MA20']                vol=113913  avg=59482
+WIN-RATE SIGNAL [M1] QCOM BEARISH  close=197.70 or_mid=198.85 MAs=['MA20','MA50','MA200'] vol=310498  avg=601048
+WIN-RATE SIGNAL [M1] AMD  BEARISH  close=413.84 or_mid=419.73 MAs=['MA20','MA50']         vol=620250  avg=1138399
+WIN-RATE SIGNAL [M1] DDOG BULLISH  close=213.69 or_mid=210.05 MAs=['MA20','MA50']         vol=123165  avg=121566
+```
+
+Signal times and vol ratios match the screener exactly.
+
+### Step 4 — Drain (9:45 AM collection deadline)
+
+Three filters reduce the 6 candidates to 1 entry:
+
+| Signal | Filter applied | Result |
+|---|---|---|
+| APP BEARISH | Regime LONG → BEARISH blocked | **Skipped** |
+| MU BULLISH | Not a pre-market pick → no rolling stats | **Skipped** |
+| CRWD BULLISH | Not a pre-market pick → no rolling stats | **Skipped** |
+| QCOM BEARISH | Regime LONG → BEARISH blocked | **Skipped** |
+| AMD BEARISH | Pre-market pick but regime LONG → BEARISH blocked | **Skipped** |
+| DDOG BULLISH | Fires at 9:50 (after drain deadline) → direct entry | **Entered** |
+
+> DDOG fires on collection bar 3 (9:50), five minutes after the drain deadline (9:45).
+> Signals that arrive after the drain go through the direct entry path. Since no positions
+> were opened during the drain, `open_position_count = 0 < top_n = 2`, so DDOG enters at rank 0.
+> SPOT never fires any signal — the pre-market pick doesn't trade without a qualifying signal.
+
+### Step 5 — Entry and exit
+
+```
+SIMULATE BUY_OPEN  stock DDOG  shares=23  simulated_fill=213.69  (9:50 AM)
+SIMULATE SELL_CLOSE stock DDOG shares=23  simulated_fill=215.54  (3:55 PM EOD)
+```
+
+```
+Daily P&L: +$43.41  (+0.87% on $5,000 deployed)  │  cap: +$43.41 (+0.43%)
+```
+
+Capital split: 10k total / top_n=2 = $5,000 per slot. Only 1 slot filled → only
+$5,000 deployed. The remaining $5,000 is idle (AMD pre-pick had no BULLISH signal,
+SPOT had no signal at all).
+
+### Key takeaways from this day
+
+1. **Regime kills your primary pick.** AMD was the top EOD win-rate pick but signalled
+   BEARISH on a LONG regime day. The engine correctly skipped it.
+
+2. **Non-picks that signal are ignored at drain time.** MU and CRWD both fired BULLISH
+   but weren't in the pre-market selection — they're filtered at drain by the absence of
+   rolling stats. This is by design: win-rate pre-selection is the entry gate.
+
+3. **Late-firing signals (collection bar 3) bypass the drain.** DDOG fired at 9:50, after
+   the 9:45 drain deadline. It entered through the direct path. If two positions had already
+   been filled by the drain, DDOG would have been blocked by `open_position_count >= top_n`.
+
+4. **Screener and engine agree on all 6 signals.** Every direction, bar time, and vol ratio
+   is identical — the two tools are now fully aligned on the same signal logic.
