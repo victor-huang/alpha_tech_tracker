@@ -119,46 +119,111 @@ Objective, liquidity-first selection. No hand-curation.
 
 ---
 
-## Head-to-Head: Set A vs Set B (2026 YTD)
+---
 
-| Metric | Set A (Original 19) | Set B (QQQ Top-15) |
+## Set C — Russell 2000 Top-20 by Dollar Volume (2026)
+
+**Tickers:** `HOOD RKLB ASTS SOFI IONQ SMCI OKLO RDDT NU HIMS RKT CIFR MARA DKNG AFRM HUT RIOT LUNR JOBY CLSK`
+
+**Selection criteria:** Top 20 Russell 2000 components ranked by average daily dollar volume Jan–Jun 2026.
+Small/mid-cap names with high intraday activity — AI/robotics, crypto mining, fintech, EV.
+
+| Rank | Ticker | Avg Daily $Vol | Avg Volume | Avg Close |
+|---|---|---|---|---|
+| 1 | HOOD | $2.5B | 29.8M | $84 |
+| 2 | RKLB | $2.1B | 24.2M | $85 |
+| 3 | ASTS | $1.7B | 17.7M | $92 |
+| 4 | SOFI | $1.2B | 65.0M | $19 |
+| 5 | IONQ | $1.2B | 26.5M | $42 |
+| 6 | SMCI | $1.1B | 37.9M | $30 |
+| 7 | OKLO | $871M | 12.2M | $69 |
+| 8 | RDDT | $864M | 5.4M | $164 |
+| 9 | NU | $812M | 53.8M | $15 |
+| 10 | HIMS | $748M | 31.6M | $24 |
+| 11 | RKT | $481M | 28.0M | $17 |
+| 12 | CIFR | $480M | 27.7M | $17 |
+| 13 | MARA | $469M | 46.2M | $10 |
+| 14 | DKNG | $367M | 14.3M | $26 |
+| 15 | AFRM | $356M | 6.0M | $60 |
+| 16 | HUT | $343M | 5.0M | $68 |
+| 17 | RIOT | $331M | 18.9M | $17 |
+| 18 | LUNR | $329M | 13.6M | $23 |
+| 19 | JOBY | $299M | 28.0M | $11 |
+| 20 | CLSK | $287M | 24.2M | $12 |
+
+**Log dir:** `logs/replay_2026_stock_m1_winrate_r2000top20/`
+
+### 2026 YTD Results (Jan 2 – Jun 4, 92 trading days with signals)
+
+| Month | P&L | Return |
 |---|---|---|
-| Total P&L | +$3,337 | +$2,645 |
-| Return on $10k | +33.4% | +26.5% |
-| Signal days / 106 | 98 | 84 |
-| No-signal days | 8 | 22 |
-| Avg signals/day | ~2.5 | 2.77 |
-| Best month | May +$1,658 | Feb +$716 |
-| Worst month | Jan +$27 | Jan +$122 |
-| Monthly range | +0.3% → +16.6% | +1.2% → +7.2% |
+| Jan | +$486 | +4.9% |
+| Feb | +$2,664 | +26.6% |
+| Mar | +$3,133 | +31.3% |
+| Apr | +$1,047 | +10.5% |
+| May | +$717 | +7.2% |
+| Jun YTD | +$102 | +1.0% |
+| **Total** | **+$8,148** | **+81.5%** |
+
+| Metric | Value |
+|---|---|
+| Trading days with signals | 92 / 106 |
+| No-trade days | 14 |
+| Avg signals per day | ~3.5 (est.) |
+| Best day | +$884 (Apr 2) |
+| Worst day | −$202 (Feb 3) |
+| Best month | Mar +$3,133 (+31.3%) |
+| Worst month | Jan +$486 (+4.9%) |
+
+**Character:** High-beta R2000 names make explosive OR moves. Feb–Mar 2026 was exceptional
+(+57.9% combined) driven by HOOD, RKLB, ASTS, and IONQ riding the AI/space/fintech rally.
+May was weaker than Set A because Set A's SNDK/APP/DDOG captured the trade deal rally better.
+Crypto miners (MARA, RIOT, HUT, CIFR) add significant vol — both upside and downside.
+
+---
+
+## Head-to-Head: All Three Sets (2026 YTD)
+
+| Metric | Set A (Original 19) | Set B (QQQ Top-15) | Set C (R2000 Top-20) |
+|---|---|---|---|
+| Total P&L | +$3,337 | +$2,645 | **+$8,148** |
+| Return on $10k | +33.4% | +26.5% | **+81.5%** |
+| Signal days / 106 | 98 | 84 | 92 |
+| No-trade days | 8 | 22 | 14 |
+| Best month | May +$1,658 | Feb +$716 | Mar +$3,133 |
+| Worst month | Jan +$27 | Jan +$122 | Jan +$486 |
+| Monthly range | +0.3% → +16.6% | +1.2% → +7.2% | +4.9% → +31.3% |
+| Best day | n/a | n/a | +$884 (Apr 2) |
+| Worst day | n/a | n/a | −$202 (Feb 3) |
 
 ### Key differences
 
-**Set A fires more often.** 98 vs 84 signal days — the original pool generates OR signals on
-nearly every trading day. The mega-cap names in Set B (MSFT, AAPL, GOOGL, AMZN) trend smoothly
-and rarely produce decisive OR breakouts.
+**Set C dominates in absolute return.** +81.5% vs +33.4% for Set A and +26.5% for Set B.
+The high-beta R2000 names make significantly larger intraday moves off the OR, translating
+directly to higher P&L per signal.
 
-**Set A has higher peak alpha but more variance.** May 2026 (+16.6%) was driven by SNDK, APP,
-and DDOG — mid-cap momentum names not in Set B. Set B's best month was February (+7.2%).
+**Set C's Feb–Mar 2026 was exceptional.** +26.6% + +31.3% = +57.9% in two months.
+The AI infrastructure, space, and fintech names (HOOD, RKLB, ASTS, IONQ, SMCI) had
+sustained momentum runs that the win-rate selector captured cleanly.
 
-**Set B is more consistent month-to-month.** Monthly return range of 1.2%–7.2% vs 0.3%–16.6%.
-The mega-caps produce smaller but steadier intraday moves.
+**Set C's May was weak relative to Set A.** Set A: +16.6% vs Set C: +7.2%. The US–China trade
+deal rally that drove SNDK, DDOG, and APP in Set A did not lift the crypto miners and
+speculative AI names in Set C as much.
 
-**Set B has worse no-signal days.** 22 idle days vs 8. High-liquidity names like MSFT and AAPL
-frequently fail the volume gate or OR midpoint cross, producing no tradeable setup.
+**Set C has higher variance.** Monthly swings from +4.9% to +31.3% vs Set A's +0.3% to +16.6%.
+The crypto mining exposure (MARA, RIOT, HUT, CIFR) adds tail risk on down-momentum days.
 
-**INTC is notable.** Ranked #11 by dollar volume due to high share count and low price ($65).
-Its OR signals may not be as clean as the price-action-driven names in Set A.
+**Set B (QQQ mega-caps) remains the weakest.** Mega-cap names grind rather than OR-breakout.
 
-### Why Set A outperforms
+### Why Set C outperforms
 
-The win-rate OR strategy favors tickers that:
-- Make decisive moves in the first 15 minutes (high intraday range relative to ATR)
-- Have sufficient volume to pass the volume gate reliably
-- Are driven by stock-specific news/momentum rather than broad index tracking
+Russell 2000 small-caps with high dollar volume are extreme OR momentum candidates:
+- Very high beta vs QQQ and SPY — same OR setup generates 3–5× the move
+- News-driven catalysts (AI fundraising, space launches, crypto price) create decisive OR breaks
+- Win-rate selector's historical signal quality screen filters the noise; what fires tends to move
 
-Set A's momentum names (SNDK, DDOG, APP, RDDT) fit this profile better than the mega-cap
-index-movers in Set B, which tend to gap and grind rather than trend cleanly from the OR.
+The trade-off is higher daily variance and more exposure to sector rotation risk. On crypto
+down-days (MARA, RIOT, HUT all correlate), the pool takes simultaneous losses.
 
 ---
 
@@ -168,5 +233,6 @@ index-movers in Set B, which tend to gap and grind rather than trend cleanly fro
 |---|---|---|
 | A | Original 19-ticker momentum pool | ✅ 2018–2026 complete |
 | B | QQQ top-15 by dollar volume (2026) | ✅ 2026 YTD complete |
-| C | Hybrid: Set A ∪ Set B high-signal names | Planned |
-| D | Sector rotation: best OR signal tickers per month | Planned |
+| C | Russell 2000 top-20 by dollar volume (2026) | ✅ 2026 YTD complete |
+| D | Hybrid: Set A ∪ Set C high-signal names (drop crypto miners) | Planned |
+| E | Sector rotation: best OR signal tickers per month | Planned |
