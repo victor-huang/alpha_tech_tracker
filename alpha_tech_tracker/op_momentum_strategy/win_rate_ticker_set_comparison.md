@@ -227,6 +227,55 @@ down-days (MARA, RIOT, HUT all correlate), the pool takes simultaneous losses.
 
 ---
 
+## Set D — 2024 Hot-20 Basket (FANG + QQQ top-6 + R2K top-10 non-crypto)
+
+**Tickers:** `META AMZN NFLX GOOGL NVDA TSLA AAPL MSFT AMD SMCI SOFI NU DKNG HOOD AFRM SOUN UPST CAVA IONQ HIMS`
+
+**Selection criteria:** Three-layer composite ranked by 2024 avg daily dollar volume.
+- FANG fixed (4): META AMZN NFLX GOOGL
+- QQQ non-FANG top-6 (6): NVDA TSLA AAPL MSFT AMD SMCI
+- Russell 2000 non-crypto top-10 (10): SOFI NU DKNG HOOD AFRM SOUN UPST CAVA IONQ HIMS
+
+Ranking script: `analysis_scripts/rank_2024_basket.py`
+
+**Log dir:** `logs/replay_2025_stock_m1_winrate_2024hot20/`
+
+### 2025 Full-Year Results (251 trading days)
+
+| Month | P&L | Return |
+|---|---|---|
+| Jan | −$242 | −2.4% |
+| Feb | +$995 | +10.0% |
+| Mar | +$553 | +5.5% |
+| Apr | +$80 | +0.8% |
+| May | +$154 | +1.5% |
+| Jun | +$495 | +5.0% |
+| Jul | +$220 | +2.2% |
+| Aug | +$702 | +7.0% |
+| Sep | +$1,040 | +10.4% |
+| Oct | +$502 | +5.0% |
+| Nov | +$669 | +6.7% |
+| Dec | +$602 | +6.0% |
+| **Total** | **+$5,771** | **+57.7%** |
+
+| Metric | Value |
+|---|---|
+| Signal days | 216 / 251 |
+| No-trade days | 35 |
+| Avg P&L per signal day | +$26.72 |
+| Best day | +$612 (Sep 3) |
+| Worst day | −$229 (May 6) |
+| Best week | +$628 (Sep 1 week) |
+| Worst week | −$317 (May 5 week) |
+| Best month | Sep +$1,040 (+10.4%) |
+
+**Character:** Steady, consistent monthly gains. No month worse than −2.4%. FANG + mega-cap QQQ
+names (NVDA, TSLA, MSFT, AAPL) provide baseline OR signal frequency; R2K growth names (SOUN,
+IONQ, HIMS, HOOD) provide the high-beta upside. 35 no-trade days is the highest across all sets
+— the large-cap QQQ/FANG component suppresses signal frequency vs pure momentum pools.
+
+---
+
 ## Planned Experiments
 
 | Set | Description | Status |
@@ -234,5 +283,6 @@ down-days (MARA, RIOT, HUT all correlate), the pool takes simultaneous losses.
 | A | Original 19-ticker momentum pool | ✅ 2018–2026 complete |
 | B | QQQ top-15 by dollar volume (2026) | ✅ 2026 YTD complete |
 | C | Russell 2000 top-20 by dollar volume (2026) | ✅ 2026 YTD complete |
-| D | Hybrid: Set A ∪ Set C high-signal names (drop crypto miners) | Planned |
-| E | Sector rotation: best OR signal tickers per month | Planned |
+| D | 2024 Hot-20: FANG + QQQ top-6 + R2K top-10 non-crypto | ✅ 2025 complete |
+| E | Run Set D for 2026 YTD and multi-year (2018–2026) | Planned |
+| F | Hybrid: Set A ∪ Set C (drop crypto miners) | Planned |
