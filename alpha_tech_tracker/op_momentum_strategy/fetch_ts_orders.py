@@ -427,6 +427,10 @@ def _parse_quotes_from_log(log_path: str, records: list) -> dict:
         r"FILL_ESC (?:loop )?step(\d+) (?:BUY_OPEN|SELL_CLOSE) (\S+): "
         r"bid=([\d.]+) ask=([\d.]+) mid=([\d.]+) fair=([\d.]+)"
     )
+    # Step3 floor case: bid < fair_price — no ask/mid/fair fields; still counts as step3
+    re_step3_floor = re.compile(
+        r"FILL_ESC step3 (?:BUY_OPEN|SELL_CLOSE) (\S+): bid=[\d.]+ is below fair_price"
+    )
 
     symbol_quotes = {}  # symbol → [(log_dt_utc, quote_dict)]
     with open(log_path) as f:
@@ -435,22 +439,28 @@ def _parse_quotes_from_log(log_path: str, records: list) -> dict:
             if not tm:
                 continue
             sm = re_step.search(line)
-            if not sm:
+            if sm:
+                step, symbol, bid, ask, mid, fair = sm.groups()
+                bid, ask, mid, fair = float(bid), float(ask), float(mid), float(fair)
+                log_dt = datetime.strptime(tm.group(1), "%Y-%m-%d %H:%M:%S").replace(
+                    tzinfo=timezone.utc
+                )
+                spread_pct = round((ask - bid) / mid * 100, 2) if mid else None
+                symbol_quotes.setdefault(symbol, []).append((log_dt, {
+                    "opt_log_bid": bid,
+                    "opt_log_ask": ask,
+                    "opt_log_mid": mid,
+                    "opt_log_fair": fair,
+                    "opt_log_spread_pct": spread_pct,
+                    "opt_log_step": int(step),
+                }))
                 continue
-            step, symbol, bid, ask, mid, fair = sm.groups()
-            bid, ask, mid, fair = float(bid), float(ask), float(mid), float(fair)
-            log_dt = datetime.strptime(tm.group(1), "%Y-%m-%d %H:%M:%S").replace(
-                tzinfo=timezone.utc
-            )
-            spread_pct = round((ask - bid) / mid * 100, 2) if mid else None
-            symbol_quotes.setdefault(symbol, []).append((log_dt, {
-                "opt_log_bid": bid,
-                "opt_log_ask": ask,
-                "opt_log_mid": mid,
-                "opt_log_fair": fair,
-                "opt_log_spread_pct": spread_pct,
-                "opt_log_step": int(step),
-            }))
+            fm = re_step3_floor.search(line)
+            if fm:
+                symbol = fm.group(1)
+                if symbol in symbol_quotes and symbol_quotes[symbol]:
+                    # Patch the most recent quote entry to reflect step3 escalation
+                    symbol_quotes[symbol][-1][1]["opt_log_step"] = 3
 
     result = {}
     for rec in records:
