@@ -59,6 +59,7 @@ The same signal logic drives both **live trading** (`trade_engine.py`) and **bac
 | `WIN_RATE_SELECTOR_MODE.md` | All params and examples for `--selector win-rate` mode; screener parity guide |
 | `WIN_RATE_SELECTOR_BACKTEST.md` | Full 2018–2026 backtest results for win-rate selector; config, monthly P&L, stop-loss impact, screener return waterfall |
 | `win_rate_selector_capital_deployment_comparison.md` | $10k-pool vs $10k-per-signal capital model comparison; signal-count quality analysis, annual Sharpe, drawdown, and deployment distribution across 1,807 days |
+| `win_rate_ticker_set_comparison.md` | Ticker universe comparison: original 19-ticker momentum pool vs QQQ top-15 by dollar volume; 2026 YTD results, signal distribution, and head-to-head analysis |
 | `backtest_params_tunning/overview.md` | When/how to re-tune params & scoring: control-chart envelope, edge-vs-ranking diagnosis, 5-step re-tune protocol, validation gates |
 | `README.md` | Live trade engine setup and daily timeline |
 
