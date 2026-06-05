@@ -2253,13 +2253,14 @@ class OpMomentumTradeEngine:
                     )
                     continue
             scored.append((score, ticker, event))
-            logger.info(
-                "Ranked %s [%s]: score=%.3f ev_trade=%.3f",
-                ticker,
-                label,
-                score,
-                stats.get("ev_trade", 0),
-            )
+            if not isinstance(score, tuple):
+                logger.info(
+                    "Ranked %s [%s]: score=%.3f ev_trade=%.3f",
+                    ticker,
+                    label,
+                    score,
+                    stats.get("ev_trade", 0),
+                )
 
         scored.sort(key=lambda x: x[0], reverse=True)
 
@@ -2357,11 +2358,16 @@ class OpMomentumTradeEngine:
             score, ticker, event = chosen
             with self._signal_lock:
                 state["open_position_count"] += 1
+            score_repr = (
+                "(%.2f%%,ma=%d,vol=%.2fx)" % score
+                if isinstance(score, tuple)
+                else "%.3f" % score
+            )
             logger.info(
-                "Selecting %s from buffer [%s] (score=%.3f rank=%d slot_weight=%.3f)",
+                "Selecting %s from buffer [%s] (score=%s rank=%d slot_weight=%.3f)",
                 ticker,
                 label,
-                score,
+                score_repr,
                 rank,
                 float(slot_weight),
             )

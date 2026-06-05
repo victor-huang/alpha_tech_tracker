@@ -2916,6 +2916,106 @@ class TestDrainPendingSignals:
 
         assert enter_calls == []
 
+    def test_win_rate_mode_enters_signals_sorted_by_tuple_score(self):
+        # Win-rate score is (up_pct, ma_count, vol_ratio) — tuple sort must
+        # rank higher up_pct first, then ma_count as tiebreaker.
+        engine = _make_engine_with_mock_client()
+        engine._selector_type = "win-rate"
+        engine._top_n = 3
+        engine._window_state["W1"]["collection_deadline"] = datetime.now(ET) - timedelta(
+            seconds=1
+        )
+
+        from alpha_tech_tracker.op_momentum_strategy.models import SignalEvent
+
+        def _win_rate_event(ticker, prev_close, ma_list, collection_vol, vol_20day_avg):
+            return SignalEvent(
+                ticker=ticker,
+                signal="BULLISH",
+                entry_price=_D("100"),
+                stock_price=_D("100"),
+                or_high=_D("102"),
+                or_low=_D("98"),
+                or_range=_D("4"),
+                ma50_at_signal=_D("99"),
+                overlapping_mas=ma_list,
+                collection_vol=collection_vol,
+                vol_20day_avg=vol_20day_avg,
+                prev_close=prev_close,
+            )
+
+        # META: up_pct≈11.1% (rank 0); QCOM: up_pct≈2.0% (rank 1); AMD: up_pct≈0.5% (rank 2)
+        engine._window_state["W1"]["pending_signals"] = {
+            "QCOM": _win_rate_event("QCOM", prev_close=98.0, ma_list=["MA20", "MA50"],
+                                    collection_vol=200.0, vol_20day_avg=100.0),
+            "META": _win_rate_event("META", prev_close=90.0, ma_list=["MA20"],
+                                    collection_vol=200.0, vol_20day_avg=100.0),
+            "AMD":  _win_rate_event("AMD",  prev_close=99.5, ma_list=["MA20"],
+                                    collection_vol=200.0, vol_20day_avg=100.0),
+        }
+        engine._rolling_stats = {
+            "META": {"ev_trade": 0.5, "win_rate": 0.6, "avg_win_pct": 2.0},
+            "QCOM": {"ev_trade": 0.4, "win_rate": 0.5, "avg_win_pct": 1.5},
+            "AMD":  {"ev_trade": 0.3, "win_rate": 0.4, "avg_win_pct": 1.0},
+        }
+
+        rank_calls = []
+        with patch.object(
+            engine, "_enter_position",
+            side_effect=lambda e, **kw: rank_calls.append((e.ticker, kw["rank"])),
+        ), patch.object(engine, "_get_window_budget", return_value=None):
+            engine._drain_pending_signals_for_window(engine._windows[0])
+
+        assert rank_calls[0] == ("META", 0)
+        assert rank_calls[1] == ("QCOM", 1)
+        assert rank_calls[2] == ("AMD", 2)
+
+    def test_win_rate_mode_selecting_log_formats_score_as_string(self, caplog):
+        # Regression: score is a tuple in win-rate mode; the "Selecting" log
+        # line must not use %.3f on a tuple — that raises TypeError at emit time.
+        import logging
+        engine = _make_engine_with_mock_client()
+        engine._selector_type = "win-rate"
+        engine._window_state["W1"]["collection_deadline"] = datetime.now(ET) - timedelta(
+            seconds=1
+        )
+
+        from alpha_tech_tracker.op_momentum_strategy.models import SignalEvent
+
+        event = SignalEvent(
+            ticker="META",
+            signal="BULLISH",
+            entry_price=_D("100"),
+            stock_price=_D("100"),
+            or_high=_D("102"),
+            or_low=_D("98"),
+            or_range=_D("4"),
+            ma50_at_signal=_D("99"),
+            overlapping_mas=["MA20"],
+            collection_vol=300000.0,
+            vol_20day_avg=260000.0,
+            prev_close=98.69,
+        )
+        engine._window_state["W1"]["pending_signals"] = {"META": event}
+        engine._rolling_stats = {
+            "META": {"ev_trade": 0.5, "win_rate": 0.6, "avg_win_pct": 2.0},
+        }
+
+        with caplog.at_level(logging.INFO), \
+             patch.object(engine, "_enter_position"), \
+             patch.object(engine, "_get_window_budget", return_value=None):
+            engine._drain_pending_signals_for_window(engine._windows[0])
+
+        # All captured records must be formattable (getMessage raises if args
+        # contain a tuple where %.3f is expected).
+        for record in caplog.records:
+            record.getMessage()
+
+        selecting = [r.getMessage() for r in caplog.records if "Selecting" in r.message]
+        assert len(selecting) == 1
+        assert "score=(" in selecting[0]
+        assert "Ranked" not in selecting[0]
+
 
 # ---------------------------------------------------------------------------
 # _enter_position failure paths — open_position_count must be decremented
