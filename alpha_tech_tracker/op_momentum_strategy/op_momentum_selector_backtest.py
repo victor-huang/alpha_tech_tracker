@@ -3355,6 +3355,15 @@ def _parse_args():
         "Default: reset to initial capital each day for clean per-day strategy evaluation.",
     )
     parser.add_argument(
+        "--fixed-signal-alloc",
+        action="store_true",
+        default=False,
+        dest="fixed_signal_alloc",
+        help="Fixed capital per signal slot (capital / top-N) regardless of how many signals "
+        "fire. Idle capital stays undeployed on low-signal days; total deployed scales with "
+        "signal count up to top-N × capital. Default: off (full capital always deployed).",
+    )
+    parser.add_argument(
         "--dedup",
         action="store_true",
         default=False,
@@ -4693,6 +4702,7 @@ if __name__ == "__main__":
         min_capital=args.min_window_capital,
         compound=args.compound,
         enable_doubledown=args.doubledown,
+        fixed_signal_alloc=args.fixed_signal_alloc,
     )
 
     if args.doubledown:

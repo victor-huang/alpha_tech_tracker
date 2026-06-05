@@ -563,6 +563,14 @@ def parse_args():
         help=f"Number of top-ranked tickers to trade per window (default: {MAX_ACTIVE_SYMBOLS}).",
     )
     parser.add_argument(
+        "--fixed-signal-alloc",
+        action="store_true",
+        default=False,
+        dest="fixed_signal_alloc",
+        help="Fixed capital per signal slot (capital / top-N) regardless of how many signals "
+        "fire. Total deployed scales with signal count up to top-N × capital. Default: off.",
+    )
+    parser.add_argument(
         "--lookback",
         type=int,
         default=_DEFAULT_LOOKBACK_DAYS,
@@ -1125,6 +1133,7 @@ if __name__ == "__main__":
             regime_hold=args.regime_hold,
             disable_ma_stops_for_regime_hold=args.disable_ma_stops_for_regime_hold,
             selector_type=args.selector,
+            fixed_signal_alloc=args.fixed_signal_alloc,
         )
         if args.replay_date or (args.replay_start and args.replay_end):
             _warn_replay_feed_mismatch(args)
@@ -1292,6 +1301,7 @@ if __name__ == "__main__":
             regime_hold=args.regime_hold,
             disable_ma_stops_for_regime_hold=args.disable_ma_stops_for_regime_hold,
             selector_type=args.selector,
+            fixed_signal_alloc=args.fixed_signal_alloc,
         )
         engine.run(tickers_override=args.tickers)
     finally:

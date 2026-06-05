@@ -538,6 +538,7 @@ class OpMomentumTradeEngine:
         regime_hold: bool = False,
         disable_ma_stops_for_regime_hold: bool = False,
         selector_type: str = "score-rank",
+        fixed_signal_alloc: bool = False,
     ):
         self._client = alpaca_client
         self._api_key = getattr(alpaca_client, "_api_key", None)
@@ -659,6 +660,7 @@ class OpMomentumTradeEngine:
         self._disable_ma_stops_for_regime_hold = disable_ma_stops_for_regime_hold
         self._current_regime = None
         self._selector_type = selector_type
+        self._fixed_signal_alloc = fixed_signal_alloc
 
         if windows:
             self._windows = windows
@@ -845,7 +847,10 @@ class OpMomentumTradeEngine:
             order.get("simulated_fill_mid") if self._mock_trade_execution else None
         )
         if window_budget is not None:
-            slot_capital = window_budget * capital_weight
+            if self._fixed_signal_alloc and self._replay_capital is not None:
+                slot_capital = _D(str(self._replay_capital)) * capital_weight
+            else:
+                slot_capital = window_budget * capital_weight
         else:
             slot_capital = None
 
@@ -1012,7 +1017,10 @@ class OpMomentumTradeEngine:
         )
 
         if window_budget is not None:
-            slot_capital = window_budget * capital_weight
+            if self._fixed_signal_alloc and self._replay_capital is not None:
+                slot_capital = _D(str(self._replay_capital)) * capital_weight
+            else:
+                slot_capital = window_budget * capital_weight
         else:
             slot_capital = None
 
