@@ -19,6 +19,7 @@ SUMMARY_ONLY=false
 FORCE=false
 NO_STOP=false
 FIXED_ALLOC=false
+REGIME_HOLD=false
 YEAR=""
 TRADE_TYPE="stock"
 FEED="sip"
@@ -32,19 +33,22 @@ while [ $# -gt 0 ]; do
     --capital)      CAPITAL="$2";    shift 2 ;;
     --summary)      SUMMARY_ONLY=true; shift ;;
     --force)        FORCE=true;      shift ;;
-    --no-stop)      NO_STOP=true;    shift ;;
-    --fixed-alloc)  FIXED_ALLOC=true; shift ;;
+    --no-stop)       NO_STOP=true;       shift ;;
+    --fixed-alloc)   FIXED_ALLOC=true;   shift ;;
+    --regime-hold)   REGIME_HOLD=true;   shift ;;
     *) echo "Unknown arg: $1"; exit 1 ;;
   esac
 done
 
 if [ -z "$YEAR" ]; then
-  echo "Usage: $0 --year YYYY [--trade-type stock|options] [--capital N] [--summary] [--force] [--no-stop] [--fixed-alloc]"
+  echo "Usage: $0 --year YYYY [--trade-type stock|options] [--capital N] [--summary] [--force] [--no-stop] [--fixed-alloc] [--regime-hold]"
   exit 1
 fi
 
 if $FIXED_ALLOC; then
   LOG_DIR="$BASE_LOG_DIR/replay_${YEAR}_${TRADE_TYPE}_m1_winrate_fixedalloc_cap${CAPITAL}"
+elif $REGIME_HOLD; then
+  LOG_DIR="$BASE_LOG_DIR/replay_${YEAR}_${TRADE_TYPE}_m1_winrate_regimehold"
 elif $NO_STOP; then
   LOG_DIR="$BASE_LOG_DIR/replay_${YEAR}_${TRADE_TYPE}_m1_winrate_nostop"
 else
@@ -124,11 +128,14 @@ replay_one() {
   local DATE="$1"
   local LOG="$LOG_DIR/$DATE.log"
   local EXTRA_FLAGS=""
-  if $NO_STOP || $FIXED_ALLOC; then
+  if $NO_STOP || $FIXED_ALLOC || $REGIME_HOLD; then
     EXTRA_FLAGS="$EXTRA_FLAGS --trailing-ma none --stop-pct 0"
   fi
   if $FIXED_ALLOC; then
     EXTRA_FLAGS="$EXTRA_FLAGS --fixed-signal-alloc"
+  fi
+  if $REGIME_HOLD; then
+    EXTRA_FLAGS="$EXTRA_FLAGS --regime-hold"
   fi
   PYTHONPATH="$PYTHONPATH_DIR" \
     python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine run \
@@ -195,8 +202,11 @@ for d_str, pnl in sorted(results.items()):
 print()
 no_stop_flag = "$NO_STOP"
 fixed_alloc_flag = "$FIXED_ALLOC"
+regime_hold_flag = "$REGIME_HOLD"
 if fixed_alloc_flag == "true":
     stop_label = "no-stop + fixed-signal-alloc"
+elif regime_hold_flag == "true":
+    stop_label = "no-stop + regime-hold"
 elif no_stop_flag == "true":
     stop_label = "no-stop"
 else:
