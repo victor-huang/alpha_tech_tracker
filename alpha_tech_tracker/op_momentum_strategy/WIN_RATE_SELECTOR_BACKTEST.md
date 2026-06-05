@@ -659,6 +659,7 @@ All runs below use the same baseline config (no-stop, original 19-ticker pool, t
 | 2020 | +$3,300 (+33.0%) | **+$4,049 (+40.5%)** | **+$749 (+7.5pp)** | COVID whipsaw; `+2h`/`+3h` windows protect against afternoon reversals |
 | 2022 | +$5,716 (+57.2%) | **+$6,092 (+60.9%)** | **+$376 (+3.7pp)** | Bear market; short hold windows cut losers before late-day reversals |
 | 2023 | +$5,187 (+51.9%) | **+$5,831 (+58.3%)** | **+$644 (+6.4pp)** | Banking crisis + Fed cycle; `+2h`/`+3h` in volatile months paid off |
+| 2024 | +$7,640 (+76.4%) | **+$7,929 (+79.3%)** | **+$289 (+2.9pp)** | Mostly bullish; Aug yen-carry unwind + Oct chop gave hold windows some edge |
 | 2025 | +$7,161 (+71.6%) | +$7,158 (+71.6%) | −$3 (~0) | Bull year; regime assigns `EOD` for most months — flag is a no-op |
 | 2026 YTD | +$3,337 (+33.4%) | +$3,285 (+32.9%) | −$52 (−0.5pp) | Bull year; `EOD` dominant — marginal cost from occasional early exit |
 
@@ -679,6 +680,24 @@ All runs below use the same baseline config (no-stop, original 19-ticker pool, t
 | Nov | −$287 | −2.9% |
 | Dec | +$270 | +2.7% |
 | **Total** | **+$4,049** | **+40.5%** |
+
+### Monthly detail — 2024 with `--regime-hold`
+
+| Month | P&L | Return |
+|---|---|---|
+| Jan | +$442 | +4.4% |
+| Feb | +$260 | +2.6% |
+| Mar | +$249 | +2.5% |
+| Apr | +$709 | +7.1% |
+| May | +$40 | +0.4% |
+| Jun | +$413 | +4.1% |
+| Jul | +$1,515 | +15.2% |
+| Aug | +$654 | +6.5% |
+| Sep | +$266 | +2.7% |
+| Oct | +$700 | +7.0% |
+| Nov | +$1,884 | +18.8% |
+| Dec | +$797 | +8.0% |
+| **Total** | **+$7,929** | **+79.3%** |
 
 ### Monthly detail — 2023 with `--regime-hold`
 
