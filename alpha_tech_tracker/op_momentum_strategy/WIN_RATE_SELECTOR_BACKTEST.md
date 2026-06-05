@@ -642,11 +642,76 @@ setups (e.g. TSLA/ARM May 12: −2.69%/−3.17% EOD), concentrating capital in h
 
 ---
 
+## `--regime-hold` Comparison
+
+When `--regime-hold` is active, the regime engine's monthly `hold_window` drives a **timed exit**
+for each position (`entry_time + hold_window_minutes`) instead of holding to EOD. Hold windows are
+set per month in the regime config: `+2h`, `+3h`, `+5h`, or `EOD`.
+
+In bull/trending years where the regime assigns `EOD` for most months, the flag has no effect.
+In volatile or bear years where shorter windows (`+2h`, `+3h`) dominate, it acts as a
+profit-protection cut — closing before late-day reversals.
+
+All runs below use the same baseline config (no-stop, original 19-ticker pool, top-8, $10k).
+
+| Year | Baseline (no-stop) | With `--regime-hold` | Delta | Note |
+|---|---|---|---|---|
+| 2020 | +$3,300 (+33.0%) | **+$4,049 (+40.5%)** | **+$749 (+7.5pp)** | COVID whipsaw; `+2h`/`+3h` windows protect against afternoon reversals |
+| 2022 | +$5,716 (+57.2%) | **+$6,092 (+60.9%)** | **+$376 (+3.7pp)** | Bear market; regime blocks longs, short hold windows cut losers early |
+| 2025 | +$7,161 (+71.6%) | +$7,158 (+71.6%) | −$3 (~0) | Bull year; regime assigns `EOD` for most months — flag is a no-op |
+| 2026 YTD | +$3,337 (+33.4%) | +$3,285 (+32.9%) | −$52 (−0.5pp) | Bull year; `EOD` dominant — marginal cost from occasional early exit |
+
+### Monthly detail — 2020 with `--regime-hold`
+
+| Month | P&L | Return |
+|---|---|---|
+| Jan | +$148 | +1.5% |
+| Feb | +$239 | +2.4% |
+| Mar | +$133 | +1.3% |
+| Apr | +$73 | +0.7% |
+| May | +$44 | +0.4% |
+| Jun | +$1,110 | +11.1% |
+| Jul | +$1,136 | +11.4% |
+| Aug | +$541 | +5.4% |
+| Sep | +$166 | +1.7% |
+| Oct | +$476 | +4.8% |
+| Nov | −$287 | −2.9% |
+| Dec | +$270 | +2.7% |
+| **Total** | **+$4,049** | **+40.5%** |
+
+### Monthly detail — 2022 with `--regime-hold`
+
+| Month | P&L | Return |
+|---|---|---|
+| Jan | −$362 | −3.6% |
+| Feb | +$238 | +2.4% |
+| Mar | +$748 | +7.5% |
+| Apr | +$632 | +6.3% |
+| May | +$596 | +6.0% |
+| Jun | +$163 | +1.6% |
+| Jul | +$850 | +8.5% |
+| Aug | +$543 | +5.4% |
+| Sep | +$445 | +4.5% |
+| Oct | +$428 | +4.3% |
+| Nov | +$1,052 | +10.5% |
+| Dec | +$757 | +7.6% |
+| **Total** | **+$6,092** | **+60.9%** |
+
+**When to use `--regime-hold`:** In live trading, enabling it adds a systematic exit discipline
+during cautious/bearish regimes without changing behavior during `EOD` months. It is particularly
+valuable in high-volatility environments where intraday reversals are common (2020 COVID,
+2022 Fed hiking cycle).
+
+Replay script: `run_replay_stock_m1_winrate.sh --year YYYY --regime-hold`
+
+---
+
 ## Log Directories
 
 | Config | Log path |
 |---|---|
 | top-8, no-stop (primary) | `logs/replay_YYYY_stock_m1_winrate_nostop/` |
+| top-8, no-stop + regime-hold | `logs/replay_YYYY_stock_m1_winrate_regimehold/` |
 | top-8, default stops | `logs/replay_YYYY_stock_m1_winrate/` |
 
-Replay script: `run_replay_stock_m1_winrate.sh --year YYYY --no-stop`
+Replay script: `run_replay_stock_m1_winrate.sh --year YYYY [--no-stop] [--regime-hold]`
