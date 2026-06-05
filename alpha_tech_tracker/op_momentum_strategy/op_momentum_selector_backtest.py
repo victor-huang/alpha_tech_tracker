@@ -283,6 +283,7 @@ def _apply_capital_flow(
     min_capital: float = MIN_WINDOW_CAPITAL,
     compound: bool = False,
     enable_doubledown: bool = False,
+    fixed_signal_alloc: bool = False,
 ) -> list:
     """
     Apply day-by-day capital flow across windows.
@@ -377,7 +378,7 @@ def _apply_capital_flow(
                 }
             )
             win_pnl = 0.0
-            eff_w = _effective_weights(weights, len(rows))
+            eff_w = _effective_weights(weights, len(rows), fixed=fixed_signal_alloc)
             for row in rows:
                 row["window_capital"] = win_capital
                 if skipped:
@@ -550,7 +551,7 @@ def _apply_capital_flow(
                 }
             )
             win_pnl = 0.0
-            eff_w = _effective_weights(weights, len(rows))
+            eff_w = _effective_weights(weights, len(rows), fixed=fixed_signal_alloc)
             for row in rows:
                 row["window_capital"] = available
                 if skipped:
@@ -2252,15 +2253,22 @@ def _collect_baseline(
     return pd.concat(frames, ignore_index=True)
 
 
-def _effective_weights(weights: list, n_picks: int) -> list:
+def _effective_weights(weights: list, n_picks: int, fixed: bool = False) -> list:
     """Redistribute weights when fewer picks than configured top-N.
 
     When a day has fewer picks than the configured top-N (e.g. 2 picks with
     top-5 and weights [0.2, 0.2, 0.2, 0.2, 0.2]), redeploy the full window
     capital proportionally across the actual picks instead of leaving idle
     capital.  Weights are renormalized to sum to 1.0 over the actual picks.
+
+    fixed=True: skip renormalization — each slot keeps its original weight
+    fraction so idle capital stays undeployed (fixed-per-signal mode).
     """
-    if n_picks == 0 or n_picks >= len(weights):
+    if n_picks == 0:
+        return weights
+    if fixed:
+        return weights[:n_picks]
+    if n_picks >= len(weights):
         return weights
     slice_ = weights[:n_picks]
     total = sum(slice_)

@@ -63,10 +63,11 @@ class TestApplyCapitalFlowSingleWindow:
         ]
         _apply_capital_flow(rows, [_W1], 10_000, _WEIGHTS, 3)
 
-        # rank-1: 10000 * 0.5 / 100 * 2 = 100
-        assert rows[0]["cap_pnl"] == pytest.approx(100.0)
-        # rank-2: 10000 * 0.3 / 50 * 1 = 60
-        assert rows[1]["cap_pnl"] == pytest.approx(60.0)
+        # 2 picks from top-3; weights renormalized: [0.5/0.8, 0.3/0.8] = [0.625, 0.375]
+        # rank-1: 10000 * 0.625 / 100 * 2 = 125
+        assert rows[0]["cap_pnl"] == pytest.approx(125.0)
+        # rank-2: 10000 * 0.375 / 50 * 1 = 75
+        assert rows[1]["cap_pnl"] == pytest.approx(75.0)
 
     def test_no_compound_resets_portfolio_each_day(self):
         rows = [
