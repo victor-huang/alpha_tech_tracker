@@ -22,12 +22,14 @@ FIXED_ALLOC=false
 YEAR=""
 TRADE_TYPE="stock"
 FEED="sip"
+CAPITAL=10000
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --year)         YEAR="$2";       shift 2 ;;
     --trade-type)   TRADE_TYPE="$2"; shift 2 ;;
     --feed)         FEED="$2";       shift 2 ;;
+    --capital)      CAPITAL="$2";    shift 2 ;;
     --summary)      SUMMARY_ONLY=true; shift ;;
     --force)        FORCE=true;      shift ;;
     --no-stop)      NO_STOP=true;    shift ;;
@@ -37,12 +39,12 @@ while [ $# -gt 0 ]; do
 done
 
 if [ -z "$YEAR" ]; then
-  echo "Usage: $0 --year YYYY [--trade-type stock|options] [--summary] [--force] [--no-stop] [--fixed-alloc]"
+  echo "Usage: $0 --year YYYY [--trade-type stock|options] [--capital N] [--summary] [--force] [--no-stop] [--fixed-alloc]"
   exit 1
 fi
 
 if $FIXED_ALLOC; then
-  LOG_DIR="$BASE_LOG_DIR/replay_${YEAR}_${TRADE_TYPE}_m1_winrate_fixedalloc"
+  LOG_DIR="$BASE_LOG_DIR/replay_${YEAR}_${TRADE_TYPE}_m1_winrate_fixedalloc_cap${CAPITAL}"
 elif $NO_STOP; then
   LOG_DIR="$BASE_LOG_DIR/replay_${YEAR}_${TRADE_TYPE}_m1_winrate_nostop"
 else
@@ -139,7 +141,7 @@ replay_one() {
     --morning-split 100 \
     --bearish-reentry --bullish-reentry --reversal \
     --doubledown --doubledown-start 10 \
-    --top 8 --capital 10000 \
+    --top 8 --capital "$CAPITAL" \
     --mock-trade-execution \
     --feed "$FEED" \
     $EXTRA_FLAGS \
@@ -150,12 +152,13 @@ replay_one() {
 # P&L summary: weekly + monthly + yearly breakdown
 # ---------------------------------------------------------------------------
 print_summary() {
-  python3 - "$LOG_DIR" "$YEAR" <<'PYEOF'
+  python3 - "$LOG_DIR" "$YEAR" "$CAPITAL" <<'PYEOF'
 import os, re, sys
 from datetime import date, timedelta
 
-log_dir = sys.argv[1]
-year    = sys.argv[2]
+log_dir  = sys.argv[1]
+year     = sys.argv[2]
+capital  = float(sys.argv[3]) if len(sys.argv) > 3 else 10000.0
 
 results = {}
 for fname in sorted(os.listdir(log_dir)):
@@ -228,14 +231,14 @@ for mkey in sorted(months.keys()):
     mp = months[mkey]
     sign = "+" if mp >= 0 else ""
     m_idx = int(mkey.split('-')[1]) - 1
-    print(f"  {month_names[m_idx]} {mkey.split('-')[0]}   {sign}${mp:>9,.2f}   ({sign}{mp/10000*100:.1f}%)")
+    print(f"  {month_names[m_idx]} {mkey.split('-')[0]}   {sign}${mp:>9,.2f}   ({sign}{mp/capital*100:.1f}%)")
     year_total += mp
 
 # -- yearly total --
 print()
 print("── YEARLY ──────────────────────────────────────────────────────")
 sign = "+" if year_total >= 0 else ""
-print(f"  {year} TOTAL   {total_days} days   {sign}${year_total:,.2f}   ({sign}{year_total/10000*100:.1f}% on $10k)")
+print(f"  {year} TOTAL   {total_days} days   {sign}${year_total:,.2f}   ({sign}{year_total/capital*100:.1f}% on ${capital:,.0f})")
 print(f"  Logs complete: {len(results)} / {total_days} trading days")
 print()
 PYEOF
