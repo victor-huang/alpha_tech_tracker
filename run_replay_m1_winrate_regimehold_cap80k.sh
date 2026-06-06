@@ -23,6 +23,7 @@ CAPITAL=80000
 EXTEND_COLLECTION_BARS=2
 STOP_PCT=0
 FIXED_SIGNAL_ALLOC=false
+REVERSAL=false
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -31,6 +32,7 @@ while [ $# -gt 0 ]; do
     --extend-collection-bars) EXTEND_COLLECTION_BARS="$2";  shift 2 ;;
     --stop-pct)               STOP_PCT="$2";                shift 2 ;;
     --fixed-signal-alloc)     FIXED_SIGNAL_ALLOC=true;      shift ;;
+    --reversal)               REVERSAL=true;                shift ;;
     --summary)                SUMMARY_ONLY=true;             shift ;;
     --force)                  FORCE=true;                    shift ;;
     *) echo "Unknown arg: $1"; exit 1 ;;
@@ -38,7 +40,7 @@ while [ $# -gt 0 ]; do
 done
 
 if [ -z "$YEAR" ]; then
-  echo "Usage: $0 --year YYYY [--summary] [--force] [--feed sip|iex] [--extend-collection-bars N] [--stop-pct N] [--fixed-signal-alloc]"
+  echo "Usage: $0 --year YYYY [--summary] [--force] [--feed sip|iex] [--extend-collection-bars N] [--stop-pct N] [--fixed-signal-alloc] [--reversal]"
   exit 1
 fi
 
@@ -46,6 +48,7 @@ LOG_SUFFIX=""
 [ "$EXTEND_COLLECTION_BARS" -ne 2 ] && LOG_SUFFIX="${LOG_SUFFIX}_ecb${EXTEND_COLLECTION_BARS}"
 [ "$(echo "$STOP_PCT > 0" | bc -l)" = "1" ] && LOG_SUFFIX="${LOG_SUFFIX}_stop$(echo "$STOP_PCT" | tr '.' 'p')"
 $FIXED_SIGNAL_ALLOC && LOG_SUFFIX="${LOG_SUFFIX}_fixedalloc"
+$REVERSAL && LOG_SUFFIX="${LOG_SUFFIX}_reversal"
 LOG_DIR="$BASE_LOG_DIR/replay_${YEAR}_stock_m1_winrate_regimehold_cap80k${LOG_SUFFIX}"
 
 # ---------------------------------------------------------------------------
@@ -123,6 +126,7 @@ replay_one() {
     --trailing-ma none \
     --regime-hold \
     $([ "$EXTEND_COLLECTION_BARS" -ne 2 ] && echo "--extend-collection-bars $EXTEND_COLLECTION_BARS") \
+    $($REVERSAL && echo "--bearish-reentry --bullish-reentry --reversal") \
     $($FIXED_SIGNAL_ALLOC && echo "--fixed-signal-alloc") \
     --mock-trade-execution \
     --feed "$FEED" \
@@ -208,10 +212,13 @@ for mkey in sorted(months.keys()):
 print()
 print("── YEARLY ──────────────────────────────────────────────────────")
 sign = "+" if year_total >= 0 else ""
-print(f"  {year} TOTAL   {total_days} days   {sign}${year_total:,.2f}   ({sign}{year_total/capital*100:.1f}% on ${capital:,.0f})")
+total_dep = sum(deployed.get(d, 0.0) for d in results)
+avg_dep = total_dep / total_days if total_days else 0.0
+ret_on_deployed = year_total / avg_dep * 100 if avg_dep > 0 else 0.0
+ret_sign = "+" if ret_on_deployed >= 0 else ""
+print(f"  {year} TOTAL   {total_days} days   {sign}${year_total:,.2f}   ({ret_sign}{ret_on_deployed:.1f}% on avg ${avg_dep:,.0f} deployed  /  {sign}{year_total/capital*100:.1f}% on ${capital:,.0f} committed)")
 print(f"  Logs complete: {len(results)} / {total_days} trading days")
 
-total_dep = sum(deployed.get(d, 0.0) for d in results)
 days_with_dep = [(results[d], deployed[d]) for d in results if deployed.get(d, 0.0) > 0]
 util = total_dep / (total_days * capital) if total_days else 0.0
 pnl_per_dollar = year_total / total_dep if total_dep > 0 else 0.0
@@ -270,6 +277,7 @@ echo ""
 RUN_LABEL=" | stop=${STOP_PCT}"
 [ "$EXTEND_COLLECTION_BARS" -ne 2 ] && RUN_LABEL="${RUN_LABEL} | ecb=${EXTEND_COLLECTION_BARS}"
 $FIXED_SIGNAL_ALLOC && RUN_LABEL="${RUN_LABEL} | fixed-signal-alloc"
+$REVERSAL && RUN_LABEL="${RUN_LABEL} | reversal+reentry"
 echo "=== $YEAR replay — M1 win-rate | regime-hold | top8 | \$${CAPITAL}${RUN_LABEL} ==="
 echo "    NO reversal / NO reentry / NO doubledown"
 echo "    Total trading days : ${#ALL_DATES[@]}"
