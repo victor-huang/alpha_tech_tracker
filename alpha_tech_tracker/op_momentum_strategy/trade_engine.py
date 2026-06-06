@@ -1,5 +1,6 @@
 import hashlib
 import logging
+import math
 import os
 import signal
 import threading
@@ -539,6 +540,7 @@ class OpMomentumTradeEngine:
         disable_ma_stops_for_regime_hold: bool = False,
         selector_type: str = "score-rank",
         fixed_signal_alloc: bool = False,
+        extend_collection_bars: int = 0,
     ):
         self._client = alpaca_client
         self._api_key = getattr(alpaca_client, "_api_key", None)
@@ -661,6 +663,7 @@ class OpMomentumTradeEngine:
         self._current_regime = None
         self._selector_type = selector_type
         self._fixed_signal_alloc = fixed_signal_alloc
+        self._extend_collection_bars = extend_collection_bars
 
         if windows:
             self._windows = windows
@@ -2289,16 +2292,35 @@ class OpMomentumTradeEngine:
         # capital / effective_n rather than capital / top_n so the full
         # budget is deployed across however many picks exist.
         # rank_weights (explicit percent sizing) bypass this adjustment.
-        effective_n = (
-            max(min(len(scored), self._top_n), 1)
-            if not self._rank_weights
-            else self._top_n
-        )
-        if effective_n < self._top_n:
+        # fixed_signal_alloc also bypasses: each pick always gets capital/top_n
+        # regardless of how many signals fire.
+        #
+        # For extended collection bars (--extend-collection-bars > 0), the slot
+        # weight from the first drain is reused so late-bar signals get the same
+        # per-signal capital as the initial batch. fixed_signal_alloc bypasses this.
+        with self._signal_lock:
+            inherited_slot_weight = state.get("initial_slot_weight")
+        if inherited_slot_weight is not None and not self._fixed_signal_alloc and not self._rank_weights:
+            effective_n = int(round(1.0 / float(inherited_slot_weight)))
             logger.info(
-                "Drain [%s]: %d candidate(s) < top_n=%d — allocating capital/%d per pick",
-                label, effective_n, self._top_n, effective_n,
+                "Drain [%s]: extended-bar collection — reusing initial slot weight 1/%d per pick",
+                label, effective_n,
             )
+        else:
+            effective_n = (
+                max(min(len(scored), self._top_n), 1)
+                if not self._rank_weights and not self._fixed_signal_alloc
+                else self._top_n
+            )
+            if effective_n < self._top_n:
+                logger.info(
+                    "Drain [%s]: %d candidate(s) < top_n=%d — allocating capital/%d per pick",
+                    label, effective_n, self._top_n, effective_n,
+                )
+            # Save slot weight so extended collection bars inherit it.
+            if self._extend_collection_bars > 0 and not self._fixed_signal_alloc and not self._rank_weights:
+                with self._signal_lock:
+                    state["initial_slot_weight"] = _D("1") / _D(str(effective_n))
 
         selections = []
         candidate_iter = iter(scored)
@@ -2401,22 +2423,45 @@ class OpMomentumTradeEngine:
         for t in threads:
             t.join(timeout=_ENTRY_JOIN_TIMEOUT_S)
 
+        # Rolling per-bar collection: if more bars remain, extend the deadline by
+        # one bar (5 min) so the next bar's signals are buffered and drained on their
+        # own bar rather than waiting for all collection bars to close at once.
+        with self._signal_lock:
+            bars_left = state.get("collection_bars_remaining", 0)
+            if bars_left > 0:
+                state["collection_bars_remaining"] = bars_left - 1
+                state["collection_deadline"] += timedelta(minutes=5)
+                state["drain_timer_scheduled"] = False
+                logger.info(
+                    "Collection window [%s] extended to %s ET (%d bar(s) remaining)",
+                    label,
+                    state["collection_deadline"].strftime("%H:%M:%S"),
+                    bars_left - 1,
+                )
+
         self._schedule_dd_check_for_window(win)
 
     def _signal_selection_loop_for_window(self, win: WindowConfig):
         label = win.label
         state = self._window_state[label]
-        logger.info(
-            "Signal collection window [%s] open until %s ET",
-            label,
-            state["collection_deadline"].strftime("%H:%M:%S"),
-        )
-        while _now_et() < state["collection_deadline"]:
-            time.sleep(0.5)
-        with self._signal_lock:
-            timer_pending = state["drain_timer_scheduled"]
-        if not timer_pending:
-            self._drain_pending_signals_for_window(win)
+        while True:
+            logger.info(
+                "Signal collection window [%s] open until %s ET",
+                label,
+                state["collection_deadline"].strftime("%H:%M:%S"),
+            )
+            while _now_et() < state["collection_deadline"]:
+                time.sleep(0.5)
+            with self._signal_lock:
+                timer_pending = state["drain_timer_scheduled"]
+            if not timer_pending:
+                self._drain_pending_signals_for_window(win)
+            # After drain, check if the deadline was extended for another bar.
+            # If so, loop back and wait for the next bar's collection window.
+            with self._signal_lock:
+                bars_left = state.get("collection_bars_remaining", 0)
+            if bars_left == 0:
+                break
 
     def _place_entry(
         self,
@@ -2857,6 +2902,8 @@ class OpMomentumTradeEngine:
             self._window_state[label] = {
                 "pending_signals": {},
                 "collection_deadline": deadline,
+                "collection_bars_remaining": self._extend_collection_bars,
+                "initial_slot_weight": None,
                 "open_position_count": 0,
                 "capital_fraction": win.capital_fraction,
                 "drain_timer_scheduled": False,
@@ -2916,6 +2963,7 @@ class OpMomentumTradeEngine:
             ma_momentum_gate=self._ma_momentum_gate,
             qqq_or_weight=self._qqq_or_weight,
             win_rate_signal_mode=self._selector_type == "win-rate",
+            collection_bars=1 + self._extend_collection_bars,
         )
         try:
             account = self._client.get_accounts()
@@ -3058,8 +3106,6 @@ class OpMomentumTradeEngine:
         logger.info("Replay %s — pre-market picks: %s", replay_date, pre_market_picks)
 
         # Build per-window states with replay_date deadlines.
-        # Use or_close as the deadline (no buffer) so that the drain fires at the
-        # very first post-OR bar, matching the backtest's bar-by-bar evaluation order.
         engine_windows = []
         for win in self._windows:
             opening_start_t = datetime.strptime(win.opening_start, "%H:%M").time()
@@ -3070,6 +3116,8 @@ class OpMomentumTradeEngine:
             self._window_state[label] = {
                 "pending_signals": {},
                 "collection_deadline": deadline,
+                "collection_bars_remaining": self._extend_collection_bars,
+                "initial_slot_weight": None,
                 "open_position_count": 0,
                 "capital_fraction": win.capital_fraction,
                 "drain_timer_scheduled": False,
@@ -3099,6 +3147,7 @@ class OpMomentumTradeEngine:
             ma_momentum_gate=self._ma_momentum_gate,
             qqq_or_weight=self._qqq_or_weight,
             win_rate_signal_mode=self._selector_type == "win-rate",
+            collection_bars=1 + self._extend_collection_bars,
         )
         self._signal_engine.start_replay(replay_date, market_data_client=self._market_data_client)
 
@@ -3133,7 +3182,14 @@ class OpMomentumTradeEngine:
 
         # In replay mode signals are drained synchronously in _on_bar (no background threads)
         # so that _drain_pending_signals_for_window runs while the replay clock is active.
-        _drained_windows = set()
+        #
+        # _first_drained_windows: windows that have completed at least one drain (OR close).
+        # Used to gate DD eligibility. Separate from the deadline-based re-drain logic so
+        # that --extend-collection-bars drains on subsequent bars without re-entering DD.
+        _first_drained_windows = set()
+        # _fully_drained_windows: windows whose last collection bar has been drained.
+        # Prevents re-triggering the drain on every subsequent _on_bar call.
+        _fully_drained_windows = set()
 
         # Pre-compute the DD check time for each window (OR close + doubledown_start_min).
         _dd_check_times = {}
@@ -3150,13 +3206,22 @@ class OpMomentumTradeEngine:
         def _on_bar(ticker):
             # Drain before monitor so newly-entered positions are evaluated
             # at the same bar that triggers the drain (matching backtest order).
+            # When --extend-collection-bars > 0, the drain extends the deadline by
+            # 5 min after each cycle, so subsequent bars re-trigger the drain.
+            # The deadline extension naturally prevents double-draining within the
+            # same bar group (after drain, deadline > current bar timestamp).
+            now = _now_et()
             for win in self._windows:
                 lbl = win.label
-                if lbl not in _drained_windows:
-                    deadline = self._window_state[lbl]["collection_deadline"]
-                    if _now_et() >= deadline:
-                        _drained_windows.add(lbl)
-                        self._drain_pending_signals_for_window(win)
+                if lbl in _fully_drained_windows:
+                    continue
+                deadline = self._window_state[lbl]["collection_deadline"]
+                if now >= deadline:
+                    _first_drained_windows.add(lbl)
+                    self._drain_pending_signals_for_window(win)
+                    with self._signal_lock:
+                        if self._window_state[lbl].get("collection_bars_remaining", 0) == 0:
+                            _fully_drained_windows.add(lbl)
             self._monitor.on_bar(ticker)
 
         def _on_bar_group_complete():
@@ -3168,7 +3233,7 @@ class OpMomentumTradeEngine:
                 return
             for win in self._windows:
                 lbl = win.label
-                if (lbl in _drained_windows
+                if (lbl in _first_drained_windows
                         and lbl not in _dd_checked_windows
                         and _now_et() >= _dd_check_times[lbl]):
                     _dd_checked_windows.add(lbl)
@@ -3223,7 +3288,7 @@ class OpMomentumTradeEngine:
         original_capital = self._replay_capital
         initial = float(original_capital) if original_capital is not None else float(ACCOUNT_BUDGET)
         running_capital = initial
-        daily_results = []  # [(date, cap_pnl)]
+        daily_results = []  # [(date, cap_pnl, deployed)]
 
         for i, day in enumerate(days):
             logger.info("─" * 70)
@@ -3242,13 +3307,15 @@ class OpMomentumTradeEngine:
             )
 
             day_pnl = float(self._daily_realized_pnl)
-            daily_results.append((day, day_pnl))
+            day_deployed = sum(float(v) for v in self._window_primary_deployed.values())
+            daily_results.append((day, day_pnl, day_deployed))
             running_capital += day_pnl
 
         self._replay_capital = original_capital
 
-        total_pnl = sum(p for _, p in daily_results)
-        wins = sum(1 for _, p in daily_results if p > 0)
+        total_pnl = sum(p for _, p, _ in daily_results)
+        total_deployed = sum(d for _, _, d in daily_results)
+        wins = sum(1 for _, p, _ in daily_results if p > 0)
         losses = len(daily_results) - wins
         logger.info("═" * 70)
         logger.info(
@@ -3268,4 +3335,31 @@ class OpMomentumTradeEngine:
                 "No-compound total: %+.2f  |  avg per day: %+.2f%%",
                 total_pnl, avg_pct,
             )
+        # Deployment metrics
+        pnl_per_dollar = total_pnl / total_deployed if total_deployed > 0 else 0.0
+        days_with_deployment = [(p, d) for _, p, d in daily_results if d > 0]
+        util = (
+            sum(d / initial for _, d in days_with_deployment) / len(daily_results)
+            if daily_results else 0.0
+        )
+        mean_rodc_str = "n/a"
+        dw_sharpe_str = "n/a"
+        if days_with_deployment:
+            rodcs = [p / d for p, d in days_with_deployment]
+            mean_rodc_str = f"{sum(rodcs) / len(rodcs) * 100:+.3f}%"
+            if len(days_with_deployment) >= 2:
+                deps = [d for _, d in days_with_deployment]
+                avg_dep = sum(deps) / len(deps)
+                w = [d / avg_dep for d in deps]
+                w_sum = sum(w)
+                w_mean = sum(wi * ri for wi, ri in zip(w, rodcs)) / w_sum
+                w_var = sum(wi * (ri - w_mean) ** 2 for wi, ri in zip(w, rodcs)) / w_sum
+                w_std = math.sqrt(w_var) if w_var > 0 else 0.0
+                if w_std > 0:
+                    dw_sharpe_str = f"{w_mean / w_std * math.sqrt(252):.2f}"
+        logger.info(
+            "Deployment metrics — total deployed: $%.2f  |  utilization: %.1f%%"
+            "  |  P&L/$: %+.4f (cumulative)  |  mean daily RODC: %s  |  DW-Sharpe: %s",
+            total_deployed, util * 100, pnl_per_dollar, mean_rodc_str, dw_sharpe_str,
+        )
         logger.info("═" * 70)

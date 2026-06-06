@@ -571,6 +571,16 @@ def parse_args():
         "fire. Total deployed scales with signal count up to top-N × capital. Default: off.",
     )
     parser.add_argument(
+        "--extend-collection-bars",
+        type=int,
+        default=0,
+        dest="extend_collection_bars",
+        help="Number of additional bars past the OR close to collect win-rate signals. "
+        "Default 0: signals must fire on the OR close bar only. "
+        "Each extra bar extends the collection window by 5 min "
+        "(e.g. --extend-collection-bars 2 → collect until 9:55 for M1 3-bar).",
+    )
+    parser.add_argument(
         "--lookback",
         type=int,
         default=_DEFAULT_LOOKBACK_DAYS,
@@ -1134,6 +1144,7 @@ if __name__ == "__main__":
             disable_ma_stops_for_regime_hold=args.disable_ma_stops_for_regime_hold,
             selector_type=args.selector,
             fixed_signal_alloc=args.fixed_signal_alloc,
+            extend_collection_bars=args.extend_collection_bars,
         )
         if args.replay_date or (args.replay_start and args.replay_end):
             _warn_replay_feed_mismatch(args)
@@ -1302,6 +1313,7 @@ if __name__ == "__main__":
             disable_ma_stops_for_regime_hold=args.disable_ma_stops_for_regime_hold,
             selector_type=args.selector,
             fixed_signal_alloc=args.fixed_signal_alloc,
+            extend_collection_bars=args.extend_collection_bars,
         )
         engine.run(tickers_override=args.tickers)
     finally:

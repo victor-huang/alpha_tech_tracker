@@ -1,4 +1,5 @@
 import argparse
+import math
 import os
 import random
 import threading
@@ -2851,12 +2852,40 @@ def _capital_stats_from_trades(trade_rows: list, initial_capital: float) -> dict
     days_with_picks = set(r["date"] for r in active)
 
     daily_cap_pnls = {}
+    daily_deployed = {}
     for row in active:
         d = row["date"]
         daily_cap_pnls[d] = daily_cap_pnls.get(d, 0.0) + row["cap_pnl"]
+        daily_deployed[d] = daily_deployed.get(d, 0.0) + row.get("slot_capital", 0.0)
 
     daily_returns = list(daily_cap_pnls.values())
     avg_daily_ret = sum(daily_returns) / len(daily_returns) if daily_returns else 0.0
+
+    # Deployment metrics
+    total_deployed = sum(daily_deployed.values())
+    pnl_per_dollar = total_cap_pnl / total_deployed if total_deployed > 0 else 0.0
+    capital_utilization = (
+        sum(v / initial_capital for v in daily_deployed.values()) / len(daily_deployed)
+        if daily_deployed else 0.0
+    )
+
+    # Daily RODC and derived metrics — exclude days with no deployment.
+    rodc_days = [(daily_cap_pnls[d], daily_deployed[d]) for d in daily_deployed if daily_deployed[d] > 0]
+    mean_daily_rodc = None
+    dw_sharpe = None
+    if rodc_days:
+        rodcs = [pnl / dep for pnl, dep in rodc_days]
+        mean_daily_rodc = sum(rodcs) / len(rodcs)
+        if len(rodc_days) >= 2:
+            deps = [dep for _, dep in rodc_days]
+            avg_dep = sum(deps) / len(deps)
+            w = [d / avg_dep for d in deps]
+            w_sum = sum(w)
+            w_mean = sum(wi * ri for wi, ri in zip(w, rodcs)) / w_sum
+            w_var = sum(wi * (ri - w_mean) ** 2 for wi, ri in zip(w, rodcs)) / w_sum
+            w_std = math.sqrt(w_var) if w_var > 0 else 0.0
+            dw_sharpe = (w_mean / w_std * math.sqrt(252)) if w_std > 0 else None
+
     return {
         "initial_capital": initial_capital,
         "total_cap_pnl": total_cap_pnl,
@@ -2865,6 +2894,11 @@ def _capital_stats_from_trades(trade_rows: list, initial_capital: float) -> dict
         "days_with_picks": len(days_with_picks),
         "avg_daily_ret": avg_daily_ret,
         "avg_daily_ret_pct": avg_daily_ret / initial_capital * 100,
+        "total_deployed": total_deployed,
+        "pnl_per_dollar_deployed": pnl_per_dollar,
+        "mean_daily_rodc": mean_daily_rodc,
+        "capital_utilization": capital_utilization,
+        "deployment_weighted_sharpe": dw_sharpe,
     }
 
 
@@ -2889,16 +2923,36 @@ def _print_capital_stats_block(stats: dict, weights_label: str = ""):
         if stats["avg_daily_ret_pct"] >= 0
         else f"{stats['avg_daily_ret_pct']:.2f}%"
     )
+    pnl_per_dollar = stats.get("pnl_per_dollar_deployed", 0.0)
+    mean_rodc = stats.get("mean_daily_rodc")
+    util = stats.get("capital_utilization", 0.0)
+    dw_sharpe = stats.get("deployment_weighted_sharpe")
+    total_deployed = stats.get("total_deployed", 0.0)
+
+    pnl_per_dollar_str = (
+        f"+${pnl_per_dollar:.4f}" if pnl_per_dollar >= 0 else f"-${abs(pnl_per_dollar):.4f}"
+    )
+    mean_rodc_str = (
+        f"{mean_rodc * 100:+.3f}%" if mean_rodc is not None else "n/a"
+    )
+    sharpe_str = f"{dw_sharpe:.2f}" if dw_sharpe is not None else "n/a"
+
     label = f"${stats['initial_capital']:,.0f} initial"
     if weights_label:
         label += f" | {weights_label}"
     print(f"\n  CAPITAL SIMULATION  ({label})")
-    print(f"  {'─' * 48}")
-    print(f"  Total return ($)    : {cap_pnl_str}")
-    print(f"  Total return (%)    : {ret_pct_str}")
-    print(f"  Final portfolio     : ${stats['final_portfolio']:,.2f}")
-    print(f"  Days with picks     : {stats['days_with_picks']}")
-    print(f"  Avg daily return    : {avg_str}  ({avg_pct_str})")
+    print(f"  {'─' * 54}")
+    print(f"  Total return ($)         : {cap_pnl_str}")
+    print(f"  Total return (%)         : {ret_pct_str}")
+    print(f"  Final portfolio          : ${stats['final_portfolio']:,.2f}")
+    print(f"  Days with picks          : {stats['days_with_picks']}")
+    print(f"  Avg daily return         : {avg_str}  ({avg_pct_str})")
+    print(f"  {'─' * 54}")
+    print(f"  Total deployed           : ${total_deployed:,.2f}")
+    print(f"  Capital utilization      : {util * 100:.1f}%  (avg daily deployed / initial)")
+    print(f"  P&L per $ deployed       : {pnl_per_dollar_str}  (cumulative)")
+    print(f"  Mean daily RODC          : {mean_rodc_str}  (avg per-day return on deployed)")
+    print(f"  Deployment-weighted Sharpe: {sharpe_str}")
 
 
 def _print_per_window_stats(

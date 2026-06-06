@@ -656,12 +656,51 @@ All runs below use the same baseline config (no-stop, original 19-ticker pool, t
 
 | Year | Baseline (no-stop) | With `--regime-hold` | Delta | Note |
 |---|---|---|---|---|
+| 2018 | +$5,642 (+56.4%) | +$5,247 (+52.5%) | −$395 (−3.9pp) | Bull year; `EOD` dominant — shorter windows cut winners early |
+| 2019 | +$6,327 (+63.3%) | +$5,645 (+56.4%) | −$682 (−6.9pp) | Bull year; steady trend — regime hold windows cost more than they protect |
 | 2020 | +$3,300 (+33.0%) | **+$4,049 (+40.5%)** | **+$749 (+7.5pp)** | COVID whipsaw; `+2h`/`+3h` windows protect against afternoon reversals |
+| 2021 | +$3,396 (+34.0%) | **+$3,962 (+39.6%)** | **+$566 (+5.6pp)** | Choppy recovery year; shorter windows avoided late-day mean reversion |
 | 2022 | +$5,716 (+57.2%) | **+$6,092 (+60.9%)** | **+$376 (+3.7pp)** | Bear market; short hold windows cut losers before late-day reversals |
 | 2023 | +$5,187 (+51.9%) | **+$5,831 (+58.3%)** | **+$644 (+6.4pp)** | Banking crisis + Fed cycle; `+2h`/`+3h` in volatile months paid off |
 | 2024 | +$7,640 (+76.4%) | **+$7,929 (+79.3%)** | **+$289 (+2.9pp)** | Mostly bullish; Aug yen-carry unwind + Oct chop gave hold windows some edge |
 | 2025 | +$7,161 (+71.6%) | +$7,158 (+71.6%) | −$3 (~0) | Bull year; regime assigns `EOD` for most months — flag is a no-op |
 | 2026 YTD | +$3,337 (+33.4%) | +$3,285 (+32.9%) | −$52 (−0.5pp) | Bull year; `EOD` dominant — marginal cost from occasional early exit |
+
+### Monthly detail — 2018 with `--regime-hold`
+
+| Month | P&L | Return |
+|---|---|---|
+| Jan | +$264 | +2.6% |
+| Feb | −$116 | −1.2% |
+| Mar | +$341 | +3.4% |
+| Apr | +$1,248 | +12.5% |
+| May | −$58 | −0.6% |
+| Jun | +$718 | +7.2% |
+| Jul | +$832 | +8.3% |
+| Aug | +$363 | +3.6% |
+| Sep | +$431 | +4.3% |
+| Oct | +$240 | +2.4% |
+| Nov | +$741 | +7.4% |
+| Dec | +$242 | +2.4% |
+| **Total** | **+$5,247** | **+52.5%** |
+
+### Monthly detail — 2019 with `--regime-hold`
+
+| Month | P&L | Return |
+|---|---|---|
+| Jan | +$1,044 | +10.4% |
+| Feb | +$147 | +1.5% |
+| Mar | +$437 | +4.4% |
+| Apr | +$188 | +1.9% |
+| May | +$125 | +1.3% |
+| Jun | +$1,123 | +11.2% |
+| Jul | +$328 | +3.3% |
+| Aug | +$169 | +1.7% |
+| Sep | +$480 | +4.8% |
+| Oct | +$525 | +5.2% |
+| Nov | +$843 | +8.4% |
+| Dec | +$235 | +2.4% |
+| **Total** | **+$5,645** | **+56.4%** |
 
 ### Monthly detail — 2020 with `--regime-hold`
 
@@ -717,6 +756,24 @@ All runs below use the same baseline config (no-stop, original 19-ticker pool, t
 | Dec | +$168 | +1.7% |
 | **Total** | **+$5,831** | **+58.3%** |
 
+### Monthly detail — 2021 with `--regime-hold`
+
+| Month | P&L | Return |
+|---|---|---|
+| Jan | +$578 | +5.8% |
+| Feb | −$388 | −3.9% |
+| Mar | +$707 | +7.1% |
+| Apr | +$590 | +5.9% |
+| May | +$108 | +1.1% |
+| Jun | +$11 | +0.1% |
+| Jul | +$276 | +2.8% |
+| Aug | +$350 | +3.5% |
+| Sep | +$568 | +5.7% |
+| Oct | +$449 | +4.5% |
+| Nov | +$271 | +2.7% |
+| Dec | +$441 | +4.4% |
+| **Total** | **+$3,962** | **+39.6%** |
+
 ### Monthly detail — 2022 with `--regime-hold`
 
 | Month | P&L | Return |
@@ -735,10 +792,16 @@ All runs below use the same baseline config (no-stop, original 19-ticker pool, t
 | Dec | +$757 | +7.6% |
 | **Total** | **+$6,092** | **+60.9%** |
 
-**When to use `--regime-hold`:** In live trading, enabling it adds a systematic exit discipline
-during cautious/bearish regimes without changing behavior during `EOD` months. It is particularly
-valuable in high-volatility environments where intraday reversals are common (2020 COVID,
-2022 Fed hiking cycle).
+**Pattern across all 9 years:** `--regime-hold` is adaptive — it only changes behavior when the
+regime engine assigns shorter windows (`+2h`/`+3h`). In pure bull/trending years (2018, 2019,
+2025, 2026) where `EOD` dominates, it costs −0.5pp to −6.9pp by cutting winners. In volatile,
+choppy, or bear years (2020, 2021, 2022, 2023, 2024) it gains +2.9pp to +7.5pp by protecting
+against late-day reversals. Net 9-year impact: **+$1,503** across all years combined.
+
+**When to use `--regime-hold`:** Recommended for live trading when the regime engine assigns
+mixed/short windows (i.e., the current month is CAUTION or NO_POSITION with `+2h`/`+3h`). In
+sustained bull regimes with `EOD` across all months it is a marginal cost, but the downside is
+small (≤−6.9pp in the worst case). Enable it by default and monitor regime assignments.
 
 Replay script: `run_replay_stock_m1_winrate.sh --year YYYY --regime-hold`
 

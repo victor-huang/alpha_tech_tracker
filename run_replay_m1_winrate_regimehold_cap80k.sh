@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
-# run_replay_stock_5win_winrate.sh
-# Replay trades for a full year in parallel batches.
-# Config: M1 09:30/3 + A1 10:00/3 + A2 11:45/2 + A3 13:15/1 + A4 15:15/1
-#         reversal + reentry + DD + rank-weighted-sizing
-#         --selector win-rate + --enable-regime-engine (win-rate-signal mode)
+# run_replay_m1_winrate_regimehold_cap80k.sh
+# Config: M1 09:30/3 | win-rate selector | regime-engine | regime-hold
+#         stop-pct 0 | trailing-ma none | top 8 | $80k capital
+#         NO reversal / NO reentry / NO doubledown
 #
 # Usage:
-#   ./run_replay_stock_5win_winrate.sh --year 2025
-#   ./run_replay_stock_5win_winrate.sh --year 2026 --summary
-#   ./run_replay_stock_5win_winrate.sh --year 2025 --force
+#   ./run_replay_m1_winrate_regimehold_cap80k.sh --year 2026
+#   ./run_replay_m1_winrate_regimehold_cap80k.sh --year 2026 --summary
+#   ./run_replay_m1_winrate_regimehold_cap80k.sh --year 2026 --force
+#   ./run_replay_m1_winrate_regimehold_cap80k.sh --year 2026 --extend-collection-bars 2
 
 set -euo pipefail
 
@@ -17,89 +17,72 @@ BASE_LOG_DIR="/Users/victorhuang/work/alpha_tech_tracker/logs"
 MAX_PARALLEL=20
 SUMMARY_ONLY=false
 FORCE=false
-NO_STOP=false
-FIXED_ALLOC=false
-REGIME_HOLD=false
 YEAR=""
-TRADE_TYPE="stock"
 FEED="sip"
-CAPITAL=10000
+CAPITAL=80000
+EXTEND_COLLECTION_BARS=0
+STOP_PCT=0
+FIXED_SIGNAL_ALLOC=false
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --year)         YEAR="$2";       shift 2 ;;
-    --trade-type)   TRADE_TYPE="$2"; shift 2 ;;
-    --feed)         FEED="$2";       shift 2 ;;
-    --capital)      CAPITAL="$2";    shift 2 ;;
-    --summary)      SUMMARY_ONLY=true; shift ;;
-    --force)        FORCE=true;      shift ;;
-    --no-stop)       NO_STOP=true;       shift ;;
-    --fixed-alloc)   FIXED_ALLOC=true;   shift ;;
-    --regime-hold)   REGIME_HOLD=true;   shift ;;
+    --year)                   YEAR="$2";                    shift 2 ;;
+    --feed)                   FEED="$2";                    shift 2 ;;
+    --extend-collection-bars) EXTEND_COLLECTION_BARS="$2";  shift 2 ;;
+    --stop-pct)               STOP_PCT="$2";                shift 2 ;;
+    --fixed-signal-alloc)     FIXED_SIGNAL_ALLOC=true;      shift ;;
+    --summary)                SUMMARY_ONLY=true;             shift ;;
+    --force)                  FORCE=true;                    shift ;;
     *) echo "Unknown arg: $1"; exit 1 ;;
   esac
 done
 
 if [ -z "$YEAR" ]; then
-  echo "Usage: $0 --year YYYY [--trade-type stock|options] [--capital N] [--summary] [--force] [--no-stop] [--fixed-alloc] [--regime-hold]"
+  echo "Usage: $0 --year YYYY [--summary] [--force] [--feed sip|iex] [--extend-collection-bars N] [--stop-pct N] [--fixed-signal-alloc]"
   exit 1
 fi
 
-if $FIXED_ALLOC; then
-  LOG_DIR="$BASE_LOG_DIR/replay_${YEAR}_${TRADE_TYPE}_m1_winrate_fixedalloc_cap${CAPITAL}"
-elif $REGIME_HOLD; then
-  LOG_DIR="$BASE_LOG_DIR/replay_${YEAR}_${TRADE_TYPE}_m1_winrate_regimehold"
-elif $NO_STOP; then
-  LOG_DIR="$BASE_LOG_DIR/replay_${YEAR}_${TRADE_TYPE}_m1_winrate_nostop"
-else
-  LOG_DIR="$BASE_LOG_DIR/replay_${YEAR}_${TRADE_TYPE}_m1_winrate"
-fi
+LOG_SUFFIX=""
+[ "$EXTEND_COLLECTION_BARS" -gt 0 ] && LOG_SUFFIX="${LOG_SUFFIX}_ecb${EXTEND_COLLECTION_BARS}"
+[ "$(echo "$STOP_PCT > 0" | bc -l)" = "1" ] && LOG_SUFFIX="${LOG_SUFFIX}_stop$(echo "$STOP_PCT" | tr '.' 'p')"
+$FIXED_SIGNAL_ALLOC && LOG_SUFFIX="${LOG_SUFFIX}_fixedalloc"
+LOG_DIR="$BASE_LOG_DIR/replay_${YEAR}_stock_m1_winrate_regimehold_cap80k${LOG_SUFFIX}"
 
 # ---------------------------------------------------------------------------
-# Generate trading days for YEAR via Python (NYSE holidays 2019-2026)
+# Generate trading days for YEAR via Python (NYSE holidays 2018-2026)
 # ---------------------------------------------------------------------------
 generate_trading_days() {
   python3 -c "
-import sys
 from datetime import date, timedelta
 
 year = int('$YEAR')
 today = date.today()
 
 holidays = {
-    # 2018
     date(2018,1,1), date(2018,1,15), date(2018,2,19),
     date(2018,3,30), date(2018,5,28), date(2018,7,4),
     date(2018,9,3), date(2018,11,22), date(2018,12,25),
-    # 2019
     date(2019,1,1), date(2019,1,21), date(2019,2,18),
     date(2019,4,19), date(2019,5,27), date(2019,7,4),
     date(2019,9,2), date(2019,11,28), date(2019,12,25),
-    # 2020
     date(2020,1,1), date(2020,1,20), date(2020,2,17),
     date(2020,4,10), date(2020,5,25), date(2020,7,3),
     date(2020,9,7), date(2020,11,26), date(2020,12,25),
-    # 2021
     date(2021,1,1), date(2021,1,18), date(2021,2,15),
     date(2021,4,2), date(2021,5,31), date(2021,7,5),
     date(2021,9,6), date(2021,11,25), date(2021,12,24),
-    # 2022
     date(2022,1,17), date(2022,2,21), date(2022,4,15),
     date(2022,5,30), date(2022,6,19), date(2022,7,4),
     date(2022,9,5), date(2022,11,24), date(2022,12,26),
-    # 2023
     date(2023,1,2), date(2023,1,16), date(2023,2,20),
     date(2023,4,7), date(2023,5,29), date(2023,6,19),
     date(2023,7,4), date(2023,9,4), date(2023,11,23), date(2023,12,25),
-    # 2024
     date(2024,1,1), date(2024,1,15), date(2024,2,19),
     date(2024,3,29), date(2024,5,27), date(2024,6,19),
     date(2024,7,4), date(2024,9,2), date(2024,11,28), date(2024,12,25),
-    # 2025
     date(2025,1,1), date(2025,1,20), date(2025,2,17),
     date(2025,4,18), date(2025,5,26), date(2025,6,19),
     date(2025,7,4), date(2025,9,1), date(2025,11,27), date(2025,12,25),
-    # 2026
     date(2026,1,1), date(2026,1,19), date(2026,2,16),
     date(2026,4,3), date(2026,5,25), date(2026,6,19),
     date(2026,7,3), date(2026,9,7), date(2026,11,26), date(2026,12,25),
@@ -118,40 +101,31 @@ while d <= end:
 "
 }
 
-# Ticker pool — matches ma_open_range_momentum_screener run set
 TICKERS="SNDK APP META SNOW SNPS SPOT MU LLY MRVL CRWD QCOM PLTR CHTR TSLA AVGO ARM AMD DDOG RDDT"
 
 # ---------------------------------------------------------------------------
-# Replay a single date — win-rate selector + win-rate-signal mode
+# Replay a single date
 # ---------------------------------------------------------------------------
 replay_one() {
   local DATE="$1"
   local LOG="$LOG_DIR/$DATE.log"
-  local EXTRA_FLAGS=""
-  if $NO_STOP || $FIXED_ALLOC || $REGIME_HOLD; then
-    EXTRA_FLAGS="$EXTRA_FLAGS --trailing-ma none --stop-pct 0"
-  fi
-  if $FIXED_ALLOC; then
-    EXTRA_FLAGS="$EXTRA_FLAGS --fixed-signal-alloc"
-  fi
-  if $REGIME_HOLD; then
-    EXTRA_FLAGS="$EXTRA_FLAGS --regime-hold"
-  fi
   PYTHONPATH="$PYTHONPATH_DIR" \
     python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine run \
     --log-level DEBUG \
-    --trade-type "$TRADE_TYPE" \
+    --trade-type stock \
     --tickers $TICKERS \
     --selector win-rate \
     --enable-regime-engine \
     --window M1 09:30 3 \
     --morning-split 100 \
-    --bearish-reentry --bullish-reentry --reversal \
-    --doubledown --doubledown-start 10 \
-    --top 8 --capital "$CAPITAL" \
+    --top 8 --capital $CAPITAL \
+    --stop-pct $STOP_PCT \
+    --trailing-ma none \
+    --regime-hold \
+    $([ "$EXTEND_COLLECTION_BARS" -gt 0 ] && echo "--extend-collection-bars $EXTEND_COLLECTION_BARS") \
+    $($FIXED_SIGNAL_ALLOC && echo "--fixed-signal-alloc") \
     --mock-trade-execution \
     --feed "$FEED" \
-    $EXTRA_FLAGS \
     --replay-date "$DATE" > "$LOG" 2>&1
 }
 
@@ -160,14 +134,14 @@ replay_one() {
 # ---------------------------------------------------------------------------
 print_summary() {
   python3 - "$LOG_DIR" "$YEAR" "$CAPITAL" <<'PYEOF'
-import os, re, sys
+import math, os, re, sys
 from datetime import date, timedelta
 
-log_dir  = sys.argv[1]
-year     = sys.argv[2]
-capital  = float(sys.argv[3]) if len(sys.argv) > 3 else 10000.0
+log_dir = sys.argv[1]
+year    = sys.argv[2]
+capital = float(sys.argv[3])
 
-results = {}
+results  = {}
 deployed = {}
 for fname in sorted(os.listdir(log_dir)):
     if not re.match(r'\d{4}-\d{2}-\d{2}\.log$', fname):
@@ -186,8 +160,7 @@ if not results:
     print("No completed logs found.")
     sys.exit(0)
 
-# -- weekly buckets --
-weeks = {}
+weeks  = {}
 months = {}
 for d_str, pnl in sorted(results.items()):
     d = date.fromisoformat(d_str)
@@ -197,32 +170,18 @@ for d_str, pnl in sorted(results.items()):
         weeks[wkey] = {"days": [], "pnl": 0.0}
     weeks[wkey]["days"].append((d_str, pnl))
     weeks[wkey]["pnl"] += pnl
-
     mkey = d.strftime("%Y-%m")
     if mkey not in months:
         months[mkey] = 0.0
     months[mkey] += pnl
 
 print()
-no_stop_flag = "$NO_STOP"
-fixed_alloc_flag = "$FIXED_ALLOC"
-regime_hold_flag = "$REGIME_HOLD"
-if fixed_alloc_flag == "true":
-    stop_label = "no-stop + fixed-signal-alloc"
-elif regime_hold_flag == "true":
-    stop_label = "no-stop + regime-hold"
-elif no_stop_flag == "true":
-    stop_label = "no-stop"
-else:
-    stop_label = "stop=default"
-print(f"=== {year} Stock Replay (WIN-RATE MODE) ===")
-print(f"    M1 09:30/3 only  |  {stop_label}")
-print(f"    selector=win-rate | regime-engine | reversal | bearish/bullish-reentry | DD@10 | rank-weighted 60/40 | top8 | $10k")
+print(f"=== {year} Stock Replay — M1 win-rate | regime-hold | no-stop | top8 | ${capital:,.0f} ===")
+print(f"    selector=win-rate | regime-engine | regime-hold | stop-pct=0 | trailing-ma=none | top8")
+print(f"    NO reversal / NO reentry / NO doubledown")
 print()
 
-# -- weekly detail --
 print("── WEEKLY ──────────────────────────────────────────────────────")
-total = 0.0
 total_days = 0
 for key in sorted(weeks.keys()):
     w = weeks[key]
@@ -233,10 +192,8 @@ for key in sorted(weeks.keys()):
         day_name = date.fromisoformat(d_str).strftime("%a")
         sign2 = "+" if pnl >= 0 else ""
         print(f"      {d_str} {day_name}   {sign2}${pnl:>8,.2f}")
-    total += w["pnl"]
     total_days += n
 
-# -- monthly summary --
 print()
 print("── MONTHLY ─────────────────────────────────────────────────────")
 month_names = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
@@ -248,13 +205,12 @@ for mkey in sorted(months.keys()):
     print(f"  {month_names[m_idx]} {mkey.split('-')[0]}   {sign}${mp:>9,.2f}   ({sign}{mp/capital*100:.1f}%)")
     year_total += mp
 
-# -- yearly total --
 print()
 print("── YEARLY ──────────────────────────────────────────────────────")
 sign = "+" if year_total >= 0 else ""
 print(f"  {year} TOTAL   {total_days} days   {sign}${year_total:,.2f}   ({sign}{year_total/capital*100:.1f}% on ${capital:,.0f})")
 print(f"  Logs complete: {len(results)} / {total_days} trading days")
-import math
+
 total_dep = sum(deployed.get(d, 0.0) for d in results)
 days_with_dep = [(results[d], deployed[d]) for d in results if deployed.get(d, 0.0) > 0]
 util = total_dep / (total_days * capital) if total_days else 0.0
@@ -311,7 +267,11 @@ for DATE in "${ALL_DATES[@]}"; do
 done
 
 echo ""
-echo "=== $YEAR $TRADE_TYPE replay (M1 window, WIN-RATE MODE) ==="
+RUN_LABEL=" | stop=${STOP_PCT}"
+[ "$EXTEND_COLLECTION_BARS" -gt 0 ] && RUN_LABEL="${RUN_LABEL} | ecb=${EXTEND_COLLECTION_BARS}"
+$FIXED_SIGNAL_ALLOC && RUN_LABEL="${RUN_LABEL} | fixed-signal-alloc"
+echo "=== $YEAR replay — M1 win-rate | regime-hold | top8 | \$${CAPITAL}${RUN_LABEL} ==="
+echo "    NO reversal / NO reentry / NO doubledown"
 echo "    Total trading days : ${#ALL_DATES[@]}"
 echo "    To run             : ${#TODO[@]}"
 echo "    Max parallel       : $MAX_PARALLEL"

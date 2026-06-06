@@ -1,3 +1,4 @@
+import logging
 from datetime import date
 from decimal import Decimal
 from unittest.mock import patch
@@ -206,3 +207,120 @@ class TestRunReplayRange:
             )
 
         assert all(t == "16:05" for t in captured_kwargs)
+
+
+# ---------------------------------------------------------------------------
+# TestRunReplayRangeDeploymentMetrics
+# ---------------------------------------------------------------------------
+
+
+class TestRunReplayRangeDeploymentMetrics:
+    def test_reads_window_primary_deployed_after_each_day(self, caplog):
+        engine = _make_engine(replay_capital=10000.0)
+
+        def fake_replay(day, **kwargs):
+            engine._daily_realized_pnl = _D("100")
+            engine._window_primary_deployed = {"M1": _D("5000")}
+
+        with patch.object(engine, "run_replay", side_effect=fake_replay), \
+             patch(_IS_NYSE_HOLIDAY_PATH, return_value=False), \
+             caplog.at_level(logging.INFO):
+            engine.run_replay_range(date(2026, 3, 16), date(2026, 3, 17))
+
+        deploy_logs = [r for r in caplog.records if "Deployment metrics" in r.message]
+        assert len(deploy_logs) == 1
+
+    def test_total_deployed_sums_all_windows_across_all_days(self, caplog):
+        engine = _make_engine(replay_capital=10000.0)
+
+        day_deployments = [
+            {"M1": _D("5000"), "A1": _D("4000")},  # day 1: $9000
+            {"M1": _D("3000")},                      # day 2: $3000
+        ]
+        call_idx = [0]
+
+        def fake_replay(day, **kwargs):
+            engine._daily_realized_pnl = _D("100")
+            engine._window_primary_deployed = day_deployments[call_idx[0]]
+            call_idx[0] += 1
+
+        with patch.object(engine, "run_replay", side_effect=fake_replay), \
+             patch(_IS_NYSE_HOLIDAY_PATH, return_value=False), \
+             caplog.at_level(logging.INFO):
+            engine.run_replay_range(date(2026, 3, 16), date(2026, 3, 17))
+
+        deploy_log = next(r for r in caplog.records if "Deployment metrics" in r.message)
+        assert "12000.00" in deploy_log.message
+
+    def test_zero_deployment_day_contributes_zero_to_total(self, caplog):
+        engine = _make_engine(replay_capital=10000.0)
+
+        day_deployments = [
+            {},                        # day 1: no trades → $0
+            {"M1": _D("5000")},        # day 2: $5000
+        ]
+        call_idx = [0]
+
+        def fake_replay(day, **kwargs):
+            engine._daily_realized_pnl = _D("0")
+            engine._window_primary_deployed = day_deployments[call_idx[0]]
+            call_idx[0] += 1
+
+        with patch.object(engine, "run_replay", side_effect=fake_replay), \
+             patch(_IS_NYSE_HOLIDAY_PATH, return_value=False), \
+             caplog.at_level(logging.INFO):
+            engine.run_replay_range(date(2026, 3, 16), date(2026, 3, 17))
+
+        deploy_log = next(r for r in caplog.records if "Deployment metrics" in r.message)
+        assert "5000.00" in deploy_log.message
+
+    def test_pnl_per_dollar_logged_in_deployment_metrics(self, caplog):
+        engine = _make_engine(replay_capital=10000.0)
+
+        def fake_replay(day, **kwargs):
+            engine._daily_realized_pnl = _D("100")
+            engine._window_primary_deployed = {"M1": _D("5000")}
+
+        # Two days: total_pnl=200, total_deployed=10000 → P&L/$=0.02
+        with patch.object(engine, "run_replay", side_effect=fake_replay), \
+             patch(_IS_NYSE_HOLIDAY_PATH, return_value=False), \
+             caplog.at_level(logging.INFO):
+            engine.run_replay_range(date(2026, 3, 16), date(2026, 3, 17))
+
+        deploy_log = next(r for r in caplog.records if "Deployment metrics" in r.message)
+        assert "0.0200" in deploy_log.message
+
+    def test_mean_daily_rodc_logged_in_deployment_metrics(self, caplog):
+        engine = _make_engine(replay_capital=10000.0)
+
+        # Day 1: pnl=200, deployed=5000 → RODC=4%
+        # Day 2: pnl=100, deployed=5000 → RODC=2%
+        # mean daily RODC = 3% → "+3.000%"
+        day_data = [(_D("200"), _D("5000")), (_D("100"), _D("5000"))]
+        call_idx = [0]
+
+        def fake_replay(day, **kwargs):
+            pnl, dep = day_data[call_idx[0]]
+            engine._daily_realized_pnl = pnl
+            engine._window_primary_deployed = {"M1": dep}
+            call_idx[0] += 1
+
+        with patch.object(engine, "run_replay", side_effect=fake_replay), \
+             patch(_IS_NYSE_HOLIDAY_PATH, return_value=False), \
+             caplog.at_level(logging.INFO):
+            engine.run_replay_range(date(2026, 3, 16), date(2026, 3, 17))
+
+        deploy_log = next(r for r in caplog.records if "Deployment metrics" in r.message)
+        assert "+3.000%" in deploy_log.message
+
+    def test_deployment_metrics_not_logged_for_empty_range(self, caplog):
+        engine = _make_engine(replay_capital=10000.0)
+
+        with patch.object(engine, "run_replay") as mock_replay, \
+             patch(_IS_NYSE_HOLIDAY_PATH, return_value=False), \
+             caplog.at_level(logging.INFO):
+            engine.run_replay_range(date(2026, 3, 18), date(2026, 3, 16))
+
+        mock_replay.assert_not_called()
+        deploy_logs = [r for r in caplog.records if "Deployment metrics" in r.message]
+        assert len(deploy_logs) == 0

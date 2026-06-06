@@ -153,6 +153,7 @@ log_dir = sys.argv[1]
 year    = sys.argv[2]
 
 results = {}
+deployed = {}
 for fname in sorted(os.listdir(log_dir)):
     if not re.match(r'\d{4}-\d{2}-\d{2}\.log$', fname):
         continue
@@ -162,6 +163,9 @@ for fname in sorted(os.listdir(log_dir)):
             m = re.search(r'cap:\s*([+-]?\$[\d,.]+)', line)
             if m:
                 results[d_str] = float(m.group(1).replace('$','').replace(',',''))
+            md = re.search(r'\$(\d[\d,]*)\s+deployed', line)
+            if md:
+                deployed[d_str] = float(md.group(1).replace(',',''))
 
 if not results:
     print("No completed logs found.")
@@ -199,6 +203,35 @@ print(f"  {'─'*50}")
 sign = "+" if total >= 0 else ""
 print(f"  TOTAL  {total_days} days   {sign}${total:,.2f}  ({sign}{total/10000*100:.1f}% on $10k)")
 print(f"  Logs:  {len(results)} / {total_days} trading days complete")
+import math
+year_total = total
+total_dep = sum(deployed.get(d, 0.0) for d in results)
+days_with_dep = [(results[d], deployed[d]) for d in results if deployed.get(d, 0.0) > 0]
+util = total_dep / (total_days * 10000) if total_days else 0.0
+pnl_per_dollar = year_total / total_dep if total_dep > 0 else 0.0
+mean_rodc_str = "n/a"
+dw_sharpe_str = "n/a"
+if days_with_dep:
+    rodcs = [p / d for p, d in days_with_dep]
+    mean_rodc_str = f"{sum(rodcs) / len(rodcs) * 100:+.3f}%"
+    if len(days_with_dep) >= 2:
+        deps = [d for _, d in days_with_dep]
+        avg_dep = sum(deps) / len(deps)
+        w = [d / avg_dep for d in deps]
+        w_sum = sum(w)
+        w_mean = sum(wi * ri for wi, ri in zip(w, rodcs)) / w_sum
+        w_var = sum(wi * (ri - w_mean) ** 2 for wi, ri in zip(w, rodcs)) / w_sum
+        w_std = math.sqrt(w_var) if w_var > 0 else 0.0
+        if w_std > 0:
+            dw_sharpe_str = f"{w_mean / w_std * math.sqrt(252):.2f}"
+pnl_sign = "+" if pnl_per_dollar >= 0 else ""
+print()
+print("── DEPLOYMENT METRICS ──────────────────────────────────────────")
+print(f"  Total deployed       : ${total_dep:,.0f}")
+print(f"  Capital utilization  : {util*100:.1f}%  (avg daily / $10k)")
+print(f"  P&L per $ deployed   : {pnl_sign}{pnl_per_dollar:.4f}  (cumulative)")
+print(f"  Mean daily RODC      : {mean_rodc_str}  (avg per-day return on deployed)")
+print(f"  DW-Sharpe            : {dw_sharpe_str}")
 print()
 PYEOF
 }
