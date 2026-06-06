@@ -20,7 +20,7 @@ FORCE=false
 YEAR=""
 FEED="sip"
 CAPITAL=80000
-EXTEND_COLLECTION_BARS=0
+EXTEND_COLLECTION_BARS=2
 STOP_PCT=0
 FIXED_SIGNAL_ALLOC=false
 
@@ -43,7 +43,7 @@ if [ -z "$YEAR" ]; then
 fi
 
 LOG_SUFFIX=""
-[ "$EXTEND_COLLECTION_BARS" -gt 0 ] && LOG_SUFFIX="${LOG_SUFFIX}_ecb${EXTEND_COLLECTION_BARS}"
+[ "$EXTEND_COLLECTION_BARS" -ne 2 ] && LOG_SUFFIX="${LOG_SUFFIX}_ecb${EXTEND_COLLECTION_BARS}"
 [ "$(echo "$STOP_PCT > 0" | bc -l)" = "1" ] && LOG_SUFFIX="${LOG_SUFFIX}_stop$(echo "$STOP_PCT" | tr '.' 'p')"
 $FIXED_SIGNAL_ALLOC && LOG_SUFFIX="${LOG_SUFFIX}_fixedalloc"
 LOG_DIR="$BASE_LOG_DIR/replay_${YEAR}_stock_m1_winrate_regimehold_cap80k${LOG_SUFFIX}"
@@ -122,7 +122,7 @@ replay_one() {
     --stop-pct $STOP_PCT \
     --trailing-ma none \
     --regime-hold \
-    $([ "$EXTEND_COLLECTION_BARS" -gt 0 ] && echo "--extend-collection-bars $EXTEND_COLLECTION_BARS") \
+    $([ "$EXTEND_COLLECTION_BARS" -ne 2 ] && echo "--extend-collection-bars $EXTEND_COLLECTION_BARS") \
     $($FIXED_SIGNAL_ALLOC && echo "--fixed-signal-alloc") \
     --mock-trade-execution \
     --feed "$FEED" \
@@ -268,7 +268,7 @@ done
 
 echo ""
 RUN_LABEL=" | stop=${STOP_PCT}"
-[ "$EXTEND_COLLECTION_BARS" -gt 0 ] && RUN_LABEL="${RUN_LABEL} | ecb=${EXTEND_COLLECTION_BARS}"
+[ "$EXTEND_COLLECTION_BARS" -ne 2 ] && RUN_LABEL="${RUN_LABEL} | ecb=${EXTEND_COLLECTION_BARS}"
 $FIXED_SIGNAL_ALLOC && RUN_LABEL="${RUN_LABEL} | fixed-signal-alloc"
 echo "=== $YEAR replay — M1 win-rate | regime-hold | top8 | \$${CAPITAL}${RUN_LABEL} ==="
 echo "    NO reversal / NO reentry / NO doubledown"

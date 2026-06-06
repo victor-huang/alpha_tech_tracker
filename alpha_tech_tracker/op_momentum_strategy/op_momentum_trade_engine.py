@@ -573,12 +573,12 @@ def parse_args():
     parser.add_argument(
         "--extend-collection-bars",
         type=int,
-        default=0,
+        default=2,
         dest="extend_collection_bars",
         help="Number of additional bars past the OR close to collect win-rate signals. "
-        "Default 0: signals must fire on the OR close bar only. "
+        "Default 2: collect until 9:55 for M1 3-bar. "
         "Each extra bar extends the collection window by 5 min "
-        "(e.g. --extend-collection-bars 2 → collect until 9:55 for M1 3-bar).",
+        "(e.g. --extend-collection-bars 0 → signals must fire on the OR close bar only).",
     )
     parser.add_argument(
         "--lookback",
