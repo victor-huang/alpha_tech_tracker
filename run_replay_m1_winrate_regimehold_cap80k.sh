@@ -26,6 +26,7 @@ EXTEND_COLLECTION_BARS=2
 STOP_PCT=0
 FIXED_SIGNAL_ALLOC=false
 REVERSAL=false
+DOUBLEDOWN=false
 MONTH=""       # 1-12: restrict replay to a single calendar month; sets MAX_PARALLEL=1
 WARMUP=false   # run only the first trading day of each month (2 parallel streams)
 
@@ -37,6 +38,7 @@ while [ $# -gt 0 ]; do
     --stop-pct)               STOP_PCT="$2";                shift 2 ;;
     --fixed-signal-alloc)     FIXED_SIGNAL_ALLOC=true;      shift ;;
     --reversal)               REVERSAL=true;                shift ;;
+    --doubledown)             DOUBLEDOWN=true;              shift ;;
     --summary)                SUMMARY_ONLY=true;             shift ;;
     --force)                  FORCE=true;                    shift ;;
     --month)                  MONTH="$2";                   shift 2 ;;
@@ -46,7 +48,7 @@ while [ $# -gt 0 ]; do
 done
 
 if [ -z "$YEAR" ]; then
-  echo "Usage: $0 --year YYYY [--summary] [--force] [--feed sip|iex] [--extend-collection-bars N] [--stop-pct N] [--fixed-signal-alloc] [--reversal] [--month 1-12] [--warmup]"
+  echo "Usage: $0 --year YYYY [--summary] [--force] [--feed sip|iex] [--extend-collection-bars N] [--stop-pct N] [--fixed-signal-alloc] [--reversal] [--doubledown] [--month 1-12] [--warmup]"
   exit 1
 fi
 
@@ -58,6 +60,7 @@ LOG_SUFFIX=""
 [ "$(echo "$STOP_PCT > 0" | bc -l)" = "1" ] && LOG_SUFFIX="${LOG_SUFFIX}_stop$(echo "$STOP_PCT" | tr '.' 'p')"
 $FIXED_SIGNAL_ALLOC && LOG_SUFFIX="${LOG_SUFFIX}_fixedalloc"
 $REVERSAL && LOG_SUFFIX="${LOG_SUFFIX}_reversal"
+$DOUBLEDOWN && LOG_SUFFIX="${LOG_SUFFIX}_dd"
 LOG_DIR="$BASE_LOG_DIR/replay_${YEAR}_stock_m1_winrate_regimehold_cap80k${LOG_SUFFIX}"
 
 # ---------------------------------------------------------------------------
@@ -145,6 +148,7 @@ replay_one() {
     --regime-hold \
     $([ "$EXTEND_COLLECTION_BARS" -ne 2 ] && echo "--extend-collection-bars $EXTEND_COLLECTION_BARS") \
     $($REVERSAL && echo "--bearish-reentry --bullish-reentry --reversal") \
+    $($DOUBLEDOWN && echo "--doubledown --doubledown-start 10") \
     $($FIXED_SIGNAL_ALLOC && echo "--fixed-signal-alloc") \
     --mock-trade-execution \
     --feed "$FEED" \
@@ -297,6 +301,7 @@ RUN_LABEL=" | stop=${STOP_PCT}"
 [ "$EXTEND_COLLECTION_BARS" -ne 2 ] && RUN_LABEL="${RUN_LABEL} | ecb=${EXTEND_COLLECTION_BARS}"
 $FIXED_SIGNAL_ALLOC && RUN_LABEL="${RUN_LABEL} | fixed-signal-alloc"
 $REVERSAL && RUN_LABEL="${RUN_LABEL} | reversal+reentry"
+$DOUBLEDOWN && RUN_LABEL="${RUN_LABEL} | doubledown"
 [ -n "$MONTH" ] && RUN_LABEL="${RUN_LABEL} | month=${MONTH}"
 $WARMUP && RUN_LABEL="${RUN_LABEL} | warmup"
 echo "=== $YEAR replay — M1 win-rate | regime-hold | top8 | \$${CAPITAL}${RUN_LABEL} ==="

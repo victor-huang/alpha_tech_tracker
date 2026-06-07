@@ -1528,7 +1528,9 @@ def _winrate_signal_day(ticker, df, day, or_start_time, or_bars, collection_bars
     return None, None
 
 
-def _winrate_exit_with_fallback(day_df, signal, or_high, or_low, or_range, entry_bar_idx):
+def _winrate_exit_with_fallback(
+    day_df, signal, or_high, or_low, or_range, entry_bar_idx, hold_minutes=None
+):
     """
     Compute the exit price for a trade, mirroring PositionMonitor with stop_pct=0.
 
@@ -1539,6 +1541,9 @@ def _winrate_exit_with_fallback(day_df, signal, or_high, or_low, or_range, entry
       bear_fallback   = or_low + 0.20 × or_range   (fires when not armed and close >= fallback)
 
     Scans bars from entry_bar_idx+1 onwards. Returns the exit price (override or last close).
+
+    hold_minutes: if set (e.g. 15 for CAUTION/+15m regime-hold), the position exits at the
+    first bar at or after entry_time + hold_minutes, matching the live engine's timed_exit.
     """
     if signal == "BULLISH":
         hard_stop = or_high
@@ -1551,6 +1556,16 @@ def _winrate_exit_with_fallback(day_df, signal, or_high, or_low, or_range, entry
     # so position_monitor.close_all() exits at the 15:50 bar close, not 15:55.
     eod_df = day_df[day_df.index.time < _dt_time(15, 55)]
     bars_after = eod_df.iloc[entry_bar_idx + 1:]
+
+    # Compute timed exit cutoff if hold_minutes is specified.
+    # hold_minutes is relative to entry bar open time (already adjusted for drain
+    # delay at call site: +5 for scan_idx=0, +0 for scan_idx>=1).
+    timed_exit_time = None
+    if hold_minutes is not None and not bars_after.empty:
+        entry_ts = day_df.index[entry_bar_idx]
+        timed_exit_time = (
+            datetime.combine(entry_ts.date(), entry_ts.time()) + timedelta(minutes=hold_minutes)
+        ).time()
     hard_stop_armed = False
 
     for i in range(len(bars_after)):
@@ -1559,6 +1574,7 @@ def _winrate_exit_with_fallback(day_df, signal, or_high, or_low, or_range, entry
         bar_open = float(bar["Open"])
         bar_high = float(bar["High"])
         bar_low = float(bar["Low"])
+        bar_time = bars_after.index[i].time()
 
         if signal == "BULLISH":
             if not hard_stop_armed and close > hard_stop:
@@ -1583,6 +1599,11 @@ def _winrate_exit_with_fallback(day_df, signal, or_high, or_low, or_range, entry
                 # Override: exit at fallback if bar's low reached it (gapped through),
                 # else exit at bar_open (bar opened above fallback, fill at open).
                 return fallback_price if bar_low <= fallback_price else bar_open
+
+        # Timed exit: checked after stops so hard_stop/fallback take precedence on the same bar
+        # (mirrors position_monitor._evaluate_stop order: stops → timed_exit).
+        if timed_exit_time is not None and bar_time >= timed_exit_time:
+            return close
 
     return float(eod_df.iloc[-1]["Close"])
 
@@ -1675,10 +1696,22 @@ def run_winrate_selector_backtest(
         else:
             direction = "LONG"
 
-        if direction in ("NO_POSITION", "CAUTION"):
+        # Extract timed-exit window for CAUTION regime with --regime-hold.
+        # CAUTION+15m exits 15 min after entry; CAUTION+EOD / other regimes use EOD.
+        _regime_hold_minutes = {
+            "+15m": 15, "+30m": 30, "+1h": 60, "+2h": 120, "+3h": 180, "+5h": 300,
+            "EOD": None,
+        }
+        hold_mins = None
+        if regime_engine_obj is not None and direction == "CAUTION":
+            hold_mins = _regime_hold_minutes.get(getattr(regime, "hold_window", None))
+
+        if direction == "NO_POSITION":
             daily_results.append({"date": day, "pnl": 0.0, "deployed": 0.0, "trades": []})
             continue
 
+        # CAUTION: no direction filter (both BULLISH and BEARISH allowed), mirrors live engine.
+        # SHORT: bottom-N by win rate (worst first).
         if direction == "SHORT":
             picks = [t for t, _ in list(reversed(ranked[-top_n:]))]
         else:
@@ -1736,8 +1769,16 @@ def run_winrate_selector_backtest(
             entry_abs_idx = from_or_start + (or_bars - 1) + entry_scan_idx
 
             # Apply fallback_20pct stop (always active, mirrors PositionMonitor with stop_pct=0).
+            # For CAUTION timed exit: live engine drain fires at OR close (or_bars*5m after start),
+            # which is 1 bar (5 min) after scan[0] fires but the same bar for scan[i>=1].
+            # Adjust hold_minutes to account for this drain delay when entry is on scan[0].
+            if hold_mins is not None:
+                drain_delay = 5 if entry_scan_idx == 0 else 0
+                effective_hold = hold_mins + drain_delay
+            else:
+                effective_hold = None
             exit_price = _winrate_exit_with_fallback(
-                day_df, signal, or_h, or_l, or_r, entry_abs_idx
+                day_df, signal, or_h, or_l, or_r, entry_abs_idx, hold_minutes=effective_hold
             )
 
             trades.append({

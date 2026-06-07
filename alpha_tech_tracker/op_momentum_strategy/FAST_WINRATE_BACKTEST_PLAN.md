@@ -331,10 +331,13 @@ No `--lookback-days` flag needed — default is now 60, matching the live engine
 | Month | Fast BT | Replay | Gap | Max single-day gap |
 |---|---|---|---|---|
 | Jan 2026 | +$33.87 | +$34.57 | -$0.70 | < $0.50 (all 20 days) |
-| Feb 2026 | +$1,264.58 | +$1,264.29 | +$0.29 | < $0.50 (all 19 days) |
+| Feb 2026 | +$1,264.56 | +$1,264.29 | +$0.27 | < $0.50 (all 19 days) |
+| Mar 2026 | +$857.39 | +$857.30 | +$0.09 | < $0.50 (all 22 days) |
+| Apr 2026 | +$1,142.73 | ~+$1,143.11 | < $0.50 | < $0.50 (all days) |
 | May 2026 | +$2,025.34 | +$2,055.47 | -$30.13 | -$29.88 (5/26 SNPS direct-entry) |
+| Jun 2026 | +$425.46 | +$425.24 | +$0.22 | < $0.50 (all 5 days) |
 
-Jan and Feb: all per-day differences are fractional-share rounding noise (< $0.50). The only material gap across all three months is the accepted SNPS direct-entry structural diff on 5/26.
+All months within fractional-share rounding noise except the accepted SNPS direct-entry diff on 5/26.
 
 ### Key fixes applied during calibration
 
@@ -343,6 +346,8 @@ Jan and Feb: all per-day differences are fractional-share rounding noise (< $0.5
 | Wrong lookback (30 → 60) | `run_winrate_selector_backtest()` default and CLI `--lookback-days` both changed to 60 to match `ROLLING_LOOKBACK_DAYS` |
 | EOD exit at 15:55 vs 15:50 | `_winrate_exit_with_fallback()` clips `day_df` to `< 15:55` before taking the last bar — matches `BarReplayDriver`'s strict `< 15:55` cutoff |
 | Wrong ticker pool | Must pass the 19-ticker replay pool; `DEFAULT_TICKERS` (V3) is different |
+| CAUTION blocking all trades | `direction == "NO_POSITION"` was blocking CAUTION too; fixed to pass CAUTION through with no direction filter |
+| CAUTION timed exit (3 bugs) | (1) Stop order in loop: timed exit must fire AFTER hard_stop/fallback, matching `_evaluate_stop` order. (2) Entry bar open vs close: scan[0] (last OR bar) entry_time is OR_close_et (+5 min), not bar open; add `drain_delay=5` when `entry_scan_idx==0`. (3) Timed exit cutoff: `bar_open >= entry_time + hold_minutes` — use bar open time with the drain-adjusted entry_time. |
 
 ### Accepted structural differences
 
