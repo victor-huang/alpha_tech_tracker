@@ -80,20 +80,62 @@ Tested back to 2015. **2017 is the earliest fully usable year.**
 
 ---
 
-## Reversal/Reentry Sub-legs — Hurts Performance
+## Sub-leg Analysis (Reversal / Reentry / Doubledown)
 
-Adding `--bearish-reentry --bullish-reentry --reversal` to either model degrades results:
+Sub-leg behavior is **strongly year-regime dependent**. In trending years doubledown amplifies gains; in choppy years reentry erodes the primary edge.
 
-| Year | Config | P&L | Return on avg deployed | Mean RODC | DW-Sharpe |
+### Fixed-Alloc + Reversal Only (no doubledown)
+
+| Year | Config | P&L | Avg deployed | Mean RODC | DW-Sharpe |
 |---|---|---|---|---|---|
-| 2022 | Fixed-alloc | +$14,601 | +52.2% on avg $28k | +0.196% | 5.38 |
-| 2022 | Fixed-alloc + reversal | +$14,028 | +30.5% on avg $46k | +0.165% | 3.26 |
-| 2025 | Fixed-alloc | +$13,195 | +54.2% on avg $24k | +0.232% | 6.08 |
-| 2025 | Fixed-alloc + reversal | +$14,508 | +38.2% on avg $38k | +0.179% | 3.33 |
-| 2026 YTD | Fixed-alloc | +$5,780 | +22.9% on avg $25k | +0.254% | 5.76 |
-| 2026 YTD | Fixed-alloc + reversal | +$4,246 | +10.6% on avg $40k | +0.153% | 2.92 |
+| 2022 | Fixed-alloc, no sub-legs | +$14,601 | $28k | +0.196% | 5.38 |
+| 2022 | Fixed-alloc + reversal | +$14,028 | $46k | +0.165% | 3.26 |
+| 2025 | Fixed-alloc, no sub-legs | +$13,195 | $24k | +0.232% | 6.08 |
+| 2025 | Fixed-alloc + reversal | +$14,508 | $38k | +0.179% | 3.33 |
+| 2026 YTD | Fixed-alloc, no sub-legs | +$5,780 | $25k | +0.254% | 5.76 |
+| 2026 YTD | Fixed-alloc + reversal | +$4,246 | $40k | +0.153% | 2.92 |
 
-Reversal/reentry increases deployment (more capital at work) but cuts RODC and DW-Sharpe every year. The regime-hold filter already selects the clean momentum days — re-entering after a reversal adds noise, not edge.
+Reversal/reentry consistently cuts RODC and DW-Sharpe. The regime-hold filter already selects clean momentum days — re-entering after a reversal adds noise, not edge.
+
+### Fixed-Alloc + Reversal + Doubledown — Per-Leg Breakdown
+
+| Year | Leg | Trades | Win rate | P&L | Notes |
+|---|---|---|---|---|---|
+| 2024 | Primary | 475 | 57.1% | +$13,681 | Identical to no-sub-leg baseline |
+| 2024 | Reentry | 229 | 43.2% | +$983 | Small positive |
+| 2024 | Doubledown | 64 | 34.4% | **+$14,767** | Trending year — DD nearly doubles total |
+| 2024 | **All** | **768** | | **+$29,429** | +115% vs primary alone |
+| 2026 YTD | Primary | 242 | 57.9% | +$5,780 | Identical to no-sub-leg baseline |
+| 2026 YTD | Reentry | 142 | 38.7% | **-$1,534** | Choppy year — reentry loses money |
+| 2026 YTD | Doubledown | 0 | — | $0 | Not triggered in this run |
+| 2026 YTD | **All** | **384** | | **+$4,246** | -27% vs primary alone |
+
+### Cross-year Sub-leg Summary (fixed-alloc $80k capital)
+
+| Year | Primary P&L | Reentry contrib | DD contrib | Total w/ sub-legs | RODC w/ sub-legs | DW-Sharpe w/ sub-legs |
+|---|---|---|---|---|---|---|
+| 2024 | +$13,681 | +$983 | +$14,767 | **+$29,429** | +0.434% | 2.84 |
+| 2026 YTD | +$5,780 | -$1,534 | $0 | **+$4,246** | +0.153% | 2.92 |
+
+### Old $10k Rank-weighted Runs (for reference — different capital model)
+
+These are from the original `replay_YYYY_stock_m1_winrate_nostop/` and `_regimehold/` runs at $10k total capital with rank-weighted sizing:
+
+| Year | Config | Primary | Reentry | DD | Total | RODC | DW-Sharpe |
+|---|---|---|---|---|---|---|---|
+| 2024 | nostop $10k | +$5,858 | +$156 | +$1,626 | +$7,640 | +0.269% | 4.86 |
+| 2024 | regimehold $10k | +$5,710 | +$265 | +$1,954 | +$7,929 | +0.279% | 5.33 |
+| 2025 | nostop $10k | +$5,143 | +$953 | +$1,065 | +$7,161 | — | 4.10 |
+| 2025 | regimehold $10k | +$4,917 | +$962 | +$1,278 | +$7,158 | — | — |
+
+At $10k capital: RODC is identical to $80k fixed-alloc (+0.280% for 2024), confirming the per-signal edge is capital-scale independent. DD contributed +30–39% of primary P&L in these runs.
+
+**Key findings:**
+- **Primary P&L is always identical** regardless of sub-leg config — sub-legs never interfere with primary signal execution
+- **Doubledown is year-regime dependent**: trending year (2024) → DD wins big at low WR (34%) because large moves continue; choppy year (2026) → DD doesn't even trigger
+- **Reentry is consistently low WR (38–45%)** and negative in 2026; small positive in 2024 only because the trend direction held after reversal
+- **DW-Sharpe always drops with sub-legs** (5.72→2.84 in 2024, 5.76→2.92 in 2026) — sub-legs add variance even when net P&L improves
+- **Rule of thumb**: use sub-legs only if confident the year will be strongly trending; regime-hold alone is the more consistent baseline
 
 ---
 
