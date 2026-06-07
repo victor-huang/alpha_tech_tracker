@@ -30,10 +30,41 @@ additionally:
   → suppress ticker from selection until either WR recovers
 ```
 
+### Feature Flag
+
+The change is gated behind a CLI flag. Default is **off** — no behavior change to anything currently running.
+
+```bash
+--direction-aware-scoring
+```
+
+**Why a flag (not a direct change):**
+- Existing backtest logs were generated with overall-WR ranking. Changing the engine without a flag would make those logs non-reproducible — re-running a past date would produce different selections.
+- The verification plan requires side-by-side runs of both configs on the same years. That only works if both modes coexist in the same binary.
+- Live trading: paper-trade with the flag for several weeks before switching production.
+
+**Log suffix convention:** when `--direction-aware-scoring` is active the replay script appends `_diraware` to the log directory name — consistent with existing suffixes (`_fixedalloc`, `_reversal`, `_dd`).
+
+```bash
+# baseline (existing behavior)
+logs/replay_2024_stock_m1_winrate_regimehold_cap80k_fixedalloc/
+
+# direction-aware (new)
+logs/replay_2024_stock_m1_winrate_regimehold_cap80k_fixedalloc_diraware/
+```
+
+**Graduation criteria** — flag becomes the new default (and eventually deprecated) when:
+1. All verification steps in this doc pass
+2. At least 3 years of backtest show P&L ≥ baseline with no DW-Sharpe regression
+3. At least 4 weeks of paper trading show LONG-day and SHORT-day primary WR both ≥ baseline
+
+Until graduation, `--direction-aware-scoring` must be explicitly passed. After graduation, `--no-direction-aware-scoring` becomes the opt-out for reproducibility of old runs.
+
 ### Files likely to change
 - `op_momentum_selector_backtest.py` — win-rate ranking logic
-- `op_momentum_trade_engine.py` — pre-market ticker selection
-- Possibly `signal_engine.py` — needs to track bull/bear WR separately
+- `op_momentum_trade_engine.py` — pre-market ticker selection, flag wiring
+- `run_replay_m1_winrate_regimehold_cap80k.sh` — `--direction-aware-scoring` passthrough + `_diraware` log suffix
+- Possibly `signal_engine.py` — needs to track bull/bear WR separately per ticker
 
 ---
 
