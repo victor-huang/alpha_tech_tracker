@@ -326,17 +326,15 @@ python -m alpha_tech_tracker.op_momentum_strategy.ma_open_range_momentum_screene
 
 No `--lookback-days` flag needed — default is now 60, matching the live engine (`ROLLING_LOOKBACK_DAYS = 60`).
 
-### May 2026 parity
+### Parity results
 
-| | Total P&L |
-|---|---|
-| Fast BT | +$2,025.34 |
-| Replay | +$2,055.47 |
-| **Gap** | **-$30.13** |
+| Month | Fast BT | Replay | Gap | Max single-day gap |
+|---|---|---|---|---|
+| Jan 2026 | +$33.87 | +$34.57 | -$0.70 | < $0.50 (all 20 days) |
+| Feb 2026 | +$1,264.58 | +$1,264.29 | +$0.29 | < $0.50 (all 19 days) |
+| May 2026 | +$2,025.34 | +$2,055.47 | -$30.13 | -$29.88 (5/26 SNPS direct-entry) |
 
-Day-by-day: 18/20 days match within cents. The two exceptions:
-- **5/26**: Replay +$29.88 (SNPS direct-entry), fast BT $0.00 — structural diff, accepted
-- **5/27**: -$0.10 rounding from fractional shares in replay
+Jan and Feb: all per-day differences are fractional-share rounding noise (< $0.50). The only material gap across all three months is the accepted SNPS direct-entry structural diff on 5/26.
 
 ### Key fixes applied during calibration
 
