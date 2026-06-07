@@ -9,6 +9,8 @@
 #   ./run_replay_m1_winrate_regimehold_cap80k.sh --year 2026 --summary
 #   ./run_replay_m1_winrate_regimehold_cap80k.sh --year 2026 --force
 #   ./run_replay_m1_winrate_regimehold_cap80k.sh --year 2026 --extend-collection-bars 2
+#   ./run_replay_m1_winrate_regimehold_cap80k.sh --year 2016 --fixed-signal-alloc --warmup
+#   ./run_replay_m1_winrate_regimehold_cap80k.sh --year 2016 --fixed-signal-alloc --month 3
 
 set -euo pipefail
 
@@ -24,6 +26,8 @@ EXTEND_COLLECTION_BARS=2
 STOP_PCT=0
 FIXED_SIGNAL_ALLOC=false
 REVERSAL=false
+MONTH=""       # 1-12: restrict replay to a single calendar month; sets MAX_PARALLEL=1
+WARMUP=false   # run only the first trading day of each month (2 parallel streams)
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -35,14 +39,19 @@ while [ $# -gt 0 ]; do
     --reversal)               REVERSAL=true;                shift ;;
     --summary)                SUMMARY_ONLY=true;             shift ;;
     --force)                  FORCE=true;                    shift ;;
+    --month)                  MONTH="$2";                   shift 2 ;;
+    --warmup)                 WARMUP=true;                  shift ;;
     *) echo "Unknown arg: $1"; exit 1 ;;
   esac
 done
 
 if [ -z "$YEAR" ]; then
-  echo "Usage: $0 --year YYYY [--summary] [--force] [--feed sip|iex] [--extend-collection-bars N] [--stop-pct N] [--fixed-signal-alloc] [--reversal]"
+  echo "Usage: $0 --year YYYY [--summary] [--force] [--feed sip|iex] [--extend-collection-bars N] [--stop-pct N] [--fixed-signal-alloc] [--reversal] [--month 1-12] [--warmup]"
   exit 1
 fi
+
+# When running a single month, caller manages parallelism — run days sequentially
+[ -n "$MONTH" ] && MAX_PARALLEL=1
 
 LOG_SUFFIX=""
 [ "$EXTEND_COLLECTION_BARS" -ne 2 ] && LOG_SUFFIX="${LOG_SUFFIX}_ecb${EXTEND_COLLECTION_BARS}"
@@ -52,7 +61,7 @@ $REVERSAL && LOG_SUFFIX="${LOG_SUFFIX}_reversal"
 LOG_DIR="$BASE_LOG_DIR/replay_${YEAR}_stock_m1_winrate_regimehold_cap80k${LOG_SUFFIX}"
 
 # ---------------------------------------------------------------------------
-# Generate trading days for YEAR via Python (NYSE holidays 2018-2026)
+# Generate trading days for YEAR via Python (NYSE holidays 2015-2026)
 # ---------------------------------------------------------------------------
 generate_trading_days() {
   python3 -c "
@@ -62,6 +71,15 @@ year = int('$YEAR')
 today = date.today()
 
 holidays = {
+    date(2015,1,1), date(2015,1,19), date(2015,2,16),
+    date(2015,4,3), date(2015,5,25), date(2015,7,3),
+    date(2015,9,7), date(2015,11,26), date(2015,12,25),
+    date(2016,1,1), date(2016,1,18), date(2016,2,15),
+    date(2016,3,25), date(2016,5,30), date(2016,7,4),
+    date(2016,9,5), date(2016,11,24), date(2016,12,26),
+    date(2017,1,2), date(2017,1,16), date(2017,2,20),
+    date(2017,4,14), date(2017,5,29), date(2017,7,4),
+    date(2017,9,4), date(2017,11,23), date(2017,12,25),
     date(2018,1,1), date(2018,1,15), date(2018,2,19),
     date(2018,3,30), date(2018,5,28), date(2018,7,4),
     date(2018,9,3), date(2018,11,22), date(2018,12,25),
@@ -264,6 +282,90 @@ while IFS= read -r line; do
   ALL_DATES+=("$line")
 done < <(generate_trading_days)
 
+# Filter to a single month if --month was given
+if [ -n "$MONTH" ]; then
+  MONTH_PADDED=$(printf "%02d" "$MONTH")
+  FILTERED=()
+  for D in "${ALL_DATES[@]}"; do
+    [ "${D:5:2}" = "$MONTH_PADDED" ] && FILTERED+=("$D")
+  done
+  ALL_DATES=("${FILTERED[@]}")
+fi
+
+echo ""
+RUN_LABEL=" | stop=${STOP_PCT}"
+[ "$EXTEND_COLLECTION_BARS" -ne 2 ] && RUN_LABEL="${RUN_LABEL} | ecb=${EXTEND_COLLECTION_BARS}"
+$FIXED_SIGNAL_ALLOC && RUN_LABEL="${RUN_LABEL} | fixed-signal-alloc"
+$REVERSAL && RUN_LABEL="${RUN_LABEL} | reversal+reentry"
+[ -n "$MONTH" ] && RUN_LABEL="${RUN_LABEL} | month=${MONTH}"
+$WARMUP && RUN_LABEL="${RUN_LABEL} | warmup"
+echo "=== $YEAR replay — M1 win-rate | regime-hold | top8 | \$${CAPITAL}${RUN_LABEL} ==="
+echo "    NO reversal / NO reentry / NO doubledown"
+echo "    Total trading days : ${#ALL_DATES[@]}"
+echo "    Max parallel       : $MAX_PARALLEL"
+echo "    Log dir            : $LOG_DIR"
+echo ""
+
+# ---------------------------------------------------------------------------
+# Warmup mode: run first trading day of each month in two parallel streams
+#   Forward stream  : Jan → Jun  (sequential)
+#   Backward stream : Dec → Jul  (sequential)
+# ---------------------------------------------------------------------------
+if $WARMUP; then
+  declare -A MONTH_FIRST
+  for D in "${ALL_DATES[@]}"; do
+    M="${D:5:2}"
+    [ -z "${MONTH_FIRST[$M]+x}" ] && MONTH_FIRST[$M]="$D"
+  done
+
+  MONTHS_SORTED=($(for k in "${!MONTH_FIRST[@]}"; do echo "$k"; done | sort))
+  N=${#MONTHS_SORTED[@]}
+  HALF=$(( N / 2 ))
+
+  FORWARD=("${MONTHS_SORTED[@]:0:$HALF}")
+  BACKWARD=()
+  for (( i=N-1; i>=HALF; i-- )); do
+    BACKWARD+=("${MONTHS_SORTED[$i]}")
+  done
+
+  echo "=== WARMUP: first trading day per month ==="
+  for M in "${FORWARD[@]}"; do printf "  fwd %s\n" "${MONTH_FIRST[$M]}"; done
+  for M in "${BACKWARD[@]}"; do printf "  bwd %s\n" "${MONTH_FIRST[$M]}"; done
+  echo ""
+
+  (
+    for M in "${FORWARD[@]}"; do
+      D="${MONTH_FIRST[$M]}"
+      if $FORCE || [ ! -f "$LOG_DIR/$D.log" ]; then
+        echo "  [fwd] running $D"
+        replay_one "$D" && echo "  [fwd] OK $D" || echo "  [fwd] ERR $D"
+      else
+        echo "  [fwd] skip $D (cached)"
+      fi
+    done
+  ) &
+  FWD_PID=$!
+
+  (
+    for M in "${BACKWARD[@]}"; do
+      D="${MONTH_FIRST[$M]}"
+      if $FORCE || [ ! -f "$LOG_DIR/$D.log" ]; then
+        echo "  [bwd] running $D"
+        replay_one "$D" && echo "  [bwd] OK $D" || echo "  [bwd] ERR $D"
+      else
+        echo "  [bwd] skip $D (cached)"
+      fi
+    done
+  ) &
+  BWD_PID=$!
+
+  wait $FWD_PID
+  wait $BWD_PID
+  echo ""
+  echo "=== WARMUP complete — run without --warmup to replay remaining days ==="
+  exit 0
+fi
+
 TODO=()
 for DATE in "${ALL_DATES[@]}"; do
   if $FORCE || [ ! -f "$LOG_DIR/$DATE.log" ]; then
@@ -273,17 +375,7 @@ for DATE in "${ALL_DATES[@]}"; do
   fi
 done
 
-echo ""
-RUN_LABEL=" | stop=${STOP_PCT}"
-[ "$EXTEND_COLLECTION_BARS" -ne 2 ] && RUN_LABEL="${RUN_LABEL} | ecb=${EXTEND_COLLECTION_BARS}"
-$FIXED_SIGNAL_ALLOC && RUN_LABEL="${RUN_LABEL} | fixed-signal-alloc"
-$REVERSAL && RUN_LABEL="${RUN_LABEL} | reversal+reentry"
-echo "=== $YEAR replay — M1 win-rate | regime-hold | top8 | \$${CAPITAL}${RUN_LABEL} ==="
-echo "    NO reversal / NO reentry / NO doubledown"
-echo "    Total trading days : ${#ALL_DATES[@]}"
 echo "    To run             : ${#TODO[@]}"
-echo "    Max parallel       : $MAX_PARALLEL"
-echo "    Log dir            : $LOG_DIR"
 echo ""
 
 if [ ${#TODO[@]} -eq 0 ]; then

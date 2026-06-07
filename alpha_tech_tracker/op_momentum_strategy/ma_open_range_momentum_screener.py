@@ -7,7 +7,7 @@ import signal
 import statistics
 import sys
 import time
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time as _dt_time, timedelta
 from typing import Optional
 
 import pandas as pd
@@ -1452,6 +1452,420 @@ def _screener_log_file():
     return os.path.join(_LOG_DIR, f"ma_or_screener_{date.today()}.log")
 
 
+# ─── Fast Win-Rate Selector Backtest ─────────────────────────────────────────
+
+
+def _winrate_signal_day(ticker, df, day, or_start_time, or_bars, collection_bars, vol_20day_avg,
+                        _day_df=None):
+    """
+    Scan one ticker for one trading day. Returns (signal, entry_price) or (None, None).
+
+    Mirrors signal_engine._try_fire_win_rate_signal() exactly:
+      BULLISH: close > OR_mid AND col_vol > vol_20day_avg AND any MA in [OR_low, OR_high]
+      BEARISH: close < OR_mid AND col_vol < vol_20day_avg AND close < MA20
+               AND (MA200 missing OR close < MA200) AND any MA in [OR_low, OR_high]
+
+    Fires on the first qualifying bar in the collection window (no lookahead).
+    col_vol is the incremental mean of volumes seen so far in the collection window,
+    matching the live engine's cbuf accumulation.
+
+    _day_df: pre-computed day slice to avoid repeated date filtering (optional, for perf).
+    """
+    day_df = _day_df if _day_df is not None else df[df.index.date == day]
+    if day_df is None or day_df.empty:
+        return None, None
+
+    from_or = day_df[day_df.index.time >= or_start_time]
+    if len(from_or) < or_bars:
+        return None, None
+
+    or_window = from_or.iloc[:or_bars]
+    or_high = float(or_window["High"].max())
+    or_low = float(or_window["Low"].min())
+    or_range = or_high - or_low
+    if or_range == 0:
+        return None, None
+    or_mid = (or_high + or_low) / 2.0
+
+    # Collection window: last OR bar (index or_bars-1) + (collection_bars-1) extension bars
+    scan_bars = from_or.iloc[or_bars - 1: or_bars - 1 + collection_bars]
+    if scan_bars.empty:
+        return None, None
+
+    for i in range(len(scan_bars)):
+        bar = scan_bars.iloc[i]
+        col_vol = float(scan_bars.iloc[: i + 1]["Volume"].mean())
+        close = float(bar["Close"])
+        ma20 = bar.get("MA20")
+        ma50 = bar.get("MA50")
+        ma200 = bar.get("MA200")
+
+        if pd.isna(ma20):
+            continue
+
+        overlapping_mas = [
+            name
+            for name, val in [("MA20", ma20), ("MA50", ma50), ("MA200", ma200)]
+            if not pd.isna(val) and or_low <= float(val) <= or_high
+        ]
+        if not overlapping_mas:
+            continue
+
+        bull = close > or_mid and col_vol > vol_20day_avg
+        ma200_f = float(ma200) if not pd.isna(ma200) else None
+        bear = (
+            close < or_mid
+            and col_vol < vol_20day_avg
+            and close < float(ma20)
+            and (ma200_f is None or close < ma200_f)
+        )
+
+        if not bull and not bear:
+            continue
+
+        return ("BULLISH" if bull else "BEARISH"), close
+
+    return None, None
+
+
+def _winrate_exit_with_fallback(day_df, signal, or_high, or_low, or_range, entry_bar_idx):
+    """
+    Compute the exit price for a trade, mirroring PositionMonitor with stop_pct=0.
+
+    With stop_pct=0:
+      bull_hard_stop  = or_high   (arms when close > or_high)
+      bull_fallback   = or_high - 0.20 × or_range  (fires when not armed and close <= fallback)
+      bear_hard_stop  = or_low    (arms when close < or_low)
+      bear_fallback   = or_low + 0.20 × or_range   (fires when not armed and close >= fallback)
+
+    Scans bars from entry_bar_idx+1 onwards. Returns the exit price (override or last close).
+    """
+    if signal == "BULLISH":
+        hard_stop = or_high
+        fallback_price = or_high - 0.20 * or_range
+    else:
+        hard_stop = or_low
+        fallback_price = or_low + 0.20 * or_range
+
+    # Exclude the 15:55 bar — replay's BarReplayDriver uses strict < 15:55 cutoff,
+    # so position_monitor.close_all() exits at the 15:50 bar close, not 15:55.
+    eod_df = day_df[day_df.index.time < _dt_time(15, 55)]
+    bars_after = eod_df.iloc[entry_bar_idx + 1:]
+    hard_stop_armed = False
+
+    for i in range(len(bars_after)):
+        bar = bars_after.iloc[i]
+        close = float(bar["Close"])
+        bar_open = float(bar["Open"])
+        bar_high = float(bar["High"])
+        bar_low = float(bar["Low"])
+
+        if signal == "BULLISH":
+            if not hard_stop_armed and close > hard_stop:
+                hard_stop_armed = True
+            if hard_stop_armed and close <= hard_stop:
+                # Hard stop: price broke above OR_high then came back to it.
+                # Override: exit at hard_stop if bar reached it, else bar_open.
+                return hard_stop if bar_high >= hard_stop else bar_open
+            elif not hard_stop_armed and close <= fallback_price:
+                # Fallback: price dropped adversely to/below fallback level.
+                # Override: exit at fallback if bar's high reached fallback (gapped through),
+                # else exit at close (bar opened and stayed below fallback, no better fill).
+                return fallback_price if bar_high >= fallback_price else close
+        else:  # BEARISH
+            if not hard_stop_armed and close < hard_stop:
+                hard_stop_armed = True
+            if hard_stop_armed and close >= hard_stop:
+                # Hard stop: price broke below OR_low then bounced back to it.
+                return hard_stop if bar_low <= hard_stop else bar_open
+            elif not hard_stop_armed and close >= fallback_price:
+                # Fallback: price bounced adversely to/above fallback level.
+                # Override: exit at fallback if bar's low reached it (gapped through),
+                # else exit at bar_open (bar opened above fallback, fill at open).
+                return fallback_price if bar_low <= fallback_price else bar_open
+
+    return float(eod_df.iloc[-1]["Close"])
+
+
+def run_winrate_selector_backtest(
+    tickers,
+    start_date,
+    end_date,
+    or_start=_DEFAULT_OR_START,
+    or_bars=_DEFAULT_OR_BARS,
+    collection_bars=3,
+    top_n=8,
+    capital=80_000.0,
+    feed="sip",
+    lookback_days=60,
+    use_regime_engine=True,
+    verbose=False,
+):
+    """
+    Fast in-process backtest mirroring the win-rate selector + regime-hold strategy.
+
+    Replaces the per-day replay process approach. Loads all bars once, then loops
+    over trading days computing pre-session rankings, regime direction, OR signals,
+    and EOD P&L in a single Python process.
+
+    Assumes: regime-hold (EOD exit), stop-pct=0, trailing-ma=none.
+    Mirrors: WinRateTickerSelector, signal_engine._try_fire_win_rate_signal, RegimeEngine.
+    """
+    from .regime_engine import RegimeEngine
+
+    effective_feed = DataFeed.SIP if feed == "sip" else DataFeed.IEX
+    warmup_start = start_date - timedelta(days=lookback_days + 30)
+    all_tickers_fetch = list(tickers) + (["QQQ"] if "QQQ" not in list(tickers) else [])
+
+    print(f"Loading bars {warmup_start} → {end_date} for {len(all_tickers_fetch)} tickers ...")
+    bars_raw = fetch_bars(all_tickers_fetch, warmup_start, end_date, "alpaca", feed=effective_feed)
+    bars_5m = {t: _add_ma_columns(df) for t, df in bars_raw.items() if not df.empty}
+
+    ticker_bars = {t: df for t, df in bars_5m.items() if t != "QQQ"}
+    or_start_time = datetime.strptime(or_start, "%H:%M").time()
+
+    # Pre-group bars by date for O(1) day slicing (avoids repeated df.index.date == day scans).
+    ticker_day_groups = {}
+    for t, df in ticker_bars.items():
+        groups = {}
+        for d, grp in df.groupby(df.index.date):
+            groups[d] = grp
+        ticker_day_groups[t] = groups
+
+    trading_days = sorted({
+        d
+        for t_groups in ticker_day_groups.values()
+        for d in t_groups
+        if start_date <= d <= end_date
+    })
+    if not trading_days:
+        print("No trading days found in range.")
+        return {}
+
+    print(f"Simulating {len(trading_days)} trading days ...")
+
+    regime_engine_obj = RegimeEngine() if use_regime_engine else None
+    daily_results = []
+
+    for day_idx, day in enumerate(trading_days):
+        # Mirror WinRateTickerSelector.fetch_bars() exactly:
+        #   fetch_start = today - (lookback_days + 5)
+        #   _trim_bars_to_range adds 7 extra days (= _CACHE_WARMUP_DAYS) before that start.
+        # Net effective window: today - (lookback_days + 5 + 7) = today - (lookback_days + 12).
+        ranking_window_start = day - timedelta(days=lookback_days + 5 + 7)
+        ticker_bars_window = {
+            t: df[df.index.date >= ranking_window_start]
+            for t, df in ticker_bars.items()
+        }
+        ranked = _rank_tickers_by_eod_win_rate(
+            ticker_bars_window, day, or_start, or_bars, lookback_days
+        )
+
+        if regime_engine_obj is not None:
+            prev_day = trading_days[day_idx - 1] if day_idx > 0 else None
+            if prev_day is not None:
+                regime_engine_obj.compute_and_add_metrics(
+                    bars_5m, prev_day, or_start, or_bars, collection_bars
+                )
+            # Match live engine: trade_engine.py calls get_current_regime(as_of_date=today)
+            # with no presession_top2_wr. Passing it would trigger a pre-session NEUTRAL→LONG
+            # override that the live engine never applies.
+            regime = regime_engine_obj.get_current_regime(as_of_date=day)
+            direction = regime.direction
+        else:
+            direction = "LONG"
+
+        if direction in ("NO_POSITION", "CAUTION"):
+            daily_results.append({"date": day, "pnl": 0.0, "deployed": 0.0, "trades": []})
+            continue
+
+        if direction == "SHORT":
+            picks = [t for t, _ in list(reversed(ranked[-top_n:]))]
+        else:
+            picks = [t for t, _ in ranked[:top_n]]
+
+        trades = []
+        for ticker in picks:
+            df = ticker_bars.get(ticker)
+            if df is None:
+                continue
+
+            # Use 20-day vol lookback, matching signal_engine._compute_collection_vol_20day_avg default.
+            vol_avg = _compute_collection_vol_20day_avg(
+                df, or_start_time, or_bars, collection_bars, day
+            )
+            if vol_avg is None:
+                continue
+
+            day_df = ticker_day_groups.get(ticker, {}).get(day)
+            if day_df is None or day_df.empty:
+                continue
+
+            from_or = day_df[day_df.index.time >= or_start_time]
+            if len(from_or) < or_bars:
+                continue
+
+            # Compute OR range once (reused for signal detection and fallback stop).
+            or_window = from_or.iloc[:or_bars]
+            or_h = float(or_window["High"].max())
+            or_l = float(or_window["Low"].min())
+            or_r = or_h - or_l
+            if or_r == 0:
+                continue
+
+            signal, entry_price = _winrate_signal_day(
+                ticker, df, day, or_start_time, or_bars, collection_bars, vol_avg,
+                _day_df=day_df,
+            )
+            if signal is None:
+                continue
+
+            if direction == "LONG" and signal == "BEARISH":
+                continue
+            if direction == "SHORT" and signal == "BULLISH":
+                continue
+
+            # Find entry bar position in day_df without get_loc (O(log n) searchsorted).
+            scan_bars = from_or.iloc[or_bars - 1: or_bars - 1 + collection_bars]
+            entry_scan_idx = 0
+            for si in range(len(scan_bars)):
+                if abs(float(scan_bars.iloc[si]["Close"]) - entry_price) < 1e-6:
+                    entry_scan_idx = si
+                    break
+            from_or_start = int(day_df.index.searchsorted(from_or.index[0]))
+            entry_abs_idx = from_or_start + (or_bars - 1) + entry_scan_idx
+
+            # Apply fallback_20pct stop (always active, mirrors PositionMonitor with stop_pct=0).
+            exit_price = _winrate_exit_with_fallback(
+                day_df, signal, or_h, or_l, or_r, entry_abs_idx
+            )
+
+            trades.append({
+                "ticker": ticker,
+                "signal": signal,
+                "entry_price": entry_price,
+                "exit_price": exit_price,
+            })
+
+        if not trades:
+            daily_results.append({"date": day, "pnl": 0.0, "deployed": 0.0, "trades": []})
+            continue
+
+        # Mirror --fixed-signal-alloc: each slot always gets capital/top_n regardless
+        # of how many signals fired. If only 3 of 8 picks fire, each still gets capital/8.
+        slot_capital = capital / top_n
+        day_pnl = 0.0
+        for trade in trades:
+            sign = 1 if trade["signal"] == "BULLISH" else -1
+            pnl = (
+                (trade["exit_price"] - trade["entry_price"])
+                / trade["entry_price"]
+                * slot_capital
+                * sign
+            )
+            trade["pnl"] = pnl
+            trade["slot_capital"] = slot_capital
+            day_pnl += pnl
+
+        daily_results.append({
+            "date": day,
+            "pnl": day_pnl,
+            "deployed": slot_capital * len(trades),
+            "trades": trades,
+        })
+
+    _print_winrate_backtest_summary(
+        daily_results, capital, list(tickers),
+        or_start, or_bars, collection_bars, top_n,
+        start_date, end_date, verbose,
+    )
+    return {"daily": daily_results}
+
+
+def _print_winrate_backtest_summary(
+    daily_results, capital, tickers,
+    or_start, or_bars, collection_bars, top_n,
+    start_date, end_date, verbose,
+):
+    month_names = [
+        "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+        "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+    ]
+
+    months = {}
+    total_deployed = 0.0
+    trade_days = 0
+    for r in daily_results:
+        day = r["date"]
+        mkey = f"{day.year}-{day.month:02d}"
+        months[mkey] = months.get(mkey, 0.0) + r["pnl"]
+        total_deployed += r["deployed"]
+        if r["trades"]:
+            trade_days += 1
+
+    total_days = len(daily_results)
+    total_pnl = sum(r["pnl"] for r in daily_results)
+    avg_dep = total_deployed / total_days if total_days else 0.0
+    util = total_deployed / (total_days * capital) if total_days and capital else 0.0
+
+    ticker_preview = " ".join(tickers[:6])
+    if len(tickers) > 6:
+        ticker_preview += f" +{len(tickers) - 6} more"
+
+    print()
+    print("╔══ Win-Rate Selector Backtest ══════════════════════════════════════")
+    print(f"║  Pool     : {ticker_preview}  ({len(tickers)} tickers)")
+    print(f"║  Config   : {or_start}/{or_bars}b  collect={collection_bars}  top-{top_n}  ${capital:,.0f}  feed=sip")
+    print(f"║  Period   : {start_date} → {end_date}  ({total_days} trading days)")
+    print("╠══ MONTHLY ══════════════════════════════════════════════════════════")
+    for mkey in sorted(months.keys()):
+        mp = months[mkey]
+        sign = "+" if mp >= 0 else ""
+        m_idx = int(mkey.split("-")[1]) - 1
+        yr = mkey.split("-")[0]
+        print(f"║  {month_names[m_idx]} {yr}   {sign}${mp:>10,.2f}   ({sign}{mp / capital * 100:.1f}%)")
+
+    days_with_dep = [(r["pnl"], r["deployed"]) for r in daily_results if r["deployed"] > 0]
+    rodc_str = "n/a"
+    dw_sharpe_str = "n/a"
+    if days_with_dep:
+        rodcs = [p / d for p, d in days_with_dep]
+        rodc_str = f"{sum(rodcs) / len(rodcs) * 100:+.3f}%"
+        if len(days_with_dep) >= 2:
+            deps = [d for _, d in days_with_dep]
+            avg_d = sum(deps) / len(deps)
+            w = [d / avg_d for d in deps]
+            w_sum = sum(w)
+            w_mean = sum(wi * ri for wi, ri in zip(w, rodcs)) / w_sum
+            w_var = sum(wi * (ri - w_mean) ** 2 for wi, ri in zip(w, rodcs)) / w_sum
+            w_std = math.sqrt(w_var) if w_var > 0 else 0.0
+            if w_std > 0:
+                dw_sharpe_str = f"{w_mean / w_std * math.sqrt(252):.2f}"
+
+    sign = "+" if total_pnl >= 0 else ""
+    print("╠══ SUMMARY ══════════════════════════════════════════════════════════")
+    print(f"║  Total       {total_days}d   {sign}${total_pnl:>10,.2f}   ({sign}{total_pnl / capital * 100:.1f}% on ${capital:,.0f})")
+    print(f"║  Trade days  {trade_days} / {total_days}  ({trade_days / total_days * 100:.0f}%)")
+    print(f"║  Avg deployed   ${avg_dep:>10,.0f}  |  util {util * 100:.1f}%")
+    print(f"║  Mean RODC      {rodc_str}")
+    print(f"║  DW-Sharpe      {dw_sharpe_str}")
+    print("╚════════════════════════════════════════════════════════════════════")
+
+    if verbose:
+        print()
+        print("── DAILY ──────────────────────────────────────────────────────────")
+        for r in daily_results:
+            pnl = r["pnl"]
+            tickers_str = " ".join(t["ticker"] for t in r["trades"]) if r["trades"] else "—"
+            day_name = r["date"].strftime("%a")
+            sign2 = "+" if pnl >= 0 else ""
+            print(
+                f"  {r['date']} {day_name}"
+                f"  [{tickers_str:<32}]"
+                f"  {sign2}${pnl:>9,.2f}"
+            )
+
+
 def _make_log_handler(log_file):
     import re
     handler = logging.handlers.TimedRotatingFileHandler(
@@ -1580,10 +1994,11 @@ def _build_arg_parser():
         "action",
         nargs="?",
         default="backtest",
-        choices=["run", "start", "stop", "status", "restart", "logs", "backtest", "analyze"],
+        choices=["run", "start", "stop", "status", "restart", "logs", "backtest", "analyze", "winrate-backtest"],
         help=(
             "run: live foreground | start: live daemon | stop | status | restart | "
-            "logs: tail the log file | backtest: single-date backtest (default) | analyze: date-range analysis"
+            "logs: tail the log file | backtest: single-date backtest (default) | "
+            "analyze: date-range analysis | winrate-backtest: fast multi-day win-rate selector backtest"
         ),
     )
     parser.add_argument(
@@ -1654,6 +2069,27 @@ def _build_arg_parser():
         "--log-level", default="INFO",
         choices=["DEBUG", "INFO", "WARNING", "ERROR"],
         help="Log level (default: INFO)"
+    )
+    # ── winrate-backtest args ──────────────────────────────────────────────────
+    parser.add_argument(
+        "--top", type=int, default=8,
+        help="Top-N tickers to select per day in winrate-backtest (default: 8)"
+    )
+    parser.add_argument(
+        "--capital", type=float, default=80_000.0,
+        help="Daily capital in winrate-backtest (default: 80000)"
+    )
+    parser.add_argument(
+        "--lookback-days", type=int, default=60, dest="lookback_days",
+        help="EOD win-rate ranking lookback in trading days (default: 60)"
+    )
+    parser.add_argument(
+        "--no-regime", action="store_true", dest="no_regime",
+        help="Disable RegimeEngine direction filter in winrate-backtest"
+    )
+    parser.add_argument(
+        "--verbose", action="store_true",
+        help="Print per-day trade table in winrate-backtest output"
     )
     return parser
 
@@ -1741,6 +2177,27 @@ def main():
         finally:
             _remove_pid(args.pid_file)
         sys.exit(0)
+
+    # ── winrate-backtest ──────────────────────────────────────────────────────
+    if args.action == "winrate-backtest":
+        if not args.start or not args.end:
+            print("winrate-backtest requires --start and --end")
+            sys.exit(1)
+        run_winrate_selector_backtest(
+            tickers=tickers,
+            start_date=date.fromisoformat(args.start),
+            end_date=date.fromisoformat(args.end),
+            or_start=args.or_start,
+            or_bars=args.or_bars,
+            collection_bars=args.collection_bars,
+            top_n=args.top,
+            capital=args.capital,
+            feed=args.feed,
+            lookback_days=args.lookback_days,
+            use_regime_engine=not args.no_regime,
+            verbose=args.verbose,
+        )
+        return
 
     # ── analyze (date-range) ──────────────────────────────────────────────────
     if args.action == "analyze" or (args.start and args.end):

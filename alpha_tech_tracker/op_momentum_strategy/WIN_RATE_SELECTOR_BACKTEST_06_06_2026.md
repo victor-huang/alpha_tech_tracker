@@ -32,6 +32,7 @@ Tickers: `SNDK APP META SNOW SNPS SPOT MU LLY MRVL CRWD QCOM PLTR CHTR TSLA AVGO
 
 | Year | Days | P&L | Return on avg deployed | Committed % | Avg deployed | Mean RODC | DW-Sharpe |
 |---|---|---|---|---|---|---|---|
+| 2017 | 223 | +$5,053 | +18.6% | +6.3% | $27,130 | +0.086% | 5.49 |
 | 2018 | 209 | +$11,032 | +43.8% | +13.8% | $25,215 | +0.197% | 5.87 |
 | 2019 | 206 | +$9,657 | +39.6% | +12.1% | $24,417 | +0.186% | 6.68 |
 | 2020 | 205 | +$9,563 | +39.4% | +12.0% | $24,244 | +0.179% | 5.15 |
@@ -41,13 +42,24 @@ Tickers: `SNDK APP META SNOW SNPS SPOT MU LLY MRVL CRWD QCOM PLTR CHTR TSLA AVGO
 | 2024 | 211 | +$13,681 | +60.8% | +17.1% | $22,512 | +0.280% | 5.72 |
 | 2025 | 212 | +$13,195 | +54.2% | +16.5% | $24,340 | +0.232% | 6.08 |
 | 2026 YTD | 96 | +$5,780 | +22.9% | +7.2% | $25,208 | +0.254% | 5.76 |
-| **Total** | **1,773** | **+$98,749** | | | | | |
+| **Total** | **1,996** | **+$103,802** | | | | | |
 
-- Profitable **every single year** across 9 years
+- Profitable **every single year** across 10 years (2017–2026)
+- 2017 Mean RODC (+0.086%) is notably lower — tickers like ARM/RDDT didn't exist and the win-rate signals weren't calibrated on this era; strategy still profitable with DW-Sharpe 5.49
 - Capital utilization consistently ~**28–35%** — only ~$23–28k average at work per day
-- Mean RODC trending upward: +0.179% (2020) → +0.280% (2024)
+- Mean RODC trending upward post-2020: +0.179% (2020) → +0.280% (2024)
 - DW-Sharpe above **4.99 every year**
 - Log dirs: `logs/replay_YYYY_stock_m1_winrate_regimehold_cap80k_fixedalloc/`
+
+### SIP Data Limit
+
+Tested back to 2015. **2017 is the earliest fully usable year.**
+
+| Year | Status |
+|---|---|
+| 2017 | Full data — 223 trading days |
+| 2016 | Partial — only ~6 days in January have SIP data |
+| 2015 | No data — SIP feed does not reach this far |
 
 ---
 
