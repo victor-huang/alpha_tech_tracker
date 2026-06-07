@@ -22,12 +22,14 @@ from alpha_tech_tracker.op_momentum_strategy.ma_open_range_momentum_screener imp
     _format_hold_history,
     _format_ticker_win_rate_table,
     _format_top2_ranking,
+    _HIST_HOLD_MIN,
     _rank_tickers_by_eod_win_rate,
     _forward_pct,
     _get_prior_day_mas,
     _hold_label,
     _is_running,
     _nanfloat,
+    _precompute_or_anchor_returns,
     _print_backtest_table,
     _read_pid,
     _remove_pid,
@@ -2351,3 +2353,142 @@ class TestRunWinateSelectorBacktest:
         )
         trade = result["daily"][0]["trades"][0]
         assert trade["slot_capital"] == pytest.approx(self._CAPITAL / 2)
+
+
+# ─── _precompute_or_anchor_returns ────────────────────────────────────────────
+
+
+class TestPrecomputeOrAnchorReturns:
+    _OR_START = "09:30"
+    _OR_BARS = 3
+    # OR close bar index 2 = 09:40; exit indices: +15m→5(09:55), +30m→8, +60m→14, +120m→26, +300m→62
+
+    def _one_day_groups(self, closes, d=None):
+        d = d or (_TARGET_DATE - timedelta(days=1))
+        return {"TSLA": {d: _make_5min_bars(closes, target_date=d)}}
+
+    def test_eod_pct_return_equals_last_close_minus_entry(self):
+        closes = [100.0] * 78
+        closes[-1] = 103.0
+        d = _TARGET_DATE - timedelta(days=1)
+        result = _precompute_or_anchor_returns(self._one_day_groups(closes), self._OR_START, self._OR_BARS)
+        assert result["TSLA"][d][None] == pytest.approx(3.0)
+
+    def test_hold_15m_pct_uses_first_bar_at_or_after_exit_time(self):
+        closes = [100.0] * 78
+        closes[5] = 102.0  # bar index 5 = 09:55 = OR close + 15m
+        d = _TARGET_DATE - timedelta(days=1)
+        result = _precompute_or_anchor_returns(self._one_day_groups(closes), self._OR_START, self._OR_BARS)
+        assert result["TSLA"][d][15] == pytest.approx(2.0)
+
+    def test_hold_window_is_none_when_no_bar_at_exit_time(self):
+        # 4 bars 09:30–09:45; +15m exit (09:55) has no bar
+        closes = [100.0] * 4
+        d = _TARGET_DATE - timedelta(days=1)
+        result = _precompute_or_anchor_returns(self._one_day_groups(closes), self._OR_START, self._OR_BARS)
+        assert result["TSLA"][d][15] is None
+
+    def test_daily_move_is_abs_last_close_minus_first_open_over_first_open(self):
+        closes = [100.0] * 78
+        closes[-1] = 110.0  # first_open=100 (Open==Close in helper), last_close=110
+        d = _TARGET_DATE - timedelta(days=1)
+        result = _precompute_or_anchor_returns(self._one_day_groups(closes), self._OR_START, self._OR_BARS)
+        assert result["TSLA"][d]["daily_move"] == pytest.approx(10.0)
+
+    def test_all_hist_hold_min_keys_present_for_full_day(self):
+        closes = [100.0] * 78
+        d = _TARGET_DATE - timedelta(days=1)
+        result = _precompute_or_anchor_returns(self._one_day_groups(closes), self._OR_START, self._OR_BARS)
+        for h in _HIST_HOLD_MIN:
+            assert h in result["TSLA"][d]
+
+    def test_skips_day_with_fewer_bars_than_or_bars(self):
+        # 2 bars — OR needs 3 → day omitted from result
+        closes = [100.0] * 2
+        d = _TARGET_DATE - timedelta(days=1)
+        result = _precompute_or_anchor_returns(self._one_day_groups(closes), self._OR_START, self._OR_BARS)
+        assert d not in result.get("TSLA", {})
+
+    def test_multiple_dates_all_computed(self):
+        day_groups = {
+            _TARGET_DATE - timedelta(days=i): _make_5min_bars([100.0] * 78,
+                                                               target_date=_TARGET_DATE - timedelta(days=i))
+            for i in range(1, 4)
+        }
+        result = _precompute_or_anchor_returns({"TSLA": day_groups}, self._OR_START, self._OR_BARS)
+        assert len(result["TSLA"]) == 3
+
+
+# ─── _compute_hold_history with anchor_returns ─────────────────────────────────
+
+
+class TestComputeHoldHistoryWithAnchorReturns:
+    _OR_START = "09:30"
+    _OR_BARS = 3
+    _EXIT_IDX = {15: 5, 30: 8, 60: 14, 120: 26, 300: 62}
+
+    def _build_anchor_returns_manually(self, day_pcts):
+        """
+        Build anchor_returns dict directly from a mapping of {days_back: {hold_min: pct}}.
+        Avoids depending on _precompute_or_anchor_returns in unit tests.
+        """
+        ar = {}
+        for days_back, pcts in day_pcts.items():
+            d = _TARGET_DATE - timedelta(days=days_back)
+            entry = {h: pcts.get(h, 0.0) for h in _HIST_HOLD_MIN}
+            entry["daily_move"] = abs(pcts.get(None, 0.0))
+            ar[d] = entry
+        return ar
+
+    def test_eod_avg_hold_computed_from_anchor_returns(self):
+        ar = self._build_anchor_returns_manually({1: {None: 5.0}, 2: {None: -3.0}})
+        result = _compute_hold_history(None, _TARGET_DATE, self._OR_START, self._OR_BARS,
+                                        anchor_returns=ar)
+        assert result["holds"][None] == pytest.approx(1.0)  # (5 + -3) / 2
+
+    def test_eod_win_rate_computed_from_anchor_returns(self):
+        ar = self._build_anchor_returns_manually({1: {None: 5.0}, 2: {None: -3.0}})
+        result = _compute_hold_history(None, _TARGET_DATE, self._OR_START, self._OR_BARS,
+                                        anchor_returns=ar)
+        assert result["win_rates"][None] == pytest.approx(50.0)
+
+    def test_respects_lookback_limit(self):
+        # 10 days: 5 recent at +2%, 5 older at +100%; lookback=5 → avg 2.0
+        recent = {i: {None: 2.0} for i in range(1, 6)}
+        older = {i: {None: 100.0} for i in range(6, 11)}
+        ar = self._build_anchor_returns_manually({**recent, **older})
+        result = _compute_hold_history(None, _TARGET_DATE, self._OR_START, self._OR_BARS,
+                                        lookback=5, anchor_returns=ar)
+        assert result["holds"][None] == pytest.approx(2.0)
+
+    def test_returns_none_when_anchor_returns_empty(self):
+        result = _compute_hold_history(None, _TARGET_DATE, self._OR_START, self._OR_BARS,
+                                        anchor_returns={})
+        assert result is None
+
+    def test_matches_day_groups_path_for_all_windows(self):
+        # Build two prior days with controlled per-bar data, then verify both paths agree.
+        d1 = _TARGET_DATE - timedelta(days=1)
+        d2 = _TARGET_DATE - timedelta(days=2)
+        closes_d1 = [100.0] * 78
+        closes_d1[-1] = 105.0       # EOD win
+        closes_d1[5] = 103.0        # +15m win
+        closes_d2 = [100.0] * 78
+        closes_d2[-1] = 95.0        # EOD loss
+        closes_d2[5] = 98.0         # +15m loss
+        df1 = _make_5min_bars(closes_d1, target_date=d1)
+        df2 = _make_5min_bars(closes_d2, target_date=d2)
+        day_groups = {d1: df1, d2: df2}
+        df_full = _add_ma_columns(pd.concat([df1, df2]))
+        ar = _precompute_or_anchor_returns({"T": day_groups}, self._OR_START, self._OR_BARS)["T"]
+        result_dg = _compute_hold_history(df_full, _TARGET_DATE, self._OR_START, self._OR_BARS,
+                                           day_groups=day_groups)
+        result_ar = _compute_hold_history(None, _TARGET_DATE, self._OR_START, self._OR_BARS,
+                                           anchor_returns=ar)
+        for h in _HIST_HOLD_MIN:
+            if h in result_dg["holds"] and h in result_ar["holds"]:
+                assert result_dg["holds"][h] == pytest.approx(result_ar["holds"][h], abs=1e-6), \
+                    f"holds[{h}] mismatch: df={result_dg['holds'][h]} ar={result_ar['holds'][h]}"
+            if h in result_dg["win_rates"] and h in result_ar["win_rates"]:
+                assert result_dg["win_rates"][h] == pytest.approx(result_ar["win_rates"][h], abs=1e-6), \
+                    f"win_rates[{h}] mismatch"

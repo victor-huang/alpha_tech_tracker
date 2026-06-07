@@ -1032,16 +1032,105 @@ def _forward_pct(day_df: pd.DataFrame, signal_time, signal_date: date, hold_min)
     return (exit_price - entry_price) / entry_price * 100
 
 
-def _compute_hold_history(df_5m, target_date, or_start, or_bars, lookback=20, day_groups=None):
+def _precompute_or_anchor_returns(ticker_day_groups, or_start, or_bars):
+    """
+    Pre-compute OR-close anchor pct returns for all ticker-dates in a single pass.
+    Called once at backtest startup; replaces 133M+ per-bar datetime conversions/year
+    with ~504K one-time conversions (19 tickers × 340 days × 78 bars × 1 pass).
+
+    Returns {ticker: {date: {hold_min_or_None: pct, "daily_move": float}}}.
+    Values mirror _compute_hold_history: None when no bar exists at the exit time.
+    """
+    import numpy as np
+    or_start_time = datetime.strptime(or_start, "%H:%M").time()
+    or_close_time = (
+        datetime.strptime(or_start, "%H:%M") + timedelta(minutes=(or_bars - 1) * 5)
+    ).time()
+    result = {}
+    for ticker, day_groups in ticker_day_groups.items():
+        ticker_returns = {}
+        for d, day_df in day_groups.items():
+            from_or = day_df[day_df.index.time >= or_start_time]
+            if len(from_or) < or_bars:
+                continue
+            # Convert bar times once per day — avoids per-window ints_to_pydatetime calls.
+            bar_times = np.array(day_df.index.time)
+            closes = day_df["Close"].to_numpy(dtype=float)
+            opens = day_df["Open"].to_numpy(dtype=float)
+            entry_mask = bar_times == or_close_time
+            if not entry_mask.any():
+                continue
+            entry_price = closes[int(np.where(entry_mask)[0][0])]
+            day_ret = {}
+            for h in _HIST_HOLD_MIN:
+                if h is None:
+                    day_ret[None] = (closes[-1] - entry_price) / entry_price * 100
+                else:
+                    exit_time = (
+                        datetime.combine(d, or_close_time) + timedelta(minutes=h)
+                    ).time()
+                    exit_mask = bar_times >= exit_time
+                    if exit_mask.any():
+                        day_ret[h] = (
+                            closes[int(np.where(exit_mask)[0][0])] - entry_price
+                        ) / entry_price * 100
+                    else:
+                        day_ret[h] = None
+            first_open = opens[0]
+            day_ret["daily_move"] = (
+                abs(closes[-1] - first_open) / first_open * 100 if first_open > 0 else None
+            )
+            ticker_returns[d] = day_ret
+        result[ticker] = ticker_returns
+    return result
+
+
+def _compute_hold_history(df_5m, target_date, or_start, or_bars, lookback=20, day_groups=None,
+                           anchor_returns=None):
     """
     For the past `lookback` trading days before target_date, compute the average
     forward return from the OR-close bar at +15m, +30m, +1h, +2h, and the average
     absolute daily move (|last_close - first_open| / first_open).
     Returns a dict or None if insufficient data.
 
-    day_groups: optional pre-grouped {date: df_slice} dict. When provided,
-    avoids the expensive df_5m.index.date scan on every call (backtest fast path).
+    anchor_returns: pre-computed {date: {hold_min: pct, "daily_move": float}} from
+    _precompute_or_anchor_returns. When provided, skips all bar scanning — dict lookup only.
+    day_groups: optional pre-grouped {date: df_slice} dict for the fallback df path.
     """
+    if anchor_returns is not None:
+        past_days = sorted([d for d in anchor_returns if d < target_date], reverse=True)[:lookback]
+        if not past_days:
+            return None
+        sums = {h: [] for h in _HIST_HOLD_MIN}
+        daily_moves = []
+        for day in past_days:
+            day_ret = anchor_returns[day]
+            for h in _HIST_HOLD_MIN:
+                pct = day_ret.get(h)
+                if pct is not None:
+                    sums[h].append(pct)
+            dm = day_ret.get("daily_move")
+            if dm is not None:
+                daily_moves.append(dm)
+        holds = {h: sum(v) / len(v) for h, v in sums.items() if v}
+        if not holds:
+            return None
+        win_rates = {
+            h: 100 * sum(1 for x in v if x > 0) / len(v)
+            for h, v in sums.items() if v
+        }
+        medians = {h: statistics.median(v) for h, v in sums.items() if v}
+        eod_returns = sums.get(None, [])
+        eod_range = (min(eod_returns), max(eod_returns)) if eod_returns else None
+        return {
+            "holds": holds,
+            "win_rates": win_rates,
+            "medians": medians,
+            "eod_range": eod_range,
+            "daily_move": sum(daily_moves) / len(daily_moves) if daily_moves else None,
+            "n": len(past_days),
+        }
+
     if day_groups is None and (df_5m is None or df_5m.empty):
         return None
     # Anchor at the last OR bar (or_bars-1 bars in), matching _scan_ticker's first
@@ -1125,19 +1214,23 @@ def _format_hold_history(hist):
 
 
 def _rank_tickers_by_eod_win_rate(ticker_bars_5m, target_date, or_start, or_bars, lookback=20,
-                                   ticker_day_groups=None):
+                                   ticker_day_groups=None, ticker_anchor_returns=None):
     """
     Compute hold history for every ticker and return the full list sorted by
     EOD win rate descending. Tickers with no computable history are excluded.
 
-    ticker_day_groups: optional pre-grouped {ticker: {date: df_slice}} dict.
-    When provided, passed down to _compute_hold_history to skip date scanning.
+    ticker_anchor_returns: pre-computed {ticker: {date: {hold_min: pct}}} from
+    _precompute_or_anchor_returns. When provided, uses the zero-scan anchor path.
+    ticker_day_groups: fallback pre-grouped {ticker: {date: df_slice}} dict.
     """
     ranked = []
     for ticker, df in ticker_bars_5m.items():
+        anchor_returns = (
+            ticker_anchor_returns.get(ticker) if ticker_anchor_returns is not None else None
+        )
         day_groups = ticker_day_groups.get(ticker) if ticker_day_groups is not None else None
         hist = _compute_hold_history(df, target_date, or_start, or_bars, lookback,
-                                     day_groups=day_groups)
+                                     day_groups=day_groups, anchor_returns=anchor_returns)
         if hist and None in hist["win_rates"]:
             ranked.append((ticker, hist))
     ranked.sort(key=lambda x: -x[1]["win_rates"][None])
@@ -1684,25 +1777,31 @@ def run_winrate_selector_backtest(
         print("No trading days found in range.")
         return {}
 
+    # Pre-compute OR-close anchor returns once for all tickers/dates.
+    # _compute_hold_history will use dict lookups instead of scanning 78-bar slices per call,
+    # reducing bar-datetime conversions from ~133M/year to ~504K (264x fewer).
+    ticker_anchor_returns = _precompute_or_anchor_returns(ticker_day_groups, or_start, or_bars)
+
     print(f"Simulating {len(trading_days)} trading days ...")
 
     regime_engine_obj = RegimeEngine() if use_regime_engine else None
     daily_results = []
 
     for day_idx, day in enumerate(trading_days):
-        # Mirror WinRateTickerSelector.fetch_bars() exactly:
+        # Mirror WinRateTickerSelector.fetch_bars() window exactly:
         #   fetch_start = today - (lookback_days + 5)
         #   _trim_bars_to_range adds 7 extra days (= _CACHE_WARMUP_DAYS) before that start.
         # Net effective window: today - (lookback_days + 5 + 7) = today - (lookback_days + 12).
-        # Use dict key filtering instead of df.index.date slicing to avoid datetime conversion.
+        # Filter anchor_returns to this window so _compute_hold_history sees only the same
+        # history the live engine would have (O(tickers × ~50 dates) dict filter per day).
         ranking_window_start = day - timedelta(days=lookback_days + 5 + 7)
-        windowed_day_groups = {
-            t: {d: grp for d, grp in groups.items() if d >= ranking_window_start}
-            for t, groups in ticker_day_groups.items()
+        windowed_anchor_returns = {
+            t: {d: v for d, v in ar.items() if d >= ranking_window_start}
+            for t, ar in ticker_anchor_returns.items()
         }
         ranked = _rank_tickers_by_eod_win_rate(
             ticker_bars, day, or_start, or_bars, lookback_days,
-            ticker_day_groups=windowed_day_groups,
+            ticker_anchor_returns=windowed_anchor_returns,
         )
 
         if regime_engine_obj is not None:
