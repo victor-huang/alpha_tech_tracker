@@ -112,10 +112,12 @@ Reversal/reentry consistently cuts RODC and DW-Sharpe. The regime-hold filter al
 
 ### Cross-year Sub-leg Summary (fixed-alloc $80k capital)
 
-| Year | Primary P&L | Reentry contrib | DD contrib | Total w/ sub-legs | RODC w/ sub-legs | DW-Sharpe w/ sub-legs |
-|---|---|---|---|---|---|---|
-| 2024 | +$13,681 | +$983 | +$14,767 | **+$29,429** | +0.434% | 2.84 |
-| 2026 YTD | +$5,780 | -$1,534 | $0 | **+$4,246** | +0.153% | 2.92 |
+| Year | Primary P&L | Reentry contrib | DD contrib | Total w/ sub-legs | Ret on avg deployed (yr) | Mean RODC (daily) | DW-Sharpe w/ sub-legs |
+|---|---|---|---|---|---|---|---|
+| 2024 no sub-legs | +$13,681 | — | — | +$13,681 | 60.8% | +0.280% | 5.72 |
+| 2024 w/ sub-legs | +$13,681 | +$983 | +$14,767 | **+$29,429** | **77.4%** | +0.434% | 2.84 |
+| 2026 YTD no sub-legs | +$5,780 | — | — | +$5,780 | 22.9% | +0.254% | 5.76 |
+| 2026 YTD w/ sub-legs | +$5,780 | -$1,534 | $0 | **+$4,246** | **10.6%** | +0.153% | 2.92 |
 
 ### Old $10k Rank-weighted Runs (for reference — different capital model)
 

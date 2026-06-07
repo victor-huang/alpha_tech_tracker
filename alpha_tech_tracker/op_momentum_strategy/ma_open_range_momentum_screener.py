@@ -252,6 +252,7 @@ def _compute_collection_vol_20day_avg(
     collection_bars: int,
     target_date: date,
     lookback_days: int = 20,
+    day_groups: dict = None,
 ) -> Optional[float]:
     """
     Compute the average volume across the collection window time slots over the
@@ -261,6 +262,9 @@ def _compute_collection_vol_20day_avg(
     (or_start + (or_bars-1)*5 min) and covers `collection_bars` bars.
     Each prior trading day contributes the mean volume of bars in those same
     time slots, then the overall mean is returned.
+
+    day_groups: optional pre-grouped {date: df_slice} dict. When provided,
+    avoids the expensive df.index.date scan on every call (backtest fast path).
     """
     or_start_dt = datetime.combine(date.today(), or_start_time)
     collection_start = (or_start_dt + timedelta(minutes=(or_bars - 1) * 5)).time()
@@ -268,16 +272,21 @@ def _compute_collection_vol_20day_avg(
         or_start_dt + timedelta(minutes=(or_bars - 1 + collection_bars - 1) * 5)
     ).time()
 
-    prior_dates = sorted(
-        {d for d in df.index.date if d < target_date}, reverse=True
-    )[:lookback_days]
+    if day_groups is not None:
+        prior_dates = sorted([d for d in day_groups if d < target_date], reverse=True)[:lookback_days]
+    else:
+        prior_dates = sorted(
+            {d for d in df.index.date if d < target_date}, reverse=True
+        )[:lookback_days]
 
     if not prior_dates:
         return None
 
     daily_avgs = []
     for d in prior_dates:
-        day = df[df.index.date == d]
+        day = day_groups[d] if day_groups is not None else df[df.index.date == d]
+        if day is None or day.empty:
+            continue
         window = day[
             (day.index.time >= collection_start) & (day.index.time <= collection_end)
         ]
@@ -1023,14 +1032,17 @@ def _forward_pct(day_df: pd.DataFrame, signal_time, signal_date: date, hold_min)
     return (exit_price - entry_price) / entry_price * 100
 
 
-def _compute_hold_history(df_5m, target_date, or_start, or_bars, lookback=20):
+def _compute_hold_history(df_5m, target_date, or_start, or_bars, lookback=20, day_groups=None):
     """
     For the past `lookback` trading days before target_date, compute the average
     forward return from the OR-close bar at +15m, +30m, +1h, +2h, and the average
     absolute daily move (|last_close - first_open| / first_open).
     Returns a dict or None if insufficient data.
+
+    day_groups: optional pre-grouped {date: df_slice} dict. When provided,
+    avoids the expensive df_5m.index.date scan on every call (backtest fast path).
     """
-    if df_5m is None or df_5m.empty:
+    if day_groups is None and (df_5m is None or df_5m.empty):
         return None
     # Anchor at the last OR bar (or_bars-1 bars in), matching _scan_ticker's first
     # collection bar — not the bar after OR closes.
@@ -1038,9 +1050,12 @@ def _compute_hold_history(df_5m, target_date, or_start, or_bars, lookback=20):
         datetime.strptime(or_start, "%H:%M") + timedelta(minutes=(or_bars - 1) * 5)
     ).time()
 
-    past_days = sorted(
-        {d for d in df_5m.index.date if d < target_date}, reverse=True
-    )[:lookback]
+    if day_groups is not None:
+        past_days = sorted([d for d in day_groups if d < target_date], reverse=True)[:lookback]
+    else:
+        past_days = sorted(
+            {d for d in df_5m.index.date if d < target_date}, reverse=True
+        )[:lookback]
     if not past_days:
         return None
 
@@ -1048,7 +1063,7 @@ def _compute_hold_history(df_5m, target_date, or_start, or_bars, lookback=20):
     daily_moves = []
 
     for day in past_days:
-        day_df = df_5m[df_5m.index.date == day]
+        day_df = day_groups[day] if day_groups is not None else df_5m[df_5m.index.date == day]
         if day_df.empty:
             continue
         entry_bars = day_df[day_df.index.time == or_close_time]
@@ -1109,14 +1124,20 @@ def _format_hold_history(hist):
 
 
 
-def _rank_tickers_by_eod_win_rate(ticker_bars_5m, target_date, or_start, or_bars, lookback=20):
+def _rank_tickers_by_eod_win_rate(ticker_bars_5m, target_date, or_start, or_bars, lookback=20,
+                                   ticker_day_groups=None):
     """
     Compute hold history for every ticker and return the full list sorted by
     EOD win rate descending. Tickers with no computable history are excluded.
+
+    ticker_day_groups: optional pre-grouped {ticker: {date: df_slice}} dict.
+    When provided, passed down to _compute_hold_history to skip date scanning.
     """
     ranked = []
     for ticker, df in ticker_bars_5m.items():
-        hist = _compute_hold_history(df, target_date, or_start, or_bars, lookback)
+        day_groups = ticker_day_groups.get(ticker) if ticker_day_groups is not None else None
+        hist = _compute_hold_history(df, target_date, or_start, or_bars, lookback,
+                                     day_groups=day_groups)
         if hist and None in hist["win_rates"]:
             ranked.append((ticker, hist))
     ranked.sort(key=lambda x: -x[1]["win_rates"][None])
@@ -1673,13 +1694,15 @@ def run_winrate_selector_backtest(
         #   fetch_start = today - (lookback_days + 5)
         #   _trim_bars_to_range adds 7 extra days (= _CACHE_WARMUP_DAYS) before that start.
         # Net effective window: today - (lookback_days + 5 + 7) = today - (lookback_days + 12).
+        # Use dict key filtering instead of df.index.date slicing to avoid datetime conversion.
         ranking_window_start = day - timedelta(days=lookback_days + 5 + 7)
-        ticker_bars_window = {
-            t: df[df.index.date >= ranking_window_start]
-            for t, df in ticker_bars.items()
+        windowed_day_groups = {
+            t: {d: grp for d, grp in groups.items() if d >= ranking_window_start}
+            for t, groups in ticker_day_groups.items()
         }
         ranked = _rank_tickers_by_eod_win_rate(
-            ticker_bars_window, day, or_start, or_bars, lookback_days
+            ticker_bars, day, or_start, or_bars, lookback_days,
+            ticker_day_groups=windowed_day_groups,
         )
 
         if regime_engine_obj is not None:
@@ -1725,7 +1748,8 @@ def run_winrate_selector_backtest(
 
             # Use 20-day vol lookback, matching signal_engine._compute_collection_vol_20day_avg default.
             vol_avg = _compute_collection_vol_20day_avg(
-                df, or_start_time, or_bars, collection_bars, day
+                df, or_start_time, or_bars, collection_bars, day,
+                day_groups=ticker_day_groups.get(ticker),
             )
             if vol_avg is None:
                 continue

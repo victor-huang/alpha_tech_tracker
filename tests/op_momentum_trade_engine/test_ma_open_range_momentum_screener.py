@@ -35,9 +35,12 @@ from alpha_tech_tracker.op_momentum_strategy.ma_open_range_momentum_screener imp
     _compute_qqq_context,
     _window_label,
     _write_pid,
+    _winrate_signal_day,
+    _winrate_exit_with_fallback,
     compute_or_ma_signals,
     format_sms,
     run_range_analysis,
+    run_winrate_selector_backtest,
 )
 
 ET = pytz.timezone("America/New_York")
@@ -1921,3 +1924,430 @@ class TestBuildPresessionPicksRows:
         bars = {"APP": self._combine(prior, today)}
         result = _build_presession_picks_rows(bars, [_TARGET_DATE], self._OR_START, self._OR_BARS)
         assert result[0]["signal_time"] == "09:40"
+
+
+# ─── _winrate_signal_day ──────────────────────────────────────────────────────
+
+
+class TestWinrateSignalDay:
+    _OR_BARS = 3
+    _COLLECTION_BARS = 3
+    _OR_START_TIME = datetime.strptime("09:30", "%H:%M").time()
+    _VOL_AVG = 500_000
+
+    def _make_day(self, scan0_close, scan0_vol=None, scan1_close=None, scan1_vol=None,
+                  or_high=101.0, or_low=99.0, target_date=_TARGET_DATE):
+        """
+        25-bar day. OR bars 0-2: close=100, highs=or_high, lows=or_low.
+        scan[0]=bar2, scan[1]=bar3, scan[2]=bar4.
+        MA20 at bar2 ≈ 100, which falls inside the default OR range [99, 101].
+        """
+        n = 25
+        closes = [100.0] * n
+        volumes = [self._VOL_AVG] * n
+        closes[2] = scan0_close
+        volumes[2] = scan0_vol if scan0_vol is not None else self._VOL_AVG
+        if scan1_close is not None:
+            closes[3] = scan1_close
+        if scan1_vol is not None:
+            volumes[3] = scan1_vol
+        highs = [c + 0.5 for c in closes]
+        lows = [c - 0.5 for c in closes]
+        for i in range(3):
+            highs[i] = or_high
+            lows[i] = or_low
+        base = ET.localize(datetime.combine(target_date, datetime.min.time()))
+        timestamps = [base + timedelta(hours=9, minutes=30 + i * 5) for i in range(n)]
+        df = pd.DataFrame(
+            {"Open": closes, "High": highs, "Low": lows, "Close": closes, "Volume": volumes},
+            index=timestamps,
+        )
+        return _add_ma_columns(df)
+
+    def test_returns_bullish_when_close_above_or_mid_and_vol_high(self):
+        df = self._make_day(scan0_close=100.5, scan0_vol=600_000)
+        signal, entry = _winrate_signal_day(
+            "TSLA", df, _TARGET_DATE, self._OR_START_TIME,
+            self._OR_BARS, self._COLLECTION_BARS, self._VOL_AVG,
+        )
+        assert signal == "BULLISH"
+        assert entry == pytest.approx(100.5)
+
+    def test_returns_bearish_when_close_below_or_mid_and_vol_low_and_below_ma20(self):
+        df = self._make_day(scan0_close=99.5, scan0_vol=400_000)
+        signal, entry = _winrate_signal_day(
+            "TSLA", df, _TARGET_DATE, self._OR_START_TIME,
+            self._OR_BARS, self._COLLECTION_BARS, self._VOL_AVG,
+        )
+        assert signal == "BEARISH"
+        assert entry == pytest.approx(99.5)
+
+    def test_returns_none_when_close_equals_or_mid(self):
+        df = self._make_day(scan0_close=100.0, scan0_vol=600_000)
+        signal, _ = _winrate_signal_day(
+            "TSLA", df, _TARGET_DATE, self._OR_START_TIME,
+            self._OR_BARS, self._COLLECTION_BARS, self._VOL_AVG,
+        )
+        assert signal is None
+
+    def test_returns_none_when_no_ma_in_or_range(self):
+        # Narrow OR range [99.0, 99.5] — MA20 ≈ 100 is above the range
+        df = self._make_day(scan0_close=99.3, scan0_vol=400_000, or_high=99.5, or_low=99.0)
+        signal, _ = _winrate_signal_day(
+            "TSLA", df, _TARGET_DATE, self._OR_START_TIME,
+            self._OR_BARS, self._COLLECTION_BARS, self._VOL_AVG,
+        )
+        assert signal is None
+
+    def test_fires_on_scan_idx1_when_scan_idx0_does_not_qualify(self):
+        # scan[0]: close=100.0 (== or_mid, no signal); scan[1]: close=100.5, vol > avg → BULLISH
+        df = self._make_day(scan0_close=100.0, scan0_vol=600_000,
+                            scan1_close=100.5, scan1_vol=600_000)
+        signal, entry = _winrate_signal_day(
+            "TSLA", df, _TARGET_DATE, self._OR_START_TIME,
+            self._OR_BARS, self._COLLECTION_BARS, self._VOL_AVG,
+        )
+        assert signal == "BULLISH"
+        assert entry == pytest.approx(100.5)
+
+    def test_returns_none_when_insufficient_or_bars(self):
+        df = _make_5min_bars([100.0] * 2, target_date=_TARGET_DATE)
+        signal, _ = _winrate_signal_day(
+            "TSLA", df, _TARGET_DATE, self._OR_START_TIME, 3, 3, self._VOL_AVG,
+        )
+        assert signal is None
+
+    def test_prefiltered_day_df_gives_same_result_as_full_df(self):
+        df = self._make_day(scan0_close=100.5, scan0_vol=600_000)
+        day_df = df[df.index.date == _TARGET_DATE]
+        signal_full, entry_full = _winrate_signal_day(
+            "TSLA", df, _TARGET_DATE, self._OR_START_TIME,
+            self._OR_BARS, self._COLLECTION_BARS, self._VOL_AVG,
+        )
+        signal_pre, entry_pre = _winrate_signal_day(
+            "TSLA", df, _TARGET_DATE, self._OR_START_TIME,
+            self._OR_BARS, self._COLLECTION_BARS, self._VOL_AVG,
+            _day_df=day_df,
+        )
+        assert signal_pre == signal_full
+        assert entry_pre == entry_full
+
+
+# ─── _winrate_exit_with_fallback ──────────────────────────────────────────────
+
+
+class TestWinrateExitWithFallback:
+    # OR range: [95, 105], or_range=10
+    # BULLISH: hard_stop=105 (arms when close>105), fallback=103 (fires when close<=103, not armed)
+    # BEARISH: hard_stop=95  (arms when close<95),  fallback=97  (fires when close>=97, not armed)
+    _OR_HIGH = 105.0
+    _OR_LOW = 95.0
+    _OR_RANGE = 10.0
+    _FALLBACK_BULL = 103.0   # 105 - 0.20*10
+    _FALLBACK_BEAR = 97.0    # 95  + 0.20*10
+
+    def _make_day(self, bar_data, target_date=_TARGET_DATE):
+        """bar_data: list of (close, high, low). Bars start at 09:30 in 5-min steps."""
+        n = len(bar_data)
+        base = ET.localize(datetime.combine(target_date, datetime.min.time()))
+        timestamps = [base + timedelta(hours=9, minutes=30 + i * 5) for i in range(n)]
+        closes = [b[0] for b in bar_data]
+        highs = [b[1] for b in bar_data]
+        lows = [b[2] for b in bar_data]
+        df = pd.DataFrame(
+            {"Open": closes, "High": highs, "Low": lows, "Close": closes,
+             "Volume": [1_000_000] * n},
+            index=timestamps,
+        )
+        return _add_ma_columns(df)
+
+    def test_eod_exit_when_no_stop_triggered(self):
+        # BULLISH: all closes=104 (> fallback=103, < hard_stop=105 → never arms) — reaches EOD.
+        # eod_df clips at < 15:55; last included bar = 15:50 (index 76), close=104.
+        bars = [(100.0, 106.0, 94.0)] + [(104.0, 104.5, 103.5)] * 77
+        day_df = self._make_day(bars)
+        exit_price = _winrate_exit_with_fallback(
+            day_df, "BULLISH", self._OR_HIGH, self._OR_LOW, self._OR_RANGE, entry_bar_idx=0
+        )
+        assert exit_price == pytest.approx(104.0)
+
+    def test_bullish_hard_stop_exits_at_or_high_when_bar_reached_it(self):
+        # Bar 1 (09:35): close=106 → arms hard stop (close > 105)
+        # Bar 2 (09:40): close=104, high=107 → hard stop fires; bar_high>=105 → returns 105
+        bars = [(100.0, 106.0, 94.0), (106.0, 107.0, 105.5), (104.0, 107.0, 103.0)]
+        day_df = self._make_day(bars)
+        exit_price = _winrate_exit_with_fallback(
+            day_df, "BULLISH", self._OR_HIGH, self._OR_LOW, self._OR_RANGE, entry_bar_idx=0
+        )
+        assert exit_price == pytest.approx(105.0)
+
+    def test_bullish_fallback_exits_at_fallback_price_when_bar_reached_it(self):
+        # Bar 1 (09:35): close=102, high=104 → not armed, close<=103 → fallback fires
+        # bar_high=104 >= 103 → returns 103
+        bars = [(100.0, 106.0, 94.0), (102.0, 104.0, 101.0)]
+        day_df = self._make_day(bars)
+        exit_price = _winrate_exit_with_fallback(
+            day_df, "BULLISH", self._OR_HIGH, self._OR_LOW, self._OR_RANGE, entry_bar_idx=0
+        )
+        assert exit_price == pytest.approx(103.0)
+
+    def test_bearish_hard_stop_exits_at_or_low_when_bar_reached_it(self):
+        # Bar 1 (09:35): close=94 → arms hard stop (close < 95)
+        # Bar 2 (09:40): close=96, low=92 → hard stop fires; bar_low<=95 → returns 95
+        bars = [(100.0, 106.0, 94.0), (94.0, 94.5, 93.0), (96.0, 97.0, 92.0)]
+        day_df = self._make_day(bars)
+        exit_price = _winrate_exit_with_fallback(
+            day_df, "BEARISH", self._OR_HIGH, self._OR_LOW, self._OR_RANGE, entry_bar_idx=0
+        )
+        assert exit_price == pytest.approx(95.0)
+
+    def test_bearish_fallback_exits_at_fallback_price_when_bar_reached_it(self):
+        # Bar 1 (09:35): close=97.5, low=96 → not armed, close>=97 → fallback fires
+        # bar_low=96 <= 97 → returns 97
+        bars = [(100.0, 106.0, 94.0), (97.5, 98.0, 96.0)]
+        day_df = self._make_day(bars)
+        exit_price = _winrate_exit_with_fallback(
+            day_df, "BEARISH", self._OR_HIGH, self._OR_LOW, self._OR_RANGE, entry_bar_idx=0
+        )
+        assert exit_price == pytest.approx(97.0)
+
+    def test_timed_exit_fires_at_hold_minutes(self):
+        # entry at 09:30 (idx=0), hold_minutes=10 → timed_exit_time=09:40
+        # Bar 1 (09:35): close=104 — no stop (104 < 105, 104 > 103); bar_time < 09:40
+        # Bar 2 (09:40): close=104 — no stop; bar_time=09:40 >= 09:40 → timed exit
+        bars = [(100.0, 106.0, 94.0), (104.0, 104.5, 103.5), (104.0, 104.5, 103.5)]
+        day_df = self._make_day(bars)
+        exit_price = _winrate_exit_with_fallback(
+            day_df, "BULLISH", self._OR_HIGH, self._OR_LOW, self._OR_RANGE,
+            entry_bar_idx=0, hold_minutes=10,
+        )
+        assert exit_price == pytest.approx(104.0)
+
+    def test_hard_stop_takes_precedence_over_timed_exit_on_same_bar(self):
+        # entry at 09:30 (idx=0), hold_minutes=10 → timed_exit_time=09:40
+        # Bar 1 (09:35): close=106 → arms hard stop
+        # Bar 2 (09:40): close=104, high=107 → hard stop fires (bar_high>=105 → returns 105)
+        #   timed exit also fires at 09:40 but stop is checked first
+        bars = [(100.0, 106.0, 94.0), (106.0, 107.0, 105.5), (104.0, 107.0, 103.0)]
+        day_df = self._make_day(bars)
+        exit_price = _winrate_exit_with_fallback(
+            day_df, "BULLISH", self._OR_HIGH, self._OR_LOW, self._OR_RANGE,
+            entry_bar_idx=0, hold_minutes=10,
+        )
+        assert exit_price == pytest.approx(105.0)
+
+
+# ─── day_groups optimization regression ──────────────────────────────────────
+
+
+class TestDayGroupsOptimizationPath:
+    _OR_START = "09:30"
+    _OR_BARS = 3
+
+    def _make_multi_day_df(self, n_days=5, target_date=_TARGET_DATE):
+        frames = []
+        for i in range(n_days, -1, -1):
+            d = target_date - timedelta(days=i)
+            frames.append(_make_5min_bars(
+                [100.0 + i * 0.1] * 10 + [101.0 + i * 0.1] * 70,
+                target_date=d,
+            ))
+        combined = pd.concat([f[["Open", "High", "Low", "Close", "Volume"]] for f in frames])
+        return _add_ma_columns(combined)
+
+    def _build_day_groups(self, df):
+        groups = {}
+        for d, grp in df.groupby(df.index.date):
+            groups[d] = grp
+        return groups
+
+    def test_compute_hold_history_day_groups_matches_df_path(self):
+        df = self._make_multi_day_df(n_days=5)
+        day_groups = self._build_day_groups(df)
+        result_df = _compute_hold_history(df, _TARGET_DATE, self._OR_START, self._OR_BARS)
+        result_dg = _compute_hold_history(
+            None, _TARGET_DATE, self._OR_START, self._OR_BARS, day_groups=day_groups
+        )
+        assert result_df is not None
+        assert result_dg is not None
+        for h in result_df["win_rates"]:
+            assert result_dg["win_rates"][h] == pytest.approx(result_df["win_rates"][h])
+        for h in result_df["holds"]:
+            assert result_dg["holds"][h] == pytest.approx(result_df["holds"][h])
+
+    def test_compute_collection_vol_20day_avg_day_groups_matches_df_path(self):
+        df = self._make_multi_day_df(n_days=5)
+        day_groups = self._build_day_groups(df)
+        or_start_time = datetime.strptime(self._OR_START, "%H:%M").time()
+        result_df = _compute_collection_vol_20day_avg(
+            df, or_start_time, self._OR_BARS, 3, _TARGET_DATE
+        )
+        result_dg = _compute_collection_vol_20day_avg(
+            df, or_start_time, self._OR_BARS, 3, _TARGET_DATE, day_groups=day_groups
+        )
+        assert result_df == pytest.approx(result_dg)
+
+    def test_rank_tickers_ticker_day_groups_matches_without(self):
+        df = self._make_multi_day_df(n_days=5)
+        day_groups = self._build_day_groups(df)
+        ticker_bars = {"APP": df, "TSLA": df}
+        ticker_day_groups = {"APP": day_groups, "TSLA": day_groups}
+        ranked_plain = _rank_tickers_by_eod_win_rate(
+            ticker_bars, _TARGET_DATE, self._OR_START, self._OR_BARS
+        )
+        ranked_dg = _rank_tickers_by_eod_win_rate(
+            ticker_bars, _TARGET_DATE, self._OR_START, self._OR_BARS,
+            ticker_day_groups=ticker_day_groups,
+        )
+        assert [t for t, _ in ranked_plain] == [t for t, _ in ranked_dg]
+        for (t1, h1), (t2, h2) in zip(ranked_plain, ranked_dg):
+            assert h1["win_rates"][None] == pytest.approx(h2["win_rates"][None])
+
+
+# ─── run_winrate_selector_backtest ────────────────────────────────────────────
+
+
+class TestRunWinateSelectorBacktest:
+    _OR_START = "09:30"
+    _OR_BARS = 3
+    _COLLECTION_BARS = 3
+    _TOP_N = 2
+    _CAPITAL = 20_000.0
+
+    def _make_fixture(self, signal_close, exit_close, n_prior=5, target_date=_TARGET_DATE):
+        """
+        Build a multi-day DataFrame for one ticker where:
+        - Prior days: close=100, vol=400k throughout (establishes vol_20day_avg≈400k)
+        - OR bars: high=110, low=90 (wide range so stops won't fire)
+        - Today scan[0]: close=signal_close, vol=600k (BULLISH if > 100; BEARISH needs <100)
+        - All bars after scan[0] today: close=exit_close
+        """
+        frames = []
+        for i in range(n_prior, 0, -1):
+            d = target_date - timedelta(days=i)
+            frames.append(_make_5min_bars(
+                [100.0] * 25, volumes=[400_000] * 25, target_date=d,
+            ))
+        today_closes = [100.0] * 25
+        today_vols = [400_000] * 25
+        today_closes[2] = signal_close
+        today_vols[2] = 600_000
+        for i in range(3, 25):
+            today_closes[i] = exit_close
+        highs = [c + 0.5 for c in today_closes]
+        lows = [c - 0.5 for c in today_closes]
+        for i in range(3):
+            highs[i] = 110.0
+            lows[i] = 90.0
+        # also widen OR bars on prior days so MA20 stays in range regardless
+        for f in frames:
+            for i in range(3):
+                f.loc[f.index[i], "High"] = 110.0
+                f.loc[f.index[i], "Low"] = 90.0
+        base = ET.localize(datetime.combine(target_date, datetime.min.time()))
+        timestamps = [base + timedelta(hours=9, minutes=30 + i * 5) for i in range(25)]
+        today_df = pd.DataFrame(
+            {"Open": today_closes, "High": highs, "Low": lows,
+             "Close": today_closes, "Volume": today_vols},
+            index=timestamps,
+        )
+        today_df = _add_ma_columns(today_df)
+        combined = pd.concat(
+            [f[["Open", "High", "Low", "Close", "Volume", "MA20", "MA50", "MA200"]]
+             for f in frames] + [today_df[["Open", "High", "Low", "Close", "Volume",
+                                           "MA20", "MA50", "MA200"]]]
+        )
+        return combined
+
+    def test_positive_pnl_for_bullish_trade_exiting_above_entry(self, mocker):
+        target = _TARGET_DATE
+        ticker_df = self._make_fixture(signal_close=100.5, exit_close=102.0, target_date=target)
+        qqq_df = _make_5min_bars([400.0] * 25, target_date=target)
+        mocker.patch(
+            "alpha_tech_tracker.op_momentum_strategy.ma_open_range_momentum_screener.fetch_bars",
+            return_value={"APP": ticker_df, "QQQ": qqq_df},
+        )
+        result = run_winrate_selector_backtest(
+            ["APP"], target, target,
+            top_n=self._TOP_N, capital=self._CAPITAL, use_regime_engine=False,
+        )
+        day = result["daily"][0]
+        assert day["pnl"] > 0
+
+    def test_no_position_direction_skips_day(self, mocker):
+        target = _TARGET_DATE
+        ticker_df = self._make_fixture(signal_close=100.5, exit_close=102.0, target_date=target)
+        qqq_df = _make_5min_bars([400.0] * 25, target_date=target)
+        mocker.patch(
+            "alpha_tech_tracker.op_momentum_strategy.ma_open_range_momentum_screener.fetch_bars",
+            return_value={"APP": ticker_df, "QQQ": qqq_df},
+        )
+        mock_regime_cls = mocker.patch(
+            "alpha_tech_tracker.op_momentum_strategy.regime_engine.RegimeEngine"
+        )
+        mock_regime_cls.return_value.get_current_regime.return_value = \
+            type("R", (), {"direction": "NO_POSITION", "hold_window": None})()
+        mock_regime_cls.return_value.compute_and_add_metrics.return_value = None
+        result = run_winrate_selector_backtest(
+            ["APP"], target, target,
+            top_n=self._TOP_N, capital=self._CAPITAL, use_regime_engine=True,
+        )
+        assert result["daily"][0]["pnl"] == 0.0
+        assert result["daily"][0]["trades"] == []
+
+    def test_long_direction_blocks_bearish_signal(self, mocker):
+        target = _TARGET_DATE
+        # signal_close=99.5 → BEARISH; with LONG direction it should be blocked
+        ticker_df = self._make_fixture(signal_close=99.5, exit_close=97.0, target_date=target)
+        qqq_df = _make_5min_bars([400.0] * 25, target_date=target)
+        mocker.patch(
+            "alpha_tech_tracker.op_momentum_strategy.ma_open_range_momentum_screener.fetch_bars",
+            return_value={"APP": ticker_df, "QQQ": qqq_df},
+        )
+        mock_regime_cls = mocker.patch(
+            "alpha_tech_tracker.op_momentum_strategy.regime_engine.RegimeEngine"
+        )
+        mock_regime_cls.return_value.get_current_regime.return_value = \
+            type("R", (), {"direction": "LONG", "hold_window": None})()
+        mock_regime_cls.return_value.compute_and_add_metrics.return_value = None
+        result = run_winrate_selector_backtest(
+            ["APP"], target, target,
+            top_n=self._TOP_N, capital=self._CAPITAL, use_regime_engine=True,
+        )
+        assert result["daily"][0]["pnl"] == 0.0
+
+    def test_caution_direction_does_not_block_bullish_signal(self, mocker):
+        target = _TARGET_DATE
+        ticker_df = self._make_fixture(signal_close=100.5, exit_close=102.0, target_date=target)
+        qqq_df = _make_5min_bars([400.0] * 25, target_date=target)
+        mocker.patch(
+            "alpha_tech_tracker.op_momentum_strategy.ma_open_range_momentum_screener.fetch_bars",
+            return_value={"APP": ticker_df, "QQQ": qqq_df},
+        )
+        mock_regime_cls = mocker.patch(
+            "alpha_tech_tracker.op_momentum_strategy.regime_engine.RegimeEngine"
+        )
+        mock_regime_cls.return_value.get_current_regime.return_value = \
+            type("R", (), {"direction": "CAUTION", "hold_window": "EOD"})()
+        mock_regime_cls.return_value.compute_and_add_metrics.return_value = None
+        result = run_winrate_selector_backtest(
+            ["APP"], target, target,
+            top_n=self._TOP_N, capital=self._CAPITAL, use_regime_engine=True,
+        )
+        assert result["daily"][0]["pnl"] > 0
+
+    def test_slot_capital_is_capital_divided_by_top_n_regardless_of_signals_fired(self, mocker):
+        # top_n=2 with only 1 ticker; slot = 20_000 / 2 = 10_000
+        target = _TARGET_DATE
+        ticker_df = self._make_fixture(signal_close=100.5, exit_close=102.0, target_date=target)
+        qqq_df = _make_5min_bars([400.0] * 25, target_date=target)
+        mocker.patch(
+            "alpha_tech_tracker.op_momentum_strategy.ma_open_range_momentum_screener.fetch_bars",
+            return_value={"APP": ticker_df, "QQQ": qqq_df},
+        )
+        result = run_winrate_selector_backtest(
+            ["APP"], target, target,
+            top_n=2, capital=self._CAPITAL, use_regime_engine=False,
+        )
+        trade = result["daily"][0]["trades"][0]
+        assert trade["slot_capital"] == pytest.approx(self._CAPITAL / 2)
