@@ -515,6 +515,46 @@ class TestSignalSelectionLoop:
             engine._signal_selection_loop_for_window(engine._windows[0])
             mock_enter.assert_not_called()
 
+    def test_no_signals_multi_bar_collection_loop_terminates(self):
+        # Regression: when collection_bars_remaining > 0 and no signals arrive for any
+        # bar, the loop must terminate rather than spinning infinitely.
+        # The initial deadline is set far enough in the past that each 5-min extension
+        # also remains in the past, so all iterations exit without sleeping.
+        engine = _make_engine_with_mock_client()
+        engine._window_state["W1"]["collection_deadline"] = (
+            datetime.now(ET) - timedelta(minutes=25)
+        )
+        engine._window_state["W1"]["collection_bars_remaining"] = 2
+
+        with patch.object(engine, "_enter_position") as mock_enter:
+            engine._signal_selection_loop_for_window(engine._windows[0])
+            mock_enter.assert_not_called()
+
+        assert engine._window_state["W1"]["collection_bars_remaining"] == 0
+
+    def test_drain_decrements_bar_counter_when_no_signals(self):
+        engine = _make_engine_with_mock_client()
+        engine._window_state["W1"]["collection_deadline"] = (
+            datetime.now(ET) - timedelta(seconds=1)
+        )
+        engine._window_state["W1"]["collection_bars_remaining"] = 2
+
+        engine._drain_pending_signals_for_window(engine._windows[0])
+
+        assert engine._window_state["W1"]["collection_bars_remaining"] == 1
+
+    def test_drain_extends_deadline_when_no_signals_and_bars_remain(self):
+        engine = _make_engine_with_mock_client()
+        original_deadline = datetime.now(ET) - timedelta(seconds=1)
+        engine._window_state["W1"]["collection_deadline"] = original_deadline
+        engine._window_state["W1"]["collection_bars_remaining"] = 1
+
+        engine._drain_pending_signals_for_window(engine._windows[0])
+
+        new_deadline = engine._window_state["W1"]["collection_deadline"]
+        assert new_deadline == original_deadline + timedelta(minutes=5)
+        assert engine._window_state["W1"]["collection_bars_remaining"] == 0
+
 
 class TestRankWeightedSizing:
     def _make_engine(self, **kwargs):

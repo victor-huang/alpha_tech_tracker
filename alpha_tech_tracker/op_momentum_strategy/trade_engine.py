@@ -2228,6 +2228,18 @@ class OpMomentumTradeEngine:
             logger.info(
                 "Signal collection window [%s] closed: no signals buffered", label
             )
+            with self._signal_lock:
+                bars_left = state.get("collection_bars_remaining", 0)
+                if bars_left > 0:
+                    state["collection_bars_remaining"] = bars_left - 1
+                    state["collection_deadline"] += timedelta(minutes=5)
+                    state["drain_timer_scheduled"] = False
+                    logger.info(
+                        "Collection window [%s] extended to %s ET (%d bar(s) remaining)",
+                        label,
+                        state["collection_deadline"].strftime("%H:%M:%S"),
+                        bars_left - 1,
+                    )
             return
 
         logger.info(
