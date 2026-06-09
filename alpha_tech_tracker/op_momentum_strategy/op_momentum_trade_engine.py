@@ -316,6 +316,17 @@ def parse_args():
         ),
     )
     parser.add_argument(
+        "--direction-aware-scoring",
+        action="store_true",
+        default=False,
+        dest="direction_aware_scoring",
+        help=(
+            "Use direction-specific win-rate scoring for --selector win-rate. "
+            "On LONG regime days rank by trailing bullish WR; on SHORT days by bearish WR. "
+            "Requires --selector win-rate and --enable-regime-engine. Default: off."
+        ),
+    )
+    parser.add_argument(
         "--rank-weighted-sizing",
         type=int,
         nargs="+",
@@ -1143,6 +1154,7 @@ if __name__ == "__main__":
             regime_hold=args.regime_hold,
             disable_ma_stops_for_regime_hold=args.disable_ma_stops_for_regime_hold,
             selector_type=args.selector,
+            direction_aware_scoring=args.direction_aware_scoring,
             fixed_signal_alloc=args.fixed_signal_alloc,
             extend_collection_bars=args.extend_collection_bars,
         )
@@ -1312,6 +1324,7 @@ if __name__ == "__main__":
             regime_hold=args.regime_hold,
             disable_ma_stops_for_regime_hold=args.disable_ma_stops_for_regime_hold,
             selector_type=args.selector,
+            direction_aware_scoring=args.direction_aware_scoring,
             fixed_signal_alloc=args.fixed_signal_alloc,
             extend_collection_bars=args.extend_collection_bars,
         )

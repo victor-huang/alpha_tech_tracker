@@ -19,6 +19,7 @@ from alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine import (
 from alpha_tech_tracker.op_momentum_strategy.trade_engine import (
     OpMomentumTradeEngine,
     TickerSelector,
+    WinRateTickerSelector,
 )
 
 from conftest import _D, _make_active_position, _make_alpaca_client
@@ -5520,3 +5521,90 @@ class TestWinRateSignalDrainRanking:
             engine._drain_pending_signals_for_window(win)
 
         mock_score.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# WinRateTickerSelector — fetch window separation (Fix 2)
+# ---------------------------------------------------------------------------
+
+class TestWinRateTickerSelectorFetchWindows:
+    """
+    fetch_bars() uses the short lookback window for NEUTRAL/CAUTION EOD-WR ranking.
+    _fetch_bars_direction_aware() uses the 90-day window for direction-aware scoring.
+    The two fetch windows must be independent so NEUTRAL picks match the baseline.
+    """
+
+    _NOW_ET_PATH = "alpha_tech_tracker.op_momentum_strategy.trade_engine._now_et"
+
+    def _make_selector(self, lookback_days=20, direction_aware=False):
+        return WinRateTickerSelector(
+            tickers=["AMD", "TSLA"],
+            top_n=3,
+            lookback_days=lookback_days,
+            direction_aware=direction_aware,
+        )
+
+    def test_fetch_bars_uses_lookback_days_window_when_not_direction_aware(self, mocker):
+        selector = self._make_selector(lookback_days=20, direction_aware=False)
+        today = date(2024, 6, 3)
+        mock_now = mocker.patch(self._NOW_ET_PATH)
+        mock_now.return_value.date.return_value = today
+        mock_fb = mocker.patch(_FETCH_BARS_PATH, return_value={})
+
+        selector.fetch_bars()
+
+        expected_start = today - timedelta(days=20 + 5)
+        call_kwargs = mock_fb.call_args
+        assert call_kwargs[0][1] == expected_start
+
+    def test_fetch_bars_uses_lookback_days_window_when_direction_aware(self, mocker):
+        selector = self._make_selector(lookback_days=20, direction_aware=True)
+        today = date(2024, 6, 3)
+        mock_now = mocker.patch(self._NOW_ET_PATH)
+        mock_now.return_value.date.return_value = today
+        mock_fb = mocker.patch(_FETCH_BARS_PATH, return_value={})
+
+        selector.fetch_bars()
+
+        # Must use lookback_days (20), NOT the 90-day direction-aware window
+        expected_start = today - timedelta(days=20 + 5)
+        call_kwargs = mock_fb.call_args
+        assert call_kwargs[0][1] == expected_start
+
+    def test_fetch_bars_direction_aware_uses_90_day_window(self, mocker):
+        selector = self._make_selector(lookback_days=20, direction_aware=True)
+        today = date(2024, 6, 3)
+        mock_now = mocker.patch(self._NOW_ET_PATH)
+        mock_now.return_value.date.return_value = today
+        mock_fb = mocker.patch(_FETCH_BARS_PATH, return_value={})
+
+        selector._fetch_bars_direction_aware()
+
+        expected_start = today - timedelta(days=90 + 5)
+        call_kwargs = mock_fb.call_args
+        assert call_kwargs[0][1] == expected_start
+
+    def test_rank_direction_aware_fetches_own_90_day_data(self, mocker):
+        selector = self._make_selector(lookback_days=20, direction_aware=True)
+        today = date(2024, 6, 3)
+        mock_now = mocker.patch(self._NOW_ET_PATH)
+        mock_now.return_value.date.return_value = today
+        mock_fb = mocker.patch(_FETCH_BARS_PATH, return_value={})
+        mocker.patch(
+            "alpha_tech_tracker.op_momentum_strategy.trade_engine.compute_signals_with_backtest",
+            return_value=__import__("pandas").DataFrame(),
+        )
+        mocker.patch(
+            "alpha_tech_tracker.op_momentum_strategy.trade_engine.compute_directional_stats",
+            return_value={"bull": None, "bear": None},
+        )
+        mocker.patch(
+            "alpha_tech_tracker.op_momentum_strategy.trade_engine.rank_tickers_direction_aware",
+            return_value=[],
+        )
+
+        selector._rank_direction_aware(ticker_dfs={}, direction="LONG", today=today)
+
+        # Verify the internal fetch used the 90-day window, not the short window
+        expected_start = today - timedelta(days=90 + 5)
+        assert mock_fb.call_args[0][1] == expected_start

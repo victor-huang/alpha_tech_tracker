@@ -14,7 +14,15 @@ import pytz
 
 from alpaca.data.enums import DataFeed
 
-from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import fetch_bars
+from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import (
+    compute_signals_with_backtest,
+    fetch_bars,
+)
+from alpha_tech_tracker.op_momentum_strategy.direction_aware_selector import (
+    compute_directional_stats,
+    rank_tickers_direction_aware,
+    DualSideFloorSuppressor,
+)
 from alpha_tech_tracker.op_momentum_strategy.regime_engine import (
     RegimeEngine,
     _rank_tickers_by_eod_win_rate,
@@ -373,11 +381,20 @@ class WinRateTickerSelector:
     Selects tickers by historical EOD win rate instead of composite score.
     LONG direction → top-N. SHORT direction → bottom-N (worst-first).
 
+    When direction_aware=True (--direction-aware-scoring flag), uses signal-based
+    directional win rates instead of hold-based EOD win rates.  Each ticker is
+    ranked by direction_score = WR * (1 + avg_win_pct * 2) computed from the
+    trailing 90-day bull (LONG) or bear (SHORT) signal history.
+
     Duck-typed with TickerSelector: exposes fetch_bars(), select(), and the
     same stat attrs so _run_window_selectors works identically for both.
     rolling_stats is populated with sentinel ev_trade=1.0 for each picked
     ticker so the drain's EV gate passes without filtering any picks.
     """
+
+    _DIRECTION_AWARE_LOOKBACK_DAYS = 90
+    _DIRECTION_AWARE_MIN_TRADES = 10
+    _DIRECTION_AWARE_MIN_POOL_VALID = 3
 
     def __init__(
         self,
@@ -389,8 +406,8 @@ class WinRateTickerSelector:
         alpaca_feed=None,
         score_feed=None,
         market_data_client=None,
+        direction_aware: bool = False,
     ):
-        from alpaca.data.enums import DataFeed
         self._tickers = tickers
         self._top_n = top_n
         self._or_start = or_start
@@ -399,10 +416,12 @@ class WinRateTickerSelector:
         self._alpaca_feed = alpaca_feed or DataFeed.SIP
         self._score_feed = score_feed or self._alpaca_feed
         self._market_data_client = market_data_client
+        self._direction_aware = direction_aware
         self.rolling_stats: dict = {}
         self.dynamic_ev_gate_state = None
         self.direction_split_ev_state = None
         self.scoring_context: dict = {}
+        self._suppressor = DualSideFloorSuppressor() if direction_aware else None
 
     def fetch_bars(self) -> dict:
         today = _now_et().date()
@@ -418,27 +437,101 @@ class WinRateTickerSelector:
             source="alpaca", feed=self._score_feed,
         )
 
+    def _fetch_bars_direction_aware(self) -> dict:
+        today = _now_et().date()
+        fetch_start = today - timedelta(days=self._DIRECTION_AWARE_LOOKBACK_DAYS + 5)
+        bars_end = today - timedelta(days=1)
+        if self._market_data_client is not None:
+            return fetch_bars(
+                self._tickers, fetch_start, bars_end,
+                source="tradestation", market_data_client=self._market_data_client,
+            )
+        return fetch_bars(
+            self._tickers, fetch_start, bars_end,
+            source="alpaca", feed=self._score_feed,
+        )
+
+    def _rank_direction_aware(self, ticker_dfs: dict, direction: str, today: date) -> list:
+        long_window_dfs = self._fetch_bars_direction_aware()
+        ticker_stats = {}
+        for ticker, df in long_window_dfs.items():
+            if df.empty:
+                continue
+            signals_df = compute_signals_with_backtest(
+                df, self._or_bars, opening_start_time=self._or_start
+            )
+            if signals_df.empty:
+                continue
+            primary_df = signals_df[
+                ~signals_df.get("is_reversal", False).astype(bool)
+                & ~signals_df.get("is_bearish_reentry", False).astype(bool)
+                & ~signals_df.get("is_bullish_reentry", False).astype(bool)
+            ] if "is_reversal" in signals_df.columns else signals_df
+
+            stats = compute_directional_stats(
+                primary_df,
+                target_date=today,
+                lookback_days=self._DIRECTION_AWARE_LOOKBACK_DAYS,
+                min_trades=self._DIRECTION_AWARE_MIN_TRADES,
+            )
+
+            if self._suppressor is not None:
+                bull_wr = stats["bull"]["wr"] if stats["bull"] else 0.0
+                bear_wr = stats["bear"]["wr"] if stats["bear"] else 0.0
+                self._suppressor.update(ticker, bull_wr, bear_wr, today)
+                if self._suppressor.is_suppressed(ticker, direction="LONG", as_of=today):
+                    stats["bull"] = None
+                if self._suppressor.is_suppressed(ticker, direction="SHORT", as_of=today):
+                    stats["bear"] = None
+
+            ticker_stats[ticker] = stats
+
+        overall_wr = {
+            ticker: (
+                stats["bull"]["wr"] if stats.get("bull") else
+                stats["bear"]["wr"] if stats.get("bear") else 0.0
+            )
+            for ticker, stats in ticker_stats.items()
+        }
+        ranked = rank_tickers_direction_aware(
+            ticker_stats,
+            direction=direction,
+            min_pool_valid=self._DIRECTION_AWARE_MIN_POOL_VALID,
+            fallback_overall_wr=overall_wr,
+        )
+        return [t for t, _ in ranked]
+
     def select(self, ticker_dfs: dict = None, direction: str = "LONG") -> list:
         if ticker_dfs is None:
             ticker_dfs = self.fetch_bars()
+
         today = _now_et().date()
-        ranked = _rank_tickers_by_eod_win_rate(
-            ticker_dfs, today, self._or_start, self._or_bars, self._lookback_days
-        )
-        if direction == "SHORT":
-            # bottom-N by EOD WR, worst first
-            picks = [t for t, _ in list(reversed(ranked[-self._top_n:]))]
+        if self._direction_aware and direction in ("LONG", "SHORT"):
+            picks = self._rank_direction_aware(ticker_dfs, direction, today)[:self._top_n]
         else:
-            picks = [t for t, _ in ranked[:self._top_n]]
+            # CAUTION / NEUTRAL / non-directional: fall back to overall EOD WR ranking.
+            ranked = _rank_tickers_by_eod_win_rate(
+                ticker_dfs, today, self._or_start, self._or_bars, self._lookback_days
+            )
+            if direction == "SHORT":
+                picks = [t for t, _ in list(reversed(ranked[-self._top_n:]))]
+            else:
+                picks = [t for t, _ in ranked[:self._top_n]]
+
         # Populate rolling_stats so the signal drain can gate and score picks.
-        # score_ticker() reads ev_trade, avg_win_pct, win_rate directly with [].
         # ev_trade=1.0 ensures every pick passes the default min_ev=0.0 gate;
         # avg_win_pct/win_rate=0.0 lets the drain rank purely by entry position.
         self.rolling_stats = {
             ticker: {"ev_trade": 1.0, "avg_win_pct": 0.0, "win_rate": 0.0}
             for ticker in picks
         }
-        logger.info("WinRateTickerSelector [%s] top-%d: %s", direction, self._top_n, picks)
+        logger.info(
+            "WinRateTickerSelector [%s%s] top-%d: %s",
+            direction,
+            " dir-aware" if self._direction_aware else "",
+            self._top_n,
+            picks,
+        )
         return picks
 
 
@@ -539,6 +632,7 @@ class OpMomentumTradeEngine:
         regime_hold: bool = False,
         disable_ma_stops_for_regime_hold: bool = False,
         selector_type: str = "score-rank",
+        direction_aware_scoring: bool = False,
         fixed_signal_alloc: bool = False,
         extend_collection_bars: int = 0,
     ):
@@ -662,6 +756,7 @@ class OpMomentumTradeEngine:
         self._disable_ma_stops_for_regime_hold = disable_ma_stops_for_regime_hold
         self._current_regime = None
         self._selector_type = selector_type
+        self._direction_aware_scoring = direction_aware_scoring
         self._fixed_signal_alloc = fixed_signal_alloc
         self._extend_collection_bars = extend_collection_bars
 
@@ -2679,6 +2774,7 @@ class OpMomentumTradeEngine:
                 alpaca_feed=self._alpaca_feed,
                 score_feed=self._score_feed,
                 market_data_client=self._market_data_client,
+                direction_aware=self._direction_aware_scoring,
             )
         return TickerSelector(
             tickers=all_tickers,
