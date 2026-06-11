@@ -1173,16 +1173,33 @@ class PositionMonitor:
 
         for lookup_symbol, group in groups.items():
             broker_entry = open_positions.get(lookup_symbol)
-            if broker_entry is None:
-                continue
-
             sample_pos = group[0]
             if sample_pos.trade_type == "stock":
-                broker_qty = int(abs(broker_entry["qty"]))
                 total_engine_qty = sum(p.shares for p in group)
             else:
-                broker_qty = int(broker_entry["qty"])
                 total_engine_qty = sum(p.contracts for p in group)
+
+            if broker_entry is None:
+                # Position is fully absent at the broker.  Two possibilities:
+                #   (a) Manual close — detect and record it.
+                #   (b) API lag on a very fresh entry (positions API can take a few
+                #       minutes to reflect a fill).
+                # Guard (b) by skipping when the oldest position in the group was
+                # entered less than 10 minutes ago.
+                oldest_entry = min(
+                    (p.entry_time for p in group if p.entry_time is not None),
+                    default=None,
+                )
+                if oldest_entry is not None:
+                    age_seconds = (_now_et() - oldest_entry).total_seconds()
+                    if age_seconds < 600:
+                        continue
+                broker_qty = 0
+            else:
+                if sample_pos.trade_type == "stock":
+                    broker_qty = int(abs(broker_entry["qty"]))
+                else:
+                    broker_qty = int(broker_entry["qty"])
 
             if broker_qty >= total_engine_qty:
                 continue

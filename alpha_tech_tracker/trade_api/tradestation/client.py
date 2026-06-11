@@ -789,7 +789,10 @@ class TradeStationAPIClient(ExecutionClient):
             try:
                 occ = _ts_to_occ(ts_symbol)
             except ValueError:
-                continue  # plain stock position, not an option
+                # Plain stock ticker — store under the stripped ticker so callers
+                # using pos.ticker as the lookup key can find it.
+                result[ts_symbol.strip()] = {"qty": qty}
+                continue
             result[occ] = {"qty": qty}
         return result
 
@@ -816,23 +819,35 @@ class TradeStationAPIClient(ExecutionClient):
             logger.warning("get_filled_orders: failed to fetch orders for %s", symbol)
             return []
 
-        orders = data if isinstance(data, list) else data.get("Orders", [])
+        hist_orders = data if isinstance(data, list) else data.get("Orders", [])
 
-        # historicalorders only covers completed trading days — today's fills are on /orders.
-        # Fall back when historical returns nothing so same-day reconciliation works.
-        if not orders:
-            try:
-                resp2 = self._session.get(
-                    self._v3_base_url + f"/brokerage/accounts/{account_key}/orders",
-                    params={"pageSize": 200},
-                )
-                data2 = self._parse(resp2)
-                all_today = data2 if isinstance(data2, list) else data2.get("Orders", [])
-                orders = [o for o in all_today if ts_symbol in (
-                    (o.get("Legs") or [{}])[0].get("Symbol", "")
-                )]
-            except Exception:
-                logger.warning("get_filled_orders: fallback /orders also failed for %s", symbol)
+        # historicalorders only covers completed trading days — same-day fills live on
+        # /orders.  Always merge both sources so a manual close placed earlier today is
+        # never missed when the ticker was also traded in the past 3 days (which would
+        # make historicalorders non-empty and skip the old fallback-only path).
+        today_orders: list = []
+        try:
+            resp2 = self._session.get(
+                self._v3_base_url + f"/brokerage/accounts/{account_key}/orders",
+                params={"pageSize": 200},
+            )
+            data2 = self._parse(resp2)
+            all_today = data2 if isinstance(data2, list) else data2.get("Orders", [])
+            today_orders = [o for o in all_today if ts_symbol in (
+                (o.get("Legs") or [{}])[0].get("Symbol", "")
+            )]
+        except Exception:
+            logger.warning("get_filled_orders: /orders fetch failed for %s", symbol)
+
+        # Merge historical + today, deduplicate by OrderID.
+        seen_ids: set = set()
+        orders: list = []
+        for raw in hist_orders + today_orders:
+            oid = str(raw.get("OrderID", ""))
+            if oid in seen_ids:
+                continue
+            seen_ids.add(oid)
+            orders.append(raw)
         result = []
         for raw in orders:
             if raw.get("Status") not in ("FLL", "FLP"):

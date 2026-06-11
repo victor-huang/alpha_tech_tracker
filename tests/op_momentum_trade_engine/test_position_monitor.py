@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime
 import pytest
 from unittest.mock import MagicMock, patch
 
@@ -3947,13 +3948,27 @@ class TestSyncOpenPositionQtys:
         assert pos.contracts == 6
         mock_notify.assert_not_called()
 
-    def test_position_absent_from_broker_leaves_contracts_unchanged(self):
+    def test_position_absent_from_broker_skipped_when_entry_is_recent(self):
+        # Positions entered within the last 10 min may not have appeared in the
+        # broker's positions API yet — skip to avoid false manual-close detection.
         monitor, client, pos = self._make_monitor_with_open_option(contracts=6)
+        import pytz
+        pos.entry_time = datetime.now(pytz.timezone("America/New_York"))
         client.get_open_positions.return_value = {}
 
         monitor._sync_open_position_qtys()
 
         assert pos.contracts == 6
+
+    def test_position_absent_from_broker_treated_as_full_manual_close(self):
+        monitor, client, pos = self._make_monitor_with_open_option(contracts=6)
+        client.get_open_positions.return_value = {}
+        client.get_filled_orders.return_value = []
+
+        with patch("alpha_tech_tracker.op_momentum_strategy.position_monitor._notify"):
+            monitor._sync_open_position_qtys()
+
+        assert pos.contracts == 0
 
     def test_already_closed_positions_are_skipped(self):
         monitor, client, pos = self._make_monitor_with_open_option(contracts=6)
@@ -4772,9 +4787,12 @@ class TestQtySyncPartialManualClose:
         assert closed_positions == []
         assert pos.contracts == 2
 
-    def test_no_callback_when_symbol_absent_from_broker_open_positions(self):
+    def test_no_callback_when_symbol_absent_and_entry_is_recent(self):
+        # Entry < 10 min ago — skip to avoid false manual-close on API lag.
+        import pytz
         closed_positions = []
         pos = self._make_options_pos(contracts=2)
+        pos.entry_time = datetime.now(pytz.timezone("America/New_York"))
         monitor, client = self._make_monitor(pos, close_callback=closed_positions.append)
 
         client.get_open_positions.return_value = {}
@@ -5095,7 +5113,7 @@ class TestFifoQtySyncMultiPosition:
 
 # ─── Phase 4 — timed exit + trailing MA suppression ──────────────────────────
 
-from datetime import date, datetime, time as dtime
+from datetime import datetime, time as dtime
 import pytz as _pytz
 ET = _pytz.timezone("America/New_York")
 
