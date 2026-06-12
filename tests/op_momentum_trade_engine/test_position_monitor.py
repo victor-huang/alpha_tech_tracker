@@ -4854,6 +4854,57 @@ class TestQtySyncPartialManualClose:
         assert "manual_close" in caplog.text
 
 
+    def test_full_close_removes_position_from_positions_list(self):
+        from datetime import timedelta
+        pos = self._make_options_pos(contracts=4)
+        monitor, client = self._make_monitor(pos)
+
+        client.get_open_positions.return_value = {}
+        pos.entry_time = datetime.now(ET) - timedelta(minutes=15)
+        client.get_filled_orders.return_value = [
+            {
+                "side": "sell",
+                "filled_avg_price": "9.00",
+                "order_id": "manual-sell-1",
+                "filled_qty": 4.0,
+                "filled_at": None,
+            }
+        ]
+        monitor._sync_open_position_qtys()
+
+        assert pos not in monitor._positions
+
+    def test_full_close_does_not_trigger_double_capital_return_on_next_bar(self):
+        from datetime import timedelta
+        close_cb = MagicMock()
+        pos = self._make_stock_pos(shares=60)
+        pos.signal = "BEARISH"
+        pos.entry_time = datetime.now(ET) - timedelta(minutes=15)
+        monitor, client = self._make_monitor(pos, close_callback=close_cb)
+
+        client.get_open_positions.return_value = {}
+        client.get_filled_orders.return_value = [
+            {
+                "side": "buy",
+                "filled_avg_price": "154.64",
+                "order_id": "manual-buy-1",
+                "filled_qty": 60.0,
+                "filled_at": None,
+            }
+        ]
+        monitor._sync_open_position_qtys()
+
+        assert close_cb.call_count == 1
+        assert pos not in monitor._positions
+
+        # Simulating the next bar arriving should not fire close_callback a second
+        # time because the position was removed from _positions by QTY SYNC.
+        with patch("alpha_tech_tracker.op_momentum_strategy.position_monitor._notify"):
+            monitor.on_bar(pos.ticker)
+
+        assert close_cb.call_count == 1
+
+
 class TestManualCloseOrderIdExclusion:
     """_fetch_manual_close_fill_price and _entry_confirmed_filled_no_manual_close
     must skip filled sell orders whose order_id matches pos.exit_order_id so that

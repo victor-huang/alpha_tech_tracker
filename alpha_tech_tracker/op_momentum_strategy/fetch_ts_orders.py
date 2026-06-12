@@ -425,7 +425,7 @@ def _parse_quotes_from_log(log_path: str, records: list) -> dict:
     re_ts = re.compile(r"^(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})")
     re_step = re.compile(
         r"FILL_ESC (?:loop )?step(\d+) (?:BUY_OPEN|SELL_CLOSE) (\S+): "
-        r"bid=([\d.]+) ask=([\d.]+) mid=([\d.]+) fair=([\d.]+)"
+        r"bid=([\d.]+) ask=([\d.]+) mid=([\d.]+) fair=([\d.]+|n/a)"
     )
     # Step3 floor case: bid < fair_price — no ask/mid/fair fields; still counts as step3
     re_step3_floor = re.compile(
@@ -441,7 +441,8 @@ def _parse_quotes_from_log(log_path: str, records: list) -> dict:
             sm = re_step.search(line)
             if sm:
                 step, symbol, bid, ask, mid, fair = sm.groups()
-                bid, ask, mid, fair = float(bid), float(ask), float(mid), float(fair)
+                bid, ask, mid = float(bid), float(ask), float(mid)
+                fair = None if fair == "n/a" else float(fair)
                 log_dt = datetime.strptime(tm.group(1), "%Y-%m-%d %H:%M:%S").replace(
                     tzinfo=timezone.utc
                 )

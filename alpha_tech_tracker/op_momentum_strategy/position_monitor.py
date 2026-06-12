@@ -1271,6 +1271,17 @@ class PositionMonitor:
                         pos.shares = new_pos_qty
                     else:
                         pos.contracts = new_pos_qty
+                    if new_pos_qty == 0:
+                        # Position fully consumed by QTY SYNC.  Remove it from
+                        # _positions so subsequent bar updates cannot trigger a
+                        # second exit signal on a 0-qty ghost, which would cause a
+                        # double capital return and a spurious reconcile loop.
+                        # The partial_closed copy in _qty_sync_closes carries the
+                        # correct fill price and P&L for summary rendering.
+                        try:
+                            self._positions.remove(pos)
+                        except ValueError:
+                            pass
 
     _MAX_RECONCILE_ATTEMPTS = 8
 
