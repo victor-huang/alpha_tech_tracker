@@ -29,7 +29,7 @@ Set:
 - `FEED` = `sip` (or `iex` if specified)
 - `ENGINE` = `stock` or `options`
 - `LIVE_DATA_FEED` = `FEED` value unless `--live-data-feed` is explicitly provided
-- `EC2_HOST` = `ec2-user@ec2-3-133-120-51.us-east-2.compute.amazonaws.com`
+- `EC2_HOST` = `ec2-user@ec2-18-220-137-181.us-east-2.compute.amazonaws.com`
 - `EC2_KEY` = `~/.ssh/trade-sys.pem`
 - If ENGINE=stock:
   - `EC2_LIVE_DATA_ROOT` = `/home/ec2-user/alpha_tech_tracker_stock_engine/alpha_tech_tracker/op_momentum_strategy/live_trade_market_data`

@@ -12,7 +12,7 @@ Parse `$ARGUMENTS` for a date (formats: `YYYY-MM-DD`, `MM-DD`, or natural langua
 
 - If empty, use today's date in ET (America/New_York).
 - Set `DATE` = YYYY-MM-DD.
-- Set `EC2_HOST` = `ec2-user@ec2-3-133-120-51.us-east-2.compute.amazonaws.com`
+- Set `EC2_HOST` = `ec2-user@ec2-18-220-137-181.us-east-2.compute.amazonaws.com`
 - Set `EC2_KEY` = `~/.ssh/trade-sys.pem`
 - Set `LOG_FILE` = `op_momentum_${DATE}.log`
 - Set `LOCAL_LOG` = `logs/op_momentum_stock_${DATE}.log`

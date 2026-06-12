@@ -10,7 +10,7 @@ The target date is today unless the user specified a date in $ARGUMENTS (accept 
 
 - If $ARGUMENTS is empty, use today's date in ET (America/New_York).
 - Resolve the date and set LOG_DATE = YYYY-MM-DD.
-- Set EC2_HOST = `ec2-user@ec2-3-133-120-51.us-east-2.compute.amazonaws.com`
+- Set EC2_HOST = `ec2-user@ec2-18-220-137-181.us-east-2.compute.amazonaws.com`
 - Set EC2_KEY = `~/.ssh/trade-sys.pem`
 - Set REMOTE_LOG_FILE = `op_momentum_${LOG_DATE}.log`
 - Set LOCAL_OPTION_LOG = `logs/op_momentum_option_${LOG_DATE}.log`
