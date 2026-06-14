@@ -1,0 +1,21 @@
+2026-06-09 23:33:01,388 INFO Only 1 signals on 2022-07-13 — insufficient for regime metrics (need ≥3)
+2026-06-09 23:33:05,911 INFO Only 2 signals on 2022-07-15 — insufficient for regime metrics (need ≥3)
+2026-06-09 23:33:12,600 INFO Only 1 signals on 2022-07-18 — insufficient for regime metrics (need ≥3)
+2026-06-09 23:34:10,936 INFO Only 1 signals on 2022-07-28 — insufficient for regime metrics (need ≥3)
+Loading bars 2022-04-02 → 2022-07-31 for 21 tickers ...
+  [cache] loaded 21 tickers from cache
+Simulating 20 trading days ...
+
+╔══ Win-Rate Selector Backtest ══════════════════════════════════════
+║  Pool     : AMD LRCX AAPL NVDA QCOM META +14 more  (20 tickers)
+║  Config   : 09:30/3b  collect=2  top-8  $80,000  feed=sip
+║  Period   : 2022-07-01 → 2022-07-31  (20 trading days)
+╠══ MONTHLY ══════════════════════════════════════════════════════════
+║  Jul 2022   +$  1,336.24   (+1.7%)
+╠══ SUMMARY ══════════════════════════════════════════════════════════
+║  Total       20d   +$  1,336.24   (+1.7% on $80,000)
+║  Trade days  20 / 20  (100%)
+║  Avg deployed   $    29,500  |  util 36.9%
+║  Mean RODC      +0.185%
+║  DW-Sharpe      10.13
+╚════════════════════════════════════════════════════════════════════

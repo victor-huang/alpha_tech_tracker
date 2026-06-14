@@ -1,0 +1,17 @@
+Loading bars 2025-11-04 → 2026-02-06 for 21 tickers ...
+  [cache] loaded 21 tickers from cache
+Simulating 5 trading days ...
+
+╔══ Win-Rate Selector Backtest ══════════════════════════════════════
+║  Pool     : AMD LRCX AAPL NVDA QCOM META +14 more  (20 tickers)
+║  Config   : 09:30/3b  collect=2  top-8  $80,000  feed=sip
+║  Period   : 2026-02-02 → 2026-02-06  (5 trading days)
+╠══ MONTHLY ══════════════════════════════════════════════════════════
+║  Feb 2026   +$    191.20   (+0.2%)
+╠══ SUMMARY ══════════════════════════════════════════════════════════
+║  Total       5d   +$    191.20   (+0.2% on $80,000)
+║  Trade days  5 / 5  (100%)
+║  Avg deployed   $    38,000  |  util 47.5%
+║  Mean RODC      +0.122%
+║  DW-Sharpe      5.76
+╚════════════════════════════════════════════════════════════════════

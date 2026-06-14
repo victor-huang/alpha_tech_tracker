@@ -1,0 +1,23 @@
+2026-06-11 01:09:01,654 INFO Only 2 signals on 2020-03-04 — insufficient for regime metrics (need ≥3)
+2026-06-11 01:09:06,695 INFO Only 1 signals on 2020-03-09 — insufficient for regime metrics (need ≥3)
+2026-06-11 01:09:07,867 INFO Only 1 signals on 2020-03-10 — insufficient for regime metrics (need ≥3)
+2026-06-11 01:09:10,784 INFO Only 1 signals on 2020-03-12 — insufficient for regime metrics (need ≥3)
+2026-06-11 01:09:12,962 INFO Only 2 signals on 2020-03-16 — insufficient for regime metrics (need ≥3)
+2026-06-11 01:09:20,779 INFO Only 2 signals on 2020-03-24 — insufficient for regime metrics (need ≥3)
+Loading bars 2019-12-02 → 2020-03-31 for 21 tickers ...
+  [cache] loaded 20 tickers from cache
+Simulating 22 trading days ...
+
+╔══ Win-Rate Selector Backtest ══════════════════════════════════════
+║  Pool     : BIDU MYL WBA BIIB CELG INTC +14 more  (20 tickers)
+║  Config   : 09:30/3b  collect=2  top-8  $80,000  feed=sip
+║  Period   : 2020-03-01 → 2020-03-31  (22 trading days)
+╠══ MONTHLY ══════════════════════════════════════════════════════════
+║  Mar 2020   +$     92.08   (+0.1%)
+╠══ SUMMARY ══════════════════════════════════════════════════════════
+║  Total       22d   +$     92.08   (+0.1% on $80,000)
+║  Trade days  21 / 22  (95%)
+║  Avg deployed   $    22,273  |  util 27.8%
+║  Mean RODC      +0.086%
+║  DW-Sharpe      0.81
+╚════════════════════════════════════════════════════════════════════

@@ -1,0 +1,50 @@
+2026-06-07 13:31:01,562 INFO Only 1 signals on 2024-01-22 — insufficient for regime metrics (need ≥3)
+2026-06-07 13:31:33,507 INFO Only 2 signals on 2024-02-08 — insufficient for regime metrics (need ≥3)
+2026-06-07 13:31:44,551 INFO Only 1 signals on 2024-02-14 — insufficient for regime metrics (need ≥3)
+2026-06-07 13:31:57,160 INFO Only 2 signals on 2024-02-22 — insufficient for regime metrics (need ≥3)
+2026-06-07 13:32:06,742 INFO Only 2 signals on 2024-02-27 — insufficient for regime metrics (need ≥3)
+2026-06-07 13:32:08,623 INFO Only 2 signals on 2024-02-28 — insufficient for regime metrics (need ≥3)
+2026-06-07 13:32:36,675 WARNING RDDT 2024-03-21: insufficient history for vol_20day_avg, skipping
+2026-06-07 13:32:38,247 WARNING RDDT 2024-03-22: insufficient history for vol_20day_avg, skipping
+2026-06-07 13:32:48,989 INFO Only 0 signals on 2024-04-02 — insufficient for regime metrics (need ≥3)
+2026-06-07 13:33:18,853 INFO Only 2 signals on 2024-04-25 — insufficient for regime metrics (need ≥3)
+2026-06-07 13:33:22,080 INFO Only 2 signals on 2024-04-29 — insufficient for regime metrics (need ≥3)
+2026-06-07 13:33:42,107 INFO Only 0 signals on 2024-05-15 — insufficient for regime metrics (need ≥3)
+2026-06-07 13:34:06,842 INFO Only 1 signals on 2024-06-05 — insufficient for regime metrics (need ≥3)
+2026-06-07 13:34:19,231 INFO Only 0 signals on 2024-06-12 — insufficient for regime metrics (need ≥3)
+2026-06-07 13:35:22,482 INFO Only 1 signals on 2024-08-05 — insufficient for regime metrics (need ≥3)
+2026-06-07 13:35:52,267 INFO Only 2 signals on 2024-08-29 — insufficient for regime metrics (need ≥3)
+2026-06-07 13:36:02,267 INFO Only 2 signals on 2024-09-09 — insufficient for regime metrics (need ≥3)
+2026-06-07 13:36:16,128 INFO Only 2 signals on 2024-09-19 — insufficient for regime metrics (need ≥3)
+2026-06-07 13:37:12,623 INFO Only 0 signals on 2024-11-06 — insufficient for regime metrics (need ≥3)
+2026-06-07 13:37:17,709 INFO Only 1 signals on 2024-11-11 — insufficient for regime metrics (need ≥3)
+2026-06-07 13:37:34,062 INFO Only 2 signals on 2024-11-25 — insufficient for regime metrics (need ≥3)
+2026-06-07 13:38:13,914 INFO Only 2 signals on 2024-12-30 — insufficient for regime metrics (need ≥3)
+Loading bars 2023-10-03 → 2024-12-31 for 19 tickers ...
+  [cache] loaded 19 tickers from cache
+Simulating 252 trading days ...
+
+╔══ Win-Rate Selector Backtest ══════════════════════════════════════
+║  Pool     : HOOD RKLB ASTS SOFI IONQ SMCI +12 more  (18 tickers)
+║  Config   : 09:30/3b  collect=3  top-8  $10,000  feed=sip
+║  Period   : 2024-01-01 → 2024-12-31  (252 trading days)
+╠══ MONTHLY ══════════════════════════════════════════════════════════
+║  Jan 2024   $    -22.99   (-0.2%)
+║  Feb 2024   +$    566.93   (+5.7%)
+║  Mar 2024   +$     47.45   (+0.5%)
+║  Apr 2024   +$    376.07   (+3.8%)
+║  May 2024   $    -95.29   (-1.0%)
+║  Jun 2024   +$    212.11   (+2.1%)
+║  Jul 2024   +$    378.31   (+3.8%)
+║  Aug 2024   +$    123.27   (+1.2%)
+║  Sep 2024   +$    110.25   (+1.1%)
+║  Oct 2024   +$      8.07   (+0.1%)
+║  Nov 2024   +$      2.13   (+0.0%)
+║  Dec 2024   +$    502.83   (+5.0%)
+╠══ SUMMARY ══════════════════════════════════════════════════════════
+║  Total       252d   +$  2,209.14   (+22.1% on $10,000)
+║  Trade days  210 / 252  (83%)
+║  Avg deployed   $     2,758  |  util 27.6%
+║  Mean RODC      +0.274%
+║  DW-Sharpe      4.76
+╚════════════════════════════════════════════════════════════════════

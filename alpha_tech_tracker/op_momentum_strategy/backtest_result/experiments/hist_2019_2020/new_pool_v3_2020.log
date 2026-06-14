@@ -1,0 +1,201 @@
+2026-06-07 20:21:53,811 INFO Only 0 signals on 2020-01-02 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:21:56,441 INFO Only 1 signals on 2020-01-03 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:21:58,486 INFO Only 2 signals on 2020-01-06 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:21:59,816 INFO Only 0 signals on 2020-01-07 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:22:01,366 INFO Only 1 signals on 2020-01-08 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:22:03,022 INFO Only 2 signals on 2020-01-09 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:22:03,322 WARNING ASTS 2020-01-10: OR range is 0, skipping
+2026-06-07 20:22:05,826 INFO Only 0 signals on 2020-01-13 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:22:06,384 WARNING ASTS 2020-01-14: insufficient history for vol_20day_avg, skipping
+2026-06-07 20:22:06,390 WARNING SMCI 2020-01-14: insufficient history for vol_20day_avg, skipping
+2026-06-07 20:22:07,974 WARNING ASTS 2020-01-15: insufficient history for vol_20day_avg, skipping
+2026-06-07 20:22:12,696 INFO Only 2 signals on 2020-01-15 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:22:14,412 WARNING ASTS 2020-01-16: OR range is 0, skipping
+2026-06-07 20:22:15,873 INFO Only 1 signals on 2020-01-16 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:22:18,312 INFO Only 1 signals on 2020-01-17 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:22:20,264 INFO Only 1 signals on 2020-01-21 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:22:22,416 INFO Only 1 signals on 2020-01-22 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:22:25,860 INFO Only 2 signals on 2020-01-23 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:22:29,077 WARNING CLSK 2020-01-24: insufficient history for vol_20day_avg, skipping
+2026-06-07 20:22:29,078 INFO Only 2 signals on 2020-01-24 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:22:31,075 INFO Only 1 signals on 2020-01-27 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:22:32,941 INFO Only 1 signals on 2020-01-28 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:22:34,578 INFO Only 2 signals on 2020-01-29 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:22:37,499 INFO Only 2 signals on 2020-01-31 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:22:40,873 INFO Only 1 signals on 2020-02-04 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:22:43,076 INFO Only 2 signals on 2020-02-05 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:22:47,127 INFO Only 1 signals on 2020-02-06 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:22:48,126 WARNING ASTS 2020-02-07: OR range is 0, skipping
+2026-06-07 20:22:51,075 INFO Only 2 signals on 2020-02-07 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:22:55,343 INFO Only 2 signals on 2020-02-10 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:22:57,750 INFO Only 1 signals on 2020-02-11 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:23:00,720 INFO Only 1 signals on 2020-02-12 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:23:07,818 INFO Only 2 signals on 2020-02-14 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:23:08,556 WARNING ASTS 2020-02-18: OR range is 0, skipping
+2026-06-07 20:23:16,833 INFO Only 2 signals on 2020-02-19 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:23:21,355 INFO Only 2 signals on 2020-02-20 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:23:26,935 WARNING ASTS 2020-02-24: OR range is 0, skipping
+2026-06-07 20:23:28,874 INFO Only 0 signals on 2020-02-24 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:23:29,318 WARNING ASTS 2020-02-25: OR range is 0, skipping
+2026-06-07 20:23:39,036 INFO Only 1 signals on 2020-02-27 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:23:42,245 INFO Only 0 signals on 2020-02-28 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:23:44,243 INFO Only 0 signals on 2020-03-02 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:23:46,687 INFO Only 0 signals on 2020-03-03 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:23:49,002 INFO Only 0 signals on 2020-03-04 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:23:53,670 INFO Only 2 signals on 2020-03-06 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:23:56,736 INFO Only 2 signals on 2020-03-09 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:24:00,331 INFO Only 1 signals on 2020-03-10 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:24:07,986 INFO Only 0 signals on 2020-03-12 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:24:10,057 INFO Only 2 signals on 2020-03-13 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:24:10,388 WARNING ASTS 2020-03-16: OR range is 0, skipping
+2026-06-07 20:24:13,251 INFO Only 1 signals on 2020-03-16 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:24:17,459 INFO Only 2 signals on 2020-03-18 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:24:20,701 INFO Only 1 signals on 2020-03-20 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:24:27,953 INFO Only 0 signals on 2020-03-24 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:24:29,885 INFO Only 1 signals on 2020-03-25 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:24:32,330 INFO Only 2 signals on 2020-03-26 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:24:32,807 WARNING ASTS 2020-03-27: OR range is 0, skipping
+2026-06-07 20:24:40,634 INFO Only 2 signals on 2020-03-31 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:24:43,547 INFO Only 2 signals on 2020-04-01 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:24:47,657 INFO Only 1 signals on 2020-04-03 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:24:49,448 INFO Only 1 signals on 2020-04-06 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:24:51,760 INFO Only 1 signals on 2020-04-07 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:24:53,783 INFO Only 1 signals on 2020-04-08 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:24:55,915 INFO Only 1 signals on 2020-04-09 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:24:58,805 INFO Only 1 signals on 2020-04-13 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:25:01,791 INFO Only 1 signals on 2020-04-14 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:25:04,057 INFO Only 2 signals on 2020-04-15 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:25:06,530 INFO Only 2 signals on 2020-04-16 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:25:11,106 INFO Only 2 signals on 2020-04-20 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:25:15,791 INFO Only 0 signals on 2020-04-22 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:25:17,223 INFO Only 1 signals on 2020-04-23 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:25:20,955 INFO Only 1 signals on 2020-04-27 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:25:27,051 INFO Only 1 signals on 2020-04-29 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:25:31,030 INFO Only 1 signals on 2020-05-01 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:25:35,181 INFO Only 0 signals on 2020-05-05 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:25:35,636 WARNING ASTS 2020-05-06: insufficient history for vol_20day_avg, skipping
+2026-06-07 20:25:38,394 INFO Only 2 signals on 2020-05-06 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:25:43,424 INFO Only 2 signals on 2020-05-08 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:25:47,708 INFO Only 2 signals on 2020-05-12 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:25:53,004 INFO Only 1 signals on 2020-05-18 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:25:54,288 INFO Only 2 signals on 2020-05-19 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:25:56,008 INFO Only 1 signals on 2020-05-20 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:26:01,083 INFO Only 0 signals on 2020-05-26 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:26:02,802 INFO Only 2 signals on 2020-05-27 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:26:06,959 INFO Only 1 signals on 2020-06-01 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:26:08,816 INFO Only 2 signals on 2020-06-03 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:26:09,465 INFO Only 0 signals on 2020-06-04 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:26:10,091 INFO Only 2 signals on 2020-06-05 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:26:10,710 INFO Only 1 signals on 2020-06-08 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:26:10,847 WARNING ASTS 2020-06-09: insufficient history for vol_20day_avg, skipping
+2026-06-07 20:26:11,341 INFO Only 1 signals on 2020-06-09 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:26:11,479 WARNING ASTS 2020-06-10: insufficient history for vol_20day_avg, skipping
+2026-06-07 20:26:11,992 INFO Only 2 signals on 2020-06-10 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:26:12,126 WARNING ASTS 2020-06-11: OR range is 0, skipping
+2026-06-07 20:26:12,654 INFO Only 2 signals on 2020-06-11 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:26:13,937 INFO Only 2 signals on 2020-06-15 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:26:14,580 INFO Only 0 signals on 2020-06-16 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:26:15,238 INFO Only 2 signals on 2020-06-17 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:26:17,888 INFO Only 2 signals on 2020-06-23 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:26:18,021 WARNING ASTS 2020-06-24: OR range is 0, skipping
+2026-06-07 20:26:19,849 INFO Only 1 signals on 2020-06-26 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:26:21,817 INFO Only 2 signals on 2020-07-01 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:26:22,781 INFO Only 1 signals on 2020-07-02 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:26:23,432 INFO Only 1 signals on 2020-07-06 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:26:24,120 INFO Only 1 signals on 2020-07-07 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:26:25,479 INFO Only 1 signals on 2020-07-09 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:26:26,843 INFO Only 2 signals on 2020-07-13 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:26:27,520 INFO Only 2 signals on 2020-07-14 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:26:28,229 INFO Only 2 signals on 2020-07-15 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:26:29,569 INFO Only 2 signals on 2020-07-17 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:26:29,693 WARNING ASTS 2020-07-20: OR range is 0, skipping
+2026-06-07 20:26:30,184 INFO Only 1 signals on 2020-07-20 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:26:30,825 INFO Only 2 signals on 2020-07-21 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:26:30,964 WARNING ASTS 2020-07-22: OR range is 0, skipping
+2026-06-07 20:26:31,466 INFO Only 2 signals on 2020-07-22 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:26:32,809 INFO Only 2 signals on 2020-07-24 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:26:34,091 INFO Only 1 signals on 2020-07-28 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:26:36,762 INFO Only 2 signals on 2020-08-03 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:26:38,495 WARNING RKT 2020-08-06: insufficient history for vol_20day_avg, skipping
+2026-06-07 20:26:38,783 INFO Only 2 signals on 2020-08-06 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:26:39,130 WARNING RKT 2020-08-07: insufficient history for vol_20day_avg, skipping
+2026-06-07 20:26:42,062 INFO Only 1 signals on 2020-08-13 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:26:42,709 INFO Only 2 signals on 2020-08-14 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:26:45,644 INFO Only 1 signals on 2020-08-20 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:26:48,684 WARNING ASTS 2020-08-27: OR range is 0, skipping
+2026-06-07 20:26:49,355 WARNING ASTS 2020-08-28: OR range is 0, skipping
+2026-06-07 20:26:49,908 INFO Only 1 signals on 2020-08-28 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:26:50,583 INFO Only 2 signals on 2020-08-31 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:26:50,711 WARNING ASTS 2020-09-01: OR range is 0, skipping
+2026-06-07 20:26:51,227 INFO Only 2 signals on 2020-09-01 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:26:52,670 INFO Only 0 signals on 2020-09-03 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:26:54,057 INFO Only 2 signals on 2020-09-08 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:26:54,752 INFO Only 2 signals on 2020-09-09 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:26:55,481 INFO Only 1 signals on 2020-09-10 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:26:57,619 INFO Only 2 signals on 2020-09-15 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:26:58,412 INFO Only 2 signals on 2020-09-16 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:26:59,833 INFO Only 2 signals on 2020-09-18 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:27:01,306 INFO Only 1 signals on 2020-09-22 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:27:04,068 INFO Only 2 signals on 2020-09-28 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:27:05,411 WARNING PLTR 2020-09-30: insufficient history for vol_20day_avg, skipping
+2026-06-07 20:27:06,114 WARNING PLTR 2020-10-01: insufficient history for vol_20day_avg, skipping
+2026-06-07 20:27:06,166 INFO Only 2 signals on 2020-10-01 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:27:08,945 INFO Only 1 signals on 2020-10-07 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:27:09,625 INFO Only 1 signals on 2020-10-08 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:27:10,287 INFO Only 2 signals on 2020-10-09 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:27:12,945 INFO Only 2 signals on 2020-10-14 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:27:13,630 INFO Only 2 signals on 2020-10-15 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:27:14,311 INFO Only 2 signals on 2020-10-16 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:27:18,811 INFO Only 2 signals on 2020-10-26 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:27:20,309 INFO Only 1 signals on 2020-10-28 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:27:22,520 INFO Only 0 signals on 2020-11-02 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:27:23,435 INFO Only 2 signals on 2020-11-03 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:27:24,119 INFO Only 0 signals on 2020-11-04 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:27:24,940 INFO Only 2 signals on 2020-11-05 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:27:26,359 WARNING JOBY 2020-11-09: OR range is 0, skipping
+2026-06-07 20:27:27,076 WARNING JOBY 2020-11-10: insufficient history for vol_20day_avg, skipping
+2026-06-07 20:27:27,134 INFO Only 2 signals on 2020-11-10 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:27:27,787 WARNING JOBY 2020-11-11: insufficient history for vol_20day_avg, skipping
+2026-06-07 20:27:28,486 WARNING JOBY 2020-11-12: insufficient history for vol_20day_avg, skipping
+2026-06-07 20:27:30,086 WARNING ASTS 2020-11-17: OR range is 0, skipping
+2026-06-07 20:27:30,616 INFO Only 1 signals on 2020-11-17 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:27:35,604 INFO Only 2 signals on 2020-11-27 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:27:35,734 WARNING ASTS 2020-11-30: OR range is 0, skipping
+2026-06-07 20:27:35,735 WARNING SOFI 2020-11-30: insufficient history for vol_20day_avg, skipping
+2026-06-07 20:27:36,976 INFO Only 2 signals on 2020-12-01 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:27:37,849 WARNING RKLB 2020-12-03: OR range is 0, skipping
+2026-06-07 20:27:37,850 WARNING ASTS 2020-12-03: OR range is 0, skipping
+2026-06-07 20:27:39,834 INFO Only 2 signals on 2020-12-07 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:27:41,247 INFO Only 0 signals on 2020-12-09 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:27:43,389 INFO Only 2 signals on 2020-12-14 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:27:47,026 INFO Only 1 signals on 2020-12-21 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:27:51,478 INFO Only 1 signals on 2020-12-30 — insufficient for regime metrics (need ≥3)
+Loading bars 2019-10-03 → 2020-12-31 for 21 tickers ...
+  [cache] fetching 7 tickers from alpaca (cache miss)
+  [cache] loaded 14 tickers from cache
+Simulating 253 trading days ...
+
+╔══ Win-Rate Selector Backtest ══════════════════════════════════════
+║  Pool     : HOOD RKLB ASTS SOFI IONQ SMCI +14 more  (20 tickers)
+║  Config   : 09:30/3b  collect=3  top-8  $10,000  feed=sip
+║  Period   : 2020-01-01 → 2020-12-31  (253 trading days)
+╠══ MONTHLY ══════════════════════════════════════════════════════════
+║  Jan 2020   $    -34.91   (-0.3%)
+║  Feb 2020   +$    180.03   (+1.8%)
+║  Mar 2020   $   -120.26   (-1.2%)
+║  Apr 2020   $    -76.79   (-0.8%)
+║  May 2020   +$    229.37   (+2.3%)
+║  Jun 2020   +$    231.43   (+2.3%)
+║  Jul 2020   +$    269.48   (+2.7%)
+║  Aug 2020   +$    265.64   (+2.7%)
+║  Sep 2020   +$     13.82   (+0.1%)
+║  Oct 2020   $    -20.54   (-0.2%)
+║  Nov 2020   +$     95.97   (+1.0%)
+║  Dec 2020   +$    111.57   (+1.1%)
+╠══ SUMMARY ══════════════════════════════════════════════════════════
+║  Total       253d   +$  1,144.82   (+11.4% on $10,000)
+║  Trade days  210 / 253  (83%)
+║  Avg deployed   $     2,233  |  util 22.3%
+║  Mean RODC      +0.148%
+║  DW-Sharpe      2.52
+╚════════════════════════════════════════════════════════════════════

@@ -1,0 +1,48 @@
+2026-06-07 12:13:17,619 INFO Only 2 signals on 2025-01-15 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:13:40,409 INFO Only 0 signals on 2025-02-03 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:13:52,140 INFO Only 2 signals on 2025-02-11 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:14:15,921 INFO Only 2 signals on 2025-02-28 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:14:45,783 INFO Only 2 signals on 2025-03-24 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:14:55,005 INFO Only 2 signals on 2025-03-31 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:15:01,191 INFO Only 1 signals on 2025-04-03 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:15:03,033 INFO Only 1 signals on 2025-04-04 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:15:06,737 INFO Only 1 signals on 2025-04-08 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:15:12,991 INFO Only 0 signals on 2025-04-11 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:15:15,013 INFO Only 2 signals on 2025-04-14 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:15:22,212 INFO Only 2 signals on 2025-04-21 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:15:25,798 INFO Only 0 signals on 2025-04-23 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:15:31,171 INFO Only 1 signals on 2025-04-28 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:15:32,927 INFO Only 1 signals on 2025-04-29 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:15:38,306 INFO Only 0 signals on 2025-05-02 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:17:41,933 INFO Only 1 signals on 2025-08-05 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:17:47,469 INFO Only 2 signals on 2025-08-08 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:18:18,799 INFO Only 1 signals on 2025-09-02 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:19:43,975 INFO Only 1 signals on 2025-11-04 — insufficient for regime metrics (need ≥3)
+Loading bars 2024-10-03 → 2025-12-31 for 21 tickers ...
+  [cache] loaded 21 tickers from cache
+Simulating 250 trading days ...
+
+╔══ Win-Rate Selector Backtest ══════════════════════════════════════
+║  Pool     : TLRY CGC PLUG WKHS W LYFT +14 more  (20 tickers)
+║  Config   : 09:30/3b  collect=3  top-8  $10,000  feed=sip
+║  Period   : 2025-01-01 → 2025-12-31  (250 trading days)
+╠══ MONTHLY ══════════════════════════════════════════════════════════
+║  Jan 2025   +$    188.53   (+1.9%)
+║  Feb 2025   +$    112.08   (+1.1%)
+║  Mar 2025   +$     93.51   (+0.9%)
+║  Apr 2025   +$     77.71   (+0.8%)
+║  May 2025   +$     87.29   (+0.9%)
+║  Jun 2025   +$     77.81   (+0.8%)
+║  Jul 2025   +$    345.99   (+3.5%)
+║  Aug 2025   +$    134.58   (+1.3%)
+║  Sep 2025   +$     54.78   (+0.5%)
+║  Oct 2025   +$     72.12   (+0.7%)
+║  Nov 2025   +$    490.25   (+4.9%)
+║  Dec 2025   +$    153.64   (+1.5%)
+╠══ SUMMARY ══════════════════════════════════════════════════════════
+║  Total       250d   +$  1,888.28   (+18.9% on $10,000)
+║  Trade days  209 / 250  (84%)
+║  Avg deployed   $     2,620  |  util 26.2%
+║  Mean RODC      +0.291%
+║  DW-Sharpe      4.21
+╚════════════════════════════════════════════════════════════════════

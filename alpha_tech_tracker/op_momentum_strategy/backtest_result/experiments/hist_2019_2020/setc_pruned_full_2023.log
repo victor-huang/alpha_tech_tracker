@@ -1,0 +1,63 @@
+2026-06-07 12:47:41,898 INFO Only 1 signals on 2023-01-03 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:47:47,154 WARNING OKLO 2023-01-05: OR range is 0, skipping
+2026-06-07 12:48:03,258 WARNING OKLO 2023-01-11: OR range is 0, skipping
+2026-06-07 12:48:07,787 INFO Only 2 signals on 2023-01-12 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:48:09,226 WARNING OKLO 2023-01-13: OR range is 0, skipping
+2026-06-07 12:48:12,824 WARNING OKLO 2023-01-17: OR range is 0, skipping
+2026-06-07 12:48:17,983 INFO Only 2 signals on 2023-01-18 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:48:29,322 WARNING OKLO 2023-01-24: OR range is 0, skipping
+2026-06-07 12:48:37,697 INFO Only 2 signals on 2023-01-26 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:48:52,566 INFO Only 1 signals on 2023-02-02 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:49:43,119 WARNING OKLO 2023-02-27: OR range is 0, skipping
+2026-06-07 12:49:47,357 INFO Only 2 signals on 2023-02-28 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:49:55,719 INFO Only 2 signals on 2023-03-03 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:50:13,518 WARNING OKLO 2023-03-13: OR range is 0, skipping
+2026-06-07 12:50:44,262 WARNING OKLO 2023-03-28: OR range is 0, skipping
+2026-06-07 12:50:50,782 INFO Only 1 signals on 2023-03-30 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:51:23,972 WARNING OKLO 2023-04-19: OR range is 0, skipping
+2026-06-07 12:51:27,242 INFO Only 2 signals on 2023-04-20 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:52:51,381 INFO Only 2 signals on 2023-06-15 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:53:27,506 INFO Only 2 signals on 2023-07-11 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:53:29,735 INFO Only 1 signals on 2023-07-12 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:54:14,624 INFO Only 2 signals on 2023-08-11 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:54:37,592 WARNING OKLO 2023-08-29: OR range is 0, skipping
+2026-06-07 12:55:09,389 INFO Only 2 signals on 2023-09-21 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:55:20,398 INFO Only 2 signals on 2023-09-29 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:55:40,176 WARNING OKLO 2023-10-17: OR range is 0, skipping
+2026-06-07 12:55:43,461 WARNING OKLO 2023-10-19: OR range is 0, skipping
+2026-06-07 12:55:49,951 INFO Only 1 signals on 2023-10-24 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:55:57,808 WARNING OKLO 2023-10-31: OR range is 0, skipping
+2026-06-07 12:56:03,013 INFO Only 0 signals on 2023-11-02 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:56:04,498 INFO Only 2 signals on 2023-11-03 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:56:06,132 INFO Only 0 signals on 2023-11-06 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:56:52,225 INFO Only 0 signals on 2023-12-14 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:57:05,817 INFO Only 2 signals on 2023-12-26 — insufficient for regime metrics (need ≥3)
+Loading bars 2022-10-03 → 2023-12-31 for 17 tickers ...
+  [cache] fetching 1 tickers from alpaca (cache miss)
+  [cache] loaded 16 tickers from cache
+Simulating 250 trading days ...
+
+╔══ Win-Rate Selector Backtest ══════════════════════════════════════
+║  Pool     : HOOD RKLB ASTS SOFI IONQ SMCI +10 more  (16 tickers)
+║  Config   : 09:30/3b  collect=3  top-8  $10,000  feed=sip
+║  Period   : 2023-01-01 → 2023-12-31  (250 trading days)
+╠══ MONTHLY ══════════════════════════════════════════════════════════
+║  Jan 2023   +$     44.13   (+0.4%)
+║  Feb 2023   +$    139.63   (+1.4%)
+║  Mar 2023   +$    180.67   (+1.8%)
+║  Apr 2023   +$    204.36   (+2.0%)
+║  May 2023   +$     92.84   (+0.9%)
+║  Jun 2023   +$    195.42   (+2.0%)
+║  Jul 2023   +$    460.99   (+4.6%)
+║  Aug 2023   +$    167.87   (+1.7%)
+║  Sep 2023   +$    281.12   (+2.8%)
+║  Oct 2023   $     -1.98   (-0.0%)
+║  Nov 2023   $    -31.26   (-0.3%)
+║  Dec 2023   +$    314.77   (+3.1%)
+╠══ SUMMARY ══════════════════════════════════════════════════════════
+║  Total       250d   +$  2,048.57   (+20.5% on $10,000)
+║  Trade days  218 / 250  (87%)
+║  Avg deployed   $     2,920  |  util 29.2%
+║  Mean RODC      +0.258%
+║  DW-Sharpe      4.47
+╚════════════════════════════════════════════════════════════════════

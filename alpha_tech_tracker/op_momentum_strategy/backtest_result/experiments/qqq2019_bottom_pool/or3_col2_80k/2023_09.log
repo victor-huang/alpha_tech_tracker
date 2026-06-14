@@ -1,0 +1,18 @@
+2026-06-11 01:15:52,436 INFO Only 2 signals on 2023-09-01 — insufficient for regime metrics (need ≥3)
+Loading bars 2023-06-03 → 2023-09-30 for 21 tickers ...
+  [cache] loaded 18 tickers from cache
+Simulating 20 trading days ...
+
+╔══ Win-Rate Selector Backtest ══════════════════════════════════════
+║  Pool     : BIDU MYL WBA BIIB CELG INTC +14 more  (20 tickers)
+║  Config   : 09:30/3b  collect=2  top-8  $80,000  feed=sip
+║  Period   : 2023-09-01 → 2023-09-30  (20 trading days)
+╠══ MONTHLY ══════════════════════════════════════════════════════════
+║  Sep 2023   +$    453.59   (+0.6%)
+╠══ SUMMARY ══════════════════════════════════════════════════════════
+║  Total       20d   +$    453.59   (+0.6% on $80,000)
+║  Trade days  18 / 20  (90%)
+║  Avg deployed   $    19,500  |  util 24.4%
+║  Mean RODC      +0.110%
+║  DW-Sharpe      6.11
+╚════════════════════════════════════════════════════════════════════

@@ -1,0 +1,66 @@
+2026-06-07 11:33:59,246 INFO Only 1 signals on 2019-01-08 — insufficient for regime metrics (need ≥3)
+2026-06-07 11:34:14,001 INFO Only 2 signals on 2019-01-25 — insufficient for regime metrics (need ≥3)
+2026-06-07 11:34:17,595 INFO Only 1 signals on 2019-01-30 — insufficient for regime metrics (need ≥3)
+2026-06-07 11:34:27,232 INFO Only 1 signals on 2019-02-11 — insufficient for regime metrics (need ≥3)
+2026-06-07 11:34:28,489 INFO Only 2 signals on 2019-02-12 — insufficient for regime metrics (need ≥3)
+2026-06-07 11:34:29,819 INFO Only 1 signals on 2019-02-13 — insufficient for regime metrics (need ≥3)
+2026-06-07 11:34:32,165 INFO Only 0 signals on 2019-02-15 — insufficient for regime metrics (need ≥3)
+2026-06-07 11:34:36,957 INFO Only 2 signals on 2019-02-22 — insufficient for regime metrics (need ≥3)
+2026-06-07 11:34:44,146 INFO Only 2 signals on 2019-03-04 — insufficient for regime metrics (need ≥3)
+2026-06-07 11:34:48,933 INFO Only 1 signals on 2019-03-08 — insufficient for regime metrics (need ≥3)
+2026-06-07 11:35:06,859 WARNING LYFT 2019-03-29: insufficient history for vol_20day_avg, skipping
+2026-06-07 11:35:08,036 WARNING LYFT 2019-04-01: insufficient history for vol_20day_avg, skipping
+2026-06-07 11:35:23,695 WARNING PINS 2019-04-18: insufficient history for vol_20day_avg, skipping
+2026-06-07 11:35:24,204 WARNING ZM 2019-04-18: insufficient history for vol_20day_avg, skipping
+2026-06-07 11:35:24,916 WARNING PINS 2019-04-22: insufficient history for vol_20day_avg, skipping
+2026-06-07 11:35:25,420 WARNING ZM 2019-04-22: insufficient history for vol_20day_avg, skipping
+2026-06-07 11:35:26,747 INFO Only 2 signals on 2019-04-23 — insufficient for regime metrics (need ≥3)
+2026-06-07 11:35:27,989 INFO Only 2 signals on 2019-04-24 — insufficient for regime metrics (need ≥3)
+2026-06-07 11:35:34,924 WARNING BYND 2019-05-02: insufficient history for vol_20day_avg, skipping
+2026-06-07 11:35:36,203 WARNING BYND 2019-05-03: insufficient history for vol_20day_avg, skipping
+2026-06-07 11:35:46,554 INFO Only 2 signals on 2019-05-14 — insufficient for regime metrics (need ≥3)
+2026-06-07 11:35:58,069 INFO Only 2 signals on 2019-05-24 — insufficient for regime metrics (need ≥3)
+2026-06-07 11:35:59,424 INFO Only 2 signals on 2019-05-28 — insufficient for regime metrics (need ≥3)
+2026-06-07 11:36:02,399 INFO Only 2 signals on 2019-05-30 — insufficient for regime metrics (need ≥3)
+2026-06-07 11:36:08,077 INFO Only 2 signals on 2019-06-05 — insufficient for regime metrics (need ≥3)
+2026-06-07 11:36:12,304 INFO Only 1 signals on 2019-06-10 — insufficient for regime metrics (need ≥3)
+2026-06-07 11:36:15,009 WARNING CRWD 2019-06-12: insufficient history for vol_20day_avg, skipping
+2026-06-07 11:36:15,857 WARNING FVRR 2019-06-13: insufficient history for vol_20day_avg, skipping
+2026-06-07 11:36:16,404 WARNING CRWD 2019-06-13: insufficient history for vol_20day_avg, skipping
+2026-06-07 11:36:17,267 WARNING FVRR 2019-06-14: insufficient history for vol_20day_avg, skipping
+2026-06-07 11:36:17,271 WARNING CHWY 2019-06-14: insufficient history for vol_20day_avg, skipping
+2026-06-07 11:36:18,794 WARNING CHWY 2019-06-17: insufficient history for vol_20day_avg, skipping
+2026-06-07 11:36:33,125 INFO Only 2 signals on 2019-06-28 — insufficient for regime metrics (need ≥3)
+2026-06-07 11:36:43,784 INFO Only 2 signals on 2019-07-10 — insufficient for regime metrics (need ≥3)
+2026-06-07 11:37:45,568 INFO Only 2 signals on 2019-09-04 — insufficient for regime metrics (need ≥3)
+2026-06-07 11:38:09,787 WARNING PTON 2019-09-26: insufficient history for vol_20day_avg, skipping
+2026-06-07 11:38:11,428 WARNING PTON 2019-09-27: insufficient history for vol_20day_avg, skipping
+2026-06-07 11:38:16,601 INFO Only 2 signals on 2019-10-02 — insufficient for regime metrics (need ≥3)
+Loading bars 2018-10-03 → 2019-12-31 for 21 tickers ...
+  [cache] loaded 21 tickers from cache
+Simulating 252 trading days ...
+
+╔══ Win-Rate Selector Backtest ══════════════════════════════════════
+║  Pool     : TLRY CGC PLUG WKHS W LYFT +14 more  (20 tickers)
+║  Config   : 09:30/3b  collect=3  top-8  $10,000  feed=sip
+║  Period   : 2019-01-01 → 2019-12-31  (252 trading days)
+╠══ MONTHLY ══════════════════════════════════════════════════════════
+║  Jan 2019   +$    234.53   (+2.3%)
+║  Feb 2019   +$    126.92   (+1.3%)
+║  Mar 2019   +$    232.80   (+2.3%)
+║  Apr 2019   +$    232.38   (+2.3%)
+║  May 2019   +$    159.20   (+1.6%)
+║  Jun 2019   +$    163.42   (+1.6%)
+║  Jul 2019   +$    165.22   (+1.7%)
+║  Aug 2019   +$     42.50   (+0.4%)
+║  Sep 2019   +$    332.24   (+3.3%)
+║  Oct 2019   +$     40.86   (+0.4%)
+║  Nov 2019   +$    236.24   (+2.4%)
+║  Dec 2019   +$    174.23   (+1.7%)
+╠══ SUMMARY ══════════════════════════════════════════════════════════
+║  Total       252d   +$  2,140.54   (+21.4% on $10,000)
+║  Trade days  220 / 252  (87%)
+║  Avg deployed   $     2,991  |  util 29.9%
+║  Mean RODC      +0.288%
+║  DW-Sharpe      6.19
+╚════════════════════════════════════════════════════════════════════

@@ -1,0 +1,65 @@
+2026-06-07 12:47:39,258 WARNING IONQ 2021-01-04: insufficient history for vol_20day_avg, skipping
+2026-06-07 12:47:53,299 WARNING CIFR 2021-01-08: OR range is 0, skipping
+2026-06-07 12:48:05,328 WARNING AFRM 2021-01-13: insufficient history for vol_20day_avg, skipping
+2026-06-07 12:48:08,094 WARNING AFRM 2021-01-14: insufficient history for vol_20day_avg, skipping
+2026-06-07 12:48:33,427 INFO Only 2 signals on 2021-01-27 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:48:44,630 INFO Only 2 signals on 2021-02-02 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:48:47,439 INFO Only 0 signals on 2021-02-03 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:49:16,814 WARNING RKLB 2021-02-18: OR range is 0, skipping
+2026-06-07 12:49:19,335 INFO Only 1 signals on 2021-02-18 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:49:28,243 INFO Only 0 signals on 2021-02-23 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:49:40,043 INFO Only 2 signals on 2021-03-01 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:50:31,936 INFO Only 0 signals on 2021-03-25 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:50:37,458 INFO Only 2 signals on 2021-03-29 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:50:42,574 INFO Only 1 signals on 2021-03-31 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:50:45,210 INFO Only 2 signals on 2021-04-01 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:50:47,834 INFO Only 2 signals on 2021-04-05 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:50:50,419 INFO Only 1 signals on 2021-04-06 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:51:27,847 INFO Only 0 signals on 2021-04-27 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:52:00,487 INFO Only 1 signals on 2021-05-18 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:52:38,139 WARNING HUT 2021-06-15: insufficient history for vol_20day_avg, skipping
+2026-06-07 12:52:52,540 INFO Only 2 signals on 2021-06-24 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:53:12,412 WARNING OKLO 2021-07-08: insufficient history for vol_20day_avg, skipping
+2026-06-07 12:53:14,393 WARNING OKLO 2021-07-09: insufficient history for vol_20day_avg, skipping
+2026-06-07 12:53:27,947 INFO Only 1 signals on 2021-07-19 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:53:42,309 WARNING HOOD 2021-07-29: insufficient history for vol_20day_avg, skipping
+2026-06-07 12:53:44,219 WARNING HOOD 2021-07-30: insufficient history for vol_20day_avg, skipping
+2026-06-07 12:54:28,306 INFO Only 2 signals on 2021-08-27 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:54:53,510 WARNING OKLO 2021-09-17: OR range is 0, skipping
+2026-06-07 12:54:57,329 INFO Only 2 signals on 2021-09-20 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:54:59,799 INFO Only 2 signals on 2021-09-21 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:55:57,274 INFO Only 2 signals on 2021-11-04 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:56:03,145 WARNING OKLO 2021-11-09: OR range is 0, skipping
+2026-06-07 12:56:28,176 WARNING OKLO 2021-11-30: OR range is 0, skipping
+2026-06-07 12:56:40,004 WARNING NU 2021-12-09: insufficient history for vol_20day_avg, skipping
+2026-06-07 12:56:41,570 WARNING NU 2021-12-10: insufficient history for vol_20day_avg, skipping
+2026-06-07 12:56:49,525 INFO Only 1 signals on 2021-12-16 — insufficient for regime metrics (need ≥3)
+Loading bars 2020-10-03 → 2021-12-31 for 21 tickers ...
+  [cache] fetching 1 tickers from alpaca (cache miss)
+  [cache] loaded 20 tickers from cache
+Simulating 252 trading days ...
+
+╔══ Win-Rate Selector Backtest ══════════════════════════════════════
+║  Pool     : HOOD RKLB ASTS SOFI IONQ SMCI +14 more  (20 tickers)
+║  Config   : 09:30/3b  collect=3  top-8  $10,000  feed=sip
+║  Period   : 2021-01-01 → 2021-12-31  (252 trading days)
+╠══ MONTHLY ══════════════════════════════════════════════════════════
+║  Jan 2021   +$    306.43   (+3.1%)
+║  Feb 2021   $    -49.03   (-0.5%)
+║  Mar 2021   +$      1.80   (+0.0%)
+║  Apr 2021   +$    247.80   (+2.5%)
+║  May 2021   +$    169.28   (+1.7%)
+║  Jun 2021   +$     39.24   (+0.4%)
+║  Jul 2021   +$    140.62   (+1.4%)
+║  Aug 2021   +$    170.73   (+1.7%)
+║  Sep 2021   +$    145.48   (+1.5%)
+║  Oct 2021   +$    268.72   (+2.7%)
+║  Nov 2021   +$    282.94   (+2.8%)
+║  Dec 2021   +$    264.04   (+2.6%)
+╠══ SUMMARY ══════════════════════════════════════════════════════════
+║  Total       252d   +$  1,988.05   (+19.9% on $10,000)
+║  Trade days  214 / 252  (85%)
+║  Avg deployed   $     2,907  |  util 29.1%
+║  Mean RODC      +0.350%
+║  DW-Sharpe      4.28
+╚════════════════════════════════════════════════════════════════════

@@ -1,0 +1,47 @@
+2026-06-07 12:06:01,591 INFO Only 0 signals on 2021-02-23 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:06:08,850 INFO Only 2 signals on 2021-03-01 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:06:10,630 INFO Only 2 signals on 2021-03-02 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:06:23,344 INFO Only 1 signals on 2021-03-11 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:06:28,811 INFO Only 1 signals on 2021-03-16 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:06:48,914 INFO Only 2 signals on 2021-03-31 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:07:21,362 INFO Only 2 signals on 2021-04-27 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:07:30,244 INFO Only 1 signals on 2021-05-04 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:08:14,631 INFO Only 2 signals on 2021-06-08 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:08:36,001 INFO Only 1 signals on 2021-06-24 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:08:39,524 INFO Only 2 signals on 2021-06-28 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:08:52,022 INFO Only 1 signals on 2021-07-08 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:09:06,459 INFO Only 2 signals on 2021-07-19 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:09:53,598 INFO Only 2 signals on 2021-08-24 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:10:26,780 INFO Only 1 signals on 2021-09-20 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:10:32,045 INFO Only 1 signals on 2021-09-23 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:11:27,211 INFO Only 2 signals on 2021-11-05 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:12:06,474 INFO Only 1 signals on 2021-12-07 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:12:22,576 INFO Only 1 signals on 2021-12-20 — insufficient for regime metrics (need ≥3)
+Loading bars 2020-10-03 → 2021-12-31 for 21 tickers ...
+  [cache] loaded 21 tickers from cache
+Simulating 252 trading days ...
+
+╔══ Win-Rate Selector Backtest ══════════════════════════════════════
+║  Pool     : TLRY CGC PLUG WKHS W LYFT +14 more  (20 tickers)
+║  Config   : 09:30/3b  collect=3  top-8  $10,000  feed=sip
+║  Period   : 2021-01-01 → 2021-12-31  (252 trading days)
+╠══ MONTHLY ══════════════════════════════════════════════════════════
+║  Jan 2021   +$     68.38   (+0.7%)
+║  Feb 2021   $   -174.46   (-1.7%)
+║  Mar 2021   +$    401.19   (+4.0%)
+║  Apr 2021   +$    117.63   (+1.2%)
+║  May 2021   +$     76.73   (+0.8%)
+║  Jun 2021   +$    215.54   (+2.2%)
+║  Jul 2021   +$    228.72   (+2.3%)
+║  Aug 2021   +$    153.85   (+1.5%)
+║  Sep 2021   +$     52.36   (+0.5%)
+║  Oct 2021   +$    102.43   (+1.0%)
+║  Nov 2021   +$    160.59   (+1.6%)
+║  Dec 2021   +$     72.54   (+0.7%)
+╠══ SUMMARY ══════════════════════════════════════════════════════════
+║  Total       252d   +$  1,475.50   (+14.8% on $10,000)
+║  Trade days  214 / 252  (85%)
+║  Avg deployed   $     2,927  |  util 29.3%
+║  Mean RODC      +0.237%
+║  DW-Sharpe      4.38
+╚════════════════════════════════════════════════════════════════════

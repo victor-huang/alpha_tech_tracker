@@ -1,0 +1,23 @@
+2026-06-07 11:33:59,619 INFO Only 2 signals on 2019-07-10 — insufficient for regime metrics (need ≥3)
+2026-06-07 11:34:31,233 INFO Only 2 signals on 2019-09-04 — insufficient for regime metrics (need ≥3)
+2026-06-07 11:34:43,853 WARNING PTON 2019-09-26: insufficient history for vol_20day_avg, skipping
+2026-06-07 11:34:44,702 WARNING PTON 2019-09-27: insufficient history for vol_20day_avg, skipping
+Loading bars 2019-04-02 → 2019-09-30 for 21 tickers ...
+  [cache] loaded 21 tickers from cache
+Simulating 64 trading days ...
+
+╔══ Win-Rate Selector Backtest ══════════════════════════════════════
+║  Pool     : TLRY CGC PLUG WKHS W LYFT +14 more  (20 tickers)
+║  Config   : 09:30/3b  collect=3  top-8  $10,000  feed=sip
+║  Period   : 2019-07-01 → 2019-09-30  (64 trading days)
+╠══ MONTHLY ══════════════════════════════════════════════════════════
+║  Jul 2019   +$    165.22   (+1.7%)
+║  Aug 2019   +$     42.50   (+0.4%)
+║  Sep 2019   +$    332.24   (+3.3%)
+╠══ SUMMARY ══════════════════════════════════════════════════════════
+║  Total       64d   +$    539.96   (+5.4% on $10,000)
+║  Trade days  59 / 64  (92%)
+║  Avg deployed   $     3,281  |  util 32.8%
+║  Mean RODC      +0.206%
+║  DW-Sharpe      5.60
+╚════════════════════════════════════════════════════════════════════

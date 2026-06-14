@@ -1,0 +1,30 @@
+2026-06-09 23:33:52,137 INFO Only 2 signals on 2025-04-02 — insufficient for regime metrics (need ≥3)
+2026-06-09 23:33:52,837 INFO Only 1 signals on 2025-04-03 — insufficient for regime metrics (need ≥3)
+2026-06-09 23:33:53,678 INFO Only 0 signals on 2025-04-04 — insufficient for regime metrics (need ≥3)
+2026-06-09 23:33:56,673 INFO Only 0 signals on 2025-04-07 — insufficient for regime metrics (need ≥3)
+2026-06-09 23:34:18,333 INFO Only 0 signals on 2025-04-14 — insufficient for regime metrics (need ≥3)
+2026-06-09 23:34:25,621 INFO Only 0 signals on 2025-04-15 — insufficient for regime metrics (need ≥3)
+2026-06-09 23:34:33,319 INFO Only 2 signals on 2025-04-17 — insufficient for regime metrics (need ≥3)
+2026-06-09 23:34:36,603 INFO Only 0 signals on 2025-04-21 — insufficient for regime metrics (need ≥3)
+2026-06-09 23:34:39,532 INFO Only 1 signals on 2025-04-22 — insufficient for regime metrics (need ≥3)
+2026-06-09 23:34:42,019 INFO Only 1 signals on 2025-04-23 — insufficient for regime metrics (need ≥3)
+2026-06-09 23:34:45,013 INFO Only 2 signals on 2025-04-24 — insufficient for regime metrics (need ≥3)
+2026-06-09 23:34:47,239 INFO Only 0 signals on 2025-04-25 — insufficient for regime metrics (need ≥3)
+2026-06-09 23:34:51,252 INFO Only 2 signals on 2025-04-29 — insufficient for regime metrics (need ≥3)
+Loading bars 2025-01-01 → 2025-04-30 for 21 tickers ...
+  [cache] loaded 21 tickers from cache
+Simulating 21 trading days ...
+
+╔══ Win-Rate Selector Backtest ══════════════════════════════════════
+║  Pool     : AMD LRCX AAPL NVDA QCOM META +14 more  (20 tickers)
+║  Config   : 09:30/3b  collect=2  top-8  $80,000  feed=sip
+║  Period   : 2025-04-01 → 2025-04-30  (21 trading days)
+╠══ MONTHLY ══════════════════════════════════════════════════════════
+║  Apr 2025   +$    608.19   (+0.8%)
+╠══ SUMMARY ══════════════════════════════════════════════════════════
+║  Total       21d   +$    608.19   (+0.8% on $80,000)
+║  Trade days  12 / 21  (57%)
+║  Avg deployed   $    10,952  |  util 13.7%
+║  Mean RODC      +0.257%
+║  DW-Sharpe      11.22
+╚════════════════════════════════════════════════════════════════════

@@ -1,0 +1,20 @@
+in this new screener, we will monitor all tickers in the list, and then will send a sms message to when we need to report or a signal is detected.
+base monitoring features, fetch 1-min and 5-min bar for the tickers, also monitor 5-min bars for QQQ. compute the 20/50/200 MA for the 5-min bar, and for the daily bar for the tickers and QQQ, we will also get the 5-min vol data as well, so we can compute the 20 MA volume.
+
+here is the list of event i am interests in 
+* tickers that has an OR range that's overlap the 5-min 20/50/200Ma line, and over above the mid point of the range, above 200MA for bull. below 200MA and 20MA for bear.
+
+the starting time of the OR is at 9:30, we can stop after n bar, which can be configure by user
+
+we should be able to back test the functionality by specific a past date, and we will get data from historical Alpacla SIP, when we are running in production, we will use tradestation api to fetch live bar data
+
+we can use similar implementation in alpha_tech_tracker/op_momentum_strategy/op_momentum_selector_backtest.py for backtesting and alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine for live monitoring
+
+create a doc for the implementation plan and i like to review it
+
+
+==========
+
+Command line run:
+python -m alpha_tech_tracker.op_momentum_strategy.ma_open_range_momentum_screener \
+    --date 2026-05-29 --tickers SNDK APP META SNOW SNPS STOP MU LLY MRVL CRWD QCOM PLTR CHTR TSLA AVGO ARM

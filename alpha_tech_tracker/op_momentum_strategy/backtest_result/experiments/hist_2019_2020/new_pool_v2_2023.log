@@ -1,0 +1,69 @@
+2026-06-07 20:43:20,540 INFO Only 1 signals on 2023-01-03 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:43:21,069 WARNING LUNR 2023-01-04: OR range is 0, skipping
+2026-06-07 20:43:21,868 INFO Only 2 signals on 2023-01-04 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:43:23,031 WARNING OKLO 2023-01-05: OR range is 0, skipping
+2026-06-07 20:43:28,418 INFO Only 2 signals on 2023-01-10 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:43:29,114 WARNING OKLO 2023-01-11: OR range is 0, skipping
+2026-06-07 20:43:31,866 WARNING OKLO 2023-01-13: OR range is 0, skipping
+2026-06-07 20:43:33,245 WARNING OKLO 2023-01-17: OR range is 0, skipping
+2026-06-07 20:43:35,288 INFO Only 1 signals on 2023-01-18 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:43:40,412 WARNING OKLO 2023-01-24: OR range is 0, skipping
+2026-06-07 20:43:43,878 INFO Only 1 signals on 2023-01-26 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:43:48,664 WARNING LUNR 2023-02-01: OR range is 0, skipping
+2026-06-07 20:43:50,917 INFO Only 2 signals on 2023-02-02 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:44:06,923 INFO Only 2 signals on 2023-02-17 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:44:11,228 INFO Only 2 signals on 2023-02-23 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:44:13,359 WARNING OKLO 2023-02-27: OR range is 0, skipping
+2026-06-07 20:44:13,978 INFO Only 1 signals on 2023-02-27 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:44:28,110 WARNING OKLO 2023-03-13: OR range is 0, skipping
+2026-06-07 20:44:43,127 INFO Only 2 signals on 2023-03-27 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:44:43,864 WARNING OKLO 2023-03-28: OR range is 0, skipping
+2026-06-07 20:44:45,872 INFO Only 2 signals on 2023-03-29 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:44:47,230 INFO Only 1 signals on 2023-03-30 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:45:05,250 WARNING OKLO 2023-04-19: OR range is 0, skipping
+2026-06-07 20:45:05,911 INFO Only 1 signals on 2023-04-19 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:46:29,337 INFO Only 2 signals on 2023-07-12 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:47:00,742 INFO Only 1 signals on 2023-08-11 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:47:04,889 INFO Only 2 signals on 2023-08-16 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:47:07,675 INFO Only 2 signals on 2023-08-18 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:47:15,082 INFO Only 2 signals on 2023-08-25 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:47:17,263 WARNING OKLO 2023-08-29: OR range is 0, skipping
+2026-06-07 20:47:34,035 WARNING ARM 2023-09-14: insufficient history for vol_20day_avg, skipping
+2026-06-07 20:47:35,464 WARNING ARM 2023-09-15: insufficient history for vol_20day_avg, skipping
+2026-06-07 20:48:07,049 WARNING OKLO 2023-10-17: OR range is 0, skipping
+2026-06-07 20:48:09,921 WARNING OKLO 2023-10-19: OR range is 0, skipping
+2026-06-07 20:48:14,911 INFO Only 2 signals on 2023-10-24 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:48:21,489 WARNING OKLO 2023-10-31: OR range is 0, skipping
+2026-06-07 20:48:25,514 INFO Only 2 signals on 2023-11-02 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:48:28,375 INFO Only 0 signals on 2023-11-06 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:48:37,035 INFO Only 2 signals on 2023-11-14 — insufficient for regime metrics (need ≥3)
+2026-06-07 20:48:51,382 INFO Only 2 signals on 2023-11-29 — insufficient for regime metrics (need ≥3)
+Loading bars 2022-10-03 → 2023-12-31 for 21 tickers ...
+  [cache] fetching 1 tickers from alpaca (cache miss)
+  [cache] loaded 19 tickers from cache
+Simulating 250 trading days ...
+
+╔══ Win-Rate Selector Backtest ══════════════════════════════════════
+║  Pool     : SNDK META SNOW PLTR MU LLY +14 more  (20 tickers)
+║  Config   : 09:30/3b  collect=3  top-8  $10,000  feed=sip
+║  Period   : 2023-01-01 → 2023-12-31  (250 trading days)
+╠══ MONTHLY ══════════════════════════════════════════════════════════
+║  Jan 2023   +$     13.78   (+0.1%)
+║  Feb 2023   +$     31.56   (+0.3%)
+║  Mar 2023   +$    113.04   (+1.1%)
+║  Apr 2023   +$    116.85   (+1.2%)
+║  May 2023   +$     54.75   (+0.5%)
+║  Jun 2023   +$     79.31   (+0.8%)
+║  Jul 2023   +$    290.76   (+2.9%)
+║  Aug 2023   +$    103.83   (+1.0%)
+║  Sep 2023   +$    254.79   (+2.5%)
+║  Oct 2023   +$    147.69   (+1.5%)
+║  Nov 2023   +$    138.55   (+1.4%)
+║  Dec 2023   +$     98.65   (+1.0%)
+╠══ SUMMARY ══════════════════════════════════════════════════════════
+║  Total       250d   +$  1,443.56   (+14.4% on $10,000)
+║  Trade days  217 / 250  (87%)
+║  Avg deployed   $     2,585  |  util 25.9%
+║  Mean RODC      +0.196%
+║  DW-Sharpe      5.01
+╚════════════════════════════════════════════════════════════════════

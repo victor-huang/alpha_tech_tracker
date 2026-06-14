@@ -1,0 +1,17 @@
+Loading bars 2020-09-02 → 2020-12-31 for 21 tickers ...
+  [cache] loaded 20 tickers from cache
+Simulating 22 trading days ...
+
+╔══ Win-Rate Selector Backtest ══════════════════════════════════════
+║  Pool     : BIDU MYL WBA BIIB CELG INTC +14 more  (20 tickers)
+║  Config   : 09:30/3b  collect=2  top-8  $80,000  feed=sip
+║  Period   : 2020-12-01 → 2020-12-31  (22 trading days)
+╠══ MONTHLY ══════════════════════════════════════════════════════════
+║  Dec 2020   +$    190.91   (+0.2%)
+╠══ SUMMARY ══════════════════════════════════════════════════════════
+║  Total       22d   +$    190.91   (+0.2% on $80,000)
+║  Trade days  17 / 22  (77%)
+║  Avg deployed   $    14,545  |  util 18.2%
+║  Mean RODC      +0.072%
+║  DW-Sharpe      7.35
+╚════════════════════════════════════════════════════════════════════

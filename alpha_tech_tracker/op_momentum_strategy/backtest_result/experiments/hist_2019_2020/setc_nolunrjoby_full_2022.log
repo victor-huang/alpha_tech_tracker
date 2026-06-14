@@ -1,0 +1,95 @@
+2026-06-07 13:30:47,812 INFO Only 1 signals on 2022-01-12 — insufficient for regime metrics (need ≥3)
+2026-06-07 13:31:00,571 INFO Only 0 signals on 2022-01-21 — insufficient for regime metrics (need ≥3)
+2026-06-07 13:31:02,986 INFO Only 0 signals on 2022-01-24 — insufficient for regime metrics (need ≥3)
+2026-06-07 13:31:08,686 INFO Only 1 signals on 2022-01-26 — insufficient for regime metrics (need ≥3)
+2026-06-07 13:31:17,868 WARNING OKLO 2022-02-02: OR range is 0, skipping
+2026-06-07 13:31:18,876 INFO Only 1 signals on 2022-02-02 — insufficient for regime metrics (need ≥3)
+2026-06-07 13:31:25,502 INFO Only 2 signals on 2022-02-07 — insufficient for regime metrics (need ≥3)
+2026-06-07 13:31:28,385 WARNING OKLO 2022-02-09: OR range is 0, skipping
+2026-06-07 13:31:29,673 INFO Only 1 signals on 2022-02-09 — insufficient for regime metrics (need ≥3)
+2026-06-07 13:31:52,335 WARNING OKLO 2022-02-24: insufficient history for vol_20day_avg, skipping
+2026-06-07 13:32:03,061 INFO Only 2 signals on 2022-03-01 — insufficient for regime metrics (need ≥3)
+2026-06-07 13:32:04,190 WARNING OKLO 2022-03-02: OR range is 0, skipping
+2026-06-07 13:32:11,008 WARNING OKLO 2022-03-07: OR range is 0, skipping
+2026-06-07 13:32:24,564 WARNING OKLO 2022-03-17: OR range is 0, skipping
+2026-06-07 13:32:38,434 INFO Only 1 signals on 2022-03-29 — insufficient for regime metrics (need ≥3)
+2026-06-07 13:32:39,955 INFO Only 2 signals on 2022-03-30 — insufficient for regime metrics (need ≥3)
+2026-06-07 13:32:52,230 INFO Only 1 signals on 2022-04-11 — insufficient for regime metrics (need ≥3)
+2026-06-07 13:33:14,795 WARNING OKLO 2022-05-02: OR range is 0, skipping
+2026-06-07 13:33:16,351 WARNING OKLO 2022-05-03: OR range is 0, skipping
+2026-06-07 13:33:19,579 WARNING OKLO 2022-05-05: insufficient history for vol_20day_avg, skipping
+2026-06-07 13:33:21,064 WARNING OKLO 2022-05-06: insufficient history for vol_20day_avg, skipping
+2026-06-07 13:33:22,516 WARNING OKLO 2022-05-09: insufficient history for vol_20day_avg, skipping
+2026-06-07 13:33:24,947 INFO Only 2 signals on 2022-05-10 — insufficient for regime metrics (need ≥3)
+2026-06-07 13:33:25,585 WARNING OKLO 2022-05-11: insufficient history for vol_20day_avg, skipping
+2026-06-07 13:33:27,088 WARNING OKLO 2022-05-12: OR range is 0, skipping
+2026-06-07 13:33:29,380 INFO Only 2 signals on 2022-05-13 — insufficient for regime metrics (need ≥3)
+2026-06-07 13:33:44,084 WARNING OKLO 2022-05-27: OR range is 0, skipping
+2026-06-07 13:33:45,581 WARNING OKLO 2022-05-31: OR range is 0, skipping
+2026-06-07 13:33:46,380 INFO Only 1 signals on 2022-05-31 — insufficient for regime metrics (need ≥3)
+2026-06-07 13:33:50,879 INFO Only 2 signals on 2022-06-03 — insufficient for regime metrics (need ≥3)
+2026-06-07 13:34:00,247 INFO Only 0 signals on 2022-06-13 — insufficient for regime metrics (need ≥3)
+2026-06-07 13:34:15,461 WARNING OKLO 2022-06-24: insufficient history for vol_20day_avg, skipping
+2026-06-07 13:34:17,996 WARNING OKLO 2022-06-27: insufficient history for vol_20day_avg, skipping
+2026-06-07 13:34:19,774 WARNING OKLO 2022-06-28: insufficient history for vol_20day_avg, skipping
+2026-06-07 13:34:28,238 INFO Only 2 signals on 2022-07-06 — insufficient for regime metrics (need ≥3)
+2026-06-07 13:34:41,570 INFO Only 2 signals on 2022-07-18 — insufficient for regime metrics (need ≥3)
+2026-06-07 13:34:52,101 INFO Only 2 signals on 2022-07-27 — insufficient for regime metrics (need ≥3)
+2026-06-07 13:35:17,299 INFO Only 2 signals on 2022-08-17 — insufficient for regime metrics (need ≥3)
+2026-06-07 13:35:25,321 INFO Only 2 signals on 2022-08-24 — insufficient for regime metrics (need ≥3)
+2026-06-07 13:35:40,919 INFO Only 2 signals on 2022-09-08 — insufficient for regime metrics (need ≥3)
+2026-06-07 13:35:42,343 INFO Only 2 signals on 2022-09-09 — insufficient for regime metrics (need ≥3)
+2026-06-07 13:35:45,240 INFO Only 1 signals on 2022-09-13 — insufficient for regime metrics (need ≥3)
+2026-06-07 13:35:45,884 WARNING OKLO 2022-09-14: OR range is 0, skipping
+2026-06-07 13:36:06,050 WARNING OKLO 2022-10-03: insufficient history for vol_20day_avg, skipping
+2026-06-07 13:36:08,395 INFO Only 0 signals on 2022-10-04 — insufficient for regime metrics (need ≥3)
+2026-06-07 13:36:12,906 INFO Only 2 signals on 2022-10-07 — insufficient for regime metrics (need ≥3)
+2026-06-07 13:36:15,119 WARNING OKLO 2022-10-11: insufficient history for vol_20day_avg, skipping
+2026-06-07 13:36:18,978 INFO Only 0 signals on 2022-10-13 — insufficient for regime metrics (need ≥3)
+2026-06-07 13:36:22,499 WARNING OKLO 2022-10-18: insufficient history for vol_20day_avg, skipping
+2026-06-07 13:36:23,309 INFO Only 1 signals on 2022-10-18 — insufficient for regime metrics (need ≥3)
+2026-06-07 13:36:28,499 WARNING OKLO 2022-10-24: insufficient history for vol_20day_avg, skipping
+2026-06-07 13:36:33,228 WARNING OKLO 2022-10-27: insufficient history for vol_20day_avg, skipping
+2026-06-07 13:36:34,707 WARNING OKLO 2022-10-28: insufficient history for vol_20day_avg, skipping
+2026-06-07 13:36:36,372 WARNING OKLO 2022-10-31: insufficient history for vol_20day_avg, skipping
+2026-06-07 13:36:37,845 WARNING OKLO 2022-11-01: insufficient history for vol_20day_avg, skipping
+2026-06-07 13:36:40,775 WARNING OKLO 2022-11-03: insufficient history for vol_20day_avg, skipping
+2026-06-07 13:36:43,735 WARNING OKLO 2022-11-07: insufficient history for vol_20day_avg, skipping
+2026-06-07 13:36:45,218 WARNING OKLO 2022-11-08: insufficient history for vol_20day_avg, skipping
+2026-06-07 13:36:46,708 WARNING OKLO 2022-11-09: insufficient history for vol_20day_avg, skipping
+2026-06-07 13:36:51,082 WARNING OKLO 2022-11-14: OR range is 0, skipping
+2026-06-07 13:36:52,539 WARNING OKLO 2022-11-15: OR range is 0, skipping
+2026-06-07 13:36:54,023 WARNING OKLO 2022-11-16: insufficient history for vol_20day_avg, skipping
+2026-06-07 13:37:10,599 INFO Only 2 signals on 2022-12-01 — insufficient for regime metrics (need ≥3)
+2026-06-07 13:37:22,730 INFO Only 0 signals on 2022-12-13 — insufficient for regime metrics (need ≥3)
+2026-06-07 13:37:23,382 WARNING OKLO 2022-12-14: OR range is 0, skipping
+2026-06-07 13:37:25,695 INFO Only 2 signals on 2022-12-15 — insufficient for regime metrics (need ≥3)
+Loading bars 2021-10-03 → 2022-12-31 for 19 tickers ...
+  [cache] fetching 1 tickers from alpaca (cache miss)
+  [cache] loaded 18 tickers from cache
+Simulating 251 trading days ...
+
+╔══ Win-Rate Selector Backtest ══════════════════════════════════════
+║  Pool     : HOOD RKLB ASTS SOFI IONQ SMCI +12 more  (18 tickers)
+║  Config   : 09:30/3b  collect=3  top-8  $10,000  feed=sip
+║  Period   : 2022-01-01 → 2022-12-31  (251 trading days)
+╠══ MONTHLY ══════════════════════════════════════════════════════════
+║  Jan 2022   +$    245.81   (+2.5%)
+║  Feb 2022   +$    499.97   (+5.0%)
+║  Mar 2022   +$    266.03   (+2.7%)
+║  Apr 2022   +$    374.60   (+3.7%)
+║  May 2022   $   -113.67   (-1.1%)
+║  Jun 2022   +$    275.30   (+2.8%)
+║  Jul 2022   $    -51.69   (-0.5%)
+║  Aug 2022   +$    329.41   (+3.3%)
+║  Sep 2022   +$    112.06   (+1.1%)
+║  Oct 2022   +$     20.33   (+0.2%)
+║  Nov 2022   +$    268.42   (+2.7%)
+║  Dec 2022   +$     79.83   (+0.8%)
+╠══ SUMMARY ══════════════════════════════════════════════════════════
+║  Total       251d   +$  2,306.41   (+23.1% on $10,000)
+║  Trade days  201 / 251  (80%)
+║  Avg deployed   $     3,132  |  util 31.3%
+║  Mean RODC      +0.316%
+║  DW-Sharpe      3.61
+╚════════════════════════════════════════════════════════════════════

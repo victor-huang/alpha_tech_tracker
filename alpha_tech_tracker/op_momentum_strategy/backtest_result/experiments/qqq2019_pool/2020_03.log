@@ -1,0 +1,26 @@
+2026-06-09 22:49:52,264 INFO Only 1 signals on 2020-03-03 — insufficient for regime metrics (need ≥3)
+2026-06-09 22:49:54,376 INFO Only 1 signals on 2020-03-06 — insufficient for regime metrics (need ≥3)
+2026-06-09 22:49:54,955 INFO Only 0 signals on 2020-03-09 — insufficient for regime metrics (need ≥3)
+2026-06-09 22:49:55,603 INFO Only 0 signals on 2020-03-10 — insufficient for regime metrics (need ≥3)
+2026-06-09 22:49:56,990 INFO Only 0 signals on 2020-03-12 — insufficient for regime metrics (need ≥3)
+2026-06-09 22:49:58,389 INFO Only 1 signals on 2020-03-16 — insufficient for regime metrics (need ≥3)
+2026-06-09 22:49:59,646 INFO Only 2 signals on 2020-03-18 — insufficient for regime metrics (need ≥3)
+2026-06-09 22:50:01,366 INFO Only 2 signals on 2020-03-20 — insufficient for regime metrics (need ≥3)
+2026-06-09 22:50:03,002 INFO Only 1 signals on 2020-03-24 — insufficient for regime metrics (need ≥3)
+Loading bars 2019-12-02 → 2020-03-31 for 21 tickers ...
+  [cache] loaded 21 tickers from cache
+Simulating 22 trading days ...
+
+╔══ Win-Rate Selector Backtest ══════════════════════════════════════
+║  Pool     : AMD LRCX AAPL NVDA QCOM META +14 more  (20 tickers)
+║  Config   : 09:30/2b  collect=3  top-8  $10,000  feed=sip
+║  Period   : 2020-03-01 → 2020-03-31  (22 trading days)
+╠══ MONTHLY ══════════════════════════════════════════════════════════
+║  Mar 2020   +$    171.42   (+1.7%)
+╠══ SUMMARY ══════════════════════════════════════════════════════════
+║  Total       22d   +$    171.42   (+1.7% on $10,000)
+║  Trade days  14 / 22  (64%)
+║  Avg deployed   $     2,216  |  util 22.2%
+║  Mean RODC      +0.230%
+║  DW-Sharpe      6.60
+╚════════════════════════════════════════════════════════════════════

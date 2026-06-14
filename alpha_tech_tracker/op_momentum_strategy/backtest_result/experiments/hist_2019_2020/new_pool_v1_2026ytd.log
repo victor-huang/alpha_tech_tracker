@@ -1,0 +1,28 @@
+2026-06-07 19:28:38,814 INFO Only 2 signals on 2026-02-10 — insufficient for regime metrics (need ≥3)
+2026-06-07 19:28:47,007 INFO Only 2 signals on 2026-02-23 — insufficient for regime metrics (need ≥3)
+2026-06-07 19:29:11,715 INFO Only 2 signals on 2026-03-26 — insufficient for regime metrics (need ≥3)
+2026-06-07 19:29:16,369 INFO Only 1 signals on 2026-04-01 — insufficient for regime metrics (need ≥3)
+2026-06-07 19:29:20,467 INFO Only 0 signals on 2026-04-08 — insufficient for regime metrics (need ≥3)
+2026-06-07 19:29:25,144 INFO Only 1 signals on 2026-04-14 — insufficient for regime metrics (need ≥3)
+Loading bars 2025-10-03 → 2026-06-06 for 21 tickers ...
+  [cache] loaded 21 tickers from cache
+Simulating 107 trading days ...
+
+╔══ Win-Rate Selector Backtest ══════════════════════════════════════
+║  Pool     : SNDK META SNOW SNPS MU LLY +14 more  (20 tickers)
+║  Config   : 09:30/3b  collect=3  top-8  $10,000  feed=sip
+║  Period   : 2026-01-01 → 2026-06-06  (107 trading days)
+╠══ MONTHLY ══════════════════════════════════════════════════════════
+║  Jan 2026   +$     20.07   (+0.2%)
+║  Feb 2026   +$    579.61   (+5.8%)
+║  Mar 2026   +$    168.16   (+1.7%)
+║  Apr 2026   +$    437.50   (+4.4%)
+║  May 2026   +$    256.20   (+2.6%)
+║  Jun 2026   +$     45.99   (+0.5%)
+╠══ SUMMARY ══════════════════════════════════════════════════════════
+║  Total       107d   +$  1,507.53   (+15.1% on $10,000)
+║  Trade days  97 / 107  (91%)
+║  Avg deployed   $     2,886  |  util 28.9%
+║  Mean RODC      +0.427%
+║  DW-Sharpe      7.10
+╚════════════════════════════════════════════════════════════════════

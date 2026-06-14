@@ -1,0 +1,42 @@
+2026-06-07 12:13:02,051 INFO Only 0 signals on 2023-01-03 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:13:15,647 INFO Only 2 signals on 2023-01-12 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:13:32,584 INFO Only 2 signals on 2023-01-26 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:14:22,451 INFO Only 2 signals on 2023-03-06 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:15:23,258 INFO Only 2 signals on 2023-04-20 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:15:47,174 INFO Only 1 signals on 2023-05-09 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:16:20,654 INFO Only 2 signals on 2023-06-02 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:17:02,019 INFO Only 2 signals on 2023-07-06 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:17:09,404 INFO Only 1 signals on 2023-07-12 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:17:45,893 INFO Only 2 signals on 2023-08-08 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:18:01,871 INFO Only 2 signals on 2023-08-18 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:18:44,827 INFO Only 2 signals on 2023-09-21 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:20:15,303 INFO Only 2 signals on 2023-11-29 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:20:35,216 INFO Only 2 signals on 2023-12-14 — insufficient for regime metrics (need ≥3)
+Loading bars 2022-10-03 → 2023-12-31 for 21 tickers ...
+  [cache] loaded 21 tickers from cache
+Simulating 250 trading days ...
+
+╔══ Win-Rate Selector Backtest ══════════════════════════════════════
+║  Pool     : TLRY CGC PLUG WKHS W LYFT +14 more  (20 tickers)
+║  Config   : 09:30/3b  collect=3  top-8  $10,000  feed=sip
+║  Period   : 2023-01-01 → 2023-12-31  (250 trading days)
+╠══ MONTHLY ══════════════════════════════════════════════════════════
+║  Jan 2023   +$    470.13   (+4.7%)
+║  Feb 2023   +$    307.00   (+3.1%)
+║  Mar 2023   +$    295.97   (+3.0%)
+║  Apr 2023   +$     91.79   (+0.9%)
+║  May 2023   +$     97.39   (+1.0%)
+║  Jun 2023   +$    218.59   (+2.2%)
+║  Jul 2023   +$    185.34   (+1.9%)
+║  Aug 2023   +$    181.62   (+1.8%)
+║  Sep 2023   +$    170.40   (+1.7%)
+║  Oct 2023   +$    202.42   (+2.0%)
+║  Nov 2023   +$    139.58   (+1.4%)
+║  Dec 2023   +$     16.90   (+0.2%)
+╠══ SUMMARY ══════════════════════════════════════════════════════════
+║  Total       250d   +$  2,377.13   (+23.8% on $10,000)
+║  Trade days  208 / 250  (83%)
+║  Avg deployed   $     2,810  |  util 28.1%
+║  Mean RODC      +0.314%
+║  DW-Sharpe      6.72
+╚════════════════════════════════════════════════════════════════════

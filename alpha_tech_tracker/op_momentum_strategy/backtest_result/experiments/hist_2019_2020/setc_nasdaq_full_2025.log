@@ -1,0 +1,59 @@
+2026-06-07 12:48:22,936 INFO Only 0 signals on 2025-01-15 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:51:01,921 INFO Only 1 signals on 2025-03-12 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:51:25,811 INFO Only 1 signals on 2025-03-21 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:51:31,034 INFO Only 2 signals on 2025-03-25 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:51:43,583 INFO Only 1 signals on 2025-03-31 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:51:55,266 INFO Only 1 signals on 2025-04-04 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:51:59,679 INFO Only 2 signals on 2025-04-07 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:52:02,564 INFO Only 1 signals on 2025-04-08 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:52:08,404 INFO Only 1 signals on 2025-04-10 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:52:22,703 INFO Only 1 signals on 2025-04-17 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:52:30,820 INFO Only 0 signals on 2025-04-23 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:52:44,292 INFO Only 1 signals on 2025-04-30 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:53:02,530 INFO Only 2 signals on 2025-05-08 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:53:09,090 INFO Only 1 signals on 2025-05-12 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:53:35,049 INFO Only 1 signals on 2025-05-23 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:55:26,233 INFO Only 2 signals on 2025-07-25 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:55:37,934 INFO Only 1 signals on 2025-08-01 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:55:42,420 INFO Only 2 signals on 2025-08-05 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:56:15,818 INFO Only 2 signals on 2025-08-22 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:56:59,144 INFO Only 1 signals on 2025-09-18 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:57:10,420 INFO Only 2 signals on 2025-09-25 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:57:21,130 INFO Only 2 signals on 2025-10-02 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:57:55,268 INFO Only 0 signals on 2025-10-24 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:58:01,799 INFO Only 1 signals on 2025-10-29 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:58:09,326 INFO Only 2 signals on 2025-11-04 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:58:17,090 INFO Only 1 signals on 2025-11-10 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:58:19,425 INFO Only 2 signals on 2025-11-11 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:58:33,229 INFO Only 1 signals on 2025-11-20 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:58:40,621 INFO Only 0 signals on 2025-11-26 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:58:42,414 INFO Only 2 signals on 2025-11-28 — insufficient for regime metrics (need ≥3)
+2026-06-07 12:58:44,163 INFO Only 1 signals on 2025-12-01 — insufficient for regime metrics (need ≥3)
+Loading bars 2024-10-03 → 2025-12-31 for 21 tickers ...
+  [cache] loaded 21 tickers from cache
+Simulating 250 trading days ...
+
+╔══ Win-Rate Selector Backtest ══════════════════════════════════════
+║  Pool     : HOOD RKLB ASTS SOFI IONQ SMCI +14 more  (20 tickers)
+║  Config   : 09:30/3b  collect=3  top-8  $10,000  feed=sip
+║  Period   : 2025-01-01 → 2025-12-31  (250 trading days)
+╠══ MONTHLY ══════════════════════════════════════════════════════════
+║  Jan 2025   +$    214.89   (+2.1%)
+║  Feb 2025   +$    283.34   (+2.8%)
+║  Mar 2025   +$    260.24   (+2.6%)
+║  Apr 2025   +$    139.69   (+1.4%)
+║  May 2025   +$     84.73   (+0.8%)
+║  Jun 2025   +$     43.77   (+0.4%)
+║  Jul 2025   +$    105.88   (+1.1%)
+║  Aug 2025   +$     56.97   (+0.6%)
+║  Sep 2025   +$    185.50   (+1.9%)
+║  Oct 2025   +$    432.12   (+4.3%)
+║  Nov 2025   +$    310.17   (+3.1%)
+║  Dec 2025   +$    277.11   (+2.8%)
+╠══ SUMMARY ══════════════════════════════════════════════════════════
+║  Total       250d   +$  2,394.41   (+23.9% on $10,000)
+║  Trade days  205 / 250  (82%)
+║  Avg deployed   $     2,645  |  util 26.5%
+║  Mean RODC      +0.368%
+║  DW-Sharpe      5.61
+╚════════════════════════════════════════════════════════════════════

@@ -1,0 +1,17 @@
+Loading bars 2021-01-01 → 2021-04-30 for 21 tickers ...
+  [cache] loaded 19 tickers from cache
+Simulating 21 trading days ...
+
+╔══ Win-Rate Selector Backtest ══════════════════════════════════════
+║  Pool     : BIDU MYL WBA BIIB CELG INTC +14 more  (20 tickers)
+║  Config   : 09:30/3b  collect=2  top-8  $80,000  feed=sip
+║  Period   : 2021-04-01 → 2021-04-30  (21 trading days)
+╠══ MONTHLY ══════════════════════════════════════════════════════════
+║  Apr 2021   +$    507.12   (+0.6%)
+╠══ SUMMARY ══════════════════════════════════════════════════════════
+║  Total       21d   +$    507.12   (+0.6% on $80,000)
+║  Trade days  21 / 21  (100%)
+║  Avg deployed   $    25,238  |  util 31.5%
+║  Mean RODC      +0.184%
+║  DW-Sharpe      4.27
+╚════════════════════════════════════════════════════════════════════

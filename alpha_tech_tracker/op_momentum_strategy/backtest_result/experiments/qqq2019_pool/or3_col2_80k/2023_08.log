@@ -1,0 +1,23 @@
+2026-06-09 23:32:56,849 INFO Only 1 signals on 2023-08-02 — insufficient for regime metrics (need ≥3)
+2026-06-09 23:33:12,117 INFO Only 2 signals on 2023-08-04 — insufficient for regime metrics (need ≥3)
+2026-06-09 23:34:31,503 INFO Only 2 signals on 2023-08-22 — insufficient for regime metrics (need ≥3)
+2026-06-09 23:34:35,064 INFO Only 2 signals on 2023-08-23 — insufficient for regime metrics (need ≥3)
+2026-06-09 23:34:37,854 INFO Only 1 signals on 2023-08-24 — insufficient for regime metrics (need ≥3)
+2026-06-09 23:34:49,222 INFO Only 1 signals on 2023-08-30 — insufficient for regime metrics (need ≥3)
+Loading bars 2023-05-03 → 2023-08-31 for 21 tickers ...
+  [cache] loaded 21 tickers from cache
+Simulating 23 trading days ...
+
+╔══ Win-Rate Selector Backtest ══════════════════════════════════════
+║  Pool     : AMD LRCX AAPL NVDA QCOM META +14 more  (20 tickers)
+║  Config   : 09:30/3b  collect=2  top-8  $80,000  feed=sip
+║  Period   : 2023-08-01 → 2023-08-31  (23 trading days)
+╠══ MONTHLY ══════════════════════════════════════════════════════════
+║  Aug 2023   +$    738.56   (+0.9%)
+╠══ SUMMARY ══════════════════════════════════════════════════════════
+║  Total       23d   +$    738.56   (+0.9% on $80,000)
+║  Trade days  19 / 23  (83%)
+║  Avg deployed   $    20,000  |  util 25.0%
+║  Mean RODC      +0.207%
+║  DW-Sharpe      7.39
+╚════════════════════════════════════════════════════════════════════

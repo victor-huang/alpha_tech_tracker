@@ -1,0 +1,27 @@
+2026-06-09 23:04:48,715 INFO Only 2 signals on 2021-05-05 — insufficient for regime metrics (need ≥3)
+2026-06-09 23:04:50,813 INFO Only 0 signals on 2021-05-07 — insufficient for regime metrics (need ≥3)
+2026-06-09 23:04:53,212 INFO Only 0 signals on 2021-05-11 — insufficient for regime metrics (need ≥3)
+2026-06-09 23:04:54,394 INFO Only 1 signals on 2021-05-12 — insufficient for regime metrics (need ≥3)
+2026-06-09 23:04:57,873 INFO Only 1 signals on 2021-05-17 — insufficient for regime metrics (need ≥3)
+2026-06-09 23:05:00,660 INFO Only 1 signals on 2021-05-19 — insufficient for regime metrics (need ≥3)
+2026-06-09 23:05:03,801 INFO Only 2 signals on 2021-05-20 — insufficient for regime metrics (need ≥3)
+2026-06-09 23:05:06,003 INFO Only 1 signals on 2021-05-21 — insufficient for regime metrics (need ≥3)
+2026-06-09 23:05:07,888 INFO Only 1 signals on 2021-05-24 — insufficient for regime metrics (need ≥3)
+2026-06-09 23:05:12,346 INFO Only 1 signals on 2021-05-26 — insufficient for regime metrics (need ≥3)
+Loading bars 2021-01-31 → 2021-05-31 for 21 tickers ...
+  [cache] loaded 21 tickers from cache
+Simulating 20 trading days ...
+
+╔══ Win-Rate Selector Backtest ══════════════════════════════════════
+║  Pool     : AMD LRCX AAPL NVDA QCOM META +14 more  (20 tickers)
+║  Config   : 09:30/3b  collect=2  top-8  $80,000  feed=sip
+║  Period   : 2021-05-01 → 2021-05-31  (20 trading days)
+╠══ MONTHLY ══════════════════════════════════════════════════════════
+║  May 2021   +$    233.15   (+0.3%)
+╠══ SUMMARY ══════════════════════════════════════════════════════════
+║  Total       20d   +$    233.15   (+0.3% on $80,000)
+║  Trade days  6 / 20  (30%)
+║  Avg deployed   $     3,500  |  util 4.4%
+║  Mean RODC      +0.431%
+║  DW-Sharpe      4.66
+╚════════════════════════════════════════════════════════════════════
