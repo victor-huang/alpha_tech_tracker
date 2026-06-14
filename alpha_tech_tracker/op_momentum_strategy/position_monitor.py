@@ -1221,6 +1221,19 @@ class PositionMonitor:
                 for o in manual_orders
             ]
 
+            # Drain fills already consumed by prior QTY SYNC cycles for this symbol.
+            # _fetch_manual_close_fill_orders always returns ALL fills oldest-first, so
+            # without this drain each new cycle re-consumes the same oldest fill and
+            # computes wrong P&L (and SMS) for the 2nd, 3rd, ... FIFO-attributed positions.
+            with self._lock:
+                already_attributed = sum(
+                    (p.contracts if p.trade_type != "stock" else int(p.shares))
+                    for p in self._qty_sync_closes
+                    if (p.option_symbol if p.trade_type != "stock" else p.ticker) == lookup_symbol
+                )
+            if already_attributed > 0:
+                self._consume_fill_orders(order_pool, already_attributed)
+
             sorted_positions = sorted(
                 group,
                 key=lambda p: p.entry_time or datetime.min.replace(tzinfo=ET),
