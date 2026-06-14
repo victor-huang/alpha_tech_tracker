@@ -48,29 +48,49 @@ The same signal logic drives both **live trading** (`trade_engine.py`) and **bac
 | `position_sizer.py` | `PositionSizer`: `compute()` for options, `compute_stock()` for stock sizing |
 | `bar_recorder.py` | `BarRecorder`: records live 1-min and 5-min bars to CSV during trading sessions |
 
-### Docs in This Directory
+### Documentation Structure
 
-| File | Purpose |
+Docs are organized into six folders. `FINDINGS.md` and `README.md` stay at the top level as primary entry points.
+
+```
+op_momentum_strategy/
+├── FINDINGS.md          ← master backtest findings index (primary research log)
+├── README.md            ← live trade engine setup and daily timeline
+│
+├── guides/              ← how to use scripts, engines, and helpers
+├── dev/
+│   ├── active/          ← in-progress dev plans and design notes
+│   └── done/            ← completed implementations
+├── research/
+│   ├── findings/        ← narrative research docs and sweep results
+│   ├── params/          ← parameter tuning and walkforward studies
+│   ├── ticker_selection/← win-rate backtest and ticker pool research
+│   ├── windows/         ← trading window experiments (M1/M2/A1/A2 sweeps)
+│   ├── regime_analysis/ ← year-by-year screener analyses (2016–2026)
+│   └── experiments/     ← specific experiment results (reentry, noise, replay)
+├── bugs/                ← active bugs (BUGS.md) and known live engine gaps
+├── pnl_history/         ← P&L reference and live trade performance records
+├── retrospects/         ← monthly retrospectives
+└── backtest_result/     ← raw .log output files from backtest runs (data, not docs)
+```
+
+**Key docs by category:**
+
+| Path | Purpose |
 |---|---|
-| `FINDINGS.md` | All backtest findings with data tables (primary research log) |
-| `step_to_create_new_trading_window.md` | 8-step process for evaluating and adding a new intraday window |
-| `TICKER_SELECTION.md` | Ticker pool selection criteria and history |
-| `OP_MOMENTUM_GUIDE.md` | Strategy methodology, signal rules, exit rules |
-| `WIN_RATE_SELECTOR_MODE.md` | All params and examples for `--selector win-rate` mode; screener parity guide |
-| `WIN_RATE_SELECTOR_BACKTEST.md` | Full 2018–2026 backtest results for win-rate selector; config, monthly P&L, stop-loss impact, screener return waterfall |
-| `win_rate_selector_capital_deployment_comparison.md` | $10k-pool vs $10k-per-signal capital model comparison; signal-count quality analysis, annual Sharpe, drawdown, and deployment distribution across 1,807 days |
-| `win_rate_ticker_set_comparison.md` | Ticker universe comparison: original 19-ticker momentum pool vs QQQ top-15 by dollar volume; 2026 YTD results, signal distribution, and head-to-head analysis |
-| `backtest_params_tunning/overview.md` | When/how to re-tune params & scoring: control-chart envelope, edge-vs-ranking diagnosis, 5-step re-tune protocol, validation gates |
-| `README.md` | Live trade engine setup and daily timeline |
-
-### Backtest Results
-
-| Path | Contents |
-|---|---|
-| `backtest_result/FINDINGS.md` | Deprecated — superseded by `FINDINGS.md` above |
-| `backtest_result/multiple_trading_windows/SUMMARY.md` | 6-year per-year comparison table + 5-year compound growth table |
-| `backtest_result/second_best_time_window/` | M1 vs M2 overlap analysis |
-| `backtest_result/afternoon_time_window/` | Afternoon window sweep + M1/M2/A1/A2 overlap analysis |
+| `guides/STRATEGY_GUIDE.md` | Strategy methodology, signal rules, exit rules |
+| `guides/TRADE_ENGINE_DESIGN.md` | Architecture and design of the live trade engine |
+| `guides/WIN_RATE_SELECTOR_MODE.md` | All params and examples for `--selector win-rate` mode |
+| `guides/NEW_WINDOW_GUIDE.md` | 8-step process for evaluating and adding a new intraday window |
+| `guides/PNL_AUDIT_GUIDE.md` | How to run and interpret the P&L audit scripts |
+| `guides/REPLAY_VALIDATION.md` | Replay vs backtest validation process |
+| `guides/TICKER_SELECTION.md` | Ticker pool selection criteria and history |
+| `guides/BACKTEST_VS_LIVE.md` | Structural differences between backtest and live engine |
+| `research/params/overview.md` | When/how to re-tune params & scoring: 5-step protocol, validation gates |
+| `research/ticker_selection/WIN_RATE_SELECTOR_BACKTEST.md` | Full 2018–2026 backtest results for win-rate selector |
+| `research/regime_analysis/MASTER_REGIME_SUMMARY.md` | Aggregated regime summary across all years |
+| `pnl_history/PNL_HISTORICAL_REFERENCE.md` | Historical P&L reference across live trading sessions |
+| `bugs/BUGS.md` | Active and pending bugs |
 
 ### Analysis Scripts (`analysis_scripts/`)
 

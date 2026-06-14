@@ -4002,6 +4002,78 @@ class TestSyncOpenPositionQtys:
 
         assert pos.contracts == 6
 
+    def test_multi_cycle_fifo_each_position_gets_its_own_fill_price(self):
+        # Regression: when QTY SYNC runs across multiple cycles for the same symbol,
+        # _fetch_manual_close_fill_orders returns ALL fills (oldest first) on every cycle.
+        # Without draining already-consumed qty, every cycle re-uses the oldest fill price,
+        # causing wrong P&L and wrong SMS for the 2nd and 3rd attributed positions.
+        import pytz
+        ET = pytz.timezone("America/New_York")
+        client = _make_alpaca_client()
+        df = _build_history_df([116.0], ma20=118.0, ma50=118.0, ma200=120.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine)
+
+        t0 = datetime(2026, 6, 12, 9, 50, tzinfo=ET)
+        t1 = datetime(2026, 6, 12, 9, 51, tzinfo=ET)
+        t2 = datetime(2026, 6, 12, 9, 52, tzinfo=ET)
+
+        pos1 = _make_active_position(signal="BULLISH", contracts=10)
+        pos1.entry_time = t0
+        pos2 = _make_active_position(signal="BULLISH", contracts=10)
+        pos2.entry_time = t1
+        pos3 = _make_active_position(signal="BULLISH", contracts=10)
+        pos3.entry_time = t2
+        pos1.option_symbol = pos2.option_symbol = pos3.option_symbol = "CLSK260612C00015000"
+        monitor._positions.extend([pos1, pos2, pos3])
+
+        fill_orders_1 = [
+            {"side": "sell", "order_id": "ord1", "filled_qty": 10, "filled_avg_price": "1.74",
+             "filled_at": datetime(2026, 6, 12, 11, 39, 2, tzinfo=ET)},
+        ]
+        fill_orders_2 = [
+            {"side": "sell", "order_id": "ord1", "filled_qty": 10, "filled_avg_price": "1.74",
+             "filled_at": datetime(2026, 6, 12, 11, 39, 2, tzinfo=ET)},
+            {"side": "sell", "order_id": "ord2", "filled_qty": 10, "filled_avg_price": "1.75",
+             "filled_at": datetime(2026, 6, 12, 11, 39, 44, tzinfo=ET)},
+        ]
+        fill_orders_3 = [
+            {"side": "sell", "order_id": "ord1", "filled_qty": 10, "filled_avg_price": "1.74",
+             "filled_at": datetime(2026, 6, 12, 11, 39, 2, tzinfo=ET)},
+            {"side": "sell", "order_id": "ord2", "filled_qty": 10, "filled_avg_price": "1.75",
+             "filled_at": datetime(2026, 6, 12, 11, 39, 44, tzinfo=ET)},
+            {"side": "sell", "order_id": "ord3", "filled_qty": 10, "filled_avg_price": "1.696",
+             "filled_at": datetime(2026, 6, 12, 11, 43, 3, tzinfo=ET)},
+        ]
+
+        recorded_fills = []
+
+        def capture_close(closed_pos):
+            recorded_fills.append(float(closed_pos.exit_fill_price))
+
+        monitor._close_callback = capture_close
+
+        with patch("alpha_tech_tracker.op_momentum_strategy.position_monitor._notify"):
+            # Cycle 1: broker shows 20, engine has 30 → 1 manual close detected
+            client.get_open_positions.return_value = {"CLSK260612C00015000": {"qty": 20.0}}
+            client.get_filled_orders.return_value = fill_orders_1
+            monitor._sync_open_position_qtys()
+
+            # Cycle 2: broker shows 10, engine has 20 (pos1 removed) → 1 more detected
+            client.get_open_positions.return_value = {"CLSK260612C00015000": {"qty": 10.0}}
+            client.get_filled_orders.return_value = fill_orders_2
+            monitor._sync_open_position_qtys()
+
+            # Cycle 3: broker shows 0, engine has 10 (pos1,pos2 removed) → 1 more detected
+            client.get_open_positions.return_value = {}
+            client.get_filled_orders.return_value = fill_orders_3
+            monitor._sync_open_position_qtys()
+
+        assert len(recorded_fills) == 3
+        assert recorded_fills[0] == pytest.approx(1.74)
+        assert recorded_fills[1] == pytest.approx(1.75)
+        assert recorded_fills[2] == pytest.approx(1.70)  # 1.696 quantized to $0.01 = 1.70
+
 
 # ---------------------------------------------------------------------------
 # TestClosedContractsRetentionOnRetry — G31
