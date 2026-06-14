@@ -1,0 +1,28 @@
+
+================================================================================
+FOLD 1: train = 2020-2025 yearly + 0 extra 2026 month(s)  |  OOS = 2026-01
+================================================================================
+  27 combos × 6 segments = 162 unit-runs
+    [ 25/162]
+    [ 50/162]
+    [ 75/162]
+    [100/162]
+    [125/162]
+    [150/162]
+    [162/162]
+  BEST TRAIN: $+22,113.72  params={'score_entry_weight': 0.6, 'qqq_regime_weight': 0.55, 'stop_pct': 0.4}
+  Running OOS on 2026-01...
+  OOS 2026-01 P&L: $+4,070.90
+  Wrote /Users/victorhuang/work/alpha_tech_tracker/alpha_tech_tracker/op_momentum_strategy/backtest_params_tunning/walkforward_2026/fold_01_2026-01.json
+
+================================================================================
+FOLD 2: train = 2020-2025 yearly + 1 extra 2026 month(s)  |  OOS = 2026-02
+================================================================================
+  27 combos × 7 segments = 189 unit-runs
+    [ 25/189]
+    [ 50/189]
+    [ 75/189]
+    [100/189]
+    [125/189]
+/Users/victorhuang/.pyenv/versions/3.8.18/lib/python3.8/multiprocessing/resource_tracker.py:216: UserWarning: resource_tracker: There appear to be 5 leaked semaphore objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '
