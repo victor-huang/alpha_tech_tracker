@@ -5094,6 +5094,88 @@ class TestManualCloseOrderIdExclusion:
         assert monitor._entry_confirmed_filled_no_manual_close(pos) is False
 
 
+class TestQtySyncRetryBackoff:
+    """_sync_open_position_qtys: retry with exponential backoff on transient API failures."""
+
+    def _make_monitor(self, pos):
+        df = _build_history_df([104.0], ma20=90.0, ma50=90.0, ma200=85.0)
+        engine = _make_signal_engine_with_history(pos.ticker, df)
+        client = _make_alpaca_client()
+        monitor = PositionMonitor(client, engine, mock_trade_execution=True)
+        monitor.add_position(pos)
+        return monitor, client
+
+    def test_succeeds_on_second_attempt_after_transient_error(self, mocker):
+        pos = _make_active_position(contracts=1)
+        pos.entry_fill_price = _D("22.95")
+        pos.window_label = "M1"
+        monitor, client = self._make_monitor(pos)
+
+        mock_sleep = mocker.patch(
+            "alpha_tech_tracker.op_momentum_strategy.position_monitor.time.sleep"
+        )
+        client.get_open_positions.side_effect = [
+            RuntimeError("transient"),
+            {pos.option_symbol: {"qty": 1}},
+        ]
+
+        monitor._sync_open_position_qtys()
+
+        assert client.get_open_positions.call_count == 2
+        mock_sleep.assert_called_once_with(1)
+
+    def test_gives_up_after_max_attempts_and_logs_warning(self, mocker):
+        pos = _make_active_position(contracts=1)
+        pos.entry_fill_price = _D("22.95")
+        pos.window_label = "M1"
+        monitor, client = self._make_monitor(pos)
+
+        mocker.patch("alpha_tech_tracker.op_momentum_strategy.position_monitor.time.sleep")
+        client.get_open_positions.side_effect = RuntimeError("broker down")
+
+        monitor._sync_open_position_qtys()
+
+        assert client.get_open_positions.call_count == 3
+
+    def test_no_retry_when_first_attempt_succeeds(self, mocker):
+        pos = _make_active_position(contracts=1)
+        pos.entry_fill_price = _D("22.95")
+        pos.window_label = "M1"
+        monitor, client = self._make_monitor(pos)
+
+        mock_sleep = mocker.patch(
+            "alpha_tech_tracker.op_momentum_strategy.position_monitor.time.sleep"
+        )
+        client.get_open_positions.return_value = {pos.option_symbol: {"qty": 1}}
+
+        monitor._sync_open_position_qtys()
+
+        assert client.get_open_positions.call_count == 1
+        mock_sleep.assert_not_called()
+
+    def test_backoff_delays_double_on_each_retry(self, mocker):
+        pos = _make_active_position(contracts=1)
+        pos.entry_fill_price = _D("22.95")
+        pos.window_label = "M1"
+        monitor, client = self._make_monitor(pos)
+
+        sleep_calls = []
+        mocker.patch(
+            "alpha_tech_tracker.op_momentum_strategy.position_monitor.time.sleep",
+            side_effect=lambda d: sleep_calls.append(d),
+        )
+        # Fail first two, succeed third
+        client.get_open_positions.side_effect = [
+            RuntimeError("err1"),
+            RuntimeError("err2"),
+            {pos.option_symbol: {"qty": 1}},
+        ]
+
+        monitor._sync_open_position_qtys()
+
+        assert sleep_calls == [1, 2]
+
+
 class TestFifoQtySyncMultiPosition:
     """_sync_open_position_qtys FIFO attribution when two engine positions share the same ticker.
 

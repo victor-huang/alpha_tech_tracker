@@ -1154,17 +1154,40 @@ class PositionMonitor:
         short MU), Alpaca reports a single aggregated qty for the symbol. Positions are
         attributed using FIFO order (oldest entry first) so the correct exit price is
         matched to each position, mirroring how Alpaca applies fills at the broker level.
+
+        Retries up to 3 times with exponential backoff (2s, 4s) before giving up, so
+        transient broker API disconnects (e.g. TradeStation RemoteDisconnected) don't
+        silently skip the sync on a cycle when a position may have been manually closed.
         """
         with self._lock:
             open_pos = [p for p in self._positions if not p.is_closed]
         if not open_pos:
             return
 
-        try:
-            open_positions = self._client.get_open_positions()
-        except Exception:
-            logger.warning("Could not fetch open positions for qty sync", exc_info=True)
-            return
+        _MAX_ATTEMPTS = 3
+        _BACKOFF_BASE = 2  # seconds; delay = _BACKOFF_BASE ** (attempt - 1)
+        open_positions = None
+        for attempt in range(1, _MAX_ATTEMPTS + 1):
+            try:
+                open_positions = self._client.get_open_positions()
+                break
+            except Exception:
+                if attempt == _MAX_ATTEMPTS:
+                    logger.warning(
+                        "Could not fetch open positions for qty sync after %d attempts",
+                        _MAX_ATTEMPTS,
+                        exc_info=True,
+                    )
+                    return
+                delay = _BACKOFF_BASE ** (attempt - 1)
+                logger.warning(
+                    "Could not fetch open positions for qty sync (attempt %d/%d) — retrying in %ds",
+                    attempt,
+                    _MAX_ATTEMPTS,
+                    delay,
+                    exc_info=True,
+                )
+                time.sleep(delay)
 
         groups: dict = {}
         for pos in open_pos:
