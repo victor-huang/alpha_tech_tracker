@@ -701,6 +701,7 @@ class PositionMonitor:
                         fill_price = self._fetch_manual_close_fill_price(pos)
                         if fill_price is not None:
                             pos.exit_fill_price = fill_price
+                            pos.exit_reason = "manual_close"
                             pos.close_order_failed = False
                         else:
                             # Fill not yet in order history — let reconciliation thread retry.
@@ -906,6 +907,7 @@ class PositionMonitor:
                         fill_est = self._fetch_manual_close_fill_price(pos)
                         if fill_est is not None:
                             pos.exit_fill_price = fill_est
+                            pos.exit_reason = "manual_close"
                             pos.close_order_failed = False
                         else:
                             # Fill not yet in order history — let reconciliation thread retry.

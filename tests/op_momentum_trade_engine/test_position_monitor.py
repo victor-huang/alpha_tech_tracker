@@ -1059,6 +1059,35 @@ class TestStockClosePosition:
         assert pos.exit_fill_price == _D("105.50")
         client.place_stock_order.assert_not_called()
 
+    def test_stock_full_manual_close_at_eod_sets_exit_reason_manual_close(self):
+        # close_all() stamps exit_reason="end_of_day" before _close_stock_position runs.
+        # Pre-close sync detecting a full manual close must override it to "manual_close".
+        client = _make_alpaca_client()
+        client.get_stock_quote.return_value = {
+            "QuoteResponse": {
+                "QuoteData": [{"All": {"bid": 99.0, "ask": 101.0, "bid_size": 1, "ask_size": 1, "last": None}}]
+            }
+        }
+        client.get_open_positions.return_value = {}
+        client.get_filled_orders.return_value = [
+            {"order_id": "o1", "side": "buy", "filled_avg_price": 105.50,
+             "filled_qty": 15.0, "filled_at": None},
+        ]
+        pos = _make_stock_position(signal="BEARISH", shares=15)
+        pos.entry_order_id = None
+        df = _build_history_df([104.0], ma20=90.0, ma50=90.0, ma200=85.0)
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine, mock_trade_execution=False)
+        monitor.add_position(pos)
+
+        with patch(
+            "alpha_tech_tracker.op_momentum_strategy.position_monitor.is_replay_mode",
+            return_value=False,
+        ):
+            monitor.close_all(reason="end_of_day")
+
+        assert pos.exit_reason == "manual_close"
+
     def test_manual_close_detection_leaves_exit_fill_price_none_when_fetch_fails(self):
         # G37: if _fetch_manual_close_fill_price returns None (no order found, no quote),
         # exit_fill_price must remain None — not silently set to 0 or mid.
@@ -3582,6 +3611,28 @@ class TestPreCloseBrokerQtySync:
             monitor._close_option_position(pos, "hard_stop")
 
         assert pos.exit_fill_price == _D("9.75")
+
+    def test_option_full_manual_close_at_eod_sets_exit_reason_manual_close(self):
+        # close_all() sets exit_reason="end_of_day" before calling _close_option_position.
+        # Pre-close sync detecting a full manual close must override it to "manual_close"
+        # so the trade summary shows [Manual Close] instead of [Bearish Cont.].
+        close_cb = MagicMock()
+        monitor, client, engine, pos = self._make_live_monitor()
+        monitor._close_callback = close_cb
+        client.get_open_positions.return_value = {}
+        client.order_status.return_value = {"status": "filled", "filled_avg_price": 8.0}
+        client.get_filled_orders.return_value = [
+            {"order_id": "o1", "side": "sell", "filled_avg_price": 9.75,
+             "filled_qty": 6.0, "filled_at": None},
+        ]
+        with \
+                patch(self._REPLAY_PATH, return_value=False), \
+                patch(self._PLACE_OPTION_PATH), \
+                patch(self._NOTIFY_PATH):
+            monitor.add_position(pos)
+            monitor.close_all(reason="end_of_day")
+
+        assert pos.exit_reason == "manual_close"
 
     def test_option_marks_pending_when_order_status_unknown_and_no_sell_history(self):
         monitor, client, engine, pos = self._make_live_monitor()
