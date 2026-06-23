@@ -749,6 +749,12 @@ def place_stock_order(
         return bid, ask, mid
 
     _shares_remaining = [shares]
+    _total_filled = [0]
+
+    def _enrich_result(order: dict) -> dict:
+        result = dict(order)
+        result["total_filled_qty"] = _total_filled[0]
+        return result
 
     def _place_limit(price) -> dict:
         rounded = float(price.quantize(_D("0.01"), rounding=ROUND_HALF_UP))
@@ -796,6 +802,7 @@ def place_stock_order(
         partial = min(filled_qty, _shares_remaining[0])
         if partial > 0:
             _shares_remaining[0] -= partial
+            _total_filled[0] += partial
             logger.warning(
                 "STOCK FILL_ESC %s attempt=%d %s %s: partial fill %d shares on cancel "
                 "— %d remaining (order=%s)",
@@ -820,7 +827,8 @@ def place_stock_order(
                 "Could not fetch stock quote for step1 attempt=%d %s, falling back to market",
                 attempt, ticker, exc_info=True,
             )
-            return _place_market()
+            _total_filled[0] += _shares_remaining[0]
+            return _enrich_result(_place_market())
 
         if is_buy and (ask - bid) > _D("0.50"):
             logger.info(
@@ -851,13 +859,15 @@ def place_stock_order(
         fill_status, filled_qty = _check_fill_status(order_id)
         if fill_status:
             logger.info("STOCK FILL_ESC step1 attempt=%d filled: %s", attempt, order_id)
-            return order
+            _total_filled[0] += _shares_remaining[0]
+            return _enrich_result(order)
         if fill_status is None:
             logger.warning(
                 "STOCK FILL_ESC step1 attempt=%d %s %s: fill status unknown — not cancelling, returning order",
                 attempt, order_action, ticker,
             )
-            return order
+            _total_filled[0] += _shares_remaining[0]
+            return _enrich_result(order)
         _absorb_partial(order_id, "step1", attempt, filled_qty)
         _cancel_safely(order_id)
         time.sleep(0.5)
@@ -866,7 +876,7 @@ def place_stock_order(
         if incremental > 0:
             _absorb_partial(order_id, "step1-post-cancel", attempt, incremental)
         if _shares_remaining[0] <= 0:
-            return order
+            return _enrich_result(order)
     for attempt in range(1, 4):
         try:
             bid, ask, mid = _fetch_mid_bid_ask()
@@ -885,7 +895,8 @@ def place_stock_order(
                 "Could not fetch stock quote for step2 attempt=%d %s, using market",
                 attempt, ticker, exc_info=True,
             )
-            return _place_market()
+            _total_filled[0] += _shares_remaining[0]
+            return _enrich_result(_place_market())
 
         try:
             order = _place_limit(aggressive_price)
@@ -909,19 +920,22 @@ def place_stock_order(
         fill_status, filled_qty = _check_fill_status(order_id)
         if fill_status:
             logger.info("STOCK FILL_ESC step2 attempt=%d filled: %s", attempt, order_id)
-            return order
+            _total_filled[0] += _shares_remaining[0]
+            return _enrich_result(order)
         if fill_status is None:
             logger.warning(
                 "STOCK FILL_ESC step2 attempt=%d %s %s: fill status unknown — not cancelling, returning order",
                 attempt, order_action, ticker,
             )
-            return order
+            _total_filled[0] += _shares_remaining[0]
+            return _enrich_result(order)
         _absorb_partial(order_id, "step2", attempt, filled_qty)
         _cancel_safely(order_id)
         if _shares_remaining[0] <= 0:
-            return order
+            return _enrich_result(order)
 
     logger.info("STOCK FILL_ESC step3 %s %s: placing market order", order_action, ticker)
     order = _place_market()
     logger.info("STOCK FILL_ESC step3 market order placed: id=%s", order.get("order_id"))
-    return order
+    _total_filled[0] += _shares_remaining[0]
+    return _enrich_result(order)

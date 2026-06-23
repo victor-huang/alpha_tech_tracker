@@ -999,8 +999,11 @@ class OpMomentumTradeEngine:
             ),
         )
         if not self._mock_trade_execution:
-            fill_price, filled_qty = self._poll_entry_fill(order.get("order_id", ""))
+            fill_price, polled_qty = self._poll_entry_fill(order.get("order_id", ""))
             pos.entry_fill_price = fill_price
+            # total_filled_qty from the executor accumulates partial fills across all
+            # retry attempts; polled_qty only reflects the last order placed.
+            filled_qty = order.get("total_filled_qty") if order.get("total_filled_qty") is not None else polled_qty
             if filled_qty is not None:
                 if filled_qty == 0:
                     logger.error(

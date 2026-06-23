@@ -3518,6 +3518,90 @@ class TestPollEntryFill:
         assert engine._client.order_status.call_count == 1
 
 
+class TestStockPartialFillFromExecutor:
+    """
+    _enter_position stock branch: total_filled_qty in the order dict (set by
+    order_executor across all retry attempts) must take precedence over the qty
+    returned by _poll_entry_fill (which only sees the last order placed).
+    """
+
+    def _make_live_stock_engine(self):
+        client = _make_alpaca_client()
+        engine = OpMomentumTradeEngine(
+            alpaca_client=client,
+            mock_trade_execution=False,
+            trade_type="stock",
+        )
+        engine._monitor = Mock()
+        engine._signal_engine = Mock()
+        engine._signal_engine.get_latest_bar.return_value = None
+        engine._window_state["W1"] = {
+            "pending_signals": {},
+            "collection_deadline": datetime.now(ET) - timedelta(minutes=1),
+            "open_position_count": 0,
+            "capital_fraction": 1.0,
+        }
+        return engine
+
+    def test_total_filled_qty_takes_precedence_over_polled_qty(self):
+        """MSTR scenario: executor tracked 69 across two orders; poll sees only 21."""
+        engine = self._make_live_stock_engine()
+        captured_positions = []
+        engine._monitor.add_position.side_effect = captured_positions.append
+
+        with patch(_COMPUTE_STOCK_PATH, return_value=(69, _D("114.87"))), \
+             patch(_PLACE_STOCK_ORDER_PATH, return_value={"order_id": "partial-stk", "total_filled_qty": 69}), \
+             patch(_POLL_ENTRY_FILL_PATH, return_value=(_D("114.87"), 21)), \
+             patch(_NOTIFY_PATH):
+            result = engine._enter_position(_make_signal_event("MSTR"), rank=0)
+
+        assert result is True
+        assert captured_positions[0].shares == 69
+
+    def test_falls_back_to_polled_qty_when_total_filled_qty_absent(self):
+        """Old executor path (no total_filled_qty key): polled qty is used."""
+        engine = self._make_live_stock_engine()
+        captured_positions = []
+        engine._monitor.add_position.side_effect = captured_positions.append
+
+        with patch(_COMPUTE_STOCK_PATH, return_value=(10, _D("100.00"))), \
+             patch(_PLACE_STOCK_ORDER_PATH, return_value={"order_id": "stk-no-total"}), \
+             patch(_POLL_ENTRY_FILL_PATH, return_value=(_D("100.25"), 10)), \
+             patch(_NOTIFY_PATH):
+            result = engine._enter_position(_make_signal_event("NVDA"), rank=0)
+
+        assert result is True
+        assert captured_positions[0].shares == 10
+
+    def test_position_discarded_when_total_filled_qty_is_zero(self):
+        """Executor reports zero filled across all attempts — entry missed."""
+        engine = self._make_live_stock_engine()
+
+        with patch(_COMPUTE_STOCK_PATH, return_value=(10, _D("100.00"))), \
+             patch(_PLACE_STOCK_ORDER_PATH, return_value={"order_id": "stk-zero", "total_filled_qty": 0}), \
+             patch(_POLL_ENTRY_FILL_PATH, return_value=(None, 0)), \
+             patch(_NOTIFY_PATH):
+            result = engine._enter_position(_make_signal_event("NVDA"), rank=0)
+
+        assert result is False
+        engine._monitor.add_position.assert_not_called()
+
+    def test_shares_adjusted_when_total_filled_qty_differs_from_requested(self):
+        """Partial fill (not zero, not full): position is tracked with actual shares."""
+        engine = self._make_live_stock_engine()
+        captured_positions = []
+        engine._monitor.add_position.side_effect = captured_positions.append
+
+        with patch(_COMPUTE_STOCK_PATH, return_value=(50, _D("200.00"))), \
+             patch(_PLACE_STOCK_ORDER_PATH, return_value={"order_id": "stk-partial", "total_filled_qty": 35}), \
+             patch(_POLL_ENTRY_FILL_PATH, return_value=(_D("200.10"), 35)), \
+             patch(_NOTIFY_PATH):
+            result = engine._enter_position(_make_signal_event("NVDA"), rank=0)
+
+        assert result is True
+        assert captured_positions[0].shares == 35
+
+
 _SAVE_SESSION_PATH = "alpha_tech_tracker.op_momentum_strategy.trade_engine._save_session"
 _LOAD_SESSION_PATH = "alpha_tech_tracker.op_momentum_strategy.trade_engine._load_session"
 _LOAD_SESSION_METADATA_PATH = "alpha_tech_tracker.op_momentum_strategy.trade_engine._load_session_metadata"

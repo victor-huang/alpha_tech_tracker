@@ -2855,3 +2855,112 @@ class TestStockOrderTradeActionForwarding:
         market_order = client.place_stock_order.call_args_list[-1]
         assert market_order.kwargs["order_type"] == "MARKET"
         assert market_order.kwargs["trade_action"] == "SELL_SHORT"
+
+
+class TestPlaceStockOrderTotalFilledQty:
+    """
+    place_stock_order must return total_filled_qty in the result dict so that
+    trade_engine can set the correct position size when partial fills across
+    multiple step-1 attempts add up to more than the last order alone.
+
+    Real-world failure (2026-06-22, MSTR): attempt-1 SELL_SHORT 69 shares partially
+    filled 48 before cancel; attempt-2 filled the remaining 21. The executor returned
+    the attempt-2 order (filled_qty=21), trade_engine polled that order and set
+    pos.shares=21, leaving 48 untracked short shares at the broker.
+    """
+
+    def _make_partial_fill_client(self, total_shares, partial_on_attempt1):
+        client = MagicMock()
+        client.get_stock_quote.return_value = {
+            "QuoteResponse": {
+                "QuoteData": [{"All": {"bid": 114.83, "ask": 114.92, "lastTrade": 114.87}}]
+            }
+        }
+        order_ids = ["order-attempt-1", "order-attempt-2"]
+        call_count = [0]
+
+        def place_side_effect(**kwargs):
+            idx = call_count[0]
+            call_count[0] += 1
+            return {"order_id": order_ids[min(idx, len(order_ids) - 1)], "status": "open", "filled_qty": 0}
+
+        client.place_stock_order.side_effect = place_side_effect
+
+        def order_status_side_effect(order_id):
+            if order_id == "order-attempt-1":
+                return {"status": "partially_filled", "filled_qty": partial_on_attempt1}
+            remaining = total_shares - partial_on_attempt1
+            return {"status": "filled", "filled_qty": remaining}
+
+        client.order_status.side_effect = order_status_side_effect
+        return client
+
+    def test_partial_then_retry_total_filled_qty_is_sum_of_both_fills(self):
+        client = self._make_partial_fill_client(total_shares=69, partial_on_attempt1=48)
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            result = place_stock_order(
+                client=client, ticker="MSTR", shares=69, order_action="SELL_SHORT"
+            )
+
+        assert result["total_filled_qty"] == 69, (
+            "total_filled_qty must be 48 (attempt-1 partial) + 21 (attempt-2 full) = 69"
+        )
+
+    def test_no_partial_total_filled_qty_equals_requested_shares(self):
+        client = _make_stock_client(bid=114.83, ask=114.92, order_status="filled")
+        client.order_status.return_value = {"status": "filled", "filled_qty": 69}
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            result = place_stock_order(
+                client=client, ticker="MSTR", shares=69, order_action="SELL_SHORT"
+            )
+
+        assert result["total_filled_qty"] == 69
+
+    def test_partial_fills_entire_position_total_filled_qty_is_original(self):
+        # attempt-1 partial-fills the full 69 before cancel fires
+        client = self._make_partial_fill_client(total_shares=69, partial_on_attempt1=69)
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            result = place_stock_order(
+                client=client, ticker="MSTR", shares=69, order_action="SELL_SHORT"
+            )
+
+        assert result["total_filled_qty"] == 69
+
+    def test_step2_fill_after_step1_partial_total_filled_qty_is_sum(self):
+        # step-1 exhausted (3 attempts, no fill) — step-2 fills after step-1 partial on attempt-3
+        client = MagicMock()
+        client.get_stock_quote.return_value = {
+            "QuoteResponse": {
+                "QuoteData": [{"All": {"bid": 204.81, "ask": 205.20, "lastTrade": 205.0}}]
+            }
+        }
+        order_ids = ["s1a1", "s1a2", "s1a3", "s2a1"]
+        call_count = [0]
+
+        def place_side_effect(**kwargs):
+            idx = call_count[0]
+            call_count[0] += 1
+            return {"order_id": order_ids[min(idx, len(order_ids) - 1)], "status": "open", "filled_qty": 0}
+
+        client.place_stock_order.side_effect = place_side_effect
+
+        def order_status_side_effect(order_id):
+            if order_id == "s1a1":
+                return {"status": "open", "filled_qty": 0}       # attempt-1: nothing
+            if order_id == "s1a2":
+                return {"status": "open", "filled_qty": 0}       # attempt-2: nothing
+            if order_id == "s1a3":
+                return {"status": "partially_filled", "filled_qty": 10}  # attempt-3: partial 10/40
+            # step-2: fills remaining 30
+            return {"status": "filled", "filled_qty": 30}
+
+        client.order_status.side_effect = order_status_side_effect
+
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            result = place_stock_order(
+                client=client, ticker="COIN", shares=40, order_action="BUY_OPEN"
+            )
+
+        assert result["total_filled_qty"] == 40, (
+            "10 (step-1 attempt-3 partial) + 30 (step-2) must equal 40"
+        )
