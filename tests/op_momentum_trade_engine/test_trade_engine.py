@@ -556,6 +556,101 @@ class TestSignalSelectionLoop:
         assert engine._window_state["W1"]["collection_bars_remaining"] == 0
 
 
+_NOW_ET_PATH = "alpha_tech_tracker.op_momentum_strategy.trade_engine._now_et"
+_TIME_SLEEP_PATH = "alpha_tech_tracker.op_momentum_strategy.trade_engine.time.sleep"
+
+
+class TestExtensionWindowDrain:
+    """
+    Regression for 6/29 bug: when bars_remaining goes 1→0 inside a drain that
+    found signals (all skipped), the loop extended the deadline but then broke
+    immediately because bars_left==0.  Signals buffered during the extension
+    (e.g. ARM BEARISH) were silently orphaned.
+
+    Fix: break only when bars_left==0 AND _now_et() >= new_deadline.
+    """
+
+    def _make_engine_bars(self, bars_remaining):
+        engine = _make_engine_with_mock_client()
+        engine._window_state["W1"]["collection_bars_remaining"] = bars_remaining
+        return engine
+
+    def test_loop_drains_extension_window_after_first_batch_skipped(self, mocker):
+        """Drain called twice: first batch skipped, second batch entered."""
+        engine = self._make_engine_bars(bars_remaining=1)
+
+        now = datetime.now(ET)
+        deadline_1 = now - timedelta(seconds=1)   # past → inner while exits immediately
+        deadline_2 = now + timedelta(seconds=300)  # future → set by fake drain
+
+        engine._window_state["W1"]["collection_deadline"] = deadline_1
+
+        drain_calls = [0]
+
+        def fake_drain(win):
+            drain_calls[0] += 1
+            if drain_calls[0] == 1:
+                engine._window_state["W1"]["collection_bars_remaining"] = 0
+                engine._window_state["W1"]["collection_deadline"] = deadline_2
+
+        now_sequence = [
+            now,               # iter 1 inner while: now > deadline_1 → exits
+            now,               # iter 1 break check: now < deadline_2 → continue
+            deadline_2 + timedelta(seconds=1),  # iter 2 inner while: > deadline_2 → exits
+            deadline_2 + timedelta(seconds=1),  # iter 2 break check: >= deadline_2 → break
+        ]
+        mocker.patch(_NOW_ET_PATH, side_effect=now_sequence)
+        mocker.patch(_TIME_SLEEP_PATH)
+        mocker.patch.object(engine, "_drain_pending_signals_for_window", side_effect=fake_drain)
+
+        engine._signal_selection_loop_for_window(engine._windows[0])
+
+        assert drain_calls[0] == 2
+
+    def test_loop_breaks_immediately_when_extended_deadline_also_in_past(self, mocker):
+        """If the extension deadline is also in the past (late startup), break after one drain."""
+        engine = self._make_engine_bars(bars_remaining=1)
+
+        now = datetime.now(ET)
+        deadline_1 = now - timedelta(minutes=10)
+        deadline_2 = now - timedelta(minutes=5)  # still in the past
+
+        engine._window_state["W1"]["collection_deadline"] = deadline_1
+
+        drain_calls = [0]
+
+        def fake_drain(win):
+            drain_calls[0] += 1
+            if drain_calls[0] == 1:
+                engine._window_state["W1"]["collection_bars_remaining"] = 0
+                engine._window_state["W1"]["collection_deadline"] = deadline_2
+
+        mocker.patch(_TIME_SLEEP_PATH)
+        mocker.patch.object(engine, "_drain_pending_signals_for_window", side_effect=fake_drain)
+
+        engine._signal_selection_loop_for_window(engine._windows[0])
+
+        assert drain_calls[0] == 1
+
+    def test_no_signals_multi_bar_loop_still_terminates(self, mocker):
+        """
+        Regression guard: multi-bar no-signal loop (startup recovery, all deadlines in past)
+        must still exhaust all bars_remaining and terminate.
+        """
+        engine = self._make_engine_bars(bars_remaining=2)
+        engine._window_state["W1"]["collection_deadline"] = (
+            datetime.now(ET) - timedelta(minutes=25)
+        )
+
+        mocker.patch(_TIME_SLEEP_PATH)
+
+        with patch.object(engine, "_enter_position") as mock_enter:
+            engine._signal_selection_loop_for_window(engine._windows[0])
+            mock_enter.assert_not_called()
+
+        assert engine._window_state["W1"]["collection_bars_remaining"] == 0
+
+
 class TestRankWeightedSizing:
     def _make_engine(self, **kwargs):
         client = _make_alpaca_client()

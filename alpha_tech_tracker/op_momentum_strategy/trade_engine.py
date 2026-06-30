@@ -2568,9 +2568,15 @@ class OpMomentumTradeEngine:
                 self._drain_pending_signals_for_window(win)
             # After drain, check if the deadline was extended for another bar.
             # If so, loop back and wait for the next bar's collection window.
+            # We must also check the deadline itself: when the drain extended it
+            # to a future time (bars went 1→0 but deadline is still ahead), the
+            # loop must continue so signals buffered during that extension are
+            # drained.  Breaking on bars_left==0 alone caused the 6/29 bug where
+            # ARM BEARISH was buffered into the extension window but never ranked.
             with self._signal_lock:
                 bars_left = state.get("collection_bars_remaining", 0)
-            if bars_left == 0:
+                new_deadline = state["collection_deadline"]
+            if bars_left == 0 and _now_et() >= new_deadline:
                 break
 
     def _place_entry(
@@ -3331,8 +3337,10 @@ class OpMomentumTradeEngine:
                     _first_drained_windows.add(lbl)
                     self._drain_pending_signals_for_window(win)
                     with self._signal_lock:
-                        if self._window_state[lbl].get("collection_bars_remaining", 0) == 0:
-                            _fully_drained_windows.add(lbl)
+                        bars_after = self._window_state[lbl].get("collection_bars_remaining", 0)
+                        new_dl = self._window_state[lbl]["collection_deadline"]
+                    if bars_after == 0 and now >= new_dl:
+                        _fully_drained_windows.add(lbl)
             self._monitor.on_bar(ticker)
 
         def _on_bar_group_complete():
