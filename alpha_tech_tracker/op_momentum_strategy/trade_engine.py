@@ -2562,6 +2562,26 @@ class OpMomentumTradeEngine:
             )
             while _now_et() < state["collection_deadline"]:
                 time.sleep(0.5)
+            # Bar-aggregation lag: the 5-min bar closing at this deadline is often
+            # finalized ~60-90s late (next bar's tick triggers finalization — see
+            # signal_engine._process_five_min_bar), so nothing is buffered yet at
+            # the exact deadline. Give _on_signal_for_window's grace-extend path
+            # (which fires when a late signal arrives within BAR_AGG_GRACE_SECONDS)
+            # a chance to claim the window before we drain it as empty and pay the
+            # full 5-minute bar extension. Skipped in replay mode, where the clock
+            # is pinned to bar timestamps and signals drain synchronously in _on_bar.
+            if not is_replay_mode():
+                with self._signal_lock:
+                    already_pending = bool(state["pending_signals"])
+                if not already_pending:
+                    grace_until = state["collection_deadline"] + timedelta(
+                        seconds=BAR_AGG_GRACE_SECONDS
+                    )
+                    while _now_et() < grace_until:
+                        time.sleep(0.5)
+                        with self._signal_lock:
+                            if state["drain_timer_scheduled"] or state["pending_signals"]:
+                                break
             with self._signal_lock:
                 timer_pending = state["drain_timer_scheduled"]
             if not timer_pending:

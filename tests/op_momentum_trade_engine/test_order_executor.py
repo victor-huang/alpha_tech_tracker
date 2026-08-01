@@ -1334,6 +1334,92 @@ class TestPlaceStockOrderInsufficientFundsAbort:
         assert client.place_stock_order.call_count == 7
 
 
+class TestPlaceStockOrderShortSaleInsufficientBuyingPowerShrink:
+    """
+    When Alpaca rejects a SELL_SHORT order with a parseable insufficient
+    buying-power message, the escalation must shrink the share count to fit
+    within the reported buying power and retry, rather than aborting the
+    entire entry (2026-07-31 CRWV incident — a legitimate BEARISH signal was
+    missed entirely because the position sizer's window budget didn't
+    account for Reg-T short-sale margin).
+    """
+
+    _BP_ERROR = InsufficientFundsError(
+        '{"buying_power":"7727.51","code":40310000,"cost_basis":"12161.98",'
+        '"message":"insufficient buying power"}'
+    )
+
+    def test_step1_shrinks_shares_and_retries_on_short_sale(self):
+        client = _make_stock_client(bid=73.10, ask=73.20, order_status="filled")
+        call_count = [0]
+
+        def side_effect(**kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                raise self._BP_ERROR
+            return {"order_id": "stock-ord-002", "status": "filled"}
+
+        client.place_stock_order.side_effect = side_effect
+
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            result = place_stock_order(
+                client=client, ticker="CRWV", shares=161, order_action="SELL_SHORT"
+            )
+
+        assert client.place_stock_order.call_count == 2
+        # 7727.51 / 12161.98 * 0.95 ≈ 0.6039 → int(161 * 0.6039) = 97
+        second_call = client.place_stock_order.call_args_list[1]
+        assert second_call.kwargs["quantity"] == 97
+        assert result["total_filled_qty"] == 97
+
+    def test_shrink_not_applied_to_buy_open(self):
+        # Margin shrink is scoped to SELL_SHORT — BUY_OPEN still aborts immediately.
+        client = _make_stock_client(bid=73.10, ask=73.20)
+        client.place_stock_order.side_effect = self._BP_ERROR
+
+        with patch(f"{_MODULE}.time.sleep", lambda _: None), \
+             pytest.raises(InsufficientFundsError):
+            place_stock_order(
+                client=client, ticker="CRWV", shares=161, order_action="BUY_OPEN"
+            )
+
+        assert client.place_stock_order.call_count == 1
+
+    def test_unparseable_message_still_aborts(self):
+        # Falls back to the original abort behavior when the error can't be parsed.
+        client = _make_stock_client(bid=73.10, ask=73.20)
+        client.place_stock_order.side_effect = InsufficientFundsError(
+            "insufficient qty available for order (requested: 161, available: 100)"
+        )
+
+        with patch(f"{_MODULE}.time.sleep", lambda _: None), \
+             pytest.raises(InsufficientFundsError):
+            place_stock_order(
+                client=client, ticker="CRWV", shares=161, order_action="SELL_SHORT"
+            )
+
+        assert client.place_stock_order.call_count == 1
+
+    def test_persistent_rejection_falls_through_to_market_then_raises(self):
+        # Every attempt rejected with the same message — each retry shrinks
+        # further (161→97→58→35→21→12→7), exhausting all 3 step1 + 3 step2
+        # attempts. This is bounded, not an infinite loop: it falls through to
+        # the existing step3 market-order fallback (same as any other
+        # exhausted escalation), which also fails and raises — it must not
+        # loop forever or silently swallow the failure.
+        client = _make_stock_client(bid=73.10, ask=73.20)
+        client.place_stock_order.side_effect = self._BP_ERROR
+
+        with patch(f"{_MODULE}.time.sleep", lambda _: None), \
+             pytest.raises(InsufficientFundsError):
+            place_stock_order(
+                client=client, ticker="CRWV", shares=161, order_action="SELL_SHORT"
+            )
+
+        # 3 step1 + 3 step2 shrink-and-retry attempts + 1 final step3 market attempt
+        assert client.place_stock_order.call_count == 7
+
+
 class TestPlaceStockOrderFeedForwarding:
     """
     When a feed is provided to place_stock_order(), it must be forwarded to

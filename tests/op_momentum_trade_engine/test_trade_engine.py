@@ -5,6 +5,7 @@ from unittest.mock import Mock, patch
 import pytz
 
 from alpha_tech_tracker.op_momentum_strategy.config import (
+    BAR_AGG_GRACE_SECONDS,
     MAX_ACTIVE_SYMBOLS,
 
 )
@@ -422,7 +423,11 @@ class TestSignalSelectionLoop:
             ET
         ) - timedelta(seconds=1)
 
-        with patch.object(engine, "_enter_position") as mock_enter:
+        with patch.object(engine, "_enter_position") as mock_enter, \
+             patch("alpha_tech_tracker.op_momentum_strategy.trade_engine.is_replay_mode", return_value=True):
+            # is_replay_mode=True skips the grace-wait loop so this test focuses
+            # purely on the "no signals buffered" behavior. See
+            # TestSignalSelectionLoopGraceWindow for grace-wait coverage.
             engine._signal_selection_loop_for_window(engine._windows[0])
             mock_enter.assert_not_called()
 
@@ -555,6 +560,89 @@ class TestSignalSelectionLoop:
         assert new_deadline == original_deadline + timedelta(minutes=5)
         assert engine._window_state["W1"]["collection_bars_remaining"] == 0
 
+    def test_loop_grace_wait_defers_to_timer_scheduled_by_late_signal(self):
+        # When a late signal arrives within BAR_AGG_GRACE_SECONDS of the deadline,
+        # _on_signal_for_window's grace-extend path claims the window (setting
+        # drain_timer_scheduled) before the loop's grace-wait gives up — the loop
+        # must defer to that scheduled call rather than draining (and extending
+        # by 5 minutes) itself.
+        engine = _make_engine_with_mock_client()
+        engine._window_state["W1"]["collection_deadline"] = (
+            datetime.now(ET) - timedelta(seconds=1)
+        )
+        engine._window_state["W1"]["collection_bars_remaining"] = 0
+
+        call_count = {"n": 0}
+
+        def fake_sleep(_):
+            call_count["n"] += 1
+            if call_count["n"] == 1:
+                engine._window_state["W1"]["drain_timer_scheduled"] = True
+
+        with patch(_TIME_SLEEP_PATH, side_effect=fake_sleep), \
+             patch.object(engine, "_drain_pending_signals_for_window") as mock_drain:
+            engine._signal_selection_loop_for_window(engine._windows[0])
+
+        mock_drain.assert_not_called()
+
+    def test_loop_grace_wait_picks_up_late_pending_signal(self):
+        # If a signal is buffered into pending_signals during the grace wait
+        # without drain_timer_scheduled being set, the loop should proceed to
+        # drain (which will find and rank it) rather than waiting the full
+        # BAR_AGG_GRACE_SECONDS.
+        engine = _make_engine_with_mock_client()
+        engine._window_state["W1"]["collection_deadline"] = (
+            datetime.now(ET) - timedelta(seconds=1)
+        )
+        engine._window_state["W1"]["collection_bars_remaining"] = 0
+
+        def fake_sleep(_):
+            engine._window_state["W1"]["pending_signals"] = {
+                "NVDA": _make_signal_event("NVDA")
+            }
+
+        with patch(_TIME_SLEEP_PATH, side_effect=fake_sleep), \
+             patch.object(engine, "_drain_pending_signals_for_window") as mock_drain:
+            engine._signal_selection_loop_for_window(engine._windows[0])
+
+        mock_drain.assert_called_once()
+
+    def test_loop_grace_wait_falls_back_to_drain_after_grace_expires(self):
+        # Deadline is far enough in the past that grace_until (deadline +
+        # BAR_AGG_GRACE_SECONDS) has also already elapsed — the grace-wait loop
+        # must exit immediately (zero iterations) and fall through to drain,
+        # mirroring test_no_signals_multi_bar_collection_loop_terminates's
+        # far-past-deadline pattern.
+        engine = _make_engine_with_mock_client()
+        engine._window_state["W1"]["collection_deadline"] = (
+            datetime.now(ET) - timedelta(minutes=25)
+        )
+        engine._window_state["W1"]["collection_bars_remaining"] = 0
+
+        with patch.object(engine, "_drain_pending_signals_for_window") as mock_drain:
+            engine._signal_selection_loop_for_window(engine._windows[0])
+
+        mock_drain.assert_called_once()
+
+    def test_loop_skips_grace_wait_in_replay_mode(self):
+        # Replay mode drives the clock from bar timestamps, not wall time —
+        # the grace-wait sleep loop must not run there.
+        engine = _make_engine_with_mock_client()
+        engine._window_state["W1"]["collection_deadline"] = (
+            datetime.now(ET) - timedelta(seconds=1)
+        )
+        engine._window_state["W1"]["collection_bars_remaining"] = 0
+
+        with patch("alpha_tech_tracker.op_momentum_strategy.trade_engine.is_replay_mode", return_value=True), \
+             patch(_TIME_SLEEP_PATH) as mock_sleep, \
+             patch.object(engine, "_drain_pending_signals_for_window") as mock_drain:
+            engine._signal_selection_loop_for_window(engine._windows[0])
+
+        mock_drain.assert_called_once()
+        # Only the initial deadline-wait's sleep calls are allowed, and since the
+        # deadline is already past, that loop makes zero sleep calls either.
+        mock_sleep.assert_not_called()
+
 
 _NOW_ET_PATH = "alpha_tech_tracker.op_momentum_strategy.trade_engine._now_et"
 _TIME_SLEEP_PATH = "alpha_tech_tracker.op_momentum_strategy.trade_engine.time.sleep"
@@ -580,8 +668,12 @@ class TestExtensionWindowDrain:
         engine = self._make_engine_bars(bars_remaining=1)
 
         now = datetime.now(ET)
-        deadline_1 = now - timedelta(seconds=1)   # past → inner while exits immediately
+        # deadline_1 is far enough in the past that grace_until (deadline +
+        # BAR_AGG_GRACE_SECONDS) has also already elapsed, so the grace-wait
+        # loop exits on its first check without entering its sleep body.
+        deadline_1 = now - timedelta(seconds=100)
         deadline_2 = now + timedelta(seconds=300)  # future → set by fake drain
+        past_grace_2 = deadline_2 + timedelta(seconds=BAR_AGG_GRACE_SECONDS + 1)
 
         engine._window_state["W1"]["collection_deadline"] = deadline_1
 
@@ -594,10 +686,12 @@ class TestExtensionWindowDrain:
                 engine._window_state["W1"]["collection_deadline"] = deadline_2
 
         now_sequence = [
-            now,               # iter 1 inner while: now > deadline_1 → exits
-            now,               # iter 1 break check: now < deadline_2 → continue
-            deadline_2 + timedelta(seconds=1),  # iter 2 inner while: > deadline_2 → exits
-            deadline_2 + timedelta(seconds=1),  # iter 2 break check: >= deadline_2 → break
+            now,           # iter 1 outer wait: now > deadline_1 → exits
+            now,           # iter 1 grace wait: now > deadline_1+grace → exits immediately
+            now,           # iter 1 break check: now < deadline_2 → continue
+            past_grace_2,  # iter 2 outer wait: > deadline_2 → exits
+            past_grace_2,  # iter 2 grace wait: > deadline_2+grace → exits immediately
+            past_grace_2,  # iter 2 break check: >= deadline_2 → break
         ]
         mocker.patch(_NOW_ET_PATH, side_effect=now_sequence)
         mocker.patch(_TIME_SLEEP_PATH)

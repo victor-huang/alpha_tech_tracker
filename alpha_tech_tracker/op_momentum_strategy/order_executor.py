@@ -29,6 +29,43 @@ def _parse_tick_from_reject_reason(message: str) -> Optional[Decimal]:
     return None
 
 
+def _shrink_shares_for_insufficient_buying_power(
+    message: str, current_shares: int
+) -> Optional[int]:
+    """Parse Alpaca's insufficient-buying-power error and compute a reduced share
+    count that should fit within the reported buying power.
+
+    Confirmed Alpaca format (production rejection, 2026-07-31):
+      {"buying_power":"7727.51","code":40310000,"cost_basis":"12161.98",
+       "message":"insufficient buying power"}
+
+    Reg-T short-sale margin requires ~150% of a short's market value, so
+    cost_basis already reflects that multiplier — buying_power/cost_basis is
+    the fraction of the attempted order that actually fits. A 5% safety
+    margin is applied so the retry doesn't bump the same limit again from
+    price movement or rounding between attempts.
+
+    Returns a reduced share count (>=1 and < current_shares), or None if the
+    message can't be parsed or no safe reduction is possible.
+    """
+    bp_match = re.search(r'"buying_power"\s*:\s*"?([\d.]+)"?', message)
+    cost_match = re.search(r'"cost_basis"\s*:\s*"?([\d.]+)"?', message)
+    if not bp_match or not cost_match:
+        return None
+    try:
+        buying_power = float(bp_match.group(1))
+        cost_basis = float(cost_match.group(1))
+    except ValueError:
+        return None
+    if buying_power <= 0 or cost_basis <= 0:
+        return None
+    safe_ratio = (buying_power / cost_basis) * 0.95
+    new_shares = int(current_shares * safe_ratio)
+    if new_shares < 1 or new_shares >= current_shares:
+        return None
+    return new_shares
+
+
 def _place_with_fill_escalation(
     client: ExecutionClient,
     ticker: str,
@@ -841,6 +878,18 @@ def place_stock_order(
             order = _place_limit(mid)
         except Exception as exc:
             if isinstance(exc, InsufficientFundsError):
+                if order_action == "SELL_SHORT":
+                    new_shares = _shrink_shares_for_insufficient_buying_power(
+                        str(exc), _shares_remaining[0]
+                    )
+                    if new_shares is not None:
+                        logger.warning(
+                            "STOCK FILL_ESC step1 attempt=%d %s %s: insufficient buying power for "
+                            "%d shares — reducing to %d shares and retrying",
+                            attempt, order_action, ticker, _shares_remaining[0], new_shares,
+                        )
+                        _shares_remaining[0] = new_shares
+                        continue
                 logger.warning(
                     "STOCK FILL_ESC step1 attempt=%d %s %s: insufficient funds — aborting",
                     attempt, order_action, ticker,
@@ -902,6 +951,18 @@ def place_stock_order(
             order = _place_limit(aggressive_price)
         except Exception as exc:
             if isinstance(exc, InsufficientFundsError):
+                if order_action == "SELL_SHORT":
+                    new_shares = _shrink_shares_for_insufficient_buying_power(
+                        str(exc), _shares_remaining[0]
+                    )
+                    if new_shares is not None:
+                        logger.warning(
+                            "STOCK FILL_ESC step2 attempt=%d %s %s: insufficient buying power for "
+                            "%d shares — reducing to %d shares and retrying",
+                            attempt, order_action, ticker, _shares_remaining[0], new_shares,
+                        )
+                        _shares_remaining[0] = new_shares
+                        continue
                 logger.warning(
                     "STOCK FILL_ESC step2 attempt=%d %s %s: insufficient funds — aborting",
                     attempt, order_action, ticker,
