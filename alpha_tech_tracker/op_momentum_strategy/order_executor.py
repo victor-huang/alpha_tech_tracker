@@ -29,21 +29,33 @@ def _parse_tick_from_reject_reason(message: str) -> Optional[Decimal]:
     return None
 
 
+# Order actions that open new exposure (as opposed to SELL_CLOSE/BUY_COVER,
+# which reduce it) — these are the only actions where a margin/buying-power
+# shortfall can be resolved by simply requesting fewer shares.
+_ENTRY_ORDER_ACTIONS = frozenset({"SELL_SHORT", "BUY_OPEN"})
+
+
 def _shrink_shares_for_insufficient_buying_power(
     message: str, current_shares: int
 ) -> Optional[int]:
     """Parse Alpaca's insufficient-buying-power error and compute a reduced share
     count that should fit within the reported buying power.
 
-    Confirmed Alpaca format (production rejection, 2026-07-31):
+    Confirmed Alpaca format (production rejections, 2026-07-31 SELL_SHORT and
+    2026-08-04 BUY_OPEN):
       {"buying_power":"7727.51","code":40310000,"cost_basis":"12161.98",
        "message":"insufficient buying power"}
 
-    Reg-T short-sale margin requires ~150% of a short's market value, so
-    cost_basis already reflects that multiplier — buying_power/cost_basis is
-    the fraction of the attempted order that actually fits. A 5% safety
-    margin is applied so the retry doesn't bump the same limit again from
-    price movement or rounding between attempts.
+    For SELL_SHORT, Reg-T short-sale margin requires ~150% of a short's
+    market value, so cost_basis already reflects that multiplier. For
+    BUY_OPEN, cost_basis is just the notional cost — the account's real-time
+    buying power (per Alpaca's Intraday Margin Framework, which replaced the
+    PDT-based day-trading buying power calc in June 2026) can still fall
+    short of the account-snapshot `buying_power` field on either side of the
+    book. Either way, buying_power/cost_basis is the fraction of the
+    attempted order that actually fits. A 5% safety margin is applied so the
+    retry doesn't bump the same limit again from price movement or rounding
+    between attempts.
 
     Returns a reduced share count (>=1 and < current_shares), or None if the
     message can't be parsed or no safe reduction is possible.
@@ -878,7 +890,7 @@ def place_stock_order(
             order = _place_limit(mid)
         except Exception as exc:
             if isinstance(exc, InsufficientFundsError):
-                if order_action == "SELL_SHORT":
+                if order_action in _ENTRY_ORDER_ACTIONS:
                     new_shares = _shrink_shares_for_insufficient_buying_power(
                         str(exc), _shares_remaining[0]
                     )
@@ -951,7 +963,7 @@ def place_stock_order(
             order = _place_limit(aggressive_price)
         except Exception as exc:
             if isinstance(exc, InsufficientFundsError):
-                if order_action == "SELL_SHORT":
+                if order_action in _ENTRY_ORDER_ACTIONS:
                     new_shares = _shrink_shares_for_insufficient_buying_power(
                         str(exc), _shares_remaining[0]
                     )

@@ -1336,12 +1336,14 @@ class TestPlaceStockOrderInsufficientFundsAbort:
 
 class TestPlaceStockOrderShortSaleInsufficientBuyingPowerShrink:
     """
-    When Alpaca rejects a SELL_SHORT order with a parseable insufficient
-    buying-power message, the escalation must shrink the share count to fit
-    within the reported buying power and retry, rather than aborting the
-    entire entry (2026-07-31 CRWV incident — a legitimate BEARISH signal was
-    missed entirely because the position sizer's window budget didn't
-    account for Reg-T short-sale margin).
+    When Alpaca rejects an entry order (SELL_SHORT or BUY_OPEN) with a
+    parseable insufficient buying-power message, the escalation must shrink
+    the share count to fit within the reported buying power and retry,
+    rather than aborting the entire entry. Confirmed live incidents:
+    2026-07-31 CRWV SELL_SHORT (Reg-T short margin exceeded window budget)
+    and 2026-08-04 CRWV BUY_OPEN (account's real-time Intraday Margin
+    Framework buying power fell short of the account-snapshot figure the
+    position sizer used) — both cost a fully missed, otherwise-valid signal.
     """
 
     _BP_ERROR = InsufficientFundsError(
@@ -1372,15 +1374,42 @@ class TestPlaceStockOrderShortSaleInsufficientBuyingPowerShrink:
         assert second_call.kwargs["quantity"] == 97
         assert result["total_filled_qty"] == 97
 
-    def test_shrink_not_applied_to_buy_open(self):
-        # Margin shrink is scoped to SELL_SHORT — BUY_OPEN still aborts immediately.
+    def test_shrink_also_applied_to_buy_open(self):
+        # Margin/buying-power shortfalls affect both entry directions (2026-08-04
+        # CRWV incident — a BUY_OPEN long was rejected the same way a SELL_SHORT
+        # was on 2026-07-31), so BUY_OPEN gets the same shrink-and-retry treatment.
+        client = _make_stock_client(bid=90.54, ask=90.60, order_status="filled")
+        call_count = [0]
+
+        def side_effect(**kwargs):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                raise self._BP_ERROR
+            return {"order_id": "stock-ord-003", "status": "filled"}
+
+        client.place_stock_order.side_effect = side_effect
+
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            result = place_stock_order(
+                client=client, ticker="CRWV", shares=133, order_action="BUY_OPEN"
+            )
+
+        assert client.place_stock_order.call_count == 2
+        # 7727.51 / 12161.98 * 0.95 ≈ 0.6039 → int(133 * 0.6039) = 80
+        second_call = client.place_stock_order.call_args_list[1]
+        assert second_call.kwargs["quantity"] == 80
+        assert result["total_filled_qty"] == 80
+
+    def test_shrink_not_applied_to_exit_actions(self):
+        # Margin shrink only makes sense for orders that OPEN exposure —
+        # SELL_CLOSE/BUY_COVER (exits) still abort immediately on the same error.
         client = _make_stock_client(bid=73.10, ask=73.20)
         client.place_stock_order.side_effect = self._BP_ERROR
 
         with patch(f"{_MODULE}.time.sleep", lambda _: None), \
              pytest.raises(InsufficientFundsError):
             place_stock_order(
-                client=client, ticker="CRWV", shares=161, order_action="BUY_OPEN"
+                client=client, ticker="CRWV", shares=161, order_action="SELL_CLOSE"
             )
 
         assert client.place_stock_order.call_count == 1

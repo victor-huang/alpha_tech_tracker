@@ -2586,6 +2586,15 @@ class OpMomentumTradeEngine:
                 timer_pending = state["drain_timer_scheduled"]
             if not timer_pending:
                 self._drain_pending_signals_for_window(win)
+            else:
+                # A late signal's grace-extend path (_on_signal_for_window) already
+                # scheduled its own drain via threading.Timer. Without this sleep,
+                # this loop's own deadline/grace waits above both exit immediately
+                # (the deadline is already in the past and pending_signals is now
+                # non-empty), so it would spin back to "while True" with no delay
+                # at all until the Timer fires — observed as 100+ duplicate
+                # "open until" log lines within one second (2026-08-05).
+                time.sleep(0.5)
             # After drain, check if the deadline was extended for another bar.
             # If so, loop back and wait for the next bar's collection window.
             # We must also check the deadline itself: when the drain extended it
