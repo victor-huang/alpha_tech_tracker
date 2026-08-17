@@ -1219,7 +1219,12 @@ class OpMomentumTradeEngine:
                 fill = status.get("filled_avg_price")
                 raw_qty = status.get("filled_qty")
                 filled_qty = int(raw_qty) if raw_qty is not None else None
-                if fill is not None:
+                # A market order can briefly report status="filled" with
+                # filled_avg_price=0.0 before the broker populates the real
+                # price (e.g. TradeStation step3 fallback, 2026-08-13 AMD/CRWD
+                # incident) — 0.0 is not None, so treat it as still pending
+                # rather than a confirmed fill.
+                if fill is not None and _D(str(fill)) > _D("0"):
                     logger.info(
                         "Entry fill confirmed %s: price=%.4f qty=%s (attempt %d)",
                         order_id,
@@ -1926,7 +1931,7 @@ class OpMomentumTradeEngine:
                 if status.get("status") in ("filled", "partially_filled"):
                     if pos.entry_fill_price is None:
                         fill = status.get("filled_avg_price")
-                        if fill is not None:
+                        if fill is not None and _D(str(fill)) > _D("0"):
                             pos.entry_fill_price = _D(str(fill))
                     verified.append(pos)
                     logger.warning(

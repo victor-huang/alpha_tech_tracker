@@ -1009,6 +1009,19 @@ def place_stock_order(
 
     logger.info("STOCK FILL_ESC step3 %s %s: placing market order", order_action, ticker)
     order = _place_market()
-    logger.info("STOCK FILL_ESC step3 market order placed: id=%s", order.get("order_id"))
+    order_id = order.get("order_id")
+    logger.info("STOCK FILL_ESC step3 market order placed: id=%s", order_id)
+    # Market orders fill asynchronously — the placement response above has no
+    # real price yet. This check is for logging visibility only; the caller's
+    # own entry-fill poll (trade_engine._poll_entry_fill) is what actually
+    # waits for and records the confirmed fill price.
+    time.sleep(2)
+    fill_status, filled_qty = _check_fill_status(order_id)
+    if fill_status is False:
+        logger.warning(
+            "STOCK FILL_ESC step3 %s %s: market order not yet filled 2s after "
+            "placement (filled_qty=%d)",
+            order_action, ticker, filled_qty,
+        )
     _total_filled[0] += _shares_remaining[0]
     return _enrich_result(order)

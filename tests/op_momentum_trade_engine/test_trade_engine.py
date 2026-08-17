@@ -3566,6 +3566,24 @@ class TestPollEntryFill:
         assert fill_price == _D("9.10")
         assert engine._client.order_status.call_count == 3
 
+    def test_retries_when_fill_price_is_zero(self):
+        """2026-08-13 AMD/CRWD incident: a market-order fallback (step3) can
+        briefly report status="filled" with filled_avg_price=0.0 before the
+        broker populates the real price. 0.0 is not None, so a naive check
+        would accept it immediately instead of retrying for the real fill."""
+        engine = self._make_live_engine()
+        engine._client.order_status.side_effect = [
+            {"filled_avg_price": 0.0, "filled_qty": 0},
+            {"filled_avg_price": "116.78", "filled_qty": 16},
+        ]
+
+        with patch("alpha_tech_tracker.op_momentum_strategy.trade_engine.time.sleep"):
+            fill_price, filled_qty = engine._poll_entry_fill("order-zero")
+
+        assert fill_price == _D("116.78")
+        assert filled_qty == 16
+        assert engine._client.order_status.call_count == 2
+
     def test_returns_none_after_all_retries_exhausted(self):
         engine = self._make_live_engine()
         engine._client.order_status.return_value = {"filled_avg_price": None}
