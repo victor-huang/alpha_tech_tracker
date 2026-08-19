@@ -3079,3 +3079,79 @@ class TestPlaceStockOrderTotalFilledQty:
         assert result["total_filled_qty"] == 40, (
             "10 (step-1 attempt-3 partial) + 30 (step-2) must equal 40"
         )
+
+
+class TestPlaceStockOrderStep3MarketOrderNotFilled:
+    """
+    Real-world failure (2026-08-17, META SELL_SHORT): step3's market order was
+    canceled with 0 fills, but the executor blindly credited total_filled_qty
+    with the full requested share count anyway. trade_engine._enter_position
+    trusts total_filled_qty over the separately-polled real fill status, so it
+    treated the failed entry as fully filled and started tracking a phantom
+    position (garbage unrealized P&L, a false SELL SHORT alert, and a stuck
+    capital slot) until a later broker-qty reconciliation caught it.
+
+    total_filled_qty must reflect the real broker outcome, not an assumption.
+
+    Step1 (3 attempts x 2 order_status checks) + step2 (3 attempts x 1 check)
+    = 9 order_status calls happen before step3's market order is even placed.
+    These tests keep every order unfilled through that phase so escalation
+    actually reaches step3, then control what the market order's own status
+    checks report.
+    """
+
+    _PRE_STEP3_CALLS = 9
+
+    def _make_client_reaching_step3(self, step3_status):
+        client = _make_stock_client(bid=329.0, ask=330.0)
+        call_count = [0]
+
+        def order_status_side_effect(order_id):
+            call_count[0] += 1
+            if call_count[0] <= self._PRE_STEP3_CALLS:
+                return {"status": "open", "filled_qty": 0}
+            if isinstance(step3_status, Exception):
+                raise step3_status
+            return step3_status
+
+        client.order_status.side_effect = order_status_side_effect
+        return client
+
+    def test_market_order_canceled_with_zero_fills_reports_zero_filled_qty(self):
+        client = self._make_client_reaching_step3({"status": "canceled", "filled_qty": 0})
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            result = place_stock_order(
+                client=client, ticker="META", shares=13, order_action="SELL_SHORT"
+            )
+
+        assert result["total_filled_qty"] == 0
+
+    def test_market_order_partially_filled_reports_actual_filled_qty(self):
+        client = self._make_client_reaching_step3({"status": "canceled", "filled_qty": 5})
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            result = place_stock_order(
+                client=client, ticker="META", shares=13, order_action="SELL_SHORT"
+            )
+
+        assert result["total_filled_qty"] == 5
+
+    def test_market_order_confirmed_filled_reports_full_requested_qty(self):
+        client = self._make_client_reaching_step3({"status": "filled", "filled_qty": 13})
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            result = place_stock_order(
+                client=client, ticker="META", shares=13, order_action="SELL_SHORT"
+            )
+
+        assert result["total_filled_qty"] == 13
+
+    def test_market_order_status_check_fails_assumes_full_fill(self):
+        # order_status() raising is treated the same as step1/step2's "fill
+        # status unknown — not cancelling" path: assume the order went through
+        # rather than risk under-crediting a share count that actually filled.
+        client = self._make_client_reaching_step3(RuntimeError("API timeout"))
+        with patch(f"{_MODULE}.time.sleep", lambda _: None):
+            result = place_stock_order(
+                client=client, ticker="META", shares=13, order_action="SELL_SHORT"
+            )
+
+        assert result["total_filled_qty"] == 13

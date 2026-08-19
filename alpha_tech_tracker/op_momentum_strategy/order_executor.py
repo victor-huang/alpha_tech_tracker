@@ -1012,16 +1012,27 @@ def place_stock_order(
     order_id = order.get("order_id")
     logger.info("STOCK FILL_ESC step3 market order placed: id=%s", order_id)
     # Market orders fill asynchronously — the placement response above has no
-    # real price yet. This check is for logging visibility only; the caller's
-    # own entry-fill poll (trade_engine._poll_entry_fill) is what actually
-    # waits for and records the confirmed fill price.
-    time.sleep(2)
-    fill_status, filled_qty = _check_fill_status(order_id)
+    # real fill data yet. Poll for the actual outcome instead of assuming a
+    # full fill: blindly crediting _total_filled_qty here previously let a
+    # canceled/0-fill market order (e.g. 2026-08-17 META) masquerade as a
+    # full fill downstream, since trade_engine._enter_position trusts
+    # total_filled_qty over the separately-polled real fill status. This is
+    # the final escalation step, so on confirmed non-fill we record only
+    # what actually filled rather than retrying further.
+    fill_status = None
+    filled_qty = 0
+    for _ in range(3):
+        time.sleep(2)
+        fill_status, filled_qty = _check_fill_status(order_id)
+        if fill_status is not False:
+            break
     if fill_status is False:
-        logger.warning(
-            "STOCK FILL_ESC step3 %s %s: market order not yet filled 2s after "
-            "placement (filled_qty=%d)",
-            order_action, ticker, filled_qty,
+        logger.error(
+            "STOCK FILL_ESC step3 %s %s: market order not filled after retries "
+            "(filled_qty=%d of %d) — order=%s",
+            order_action, ticker, filled_qty, _shares_remaining[0], order_id,
         )
-    _total_filled[0] += _shares_remaining[0]
+        _total_filled[0] += filled_qty
+    else:
+        _total_filled[0] += _shares_remaining[0]
     return _enrich_result(order)
