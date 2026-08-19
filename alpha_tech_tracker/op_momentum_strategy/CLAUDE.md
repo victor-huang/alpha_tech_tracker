@@ -83,6 +83,7 @@ op_momentum_strategy/
 | `guides/WIN_RATE_SELECTOR_MODE.md` | All params and examples for `--selector win-rate` mode |
 | `guides/NEW_WINDOW_GUIDE.md` | 8-step process for evaluating and adding a new intraday window |
 | `guides/PNL_AUDIT_GUIDE.md` | How to run and interpret the P&L audit scripts |
+| `guides/LIVE_PNL_CALCULATION_GUIDE.md` | How to compute daily/weekly/monthly broker-truth P&L via `fetch_broker_pnl.py`, bypassing engine log gaps |
 | `guides/REPLAY_VALIDATION.md` | Replay vs backtest validation process |
 | `guides/TICKER_SELECTION.md` | Ticker pool selection criteria and history |
 | `guides/BACKTEST_VS_LIVE.md` | Structural differences between backtest and live engine |

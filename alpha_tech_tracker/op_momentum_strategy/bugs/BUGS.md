@@ -183,3 +183,63 @@ restored on RECOVER — so the remaining-budget calculation is:
 `remaining = initial_budget - recovered_slot_capital - window_dd_deployed`.
 Alternatively, check `remaining_budget <= 0` as an explicit gate in
 `_drain_pending_signals_for_window` before entering any post-RECOVER position.
+
+---
+
+## ~~G42 — Step3 market-order fallback credited a fill that never happened~~ ✓ Fixed
+
+**File:** `order_executor.py` `place_stock_order()` step3 / `trade_engine.py` `_poll_entry_fill()`
+**Severity:** High — phantom position tracked with garbage P&L, false trade alert sent, capital slot stuck
+
+Two compounding defects, both in the step3 (final market-order) fallback path:
+
+1. `_poll_entry_fill()` accepted `filled_avg_price=0.0` as a confirmed fill since `0.0 is not
+   None` — a market order can briefly report `status="filled"` with a zero price before the
+   broker populates the real one.
+2. `place_stock_order()`'s step3 blindly credited `total_filled_qty` with the full requested
+   share count regardless of whether the market order actually filled, and `_enter_position`
+   trusts `total_filled_qty` over the separately-polled real fill status.
+
+**Observed 2026-08-13 (options log, AMD/CRWD):** both entries escalated to step3, got a bogus
+$0.00 fill logged as confirmed, and were silently dropped from the DAILY TRADE SUMMARY when
+QTY-sync couldn't reconcile them (~$15,500 capital, P&L unknown).
+
+**Observed 2026-08-17 (options log, RDDT DD add-on) — worse manifestation, defect #2 only
+(fix #1 was already live):** step3 market order was declared "canceled with 0 fills — entry
+failed," but `Tracking position` was logged on the very next line anyway, because
+`total_filled_qty` (blindly credited) didn't match the correctly-polled 0 fill. The phantom
+position persisted ~3 hours with garbage unrealized P&L (-$6,100 to -$6,266) and a false
+"[DD] ADD-ON RDDT" Telegram alert, before a hard-stop fired a real BUY_COVER that happened to
+net out the real share count by coincidence. The DAILY TRADE SUMMARY still shows a fake
+~$6,267 "loss" for that leg — see `guides/LIVE_PNL_CALCULATION_GUIDE.md` for the broker-truth
+reconciliation.
+
+**Fix (commits `580667b`, `e88bdd9`):** `_poll_entry_fill()` now requires a positive fill price
+before accepting a fill as confirmed. `place_stock_order()`'s step3 now polls `order_status` up
+to 3 times after the market order and credits `total_filled_qty` with only what the broker
+actually confirms, instead of assuming a full fill.
+
+---
+
+## G43 — QTY-sync reconciliation drops P&L when closing fill price can't be located
+
+**File:** `position_monitor.py` (QTY SYNC reconciliation path)
+**Severity:** High — real P&L silently missing from DAILY TRADE SUMMARY, confirmed recurring
+
+When the periodic broker-qty reconciliation finds a position closed at the broker (native stop,
+or a fill racing the engine's own poll) and can't locate the closing fill price, it logs
+`"fill price not found — P&L not recorded"` and drops the leg entirely rather than recording it
+with an estimated price or flagging it prominently.
+
+**Observed 2026-08-18:** 6 occurrences across both engines in one day — CRDO (stock engine, 4
+separate partial reconciliations across all 3 windows) and RDDT/CRWD (options engine). CRDO
+alone shorted 153 shares across the day; the DAILY TRADE SUMMARY only shows 65 shares worth of
+`manual_close` rows — the bulk of that day's real P&L is unaccounted for in the summary (real
+broker P&L was ultimately recovered via `guides/LIVE_PNL_CALCULATION_GUIDE.md`'s
+activity-based reconstruction: +$453.30 for CRDO that day, vs. the log's reported +$303.00 /
++$679.43 capital-based estimate — neither matched).
+
+**Fix (not yet implemented):** either backfill the closing price from broker order/activity
+history at reconciliation time (the same technique `fetch_broker_pnl.py` uses), or at minimum
+surface these drops prominently in the DAILY TRADE SUMMARY (not just a buried WARNING log line)
+so P&L totals are never silently understated.
