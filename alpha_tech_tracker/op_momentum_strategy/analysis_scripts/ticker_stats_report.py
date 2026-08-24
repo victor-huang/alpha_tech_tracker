@@ -797,7 +797,7 @@ def parse_args():
         "--regime-symbol", default="QQQ",
         help="Benchmark whose prior close vs daily MA20 gates long entries",
     )
-    parser.add_argument("--chart-out", help="Path for the range% distribution chart")
+    parser.add_argument("--chart-out", help="Path for the range%% distribution chart")
     return parser.parse_args()
 
 

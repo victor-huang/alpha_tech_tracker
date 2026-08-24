@@ -614,9 +614,8 @@ def parse_args():
     )
     parser.add_argument(
         "--exit-by-spread", action="store_true",
-        help="Per ticker, switch to a +%d min hold when it beat the full hold on prior "
-             "sessions (lifecycle 15mWR-vs-EOD spread). Off by default"
-             % EARLY_EXIT_MINUTES,
+        help=f"Per ticker, switch to a +{EARLY_EXIT_MINUTES} min hold when it beat the "
+             "full hold on prior sessions (lifecycle 15mWR-vs-EOD spread). Off by default",
     )
     parser.add_argument(
         "--spread-edge-pp", type=float, default=0.0,
@@ -625,7 +624,7 @@ def parse_args():
     parser.add_argument(
         "--min-median-pct", type=float,
         help="Require the trailing median return per selection to clear this percent "
-             "(lifecycle Med% gate). Off by default",
+             "(lifecycle Med%% gate). Off by default",
     )
     parser.add_argument(
         "--cost-bps", type=float, default=0.0,
