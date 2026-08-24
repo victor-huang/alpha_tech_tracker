@@ -801,8 +801,12 @@ def parse_args():
     return parser.parse_args()
 
 
-def main():
-    args = parse_args()
+def collect_results(args):
+    """Gather every per-ticker table the report prints.
+
+    Returns (results, context) so callers other than the CLI — the daily watch-list
+    driver — can reuse the same numbers instead of recomputing them.
+    """
     feed = DataFeed.SIP if args.feed == "sip" else DataFeed.IEX
     requested_end = date.fromisoformat(args.end) if args.end else date.today()
     end_date = clamp_end_for_sip(requested_end, feed)
@@ -863,6 +867,24 @@ def main():
                 if spot else {"error": "no reference price"}
             ),
         }
+
+    return results, {
+        "end_date": end_date,
+        "requested_end": requested_end,
+        "expiry": expiry,
+        "feed": args.feed,
+        "benchmark_allows_longs": benchmark_allows_longs,
+        "regime_symbol": args.regime_symbol,
+    }
+
+
+def main():
+    args = parse_args()
+    results, context = collect_results(args)
+    end_date = context["end_date"]
+    requested_end = context["requested_end"]
+    expiry = context["expiry"]
+    benchmark_allows_longs = context["benchmark_allows_longs"]
 
     clamp_note = f" (clamped from {requested_end} for {args.feed})" if end_date != requested_end else ""
     print(f"\nReport through {end_date}{clamp_note} | feed={args.feed} | option expiry {expiry}")

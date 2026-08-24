@@ -1,0 +1,624 @@
+{
+  "as_of": "2026-08-23",
+  "expiry": "2026-09-18",
+  "bands": [
+    12,
+    16,
+    20
+  ],
+  "note": "open interest is the prior session's OCC figure; see open_interest_date",
+  "tickers": {
+    "QQQ": {
+      "reference_price": 712.96,
+      "atm_strike": 713.0,
+      "open_interest_date": "2026-08-20",
+      "bands": {
+        "12": {
+          "strikes": 25,
+          "strike_low": 701.0,
+          "strike_high": 725.0,
+          "call_open_interest": 114481,
+          "put_open_interest": 85985,
+          "call_put_ratio": 1.33,
+          "put_call_ratio": 0.75
+        },
+        "16": {
+          "strikes": 33,
+          "strike_low": 697.0,
+          "strike_high": 729.0,
+          "call_open_interest": 145831,
+          "put_open_interest": 194063,
+          "call_put_ratio": 0.75,
+          "put_call_ratio": 1.33
+        },
+        "20": {
+          "strikes": 41,
+          "strike_low": 693.0,
+          "strike_high": 733.0,
+          "call_open_interest": 177324,
+          "put_open_interest": 228979,
+          "call_put_ratio": 0.77,
+          "put_call_ratio": 1.29
+        }
+      }
+    },
+    "LLY": {
+      "reference_price": 1255.4,
+      "atm_strike": 1255.0,
+      "open_interest_date": "2026-08-20",
+      "bands": {
+        "12": {
+          "strikes": 25,
+          "strike_low": 1180.0,
+          "strike_high": 1320.0,
+          "call_open_interest": 13806,
+          "put_open_interest": 2081,
+          "call_put_ratio": 6.63,
+          "put_call_ratio": 0.15
+        },
+        "16": {
+          "strikes": 33,
+          "strike_low": 1140.0,
+          "strike_high": 1400.0,
+          "call_open_interest": 20139,
+          "put_open_interest": 3455,
+          "call_put_ratio": 5.83,
+          "put_call_ratio": 0.17
+        },
+        "20": {
+          "strikes": 41,
+          "strike_low": 1100.0,
+          "strike_high": 1480.0,
+          "call_open_interest": 23575,
+          "put_open_interest": 4831,
+          "call_put_ratio": 4.88,
+          "put_call_ratio": 0.2
+        }
+      }
+    },
+    "MRNA": {
+      "reference_price": 144.81,
+      "atm_strike": 145.0,
+      "open_interest_date": "2026-08-20",
+      "bands": {
+        "12": {
+          "strikes": 25,
+          "strike_low": 95.0,
+          "strike_high": 167.5,
+          "call_open_interest": 7926,
+          "put_open_interest": 33257,
+          "call_put_ratio": 0.24,
+          "put_call_ratio": 4.2
+        },
+        "16": {
+          "strikes": 33,
+          "strike_low": 75.0,
+          "strike_high": 177.5,
+          "call_open_interest": 18293,
+          "put_open_interest": 39101,
+          "call_put_ratio": 0.47,
+          "put_call_ratio": 2.14
+        },
+        "20": {
+          "strikes": 41,
+          "strike_low": 55.0,
+          "strike_high": 195.0,
+          "call_open_interest": 31440,
+          "put_open_interest": 47849,
+          "call_put_ratio": 0.66,
+          "put_call_ratio": 1.52
+        }
+      }
+    },
+    "APP": {
+      "reference_price": 305.77,
+      "atm_strike": 305.0,
+      "open_interest_date": "2026-08-20",
+      "bands": {
+        "12": {
+          "strikes": 25,
+          "strike_low": 275.0,
+          "strike_high": 345.0,
+          "call_open_interest": 4288,
+          "put_open_interest": 8386,
+          "call_put_ratio": 0.51,
+          "put_call_ratio": 1.96
+        },
+        "16": {
+          "strikes": 33,
+          "strike_low": 255.0,
+          "strike_high": 380.0,
+          "call_open_interest": 7363,
+          "put_open_interest": 12599,
+          "call_put_ratio": 0.58,
+          "put_call_ratio": 1.71
+        },
+        "20": {
+          "strikes": 41,
+          "strike_low": 220.0,
+          "strike_high": 420.0,
+          "call_open_interest": 11259,
+          "put_open_interest": 15904,
+          "call_put_ratio": 0.71,
+          "put_call_ratio": 1.41
+        }
+      }
+    },
+    "META": {
+      "reference_price": 547.13,
+      "atm_strike": 547.5,
+      "open_interest_date": "2026-08-20",
+      "bands": {
+        "12": {
+          "strikes": 25,
+          "strike_low": 510.0,
+          "strike_high": 580.0,
+          "call_open_interest": 18494,
+          "put_open_interest": 58644,
+          "call_put_ratio": 0.32,
+          "put_call_ratio": 3.17
+        },
+        "16": {
+          "strikes": 33,
+          "strike_low": 490.0,
+          "strike_high": 600.0,
+          "call_open_interest": 38196,
+          "put_open_interest": 86482,
+          "call_put_ratio": 0.44,
+          "put_call_ratio": 2.26
+        },
+        "20": {
+          "strikes": 41,
+          "strike_low": 470.0,
+          "strike_high": 620.0,
+          "call_open_interest": 51453,
+          "put_open_interest": 102527,
+          "call_put_ratio": 0.5,
+          "put_call_ratio": 1.99
+        }
+      }
+    },
+    "SNDK": {
+      "reference_price": 1596.08,
+      "atm_strike": 1595.0,
+      "open_interest_date": "2026-08-20",
+      "bands": {
+        "12": {
+          "strikes": 25,
+          "strike_low": 1530.0,
+          "strike_high": 1670.0,
+          "call_open_interest": 3365,
+          "put_open_interest": 3610,
+          "call_put_ratio": 0.93,
+          "put_call_ratio": 1.07
+        },
+        "16": {
+          "strikes": 33,
+          "strike_low": 1490.0,
+          "strike_high": 1710.0,
+          "call_open_interest": 6731,
+          "put_open_interest": 6260,
+          "call_put_ratio": 1.08,
+          "put_call_ratio": 0.93
+        },
+        "20": {
+          "strikes": 41,
+          "strike_low": 1450.0,
+          "strike_high": 1750.0,
+          "call_open_interest": 8197,
+          "put_open_interest": 9814,
+          "call_put_ratio": 0.84,
+          "put_call_ratio": 1.2
+        }
+      }
+    },
+    "SPCX": {
+      "reference_price": 137.15,
+      "atm_strike": 137.0,
+      "open_interest_date": "2026-08-20",
+      "bands": {
+        "12": {
+          "strikes": 25,
+          "strike_low": 125.0,
+          "strike_high": 155.0,
+          "call_open_interest": 102423,
+          "put_open_interest": 141309,
+          "call_put_ratio": 0.72,
+          "put_call_ratio": 1.38
+        },
+        "16": {
+          "strikes": 33,
+          "strike_low": 121.0,
+          "strike_high": 170.0,
+          "call_open_interest": 154733,
+          "put_open_interest": 165541,
+          "call_put_ratio": 0.93,
+          "put_call_ratio": 1.07
+        },
+        "20": {
+          "strikes": 41,
+          "strike_low": 110.0,
+          "strike_high": 190.0,
+          "call_open_interest": 236647,
+          "put_open_interest": 246348,
+          "call_put_ratio": 0.96,
+          "put_call_ratio": 1.04
+        }
+      }
+    },
+    "HOOD": {
+      "reference_price": 107.62,
+      "atm_strike": 108.0,
+      "open_interest_date": "2026-08-20",
+      "bands": {
+        "12": {
+          "strikes": 25,
+          "strike_low": 96.0,
+          "strike_high": 120.0,
+          "call_open_interest": 46451,
+          "put_open_interest": 19327,
+          "call_put_ratio": 2.4,
+          "put_call_ratio": 0.42
+        },
+        "16": {
+          "strikes": 33,
+          "strike_low": 90.0,
+          "strike_high": 140.0,
+          "call_open_interest": 85638,
+          "put_open_interest": 30658,
+          "call_put_ratio": 2.79,
+          "put_call_ratio": 0.36
+        },
+        "20": {
+          "strikes": 41,
+          "strike_low": 70.0,
+          "strike_high": 160.0,
+          "call_open_interest": 110381,
+          "put_open_interest": 72072,
+          "call_put_ratio": 1.53,
+          "put_call_ratio": 0.65
+        }
+      }
+    },
+    "COIN": {
+      "reference_price": 186.49,
+      "atm_strike": 187.5,
+      "open_interest_date": "2026-08-20",
+      "bands": {
+        "12": {
+          "strikes": 25,
+          "strike_low": 155.0,
+          "strike_high": 225.0,
+          "call_open_interest": 47075,
+          "put_open_interest": 20075,
+          "call_put_ratio": 2.34,
+          "put_call_ratio": 0.43
+        },
+        "16": {
+          "strikes": 33,
+          "strike_low": 135.0,
+          "strike_high": 250.0,
+          "call_open_interest": 59406,
+          "put_open_interest": 39415,
+          "call_put_ratio": 1.51,
+          "put_call_ratio": 0.66
+        },
+        "20": {
+          "strikes": 41,
+          "strike_low": 115.0,
+          "strike_high": 290.0,
+          "call_open_interest": 72767,
+          "put_open_interest": 49349,
+          "call_put_ratio": 1.47,
+          "put_call_ratio": 0.68
+        }
+      }
+    },
+    "AMD": {
+      "reference_price": 467.54,
+      "atm_strike": 467.5,
+      "open_interest_date": "2026-08-20",
+      "bands": {
+        "12": {
+          "strikes": 25,
+          "strike_low": 435.0,
+          "strike_high": 505.0,
+          "call_open_interest": 28880,
+          "put_open_interest": 27537,
+          "call_put_ratio": 1.05,
+          "put_call_ratio": 0.95
+        },
+        "16": {
+          "strikes": 33,
+          "strike_low": 410.0,
+          "strike_high": 530.0,
+          "call_open_interest": 43157,
+          "put_open_interest": 45360,
+          "call_put_ratio": 0.95,
+          "put_call_ratio": 1.05
+        },
+        "20": {
+          "strikes": 41,
+          "strike_low": 370.0,
+          "strike_high": 570.0,
+          "call_open_interest": 66220,
+          "put_open_interest": 68131,
+          "call_put_ratio": 0.97,
+          "put_call_ratio": 1.03
+        }
+      }
+    },
+    "CRWV": {
+      "reference_price": 87.85,
+      "atm_strike": 88.0,
+      "open_interest_date": "2026-08-20",
+      "bands": {
+        "12": {
+          "strikes": 25,
+          "strike_low": 78.0,
+          "strike_high": 98.0,
+          "call_open_interest": 29015,
+          "put_open_interest": 41663,
+          "call_put_ratio": 0.7,
+          "put_call_ratio": 1.44
+        },
+        "16": {
+          "strikes": 33,
+          "strike_low": 75.0,
+          "strike_high": 110.0,
+          "call_open_interest": 107344,
+          "put_open_interest": 70139,
+          "call_put_ratio": 1.53,
+          "put_call_ratio": 0.65
+        },
+        "20": {
+          "strikes": 41,
+          "strike_low": 65.0,
+          "strike_high": 130.0,
+          "call_open_interest": 183754,
+          "put_open_interest": 100441,
+          "call_put_ratio": 1.83,
+          "put_call_ratio": 0.55
+        }
+      }
+    },
+    "AMAT": {
+      "reference_price": 488.52,
+      "atm_strike": 487.5,
+      "open_interest_date": "2026-08-20",
+      "bands": {
+        "12": {
+          "strikes": 25,
+          "strike_low": 450.0,
+          "strike_high": 520.0,
+          "call_open_interest": 4641,
+          "put_open_interest": 9249,
+          "call_put_ratio": 0.5,
+          "put_call_ratio": 1.99
+        },
+        "16": {
+          "strikes": 33,
+          "strike_low": 420.0,
+          "strike_high": 540.0,
+          "call_open_interest": 7911,
+          "put_open_interest": 15467,
+          "call_put_ratio": 0.51,
+          "put_call_ratio": 1.96
+        },
+        "20": {
+          "strikes": 41,
+          "strike_low": 380.0,
+          "strike_high": 580.0,
+          "call_open_interest": 12592,
+          "put_open_interest": 21699,
+          "call_put_ratio": 0.58,
+          "put_call_ratio": 1.72
+        }
+      }
+    },
+    "SPOT": {
+      "reference_price": 535.11,
+      "atm_strike": 535.0,
+      "open_interest_date": "2026-08-20",
+      "bands": {
+        "12": {
+          "strikes": 25,
+          "strike_low": 500.0,
+          "strike_high": 570.0,
+          "call_open_interest": 3685,
+          "put_open_interest": 1526,
+          "call_put_ratio": 2.41,
+          "put_call_ratio": 0.41
+        },
+        "16": {
+          "strikes": 33,
+          "strike_low": 470.0,
+          "strike_high": 590.0,
+          "call_open_interest": 7102,
+          "put_open_interest": 3480,
+          "call_put_ratio": 2.04,
+          "put_call_ratio": 0.49
+        },
+        "20": {
+          "strikes": 41,
+          "strike_low": 430.0,
+          "strike_high": 630.0,
+          "call_open_interest": 9374,
+          "put_open_interest": 6844,
+          "call_put_ratio": 1.37,
+          "put_call_ratio": 0.73
+        }
+      }
+    },
+    "PLTR": {
+      "reference_price": 181.34,
+      "atm_strike": 182.5,
+      "open_interest_date": "2026-08-20",
+      "bands": {
+        "12": {
+          "strikes": 25,
+          "strike_low": 152.5,
+          "strike_high": 230.0,
+          "call_open_interest": 128693,
+          "put_open_interest": 40183,
+          "call_put_ratio": 3.2,
+          "put_call_ratio": 0.31
+        },
+        "16": {
+          "strikes": 33,
+          "strike_low": 135.0,
+          "strike_high": 270.0,
+          "call_open_interest": 184582,
+          "put_open_interest": 75165,
+          "call_put_ratio": 2.46,
+          "put_call_ratio": 0.41
+        },
+        "20": {
+          "strikes": 41,
+          "strike_low": 115.0,
+          "strike_high": 310.0,
+          "call_open_interest": 212545,
+          "put_open_interest": 126510,
+          "call_put_ratio": 1.68,
+          "put_call_ratio": 0.6
+        }
+      }
+    },
+    "FN": {
+      "reference_price": 432.21,
+      "atm_strike": 430.0,
+      "open_interest_date": "2026-08-20",
+      "bands": {
+        "12": {
+          "strikes": 25,
+          "strike_low": 310.0,
+          "strike_high": 550.0,
+          "call_open_interest": 828,
+          "put_open_interest": 2780,
+          "call_put_ratio": 0.3,
+          "put_call_ratio": 3.36
+        },
+        "16": {
+          "strikes": 33,
+          "strike_low": 270.0,
+          "strike_high": 590.0,
+          "call_open_interest": 1061,
+          "put_open_interest": 3033,
+          "call_put_ratio": 0.35,
+          "put_call_ratio": 2.86
+        },
+        "20": {
+          "strikes": 41,
+          "strike_low": 230.0,
+          "strike_high": 630.0,
+          "call_open_interest": 1292,
+          "put_open_interest": 3070,
+          "call_put_ratio": 0.42,
+          "put_call_ratio": 2.38
+        }
+      }
+    },
+    "RH": {
+      "reference_price": 153.21,
+      "atm_strike": 152.5,
+      "open_interest_date": "2026-08-20",
+      "bands": {
+        "12": {
+          "strikes": 25,
+          "strike_low": 125.0,
+          "strike_high": 185.0,
+          "call_open_interest": 1468,
+          "put_open_interest": 4749,
+          "call_put_ratio": 0.31,
+          "put_call_ratio": 3.24
+        },
+        "16": {
+          "strikes": 33,
+          "strike_low": 105.0,
+          "strike_high": 205.0,
+          "call_open_interest": 2059,
+          "put_open_interest": 5497,
+          "call_put_ratio": 0.37,
+          "put_call_ratio": 2.67
+        },
+        "20": {
+          "strikes": 41,
+          "strike_low": 85.0,
+          "strike_high": 240.0,
+          "call_open_interest": 3066,
+          "put_open_interest": 6245,
+          "call_put_ratio": 0.49,
+          "put_call_ratio": 2.04
+        }
+      }
+    },
+    "DECK": {
+      "reference_price": 91.68,
+      "atm_strike": 92.0,
+      "open_interest_date": "2026-08-20",
+      "bands": {
+        "12": {
+          "strikes": 25,
+          "strike_low": 80.0,
+          "strike_high": 110.0,
+          "call_open_interest": 2130,
+          "put_open_interest": 3270,
+          "call_put_ratio": 0.65,
+          "put_call_ratio": 1.54
+        },
+        "16": {
+          "strikes": 33,
+          "strike_low": 60.0,
+          "strike_high": 130.0,
+          "call_open_interest": 3607,
+          "put_open_interest": 4643,
+          "call_put_ratio": 0.78,
+          "put_call_ratio": 1.29
+        },
+        "20": {
+          "strikes": 40,
+          "strike_low": 45.0,
+          "strike_high": 150.0,
+          "call_open_interest": 4939,
+          "put_open_interest": 4720,
+          "call_put_ratio": 1.05,
+          "put_call_ratio": 0.96
+        }
+      }
+    },
+    "GWRE": {
+      "reference_price": 189.2,
+      "atm_strike": 190.0,
+      "open_interest_date": "2026-08-20",
+      "bands": {
+        "12": {
+          "strikes": 25,
+          "strike_low": 130.0,
+          "strike_high": 300.0,
+          "call_open_interest": 1390,
+          "put_open_interest": 648,
+          "call_put_ratio": 2.15,
+          "put_call_ratio": 0.47
+        },
+        "16": {
+          "strikes": 33,
+          "strike_low": 110.0,
+          "strike_high": 340.0,
+          "call_open_interest": 1605,
+          "put_open_interest": 748,
+          "call_put_ratio": 2.15,
+          "put_call_ratio": 0.47
+        },
+        "20": {
+          "strikes": 41,
+          "strike_low": 90.0,
+          "strike_high": 380.0,
+          "call_open_interest": 1657,
+          "put_open_interest": 1204,
+          "call_put_ratio": 1.38,
+          "put_call_ratio": 0.73
+        }
+      }
+    }
+  }
+}
