@@ -17,7 +17,9 @@ Covers:
 import unittest.mock as mock
 
 import pandas as pd
-from datetime import date
+from datetime import date, datetime, timedelta
+
+import pytz
 
 import alpha_tech_tracker.op_momentum_strategy.op_momentum_selector_backtest as _bt_module
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector import compute_ticker_stats
@@ -110,6 +112,26 @@ def _mock_vix_df(close_values, start_date):
     return pd.DataFrame({"Close": close_values}, index=dates)
 
 
+
+def _freeze_eastern_now(monkeypatch, on_date, hour):
+    """Pin the Eastern clock the VIX cache gate reads, and return that date.
+
+    The gate compares `end` against the Eastern date, so a test that builds its
+    dates from the local clock breaks whenever the two time zones disagree.
+    """
+    frozen = pytz.timezone("America/New_York").localize(
+        datetime(on_date.year, on_date.month, on_date.day, hour)
+    )
+
+    class _FrozenDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return frozen.astimezone(tz) if tz else frozen
+
+    monkeypatch.setattr(_bt_module, "datetime", _FrozenDatetime)
+    return on_date
+
+
 class TestFetchVixDailyCaching:
     def test_cold_call_downloads_and_writes_cache_file(self, monkeypatch, tmp_path):
         monkeypatch.setattr(_bt_module, "_VIX_CACHE_DIR", tmp_path)
@@ -148,7 +170,7 @@ class TestFetchVixDailyCaching:
 
     def test_end_date_today_does_not_write_cache(self, monkeypatch, tmp_path):
         monkeypatch.setattr(_bt_module, "_VIX_CACHE_DIR", tmp_path)
-        today = date.today()
+        today = _freeze_eastern_now(monkeypatch, date(2025, 6, 30), hour=11)
         monkeypatch.setattr(
             _bt_module.yf, "download",
             mock.MagicMock(return_value=_mock_vix_df([20.0], today)),
@@ -157,6 +179,18 @@ class TestFetchVixDailyCaching:
         _fetch_vix_daily(date(2025, 1, 1), today)
 
         assert list(tmp_path.glob("yfinance_1d_VIX_*.json")) == []
+
+    def test_end_date_before_today_writes_cache(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(_bt_module, "_VIX_CACHE_DIR", tmp_path)
+        today = _freeze_eastern_now(monkeypatch, date(2025, 6, 30), hour=11)
+        monkeypatch.setattr(
+            _bt_module.yf, "download",
+            mock.MagicMock(return_value=_mock_vix_df([20.0], date(2025, 6, 27))),
+        )
+
+        _fetch_vix_daily(date(2025, 1, 1), today - timedelta(days=1))
+
+        assert len(list(tmp_path.glob("yfinance_1d_VIX_*.json"))) == 1
 
     def test_different_date_ranges_produce_separate_cache_files(self, monkeypatch, tmp_path):
         monkeypatch.setattr(_bt_module, "_VIX_CACHE_DIR", tmp_path)

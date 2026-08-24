@@ -650,31 +650,46 @@ def _reentry_row(window, rank, entry, pnl, br_entry=0.0, br_pnl=0.0, bru_entry=0
     }
 
 
+def _full_slate(featured):
+    """Pad `featured` out to a full top-3 slate of picks.
+
+    _effective_weights renormalizes when a day has fewer picks than the configured
+    top-N, so a lone rank-1 row would take the whole window's capital instead of its
+    0.5 weight. Filler rows carry no P&L and keep the configured weights in force.
+    """
+    ranks = {row["rank"] for row in featured}
+    filler = [_reentry_row("W1", rank, 100.0, 0.0) for rank in (1, 2, 3) if rank not in ranks]
+    return sorted(featured + filler, key=lambda row: row["rank"])
+
+
 class TestApplyCapitalFlowWithReentry:
     def test_bre_pnl_added_to_cap_pnl(self):
         # Primary pnl=0, BRE: entry=100, pnl=2 → cap += 5000/100*2 = 100
-        rows = [_reentry_row("W1", 1, 100.0, 0.0, br_entry=100.0, br_pnl=2.0)]
+        rows = _full_slate([_reentry_row("W1", 1, 100.0, 0.0, br_entry=100.0, br_pnl=2.0)])
         _apply_capital_flow(rows, [_W1], 10_000, _WEIGHTS, 3)
 
         assert rows[0]["cap_pnl"] == pytest.approx(100.0)
 
     def test_bru_pnl_added_to_cap_pnl(self):
         # Primary pnl=0, BRU: entry=100, pnl=1 → cap += 5000/100*1 = 50
-        rows = [_reentry_row("W1", 1, 100.0, 0.0, bru_entry=100.0, bru_pnl=1.0)]
+        rows = _full_slate([_reentry_row("W1", 1, 100.0, 0.0, bru_entry=100.0, bru_pnl=1.0)])
         _apply_capital_flow(rows, [_W1], 10_000, _WEIGHTS, 3)
 
         assert rows[0]["cap_pnl"] == pytest.approx(50.0)
 
     def test_bre_and_bru_both_contribute_to_cap_pnl(self):
         # Primary pnl=0, BRE: entry=100, pnl=2 (+100), BRU: entry=100, pnl=1 (+50)
-        rows = [_reentry_row("W1", 1, 100.0, 0.0, br_entry=100.0, br_pnl=2.0, bru_entry=100.0, bru_pnl=1.0)]
+        rows = _full_slate([
+            _reentry_row("W1", 1, 100.0, 0.0, br_entry=100.0, br_pnl=2.0,
+                         bru_entry=100.0, bru_pnl=1.0)
+        ])
         _apply_capital_flow(rows, [_W1], 10_000, _WEIGHTS, 3)
 
         assert rows[0]["cap_pnl"] == pytest.approx(150.0)
 
     def test_bre_missing_entry_price_does_not_add_cap_pnl(self):
         # br_entry_price=0 (falsy) → no BRE contribution
-        rows = [_reentry_row("W1", 1, 100.0, 0.0, br_entry=0.0, br_pnl=5.0)]
+        rows = _full_slate([_reentry_row("W1", 1, 100.0, 0.0, br_entry=0.0, br_pnl=5.0)])
         _apply_capital_flow(rows, [_W1], 10_000, _WEIGHTS, 3)
 
         assert rows[0]["cap_pnl"] == pytest.approx(0.0)
@@ -682,10 +697,11 @@ class TestApplyCapitalFlowWithReentry:
     def test_bre_pnl_uses_same_slot_capital_as_primary(self):
         # rank-2 slot_capital = 10000 * 0.3 = 3000
         # BRE cap = 3000 / 100 * 2 = 60
-        rows = [_reentry_row("W1", 2, 100.0, 0.0, br_entry=100.0, br_pnl=2.0)]
+        rows = _full_slate([_reentry_row("W1", 2, 100.0, 0.0, br_entry=100.0, br_pnl=2.0)])
         _apply_capital_flow(rows, [_W1], 10_000, _WEIGHTS, 3)
 
-        assert rows[0]["cap_pnl"] == pytest.approx(60.0)
+        rank_two = next(row for row in rows if row["rank"] == 2)
+        assert rank_two["cap_pnl"] == pytest.approx(60.0)
 
 
 # ---------------------------------------------------------------------------

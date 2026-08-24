@@ -963,6 +963,18 @@ class TestOrderStatus:
         assert result["status"] == "open"
 
 
+def _call_with_url(mock_get, fragment):
+    """Return the call whose URL contains `fragment`.
+
+    get_filled_orders queries /historicalorders and /orders and merges both, so
+    assertions must name the endpoint instead of relying on the last call.
+    """
+    for call in mock_get.call_args_list:
+        if fragment in call[0][0]:
+            return call
+    raise AssertionError(f"no request to {fragment}: {mock_get.call_args_list}")
+
+
 class TestGetFilledOrders:
     def test_returns_filled_sell_order_for_option(self):
         client = _make_client()
@@ -982,7 +994,7 @@ class TestGetFilledOrders:
 
         client.get_filled_orders("TSLA250420C00240000", limit=5)
 
-        params = client._session.get.call_args[1]["params"]
+        params = _call_with_url(client._session.get, "/historicalorders")[1]["params"]
         assert params["symbol"] == "TSLA 250420C240"
 
     def test_stock_symbol_passed_as_uppercase_ticker(self):
@@ -991,17 +1003,18 @@ class TestGetFilledOrders:
 
         client.get_filled_orders("tsla", limit=5)
 
-        params = client._session.get.call_args[1]["params"]
+        params = _call_with_url(client._session.get, "/historicalorders")[1]["params"]
         assert params["symbol"] == "TSLA"
 
-    def test_uses_historicalorders_endpoint(self):
+    def test_queries_both_historicalorders_and_todays_orders(self):
         client = _make_client()
         client._session.get.return_value = _mock_response(orders_filled_sell_response)
 
         client.get_filled_orders("TSLA250420C00240000", limit=5)
 
-        url = client._session.get.call_args[0][0]
-        assert "/historicalorders" in url
+        urls = [call[0][0] for call in client._session.get.call_args_list]
+        assert any("/historicalorders" in u for u in urls)
+        assert any(u.endswith("/orders") for u in urls)
 
     def test_sends_since_param(self):
         client = _make_client()
@@ -1009,7 +1022,7 @@ class TestGetFilledOrders:
 
         client.get_filled_orders("TSLA250420C00240000", limit=5)
 
-        params = client._session.get.call_args[1]["params"]
+        params = _call_with_url(client._session.get, "/historicalorders")[1]["params"]
         assert "since" in params
 
     def test_filters_out_open_orders(self):
@@ -1182,14 +1195,15 @@ class TestGetFilledOrders:
         assert len(result) == 1
         assert result[0]["order_id"] == "FLL1"
 
-    def test_no_fallback_when_historicalorders_has_results(self):
-        # When historicalorders returns data, /orders should not be called.
+    def test_merges_both_sources_and_dedupes_by_order_id(self):
+        # Same-day fills live on /orders, so both sources are always queried and
+        # deduplicated: the same OrderID appearing in both must yield one row.
         client = _make_client()
         client._session.get.return_value = _mock_response(orders_filled_sell_response)
 
         result = client.get_filled_orders("TSLA250420C00240000", limit=5)
 
-        assert client._session.get.call_count == 1
+        assert client._session.get.call_count == 2
         assert len(result) == 1
 
 
@@ -1255,7 +1269,7 @@ class TestGetOpenPositions:
         assert "TSLA250420C00240000" in result
         assert result["TSLA250420C00240000"]["qty"] == 5.0
 
-    def test_mixed_account_skips_stock_positions_returns_options(self):
+    def test_mixed_account_returns_both_stock_and_option_positions(self):
         client = _make_client()
         client._session.get.return_value = _mock_response(
             {
@@ -1266,11 +1280,10 @@ class TestGetOpenPositions:
             }
         )
         result = client.get_open_positions()
-        assert "MRVL" not in result
-        assert "TSLA250420C00240000" in result
+        assert result["MRVL"]["qty"] == 41.0
         assert result["TSLA250420C00240000"]["qty"] == 3.0
 
-    def test_stock_only_account_returns_empty_dict(self):
+    def test_stock_only_account_returns_positions_keyed_by_ticker(self):
         client = _make_client()
         client._session.get.return_value = _mock_response(
             {
@@ -1281,7 +1294,7 @@ class TestGetOpenPositions:
             }
         )
         result = client.get_open_positions()
-        assert result == {}
+        assert result == {"SHOP": {"qty": 114.0}, "MRVL": {"qty": 41.0}}
 
     def test_zero_qty_positions_excluded(self):
         client = _make_client()
