@@ -22,6 +22,30 @@ from alpha_tech_tracker.trade_api.execution_client import ExecutionClient, Insuf
 logger = logging.getLogger("trade_api.alpaca")
 
 
+def main_monthly_expiry(reference_date=None):
+    """Return the standard monthly option expiry (3rd Friday) at or after reference_date.
+
+    Rolls into the following month once the current month's 3rd Friday has passed.
+    """
+    reference_date = reference_date or date.today()
+
+    def third_friday(year, month):
+        first = date(year, month, 1)
+        return next(
+            first.replace(day=day)
+            for day in range(15, 22)
+            if first.replace(day=day).weekday() == 4
+        )
+
+    expiry = third_friday(reference_date.year, reference_date.month)
+    if expiry < reference_date:
+        year = reference_date.year + (1 if reference_date.month == 12 else 0)
+        month = reference_date.month % 12 + 1
+        expiry = third_friday(year, month)
+
+    return expiry
+
+
 class APIError(Exception):
     def __init__(self, code, message):
         self.code = code
@@ -291,23 +315,33 @@ class AlpacaAPIClient(ExecutionClient):
         strike_price_gte=None,
         strike_price_lte=None,
         limit=100,
+        fetch_all_pages=False,
     ):
-        request = GetOptionContractsRequest(
-            underlying_symbols=[underlying_symbol],
-            expiration_date=expiration_date,
-            expiration_date_gte=expiration_date_gte,
-            expiration_date_lte=expiration_date_lte,
-            type=option_type,
-            strike_price_gte=strike_price_gte,
-            strike_price_lte=strike_price_lte,
-            limit=limit,
-        )
-        response = self._trading_client.get_option_contracts(request)
-        contracts = (
-            response.option_contracts
-            if hasattr(response, "option_contracts")
-            else response
-        )
+        contracts = []
+        page_token = None
+
+        while True:
+            request = GetOptionContractsRequest(
+                underlying_symbols=[underlying_symbol],
+                expiration_date=expiration_date,
+                expiration_date_gte=expiration_date_gte,
+                expiration_date_lte=expiration_date_lte,
+                type=option_type,
+                strike_price_gte=strike_price_gte,
+                strike_price_lte=strike_price_lte,
+                limit=limit,
+                page_token=page_token,
+            )
+            response = self._trading_client.get_option_contracts(request)
+            contracts.extend(
+                response.option_contracts
+                if hasattr(response, "option_contracts")
+                else response
+            )
+
+            page_token = getattr(response, "next_page_token", None)
+            if not fetch_all_pages or not page_token:
+                break
 
         return [
             {
@@ -317,9 +351,107 @@ class AlpacaAPIClient(ExecutionClient):
                 "strike_price": float(contract.strike_price),
                 "option_type": contract.type,
                 "contract_size": contract.size,
+                "open_interest": (
+                    int(contract.open_interest)
+                    if contract.open_interest is not None
+                    else None
+                ),
+                "open_interest_date": (
+                    str(contract.open_interest_date)
+                    if contract.open_interest_date is not None
+                    else None
+                ),
             }
             for contract in contracts
         ]
+
+    def get_options_open_interest(
+        self,
+        underlying_symbol,
+        expiration_date=None,
+        strikes_around_atm=10,
+        reference_price=None,
+        feed: DataFeed = DataFeed.IEX,
+    ):
+        """Aggregate call/put open interest around the money for one expiry.
+
+        expiration_date   — defaults to the main monthly expiry (3rd Friday).
+        strikes_around_atm — strikes to include on each side of the ATM strike,
+                             so the default spans 21 strikes. None includes the
+                             whole chain.
+        reference_price   — ATM anchor; defaults to the live quote mid.
+
+        Open interest is the prior session's OCC figure (see open_interest_date),
+        not an intraday value.
+        """
+        if expiration_date is None:
+            expiration_date = main_monthly_expiry()
+
+        contracts = self.get_options_contracts(
+            underlying_symbol,
+            expiration_date=expiration_date,
+            limit=500,
+            fetch_all_pages=True,
+        )
+        if not contracts:
+            raise ClientError(
+                f"No option contracts found for {underlying_symbol} {expiration_date}"
+            )
+
+        if reference_price is None:
+            quote = self.get_stock_quote(underlying_symbol, feed=feed)
+            bid, ask = self._extract_bid_ask({underlying_symbol: quote}, underlying_symbol)
+            if not bid or not ask:
+                raise ClientError(f"No usable quote for {underlying_symbol}")
+            reference_price = (bid + ask) / 2
+
+        strikes = sorted({c["strike_price"] for c in contracts})
+        atm_strike = min(strikes, key=lambda strike: abs(strike - reference_price))
+
+        if strikes_around_atm is None:
+            selected_strikes = set(strikes)
+        else:
+            atm_index = strikes.index(atm_strike)
+            low = max(0, atm_index - strikes_around_atm)
+            selected_strikes = set(strikes[low : atm_index + strikes_around_atm + 1])
+
+        by_strike = {}
+        open_interest_dates = set()
+        for contract in contracts:
+            strike = contract["strike_price"]
+            if strike not in selected_strikes:
+                continue
+
+            bucket = by_strike.setdefault(
+                strike, {"strike_price": strike, "call_open_interest": 0, "put_open_interest": 0}
+            )
+            side = (
+                "call_open_interest"
+                if str(contract["option_type"]).lower().endswith("call")
+                else "put_open_interest"
+            )
+            bucket[side] += contract["open_interest"] or 0
+            if contract["open_interest_date"]:
+                open_interest_dates.add(contract["open_interest_date"])
+
+        call_oi = sum(b["call_open_interest"] for b in by_strike.values())
+        put_oi = sum(b["put_open_interest"] for b in by_strike.values())
+
+        return {
+            "underlying_symbol": underlying_symbol,
+            "expiration_date": str(expiration_date),
+            "reference_price": reference_price,
+            "atm_strike": atm_strike,
+            "strikes_around_atm": strikes_around_atm,
+            "strike_count": len(by_strike),
+            "open_interest_date": max(open_interest_dates) if open_interest_dates else None,
+            "call_open_interest": call_oi,
+            "put_open_interest": put_oi,
+            "total_open_interest": call_oi + put_oi,
+            "put_call_ratio": round(put_oi / call_oi, 4) if call_oi else None,
+            "call_put_ratio": round(call_oi / put_oi, 4) if put_oi else None,
+            "by_strike": [by_strike[strike] for strike in sorted(by_strike)],
+        }
 
     def place_stock_order(
         self,

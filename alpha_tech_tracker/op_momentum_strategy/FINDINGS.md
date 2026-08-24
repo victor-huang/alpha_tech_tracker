@@ -1,5 +1,10 @@
 # Backtest Findings
 
+> Side studies live under `research/`. See
+> [`research/experiments/OR_WINRATE_STRATEGY_STUDY.md`](research/experiments/OR_WINRATE_STRATEGY_STUDY.md)
+> for the 2019–2026 OR-direction + trailing-win-rate stock study (marginal after costs;
+> the QQQ prior-close regime gate on longs is the finding most likely to transfer here).
+
 ## Finding 1 — Opening Window Start Time & Width (2026-03-01 → 2026-03-28)
 
 **Question**: Does shifting the evaluation window start time and/or width improve P&L over the default 9:30 / 3-bar (15 min) setup?
