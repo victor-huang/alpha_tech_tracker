@@ -162,8 +162,10 @@ class TestTickerSetResolutionLogic:
     def test_v3_pool_does_not_contain_nvda(self):
         assert "NVDA" not in DEFAULT_TICKERS
 
-    def test_v3_pool_contains_tsla(self):
-        assert "TSLA" in DEFAULT_TICKERS
+    def test_v3_pool_does_not_contain_tsla(self):
+        # TSLA was removed from V3 on 2026-08-30. It stays in the AT pool only —
+        # see test_at_pool_contains_nvda_and_tsla above.
+        assert "TSLA" not in DEFAULT_TICKERS
 
 
 class TestTradeEngineTickerSetArg:

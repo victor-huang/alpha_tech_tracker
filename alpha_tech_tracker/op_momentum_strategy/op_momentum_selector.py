@@ -56,7 +56,9 @@ DEFAULT_TICKERS = [
     "META",
     "EXPE",
     "JPM",
-    "TSLA",
+    # TSLA removed 2026-08-30: re-added at some point after the 2026-04-12 swap that
+    # replaced it with CRWV (see comment on CRWV below). Keeping it out per the
+    # original rationale — peaked Q2/Q3 2025, declining to +6.5% Q1 2026.
     "MU",
     "CRDO", # replaced ANAB 2026-04-10: sparse live data; CRDO has min 72 bars/day, 3.65% OR
     "PLTR",
