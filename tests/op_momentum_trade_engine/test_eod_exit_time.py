@@ -30,6 +30,21 @@ _SET_CLOCK_PATH = "alpha_tech_tracker.op_momentum_strategy.trade_engine.set_repl
 _CLEAR_CLOCK_PATH = "alpha_tech_tracker.op_momentum_strategy.trade_engine.clear_replay_clock"
 _ENABLE_NOTIF_PATH = "alpha_tech_tracker.op_momentum_strategy.trade_engine.enable_notifications"
 _DISABLE_NOTIF_PATH = "alpha_tech_tracker.op_momentum_strategy.trade_engine.disable_notifications"
+# run_replay runs the pre-market ticker selectors before the replay driver, which
+# fetches bars from Alpaca over the network. These tests only assert on replay-clock
+# behaviour, so the selection step is stubbed out — without this the tests make a
+# real HTTP call and fail with 401 on any machine without live credentials.
+_WINDOW_SELECTORS_PATH = (
+    "alpha_tech_tracker.op_momentum_strategy.trade_engine."
+    "OpMomentumTradeEngine._run_window_selectors"
+)
+# The signal engine also warms its MA history from Alpaca on start_replay. Only the
+# warmup is stubbed, so start_replay still sets _session_date and applies the regime
+# filter as it normally would.
+_WARMUP_PATH = (
+    "alpha_tech_tracker.op_momentum_strategy.signal_engine."
+    "LiveSignalEngine._warmup_from_cache"
+)
 
 
 def _et(h, m, d=_REPLAY_DATE):
@@ -72,7 +87,9 @@ class TestReplayClockPinnedToEodBar:
              patch(_SET_CLOCK_PATH, side_effect=capture_set_clock), \
              patch(_CLEAR_CLOCK_PATH), \
              patch(_ENABLE_NOTIF_PATH), \
-             patch(_DISABLE_NOTIF_PATH):
+             patch(_DISABLE_NOTIF_PATH), \
+             patch(_WINDOW_SELECTORS_PATH, return_value=[]), \
+             patch(_WARMUP_PATH):
             engine.run_replay(_REPLAY_DATE)
 
         return captured
