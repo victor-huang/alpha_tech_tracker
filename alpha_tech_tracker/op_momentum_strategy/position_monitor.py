@@ -130,6 +130,7 @@ class PositionMonitor:
         trailing_ma_switch: str = TRAILING_MA_SWITCH,
         trailing_ma_switch_factor: float = TRAILING_MA_SWITCH_FACTOR,
         trailing_ma_switch_period: int = TRAILING_MA_SWITCH_PERIOD,
+        min_hold_minutes: Optional[int] = None,
     ):
         self._client = alpaca_client
         self._signal_engine = signal_engine
@@ -155,6 +156,7 @@ class PositionMonitor:
         self._trailing_ma_switch_period = trailing_ma_switch_period
         self._fast_ma_col = f"MA{trailing_ma_switch_period}"
         self._fast_ma_reason = f"trailing_stop_ma{trailing_ma_switch_period}"
+        self._min_hold_minutes = min_hold_minutes
         self._positions: list = []
         self._qty_sync_closes: list = []
         self._reentry_watchers: list = []
@@ -466,6 +468,22 @@ class PositionMonitor:
                 timed_exit_dt = pos.entry_time + timedelta(minutes=pos.timed_exit_minutes)
                 if bar_dt >= timed_exit_dt:
                     exit_reason = "timed_exit"
+
+        # Minimum hold interval: suppress any exit (hard stop, fallback, trailing MA,
+        # max loss, timed exit) until entry_time + min_hold_minutes has elapsed. Latch
+        # state above (hard_stop_armed, use_ma_fast, max_favorable_move, trailing_arm_reached)
+        # still updates normally — only the firing of the exit is held back. EOD close
+        # (close_all) is separate from this method and is never gated by min-hold.
+        if (
+            exit_reason
+            and self._min_hold_minutes
+            and pos.entry_time is not None
+            and bar_time is not None
+        ):
+            bar_dt = bar_time if hasattr(bar_time, "tzinfo") else bar_time.to_pydatetime()
+            min_hold_dt = pos.entry_time + timedelta(minutes=self._min_hold_minutes)
+            if bar_dt < min_hold_dt:
+                exit_reason = None
 
         if exit_reason:
             override = None

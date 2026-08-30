@@ -515,6 +515,107 @@ class TestPositionMonitor:
         assert pos.exit_reason == "fallback_20pct"
 
 
+class TestMinHoldMinutes:
+    """Minimum hold interval: suppress all _evaluate_stop exits until entry_time + min_hold_minutes."""
+
+    @pytest.fixture(autouse=True)
+    def patch_sleep(self, monkeypatch):
+        monkeypatch.setattr(
+            "alpha_tech_tracker.op_momentum_strategy.order_executor.time.sleep",
+            lambda _: None,
+        )
+
+    def test_hard_stop_suppressed_within_hold_window_then_fires_after_elapsed(self):
+        client = _make_alpaca_client()
+        client.place_option_order.return_value = {"order_id": "close-mh"}
+        client.order_status.return_value = {
+            "status": "filled",
+            "filled_avg_price": 5.25,
+        }
+        client.get_option_quote_by_occ.return_value = _make_option_quote(bid=5.0, ask=5.5)
+
+        pos = _make_active_position(
+            signal="BULLISH", hard_stop_price=_D("103.5"), fallback_price=_D("103.0")
+        )
+        pos.hard_stop_armed = True
+
+        closes = [104.0]
+        df = _build_history_df(closes, ma20=106.0, ma50=105.0, ma200=90.0)
+        pos.entry_time = df.index[0]
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine, min_hold_minutes=20)
+        monitor.add_position(pos)
+
+        # entry+5min: hard stop condition met (close <= 103.5) but hold window (20min) not elapsed
+        _set_latest_bar(engine, "NVDA", close=103.0, ma50=105.0, ma20=106.0)
+        monitor.on_bar("NVDA")
+        assert pos.is_closed is False
+
+        # entry+10min: still within hold
+        _set_latest_bar(engine, "NVDA", close=103.0, ma50=105.0, ma20=106.0)
+        monitor.on_bar("NVDA")
+        assert pos.is_closed is False
+
+        # entry+15min: still within hold
+        _set_latest_bar(engine, "NVDA", close=103.0, ma50=105.0, ma20=106.0)
+        monitor.on_bar("NVDA")
+        assert pos.is_closed is False
+
+        # entry+20min: hold elapsed → hard stop fires
+        _set_latest_bar(engine, "NVDA", close=103.0, ma50=105.0, ma20=106.0)
+        monitor.on_bar("NVDA")
+        assert pos.is_closed is True
+        assert pos.exit_reason == "hard_stop"
+
+    def test_no_suppression_when_min_hold_minutes_not_set(self):
+        """Default (min_hold_minutes=None) behaves exactly as before — no gating."""
+        client = _make_alpaca_client()
+        client.place_option_order.return_value = {"order_id": "close-nomh"}
+        client.order_status.return_value = {
+            "status": "filled",
+            "filled_avg_price": 5.25,
+        }
+        client.get_option_quote_by_occ.return_value = _make_option_quote(bid=5.0, ask=5.5)
+
+        pos = _make_active_position(
+            signal="BULLISH", hard_stop_price=_D("103.5"), fallback_price=_D("103.0")
+        )
+        pos.hard_stop_armed = True
+
+        closes = [104.0]
+        df = _build_history_df(closes, ma20=106.0, ma50=105.0, ma200=90.0)
+        pos.entry_time = df.index[0]
+        engine = _make_signal_engine_with_history("NVDA", df)
+        monitor = PositionMonitor(client, engine)
+        monitor.add_position(pos)
+
+        _set_latest_bar(engine, "NVDA", close=103.0, ma50=105.0, ma20=106.0)
+        monitor.on_bar("NVDA")
+        assert pos.is_closed is True
+        assert pos.exit_reason == "hard_stop"
+
+    def test_close_all_ignores_min_hold(self):
+        """EOD close (close_all) is not gated by min_hold_minutes."""
+        client = _make_alpaca_client()
+        client.place_option_order.return_value = {"order_id": "close-eod"}
+        client.order_status.return_value = {
+            "status": "filled",
+            "filled_avg_price": 5.25,
+        }
+        client.get_option_quote_by_occ.return_value = _make_option_quote(bid=5.0, ask=5.5)
+
+        import pytz
+        pos = _make_active_position(signal="BULLISH")
+        engine = _make_signal_engine_with_history("NVDA", pd.DataFrame())
+        pos.entry_time = pytz.timezone("America/New_York").localize(datetime.now().replace(microsecond=0))
+        monitor = PositionMonitor(client, engine, min_hold_minutes=9999)
+        monitor.add_position(pos)
+
+        monitor.close_all(reason="end_of_day")
+        assert pos.is_closed is True
+        assert pos.exit_reason == "end_of_day"
+
+
 class TestTrailingMaSwitchPeriod:
     """Live engine fast-MA trailing-stop upgrade.
 

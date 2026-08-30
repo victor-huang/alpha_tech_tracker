@@ -635,6 +635,7 @@ class OpMomentumTradeEngine:
         direction_aware_scoring: bool = False,
         fixed_signal_alloc: bool = False,
         extend_collection_bars: int = 0,
+        min_hold_minutes: Optional[int] = None,
     ):
         self._client = alpaca_client
         self._api_key = getattr(alpaca_client, "_api_key", None)
@@ -689,6 +690,7 @@ class OpMomentumTradeEngine:
         self._daily_realized_pnl = _D("0")
         self._pnl_lock = threading.Lock()
         self._armed_ma20_exit = armed_ma20_exit
+        self._min_hold_minutes = min_hold_minutes
         self._regime_filter = regime_filter
         self._regime_ma = regime_ma
         if rank_weights:
@@ -3146,6 +3148,7 @@ class OpMomentumTradeEngine:
             trailing_ma_switch=self._trailing_ma_switch,
             trailing_ma_switch_factor=self._trailing_ma_switch_factor,
             trailing_ma_switch_period=self._trailing_ma_switch_period,
+            min_hold_minutes=self._min_hold_minutes,
         )
 
         if self._option_price_monitor:
@@ -3329,6 +3332,7 @@ class OpMomentumTradeEngine:
             trailing_ma_switch=self._trailing_ma_switch,
             trailing_ma_switch_factor=self._trailing_ma_switch_factor,
             trailing_ma_switch_period=self._trailing_ma_switch_period,
+            min_hold_minutes=self._min_hold_minutes,
         )
 
         # In replay mode signals are drained synchronously in _on_bar (no background threads)

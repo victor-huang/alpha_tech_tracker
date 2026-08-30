@@ -260,6 +260,15 @@ def parse_args():
         help=f"Seconds without a bar before the WebSocket stream is reconnected (default: {WS_RECONNECT_TIMEOUT_SECONDS}).",
     )
     parser.add_argument(
+        "--min-hold-minutes",
+        type=int,
+        default=None,
+        dest="min_hold_minutes",
+        help="Minimum minutes a position must be held before any exit mechanism "
+        "(hard stop, fallback, trailing MA, max-loss, timed exit) can trigger. "
+        "EOD close is never gated by this. Default: disabled (no minimum hold).",
+    )
+    parser.add_argument(
         "--armed-ma20-exit",
         action="store_true",
         default=ARMED_MA20_EXIT,
@@ -1157,6 +1166,7 @@ if __name__ == "__main__":
             direction_aware_scoring=args.direction_aware_scoring,
             fixed_signal_alloc=args.fixed_signal_alloc,
             extend_collection_bars=args.extend_collection_bars,
+            min_hold_minutes=args.min_hold_minutes,
         )
         if args.replay_date or (args.replay_start and args.replay_end):
             _warn_replay_feed_mismatch(args)
@@ -1327,6 +1337,7 @@ if __name__ == "__main__":
             direction_aware_scoring=args.direction_aware_scoring,
             fixed_signal_alloc=args.fixed_signal_alloc,
             extend_collection_bars=args.extend_collection_bars,
+            min_hold_minutes=args.min_hold_minutes,
         )
         engine.run(tickers_override=args.tickers)
     finally:
