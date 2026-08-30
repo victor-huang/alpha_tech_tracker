@@ -343,6 +343,28 @@ themselves regardless of whether the rest happens.
 
 ### Phase 0.5 — Mechanical file decomposition
 
+**Status: 0.5a, 0.5b, 0.5c DONE (commits `b6f3fcf`, `f316c01`, `b3a5e90`).**
+
+| Step | File | Before | After | Test changes |
+|---|---|---|---|---|
+| 0.5a | `op_momentum_trade_engine.py` | 1,344 | 217 | 1 patch-path retarget |
+| 0.5b | `op_momentum_selector_backtest.py` | 4,814 | 2,793 | none |
+| 0.5c | `trade_engine.py` | 3,522 | 3,067 | 41 patch-path retargets |
+
+Baseline held throughout: 3 failed (pre-existing network), 2,140 passed, 23 skipped,
+73 errors (pre-existing, pytest-mock absent).
+
+Two pre-existing crash bugs were fixed in passing (both in the backtest CLI, see §4.3
+and below): `--help` raised `ValueError` on an unescaped `%`, and four
+`parser.error(...)` calls in `__main__` raised `NameError` because `parser` was only
+ever a local inside `_parse_args`.
+
+> **Carry-over risk for Phase 0.** The 18 patch-path retargets in
+> `test_trade_engine_regime.py` are **unverified** — every one sits in a
+> `mocker`-fixture test, so none of them currently run. They were patching a module
+> that no longer owns the function and would have broken silently once pytest-mock is
+> installed. Re-run and confirm those specifically as part of Phase 0 step 3.
+
 **~2–3 days. Pure moves — safe before the parity harness exists.**
 
 Splittability is not size. The deciding metric is **what fraction of a file is one
