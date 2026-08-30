@@ -10,6 +10,7 @@ Usage:
 
 import argparse
 import json
+import os
 import pathlib
 import pytz
 import requests
@@ -398,10 +399,14 @@ if __name__ == "__main__":
     ]
     print(f"Found {len(afternoon_losses)} losing afternoon trades. Fetching bar data...")
 
-    bar_client = StockHistoricalDataClient(
-        api_key="AK2PHJV4ZFO65JYT2IU7EDDIDH",
-        secret_key="7NmxWaaBDRtXq8TJ2HLusiHqXqjT3QQQYWX1KZhj8iTb",
-    )
+    _key = os.environ.get("ALPACA_API_KEY", "")
+    _secret = os.environ.get("ALPACA_SECRET_KEY", "")
+    if not _key or not _secret:
+        raise SystemExit(
+            "Set ALPACA_API_KEY and ALPACA_SECRET_KEY in the environment before running "
+            "this script (they used to be hardcoded here; that key is being revoked)."
+        )
+    bar_client = StockHistoricalDataClient(api_key=_key, secret_key=_secret)
 
     results = analyze_stop_quality(afternoon_losses, bar_client)
     _print_results(results)

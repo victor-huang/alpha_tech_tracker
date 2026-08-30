@@ -10,6 +10,7 @@ Usage:
 """
 
 import json
+import os
 import pathlib
 import pytz
 import requests
@@ -441,9 +442,14 @@ if __name__ == "__main__":
         headers={"APCA-API-KEY-ID": _test_key, "APCA-API-SECRET-KEY": _test_secret},
     )
     if not _r.ok:
-        _test_key = "AK2PHJV4ZFO65JYT2IU7EDDIDH"
-        _test_secret = "7NmxWaaBDRtXq8TJ2HLusiHqXqjT3QQQYWX1KZhj8iTb"
-        print("(config.json key unauthorized — using bash_profile live key)")
+        _test_key = os.environ.get("ALPACA_API_KEY", "")
+        _test_secret = os.environ.get("ALPACA_SECRET_KEY", "")
+        if not _test_key or not _test_secret:
+            raise SystemExit(
+                "config.json key unauthorized and ALPACA_API_KEY / ALPACA_SECRET_KEY "
+                "are not set. Export them (e.g. from ~/.bash_profile) and retry."
+            )
+        print("(config.json key unauthorized — using ALPACA_* from the environment)")
 
     alpaca_client = AlpacaAPIClient(
         api_key=_test_key,

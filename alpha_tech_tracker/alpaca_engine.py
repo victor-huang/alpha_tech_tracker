@@ -166,8 +166,10 @@ def simulate_stream_minute_aggreated_market_data_from_file(
 
 
 class DataAggregator(object):
-    key_id = "PKX2ZYMDG183VHH2VPYS"
-    secret_key = "HM6fKUfOVohXWj5JG1bD57hM6LE0xM5NaX9aoUCT"
+    # Legacy engine — reads the paper-account credentials from the environment.
+    # These were hardcoded until 2026-08-30; that paper key is being revoked.
+    key_id = os.environ.get("ALPACA_KEY_ID", "")
+    secret_key = os.environ.get("ALPACA_SECRET_KEY", "")
     generator_queues = []
 
     def __init__(self):

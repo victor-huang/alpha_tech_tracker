@@ -8,6 +8,7 @@ Usage:
 """
 
 import math
+import os
 import pytz
 from datetime import datetime, date, timedelta
 
@@ -24,8 +25,8 @@ from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
 
 ET = pytz.timezone("America/New_York")
 
-ALPACA_KEY    = "AK2PHJV4ZFO65JYT2IU7EDDIDH"
-ALPACA_SECRET = "7NmxWaaBDRtXq8TJ2HLusiHqXqjT3QQQYWX1KZhj8iTb"
+ALPACA_KEY    = os.environ.get("ALPACA_API_KEY", "")
+ALPACA_SECRET = os.environ.get("ALPACA_SECRET_KEY", "")
 
 # ── 10 representative HELPED trades ──────────────────────────────────────────
 # Fields: ticker, date, direction (CALL/PUT), window, open_et, close_et,
@@ -163,6 +164,11 @@ def _draw_candle_chart(ax, df: pd.DataFrame, trade: dict):
 
 
 def main():
+    if not ALPACA_KEY or not ALPACA_SECRET:
+        raise SystemExit(
+            "Set ALPACA_API_KEY and ALPACA_SECRET_KEY in the environment before running "
+            "this script (they used to be hardcoded here; that key is being revoked)."
+        )
     client = StockHistoricalDataClient(api_key=ALPACA_KEY, secret_key=ALPACA_SECRET)
 
     print("Fetching bars for 10 trades...")
