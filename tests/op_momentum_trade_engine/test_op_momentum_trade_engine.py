@@ -95,7 +95,9 @@ class TestBuildOptionPriceMonitor:
         client = _make_alpaca_client()
         selector = Mock()
         with patch(
-            "alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine.TICKERS",
+            # _build_option_price_monitor moved to the cli.clients module; the
+            # default-ticker fallback resolves TICKERS from there.
+            "alpha_tech_tracker.op_momentum_strategy.cli.clients.TICKERS",
             ["TSLA", "NVDA"],
         ):
             monitor = _build_option_price_monitor(
