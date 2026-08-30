@@ -51,7 +51,7 @@ def _minimal_ticker_df(today=None):
 class TestWinRateTickerSelector:
     def test_select_long_returns_top_n(self, mocker):
         mocker.patch(
-            "alpha_tech_tracker.op_momentum_strategy.trade_engine.fetch_bars",
+            "alpha_tech_tracker.op_momentum_strategy.selectors.fetch_bars",
             return_value={
                 "AAPL": _minimal_ticker_df(),
                 "TSLA": _minimal_ticker_df(),
@@ -59,7 +59,7 @@ class TestWinRateTickerSelector:
             },
         )
         mocker.patch(
-            "alpha_tech_tracker.op_momentum_strategy.trade_engine._rank_tickers_by_eod_win_rate",
+            "alpha_tech_tracker.op_momentum_strategy.selectors._rank_tickers_by_eod_win_rate",
             return_value=[
                 ("AAPL", {"win_rates": {None: 70}}),
                 ("NVDA", {"win_rates": {None: 65}}),
@@ -73,7 +73,7 @@ class TestWinRateTickerSelector:
 
     def test_select_short_returns_bottom_n(self, mocker):
         mocker.patch(
-            "alpha_tech_tracker.op_momentum_strategy.trade_engine.fetch_bars",
+            "alpha_tech_tracker.op_momentum_strategy.selectors.fetch_bars",
             return_value={
                 "AAPL": _minimal_ticker_df(),
                 "TSLA": _minimal_ticker_df(),
@@ -81,7 +81,7 @@ class TestWinRateTickerSelector:
             },
         )
         mocker.patch(
-            "alpha_tech_tracker.op_momentum_strategy.trade_engine._rank_tickers_by_eod_win_rate",
+            "alpha_tech_tracker.op_momentum_strategy.selectors._rank_tickers_by_eod_win_rate",
             return_value=[
                 ("AAPL", {"win_rates": {None: 70}}),
                 ("NVDA", {"win_rates": {None: 65}}),
@@ -96,11 +96,11 @@ class TestWinRateTickerSelector:
 
     def test_select_default_direction_is_long(self, mocker):
         mocker.patch(
-            "alpha_tech_tracker.op_momentum_strategy.trade_engine.fetch_bars",
+            "alpha_tech_tracker.op_momentum_strategy.selectors.fetch_bars",
             return_value={"AAPL": _minimal_ticker_df()},
         )
         mocker.patch(
-            "alpha_tech_tracker.op_momentum_strategy.trade_engine._rank_tickers_by_eod_win_rate",
+            "alpha_tech_tracker.op_momentum_strategy.selectors._rank_tickers_by_eod_win_rate",
             return_value=[("AAPL", {"win_rates": {None: 70}})],
         )
         sel = WinRateTickerSelector(tickers=["AAPL"], top_n=1)
@@ -109,11 +109,11 @@ class TestWinRateTickerSelector:
 
     def test_rolling_stats_populated_after_select(self, mocker):
         mocker.patch(
-            "alpha_tech_tracker.op_momentum_strategy.trade_engine.fetch_bars",
+            "alpha_tech_tracker.op_momentum_strategy.selectors.fetch_bars",
             return_value={"AAPL": _minimal_ticker_df()},
         )
         mocker.patch(
-            "alpha_tech_tracker.op_momentum_strategy.trade_engine._rank_tickers_by_eod_win_rate",
+            "alpha_tech_tracker.op_momentum_strategy.selectors._rank_tickers_by_eod_win_rate",
             return_value=[("AAPL", {"win_rates": {None: 70}})],
         )
         sel = WinRateTickerSelector(tickers=["AAPL"], top_n=1)
@@ -395,11 +395,11 @@ class TestRunWindowSelectorsRegime:
             return_value=ET.localize(datetime(2026, 5, 29, 9, 20)),
         )
         mocker.patch(
-            "alpha_tech_tracker.op_momentum_strategy.trade_engine.fetch_bars",
+            "alpha_tech_tracker.op_momentum_strategy.selectors.fetch_bars",
             return_value={"AAPL": _minimal_ticker_df()},
         )
         mocker.patch(
-            "alpha_tech_tracker.op_momentum_strategy.trade_engine.select_top_n",
+            "alpha_tech_tracker.op_momentum_strategy.selectors.select_top_n",
             return_value={"picks": [{"ticker": "AAPL", "score": 1.0, "ev_trade": 1.0}],
                           "rolling_stats": {}, "dynamic_ev_gate_state": None,
                           "direction_split_ev_state": None, "scoring_context": {}},
@@ -427,11 +427,11 @@ class TestRunWindowSelectorsRegime:
             return_value=ET.localize(datetime(2026, 5, 29, 9, 20)),
         )
         mocker.patch(
-            "alpha_tech_tracker.op_momentum_strategy.trade_engine.fetch_bars",
+            "alpha_tech_tracker.op_momentum_strategy.selectors.fetch_bars",
             return_value={"AAPL": _minimal_ticker_df()},
         )
         mocker.patch(
-            "alpha_tech_tracker.op_momentum_strategy.trade_engine.select_top_n",
+            "alpha_tech_tracker.op_momentum_strategy.selectors.select_top_n",
             return_value={"picks": [{"ticker": "AAPL", "score": 1.0, "ev_trade": 1.0}],
                           "rolling_stats": {}, "dynamic_ev_gate_state": None,
                           "direction_split_ev_state": None, "scoring_context": {}},
@@ -456,11 +456,11 @@ class TestSelectorType:
             return_value=ET.localize(datetime(2026, 5, 29, 9, 20)),
         )
         mocker.patch(
-            "alpha_tech_tracker.op_momentum_strategy.trade_engine.fetch_bars",
+            "alpha_tech_tracker.op_momentum_strategy.selectors.fetch_bars",
             return_value={"AAPL": _minimal_ticker_df()},
         )
         mocker.patch(
-            "alpha_tech_tracker.op_momentum_strategy.trade_engine.select_top_n",
+            "alpha_tech_tracker.op_momentum_strategy.selectors.select_top_n",
             return_value={"picks": [{"ticker": "AAPL", "score": 1.0, "ev_trade": 1.0}],
                           "rolling_stats": {}, "dynamic_ev_gate_state": None,
                           "direction_split_ev_state": None, "scoring_context": {}},
@@ -482,11 +482,11 @@ class TestSelectorType:
             return_value=ET.localize(datetime(2026, 5, 29, 9, 20)),
         )
         mocker.patch(
-            "alpha_tech_tracker.op_momentum_strategy.trade_engine.fetch_bars",
+            "alpha_tech_tracker.op_momentum_strategy.selectors.fetch_bars",
             return_value={"AAPL": _minimal_ticker_df()},
         )
         mocker.patch(
-            "alpha_tech_tracker.op_momentum_strategy.trade_engine._rank_tickers_by_eod_win_rate",
+            "alpha_tech_tracker.op_momentum_strategy.selectors._rank_tickers_by_eod_win_rate",
             return_value=[("AAPL", {"win_rates": {None: 0.65}})],
         )
         from alpha_tech_tracker.op_momentum_strategy.trade_engine import WinRateTickerSelector
@@ -502,14 +502,14 @@ class TestSelectorType:
 
     def test_win_rate_rolling_stats_populated_for_drain(self, mocker):
         mocker.patch(
-            "alpha_tech_tracker.op_momentum_strategy.trade_engine.fetch_bars",
+            "alpha_tech_tracker.op_momentum_strategy.selectors.fetch_bars",
             return_value={
                 "AAPL": _minimal_ticker_df(),
                 "TSLA": _minimal_ticker_df(),
             },
         )
         mocker.patch(
-            "alpha_tech_tracker.op_momentum_strategy.trade_engine._rank_tickers_by_eod_win_rate",
+            "alpha_tech_tracker.op_momentum_strategy.selectors._rank_tickers_by_eod_win_rate",
             return_value=[
                 ("AAPL", {"win_rates": {None: 0.70}}),
                 ("TSLA", {"win_rates": {None: 0.55}}),

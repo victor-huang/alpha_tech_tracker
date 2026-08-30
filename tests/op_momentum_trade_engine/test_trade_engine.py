@@ -27,8 +27,8 @@ from conftest import _D, _make_active_position, _make_alpaca_client
 
 ET = pytz.timezone("America/New_York")
 
-_SELECT_TOP_N_PATH = "alpha_tech_tracker.op_momentum_strategy.trade_engine.select_top_n"
-_FETCH_BARS_PATH = "alpha_tech_tracker.op_momentum_strategy.trade_engine.fetch_bars"
+_SELECT_TOP_N_PATH = "alpha_tech_tracker.op_momentum_strategy.selectors.select_top_n"
+_FETCH_BARS_PATH = "alpha_tech_tracker.op_momentum_strategy.selectors.fetch_bars"
 _SCORE_TICKER_PATH = "alpha_tech_tracker.op_momentum_strategy.trade_engine.score_ticker"
 _OPTION_CONTRACT_SELECTOR_PATH = (
     "alpha_tech_tracker.op_momentum_strategy.trade_engine.ITMOptionContractSelector.select"
@@ -1858,10 +1858,10 @@ class TestTickerSelectorReplayMode:
         today = date(2026, 4, 7)
 
         with patch(
-            "alpha_tech_tracker.op_momentum_strategy.trade_engine.is_replay_mode",
+            "alpha_tech_tracker.op_momentum_strategy.selectors.is_replay_mode",
             return_value=True,
         ), patch(
-            "alpha_tech_tracker.op_momentum_strategy.trade_engine._now_et"
+            "alpha_tech_tracker.op_momentum_strategy.selectors._now_et"
         ) as mock_now_et:
             mock_now_et.return_value = Mock()
             mock_now_et.return_value.date.return_value = today
@@ -1887,10 +1887,10 @@ class TestTickerSelectorReplayMode:
         today = date(2026, 4, 13)
 
         with patch(
-            "alpha_tech_tracker.op_momentum_strategy.trade_engine.is_replay_mode",
+            "alpha_tech_tracker.op_momentum_strategy.selectors.is_replay_mode",
             return_value=True,
         ), patch(
-            "alpha_tech_tracker.op_momentum_strategy.trade_engine._now_et"
+            "alpha_tech_tracker.op_momentum_strategy.selectors._now_et"
         ) as mock_now_et:
             mock_now_et.return_value = Mock()
             mock_now_et.return_value.date.return_value = today
@@ -1914,10 +1914,10 @@ class TestTickerSelectorReplayMode:
         today = date(2026, 4, 15)
 
         with patch(
-            "alpha_tech_tracker.op_momentum_strategy.trade_engine.is_replay_mode",
+            "alpha_tech_tracker.op_momentum_strategy.selectors.is_replay_mode",
             return_value=False,
         ), patch(
-            "alpha_tech_tracker.op_momentum_strategy.trade_engine._now_et"
+            "alpha_tech_tracker.op_momentum_strategy.selectors._now_et"
         ) as mock_now_et:
             mock_now_et.return_value = Mock()
             mock_now_et.return_value.date.return_value = today
@@ -1960,7 +1960,7 @@ class TestTickerSelectorOrBarLookback:
         selector = TickerSelector(tickers=["NVDA"], top_n=1, or_bar_lookback=5)
 
         with patch(
-            "alpha_tech_tracker.op_momentum_strategy.trade_engine.is_replay_mode",
+            "alpha_tech_tracker.op_momentum_strategy.selectors.is_replay_mode",
             return_value=False,
         ):
             selector.select()
@@ -1977,10 +1977,10 @@ class TestTickerSelectorOrBarLookback:
         selector = TickerSelector(tickers=["NVDA"], top_n=1, or_bar_lookback=7)
 
         with patch(
-            "alpha_tech_tracker.op_momentum_strategy.trade_engine.is_replay_mode",
+            "alpha_tech_tracker.op_momentum_strategy.selectors.is_replay_mode",
             return_value=True,
         ), patch(
-            "alpha_tech_tracker.op_momentum_strategy.trade_engine._now_et"
+            "alpha_tech_tracker.op_momentum_strategy.selectors._now_et"
         ) as mock_now_et:
             mock_now_et.return_value.date.return_value = date(2026, 4, 7)
             selector.select()
@@ -1998,7 +1998,7 @@ class TestTickerSelectorOrBarLookback:
         selector = TickerSelector(tickers=["NVDA"], top_n=1, or_bar_lookback=2)
 
         with patch(
-            "alpha_tech_tracker.op_momentum_strategy.trade_engine.is_replay_mode",
+            "alpha_tech_tracker.op_momentum_strategy.selectors.is_replay_mode",
             return_value=False,
         ):
             selector.select()
@@ -2197,7 +2197,7 @@ class TestTickerSelectorStrategyParams:
         selector = TickerSelector(tickers=["NVDA"], top_n=1, trailing_ma="ma50")
 
         with patch(
-            "alpha_tech_tracker.op_momentum_strategy.trade_engine.is_replay_mode",
+            "alpha_tech_tracker.op_momentum_strategy.selectors.is_replay_mode",
             return_value=False,
         ):
             selector.select()
@@ -2214,7 +2214,7 @@ class TestTickerSelectorStrategyParams:
         selector = TickerSelector(tickers=["NVDA"], top_n=1, max_loss_pct=0.08)
 
         with patch(
-            "alpha_tech_tracker.op_momentum_strategy.trade_engine.is_replay_mode",
+            "alpha_tech_tracker.op_momentum_strategy.selectors.is_replay_mode",
             return_value=False,
         ):
             selector.select()
@@ -2231,7 +2231,7 @@ class TestTickerSelectorStrategyParams:
         selector = TickerSelector(tickers=["NVDA"], top_n=1, armed_ma20_exit=True)
 
         with patch(
-            "alpha_tech_tracker.op_momentum_strategy.trade_engine.is_replay_mode",
+            "alpha_tech_tracker.op_momentum_strategy.selectors.is_replay_mode",
             return_value=False,
         ):
             selector.select()
@@ -2252,7 +2252,7 @@ class TestTickerSelectorStrategyParams:
         )
 
         with patch(
-            "alpha_tech_tracker.op_momentum_strategy.trade_engine.is_replay_mode",
+            "alpha_tech_tracker.op_momentum_strategy.selectors.is_replay_mode",
             return_value=False,
         ):
             selector.select()
@@ -2272,10 +2272,10 @@ class TestTickerSelectorStrategyParams:
         )
 
         with patch(
-            "alpha_tech_tracker.op_momentum_strategy.trade_engine.is_replay_mode",
+            "alpha_tech_tracker.op_momentum_strategy.selectors.is_replay_mode",
             return_value=True,
         ), patch(
-            "alpha_tech_tracker.op_momentum_strategy.trade_engine._now_et"
+            "alpha_tech_tracker.op_momentum_strategy.selectors._now_et"
         ) as mock_now_et:
             mock_now_et.return_value.date.return_value = date(2026, 4, 7)
             selector.select()
@@ -2299,7 +2299,7 @@ class TestTickerSelectorStrategyParams:
         )
 
         with patch(
-            "alpha_tech_tracker.op_momentum_strategy.trade_engine.is_replay_mode",
+            "alpha_tech_tracker.op_momentum_strategy.selectors.is_replay_mode",
             return_value=False,
         ):
             selector.select()
@@ -2344,7 +2344,7 @@ class TestTickerSelectorStrategyParams:
 # TickerSelector — market_data_client (TradeStation caching)
 # ---------------------------------------------------------------------------
 
-_FETCH_BARS_BACKTEST_PATH = "alpha_tech_tracker.op_momentum_strategy.trade_engine.fetch_bars"
+_FETCH_BARS_BACKTEST_PATH = "alpha_tech_tracker.op_momentum_strategy.selectors.fetch_bars"
 
 
 def _make_select_top_n_result(tickers=None):
@@ -2426,10 +2426,10 @@ class TestTickerSelectorMarketDataClient:
         selector = TickerSelector(tickers=["NVDA"], top_n=1, market_data_client=client)
 
         with patch(
-            "alpha_tech_tracker.op_momentum_strategy.trade_engine.is_replay_mode",
+            "alpha_tech_tracker.op_momentum_strategy.selectors.is_replay_mode",
             return_value=False,
         ), patch(
-            "alpha_tech_tracker.op_momentum_strategy.trade_engine._now_et"
+            "alpha_tech_tracker.op_momentum_strategy.selectors._now_et"
         ) as mock_now_et:
             mock_now_et.return_value = Mock()
             mock_now_et.return_value.date.return_value = date(2026, 4, 15)
@@ -5865,7 +5865,7 @@ class TestWinRateTickerSelectorFetchWindows:
     The two fetch windows must be independent so NEUTRAL picks match the baseline.
     """
 
-    _NOW_ET_PATH = "alpha_tech_tracker.op_momentum_strategy.trade_engine._now_et"
+    _NOW_ET_PATH = "alpha_tech_tracker.op_momentum_strategy.selectors._now_et"
 
     def _make_selector(self, lookback_days=20, direction_aware=False):
         return WinRateTickerSelector(
@@ -5922,15 +5922,15 @@ class TestWinRateTickerSelectorFetchWindows:
         mock_now.return_value.date.return_value = today
         mock_fb = mocker.patch(_FETCH_BARS_PATH, return_value={})
         mocker.patch(
-            "alpha_tech_tracker.op_momentum_strategy.trade_engine.compute_signals_with_backtest",
+            "alpha_tech_tracker.op_momentum_strategy.selectors.compute_signals_with_backtest",
             return_value=__import__("pandas").DataFrame(),
         )
         mocker.patch(
-            "alpha_tech_tracker.op_momentum_strategy.trade_engine.compute_directional_stats",
+            "alpha_tech_tracker.op_momentum_strategy.selectors.compute_directional_stats",
             return_value={"bull": None, "bear": None},
         )
         mocker.patch(
-            "alpha_tech_tracker.op_momentum_strategy.trade_engine.rank_tickers_direction_aware",
+            "alpha_tech_tracker.op_momentum_strategy.selectors.rank_tickers_direction_aware",
             return_value=[],
         )
 
