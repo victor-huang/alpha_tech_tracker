@@ -10,8 +10,8 @@ from pathlib import Path
 from alpha_tech_tracker.op_momentum_strategy.analysis_scripts import ticker_stats_report as R
 
 DEFAULT_TICKERS = [
-    "QQQ", "LLY", "MRNA", "APP", "META", "SNDK", "SPCX", "HOOD", "COIN",
-    "AMD", "CRWV", "AMAT", "SPOT", "PLTR", "FN", "RH", "DECK", "GWRE",
+    "QQQ", "SPOT", "PLTR", "LLY", "HOOD", "SPCX", "CRM", "MRNA", "CRWD", "COIN",
+    "MSFT", "SNDK", "AMAT", "AMD", "CRWV", "FN", "APP", "META", "GOOGL", "SNPS", "RH",
 ]
 LOG_ROOT = Path(__file__).resolve().parent.parent / "dt_stock_watch_list_log"
 BANDS = [12, 16, 20]
@@ -19,6 +19,8 @@ SHORTLIST_SIZE = 3
 REPORT_MODULE = (
     "alpha_tech_tracker.op_momentum_strategy.analysis_scripts.ticker_stats_report"
 )
+SCREENER_MODULE = "alpha_tech_tracker.op_momentum_strategy.ma_open_range_momentum_screener"
+DEFAULT_WR_LOOKBACK = 10  # ~2 trading weeks
 
 
 def _report_args(tickers, weeks, end, bands, skip_options=False):
@@ -59,6 +61,23 @@ def write_stats_text(out_dir, tickers, weeks, end, chart_path):
     return target, completed.returncode
 
 
+def write_hold_window_winrate(out_dir, tickers, end_date, wr_lookback):
+    """Per-ticker win rate + median return at +15m/+30m/+1h/+2h/+5h/EOD, trailing
+    `wr_lookback` sessions, via the MA-OR screener's single-date backtest action.
+    """
+    command = [
+        sys.executable, "-m", SCREENER_MODULE, "backtest",
+        "--date", str(end_date),
+        "--tickers", *[t for t in tickers if t != "QQQ"],
+        "--wr-lookback", str(wr_lookback),
+        "--print-all",
+    ]
+    completed = subprocess.run(command, capture_output=True, text=True)
+    target = out_dir / "hold_window_winrate.txt"
+    target.write_text(completed.stdout + completed.stderr)
+    return target, completed.returncode
+
+
 def build_shortlist(results, week_count, benchmark_allows_longs):
     """Mechanically rank the enterable candidates on each side.
 
@@ -82,9 +101,25 @@ def build_shortlist(results, week_count, benchmark_allows_longs):
     return enterable, blocked
 
 
+def _bands_payload(skew):
+    return {
+        str(band["band"]): {
+            "strikes": band["strikes"],
+            "strike_low": band["strike_low"],
+            "strike_high": band["strike_high"],
+            "call_open_interest": band["calls"],
+            "put_open_interest": band["puts"],
+            "call_put_ratio": band["call_put"],
+            "put_call_ratio": band["put_call"],
+        }
+        for band in skew["bands"]
+    }
+
+
 def dump_option_open_interest(out_dir, results, context):
-    """Snapshot the OI behind the report. Alpaca serves live values only, so this
-    file is the sole record of the day's figures.
+    """Snapshot the OI behind the report — Alpaca serves live values only, so this
+    file is the sole record of the day's figures. Includes both the live-ATM
+    skew and the week-pinned skew (see `compute_week_pin_price`).
     """
     payload = {
         "as_of": str(context["end_date"]),
@@ -95,26 +130,28 @@ def dump_option_open_interest(out_dir, results, context):
     }
     for ticker, stats in results.items():
         skew = stats["option_skew"]
+        pinned = stats.get("option_skew_pinned", {"error": "not computed"})
+        entry = {}
         if "error" in skew:
-            payload["tickers"][ticker] = {"error": skew["error"]}
-            continue
-        payload["tickers"][ticker] = {
-            "reference_price": round(stats["spot"], 2) if stats["spot"] else None,
-            "atm_strike": skew["atm_strike"],
-            "open_interest_date": skew["open_interest_date"],
-            "bands": {
-                str(band["band"]): {
-                    "strikes": band["strikes"],
-                    "strike_low": band["strike_low"],
-                    "strike_high": band["strike_high"],
-                    "call_open_interest": band["calls"],
-                    "put_open_interest": band["puts"],
-                    "call_put_ratio": band["call_put"],
-                    "put_call_ratio": band["put_call"],
-                }
-                for band in skew["bands"]
-            },
-        }
+            entry["error"] = skew["error"]
+        else:
+            entry["live_atm"] = {
+                "reference_price": round(stats["spot"], 2) if stats["spot"] else None,
+                "atm_strike": skew["atm_strike"],
+                "open_interest_date": skew["open_interest_date"],
+                "bands": _bands_payload(skew),
+            }
+        if "error" in pinned:
+            entry["pinned_error"] = pinned["error"]
+        else:
+            entry["week_pinned"] = {
+                "pin_price": round(stats["pin_price"], 2) if stats.get("pin_price") else None,
+                "pin_asof": str(stats["pin_asof"]) if stats.get("pin_asof") else None,
+                "atm_strike": pinned["atm_strike"],
+                "open_interest_date": pinned["open_interest_date"],
+                "bands": _bands_payload(pinned),
+            }
+        payload["tickers"][ticker] = entry
     target = out_dir / "option_open_interest.json"
     target.write_text(json.dumps(payload, indent=2))
     return target
@@ -210,6 +247,15 @@ def parse_args():
         "--skip-options", action="store_true",
         help="Skip the OI section — required when --end is a past date",
     )
+    parser.add_argument(
+        "--wr-lookback", type=int, default=DEFAULT_WR_LOOKBACK, dest="wr_lookback",
+        help=f"Trading days of history for the hold-window win-rate table "
+             f"(default: {DEFAULT_WR_LOOKBACK}, ~2 weeks)",
+    )
+    parser.add_argument(
+        "--skip-winrate", action="store_true",
+        help="Skip the hold-window win-rate table (ma_open_range_momentum_screener)",
+    )
     return parser.parse_args()
 
 
@@ -238,8 +284,16 @@ def main():
         if not args.skip_options else None
     )
 
+    winrate_path = None
+    if not args.skip_winrate:
+        winrate_path, wr_code = write_hold_window_winrate(
+            out_dir, args.tickers, context["end_date"], args.wr_lookback
+        )
+        if wr_code != 0:
+            print(f"WARNING: hold-window win-rate screener exited {wr_code}; see {winrate_path}")
+
     print(f"\nwatch-list log written to {out_dir}")
-    for path in (stats_path, watchlist_path, oi_path, out_dir / "range_distribution.pdf"):
+    for path in (stats_path, watchlist_path, oi_path, winrate_path, out_dir / "range_distribution.pdf"):
         if path and path.exists():
             print(f"  {path.name:28} {path.stat().st_size:>9,} bytes")
     for side in ("long", "short"):

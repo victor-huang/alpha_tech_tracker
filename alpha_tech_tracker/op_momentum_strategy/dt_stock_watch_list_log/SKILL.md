@@ -13,18 +13,20 @@ export PYTHONPATH=/Users/victorhuang/work/alpha_tech_tracker
 python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.dt_watch_list_log
 ```
 
-That writes four files into `dt_stock_watch_list_log/<as_of-date>/` and prints the
+That writes five files into `dt_stock_watch_list_log/<as_of-date>/` and prints the
 mechanical candidate lists. Takes 1-3 minutes; longer on a cold cache.
 
 Useful flags:
 
 | flag | default | when to use |
 |---|---|---|
-| `--tickers` | 18-name list in the script | different universe |
+| `--tickers` | 21-name list in the script (`DEFAULT_TICKERS`) | different universe |
 | `--weeks` | `1 2` | one OR table per window |
 | `--rank-weeks` | longest `--weeks` | rank candidates on a different window |
 | `--end YYYY-MM-DD` | today | review a past session |
 | `--skip-options` | off | **required with a past `--end`** (see Pitfalls) |
+| `--wr-lookback` | `10` | sessions of history for the hold-window win-rate table (10 ≈ 2 weeks) |
+| `--skip-winrate` | off | skip the hold-window win-rate table |
 
 ## What lands in the folder
 
@@ -32,8 +34,9 @@ Useful flags:
 |---|---|
 | `ticker_stats.txt` | the full report, exactly as the CLI prints it |
 | `watchlist.md` | gate state, mechanical long/short candidates, review notes |
-| `option_open_interest.json` | OI at strike bands 12/16/20 for the main monthly expiry |
+| `option_open_interest.json` | OI at strike bands 12/16/20 for the main monthly expiry — `live_atm` (re-centered on today's spot) and `week_pinned` (ATM window fixed to last Friday's 50-session MA, see Pitfalls) per ticker |
 | `range_distribution.pdf` | 20-session daily range% histogram per ticker |
+| `hold_window_winrate.txt` | per-ticker win rate + median return at +15m/+30m/+1h/+2h/+5h/EOD, trailing `--wr-lookback` sessions (from `ma_open_range_momentum_screener.py backtest`) |
 
 ## Then review the candidates
 
@@ -46,7 +49,11 @@ candidate using the other columns, and say why. Check each against:
   `RECOVERY_ATTEMPT` / `BREAKDOWN_CONFIRMED` mean a fresh volume thrust toward the
   MA200, which argues against shorting / buying into it.
 - **C/P** — option open interest disagreeing with the side is a conflict. Above ~1.5
-  is call-heavy (supports longs), below ~0.7 put-heavy (supports shorts).
+  is call-heavy (supports longs), below ~0.7 put-heavy (supports shorts). `watchlist.md`
+  shows the live-ATM number (today's snapshot); use `option_open_interest.json`'s
+  `week_pinned` figure instead when comparing across the week's daily runs — the
+  live number re-centers on spot each day, which can swing the ratio on a big price
+  move even with no real change in open interest (see Pitfalls).
 - **vol** — opening volume ≥1.5x its own baseline was the strongest quality filter
   found in backtesting; below 1x is a caution.
 - **intraday hit vs EOD hit** — high EOD with low intraday means small grinding wins,
@@ -72,6 +79,12 @@ longs blocked by the benchmark regime). Report them; do not silently drop them.
   describe when reporting.
 - **Direction is not decided in advance.** A candidate only trades if its opening
   range closes on the biased side at 09:45. Never present candidates as positions.
+- **Live-ATM C/P isn't comparable day-to-day.** It re-centers on the current spot
+  every run, so a big price move shifts which physical strikes fall in the band —
+  that alone can swing the ratio with no real change in open interest. Names with
+  large daily ranges (MRNA, CRWV, SNDK) are most exposed. Use `week_pinned` (fixed
+  strike window, recalculated only on Sunday) when tracking a ticker's skew across
+  the week; the live number is fine for a single day's absolute read.
 
 ## Reliability — state this when reporting
 
@@ -93,4 +106,5 @@ Full detail: `../research/experiments/OR_WINRATE_STRATEGY_STUDY.md`.
 |---|---|
 | `analysis_scripts/dt_watch_list_log.py` | this driver |
 | `analysis_scripts/ticker_stats_report.py` | the report; `collect_results()` is the reusable entry point |
+| `ma_open_range_momentum_screener.py` | hold-window win-rate table (`backtest` action, `--wr-lookback`) |
 | `trade_api/alpaca_client/client.py` | `get_options_open_interest()`, `main_monthly_expiry()` |

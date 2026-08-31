@@ -37,6 +37,9 @@ EXTENSION_ADR_FACTOR = 1.5
 MINUTES_BEFORE_CLOSE = 10
 DAILY_STATS_SESSIONS = 20
 SESSIONS_PER_WEEK = 5
+SNAPSHOT_CHECKPOINTS_PT = ["10:00", "11:20"]
+PT_TO_ET_HOURS = 3  # fixed offset used throughout this project for PT checkpoints
+PIN_MA_PERIOD = 50
 
 
 def _fmt_ratio(value):
@@ -477,6 +480,59 @@ def compute_or_direction_stats(
     return summary
 
 
+def parse_pt_checkpoint(text: str):
+    """'HH:MM' in PT -> (label, ET time), using the project's fixed +3h PT->ET offset."""
+    hh, mm = text.split(":")
+    pt = time(int(hh), int(mm))
+    et_dt = datetime.combine(date.today(), pt) + timedelta(hours=PT_TO_ET_HOURS)
+    return f"@{text} PT", et_dt.time()
+
+
+def compute_session_snapshot(bars: pd.DataFrame, or_bars: int, session: date, checkpoints):
+    """One session's moves anchored on the OR-close price: drawdown, max gain,
+    named clock checkpoints and EOD — all measured from the same entry, unsigned
+    by the OR's own direction call.
+    """
+    frame = bars[bars.index.date == session]
+    regular = frame[frame.index.time >= MARKET_OPEN]
+    if len(regular) <= or_bars:
+        return None
+
+    opening = regular.iloc[:or_bars]
+    rest = regular.iloc[or_bars:]
+    or_high, or_low = float(opening["High"].max()), float(opening["Low"].min())
+    or_mid = (or_high + or_low) / 2
+    or_close = float(opening["Close"].iloc[-1])
+    direction = "bull" if or_close > or_mid else "bear"
+
+    drawdown_pct = (
+        (float(rest["Low"].min()) - or_close) / or_close * 100 if not rest.empty else 0.0
+    )
+    max_gain_pct = (
+        (float(rest["High"].max()) - or_close) / or_close * 100 if not rest.empty else 0.0
+    )
+
+    checkpoint_pct = {}
+    for label, checkpoint_time in checkpoints:
+        window = regular[regular.index.time <= checkpoint_time]
+        if window.empty:
+            checkpoint_pct[label] = None
+        else:
+            price = float(window["Close"].iloc[-1])
+            checkpoint_pct[label] = (price - or_close) / or_close * 100
+
+    eod_price = float(regular["Close"].iloc[-1])
+    return {
+        "session": session,
+        "direction": direction,
+        "or_close": or_close,
+        "drawdown_pct": drawdown_pct,
+        "max_gain_pct": max_gain_pct,
+        "checkpoints": checkpoint_pct,
+        "eod_pct": (eod_price - or_close) / or_close * 100,
+    }
+
+
 def compute_opening_volume_stats(bars: pd.DataFrame, or_bars: int, baseline_sessions: int):
     opening_volumes = []
     for session_date, frame in _session_frames(bars):
@@ -541,6 +597,29 @@ def reference_price(client, ticker, daily: pd.DataFrame):
     if not daily.empty:
         return float(daily["Close"].iloc[-1]), "daily-close"
     return None, "unavailable"
+
+
+def compute_week_pin_price(daily: pd.DataFrame, session_date: date, ma_period=PIN_MA_PERIOD):
+    """The `ma_period`-session MA as of the last close before `session_date`'s
+    Monday, so the option-skew ATM window stays fixed across a whole week instead
+    of re-centering on spot (and thus shifting strikes) on every daily run.
+    """
+    if daily.empty:
+        return None, None
+    week_monday = session_date - timedelta(days=session_date.weekday())
+    prior_sessions = [
+        stamp for stamp in daily.index
+        if (stamp.date() if hasattr(stamp, "date") else stamp) < week_monday
+    ]
+    if not prior_sessions:
+        return None, None
+    pin_stamp = prior_sessions[-1]
+    ma = daily["Close"].rolling(ma_period).mean()
+    value = ma.get(pin_stamp)
+    if value is None or pd.isna(value):
+        return None, None
+    pin_asof = pin_stamp.date() if hasattr(pin_stamp, "date") else pin_stamp
+    return float(value), pin_asof
 
 
 def compute_option_skew(client, ticker, expiry, bands, spot):
@@ -702,6 +781,43 @@ def _print_option_skew_table(results):
         print(f"\nopen interest as of: {', '.join(oi_dates)}")
 
 
+def _print_option_skew_pinned_table(results, ma_period=PIN_MA_PERIOD):
+    print("\n" + "=" * 104)
+    print(f"WEEK-PINNED OPTION OPEN-INTEREST SKEW   (ATM window centered on the"
+          f" {ma_period}-session MA as of last Friday's close, held fixed all week)")
+    print("Compare this across the week's daily runs — unlike the live-ATM table"
+          " above, the strike window doesn't shift with the spot each day.")
+    print("=" * 104)
+    print(
+        f"{'tkr':6} {'pin px':>9} {'pin as-of':>11} {'band':>5} {'strikes':>7}"
+        f" {'strike range':>18} {'calls':>10} {'puts':>10} {'C/P':>6} {'P/C':>6}"
+    )
+    for ticker, stats in results.items():
+        skew = stats["option_skew_pinned"]
+        if "error" in skew:
+            print(f"{ticker:6} ERROR: {skew['error'][:80]}")
+            continue
+        for row in skew["bands"]:
+            strike_range = f"{row['strike_low']:.1f}-{row['strike_high']:.1f}"
+            print(
+                f"{ticker:6} {stats['pin_price']:9.2f} {str(stats['pin_asof']):>11}"
+                f" {row['band']:>5} {row['strikes']:>7} {strike_range:>18}"
+                f" {row['calls']:10,} {row['puts']:10,}"
+                f" {_fmt_ratio(row['call_put']):>6} {_fmt_ratio(row['put_call']):>6}"
+            )
+
+    oi_dates = sorted(
+        {
+            stats["option_skew_pinned"]["open_interest_date"]
+            for stats in results.values()
+            if "error" not in stats["option_skew_pinned"]
+            and stats["option_skew_pinned"]["open_interest_date"]
+        }
+    )
+    if oi_dates:
+        print(f"\nopen interest as of: {', '.join(oi_dates)}")
+
+
 def _print_volume_table(results, or_bars):
     print("\n" + "=" * 104)
     print(
@@ -723,6 +839,53 @@ def _print_volume_table(results, or_bars):
             f"{ticker:6} {str(row['session']):>12} {row['first_window_volume']:14,.0f}"
             f" {row['baseline_avg']:14,.0f} {row['ratio']:7.2f}x {delta:>11}"
         )
+
+
+def _print_snapshot_table(results, session, checkpoint_labels):
+    print("\n" + "=" * 104)
+    print(
+        f"SESSION SNAPSHOT   {session}   (all moves measured from the OR-close price,"
+        f" not signed by the OR's direction)"
+    )
+    print("=" * 104)
+    checkpoint_headers = "".join(f" {label:>10}" for label in checkpoint_labels)
+    header = (
+        f"{'tkr':6} {'OR dir':7} {'drawdown':>9} {'max gain':>9}{checkpoint_headers}"
+        f" {'EOD':>8} {'vol/20d avg':>12}"
+    )
+
+    def fmt(value):
+        return f"{value:+.2f}%" if value is not None else "n/a"
+
+    any_rows = False
+    for direction in ("bull", "bear"):
+        group = [
+            (ticker, stats["session_snapshot"])
+            for ticker, stats in results.items()
+            if stats.get("session_snapshot") and stats["session_snapshot"]["direction"] == direction
+        ]
+        if not group:
+            continue
+        any_rows = True
+        group.sort(key=lambda pair: pair[1]["max_gain_pct"], reverse=True)
+        print(f"\n-- {direction.upper()} --")
+        print(header)
+        for ticker, snap in group:
+            vol = (results[ticker].get("volume") or {}).get("ratio")
+            vol_text = f"{vol:.2f}x" if vol else "n/a"
+            checkpoint_cells = "".join(
+                f" {fmt(snap['checkpoints'].get(label)):>10}" for label in checkpoint_labels
+            )
+            print(
+                f"{ticker:6} {snap['direction']:7} {fmt(snap['drawdown_pct']):>9}"
+                f" {fmt(snap['max_gain_pct']):>9}{checkpoint_cells}"
+                f" {fmt(snap['eod_pct']):>8} {vol_text:>12}"
+            )
+    if not any_rows:
+        print("\nno sessions available for this date")
+    print("\ndrawdown = worst close-to-low after the OR; max gain = best close-to-high after the OR")
+    print("checkpoints are named clock times in ET; vol/20d avg = first-window volume"
+          " vs its own 20-session baseline")
 
 
 def _print_movement_table(results):
@@ -798,6 +961,17 @@ def parse_args():
         help="Benchmark whose prior close vs daily MA20 gates long entries",
     )
     parser.add_argument("--chart-out", help="Path for the range%% distribution chart")
+    parser.add_argument(
+        "--snapshot", action="store_true",
+        help="Print a per-session OR-close-anchored snapshot for --end "
+             "(drawdown, max gain, clock checkpoints, EOD, opening volume ratio)",
+    )
+    parser.add_argument(
+        "--snapshot-checkpoints-pt", nargs="+", default=SNAPSHOT_CHECKPOINTS_PT,
+        help=f"Checkpoint clock times as HH:MM in Pacific time "
+             f"(default: {' '.join(SNAPSHOT_CHECKPOINTS_PT)}); converted to ET "
+             f"with a fixed +{PT_TO_ET_HOURS}h offset",
+    )
     return parser.parse_args()
 
 
@@ -811,6 +985,12 @@ def collect_results(args):
     requested_end = date.fromisoformat(args.end) if args.end else date.today()
     end_date = clamp_end_for_sip(requested_end, feed)
     expiry = date.fromisoformat(args.expiry) if args.expiry else main_monthly_expiry()
+
+    snapshot_enabled = getattr(args, "snapshot", False)
+    checkpoints = [
+        parse_pt_checkpoint(text)
+        for text in getattr(args, "snapshot_checkpoints_pt", SNAPSHOT_CHECKPOINTS_PT)
+    ]
 
     max_sessions = max(max(args.weeks) * SESSIONS_PER_WEEK, DAILY_STATS_SESSIONS + 1)
     intraday_start = end_date - timedelta(days=int(max_sessions * 1.9) + 10)
@@ -832,6 +1012,7 @@ def collect_results(args):
         bars = intraday.get(ticker, pd.DataFrame())
         daily_bars = daily.get(ticker, pd.DataFrame())
         spot, spot_source = reference_price(client, ticker, daily_bars)
+        pin_price, pin_asof = compute_week_pin_price(daily_bars, end_date)
         movement = (
             compute_daily_movement_stats(daily_bars, DAILY_STATS_SESSIONS)
             if not daily_bars.empty
@@ -855,6 +1036,9 @@ def collect_results(args):
             "volume": compute_opening_volume_stats(
                 bars, args.or_bars, DAILY_STATS_SESSIONS
             ) if not bars.empty else None,
+            "session_snapshot": compute_session_snapshot(
+                bars, args.or_bars, end_date, checkpoints
+            ) if snapshot_enabled and not bars.empty else None,
             "movement": movement,
             "gate": gate_state(daily_bars, benchmark_allows_longs),
             "trend": classify_daily_trend(
@@ -866,6 +1050,13 @@ def collect_results(args):
                 compute_option_skew(client, ticker, expiry, args.bands, spot)
                 if spot else {"error": "no reference price"}
             ),
+            "pin_price": pin_price,
+            "pin_asof": pin_asof,
+            "option_skew_pinned": {"error": "skipped"} if args.skip_options
+            else (
+                compute_option_skew(client, ticker, expiry, args.bands, pin_price)
+                if pin_price else {"error": "insufficient history for MA50 pin"}
+            ),
         }
 
     return results, {
@@ -875,6 +1066,7 @@ def collect_results(args):
         "feed": args.feed,
         "benchmark_allows_longs": benchmark_allows_longs,
         "regime_symbol": args.regime_symbol,
+        "snapshot_checkpoint_labels": [label for label, _ in checkpoints],
     }
 
 
@@ -900,8 +1092,11 @@ def main():
     _print_watchlist(build_watchlist(results, longest), longest, regime_note)
     _print_trend_table(results, args.trend_slope_lookback, args.trend_flat_pct)
     _print_or_direction_table(results, sorted(args.weeks))
+    if args.snapshot:
+        _print_snapshot_table(results, end_date, context["snapshot_checkpoint_labels"])
     if not args.skip_options:
         _print_option_skew_table(results)
+        _print_option_skew_pinned_table(results)
     _print_volume_table(results, args.or_bars)
     _print_movement_table(results)
 

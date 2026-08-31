@@ -8,7 +8,7 @@ import yfinance as yf
 from datetime import date, datetime, time as _time, timedelta
 from pathlib import Path
 
-from alpaca.data.enums import DataFeed
+from alpaca.data.enums import Adjustment, DataFeed
 from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
@@ -1875,17 +1875,18 @@ def fetch_daily_bars(
     tickers: list, start_date: date, end_date: date, source: str = "alpaca",
     feed: DataFeed = None,
 ) -> dict:
-    """Fetch 1-day bars for the given tickers. Returns {ticker: DataFrame} with date index."""
+    """Fetch split-adjusted 1-day bars. Returns {ticker: DataFrame} with date index."""
     cacheable = _is_cacheable(end_date)
 
     csource = _cache_source(source, feed)
+    daily_timeframe = "1day-adj"  # distinct from pre-split-adjustment "1day" cache files
     result = {}
     to_fetch = []
     for ticker in tickers:
         if cacheable:
-            cp = _cache_path(ticker, start_date, end_date, csource, "1day")
+            cp = _cache_path(ticker, start_date, end_date, csource, daily_timeframe)
             if cp.exists():
-                result[ticker] = _load_cache(cp, "1day")
+                result[ticker] = _load_cache(cp, daily_timeframe)
                 continue
         to_fetch.append(ticker)
 
@@ -1918,6 +1919,7 @@ def fetch_daily_bars(
             start=datetime.combine(start_date, datetime.min.time()),
             end=datetime.combine(end_date + timedelta(days=1), datetime.min.time()),
             feed=effective_feed,
+            adjustment=Adjustment.SPLIT,
         )
         bars = client.get_stock_bars(request)
         for ticker in to_fetch:
@@ -1933,7 +1935,9 @@ def fetch_daily_bars(
         result[ticker] = df
         if cacheable and not df.empty:
             _save_cache(
-                df, _cache_path(ticker, start_date, end_date, csource, "1day"), "1day"
+                df,
+                _cache_path(ticker, start_date, end_date, csource, daily_timeframe),
+                daily_timeframe,
             )
 
     return result

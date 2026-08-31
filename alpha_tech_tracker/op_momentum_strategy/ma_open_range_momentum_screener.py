@@ -572,6 +572,7 @@ def run_backtest(
     print_all=False,
     enable_regime_engine=False,
     regime_data_dir="market_data/regime_state",
+    wr_lookback=20,
 ):
     """
     Fetch historical data for target_date and run the OR/MA signal scan.
@@ -623,8 +624,12 @@ def run_backtest(
         collection_bars=collection_bars,
     )
 
-    ranked = _rank_tickers_by_eod_win_rate(ticker_bars_5m, target_date, or_start, or_bars)
-    ranking_block = _format_top2_ranking(ranked, target_date, or_start, or_bars)
+    ranked = _rank_tickers_by_eod_win_rate(
+        ticker_bars_5m, target_date, or_start, or_bars, lookback=wr_lookback
+    )
+    ranking_block = _format_top2_ranking(
+        ranked, target_date, or_start, or_bars, lookback=wr_lookback
+    )
     wr_table = _format_ticker_win_rate_table(ranked)
     if ranking_block:
         print(ranking_block)
@@ -1237,7 +1242,7 @@ def _rank_tickers_by_eod_win_rate(ticker_bars_5m, target_date, or_start, or_bars
     return ranked
 
 
-def _format_top2_ranking(ranked, target_date, or_start, or_bars):
+def _format_top2_ranking(ranked, target_date, or_start, or_bars, lookback=20):
     """
     Format the top-2 tickers (by EOD win rate) into a display/SMS block.
     Shows win rate + median return at each hold window, plus EOD gain range.
@@ -1247,7 +1252,7 @@ def _format_top2_ranking(ranked, target_date, or_start, or_bars):
     if not top2:
         return None
     lines = [
-        f"Pre-session top-2 (9:25, 20d EOD win rate) — {target_date}  "
+        f"Pre-session top-2 (9:25, {lookback}d EOD win rate) — {target_date}  "
         f"OR: {or_start}/{or_bars}b"
     ]
     for rank, (ticker, hist) in enumerate(top2, 1):
@@ -2206,6 +2211,11 @@ def _build_arg_parser():
     parser.add_argument("--print-all", action="store_true",
                         help="Print non-signal tickers in backtest output")
     parser.add_argument(
+        "--wr-lookback", type=int, default=20, dest="wr_lookback",
+        help="Trading days of history for the per-ticker hold-window win-rate "
+             "table in the backtest action (default: 20; use 10 for ~2 weeks)"
+    )
+    parser.add_argument(
         "--start", default=None,
         help="Start date YYYY-MM-DD for range analysis"
     )
@@ -2395,6 +2405,7 @@ def main():
         feed=feed,
         print_all=args.print_all,
         enable_regime_engine=args.enable_regime_engine,
+        wr_lookback=args.wr_lookback,
     )
 
 
