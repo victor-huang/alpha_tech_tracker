@@ -739,10 +739,20 @@ class PositionMonitor:
                         " — adjusting (partial manual close detected)",
                         pos.ticker, broker_qty, pos.shares,
                     )
+                    # Scale slot_capital proportionally so the partial-close record and
+                    # the remaining position don't each carry the full original slot
+                    # (see QTY SYNC fix below for the same pattern).
+                    if pos.slot_capital is not None:
+                        close_fraction = _D(manually_closed_qty) / _D(pos.shares)
+                        partial_slot_capital = pos.slot_capital * close_fraction
+                    else:
+                        partial_slot_capital = None
+
                     fill_price = self._fetch_manual_close_fill_price(pos)
                     if fill_price is not None:
                         partial_closed = copy.copy(pos)
                         partial_closed.shares = manually_closed_qty
+                        partial_closed.slot_capital = partial_slot_capital
                         partial_closed.exit_fill_price = fill_price
                         partial_closed.is_closed = True
                         partial_closed.exit_reason = "manual_close"
@@ -764,6 +774,8 @@ class PositionMonitor:
                             f" — fill price unknown, P&L not recorded"
                             f" — selling remaining {broker_qty} shares"
                         )
+                    if pos.slot_capital is not None:
+                        pos.slot_capital -= partial_slot_capital
                     pos.shares = broker_qty
             except Exception:
                 logger.warning(
@@ -944,10 +956,20 @@ class PositionMonitor:
                         " — adjusting (partial manual close detected)",
                         pos.option_symbol, broker_qty, pos.contracts,
                     )
+                    # Scale slot_capital proportionally so the partial-close record and
+                    # the remaining position don't each carry the full original slot
+                    # (see QTY SYNC fix for the same pattern).
+                    if pos.slot_capital is not None:
+                        close_fraction = _D(manually_closed_qty) / _D(pos.contracts)
+                        partial_slot_capital = pos.slot_capital * close_fraction
+                    else:
+                        partial_slot_capital = None
+
                     fill_price = self._fetch_manual_close_fill_price(pos)
                     if fill_price is not None:
                         partial_closed = copy.copy(pos)
                         partial_closed.contracts = manually_closed_qty
+                        partial_closed.slot_capital = partial_slot_capital
                         partial_closed.exit_fill_price = fill_price
                         partial_closed.is_closed = True
                         partial_closed.exit_reason = "manual_close"
@@ -969,6 +991,8 @@ class PositionMonitor:
                             f" — fill price unknown, P&L not recorded"
                             f" — selling remaining {broker_qty} contracts"
                         )
+                    if pos.slot_capital is not None:
+                        pos.slot_capital -= partial_slot_capital
                     pos.contracts = broker_qty
             except Exception:
                 logger.warning(
@@ -1292,12 +1316,24 @@ class PositionMonitor:
 
                 fill_price = self._consume_fill_orders(order_pool, close_qty)
 
+                # Scale slot_capital proportionally to the fraction of the current
+                # position being closed. Without this, the partial-close record and
+                # the still-open remainder both carry the full original slot_capital,
+                # so _rebuild_window_returned double-counts (and inflates cap_pnl for)
+                # the same slot across two separate close events.
+                if pos.slot_capital is not None:
+                    close_fraction = _D(close_qty) / _D(pos_qty)
+                    partial_slot_capital = pos.slot_capital * close_fraction
+                else:
+                    partial_slot_capital = None
+
                 if fill_price is not None:
                     partial_closed = copy.copy(pos)
                     if pos.trade_type == "stock":
                         partial_closed.shares = close_qty
                     else:
                         partial_closed.contracts = close_qty
+                    partial_closed.slot_capital = partial_slot_capital
                     partial_closed.exit_fill_price = fill_price
                     partial_closed.is_closed = True
                     partial_closed.exit_reason = "manual_close"
@@ -1327,6 +1363,8 @@ class PositionMonitor:
                         pos.shares = new_pos_qty
                     else:
                         pos.contracts = new_pos_qty
+                    if pos.slot_capital is not None:
+                        pos.slot_capital -= partial_slot_capital
                     if new_pos_qty == 0:
                         # Position fully consumed by QTY SYNC.  Remove it from
                         # _positions so subsequent bar updates cannot trigger a
