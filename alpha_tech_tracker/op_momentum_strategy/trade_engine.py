@@ -1941,6 +1941,23 @@ class OpMomentumTradeEngine:
                 " open re-entries or lost; skipping entries",
                 label,
             )
+            # Advance collection state same as the no-pending branch above —
+            # otherwise collection_deadline stays in the past and bars_left stays
+            # frozen, so _signal_selection_loop_for_window's exit check never
+            # fires and its wait blocks never sleep, busy-looping and re-logging
+            # "open until ..." continuously until budget frees up (2026-09-21).
+            with self._signal_lock:
+                bars_left = state.get("collection_bars_remaining", 0)
+                if bars_left > 0:
+                    state["collection_bars_remaining"] = bars_left - 1
+                    state["collection_deadline"] += timedelta(minutes=5)
+                    state["drain_timer_scheduled"] = False
+                    logger.info(
+                        "Collection window [%s] extended to %s ET (%d bar(s) remaining)",
+                        label,
+                        state["collection_deadline"].strftime("%H:%M:%S"),
+                        bars_left - 1,
+                    )
             return
 
         # Collect top-N selections. Advance to the next-ranked candidate when a
