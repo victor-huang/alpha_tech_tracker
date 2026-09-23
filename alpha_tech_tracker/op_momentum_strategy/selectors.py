@@ -32,7 +32,7 @@ from alpha_tech_tracker.op_momentum_strategy.op_momentum_selector import (
 )
 
 from .config import BEARISH_MA200, OPENING_BARS, OPENING_START_TIME, STOP_PCT
-from .contract_selector import _is_nyse_holiday
+from .contract_selector import _is_nyse_holiday, _prior_trading_day  # noqa: F401 — re-exported
 from .replay import _now_et, is_replay_mode
 
 logger = logging.getLogger(__name__)

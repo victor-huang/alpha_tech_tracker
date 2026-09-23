@@ -46,6 +46,14 @@ def _is_nyse_holiday(d: date) -> bool:
     return pd.Timestamp(d) in holidays
 
 
+def _prior_trading_day(d: date) -> date:
+    """Return the nearest past weekday that is not a NYSE holiday."""
+    candidate = d - timedelta(days=1)
+    while candidate.weekday() >= 5 or _is_nyse_holiday(candidate):
+        candidate -= timedelta(days=1)
+    return candidate
+
+
 def _today() -> date:
     return date.today()
 

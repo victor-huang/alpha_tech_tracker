@@ -69,6 +69,7 @@ from .selectors import (  # noqa: F401  — re-exported; imported from here by t
     TickerSelector,
     WinRateTickerSelector,
     _next_trading_day,
+    _prior_trading_day,
     _trading_days_in_range,
 )
 
@@ -2447,10 +2448,14 @@ class OpMomentumTradeEngine:
         # seasonal prior instead of the wall-clock month at run time.
         if self._regime_engine is not None:
             today = _now_et().date()
-            yesterday = today - timedelta(days=1)
+            # Prior trading day, not simply today - 1 day — otherwise every Monday
+            # (or day after a market holiday) looks up Sunday/the holiday, which
+            # always has 0 signals, and the actual last trading day's metrics are
+            # silently never computed (confirmed missing from history: 2026-09-18).
+            prior_day = _prior_trading_day(today)
             first_win = self._windows[0]
             self._regime_engine.compute_and_add_metrics(
-                shared_ticker_dfs, yesterday,
+                shared_ticker_dfs, prior_day,
                 first_win.opening_start, first_win.opening_bars,
                 collection_bars=first_win.opening_bars,
             )

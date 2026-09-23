@@ -19,6 +19,7 @@ from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
 
 from .config import _notify, disable_notifications
+from .contract_selector import _prior_trading_day
 from .op_momentum_backtest import fetch_bars, fetch_daily_bars
 from .op_momentum_selector import DEFAULT_TICKERS
 from .replay import _now_et
@@ -642,7 +643,10 @@ def run_backtest(
     if enable_regime_engine:
         from .regime_engine import RegimeEngine  # noqa: PLC0415
         regime_engine = RegimeEngine(data_dir=regime_data_dir)
-        yesterday = target_date - timedelta(days=1)
+        # Prior trading day, not simply target_date - 1 day — see fix in run_live()
+        # for why calendar-day subtraction silently drops the last trading day's
+        # metrics whenever target_date follows a weekend or market holiday.
+        yesterday = _prior_trading_day(target_date)
         regime_engine.compute_and_add_metrics(
             bars_5m, yesterday, or_start, or_bars, collection_bars
         )
@@ -724,7 +728,11 @@ def run_live(
     # Pre-warm from Alpaca historical data (prior days only — safe to cache)
     now_init = _now_et()
     print(f"Current ET time: {now_init.strftime('%Y-%m-%d %H:%M:%S %Z')}")
-    yesterday = (now_init - timedelta(days=1)).date()
+    # Prior trading day, not simply today - 1 day — otherwise every Monday (or
+    # day after a market holiday) resolves to Sunday/the holiday, which has no
+    # bars and no signals, so the regime engine never records the actual last
+    # trading day's metrics.
+    yesterday = _prior_trading_day(now_init.date())
     warmup_start = yesterday - timedelta(days=_5MIN_WARMUP_DAYS)
     daily_start = yesterday - timedelta(days=_DAILY_LOOKBACK_DAYS)
 
