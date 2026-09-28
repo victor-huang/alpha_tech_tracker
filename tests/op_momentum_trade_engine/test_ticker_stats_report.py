@@ -7,6 +7,7 @@ from alpaca.data.enums import DataFeed
 from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.ticker_stats_report import (
     clamp_end_for_sip,
     classify_daily_trend,
+    compute_week_pin_price,
     latest_sip_date,
     resolve_followthrough_threshold,
 )
@@ -168,3 +169,31 @@ class TestClassifyDailyTrend:
         assert classify_daily_trend(_daily(gentle), flat_pct=5.0)[
             max(classify_daily_trend(_daily(gentle), flat_pct=5.0))
         ]["slopes"][20] == "flat"
+
+
+class TestComputeWeekPinPrice:
+    @pytest.fixture
+    def daily(self):
+        index = pd.bdate_range("2026-07-01", "2026-09-25").date
+        return pd.DataFrame({"Close": range(1, len(index) + 1)}, index=index, dtype=float)
+
+    def test_weekday_pins_on_prior_friday(self, daily):
+        _, pin_asof = compute_week_pin_price(daily, date(2026, 9, 23))
+
+        assert pin_asof == date(2026, 9, 18)
+
+    def test_sunday_pins_on_friday_just_closed(self, daily):
+        _, pin_asof = compute_week_pin_price(daily, date(2026, 9, 27))
+
+        assert pin_asof == date(2026, 9, 25)
+
+    def test_saturday_pins_on_friday_just_closed(self, daily):
+        _, pin_asof = compute_week_pin_price(daily, date(2026, 9, 26))
+
+        assert pin_asof == date(2026, 9, 25)
+
+    def test_pin_is_ma_of_last_n_closes(self, daily):
+        pin_price, _ = compute_week_pin_price(daily, date(2026, 9, 27), ma_period=3)
+
+        last_three = daily["Close"].iloc[-3:]
+        assert pin_price == pytest.approx(last_three.mean())

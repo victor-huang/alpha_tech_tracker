@@ -603,10 +603,16 @@ def compute_week_pin_price(daily: pd.DataFrame, session_date: date, ma_period=PI
     """The `ma_period`-session MA as of the last close before `session_date`'s
     Monday, so the option-skew ATM window stays fixed across a whole week instead
     of re-centering on spot (and thus shifting strikes) on every daily run.
+
+    A weekend date belongs to the coming week, so a Sunday run pins on the
+    Friday that just closed.
     """
     if daily.empty:
         return None, None
-    week_monday = session_date - timedelta(days=session_date.weekday())
+    if session_date.weekday() >= 5:
+        week_monday = session_date + timedelta(days=7 - session_date.weekday())
+    else:
+        week_monday = session_date - timedelta(days=session_date.weekday())
     prior_sessions = [
         stamp for stamp in daily.index
         if (stamp.date() if hasattr(stamp, "date") else stamp) < week_monday

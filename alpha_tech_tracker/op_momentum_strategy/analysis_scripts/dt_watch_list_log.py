@@ -12,6 +12,7 @@ from alpha_tech_tracker.op_momentum_strategy.analysis_scripts import ticker_stat
 DEFAULT_TICKERS = [
     "QQQ", "SPOT", "PLTR", "LLY", "HOOD", "SPCX", "CRM", "MRNA", "CRWD", "COIN",
     "MSFT", "SNDK", "AMAT", "AMD", "CRWV", "FN", "APP", "META", "GOOGL", "SNPS", "RH",
+    "MDB", "INTC",
 ]
 LOG_ROOT = Path(__file__).resolve().parent.parent / "dt_stock_watch_list_log"
 BANDS = [12, 16, 20]

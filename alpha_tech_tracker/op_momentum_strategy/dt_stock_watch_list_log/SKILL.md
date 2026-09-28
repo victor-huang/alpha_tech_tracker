@@ -20,7 +20,7 @@ Useful flags:
 
 | flag | default | when to use |
 |---|---|---|
-| `--tickers` | 21-name list in the script (`DEFAULT_TICKERS`) | different universe |
+| `--tickers` | 23-name list in the script (`DEFAULT_TICKERS`) | different universe |
 | `--weeks` | `1 2` | one OR table per window |
 | `--rank-weeks` | longest `--weeks` | rank candidates on a different window |
 | `--end YYYY-MM-DD` | today | review a past session |
