@@ -4,6 +4,12 @@
 > [`research/experiments/OR_WINRATE_STRATEGY_STUDY.md`](research/experiments/OR_WINRATE_STRATEGY_STUDY.md)
 > for the 2019–2026 OR-direction + trailing-win-rate stock study (marginal after costs;
 > the QQQ prior-close regime gate on longs is the finding most likely to transfer here).
+>
+> See [`research/findings/WAVE_RISK_REWARD_FINDINGS.md`](research/findings/WAVE_RISK_REWARD_FINDINGS.md)
+> for the wave-count / consolidation-box signal study behind `analysis_scripts/wave_risk_reward.py`
+> (no reliable edge yet; box breakouts don't predict direction, wide-box fades are
+> regime-dependent, the 5-min MA-stack regime switch helps, stop-and-reverse and the
+> opening-range bias hurt).
 
 ## Finding 1 — Opening Window Start Time & Width (2026-03-01 → 2026-03-28)
 
