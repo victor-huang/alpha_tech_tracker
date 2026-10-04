@@ -842,17 +842,8 @@ def _print_ticker_summary(ticker, result, display_start, chart_path):
     print(f"chart: {chart_path}")
 
 
-def parse_args():
-    parser = argparse.ArgumentParser(
-        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
-    )
-    parser.add_argument("--tickers", nargs="+", default=DEFAULT_TICKERS)
-    parser.add_argument(
-        "--days", type=int, default=DEFAULT_DAYS,
-        help=f"Trailing sessions to display (default: {DEFAULT_DAYS})",
-    )
-    parser.add_argument("--end", help="Last session YYYY-MM-DD (default: today)")
-    parser.add_argument("--feed", default="sip", choices=["sip", "iex"])
+def add_strategy_arguments(parser):
+    """Signal options shared by this script and the backtest; read back with params_from_args."""
     lookback = parser.add_mutually_exclusive_group()
     lookback.add_argument(
         "--lookback-waves", type=int, default=DEFAULT_LOOKBACK_WAVES,
@@ -934,13 +925,10 @@ def parse_args():
         help="Suppress a same-direction repeat whose box edge is within this many session"
              " average bar ranges of the edge that fired (default: 1.0)",
     )
-    parser.add_argument("--out-dir", default=str(DEFAULT_OUT_DIR))
-    return parser.parse_args()
 
 
-def main():
-    args = parse_args()
-    params = WaveRiskRewardParams(
+def params_from_args(args):
+    return WaveRiskRewardParams(
         lookback_waves=None if args.lookback_bars else args.lookback_waves,
         lookback_bars=args.lookback_bars,
         min_box_waves=args.min_box_waves,
@@ -959,6 +947,27 @@ def main():
         volatility_window_bars=args.volatility_window_bars,
         repeat_overlap_bars=args.repeat_overlap_bars,
     )
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument("--tickers", nargs="+", default=DEFAULT_TICKERS)
+    parser.add_argument(
+        "--days", type=int, default=DEFAULT_DAYS,
+        help=f"Trailing sessions to display (default: {DEFAULT_DAYS})",
+    )
+    parser.add_argument("--end", help="Last session YYYY-MM-DD (default: today)")
+    parser.add_argument("--feed", default="sip", choices=["sip", "iex"])
+    add_strategy_arguments(parser)
+    parser.add_argument("--out-dir", default=str(DEFAULT_OUT_DIR))
+    return parser.parse_args()
+
+
+def main():
+    args = parse_args()
+    params = params_from_args(args)
     feed = DataFeed.SIP if args.feed == "sip" else DataFeed.IEX
     requested_end = date.fromisoformat(args.end) if args.end else date.today()
     end_date = clamp_end_for_sip(requested_end, feed)
