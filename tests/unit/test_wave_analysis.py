@@ -24,11 +24,31 @@ class TestWaveCreation:
         wave = Wave(date, price_data)
 
         assert wave.start == date
-        assert wave.high == 105.0
-        assert wave.low == 98.0
+        assert wave.high == 103.0
+        assert wave.low == 100.0
         assert wave.high_date == date
         assert wave.low_date == date
         assert wave.end is None
+
+    def test_create_wave_from_down_bar_ignores_wicks(self):
+        """A down bar should start the wave between its open (high) and close (low)."""
+        date = datetime.date(2024, 1, 1)
+        price_data = {"open": 103.0, "high": 105.0, "low": 98.0, "close": 100.0}
+
+        wave = Wave(date, price_data)
+
+        assert wave.high == 103.0
+        assert wave.low == 100.0
+
+    def test_minimum_wave_price_change_override(self):
+        """minimum_wave_price_change should be configurable per wave."""
+        price_data = {"open": 100.0, "high": 105.0, "low": 98.0, "close": 103.0}
+
+        wave = Wave(
+            datetime.date(2024, 1, 1), price_data, minimum_wave_price_change=0.003
+        )
+
+        assert wave.minimum_wave_price_change == 0.003
 
     def test_wave_defaults(self):
         """Wave should have sensible defaults."""
@@ -208,7 +228,7 @@ class TestWaveStatistics:
         # Up wave 1: range = 20
         wave1 = Wave(
             datetime.date(2024, 1, 1),
-            {"open": 100.0, "high": 120.0, "low": 100.0, "close": 118.0},
+            {"open": 100.0, "high": 121.0, "low": 99.0, "close": 120.0},
         )
         wave1.num_high = 6
         wave1.num_low = 2
@@ -217,7 +237,7 @@ class TestWaveStatistics:
         # Up wave 2: range = 15
         wave2 = Wave(
             datetime.date(2024, 1, 2),
-            {"open": 120.0, "high": 135.0, "low": 120.0, "close": 133.0},
+            {"open": 120.0, "high": 136.0, "low": 119.0, "close": 135.0},
         )
         wave2.num_high = 5
         wave2.num_low = 2
@@ -226,7 +246,7 @@ class TestWaveStatistics:
         # Down wave: range = 5
         wave3 = Wave(
             datetime.date(2024, 1, 3),
-            {"open": 135.0, "high": 135.0, "low": 130.0, "close": 131.0},
+            {"open": 135.0, "high": 136.0, "low": 129.0, "close": 130.0},
         )
         wave3.num_high = 2
         wave3.num_low = 5
@@ -235,7 +255,7 @@ class TestWaveStatistics:
         # Up wave 3: range = 10
         wave4 = Wave(
             datetime.date(2024, 1, 4),
-            {"open": 130.0, "high": 140.0, "low": 130.0, "close": 138.0},
+            {"open": 130.0, "high": 141.0, "low": 129.0, "close": 140.0},
         )
         wave4.num_high = 5
         wave4.num_low = 2
@@ -301,13 +321,12 @@ class TestWaveMeasurements:
         assert wave.length() == 1
 
     def test_price_range(self):
-        """Price range should be absolute difference between high and low."""
+        """Price range should be the open-to-close span of the starting bar, ignoring wicks."""
         date = datetime.date(2024, 1, 1)
-        price_data = {"open": 100.0, "high": 110.0, "low": 95.0, "close": 105.0}
+        price_data = {"open": 95.0, "high": 112.0, "low": 93.0, "close": 110.0}
 
         wave = Wave(date, price_data)
 
-        # Range: 110 - 95 = 15
         assert wave.price_range() == 15.0
 
     def test_price_range_zero(self):
@@ -326,7 +345,7 @@ class TestWaveSummary:
     def test_wave_summary(self):
         """Should generate summary with key metrics."""
         date = datetime.date(2024, 1, 1)
-        price_data = {"open": 100.0, "high": 110.0, "low": 95.0, "close": 105.0}
+        price_data = {"open": 95.0, "high": 112.0, "low": 93.0, "close": 110.0}
 
         wave = Wave(date, price_data)
         wave.num_high = 5
@@ -417,6 +436,61 @@ class TestWaveStatsEdgeCases:
 
         # Average: (1 + 1 + 3) / 3 = 1.6667
         assert stats["average_wave_length"] == pytest.approx(1.6667, rel=0.01)
+
+
+class TestWaveCount:
+    """Test count() wave splitting behavior."""
+
+    def _wave_at_maximum_length(self):
+        start = datetime.datetime(2024, 1, 2, 9, 30)
+        wave = Wave(start, {"open": 100.0, "high": 101.0, "low": 99.0, "close": 100.5})
+        wave.maximum_wave_length = 1
+        return wave, start + datetime.timedelta(minutes=5)
+
+    def test_count_creates_new_wave_at_maximum_length(self):
+        wave, next_bar_time = self._wave_at_maximum_length()
+        bar = {"open": 100.5, "high": 102.0, "low": 100.0, "close": 101.5}
+
+        new_wave = wave.count(
+            next_bar_time, bar, time_increment=datetime.timedelta(minutes=5)
+        )
+
+        assert new_wave is not None
+        assert wave.next_wave is new_wave
+        assert new_wave.start == next_bar_time
+
+    def test_count_with_skip_create_new_wave_extends_current_wave(self):
+        wave, next_bar_time = self._wave_at_maximum_length()
+        bar = {"open": 100.5, "high": 102.0, "low": 100.0, "close": 101.5}
+
+        new_wave = wave.count(
+            next_bar_time,
+            bar,
+            skip_create_new_wave=True,
+            time_increment=datetime.timedelta(minutes=5),
+        )
+
+        assert new_wave is None
+        assert wave.length() == 2
+        assert wave.high == 101.5
+
+    def test_new_wave_inherits_minimum_wave_price_change(self):
+        start = datetime.datetime(2024, 1, 2, 9, 30)
+        wave = Wave(
+            start,
+            {"open": 100.0, "high": 101.0, "low": 99.0, "close": 100.5},
+            minimum_wave_price_change=0.003,
+        )
+        wave.maximum_wave_length = 1
+        bar = {"open": 100.5, "high": 102.0, "low": 100.0, "close": 101.5}
+
+        new_wave = wave.count(
+            start + datetime.timedelta(minutes=5),
+            bar,
+            time_increment=datetime.timedelta(minutes=5),
+        )
+
+        assert new_wave.minimum_wave_price_change == 0.003
 
 
 class TestYahooDataConversion:

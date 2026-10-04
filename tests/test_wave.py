@@ -57,7 +57,7 @@ def test_c_wave_is_create_new_wave():
     assert all_waves[0].start == datetime.date(2016, 12, 13)
     assert all_waves[0].end == datetime.date(2016, 12, 30)
     assert all_waves[0].high_date == datetime.date(2016, 12, 13)
-    assert all_waves[0].high == 109.129997
+    assert all_waves[0].high == 108.010002
     assert all_waves[0].low_date == datetime.date(2016, 12, 30)
     assert all_waves[0].low == 101.099998
 
@@ -74,4 +74,4 @@ def test_c_wave_summary():
 
     summary = all_waves[0].summary()
     assert summary["length"] == 13
-    assert summary["movement_in_percentage"].round(4) == -0.0736
+    assert summary["movement_in_percentage"].round(4) == -0.064

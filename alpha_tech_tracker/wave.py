@@ -2,11 +2,22 @@ import datetime
 import pandas as pd
 
 
+DEFAULT_MINIMUM_WAVE_PRICE_CHANGE = 0.03 / (12 * 8)
+
+
 class Wave:
-    def __init__(self, start, price_data_dict):
+    def __init__(
+        self,
+        start,
+        price_data_dict,
+        minimum_wave_price_change=DEFAULT_MINIMUM_WAVE_PRICE_CHANGE,
+    ):
         self.start = start
-        self.high = price_data_dict["high"]
-        self.low = price_data_dict["low"]
+        # extremes track closes, so the wave starts at the bar's open rather than its wick
+        open_price = price_data_dict["open"]
+        close_price = price_data_dict["close"]
+        self.high = max(open_price, close_price)
+        self.low = min(open_price, close_price)
         self.num_high = 1
         self.num_low = 1
         self.high_date = start
@@ -16,9 +27,8 @@ class Wave:
         self.next_wave = None
         self.maximum_wave_length = 78  # a trading day has 78 5 mins intervals
         self.minimum_wave_length = 7
-        self.minimum_wave_price_change = 0.03 / (
-            12 * 8
-        )  # wave needs ot be at leat 2% change of the lowest price
+        # minimum (high - low) / low before a wave may end; default is 3% spread over 96 bars (~0.031%)
+        self.minimum_wave_price_change = minimum_wave_price_change
         self.bounce_threshold = 0.236  # fibonacci ratio
 
     @classmethod
@@ -157,8 +167,7 @@ class Wave:
         time_increment=datetime.timedelta(days=1),
     ):
 
-        #  if is_create_new_wave(date, price_data_dict):
-        if self.is_create_new_wave(date, price_data_dict):
+        if not skip_create_new_wave and self.is_create_new_wave(date, price_data_dict):
             if self.direction() == "up":
                 self.end = self.high_date
             else:
@@ -176,7 +185,11 @@ class Wave:
                 if new_wave:
                     new_wave.count(index, row, skip_create_new_wave=True)
                 else:
-                    new_wave = Wave(index, row)
+                    new_wave = Wave(
+                        index,
+                        row,
+                        minimum_wave_price_change=self.minimum_wave_price_change,
+                    )
 
             self.next_wave = new_wave
 
