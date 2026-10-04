@@ -6,7 +6,7 @@ urllib3==1.24
 pytest==7.4.2
 ipdb==0.13.13
 redis==3.2.1
-plotly==4.3.0
+plotly==7.1.0
 nbformat==4.4.0
 daemonize==2.5.0
 clicksend-client
