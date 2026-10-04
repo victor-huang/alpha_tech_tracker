@@ -9,7 +9,12 @@ from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward i
     add_moving_averages,
     analyze_bars,
     find_consolidation,
+    is_reversion_box,
+    ma_stack_regime,
+    opening_range_bias,
+    regime_allows,
     regular_hours,
+    reversion_box_risk_reward,
     risk_reward,
     select_lookback_waves,
 )
@@ -42,8 +47,22 @@ def _bars(start, closes, bar_range=0.0):
     )
 
 
-def _box(low, high, median_wave_size=1.0, start="2026-09-01 09:30", end="2026-09-01 10:00"):
+def _params(**overrides):
+    """Params with the regime switch off, so box mechanics are tested on their own."""
+    return WaveRiskRewardParams(**dict({"regime_switch": "off"}, **overrides))
+
+
+def _bars_with_mas(start, closes, mas):
+    """`_bars` plus constant MA 8/20/50/200 columns, e.g. mas=(4, 3, 2, 1) for a trend-up stack."""
+    bars = _bars(start, closes)
+    for period, value in zip((8, 20, 50, 200), mas):
+        bars[f"ma_{period}"] = value
+    return bars
+
+
+def _box(low, high, median_wave_size=1.0, start="2026-09-01 09:30", end="2026-09-01 10:00", bar_length=0.0):
     return {
+        "bar_length": bar_length,
         "start": _timestamp(start),
         "end": _timestamp(end),
         "low": low,
@@ -116,6 +135,15 @@ class TestFindConsolidation:
         assert box["high"] == 102.0
         assert box["num_waves"] == 3
         assert box["start"] == _timestamp("2026-09-01 10:30")
+
+    def test_box_records_average_bar_length_of_its_waves(self):
+        waves = self._history()
+        for wave in waves[-3:]:
+            wave.df["high"] = wave.df["low"] + 0.4
+
+        box = find_consolidation(waves, min_box_waves=3, small_wave_ratio=1.0, max_box_height_ratio=1.5)
+
+        assert box["bar_length"] == pytest.approx(0.4)
 
     def test_no_box_when_small_wave_run_is_too_short(self):
         box = find_consolidation(self._history(), min_box_waves=4, small_wave_ratio=1.0, max_box_height_ratio=1.5)
@@ -201,7 +229,7 @@ class TestAnalyzeBars:
             _bars("2026-09-02 09:30", [103.0, 104.0]),
         ])
 
-        result = analyze_bars(bars)
+        result = analyze_bars(bars, _params())
 
         first, second = result["waves"]
         assert first.end == _timestamp("2026-09-01 15:55")
@@ -214,7 +242,7 @@ class TestAnalyzeBars:
             _bars("2026-09-02 09:30", [103.0, 104.0]),
         ])
 
-        result = analyze_bars(bars)
+        result = analyze_bars(bars, _params())
 
         assert result["snapshots"]["lookback_waves"].iloc[-1] == 1
 
@@ -222,7 +250,7 @@ class TestAnalyzeBars:
         mocker.patch(f"{MODULE}.find_consolidation", return_value=_box(100.0, 101.0, median_wave_size=10.0))
         bars = _bars("2026-09-01 10:00", [100.5, 101.5, 101.8])
 
-        result = analyze_bars(bars)
+        result = analyze_bars(bars, _params())
 
         assert [(s["time"], s["signal"]) for s in result["signals"]] == [
             (_timestamp("2026-09-01 10:05"), "breakout")
@@ -232,7 +260,7 @@ class TestAnalyzeBars:
         mocker.patch(f"{MODULE}.find_consolidation", return_value=_box(100.0, 101.0, median_wave_size=10.0))
         bars = _bars("2026-09-01 10:00", [100.5, 99.5])
 
-        result = analyze_bars(bars)
+        result = analyze_bars(bars, _params())
 
         assert result["signals"][0]["signal"] == "breakdown"
         assert result["signals"][0]["price"] == 99.5
@@ -241,7 +269,7 @@ class TestAnalyzeBars:
         mocker.patch(f"{MODULE}.find_consolidation", return_value=_box(100.0, 101.0, median_wave_size=1.0))
         bars = _bars("2026-09-01 10:00", [100.5, 102.0, 99.0])
 
-        result = analyze_bars(bars)
+        result = analyze_bars(bars, _params(small_wave_ratio=1.0))
 
         assert [s["signal"] for s in result["signals"]] == ["breakout"]
         assert result["boxes"][0]["active_until"] == _timestamp("2026-09-01 10:05")
@@ -251,7 +279,7 @@ class TestAnalyzeBars:
         mocker.patch(f"{MODULE}.risk_reward", return_value={"stop": 100.0, "target": 103.0, "rr": 2.0})
         bars = _bars("2026-09-01 10:00", [100.5, 100.6])
 
-        snapshots = analyze_bars(bars, WaveRiskRewardParams())["snapshots"]
+        snapshots = analyze_bars(bars, _params())["snapshots"]
 
         assert list(snapshots["long_rr"]) == [2.0, 2.0]
         assert list(snapshots["box_low"]) == [100.0, 100.0]
@@ -263,7 +291,7 @@ class TestAnalyzeBars:
             _bars("2026-09-02 09:30", [103.0]),
         ])
 
-        analyze_bars(bars, WaveRiskRewardParams(minimum_wave_price_change=0.004))
+        analyze_bars(bars, _params(minimum_wave_price_change=0.004))
 
         assert new_wave.call_count == 2
         assert all(c.kwargs["minimum_wave_price_change"] == 0.004 for c in new_wave.call_args_list)
@@ -272,7 +300,7 @@ class TestAnalyzeBars:
         new_wave = mocker.spy(wave_risk_reward, "Wave")
         bars = _bars("2026-09-01 10:00", [100.0], bar_range=1.0)
 
-        analyze_bars(bars, WaveRiskRewardParams(min_wave_bar_ranges=2.0))
+        analyze_bars(bars, _params(min_wave_bar_ranges=2.0))
 
         assert new_wave.call_args.kwargs["minimum_wave_price_change"] == pytest.approx(0.02)
 
@@ -281,7 +309,7 @@ class TestAnalyzeBars:
         bars.iloc[1, bars.columns.get_loc("high")] = 101.5
         bars.iloc[1, bars.columns.get_loc("low")] = 98.5
 
-        result = analyze_bars(bars, WaveRiskRewardParams(min_wave_bar_ranges=2.0))
+        result = analyze_bars(bars, _params(min_wave_bar_ranges=2.0))
 
         assert result["waves"][-1].minimum_wave_price_change == pytest.approx(0.04)
 
@@ -294,7 +322,7 @@ class TestAnalyzeBarsSignalLabels:
             _bars("2026-09-02 09:30", [101.5]),
         ])
 
-        signal = analyze_bars(bars)["signals"][0]
+        signal = analyze_bars(bars, _params())["signals"][0]
 
         assert signal["signal"] == "breakout"
         assert signal["gap"] is True
@@ -303,7 +331,7 @@ class TestAnalyzeBarsSignalLabels:
         mocker.patch(f"{MODULE}.find_consolidation", return_value=_box(100.0, 101.0, median_wave_size=10.0))
         bars = _bars("2026-09-02 09:30", [100.5, 101.5])
 
-        signal = analyze_bars(bars)["signals"][0]
+        signal = analyze_bars(bars, _params())["signals"][0]
 
         assert signal["gap"] is False
 
@@ -314,7 +342,7 @@ class TestAnalyzeBarsSignalLabels:
             _bars("2026-09-02 09:30", [101.5]),
         ])
 
-        snapshots = analyze_bars(bars)["snapshots"]
+        snapshots = analyze_bars(bars, _params())["snapshots"]
 
         assert snapshots["signal"].iloc[-1] == "gap breakout"
 
@@ -333,7 +361,7 @@ class TestAnalyzeBarsRepeatSuppression:
         )
         bars = _bars("2026-09-02 10:00", [100.5, 101.5, 101.6], bar_range=1.0)
 
-        result = analyze_bars(bars)
+        result = analyze_bars(bars, _params())
 
         assert [s["time"] for s in result["signals"]] == [_timestamp("2026-09-02 10:05")]
         assert [s["time"] for s in result["suppressed_signals"]] == [_timestamp("2026-09-02 10:10")]
@@ -345,7 +373,7 @@ class TestAnalyzeBarsRepeatSuppression:
         )
         bars = _bars("2026-09-02 10:00", [100.5, 101.5, 103.0], bar_range=1.0)
 
-        result = analyze_bars(bars)
+        result = analyze_bars(bars, _params())
 
         assert len(result["signals"]) == 2
         assert result["suppressed_signals"] == []
@@ -357,7 +385,7 @@ class TestAnalyzeBarsRepeatSuppression:
         )
         bars = _bars("2026-09-02 10:00", [100.5, 101.5, 99.5, 101.6], bar_range=1.0)
 
-        result = analyze_bars(bars)
+        result = analyze_bars(bars, _params())
 
         assert [s["signal"] for s in result["signals"]] == ["breakout", "breakdown", "breakout"]
 
@@ -371,7 +399,7 @@ class TestAnalyzeBarsRepeatSuppression:
             _bars("2026-09-02 10:15", [101.6], bar_range=1.0),
         ])
 
-        result = analyze_bars(bars)
+        result = analyze_bars(bars, _params())
 
         assert len(result["signals"]) == 2
 
@@ -382,6 +410,322 @@ class TestAnalyzeBarsRepeatSuppression:
         )
         bars = _bars("2026-09-02 10:00", [100.5, 101.5, 101.6], bar_range=1.0)
 
-        result = analyze_bars(bars, WaveRiskRewardParams(repeat_overlap_bars=0.2))
+        result = analyze_bars(bars, _params(repeat_overlap_bars=0.2))
 
         assert len(result["signals"]) == 2
+
+
+class TestIsReversionBox:
+    def test_box_at_least_n_bar_lengths_tall_is_reversion(self):
+        assert is_reversion_box(_box(100.0, 103.0, bar_length=0.5), reversion_box_bars=6) is True
+
+    def test_box_under_n_bar_lengths_tall_is_not_reversion(self):
+        assert is_reversion_box(_box(100.0, 102.9, bar_length=0.5), reversion_box_bars=6) is False
+
+    def test_zero_bar_length_is_not_reversion(self):
+        assert is_reversion_box(_box(100.0, 103.0, bar_length=0.0), reversion_box_bars=6) is False
+
+
+class TestReversionBoxRiskReward:
+    def _wide_box(self):
+        return _box(100.0, 103.0, bar_length=0.5)
+
+    def _waves(self):
+        return [_wave("2026-09-01 09:30", 100.0, 104.0, "up"), _wave("2026-09-01 10:00", 99.0, 102.0, "down")]
+
+    def test_short_near_box_high_fades_to_box_low(self):
+        result = reversion_box_risk_reward("down", 102.8, self._waves(), self._wide_box(), min_risk_pct=0.0)
+
+        assert result["stop"] == pytest.approx(103.5)
+        assert result["target"] == pytest.approx(100.0)
+        assert result["rr"] == pytest.approx(2.8 / 0.7)
+
+    def test_long_near_box_low_fades_to_box_high(self):
+        result = reversion_box_risk_reward("up", 100.2, self._waves(), self._wide_box(), min_risk_pct=0.0)
+
+        assert result["stop"] == pytest.approx(99.5)
+        assert result["target"] == pytest.approx(103.0)
+
+    def test_long_past_fade_stop_is_breakout_with_stop_at_box_high(self):
+        result = reversion_box_risk_reward("up", 103.6, self._waves(), self._wide_box(), min_risk_pct=0.0)
+
+        assert result["stop"] == pytest.approx(103.0)
+        assert result["target"] == pytest.approx(107.6)
+
+    def test_short_past_fade_stop_is_breakdown_with_stop_at_box_low(self):
+        result = reversion_box_risk_reward("down", 99.4, self._waves(), self._wide_box(), min_risk_pct=0.0)
+
+        assert result["stop"] == pytest.approx(100.0)
+        assert result["target"] == pytest.approx(96.4)
+
+    def test_long_fade_above_box_high_has_no_reward(self):
+        assert reversion_box_risk_reward("up", 103.2, self._waves(), self._wide_box()) is None
+
+    def test_short_fade_below_fade_stop_is_none(self):
+        assert reversion_box_risk_reward("down", 103.6, self._waves(), self._wide_box()) is None
+
+
+class TestAnalyzeBarsReversionBox:
+    def _patch_wide_box(self, mocker):
+        mocker.patch(
+            f"{MODULE}.find_consolidation",
+            return_value=_box(100.0, 103.0, median_wave_size=1.0, bar_length=0.5),
+        )
+
+    def test_close_in_upper_edge_zone_fires_fade_short(self, mocker):
+        self._patch_wide_box(mocker)
+        bars = _bars("2026-09-01 10:00", [101.5, 102.7])
+
+        signal = analyze_bars(bars, _params())["signals"][0]
+
+        assert signal["signal"] == "fade_short"
+        assert signal["risk_reward"]["stop"] == pytest.approx(103.5)
+        assert signal["risk_reward"]["target"] == pytest.approx(100.0)
+
+    def test_close_in_lower_edge_zone_fires_fade_long(self, mocker):
+        self._patch_wide_box(mocker)
+        bars = _bars("2026-09-01 10:00", [101.5, 100.3])
+
+        assert analyze_bars(bars, _params())["signals"][0]["signal"] == "fade_long"
+
+    def test_close_above_box_high_within_one_bar_is_not_a_breakout(self, mocker):
+        self._patch_wide_box(mocker)
+        bars = _bars("2026-09-01 10:00", [101.5, 103.3])
+
+        assert [s["signal"] for s in analyze_bars(bars, _params())["signals"]] == ["fade_short"]
+
+    def test_break_past_fade_stop_stops_and_reverses_into_breakout(self, mocker):
+        self._patch_wide_box(mocker)
+        bars = _bars("2026-09-01 10:00", [101.5, 102.7, 103.6])
+
+        signals = analyze_bars(bars, _params())["signals"]
+
+        assert [s["signal"] for s in signals] == ["fade_short", "breakout"]
+        assert signals[1]["reverses"] == "fade_short"
+        assert signals[1]["risk_reward"]["stop"] == pytest.approx(103.0)
+
+    def test_breakout_without_prior_fade_does_not_reverse(self, mocker):
+        self._patch_wide_box(mocker)
+        bars = _bars("2026-09-01 10:00", [101.5, 103.6])
+
+        signal = analyze_bars(bars, _params())["signals"][0]
+
+        assert signal["signal"] == "breakout"
+        assert signal["reverses"] is None
+
+    def test_wide_box_survives_large_wave_until_it_breaks(self, mocker):
+        self._patch_wide_box(mocker)
+        bars = _bars("2026-09-01 10:00", [102.7, 100.3, 103.6, 103.0])
+
+        result = analyze_bars(bars, _params())
+
+        assert [s["signal"] for s in result["signals"]] == ["fade_short", "fade_long", "breakout"]
+        assert result["boxes"][0]["active_until"] == _timestamp("2026-09-01 10:10")
+
+    def test_reversion_box_bars_threshold_is_configurable(self, mocker):
+        self._patch_wide_box(mocker)
+        bars = _bars("2026-09-01 10:00", [101.5, 103.3])
+
+        signals = analyze_bars(bars, _params(reversion_box_bars=10))["signals"]
+
+        assert [s["signal"] for s in signals] == ["breakout"]
+
+
+class TestMaStackRegime:
+    def test_fully_stacked_rising_mas_are_up(self):
+        assert ma_stack_regime({"ma_8": 4.0, "ma_20": 3.0, "ma_50": 2.0, "ma_200": 1.0}) == "up"
+
+    def test_fully_stacked_falling_mas_are_down(self):
+        assert ma_stack_regime({"ma_8": 1.0, "ma_20": 2.0, "ma_50": 3.0, "ma_200": 4.0}) == "down"
+
+    def test_tangled_mas_are_range(self):
+        assert ma_stack_regime({"ma_8": 4.0, "ma_20": 2.0, "ma_50": 3.0, "ma_200": 1.0}) == "range"
+
+    def test_unfilled_ma_is_range(self):
+        assert ma_stack_regime({"ma_8": 4.0, "ma_20": 3.0, "ma_50": 2.0, "ma_200": float("nan")}) == "range"
+
+
+class TestRegimeAllows:
+    @pytest.mark.parametrize("regime, allowed", [
+        ("up", {"breakout"}),
+        ("down", {"breakdown"}),
+        ("range", {"fade_long", "fade_short"}),
+    ])
+    def test_each_regime_allows_only_its_signals(self, regime, allowed):
+        names = ("breakout", "breakdown", "fade_long", "fade_short")
+
+        assert {name for name in names if regime_allows(name, regime)} == allowed
+
+
+class TestAnalyzeBarsRegimeSwitch:
+    TREND_UP = (4.0, 3.0, 2.0, 1.0)
+    TREND_DOWN = (1.0, 2.0, 3.0, 4.0)
+    RANGE = (4.0, 2.0, 3.0, 1.0)
+
+    def _patch_narrow_box(self, mocker):
+        mocker.patch(f"{MODULE}.find_consolidation", return_value=_box(100.0, 101.0, median_wave_size=10.0))
+
+    def _patch_wide_box(self, mocker):
+        mocker.patch(
+            f"{MODULE}.find_consolidation",
+            return_value=_box(100.0, 103.0, median_wave_size=10.0, bar_length=0.5),
+        )
+
+    def test_trend_up_fires_breakout(self, mocker):
+        self._patch_narrow_box(mocker)
+        bars = _bars_with_mas("2026-09-01 10:00", [100.5, 101.5], self.TREND_UP)
+
+        result = analyze_bars(bars)
+
+        assert [s["signal"] for s in result["signals"]] == ["breakout"]
+        assert result["signals"][0]["regime"] == "up"
+
+    def test_trend_down_skips_breakout(self, mocker):
+        self._patch_narrow_box(mocker)
+        bars = _bars_with_mas("2026-09-01 10:00", [100.5, 101.5], self.TREND_DOWN)
+
+        result = analyze_bars(bars)
+
+        assert result["signals"] == []
+        assert [s["signal"] for s in result["regime_skipped_signals"]] == ["breakout"]
+
+    def test_range_skips_narrow_box_breakout(self, mocker):
+        self._patch_narrow_box(mocker)
+        bars = _bars_with_mas("2026-09-01 10:00", [100.5, 101.5], self.RANGE)
+
+        assert analyze_bars(bars)["signals"] == []
+
+    def test_range_fires_fade(self, mocker):
+        self._patch_wide_box(mocker)
+        bars = _bars_with_mas("2026-09-01 10:00", [101.5, 102.7], self.RANGE)
+
+        assert [s["signal"] for s in analyze_bars(bars)["signals"]] == ["fade_short"]
+
+    def test_trend_up_skips_fade(self, mocker):
+        self._patch_wide_box(mocker)
+        bars = _bars_with_mas("2026-09-01 10:00", [101.5, 102.7], self.TREND_UP)
+
+        result = analyze_bars(bars)
+
+        assert result["signals"] == []
+        assert [s["signal"] for s in result["regime_skipped_signals"]] == ["fade_short"]
+
+    def test_regime_switch_off_fires_every_signal(self, mocker):
+        self._patch_narrow_box(mocker)
+        bars = _bars_with_mas("2026-09-01 10:00", [100.5, 101.5], self.TREND_DOWN)
+
+        signals = analyze_bars(bars, WaveRiskRewardParams(regime_switch="off"))["signals"]
+
+        assert [s["signal"] for s in signals] == ["breakout"]
+
+    def test_snapshot_records_regime(self, mocker):
+        self._patch_narrow_box(mocker)
+        bars = _bars_with_mas("2026-09-01 10:00", [100.5, 100.6], self.TREND_UP)
+
+        snapshots = analyze_bars(bars)["snapshots"]
+
+        assert list(snapshots["regime"]) == ["up", "up"]
+
+
+class TestOpeningRangeBias:
+    def test_close_below_opening_range_just_under_ma200_is_bearish(self):
+        assert opening_range_bias(99.0, 101.0, 100.0, ma_200=99.5, avg_bar_range=0.2, max_ma200_distance_bars=10) == "bearish"
+
+    def test_close_above_opening_range_just_over_ma200_is_bullish(self):
+        assert opening_range_bias(102.0, 101.0, 100.0, ma_200=101.5, avg_bar_range=0.2, max_ma200_distance_bars=10) == "bullish"
+
+    def test_close_inside_opening_range_has_no_bias(self):
+        assert opening_range_bias(100.5, 101.0, 100.0, ma_200=101.5, avg_bar_range=0.2, max_ma200_distance_bars=10) is None
+
+    def test_close_below_opening_range_but_above_ma200_has_no_bias(self):
+        assert opening_range_bias(99.0, 101.0, 100.0, ma_200=98.0, avg_bar_range=0.2, max_ma200_distance_bars=10) is None
+
+    def test_close_too_far_below_ma200_has_no_bias(self):
+        assert opening_range_bias(97.0, 101.0, 100.0, ma_200=99.5, avg_bar_range=0.2, max_ma200_distance_bars=10) is None
+
+    def test_unfilled_ma200_has_no_bias(self):
+        assert opening_range_bias(99.0, 101.0, 100.0, ma_200=float("nan"), avg_bar_range=0.2, max_ma200_distance_bars=10) is None
+
+
+class TestAnalyzeBarsOpeningRangeBias:
+    """Opening range = first 3 bars at 100.5-101.0; later closes are tested against it."""
+
+    RANGE_STACK = (4.0, 2.0, 3.0, 1.0)
+
+    def _bars(self, later_closes, ma_200):
+        closes = [100.5, 101.0, 100.6] + later_closes
+        bars = _bars("2026-09-01 09:30", closes, bar_range=0.2)
+        for period, value in zip((8, 20, 50), self.RANGE_STACK[:3]):
+            bars[f"ma_{period}"] = value
+        bars["ma_200"] = ma_200
+        return bars
+
+    def _params(self, **overrides):
+        return WaveRiskRewardParams(**dict({"regime_switch": "opening-range"}, **overrides))
+
+    def _patch_box(self, mocker, low, high, bar_length=0.2):
+        mocker.patch(
+            f"{MODULE}.find_consolidation",
+            return_value=_box(low, high, median_wave_size=10.0, bar_length=bar_length),
+        )
+
+    def test_bearish_bias_shorts_top_of_narrow_box(self, mocker):
+        self._patch_box(mocker, 99.0, 99.6)
+        bars = self._bars([99.5], ma_200=100.0)
+
+        signals = analyze_bars(bars, self._params())["signals"]
+
+        assert [(s["signal"], s["bias"]) for s in signals] == [("fade_short", "bearish")]
+        assert signals[0]["risk_reward"]["stop"] == pytest.approx(99.8)
+        assert signals[0]["risk_reward"]["target"] == pytest.approx(99.0)
+
+    def test_bullish_bias_buys_bottom_of_box(self, mocker):
+        self._patch_box(mocker, 101.4, 102.0)
+        bars = self._bars([101.5], ma_200=101.2)
+
+        signals = analyze_bars(bars, self._params())["signals"]
+
+        assert [(s["signal"], s["bias"]) for s in signals] == [("fade_long", "bullish")]
+
+    def test_bearish_bias_ignores_box_bottom(self, mocker):
+        self._patch_box(mocker, 99.4, 100.4)
+        bars = self._bars([99.45], ma_200=100.0)
+
+        assert analyze_bars(bars, self._params())["signals"] == []
+
+    def test_no_bias_during_opening_range_falls_back_to_ma_stack(self, mocker):
+        self._patch_box(mocker, 99.0, 100.55, bar_length=0.0)
+        bars = self._bars([], ma_200=101.0)
+
+        result = analyze_bars(bars, self._params())
+
+        assert result["signals"] == []
+        assert [s["regime"] for s in result["regime_skipped_signals"]] == ["range"]
+
+    def test_too_far_from_ma200_falls_back_to_ma_stack(self, mocker):
+        self._patch_box(mocker, 99.0, 99.6)
+        bars = self._bars([99.5], ma_200=100.0)
+
+        last = analyze_bars(bars, self._params(max_ma200_distance_bars=1))["snapshots"].iloc[-1]
+
+        assert last["bias"] is None
+        assert last["regime"] == "range"
+
+    def test_opening_range_bars_is_configurable(self, mocker):
+        self._patch_box(mocker, 99.0, 99.6)
+        bars = self._bars([99.5], ma_200=100.0)
+
+        snapshots = analyze_bars(bars, self._params(opening_range_bars=4))["snapshots"]
+
+        assert snapshots["or_low"].isna().all()
+        assert snapshots["bias"].isna().all()
+
+    def test_snapshot_records_opening_range_and_bias(self, mocker):
+        self._patch_box(mocker, 99.0, 99.6)
+        bars = self._bars([99.5], ma_200=100.0)
+
+        last = analyze_bars(bars, self._params())["snapshots"].iloc[-1]
+
+        assert (last["or_high"], last["or_low"]) == (pytest.approx(101.1), pytest.approx(100.4))
+        assert last["bias"] == "bearish"
+        assert last["regime"] == "or-bearish"
