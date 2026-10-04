@@ -15,6 +15,37 @@ did the trade look like at that moment?*
 
 ---
 
+## Best configuration so far — copy and run
+
+From [Finding 14](../research/findings/WAVE_RISK_REWARD_FINDINGS.md#finding-14--opening-drive--exits-with-costs-jun-1--oct-2)
+(QQQ + SNDK, Jun 1 – Oct 2 2026, 5 bps round-trip costs): default box signals plus the opening
+drive made **+75.04%** held to the session close and **+49.45%** with the give-back exit —
+almost all of it from SNDK; QQQ lost in every configuration once costs were included.
+
+```bash
+cd /Users/victorhuang/work/alpha_tech_tracker
+source ~/.pyenv/versions/alpha_tech_tracker/bin/activate
+export PYTHONPATH=$PWD
+
+# 1. Backtest the best configuration (reproduces +75.04% / +49.45% below)
+python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward_backtest \
+  --tickers QQQ SNDK --start 2026-06-01 --end 2026-10-02 \
+  --opening-drive both --exit eod --cost-bps 5
+
+python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward_backtest \
+  --tickers QQQ SNDK --start 2026-06-01 --end 2026-10-02 \
+  --opening-drive both --exit giveback --cost-bps 5
+
+# 2. Chart the same signals (the chart has no exit model)
+python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward \
+  --tickers QQQ SNDK --days 87 --end 2026-10-02 --opening-drive both
+```
+
+To run it on other tickers or dates, change `--tickers`, `--start`/`--end` (backtest) or
+`--days`/`--end` (chart).
+
+---
+
 ## Setup
 
 ```bash
@@ -220,6 +251,44 @@ metric above), `waves`, `boxes`, `signals`, `suppressed_signals`, `regime_skippe
 `reversal_skipped_signals`.
 `bars` is a regular-hours frame with lowercase OHLC and `ma_<period>` columns — build it with
 `add_moving_averages(regular_hours(raw_bars))`.
+
+---
+
+## Backtesting
+
+`analysis_scripts/wave_risk_reward_backtest.py` turns every signal into one trade, using the same
+signal options as the charting script (all of the options above except `--days`/`--out-dir`):
+
+```bash
+# Defaults, every exit model side by side
+python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward_backtest \
+  --tickers QQQ SNDK --start 2026-06-01 --end 2026-10-02 --compare-exits
+
+# Opening drive with the give-back exit and 5 bps round-trip costs, trades to CSV
+... wave_risk_reward_backtest --tickers SNDK --start 2026-08-03 --end 2026-10-02 \
+    --opening-drive both --exit giveback --cost-bps 5 --csv-out trades.csv
+
+# Leg-catch report: how many large/medium hindsight legs the signals catch
+... wave_risk_reward_backtest --tickers SNDK --start 2026-08-03 --end 2026-10-02 --legs
+```
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--start` / `--end` | required / today | Backtest window (sessions); 45 calendar days before `--start` are loaded for warm-up |
+| `--exit` | `target` | `target`: the signal's stop or target. `giveback`: the stop, or once up `--giveback-arm-r` × risk, the first close that gives back `--giveback` of the best open profit. `eod`: the stop, else the session close |
+| `--compare-exits` | off | Also print all three exits side by side |
+| `--giveback` / `--giveback-arm-r` | 0.32 / 0.25 | Give-back exit settings |
+| `--cost-bps` | 0 | Round-trip cost taken off every trade |
+| `--legs` | off | Leg-catch report (all legs and opening legs, large and medium) |
+| `--leg-reversal-adr` / `--large-leg-adr` / `--medium-leg-adr` | 0.25 / 0.75 / 0.4 | Leg definition, in multiples of ADR |
+| `--csv-out` | — | Write every trade (chosen exit) to CSV |
+
+Trade rules: entry at the signal bar's close; every exit mode exits at the session close at the
+latest; a bar touching both stop and target counts as the stop; a gap through the stop fills at
+the bar's open; signals on a session's last bar are skipped. Times in the CSV are bar *open*
+times (Alpaca convention), so an entry stamped 09:30 filled at that bar's 09:35 close. The
+report shows results overall and by signal type, ticker and month. Tests:
+`tests/op_momentum_trade_engine/test_wave_risk_reward_backtest.py`.
 
 ---
 

@@ -9,7 +9,10 @@
 > for the wave-count / consolidation-box signal study behind `analysis_scripts/wave_risk_reward.py`
 > (no reliable edge yet; box breakouts don't predict direction, wide-box fades are
 > regime-dependent, the 5-min MA-stack regime switch helps, stop-and-reverse and the
-> opening-range bias hurt).
+> opening-range bias hurt), and
+> [`research/findings/wave_risk_reward_strategy_ticker_params_tunning.md`](research/findings/wave_risk_reward_strategy_ticker_params_tunning.md)
+> for its full-year 2026 SNDK vs META results and META parameter tuning (ticker-specific;
+> 3-month tuning does not hold out of sample).
 
 ## Finding 1 — Opening Window Start Time & Width (2026-03-01 → 2026-03-28)
 

@@ -6,10 +6,12 @@ Research log for `analysis_scripts/wave_risk_reward.py` (usage:
 
 ## Summary
 
-- **No configuration has a reliable edge yet.** The best so far — the current defaults
-  (`--regime-switch ma-stack`, stop-and-reverse off) — made **+13.62% over 138 trades** on
-  QQQ + SNDK, Jun 1 – Oct 2 2026, but averages only **+0.05R per trade**, comes almost entirely
-  from SNDK (+13.94%; QQQ −0.32%), and loses 11% in July.
+- **Best result so far (Finding 14):** default box signals plus `--opening-drive both`, with 5 bps
+  round-trip costs, on QQQ + SNDK, Jun 1 – Oct 2 2026: **+75.04%** over 311 trades holding to the
+  session close (`--exit eod`), **+49.45%** with the give-back exit; every full month positive in
+  both. **It is an SNDK result:** SNDK made +83.55% / +55.25% while **QQQ lost in every
+  configuration once costs are included**, and SNDK rose enormously over the period. Not yet a
+  reliable edge — it needs a wider ticker set and a bear period.
 - **Box breakouts do not predict direction.** Over 30 sessions, in-session breakouts and
   breakdowns moved the signal's way 36–57% of the time at 5 min to the session close, and R/R did
   not rank outcomes (Spearman +0.10).
@@ -25,7 +27,12 @@ Research log for `analysis_scripts/wave_risk_reward.py` (usage:
   trade-every-day baseline on both sides in all three samples tested (Finding 12) and is now
   `--opening-drive`.
 - **The exit leaves most of a caught leg on the table.** On the same SNDK signals a give-back
-  exit made +19.29% against +7.54% for the fixed target (Finding 11).
+  exit made +19.29% against +7.54% for the fixed target (Finding 11); on QQQ + SNDK Jun–Oct it
+  made +28.01% against +13.62% (Finding 13).
+- **The setup is ticker-specific** — see
+  [`wave_risk_reward_strategy_ticker_params_tunning.md`](wave_risk_reward_strategy_ticker_params_tunning.md):
+  over 2026 the best configuration made +156.66% on SNDK but −8.74% on META, and tuning META's
+  box settings on 3 months did not hold out of sample.
 - **The MA-stack regime switch helps** (+4.39% → +9.41%, 345 → 145 trades); an efficiency-ratio
   trend filter and the opening-range bias both hurt.
 
@@ -301,21 +308,96 @@ Large opening up legs caught: green first bar 3/5, 17/36, 74/187 (52–61% win);
   the pool is thin), entry assumes a fill at the 09:35 close, give-back values untuned, leg
   thresholds are judgement calls.
 
+## Finding 13 — Exit models on the default signals (Jun 1 – Oct 2)
+
+First run of the committed backtest (`wave_risk_reward_backtest.py --compare-exits`), defaults,
+QQQ + SNDK, no costs. The target row reproduces Finding 10 exactly.
+
+| Exit | Trades | Win | Avg % | Avg R | Total | Exits (target / giveback / stop / close) |
+|---|---|---|---|---|---|---|
+| target (current) | 138 | 43% | +0.099 | +0.05 | +13.62% | 21 / 0 / 72 / 45 |
+| **giveback** (32%, armed at 0.25 × risk) | 138 | **57%** | **+0.203** | +0.09 | **+28.01%** | 0 / 83 / 43 / 12 |
+| session close | 138 | 42% | +0.189 | +0.16 | +26.09% | 0 / 0 / 72 / 66 |
+
+Letting winners run roughly doubles the total; the give-back exit also lifts the win rate. Same
+caveats as before: 2 tickers, 4 months, no costs, give-back values untuned.
+
+## Finding 14 — Opening drive + exits, with costs (Jun 1 – Oct 2)
+
+QQQ + SNDK, default box signals, 5 bps round trip unless noted (`wave_risk_reward_backtest.py`):
+
+| Configuration | Trades | Win | Total | QQQ | SNDK | Jun | Jul | Aug | Sep |
+|---|---|---|---|---|---|---|---|---|---|
+| defaults, `--exit target`, no costs | 138 | 43% | +13.62% | −0.32 | +13.94 | +16.2 | −11.0 | +5.7 | +3.0 |
+| defaults, `--exit giveback`, no costs | 138 | 57% | +28.01% | −1.04 | +29.05 | | | | |
+| defaults, `--exit eod` | 138 | 38% | +19.19% | −0.91 | +20.11 | | | | |
+| defaults, `--exit giveback` | 138 | 46% | +21.11% | −4.39 | +25.50 | +7.9 | −3.4 | +7.2 | +10.0 |
+| `--opening-drive long`, `--exit giveback` | 219 | 47% | +40.82% | −5.13 | +45.94 | | | | |
+| `--opening-drive both`, `--exit giveback` | 311 | 46% | **+49.45%** | −5.80 | +55.25 | +0.7 | +19.0 | +11.8 | +20.9 |
+| **`--opening-drive both`, `--exit eod`** | 311 | 35% | **+75.04%** | −8.51 | +83.55 | +13.7 | +16.5 | +26.2 | +21.5 |
+
+By signal type for the two best rows (giveback / eod): opening drive +28.34% / +55.85% (173
+trades), gap +15.83% / +9.54% (21), narrow-box breaks +5.45% / +6.91% (89), fades −0.17% /
++2.75% (28). October (2 sessions) lost about 3% in both.
+
+- The opening drive is the main contributor and every full month is positive in both rows.
+- Holding to the close beats the give-back exit on SNDK in this period — consistent with SNDK's
+  strong up-drift. The give-back exit wins more often (46% vs 35%) and is the more conservative
+  choice; Finding 12's mirror test is the evidence that the first-bar direction is not pure drift.
+- **QQQ loses in every row with costs** — this configuration is not a QQQ strategy.
+
 ---
 
-## Current best configuration
+## Current best configuration (as of 2026-10-04)
 
-The defaults:
+**Highest total:** default box signals + `--opening-drive both`, held to the session close.
+**More conservative:** the same signals with the give-back exit. Both from Finding 14 (QQQ +
+SNDK, Jun 1 – Oct 2 2026, 5 bps costs):
+
+| Configuration | Trades | Win | Total | QQQ | SNDK |
+|---|---|---|---|---|---|
+| `--opening-drive both --exit eod` | 311 | 35% | **+75.04%** | −8.51% | +83.55% |
+| `--opening-drive both --exit giveback` | 311 | 46% | **+49.45%** | −5.80% | +55.25% |
 
 ```bash
+cd /Users/victorhuang/work/alpha_tech_tracker
+source ~/.pyenv/versions/alpha_tech_tracker/bin/activate
+export PYTHONPATH=$PWD
+
+# 1. Backtest the best configuration (reproduces +75.04% / +49.45% below)
+python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward_backtest \
+  --tickers QQQ SNDK --start 2026-06-01 --end 2026-10-02 \
+  --opening-drive both --exit eod --cost-bps 5
+
+python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward_backtest \
+  --tickers QQQ SNDK --start 2026-06-01 --end 2026-10-02 \
+  --opening-drive both --exit giveback --cost-bps 5
+
+# 2. Chart the same signals (the chart has no exit model)
 python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward \
-  --tickers QQQ SNDK --days 87 --end 2026-10-02
-# = --regime-switch ma-stack (no --stop-and-reverse) --reversion-box-bars 6 --box-stop-ratio 0.2
-#   --min-box-waves 2 --small-wave-ratio 1.5 --max-box-height-ratio 2.0
-#   --min-wave-bar-ranges 2 --lookback-waves 10 --repeat-overlap-bars 1.0 --min-risk-pct 0.001
+  --tickers QQQ SNDK --days 87 --end 2026-10-02 --opening-drive both
 ```
 
+Every other setting is a default:
+
+```
+--regime-switch ma-stack (no --stop-and-reverse) --reversion-box-bars 6 --box-stop-ratio 0.2
+--min-box-waves 2 --small-wave-ratio 1.5 --max-box-height-ratio 2.0
+--min-wave-bar-ranges 2 --lookback-waves 10 --repeat-overlap-bars 1.0 --min-risk-pct 0.001
+--giveback 0.32 --giveback-arm-r 0.25 (giveback exit only)
+```
+
+**Read before using:** over full-year 2026 this configuration (long-only drive) made +156.66% on
+SNDK and −8.74% on META —
+[`wave_risk_reward_strategy_ticker_params_tunning.md`](wave_risk_reward_strategy_ticker_params_tunning.md).
+The profit is SNDK's (QQQ loses in every configuration with costs), both
+periods tested were bull markets, the 5 bps cost and 09:35 fill are assumptions, and several
+settings were chosen on this same data.
+
 | Setting | Source |
+|---|---|
+| `--opening-drive both` | Finding 12 (beats a trade-every-day baseline on both sides); Finding 14 |
+| `--exit eod` / `--exit giveback` | Findings 11, 13, 14 |
 |---|---|
 | `ma-stack` | Finding 8 — beat no filter, efficiency ratio and opening range |
 | stop-and-reverse off | Finding 10 — the one signal type that lost in every test |
@@ -327,9 +409,10 @@ python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_rew
 
 ## Open questions and next steps
 
-0. **Give-back exit and opening drive** — build the give-back exit into a committed backtest and
-   test `--opening-drive` with costs and on a bear period (for example 2022 from cached
-   history). Recheck Findings 11–12 with legs built from the `Wave` module.
+0. **Give-back exit and opening drive** — the committed backtest now has the give-back exit and
+   costs; next, test `--opening-drive` and the give-back exit on a bear period (for example 2022
+   from cached history) and on a wider ticker set. Recheck Findings 11–12 with legs built from
+   the `Wave` module.
 
 1. ~~Drop stop-and-reverse~~ — done, off by default (Finding 10).
 2. **Validate on a wider sample** — 10+ cached tickers over 6–12 months before trusting any
@@ -344,9 +427,19 @@ python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_rew
 
 ## Reproduction
 
-The evaluation scripts were one-off scratchpad files (not in the repo): a signal-quality
-backtest (forward returns plus the stop/target trade simulation above), a regime-filter
-prototype, an opening-range sweep and an opening-range direction check. They all call
-`analyze_bars()` on `add_moving_averages(regular_hours(fetch_bars(...)))` and apply the trade
-rules in [Method](#method). Promote the signal-quality backtest into `analysis_scripts/` before
-rerunning these findings on a wider sample.
+`analysis_scripts/wave_risk_reward_backtest.py` reproduces the trade-based findings with the
+trade rules in [Method](#method) (usage in the guide's *Backtesting* section). For example:
+
+```bash
+# Findings 10 and 13 (138 trades, +13.62% target / +28.01% giveback)
+... wave_risk_reward_backtest --tickers QQQ SNDK --start 2026-06-01 --end 2026-10-02 --compare-exits
+# Finding 7 (no regime filter, stop-and-reverse on)
+... wave_risk_reward_backtest --tickers QQQ SNDK --start 2026-06-01 --end 2026-10-02 \
+    --regime-switch off --stop-and-reverse
+# Finding 11 (leg catch, 1/7 large, 3/45 medium)
+... wave_risk_reward_backtest --tickers SNDK --start 2026-08-03 --end 2026-10-02 --legs
+```
+
+The forward-return tables (Finding 5), the efficiency-ratio prototype (Finding 8), the
+opening-range direction check (Finding 9) and the opening-leg rule study with its mirror test
+(Finding 12) came from one-off scripts that were not committed.
