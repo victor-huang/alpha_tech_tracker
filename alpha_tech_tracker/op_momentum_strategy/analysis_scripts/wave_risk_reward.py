@@ -30,8 +30,11 @@ Wide box   = a box at least `--reversion-box-bars` x its average bar length (hig
              of the 5-min bars inside it) tall trades as a range instead:
              fade short = first close within one bar length of the box high (stop one
              bar length above the high, target the box low); fade long mirrors it at
-             the low. A close beyond that fade stop is the breakout/breakdown, which
-             stops the fade out and reverses it; its stop sits back at the box edge.
+             the low. A close beyond that fade stop is the breakout/breakdown (stop back
+             at the box edge). When it follows a fade on the same box it would stop the
+             fade out and reverse it; that stop-and-reverse signal only fires with
+             `--stop-and-reverse` (off by default, it lost in every test) and is otherwise
+             kept in `reversal_skipped_signals`.
              A wide box retires when it breaks out or down rather than when the wave
              in progress outgrows the small-wave size.
 Regime     = `--regime-switch ma-stack` (default) classifies every bar from its MAs:
@@ -46,6 +49,13 @@ Regime     = `--regime-switch ma-stack` (default) classifies every bar from its 
              mirror. A bearish bar only fades the top zone of any box (narrow or
              wide), a bullish bar only buys the bottom zone. Bars without a bias fall
              back to the ma-stack rules.
+Opening    = `--opening-drive both|long|short` (off by default): a green first bar of the
+drive        session fires drive long at its close with the stop at the bar's low, a red
+             one fires drive short with the stop at its high. Not gated by the regime
+             switch or repeat suppression. Target = the median wave size in the trade
+             direction. In testing it was traded with a give-back exit (out once 32% of
+             the best open profit is given back, after a move of 0.25 x risk), which
+             this script does not model.
 Wave size  = a wave may only end once its range reaches `--min-wave-bar-ranges` x the
              average 5-min bar range % of the trailing `--volatility-window-bars` bars,
              so wave counts are comparable across tickers. `--min-wave-price-change`
@@ -94,7 +104,8 @@ DEFAULT_MIN_BOX_WAVES = 2
 DEFAULT_SMALL_WAVE_RATIO = 1.5
 DEFAULT_MAX_BOX_HEIGHT_RATIO = 2.0
 DEFAULT_REVERSION_BOX_BARS = 6.0
-LONG_SIGNALS = ("breakout", "fade_long")
+LONG_SIGNALS = ("breakout", "fade_long", "drive_long")
+OPENING_DRIVE_MODES = ("off", "both", "long", "short")
 REGIME_SIGNALS = {"up": ("breakout",), "down": ("breakdown",), "range": ("fade_long", "fade_short")}
 REGIME_SWITCHES = ("ma-stack", "opening-range", "off")
 DEFAULT_OPENING_RANGE_BARS = 3
@@ -118,6 +129,8 @@ class WaveRiskRewardParams:
     box_stop_ratio: float = DEFAULT_BOX_STOP_RATIO
     reversion_box_bars: float = DEFAULT_REVERSION_BOX_BARS
     regime_switch: str = "ma-stack"
+    stop_and_reverse: bool = False
+    opening_drive: str = "off"
     opening_range_bars: int = DEFAULT_OPENING_RANGE_BARS
     max_ma200_distance_bars: float = DEFAULT_MAX_MA200_DISTANCE_BARS
     minimum_wave_price_change: Optional[float] = None
@@ -345,6 +358,34 @@ def regime_allows(signal_name, regime):
     return signal_name in REGIME_SIGNALS[regime]
 
 
+def opening_drive_signal(bar, mode):
+    """(signal name, stop) for the session's first bar: green -> drive_long, red -> drive_short."""
+    if bar["close"] > bar["open"] and mode in ("both", "long"):
+        return "drive_long", bar["low"]
+    if bar["close"] < bar["open"] and mode in ("both", "short"):
+        return "drive_short", bar["high"]
+    return None
+
+
+def opening_drive_risk_reward(direction, entry, stop, waves, min_risk_pct=0.001):
+    """Stop at the first bar's extreme, target the median wave size in the trade direction."""
+    sizes = [wave.price_range() for wave in waves if wave.direction() == direction]
+    is_long = direction == "up"
+    risk = entry - stop if is_long else stop - entry
+    if not sizes or risk < 0:
+        return None
+    risk = max(risk, entry * min_risk_pct)
+    reward = statistics.median(sizes)
+    return {
+        "entry": entry,
+        "stop": stop,
+        "target": entry + reward if is_long else entry - reward,
+        "risk": risk,
+        "reward": reward,
+        "rr": reward / risk,
+    }
+
+
 def _box_signal(box, close):
     """Signal the close triggers in `box`, or None; each box fires each signal once."""
     if box["mode"] == "reversion":
@@ -390,6 +431,7 @@ def analyze_bars(bars, params=None):
     signals = []
     suppressed_signals = []
     regime_skipped_signals = []
+    reversal_skipped_signals = []
     snapshots = []
     current_box = None
     retired_box_keys = set()
@@ -505,12 +547,38 @@ def analyze_bars(bars, params=None):
             if params.regime_switch != "off" and not bias and not regime_allows(name, regime):
                 regime_skipped_signals.append(signal)
                 signal = None
+            elif signal["reverses"] and not params.stop_and_reverse:
+                reversal_skipped_signals.append(signal)
+                signal = None
             elif _repeat_is_suppressed(last_fired.get(name), edge, session, tolerance):
                 suppressed_signals.append(signal)
                 signal = None
             else:
                 signals.append(signal)
                 last_fired = {name: {"edge": edge, "session": session}}
+
+        drive_signal = None
+        if params.opening_drive != "off" and session_bar_index == 0:
+            drive = opening_drive_signal(bar, params.opening_drive)
+            if drive:
+                drive_name, drive_stop = drive
+                drive_signal = {
+                    "time": timestamp,
+                    "signal": drive_name,
+                    "gap": False,
+                    "price": close,
+                    "box_low": bar["low"],
+                    "box_high": bar["high"],
+                    "box_mode": "opening",
+                    "reverses": None,
+                    "risk_reward": opening_drive_risk_reward(
+                        "up" if drive_name == "drive_long" else "down", close, drive_stop, lookback,
+                        params.min_risk_pct,
+                    ),
+                    "regime": regime,
+                    "bias": bias,
+                }
+                signals.append(drive_signal)
 
         if active_box:
             if active_box["mode"] == "reversion":
@@ -537,7 +605,7 @@ def analyze_bars(bars, params=None):
             "bias": bias,
             "or_high": or_high if opening_range_done else None,
             "or_low": or_low if opening_range_done else None,
-            "signal": _signal_label(signal) if signal else None,
+            "signal": " + ".join(_signal_label(fired) for fired in (signal, drive_signal) if fired) or None,
             "min_wave_price_change": min_wave_change,
         }
         for period in MA_PERIODS:
@@ -560,12 +628,19 @@ def analyze_bars(bars, params=None):
         "signals": signals,
         "suppressed_signals": suppressed_signals,
         "regime_skipped_signals": regime_skipped_signals,
+        "reversal_skipped_signals": reversal_skipped_signals,
     }
 
 
 def _signal_label(signal):
     name = signal["signal"].replace("_", " ")
     return f"gap {name}" if signal["gap"] else name
+
+
+def _signal_range_text(signal):
+    if signal["box_mode"] == "opening":
+        return f"first bar {signal['box_low']:.2f}-{signal['box_high']:.2f}"
+    return f"{signal['box_mode']} box {signal['box_low']:.2f}-{signal['box_high']:.2f}"
 
 
 def _fmt(value, spec=".2f"):
@@ -680,6 +755,8 @@ def build_chart(ticker, bars, result, display_start):
         ("fade short", "triangle-down", "#ff7f0e"),
         ("gap fade long", "triangle-up-open", "#17becf"),
         ("gap fade short", "triangle-down-open", "#ff7f0e"),
+        ("drive long", "diamond", "#2ca02c"),
+        ("drive short", "diamond", "#d62728"),
     )
     for kind, symbol, color in marker_styles:
         picked = [signal for signal in signals if _signal_label(signal) == kind]
@@ -692,7 +769,7 @@ def build_chart(ticker, bars, result, display_start):
             reverses_text = f" (stops & reverses {signal['reverses'].replace('_', ' ')})" if signal["reverses"] else ""
             texts.append(
                 f"{kind}{reverses_text} {signal['time']:%m-%d %H:%M} @ {signal['price']:.2f}<br>"
-                f"box {signal['box_low']:.2f}-{signal['box_high']:.2f}<br>{rr_text}"
+                f"{_signal_range_text(signal)}<br>{rr_text}"
             )
         fig.add_trace(go.Scatter(
             x=[_chart_time(signal["time"]) for signal in picked], y=[signal["price"] for signal in picked],
@@ -732,6 +809,7 @@ def _print_ticker_summary(ticker, result, display_start, chart_path):
     shown_signals = [signal for signal in result["signals"] if signal["time"] >= display_start]
     suppressed = [signal for signal in result["suppressed_signals"] if signal["time"] >= display_start]
     regime_skipped = [signal for signal in result["regime_skipped_signals"] if signal["time"] >= display_start]
+    reversal_skipped = [signal for signal in result["reversal_skipped_signals"] if signal["time"] >= display_start]
     last = snapshots.iloc[-1]
 
     print("\n" + "=" * 100)
@@ -741,11 +819,13 @@ def _print_ticker_summary(ticker, result, display_start, chart_path):
         f" {sum(1 for w in shown_waves if w.direction() == 'down')} down)"
         + "".join(
             f"   {sum(1 for s in shown_signals if s['signal'] == name)} {name.replace('_', ' ')}"
-            for name in ("breakout", "breakdown", "fade_long", "fade_short")
+            for name in ("breakout", "breakdown", "fade_long", "fade_short", "drive_long", "drive_short")
+            if not name.startswith("drive") or any(s["signal"] == name for s in shown_signals)
         )
         + f"   ({sum(1 for s in shown_signals if s['gap'])} gap,"
         f" {sum(1 for s in shown_signals if s['reverses'])} stop-and-reverse,"
-        f" {len(suppressed)} repeats suppressed, {len(regime_skipped)} skipped by regime)"
+        f" {len(suppressed)} repeats suppressed, {len(regime_skipped)} skipped by regime,"
+        f" {len(reversal_skipped)} stop-and-reverse skipped)"
     )
     print("=" * 100)
     for signal in shown_signals:
@@ -754,7 +834,7 @@ def _print_ticker_summary(ticker, result, display_start, chart_path):
         print(
             f"  {signal['time']:%Y-%m-%d %H:%M}  {_signal_label(signal):14}  @ {signal['price']:.2f}"
             f"  {signal['regime']:5}"
-            f"  {signal['box_mode']:9} box {signal['box_low']:.2f}-{signal['box_high']:.2f}  {rr_text}"
+            f"  {_signal_range_text(signal):31}  {rr_text}"
             + ("  (stop & reverse)" if signal["reverses"] else "")
         )
     print(f"latest {snapshots.index[-1]:%Y-%m-%d %H:%M}")
@@ -814,6 +894,16 @@ def parse_args():
              " off: fire every signal (default: ma-stack)",
     )
     parser.add_argument(
+        "--stop-and-reverse", action="store_true",
+        help="Fire the breakout/breakdown that stops a wide-box fade out and reverses it"
+             " (default: off)",
+    )
+    parser.add_argument(
+        "--opening-drive", default="off", choices=OPENING_DRIVE_MODES,
+        help="Signal on the session's first bar: green -> drive long, red -> drive short, stop at"
+             " the bar's extreme; both, long or short (default: off)",
+    )
+    parser.add_argument(
         "--opening-range-bars", type=int, default=DEFAULT_OPENING_RANGE_BARS,
         help=f"5-min bars in the opening range, normally 3-6 (default: {DEFAULT_OPENING_RANGE_BARS})",
     )
@@ -860,6 +950,8 @@ def main():
         box_stop_ratio=args.box_stop_ratio,
         reversion_box_bars=args.reversion_box_bars,
         regime_switch=args.regime_switch,
+        stop_and_reverse=args.stop_and_reverse,
+        opening_drive=args.opening_drive,
         opening_range_bars=args.opening_range_bars,
         max_ma200_distance_bars=args.max_ma200_distance_bars,
         minimum_wave_price_change=args.min_wave_price_change,

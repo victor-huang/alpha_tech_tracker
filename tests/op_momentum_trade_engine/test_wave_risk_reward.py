@@ -11,6 +11,8 @@ from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward i
     find_consolidation,
     is_reversion_box,
     ma_stack_regime,
+    opening_drive_risk_reward,
+    opening_drive_signal,
     opening_range_bias,
     regime_allows,
     regular_hours,
@@ -498,11 +500,35 @@ class TestAnalyzeBarsReversionBox:
         self._patch_wide_box(mocker)
         bars = _bars("2026-09-01 10:00", [101.5, 102.7, 103.6])
 
-        signals = analyze_bars(bars, _params())["signals"]
+        signals = analyze_bars(bars, _params(stop_and_reverse=True))["signals"]
 
         assert [s["signal"] for s in signals] == ["fade_short", "breakout"]
         assert signals[1]["reverses"] == "fade_short"
         assert signals[1]["risk_reward"]["stop"] == pytest.approx(103.0)
+
+    def test_stop_and_reverse_is_skipped_by_default(self, mocker):
+        self._patch_wide_box(mocker)
+        bars = _bars("2026-09-01 10:00", [101.5, 102.7, 103.6])
+
+        result = analyze_bars(bars, _params())
+
+        assert [s["signal"] for s in result["signals"]] == ["fade_short"]
+        assert [s["signal"] for s in result["reversal_skipped_signals"]] == ["breakout"]
+
+    def test_skipped_stop_and_reverse_still_retires_wide_box(self, mocker):
+        self._patch_wide_box(mocker)
+        bars = _bars("2026-09-01 10:00", [101.5, 102.7, 103.6, 100.3])
+
+        result = analyze_bars(bars, _params())
+
+        assert [s["signal"] for s in result["signals"]] == ["fade_short"]
+        assert result["boxes"][0]["active_until"] == _timestamp("2026-09-01 10:10")
+
+    def test_breakout_without_prior_fade_fires_by_default(self, mocker):
+        self._patch_wide_box(mocker)
+        bars = _bars("2026-09-01 10:00", [101.5, 103.6])
+
+        assert [s["signal"] for s in analyze_bars(bars, _params())["signals"]] == ["breakout"]
 
     def test_breakout_without_prior_fade_does_not_reverse(self, mocker):
         self._patch_wide_box(mocker)
@@ -517,7 +543,7 @@ class TestAnalyzeBarsReversionBox:
         self._patch_wide_box(mocker)
         bars = _bars("2026-09-01 10:00", [102.7, 100.3, 103.6, 103.0])
 
-        result = analyze_bars(bars, _params())
+        result = analyze_bars(bars, _params(stop_and_reverse=True))
 
         assert [s["signal"] for s in result["signals"]] == ["fade_short", "fade_long", "breakout"]
         assert result["boxes"][0]["active_until"] == _timestamp("2026-09-01 10:10")
@@ -729,3 +755,107 @@ class TestAnalyzeBarsOpeningRangeBias:
         assert (last["or_high"], last["or_low"]) == (pytest.approx(101.1), pytest.approx(100.4))
         assert last["bias"] == "bearish"
         assert last["regime"] == "or-bearish"
+
+
+class TestOpeningDriveSignal:
+    def test_green_first_bar_is_drive_long_with_stop_at_low(self):
+        bar = {"open": 100.0, "high": 101.5, "low": 99.5, "close": 101.0}
+
+        assert opening_drive_signal(bar, "both") == ("drive_long", 99.5)
+
+    def test_red_first_bar_is_drive_short_with_stop_at_high(self):
+        bar = {"open": 100.0, "high": 100.5, "low": 98.5, "close": 99.0}
+
+        assert opening_drive_signal(bar, "both") == ("drive_short", 100.5)
+
+    def test_flat_first_bar_has_no_signal(self):
+        bar = {"open": 100.0, "high": 100.5, "low": 99.5, "close": 100.0}
+
+        assert opening_drive_signal(bar, "both") is None
+
+    def test_long_mode_ignores_red_bar(self):
+        bar = {"open": 100.0, "high": 100.5, "low": 98.5, "close": 99.0}
+
+        assert opening_drive_signal(bar, "long") is None
+
+    def test_short_mode_ignores_green_bar(self):
+        bar = {"open": 100.0, "high": 101.5, "low": 99.5, "close": 101.0}
+
+        assert opening_drive_signal(bar, "short") is None
+
+
+class TestOpeningDriveRiskReward:
+    def _waves(self):
+        return [
+            _wave("2026-09-01 09:30", 100.0, 102.0, "up"),
+            _wave("2026-09-01 10:00", 99.0, 102.0, "down"),
+            _wave("2026-09-01 10:30", 99.0, 103.0, "up"),
+        ]
+
+    def test_long_targets_median_up_wave(self):
+        result = opening_drive_risk_reward("up", 101.0, 100.0, self._waves(), min_risk_pct=0.0)
+
+        assert result["target"] == pytest.approx(104.0)
+        assert result["rr"] == pytest.approx(3.0)
+
+    def test_short_targets_median_down_wave(self):
+        result = opening_drive_risk_reward("down", 101.0, 102.0, self._waves(), min_risk_pct=0.0)
+
+        assert result["target"] == pytest.approx(98.0)
+
+    def test_none_without_waves_in_trade_direction(self):
+        up_only = [wave for wave in self._waves() if wave.direction() == "up"]
+
+        assert opening_drive_risk_reward("down", 101.0, 102.0, up_only) is None
+
+
+class TestAnalyzeBarsOpeningDrive:
+    RANGE_STACK = (4.0, 2.0, 3.0, 1.0)
+
+    def _session(self, first_bar, start="2026-09-02 09:30"):
+        bars = _bars_with_mas(start, [first_bar[3], first_bar[3]], self.RANGE_STACK)
+        for column, value in zip(("open", "high", "low", "close"), first_bar):
+            bars.iloc[0, bars.columns.get_loc(column)] = value
+        return bars
+
+    def test_off_by_default(self):
+        bars = self._session((100.0, 101.5, 99.5, 101.0))
+
+        assert analyze_bars(bars)["signals"] == []
+
+    def test_green_first_bar_fires_drive_long_at_close(self):
+        bars = self._session((100.0, 101.5, 99.5, 101.0))
+
+        signals = analyze_bars(bars, WaveRiskRewardParams(opening_drive="both"))["signals"]
+
+        assert [(s["signal"], s["time"], s["price"]) for s in signals] == [
+            ("drive_long", _timestamp("2026-09-02 09:30"), 101.0)
+        ]
+
+    def test_fires_in_range_regime_despite_ma_stack_switch(self):
+        bars = self._session((100.0, 101.5, 99.5, 101.0))
+
+        result = analyze_bars(bars, WaveRiskRewardParams(opening_drive="both", regime_switch="ma-stack"))
+
+        assert [s["signal"] for s in result["signals"]] == ["drive_long"]
+        assert result["signals"][0]["regime"] == "range"
+
+    def test_fires_once_per_session_on_first_bar_only(self):
+        bars = pd.concat([
+            self._session((100.0, 101.5, 99.5, 101.0), start="2026-09-01 15:50"),
+            self._session((100.0, 100.5, 98.5, 99.0), start="2026-09-02 09:30"),
+        ])
+
+        signals = analyze_bars(bars, WaveRiskRewardParams(opening_drive="both"))["signals"]
+
+        assert [(s["signal"], s["time"]) for s in signals] == [
+            ("drive_long", _timestamp("2026-09-01 15:50")),
+            ("drive_short", _timestamp("2026-09-02 09:30")),
+        ]
+
+    def test_snapshot_labels_drive_signal(self):
+        bars = self._session((100.0, 101.5, 99.5, 101.0))
+
+        snapshots = analyze_bars(bars, WaveRiskRewardParams(opening_drive="both"))["snapshots"]
+
+        assert snapshots["signal"].iloc[0] == "drive long"
