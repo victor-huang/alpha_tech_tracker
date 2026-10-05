@@ -17,10 +17,10 @@ from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward_s
 MARKET_TZ = "America/New_York"
 
 
-def _trade(day, pnl):
+def _trade(day, pnl, **extra):
     stamp = pd.Timestamp(day, tz=MARKET_TZ)
-    return {"entry_time": stamp, "exit_time": stamp, "side": 1, "entry": 100.0, "exit": 101.0,
-            "outcome": "target", "net_pct": pnl}
+    return dict({"entry_time": stamp, "exit_time": stamp, "side": 1, "entry": 100.0, "exit": 101.0,
+                 "outcome": "target", "net_pct": pnl}, **extra)
 
 
 def _results(trades):
@@ -31,7 +31,8 @@ def _results(trades):
 
 
 def _overviews():
-    return OrderedDict(AMD={"sessions": 3, "buy_hold": 5.0, "overnight": 4.0, "in_session": 1.0})
+    return OrderedDict(AMD={"sessions": 3, "buy_hold": 5.0, "overnight": 4.0, "in_session": 1.0,
+                            "earnings": OrderedDict([(date(2026, 9, 2), -13.2)])})
 
 
 class TestWeekStart:
@@ -69,6 +70,24 @@ class TestBuildReport:
         assert "### Monthly (fixed exits)" in report
         assert "### Weekly (week starting) (fixed exits)" in report
         assert "| AMD | +5.00% | +4.00% | +1.00% | drive long +1.50% |" in report
+
+    def test_lists_earnings_sessions(self):
+        report = build_report(_results([_trade("2026-09-01 10:00", 1.5)]), _overviews(),
+                              date(2026, 9, 1), date(2026, 9, 30), 5)
+
+        assert "Earnings reaction sessions (close vs previous close): 2026-09-02 -13.20%." in report
+
+    def test_splits_flagged_trades_into_earnings_and_other(self):
+        trades = [_trade("2026-09-02 09:30", -4.0, earnings=True), _trade("2026-09-03 09:30", 1.0, earnings=False)]
+
+        report = build_report(_results(trades), _overviews(), date(2026, 9, 1), date(2026, 9, 30), 5)
+
+        assert "| drive long | 1 / -4.00% | 1 / +1.00% |" in report
+
+    def test_notes_skipped_earnings_trades(self):
+        report = build_report(_results([]), _overviews(), date(2026, 9, 1), date(2026, 9, 30), 5, earnings="skip")
+
+        assert "Trades carrying an earnings reaction are skipped." in report
 
 
 class TestWriteOutputs:

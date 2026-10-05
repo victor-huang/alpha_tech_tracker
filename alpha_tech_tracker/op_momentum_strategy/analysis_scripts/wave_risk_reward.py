@@ -88,6 +88,12 @@ Switches   = `--no-box-signals` turns off every box signal (breakout, breakdown,
              the wave pullback can run on their own. `--no-gap-signals` drops box signals
              fired on a session's first bar from an earlier session's box; they are kept
              in `gap_skipped_signals`.
+Earnings   = `--earnings skip` drops signals whose trade carries an earnings reaction: the
+             overnight hold entered the session before a reacting session, and intraday
+             signals on the reacting session (release before the open -> that session,
+             after the close -> the next). `--earnings only` keeps just those. Dropped
+             signals are kept in `earnings_skipped_signals`; reacting sessions are marked
+             on the chart. Release times: earnings_calendar.py (Yahoo, cached 7 days).
 Wave size  = a wave may only end once its range reaches `--min-wave-bar-ranges` x the
              average 5-min bar range % of the trailing `--volatility-window-bars` bars,
              so wave counts are comparable across tickers. `--min-wave-price-change`
@@ -114,6 +120,10 @@ import plotly.graph_objects as go
 from alpaca.data.enums import DataFeed
 from plotly.subplots import make_subplots
 
+from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.earnings_calendar import (
+    in_earnings_window,
+    ticker_earnings_windows,
+)
 from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.ticker_stats_report import (
     MARKET_OPEN,
     SESSION_END,
@@ -141,6 +151,7 @@ OVERNIGHT_HOLD_MODES = ("off", "always", "ma200", "ma20-ma200", "ma50-rising")
 OVERNIGHT_ENTRY_TIME = time(15, 55)
 OVERNIGHT_WARMUP_SESSIONS = 210  # daily MA200 plus a margin
 OVERNIGHT_NOMINAL_RISK_PCT = 0.01  # no stop: R is measured against 1% of the entry price
+EARNINGS_MODES = ("off", "skip", "only")
 DEEP_BOUNCE_MODES = ("off", "both", "long", "short")
 DEFAULT_DEEP_WAVE_RATIO = 2.0
 DEFAULT_DEEP_BOUNCE_TARGET_FIB = 0.5
@@ -179,6 +190,7 @@ class WaveRiskRewardParams:
     wave_pullback: str = "off"
     deep_bounce: str = "off"
     overnight_hold: str = "off"
+    earnings: str = "off"
     deep_wave_ratio: float = DEFAULT_DEEP_WAVE_RATIO
     deep_bounce_target_fib: float = DEFAULT_DEEP_BOUNCE_TARGET_FIB
     deep_bounce_stop_buffer: float = DEFAULT_DEEP_BOUNCE_STOP_BUFFER
@@ -609,13 +621,17 @@ def _repeat_is_suppressed(previous, edge, session, tolerance):
     return previous is not None and previous["session"] == session and abs(edge - previous["edge"]) < tolerance
 
 
-def analyze_bars(bars, params=None):
+def analyze_bars(bars, params=None, earnings_windows=None):
     """Replay regular-hours bars (lowercase OHLC + MA columns) through Wave bar by bar.
 
     Returns the per-bar snapshot frame, every wave, the consolidation boxes seen and
     the breakout/breakdown/fade signals. A narrow box retires once the wave in progress
     grows past the small-wave size, so a trend leg that has not finished yet still ends
     the box; a wide box retires once it breaks out or down.
+
+    With `params.earnings` skip or only and `earnings_windows` (earnings_calendar.earnings_windows),
+    signals whose trade carries an earnings reaction are dropped (skip) or kept alone (only);
+    the dropped ones are in `earnings_skipped_signals`.
     """
     params = params or WaveRiskRewardParams()
     waves = []
@@ -904,6 +920,15 @@ def analyze_bars(bars, params=None):
                 snapshot[f"{side}_{field}"] = result[field] if result else None
         snapshots.append(snapshot)
 
+    earnings_skipped_signals = []
+    if params.earnings != "off" and earnings_windows is not None:
+        keep_inside = params.earnings == "only"
+        kept = []
+        for fired in signals:
+            target = kept if in_earnings_window(fired, earnings_windows) == keep_inside else earnings_skipped_signals
+            target.append(fired)
+        signals = kept
+
     if waves:
         snapshot_frame = pd.DataFrame(snapshots).set_index("time")
     else:
@@ -917,6 +942,8 @@ def analyze_bars(bars, params=None):
         "regime_skipped_signals": regime_skipped_signals,
         "reversal_skipped_signals": reversal_skipped_signals,
         "gap_skipped_signals": gap_skipped_signals,
+        "earnings_skipped_signals": earnings_skipped_signals,
+        "earnings_windows": earnings_windows,
     }
 
 
@@ -1082,6 +1109,14 @@ def build_chart(ticker, bars, result, display_start):
             text=texts, hoverinfo="text", name=kind,
         ), row=1, col=1)
 
+    reaction_days = sorted((result.get("earnings_windows") or {}).get("reaction", ()))
+    for day in reaction_days:
+        opening = shown_bars.index[shown_bars.index.date == day]
+        if len(opening):
+            fig.add_vline(x=_chart_time(opening[0]), line=dict(color="#8c564b", width=1, dash="dash"), row=1, col=1)
+            fig.add_annotation(x=_chart_time(opening[0]), y=1, yref="y domain", text="earnings", showarrow=False,
+                               font=dict(color="#8c564b", size=10), xanchor="left", row=1, col=1)
+
     for side, color in (("long", "#2ca02c"), ("short", "#d62728")):
         fig.add_trace(go.Scatter(
             x=times, y=snapshots[f"{side}_rr"].clip(upper=RR_DISPLAY_CAP), mode="lines",
@@ -1116,6 +1151,7 @@ def _print_ticker_summary(ticker, result, display_start, chart_path):
     regime_skipped = [signal for signal in result["regime_skipped_signals"] if signal["time"] >= display_start]
     reversal_skipped = [signal for signal in result["reversal_skipped_signals"] if signal["time"] >= display_start]
     gap_skipped = [signal for signal in result["gap_skipped_signals"] if signal["time"] >= display_start]
+    earnings_skipped = [signal for signal in result["earnings_skipped_signals"] if signal["time"] >= display_start]
     last = snapshots.iloc[-1]
 
     print("\n" + "=" * 100)
@@ -1134,8 +1170,13 @@ def _print_ticker_summary(ticker, result, display_start, chart_path):
         f" {sum(1 for s in shown_signals if s['reverses'])} stop-and-reverse,"
         f" {len(suppressed)} repeats suppressed, {len(regime_skipped)} skipped by regime,"
         f" {len(reversal_skipped)} stop-and-reverse skipped"
-        + (f", {len(gap_skipped)} gap skipped" if gap_skipped else "") + ")"
+        + (f", {len(gap_skipped)} gap skipped" if gap_skipped else "")
+        + (f", {len(earnings_skipped)} earnings skipped" if earnings_skipped else "") + ")"
     )
+    reaction_days = sorted(d for d in (result.get("earnings_windows") or {}).get("reaction", ())
+                           if d >= display_start.date())
+    if reaction_days:
+        print("earnings reaction sessions: " + ", ".join(f"{d:%Y-%m-%d}" for d in reaction_days))
     print("=" * 100)
     for signal in shown_signals:
         rr_text = _rr_text(signal, width="5")
@@ -1206,6 +1247,12 @@ def add_strategy_arguments(parser):
         "--overnight-hold", default="off", choices=OVERNIGHT_HOLD_MODES,
         help="Buy the session's 15:55 close and exit at the next open; always, or filtered by the daily"
              " trend: ma200 (close above the daily MA200, recommended), ma20-ma200, ma50-rising (default: off)",
+    )
+    parser.add_argument(
+        "--earnings", default="off", choices=EARNINGS_MODES,
+        help="Earnings calendar (Yahoo, cached): skip drops trades that carry an earnings reaction (the"
+             " overnight hold into a release and intraday signals on the reacting session), only keeps them"
+             " alone; the reacting sessions are marked on the chart (default: off)",
     )
     parser.add_argument(
         "--deep-bounce", default="off", choices=DEEP_BOUNCE_MODES,
@@ -1306,6 +1353,7 @@ def params_from_args(args):
         pullback_target_ext=args.pullback_target_ext,
         deep_bounce=args.deep_bounce,
         overnight_hold=args.overnight_hold,
+        earnings=args.earnings,
         deep_wave_ratio=args.deep_wave_ratio,
         deep_bounce_target_fib=args.deep_bounce_target_fib,
         deep_bounce_stop_buffer=args.deep_bounce_stop_buffer,
@@ -1358,7 +1406,8 @@ def main():
         sessions = sorted(set(bars.index.date))
         display_start = bars.index[bars.index.date >= sessions[-min(args.days, len(sessions))]][0]
 
-        result = analyze_bars(bars, params)
+        windows = ticker_earnings_windows(ticker, bars) if params.earnings != "off" else None
+        result = analyze_bars(bars, params, windows)
         chart_path = out_dir / f"{ticker}_{display_start:%Y-%m-%d}_{bars.index[-1]:%Y-%m-%d}.html"
         build_chart(ticker, bars, result, display_start).write_html(str(chart_path))
         _print_ticker_summary(ticker, result, display_start, chart_path)

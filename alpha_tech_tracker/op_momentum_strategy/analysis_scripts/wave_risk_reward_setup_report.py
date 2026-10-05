@@ -6,6 +6,11 @@ pullback long C1, deep bounce long/short, overnight always/ma200) for every tick
 advance (REPORT_EXITS) so they are not picked with hindsight; every trade for every exit is in
 the trades CSV.
 
+Every trade is flagged when it carries an earnings reaction (earnings_calendar.py): the
+report lists each ticker's earnings sessions and splits the fixed-exit totals into earnings
+vs other trades. `--earnings skip` drops those trades from every setup, `--earnings only`
+keeps just them (the output folder gets an `_earnings-<mode>` suffix).
+
 Writes to `--out-dir` (default backtest_result/wave_setups/<start>_<end>/):
   report.md   - per-ticker overview, setup x exit totals, monthly and weekly tables
   trades.csv  - every trade: ticker, setup, exit, entry/exit time, prices, net %
@@ -26,6 +31,7 @@ from pathlib import Path
 
 from alpaca.data.enums import DataFeed
 
+from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.earnings_calendar import ticker_earnings_windows
 from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.ticker_stats_report import clamp_end_for_sip
 from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward_backtest import (
     parse_args as parse_backtest_args,
@@ -54,7 +60,7 @@ REPORT_EXITS = OrderedDict([
 ])
 DEFAULT_OUT_ROOT = Path(__file__).resolve().parent.parent / "backtest_result" / "wave_setups"
 TRADE_FIELDS = ["ticker", "setup", "exit", "entry_time", "exit_time", "side", "entry", "exit_price",
-                "outcome", "net_pct"]
+                "outcome", "net_pct", "earnings"]
 
 
 def week_start(day):
@@ -76,13 +82,14 @@ def stats(trades):
 
 
 def _run(job):
-    ticker, name, start, end, cost_bps, feed_name = job
+    ticker, name, start, end, cost_bps, feed_name, earnings = job
     feed = DataFeed.SIP if feed_name == "sip" else DataFeed.IEX
     bars = _load_bars(ticker, start, end, feed)
     args = parse_backtest_args(["--tickers", ticker, "--start", start.isoformat(), "--compare-exits",
-                                "--cost-bps", str(cost_bps)] + SETUP_RUNS[name])
+                                "--cost-bps", str(cost_bps), "--earnings", earnings] + SETUP_RUNS[name])
     args.end = end
-    trades_by_exit = run_backtest(OrderedDict([(ticker, bars)]), args)[0]
+    windows = ticker_earnings_windows(ticker, bars)
+    trades_by_exit = run_backtest(OrderedDict([(ticker, bars)]), args, {ticker: windows})[0]
     out = OrderedDict()
     if name == "box signals":
         for label in sorted(set(BOX_GROUPS.values())):
@@ -102,19 +109,23 @@ def ticker_overview(ticker, start, end, feed):
     window = daily[(daily.index >= start) & (daily.index <= end)]
     overnight = sum(math.log(o / p) for o, p in zip(window["open"], previous_close.loc[window.index]) if p == p)
     session = sum(math.log(c / o) for c, o in zip(window["close"], window["open"]))
+    reaction = sorted(d for d in ticker_earnings_windows(ticker, bars)["reaction"] if start <= d <= end)
     return {"sessions": len(window), "buy_hold": (window["close"].iloc[-1] / window["open"].iloc[0] - 1) * 100,
-            "overnight": math.exp(overnight) * 100 - 100, "in_session": math.exp(session) * 100 - 100}
+            "overnight": math.exp(overnight) * 100 - 100, "in_session": math.exp(session) * 100 - 100,
+            "earnings": OrderedDict((d, (daily.loc[d, "close"] / previous_close.loc[d] - 1) * 100) for d in reaction)}
 
 
 def _pct(value):
     return f"{value:+.2f}%"
 
 
-def build_report(results, overviews, start, end, cost_bps):
+def build_report(results, overviews, start, end, cost_bps, earnings="off"):
+    earnings_note = {"off": "", "skip": " Trades carrying an earnings reaction are skipped.",
+                     "only": " Only trades carrying an earnings reaction are kept."}[earnings]
     lines = [f"# Wave setup report {start} .. {end}", "",
              f"Every setup backtested on its own, {cost_bps:g} bps round trip. Weekly and monthly tables use a fixed "
              "exit per setup: " + ", ".join(f"{s} = {e}" for s, e in REPORT_EXITS.items()) + ". "
-             "Totals are sums of per-trade returns (not compounded); setups trade independently.", ""]
+             "Totals are sums of per-trade returns (not compounded); setups trade independently." + earnings_note, ""]
 
     lines += ["## Summary (fixed exits)", "",
               "| Setup | " + " | ".join(results) + " |", "|---|" + "---|" * len(results)]
@@ -133,6 +144,9 @@ def build_report(results, overviews, start, end, cost_bps):
         lines += ["", f"## {t}", "",
                   f"{ov['sessions']} sessions: buy & hold {_pct(ov['buy_hold'])}, overnight {_pct(ov['overnight'])}, "
                   f"in-session {_pct(ov['in_session'])}.", "",
+                  "Earnings reaction sessions (close vs previous close): "
+                  + (", ".join(f"{d} {_pct(move)}" for d, move in ov.get("earnings", {}).items())
+                     or "none in the window") + ".", "",
                   "### All exits (trades / win / total)", "",
                   "| Setup | target | target-trail | giveback | eod | next open |", "|---|---|---|---|---|---|"]
         for setup in REPORT_EXITS:
@@ -145,6 +159,16 @@ def build_report(results, overviews, start, end, cost_bps):
                 s = stats(trades)
                 cells.append(f"{s['trades']} / {s['win']:.0%} / {_pct(s['total'])}")
             lines.append(f"| {setup} | " + " | ".join(cells) + " |")
+
+        if any("earnings" in t for by_exit in setups.values() for trades in by_exit.values() for t in trades):
+            lines += ["", "### Earnings vs other trades (fixed exits, trades / total)", "",
+                      "| Setup | earnings | other |", "|---|---|---|"]
+            for setup, exit_mode in REPORT_EXITS.items():
+                cells = []
+                for flag in (True, False):
+                    s = stats([t for t in setups[setup][exit_mode] if t.get("earnings") == flag])
+                    cells.append(f"{s['trades']} / {_pct(s['total'])}")
+                lines.append(f"| {setup} | " + " | ".join(cells) + " |")
 
         for title, key, label in (("Monthly", lambda d: (d.year, d.month), lambda p: f"{p[0]}-{p[1]:02d}"),
                                   ("Weekly (week starting)", week_start, lambda p: f"{p:%m-%d}")):
@@ -163,7 +187,7 @@ def _session_days(setups):
     return {t["entry_time"].date() for by_exit in setups.values() for trades in by_exit.values() for t in trades}
 
 
-def write_outputs(results, overviews, start, end, cost_bps, out_dir):
+def write_outputs(results, overviews, start, end, cost_bps, out_dir, earnings="off"):
     out_dir.mkdir(parents=True, exist_ok=True)
     with (out_dir / "trades.csv").open("w", newline="") as handle:
         writer = csv.DictWriter(handle, fieldnames=TRADE_FIELDS)
@@ -176,7 +200,7 @@ def write_outputs(results, overviews, start, end, cost_bps, out_dir):
                                          "entry_time": t["entry_time"], "exit_time": t["exit_time"],
                                          "side": t["side"], "entry": round(t["entry"], 4),
                                          "exit_price": round(t["exit"], 4), "outcome": t["outcome"],
-                                         "net_pct": round(t["net_pct"], 4)})
+                                         "net_pct": round(t["net_pct"], 4), "earnings": t.get("earnings", "")})
     with (out_dir / "summary.csv").open("w", newline="") as handle:
         writer = csv.writer(handle)
         writer.writerow(["ticker", "setup", "exit", "trades", "win_rate", "total_pct", "report_exit"])
@@ -186,7 +210,7 @@ def write_outputs(results, overviews, start, end, cost_bps, out_dir):
                     s = stats(trades)
                     writer.writerow([ticker, setup, mode, s["trades"], round(s["win"], 4), round(s["total"], 4),
                                      mode == REPORT_EXITS[setup]])
-    (out_dir / "report.md").write_text(build_report(results, overviews, start, end, cost_bps))
+    (out_dir / "report.md").write_text(build_report(results, overviews, start, end, cost_bps, earnings))
     return out_dir
 
 
@@ -197,6 +221,8 @@ def parse_args(argv=None):
     parser.add_argument("--end", type=date.fromisoformat, help="Last session (default: today)")
     parser.add_argument("--feed", default="sip", choices=["sip", "iex"])
     parser.add_argument("--cost-bps", type=float, default=5.0)
+    parser.add_argument("--earnings", default="off", choices=("off", "skip", "only"),
+                        help="skip: drop trades that carry an earnings reaction; only: keep just them (default: off)")
     parser.add_argument("--out-dir", help="Output folder (default: backtest_result/wave_setups/<start>_<end>)")
     parser.add_argument("--workers", type=int, default=8)
     return parser.parse_args(argv)
@@ -207,7 +233,7 @@ def main(argv=None):
     feed = DataFeed.SIP if args.feed == "sip" else DataFeed.IEX
     end = clamp_end_for_sip(args.end or date.today(), feed)
     start = args.start or end - timedelta(days=91)
-    jobs = [(t, name, start, end, args.cost_bps, args.feed) for t in args.tickers for name in SETUP_RUNS]
+    jobs = [(t, name, start, end, args.cost_bps, args.feed, args.earnings) for t in args.tickers for name in SETUP_RUNS]
     results = OrderedDict((t, OrderedDict()) for t in args.tickers)
     with ProcessPoolExecutor(max_workers=args.workers) as pool:
         for ticker, out in pool.map(_run, jobs):
@@ -215,8 +241,9 @@ def main(argv=None):
     for ticker in results:
         results[ticker] = OrderedDict((s, results[ticker][s]) for s in REPORT_EXITS)
     overviews = OrderedDict((t, ticker_overview(t, start, end, feed)) for t in args.tickers)
+    folder = f"{start}_{end}" + (f"_earnings-{args.earnings}" if args.earnings != "off" else "")
     out_dir = write_outputs(results, overviews, start, end, args.cost_bps,
-                            Path(args.out_dir) if args.out_dir else DEFAULT_OUT_ROOT / f"{start}_{end}")
+                            Path(args.out_dir) if args.out_dir else DEFAULT_OUT_ROOT / folder, args.earnings)
     report = (out_dir / "report.md").read_text()
     print(report.split("\n## ", 2)[0] + "\n## " + report.split("\n## ", 2)[1].split("\n## ")[0])
     print(f"\nreport, trades.csv and summary.csv written to {out_dir}")

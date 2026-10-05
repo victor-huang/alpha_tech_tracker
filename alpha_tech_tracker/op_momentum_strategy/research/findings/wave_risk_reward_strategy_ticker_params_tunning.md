@@ -658,6 +658,38 @@ python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_rew
   --tickers AMAT --start 2025-10-01 --end 2026-10-02
 ```
 
+## Finding 16 — Earnings calendar: skip the night into the release
+
+`--earnings skip` (see the guide's Earnings calendar section) drops trades that carry an earnings
+reaction: the overnight hold entered the session before the release gap, and intraday signals on
+the reacting session. Run on the 8-ticker setup report, 2026-07-02 .. 2026-10-02, 5 bps
+(`backtest_result/wave_setups/2026-07-02_2026-10-02{,_earnings-skip}/`). One release per ticker
+in the window:
+
+| Ticker | Reaction session (close vs prior close) | Overnight into it | Overnight always: all → skip |
+|---|---|---|---|
+| AMD | 2026-08-05 −8.42% | −7.94% | +7.43% → **+15.37%** |
+| MRNA | 2026-07-31 −5.43% | −0.10% | +45.58% → +45.68% |
+| META | 2026-07-30 −8.17% | −10.51% | +7.65% → **+18.16%** |
+| SNPS | 2026-08-27 +13.37% | +2.27% | +19.70% → +17.43% |
+| MSFT | 2026-07-30 +15.06% | **+11.77%** | +5.78% → −5.99% |
+| MDB | 2026-09-02 −13.78% | −13.20% | −47.00% → −33.79% |
+| SPOT | 2026-08-04 −1.74% | −4.10% | −15.74% → −11.65% |
+| SPCX | 2026-08-05 −14.02% | −10.83% | −20.33% → −9.50% |
+
+- **The night into earnings is a coin flip with a fat tail:** 6 of 8 lost (−0.1% to −13.2%),
+  2 won (MSFT +11.8%, SNPS +2.3%). Net across the 8: −32.6% on 8 nights, versus the ordinary nights
+  that carry the overnight edge on AMD, META and MRNA.
+- **Skipping helped 6 of 8 tickers.** It is a risk filter, not an edge: one night decides the
+  outcome either way (MSFT turns from +5.8% to −6.0% by skipping its one good night).
+- **It does not fix MDB.** MDB's −24.1% gap on Sep 28 was not an earnings release; the overnight
+  hold still loses −33.8% with earnings skipped. Ticker selection (Finding 14) is still the main
+  guard.
+- **Intraday setups barely change:** one trade per ticker per setup at most moves (e.g. AMD drive
+  long −1.26% → +1.56%, MDB C1 +2.24% → +3.98%).
+- Sample: one quarter, 8 releases. Before relying on it, rerun over a year
+  (`--earnings only` shows the earnings trades alone).
+
 ## Recommendations
 
 1. **Choose tickers before tuning settings.** The same configuration ranges from +156.66% (SNDK)

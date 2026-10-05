@@ -275,6 +275,39 @@ class TestRunBacktest:
         params = analyze.call_args.args[1]
         assert (params.opening_drive, params.regime_switch) == ("both", "off")
 
+    def test_given_earnings_windows_flag_each_trade(self, mocker):
+        mocker.patch(f"{MODULE}.analyze_bars", return_value={"signals": [_signal("2026-09-01 10:00")]})
+        args = parse_args(["--start", "2026-09-01"])
+        args.end = date(2026, 9, 1)
+        windows = {"reaction": {date(2026, 9, 1)}, "eve": set()}
+
+        trades_by_exit, _, _ = run_backtest({"SNDK": self._bars()}, args, {"SNDK": windows})
+
+        assert trades_by_exit["target"][0]["earnings"] is True
+
+    def test_earnings_option_loads_the_calendar(self, mocker):
+        analyze = mocker.patch(f"{MODULE}.analyze_bars", return_value={"signals": []})
+        windows = {"reaction": set(), "eve": set()}
+        load = mocker.patch(f"{MODULE}.ticker_earnings_windows", return_value=windows)
+        args = parse_args(["--start", "2026-09-01", "--earnings", "skip"])
+        args.end = date(2026, 9, 1)
+
+        run_backtest({"SNDK": self._bars()}, args)
+
+        assert load.call_args.args[0] == "SNDK"
+        assert analyze.call_args.args[2] is windows
+
+    def test_earnings_off_skips_the_calendar(self, mocker):
+        mocker.patch(f"{MODULE}.analyze_bars", return_value={"signals": [_signal("2026-09-01 10:00")]})
+        load = mocker.patch(f"{MODULE}.ticker_earnings_windows")
+        args = parse_args(["--start", "2026-09-01"])
+        args.end = date(2026, 9, 1)
+
+        trades_by_exit, _, _ = run_backtest({"SNDK": self._bars()}, args)
+
+        load.assert_not_called()
+        assert "earnings" not in trades_by_exit["target"][0]
+
 
 class TestMain:
     def test_prints_report_for_fetched_bars(self, mocker, capsys):

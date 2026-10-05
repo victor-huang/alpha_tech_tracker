@@ -61,6 +61,34 @@ python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_rew
 
 Writes `report.md`, `trades.csv` (every trade, every exit) and `summary.csv` to
 `backtest_result/wave_setups/<start>_<end>/` (or `--out-dir`). Default window: the last 3 months.
+Each ticker's section lists its earnings reaction sessions and splits the fixed-exit totals into
+earnings vs other trades; `trades.csv` has an `earnings` column. `--earnings skip` / `only`
+reruns with those trades dropped / kept alone (folder suffix `_earnings-<mode>`).
+
+### Earnings calendar
+
+`--earnings off|skip|only` (chart, backtest, scan and setup report) uses
+`analysis_scripts/earnings_calendar.py`: release times from Yahoo's earnings calendar page, cached
+per ticker in `market_data/cache/earnings/<TICKER>.json` for 7 days (a failed refresh falls back
+to the cache; no cache and no network means no filter, with a message).
+
+- **Reaction session:** a release before the open → that session; at or after noon → the next
+  session; unknown time (Yahoo shows 12 AM) → both.
+- **Eve:** the session before a reaction session.
+- A trade **carries an earnings reaction** when it is an overnight hold entered on an eve
+  (it holds through the release gap) or an intraday signal on a reaction session.
+- `skip` drops those signals (kept in `earnings_skipped_signals`), `only` keeps just them; the
+  backtest flags every trade and adds a "by earnings" breakdown. Reaction sessions are marked
+  with a dashed line on the chart.
+
+```bash
+# Overnight hold, skipping the nights into an earnings release
+python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward_backtest \
+  --tickers AMD META --start 2026-07-02 --end 2026-10-02 --no-box-signals --overnight-hold always \
+  --earnings skip --cost-bps 5
+```
+
+Results: [ticker-tuning doc, Finding 16](../research/findings/wave_risk_reward_strategy_ticker_params_tunning.md#finding-16--earnings-calendar-skip-the-night-into-the-release).
 
 ### Box signals + opening drive (QQQ + SNDK)
 
@@ -291,6 +319,7 @@ Signals the regime blocks are kept in `regime_skipped_signals` and counted in th
 | | `--deep-bounce-target-fib` | 0.5 | Target as a fraction of the wave back from its extreme (1.0 = its start) |
 | | `--deep-bounce-stop-buffer` | 0.1 | Stop beyond the wave extreme, as a fraction of the wave size |
 | | `--overnight-hold` | `off` | Buy the 15:55 close, sell the next open: `always`, `ma200`, `ma20-ma200`, `ma50-rising` |
+| | `--earnings` | `off` | Earnings calendar: `skip` trades that carry a release reaction, or keep `only` them |
 | | `--no-box-signals` | — | Turn off breakouts, breakdowns and fades |
 | | `--no-gap-signals` | — | Drop gap signals |
 | R/R | `--box-stop-ratio` | 0.2 | Breakout stop back inside the box (1.0 = opposite edge) |

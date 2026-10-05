@@ -17,6 +17,10 @@ Exit       = `--exit target`: the signal's stop or target, whichever comes first
              Overnight-hold signals always exit at the next session's first bar open,
              whatever `--exit` says.
 Costs      = `--cost-bps` round trip, taken off every trade's return.
+Earnings   = `--earnings skip` drops the trades that carry an earnings reaction (the overnight
+             hold into a release, intraday signals on the reacting session); `--earnings only`
+             keeps them alone. Either way each trade gets an `earnings` flag and the report a
+             breakdown by it. Release times come from earnings_calendar.py (Yahoo, cached).
 
 `--legs` adds a hindsight leg report: legs are pivot-to-pivot moves on 5-min closes within a
 session that end when price reverses `--leg-reversal-adr` x ADR (prior 20 sessions' high-low).
@@ -39,6 +43,10 @@ from pathlib import Path
 import numpy as np
 from alpaca.data.enums import DataFeed
 
+from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.earnings_calendar import (
+    in_earnings_window,
+    ticker_earnings_windows,
+)
 from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.intraday_leg_timing import (
     prior_session_adr,
     regular_sessions,
@@ -73,7 +81,7 @@ SIGNAL_GROUPS = (
 )
 CSV_FIELDS = [
     "ticker", "signal", "group", "regime", "entry_time", "exit_time", "side", "entry", "exit",
-    "stop", "target", "outcome", "risk", "gross_pct", "net_pct", "net_r",
+    "stop", "target", "outcome", "risk", "gross_pct", "net_pct", "net_r", "earnings",
 ]
 
 
@@ -297,6 +305,9 @@ def print_report(trades, session_count, args, exit_mode):
     _print_breakdown("ticker", OrderedDict((t, [x for x in trades if x["ticker"] == t]) for t in args.tickers))
     months = sorted({f"{t['entry_time']:%Y-%m}" for t in trades})
     _print_breakdown("month", OrderedDict((m, [t for t in trades if f"{t['entry_time']:%Y-%m}" == m]) for m in months))
+    if any("earnings" in t for t in trades):
+        _print_breakdown("earnings", OrderedDict((label, [t for t in trades if t.get("earnings") == flag])
+                                                 for label, flag in (("earnings", True), ("other", False))))
 
 
 def print_exit_comparison(trades_by_exit, args):
@@ -363,20 +374,29 @@ def parse_args(argv=None):
     return parser.parse_args(argv)
 
 
-def run_backtest(bars_by_ticker, args):
-    """Trades per exit mode, graded legs and the session count for the backtest window."""
+def run_backtest(bars_by_ticker, args, earnings_windows_by_ticker=None):
+    """Trades per exit mode, graded legs and the session count for the backtest window.
+
+    Earnings windows come from `earnings_windows_by_ticker`, else from the calendar when
+    `--earnings` is on; with windows every trade gets an `earnings` flag.
+    """
     params = params_from_args(args)
     exit_modes = EXIT_MODES if args.compare_exits else (args.exit,)
     trades_by_exit = {mode: [] for mode in exit_modes}
     graded_legs, session_count = [], 0
     for ticker, bars in bars_by_ticker.items():
-        signals = [s for s in analyze_bars(bars, params)["signals"] if args.start <= s["time"].date() <= args.end]
+        windows = (earnings_windows_by_ticker or {}).get(ticker)
+        if windows is None and params.earnings != "off":
+            windows = ticker_earnings_windows(ticker, bars)
+        signals = [s for s in analyze_bars(bars, params, windows)["signals"] if args.start <= s["time"].date() <= args.end]
         session_count += len({d for d in bars.index.date if args.start <= d <= args.end})
         simulator = TradeSimulator(bars)
         for mode in exit_modes:
             for signal in signals:
                 trade = simulator.run(signal, mode, args.giveback, args.giveback_arm_r)
                 if trade:
+                    if windows is not None:
+                        trade["earnings"] = in_earnings_window(signal, windows)
                     trades_by_exit[mode].append(dict(apply_costs(trade, args.cost_bps), ticker=ticker))
         if args.legs:
             legs = find_legs(bars, args.start, args.end, args.leg_reversal_adr, args.large_leg_adr, args.medium_leg_adr)

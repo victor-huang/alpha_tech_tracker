@@ -114,22 +114,22 @@ def _load_bars(ticker, start, end, feed):
 
 
 def _run_setup(job):
-    ticker, name, start, end, cost_bps, feed_name = job
+    ticker, name, start, end, cost_bps, feed_name, earnings = job
     feed = DataFeed.SIP if feed_name == "sip" else DataFeed.IEX
     bars = _load_bars(ticker, start, end, feed)
     args = parse_backtest_args(["--tickers", ticker, "--start", start.isoformat(), "--compare-exits",
-                                "--cost-bps", str(cost_bps)] + SETUP_RUNS[name])
+                                "--cost-bps", str(cost_bps), "--earnings", earnings] + SETUP_RUNS[name])
     args.end = end
     trades_by_exit = run_backtest(OrderedDict([(ticker, bars)]), args)[0]
     return job, trades_by_exit
 
 
-def scan_ticker(ticker, start, end, cost_bps, feed_name, workers):
+def scan_ticker(ticker, start, end, cost_bps, feed_name, workers, earnings="off"):
     feed = DataFeed.SIP if feed_name == "sip" else DataFeed.IEX
     bars = _load_bars(ticker, start, end, feed)
     sessions = sorted(d for d in set(bars.index.date) if start <= d <= end)
     halves = split_halves(sessions)
-    jobs = [(ticker, name, start, end, cost_bps, feed_name) for name in SETUP_RUNS]
+    jobs = [(ticker, name, start, end, cost_bps, feed_name, earnings) for name in SETUP_RUNS]
     with ProcessPoolExecutor(max_workers=workers) as pool:
         outputs = dict(pool.map(_run_setup, jobs))
 
@@ -183,6 +183,8 @@ def parse_args(argv=None):
     parser.add_argument("--cost-bps", type=float, default=5.0, help="Round-trip cost in basis points (default: 5)")
     parser.add_argument("--min-trades", type=int, default=DEFAULT_MIN_TRADES,
                         help=f"Trades a setup needs in each half to be recommended (default: {DEFAULT_MIN_TRADES})")
+    parser.add_argument("--earnings", default="off", choices=("off", "skip", "only"),
+                        help="skip: drop trades that carry an earnings reaction; only: keep just them (default: off)")
     parser.add_argument("--workers", type=int, default=8)
     return parser.parse_args(argv)
 
@@ -194,7 +196,8 @@ def main(argv=None):
     start = args.start or end - timedelta(days=365)
     print(f"Setup scan {start}..{end}, {args.cost_bps:g} bps round trip; each setup backtested on its own")
     for ticker in args.tickers:
-        print_report(ticker, scan_ticker(ticker, start, end, args.cost_bps, args.feed, args.workers), args.min_trades)
+        print_report(ticker, scan_ticker(ticker, start, end, args.cost_bps, args.feed, args.workers, args.earnings),
+                     args.min_trades)
 
 
 if __name__ == "__main__":

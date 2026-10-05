@@ -1,4 +1,5 @@
 import math
+from datetime import date
 
 import pandas as pd
 import pytest
@@ -868,6 +869,39 @@ class TestAnalyzeBarsOpeningDrive:
         snapshots = analyze_bars(bars, WaveRiskRewardParams(opening_drive="both"))["snapshots"]
 
         assert snapshots["signal"].iloc[0] == "drive long"
+
+
+class TestAnalyzeBarsEarnings:
+    WINDOWS = {"reaction": {date(2026, 9, 2)}, "eve": {date(2026, 9, 1)}}
+
+    def _bars(self):
+        sessions = TestAnalyzeBarsOpeningDrive()
+        return pd.concat([
+            sessions._session((100.0, 101.5, 99.5, 101.0), start="2026-09-01 15:50"),
+            sessions._session((100.0, 100.5, 98.5, 99.0), start="2026-09-02 09:30"),
+        ])
+
+    def test_skip_drops_signals_on_the_reaction_session(self):
+        result = analyze_bars(self._bars(), WaveRiskRewardParams(opening_drive="both", earnings="skip"), self.WINDOWS)
+
+        assert [s["time"] for s in result["signals"]] == [_timestamp("2026-09-01 15:50")]
+        assert [s["time"] for s in result["earnings_skipped_signals"]] == [_timestamp("2026-09-02 09:30")]
+
+    def test_only_keeps_signals_on_the_reaction_session(self):
+        result = analyze_bars(self._bars(), WaveRiskRewardParams(opening_drive="both", earnings="only"), self.WINDOWS)
+
+        assert [s["time"] for s in result["signals"]] == [_timestamp("2026-09-02 09:30")]
+
+    def test_off_ignores_the_windows(self):
+        result = analyze_bars(self._bars(), WaveRiskRewardParams(opening_drive="both"), self.WINDOWS)
+
+        assert len(result["signals"]) == 2
+        assert result["earnings_skipped_signals"] == []
+
+    def test_skip_without_windows_keeps_every_signal(self):
+        result = analyze_bars(self._bars(), WaveRiskRewardParams(opening_drive="both", earnings="skip"))
+
+        assert len(result["signals"]) == 2
 
 
 def _up_setup():
