@@ -77,14 +77,22 @@ to the cache; no cache and no network means no filter, with a message).
 - **Eve:** the session before a reaction session.
 - A trade **carries an earnings reaction** when it is an overnight hold entered on an eve
   (it holds through the release gap) or an intraday signal on a reaction session.
+- **The overnight hold skips the night into a release by default**, even with `--earnings off`
+  (the calendar loads automatically whenever `--overnight-hold` is on). `--overnight-include-earnings`
+  holds through it; `--earnings only` still keeps just the earnings nights.
 - `skip` drops those signals (kept in `earnings_skipped_signals`), `only` keeps just them; the
   backtest flags every trade and adds a "by earnings" breakdown. Reaction sessions are marked
   with a dashed line on the chart.
 
 ```bash
-# Overnight hold, skipping the nights into an earnings release
+# Overnight hold (skips the nights into an earnings release by default)
 python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward_backtest \
   --tickers AMD META --start 2026-07-02 --end 2026-10-02 --no-box-signals --overnight-hold always \
+  --cost-bps 5
+
+# Every setup, intraday signals on reaction sessions skipped too
+python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward_backtest \
+  --tickers AMD META --start 2026-07-02 --end 2026-10-02 --opening-drive long --overnight-hold always \
   --earnings skip --cost-bps 5
 ```
 
@@ -320,6 +328,7 @@ Signals the regime blocks are kept in `regime_skipped_signals` and counted in th
 | | `--deep-bounce-stop-buffer` | 0.1 | Stop beyond the wave extreme, as a fraction of the wave size |
 | | `--overnight-hold` | `off` | Buy the 15:55 close, sell the next open: `always`, `ma200`, `ma20-ma200`, `ma50-rising` |
 | | `--earnings` | `off` | Earnings calendar: `skip` trades that carry a release reaction, or keep `only` them |
+| | `--overnight-include-earnings` | — | Hold overnight into earnings releases too (skipped by default) |
 | | `--no-box-signals` | — | Turn off breakouts, breakdowns and fades |
 | | `--no-gap-signals` | — | Drop gap signals |
 | R/R | `--box-stop-ratio` | 0.2 | Breakout stop back inside the box (1.0 = opposite edge) |

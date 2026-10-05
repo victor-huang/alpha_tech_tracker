@@ -297,6 +297,25 @@ class TestRunBacktest:
         assert load.call_args.args[0] == "SNDK"
         assert analyze.call_args.args[2] is windows
 
+    def test_overnight_hold_loads_the_calendar_by_default(self, mocker):
+        mocker.patch(f"{MODULE}.analyze_bars", return_value={"signals": []})
+        load = mocker.patch(f"{MODULE}.ticker_earnings_windows", return_value={"reaction": set(), "eve": set()})
+        args = parse_args(["--start", "2026-09-01", "--overnight-hold", "always"])
+        args.end = date(2026, 9, 1)
+
+        run_backtest({"SNDK": self._bars()}, args)
+
+        load.assert_called_once()
+
+    def test_overnight_include_earnings_reaches_analyze_bars(self, mocker):
+        analyze = mocker.patch(f"{MODULE}.analyze_bars", return_value={"signals": []})
+        args = parse_args(["--start", "2026-09-01", "--overnight-hold", "always", "--overnight-include-earnings"])
+        args.end = date(2026, 9, 1)
+
+        run_backtest({"SNDK": self._bars()}, args)
+
+        assert analyze.call_args.args[1].overnight_skip_earnings is False
+
     def test_earnings_off_skips_the_calendar(self, mocker):
         mocker.patch(f"{MODULE}.analyze_bars", return_value={"signals": [_signal("2026-09-01 10:00")]})
         load = mocker.patch(f"{MODULE}.ticker_earnings_windows")

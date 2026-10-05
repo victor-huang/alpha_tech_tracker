@@ -21,6 +21,8 @@ Earnings   = `--earnings skip` drops the trades that carry an earnings reaction 
              hold into a release, intraday signals on the reacting session); `--earnings only`
              keeps them alone. Either way each trade gets an `earnings` flag and the report a
              breakdown by it. Release times come from earnings_calendar.py (Yahoo, cached).
+             The overnight hold skips the night into a release by default, even with
+             `--earnings off`; `--overnight-include-earnings` holds through it.
 
 `--legs` adds a hindsight leg report: legs are pivot-to-pivot moves on 5-min closes within a
 session that end when price reverses `--leg-reversal-adr` x ADR (prior 20 sessions' high-low).
@@ -60,6 +62,7 @@ from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward i
     add_moving_averages,
     add_strategy_arguments,
     analyze_bars,
+    needs_earnings_calendar,
     overnight_needs_history,
     params_from_args,
     regular_hours,
@@ -378,7 +381,8 @@ def run_backtest(bars_by_ticker, args, earnings_windows_by_ticker=None):
     """Trades per exit mode, graded legs and the session count for the backtest window.
 
     Earnings windows come from `earnings_windows_by_ticker`, else from the calendar when
-    `--earnings` is on; with windows every trade gets an `earnings` flag.
+    `--earnings` is on or the overnight hold skips releases; with windows every trade gets an
+    `earnings` flag.
     """
     params = params_from_args(args)
     exit_modes = EXIT_MODES if args.compare_exits else (args.exit,)
@@ -386,7 +390,7 @@ def run_backtest(bars_by_ticker, args, earnings_windows_by_ticker=None):
     graded_legs, session_count = [], 0
     for ticker, bars in bars_by_ticker.items():
         windows = (earnings_windows_by_ticker or {}).get(ticker)
-        if windows is None and params.earnings != "off":
+        if windows is None and needs_earnings_calendar(params):
             windows = ticker_earnings_windows(ticker, bars)
         signals = [s for s in analyze_bars(bars, params, windows)["signals"] if args.start <= s["time"].date() <= args.end]
         session_count += len({d for d in bars.index.date if args.start <= d <= args.end})

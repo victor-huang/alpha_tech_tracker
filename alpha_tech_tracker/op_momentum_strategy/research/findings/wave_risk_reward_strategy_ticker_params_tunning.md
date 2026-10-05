@@ -689,6 +689,10 @@ in the window:
   long −1.26% → +1.56%, MDB C1 +2.24% → +3.98%).
 - Sample: one quarter, 8 releases. Before relying on it, rerun over a year
   (`--earnings only` shows the earnings trades alone).
+- **Made the default for the overnight hold** (2026-10-05): it skips the night into a release
+  unless `--overnight-include-earnings` is given. Intraday setups are unchanged unless
+  `--earnings skip`. Overnight results in Findings 13–15 were run before this default and
+  include the earnings nights.
 
 ## Recommendations
 

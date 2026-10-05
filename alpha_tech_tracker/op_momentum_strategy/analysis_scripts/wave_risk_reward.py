@@ -94,6 +94,8 @@ Earnings   = `--earnings skip` drops signals whose trade carries an earnings rea
              after the close -> the next). `--earnings only` keeps just those. Dropped
              signals are kept in `earnings_skipped_signals`; reacting sessions are marked
              on the chart. Release times: earnings_calendar.py (Yahoo, cached 7 days).
+             The overnight hold skips the night into a release by default, even with
+             `--earnings off`; `--overnight-include-earnings` holds through it.
 Wave size  = a wave may only end once its range reaches `--min-wave-bar-ranges` x the
              average 5-min bar range % of the trailing `--volatility-window-bars` bars,
              so wave counts are comparable across tickers. `--min-wave-price-change`
@@ -191,6 +193,7 @@ class WaveRiskRewardParams:
     deep_bounce: str = "off"
     overnight_hold: str = "off"
     earnings: str = "off"
+    overnight_skip_earnings: bool = True
     deep_wave_ratio: float = DEFAULT_DEEP_WAVE_RATIO
     deep_bounce_target_fib: float = DEFAULT_DEEP_BOUNCE_TARGET_FIB
     deep_bounce_stop_buffer: float = DEFAULT_DEEP_BOUNCE_STOP_BUFFER
@@ -586,6 +589,10 @@ def overnight_filter_ok(mode, closes):
     return False
 
 
+def needs_earnings_calendar(params):
+    return params.earnings != "off" or (params.overnight_hold != "off" and params.overnight_skip_earnings)
+
+
 def overnight_needs_history(mode):
     return mode in ("ma200", "ma20-ma200", "ma50-rising")
 
@@ -631,7 +638,8 @@ def analyze_bars(bars, params=None, earnings_windows=None):
 
     With `params.earnings` skip or only and `earnings_windows` (earnings_calendar.earnings_windows),
     signals whose trade carries an earnings reaction are dropped (skip) or kept alone (only);
-    the dropped ones are in `earnings_skipped_signals`.
+    the dropped ones are in `earnings_skipped_signals`. With `--earnings off`, overnight holds
+    into a release are still skipped unless `params.overnight_skip_earnings` is False.
     """
     params = params or WaveRiskRewardParams()
     waves = []
@@ -921,12 +929,15 @@ def analyze_bars(bars, params=None, earnings_windows=None):
         snapshots.append(snapshot)
 
     earnings_skipped_signals = []
-    if params.earnings != "off" and earnings_windows is not None:
-        keep_inside = params.earnings == "only"
+    if earnings_windows is not None:
         kept = []
         for fired in signals:
-            target = kept if in_earnings_window(fired, earnings_windows) == keep_inside else earnings_skipped_signals
-            target.append(fired)
+            mode = params.earnings
+            if mode == "off" and fired["signal"] == "overnight_long" and params.overnight_skip_earnings:
+                mode = "skip"
+            inside = in_earnings_window(fired, earnings_windows)
+            dropped = (mode == "skip" and inside) or (mode == "only" and not inside)
+            (earnings_skipped_signals if dropped else kept).append(fired)
         signals = kept
 
     if waves:
@@ -1255,6 +1266,11 @@ def add_strategy_arguments(parser):
              " alone; the reacting sessions are marked on the chart (default: off)",
     )
     parser.add_argument(
+        "--overnight-include-earnings", dest="overnight_skip_earnings", action="store_false",
+        help="Hold overnight into an earnings release too (by default the overnight hold skips the session"
+             " before a reacting session, even with --earnings off)",
+    )
+    parser.add_argument(
         "--deep-bounce", default="off", choices=DEEP_BOUNCE_MODES,
         help="Buy the first green bar after a deep down wave (short the mirror after a big up wave);"
              " both, long or short (default: off)",
@@ -1354,6 +1370,7 @@ def params_from_args(args):
         deep_bounce=args.deep_bounce,
         overnight_hold=args.overnight_hold,
         earnings=args.earnings,
+        overnight_skip_earnings=args.overnight_skip_earnings,
         deep_wave_ratio=args.deep_wave_ratio,
         deep_bounce_target_fib=args.deep_bounce_target_fib,
         deep_bounce_stop_buffer=args.deep_bounce_stop_buffer,
@@ -1406,7 +1423,7 @@ def main():
         sessions = sorted(set(bars.index.date))
         display_start = bars.index[bars.index.date >= sessions[-min(args.days, len(sessions))]][0]
 
-        windows = ticker_earnings_windows(ticker, bars) if params.earnings != "off" else None
+        windows = ticker_earnings_windows(ticker, bars) if needs_earnings_calendar(params) else None
         result = analyze_bars(bars, params, windows)
         chart_path = out_dir / f"{ticker}_{display_start:%Y-%m-%d}_{bars.index[-1]:%Y-%m-%d}.html"
         build_chart(ticker, bars, result, display_start).write_html(str(chart_path))

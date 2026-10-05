@@ -23,6 +23,7 @@ from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward i
     pullback_risk_reward,
     opening_drive_signal,
     opening_range_bias,
+    needs_earnings_calendar,
     overnight_filter_ok,
     regime_allows,
     regular_hours,
@@ -902,6 +903,46 @@ class TestAnalyzeBarsEarnings:
         result = analyze_bars(self._bars(), WaveRiskRewardParams(opening_drive="both", earnings="skip"))
 
         assert len(result["signals"]) == 2
+
+
+class TestAnalyzeBarsOvernightEarnings:
+    WINDOWS = {"reaction": {date(2026, 9, 2)}, "eve": {date(2026, 9, 1)}}
+
+    def _bars(self):
+        return pd.concat([
+            _bars("2026-09-01 15:50", [100.0, 101.0]),
+            _bars("2026-09-02 15:50", [102.0, 103.0]),
+            _bars("2026-09-03 09:30", [104.0]),
+        ])
+
+    def test_skips_the_hold_into_a_release_by_default(self):
+        result = analyze_bars(self._bars(), _params(overnight_hold="always"), self.WINDOWS)
+
+        assert [s["time"] for s in result["signals"]] == [_timestamp("2026-09-02 15:55")]
+        assert [s["time"] for s in result["earnings_skipped_signals"]] == [_timestamp("2026-09-01 15:55")]
+
+    def test_holds_into_the_release_when_switched_off(self):
+        params = _params(overnight_hold="always", overnight_skip_earnings=False)
+
+        result = analyze_bars(self._bars(), params, self.WINDOWS)
+
+        assert len(result["signals"]) == 2
+
+    def test_earnings_only_overrides_the_default_skip(self):
+        result = analyze_bars(self._bars(), _params(overnight_hold="always", earnings="only"), self.WINDOWS)
+
+        assert [s["time"] for s in result["signals"]] == [_timestamp("2026-09-01 15:55")]
+
+
+class TestNeedsEarningsCalendar:
+    @pytest.mark.parametrize("overrides, expected", [
+        ({}, False),
+        ({"overnight_hold": "always"}, True),
+        ({"overnight_hold": "always", "overnight_skip_earnings": False}, False),
+        ({"earnings": "skip"}, True),
+    ])
+    def test_loads_the_calendar_only_when_used(self, overrides, expected):
+        assert needs_earnings_calendar(WaveRiskRewardParams(**overrides)) is expected
 
 
 def _up_setup():
