@@ -47,6 +47,21 @@ half), `--feed`, `--workers` (8). Takes about 1.5 minutes per ticker. The report
 overnight / in-session line shows which way the ticker leans: gains overnight → the overnight hold;
 gains in-session → the intraday long setups. Re-run it as the ticker's behaviour changes.
 
+### Setup report with weekly and monthly breakdowns
+
+`analysis_scripts/wave_risk_reward_setup_report.py` runs every setup on every ticker (all exits) and
+saves a report: summary table, per-ticker overview (buy & hold, overnight vs in-session), setup × exit
+totals, and monthly and weekly tables using one exit per setup fixed in advance (box = target,
+drive = eod, pullback / C1 = target-trail, bounce = target, overnight = next open).
+
+```bash
+python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward_setup_report \
+  --tickers AMD MRNA META SNPS MSFT MDB SPOT SPCX --start 2026-07-02 --end 2026-10-02
+```
+
+Writes `report.md`, `trades.csv` (every trade, every exit) and `summary.csv` to
+`backtest_result/wave_setups/<start>_<end>/` (or `--out-dir`). Default window: the last 3 months.
+
 ### Box signals + opening drive (QQQ + SNDK)
 
 From [Finding 14](../research/findings/WAVE_RISK_REWARD_FINDINGS.md#finding-14--opening-drive--exits-with-costs-jun-1--oct-2)
