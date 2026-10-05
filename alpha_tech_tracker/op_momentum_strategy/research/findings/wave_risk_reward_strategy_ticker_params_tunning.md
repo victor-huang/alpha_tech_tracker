@@ -30,6 +30,12 @@ earlier findings: [`WAVE_RISK_REWARD_FINDINGS.md`](WAVE_RISK_REWARD_FINDINGS.md)
   lost in 2025 (−2.68%); the default lost 7.50% on AMD 2025. Only coarser waves (C1,
   `--min-wave-bar-ranges 3`) stayed positive on AMD in both years. The run-up and volatility
   triggers did not hold across years.
+- **Deep bounce (Finding 9):** buying the first green bar after a deep down wave (≥ 2 × the median
+  wave) made +6.09% over AMD's last 3 months (80% win) and +14.72% to +19.69% over 2026, but lost
+  in every variant on 2025 (−5% to −20%).
+- **Best AMD 2026 combination (Finding 10):** deep bounce + pullback long, +29.59% over Jan–Oct
+  2026 with `target-trail` (110 trades, at most 2 open at once) — but −18.81% on 2025. The
+  setups that work on AMD in 2026 are the same dip-buying idea and share the same bad year.
 
 ## Method
 
@@ -341,6 +347,64 @@ Pullback longs without the filter (target-trail, 5 bps):
 All three lost on SNDK and META in 2025. C1 is the most consistent, and the only one positive on
 AMD in both years.
 
+## Finding 9 — Deep bounce: buy the first green bar after a deep down wave
+
+`--deep-bounce` (off by default): when a down wave at least `--deep-wave-ratio` (2) × the median
+lookback wave size finishes — the Wave module ends it once price bounces 23.6% off the low — the
+first green bar fires `bounce long` while price is still below the target. Stop at the wave low −
+`--deep-bounce-stop-buffer` (0.1) × wave size; target `--deep-bounce-target-fib` of the wave back
+up (0.5 = half way, 1.0 = its start). Mirror for shorts after a big up wave.
+
+AMD deep-bounce longs, box signals off, 5 bps (depth 1.5 / 2 / 3 × target 0.5 / 1.0 × four
+exits × with/without a price-above-MA200 filter were tested). Depth 2, target half way:
+
+| Exit | Jul 2 – Oct 2 2026 | Jan 2 – Oct 2 2026 | 2025 |
+|---|---|---|---|
+| `target` | 20 trades, **80%** win, **+6.09%** | 65, 71%, +14.72% | 78, 58%, **−10.71%** |
+| `target-trail` | 20, 80%, +4.26% | 65, 65%, **+19.69%** | 78, 56%, −11.31% |
+| `giveback` | 20, 70%, +0.87% | 65, 58%, +5.80% | 78, 62%, −5.16% |
+| `eod` | 20, 45%, −3.15% | 65, 51%, +21.37% | 78, 40%, −14.57% |
+
+- **All 24 setting/exit combinations lost on 2025**, even at 56–62% win rates: the stop sits
+  well below the entry while the half-way target is close, so losers outweigh winners.
+- The **MA200 trend filter** cut the 2025 loss (best −1.01%) but removed most of the 2026 gain
+  (4 trades in the last 3 months).
+- Depth 1.5 is too loose (more trades, worse results); depth 3 too rare (8 trades in 3 months).
+
+## Finding 10 — Combining the setups that worked for AMD in 2026
+
+Box signals off, 5 bps, each signal traded independently (overlapping positions allowed; "max
+open" is the most trades open at once). Wave size 3 is shared by every setup in the run.
+
+| Setup | Exit | Jul–Oct 2026 | Jan–Oct 2026 | 2025 | Max open (2026) |
+|---|---|---|---|---|---|
+| deep bounce | target-trail | +4.26% | +19.69% | −11.31% | 1 |
+| pullback long | target-trail | +4.36% | +9.91% | −7.50% | 1 |
+| pullback long, wave 3 (C1) | target | +4.55% | +10.66% | **+5.54%** | 1 |
+| long opening drive | target-trail | +0.89% | **−8.30%** | −11.17% | 1 |
+| **deep bounce + pullback** | **target-trail** | **+8.62%** | **+29.59%** (110 trades, 62% win) | −18.81% | 2 |
+| deep bounce + pullback | target | +10.26% | +23.99% | −17.99% | 2 |
+| deep bounce + pullback, wave 3 | target | +7.96% | +19.78% | −9.39% | 2 |
+| bounce + pullback + drive | target-trail | +9.51% | +21.29% | −29.98% | 3 |
+| bounce + pullback + drive, wave 3 | target | +13.03% | +6.53% | −12.63% | 2 |
+
+- **Deep bounce + pullback long is the best AMD 2026 combination.** The two rarely overlap (10
+  of 110 trades), so the total is close to the sum of its parts (+19.69% + +9.91%).
+- **The long opening drive lost over 2026** (−13.52% with `target`, −8.30% with `target-trail`)
+  and drags every combination it joins — its 3-month gain was not representative.
+- **Every 2026 winner loses on 2025.** Combining doubles the 2026 gain and roughly doubles the
+  2025 loss: the setups are all dip-buying, so they share the same good and bad years.
+- The only AMD setting positive in both years is still **C1 alone** (`target` exit: +10.66% in
+  2026, +5.54% in 2025).
+
+Run the best 2026 combination:
+
+```bash
+python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward_backtest \
+  --tickers AMD --start 2026-01-02 --end 2026-10-02 --no-box-signals \
+  --deep-bounce long --wave-pullback long --exit target-trail --cost-bps 5
+```
+
 ## Recommendations
 
 1. **Choose tickers before tuning settings.** The same configuration ranges from +156.66% (SNDK)
@@ -350,15 +414,21 @@ AMD in both years.
 2. **Treat per-ticker settings with suspicion.** On META, 3-month tuning barely predicted the
    previous 6 months (correlation +0.26). Any per-ticker setting needs an out-of-sample check.
 3. **The regime switch may need to be per ticker** — it helped QQQ + SNDK and hurt META.
-4. **For AMD-like names (impulse waves, few tight boxes)** the wave pullback long is the best
+4. **AMD in a 2026-style year (sharp drops that recover):** deep bounce + pullback long,
+   `--no-box-signals --deep-bounce long --wave-pullback long --exit target-trail` (+29.59% over
+   Jan–Oct 2026). It is year-dependent (−18.81% on 2025) — size it accordingly and drop the long
+   opening drive.
+5. **For AMD-like names (impulse waves, few tight boxes)** the wave pullback long is the best
    option tested, but use **C1** (`--no-box-signals --wave-pullback long
    --min-wave-bar-ranges 3 --exit target-trail`) — the only setting positive on AMD in both 2025
    and 2026. Expect a small edge with few trades.
-5. **Don't re-tune monthly, and don't loosen settings after a run-up** (Finding 6). Fixed strict
+6. **Don't re-tune monthly, and don't loosen settings after a run-up** (Finding 6). Fixed strict
    settings beat 4-week re-tuning in both years.
-6. **Triggers tested and rejected:** the strategy's own recent result, a volatility gate, and the
+7. **Triggers tested and rejected:** the strategy's own recent result, a volatility gate, and the
    run-up filter (Findings 6 and 8).
-7. **Still untested:** a bear-market year for SNDK-like names, and costs other than 5 bps.
+8. **Still untested:** a bear-market year for SNDK-like names, costs other than 5 bps, a
+   one-position-at-a-time rule for combined setups, and a regime signal that tells a 2026-style
+   year (dips recover) from a 2025-style year (dips don't) in advance.
 
 ## Reproduction
 

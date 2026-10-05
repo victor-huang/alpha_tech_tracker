@@ -153,6 +153,8 @@ Retires once the wave in progress grows past the small-wave size.
 | `drive short` | — | first bar of the session closes red (`--opening-drive`) | first bar's high | entry − median down-wave |
 | `pullback long` | — | after a strong up wave touched its 38.2% retracement, first green bar closing between the 61.8% level and the impulse high (`--wave-pullback`) | 78.6% retracement | impulse high |
 | `pullback short` | — | mirror after a strong down wave (red bar) | 78.6% retracement | impulse low |
+| `bounce long` | — | first green bar after a deep down wave finishes (`--deep-bounce`) | wave low − 0.1 × wave size | half way back up the wave |
+| `bounce short` | — | mirror after a big up wave (red bar) | wave high + 0.1 × wave size | half way back down |
 
 - **Stop-and-reverse is off by default.** A wide-box breakout/breakdown that follows a fade on
   the same box would stop the fade out and reverse it. It lost in every test, so it only fires
@@ -170,6 +172,11 @@ Retires once the wave in progress grows past the small-wave size.
   the session close. Not gated by the regime switch or repeat suppression. Shorts lost in
   testing — use `long`. Best traded with the backtest's `target-trail` exit, since R/R to the
   impulse extreme is usually only 0.5–1.5.
+- **Deep bounce is off by default.** `--deep-bounce both|long|short`: a wave is deep when it is at
+  least `--deep-wave-ratio` (2) × the median lookback wave size. Entry on the first bar closing
+  back the other way while price is still short of the target; cancelled on the stop, a close past
+  the target, or the session close. Not gated by the regime switch. Made money on AMD in 2026 and
+  lost in 2025 (ticker-tuning doc, Finding 9).
 - **Switches:** `--no-box-signals` turns off every box signal (boxes and their R/R are still
   computed and drawn), so the opening drive or the pullback can run on their own.
   `--no-gap-signals` drops gap signals and keeps them in `gap_skipped_signals`.
@@ -223,6 +230,10 @@ Signals the regime blocks are kept in `regime_skipped_signals` and counted in th
 | | `--pullback-floor-fib` | 0.618 | Deepest retracement an entry bar may close at |
 | | `--pullback-stop-fib` | 0.786 | Retracement where the stop sits (1.0 = impulse start) |
 | | `--pullback-target-ext` | 1.0 | Target = impulse start + ext × impulse size (1.0 = impulse extreme) |
+| | `--deep-bounce` | `off` | Bounce after a deep wave: `both`, `long` or `short` |
+| | `--deep-wave-ratio` | 2 | Deep-wave threshold in median lookback wave sizes |
+| | `--deep-bounce-target-fib` | 0.5 | Target as a fraction of the wave back from its extreme (1.0 = its start) |
+| | `--deep-bounce-stop-buffer` | 0.1 | Stop beyond the wave extreme, as a fraction of the wave size |
 | | `--no-box-signals` | — | Turn off breakouts, breakdowns and fades |
 | | `--no-gap-signals` | — | Drop gap signals |
 | R/R | `--box-stop-ratio` | 0.2 | Breakout stop back inside the box (1.0 = opposite edge) |
@@ -247,6 +258,10 @@ Signals the regime blocks are kept in `regime_skipped_signals` and counted in th
 
 # Opening-drive signals on SNDK (buy a green first bar, short a red one)
 ... wave_risk_reward --tickers SNDK --days 44 --end 2026-10-02 --opening-drive both
+
+# Best AMD 2026 combination: deep bounce + pullback long (year-dependent, see the ticker-tuning doc)
+... wave_risk_reward_backtest --tickers AMD --start 2026-01-02 --end 2026-10-02 --no-box-signals \
+    --deep-bounce long --wave-pullback long --exit target-trail --cost-bps 5
 
 # Coarser waves (about 4-5 per session instead of about 6)
 ... wave_risk_reward --tickers TSLA --days 10 --min-wave-bar-ranges 3
@@ -285,7 +300,7 @@ breakout that stopped a fade out (only with `--stop-and-reverse`). The `latest` 
 - **Top panel:** candles, MA 8/20/50/200, up/down wave legs (start price → extreme), boxes (blue
   = narrow, orange = wide), signal markers (filled = in-session, hollow = gap; green/red =
   breakout/breakdown, cyan/orange = fade long/short, diamonds = opening drive, circles = wave
-  pullback), and dotted
+  pullback, stars = deep bounce), and dotted
   opening-range high/low lines (first `--opening-range-bars` bars) for every session.
 - **Bottom panel:** long and short R/R per bar, capped at 10, with a dotted line at 1.
 - **Hover** any bar for its close, regime, MAs, wave number and direction, lookback up/down
