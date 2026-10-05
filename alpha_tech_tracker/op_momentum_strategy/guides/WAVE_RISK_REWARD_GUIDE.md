@@ -44,6 +44,30 @@ python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_rew
 To run it on other tickers or dates, change `--tickers`, `--start`/`--end` (backtest) or
 `--days`/`--end` (chart).
 
+### Most consistent signal so far — wave pullback longs
+
+From [Finding 15](../research/findings/WAVE_RISK_REWARD_FINDINGS.md#finding-15--wave-pullback-buy-the-bounce-after-a-strong-wave):
+buy the bounce after a strong up wave pulls back into its 38.2–61.8% retracement, held past the
+impulse high with `--exit target-trail` (5 bps costs). Positive on all three tickers in both
+windows; smaller per ticker than the opening drive on SNDK, but the only setup that works on AMD:
+
+| Ticker | Jul 2 – Oct 2 | Jan 2 – Jul 1 (not used to build it) |
+|---|---|---|
+| AMD | 18 trades, 61% win, **+4.36%** | 27 trades, 56% win, **+5.55%** |
+| SNDK | 17 trades, 59% win, **+5.16%** | 35 trades, 57% win, **+10.96%** |
+| META | 18 trades, 39% win, **+1.35%** | 32 trades, 62% win, **+1.62%** |
+
+```bash
+# Backtest the pullback on its own (box signals off)
+python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward_backtest \
+  --tickers AMD --start 2026-07-02 --end 2026-10-02 \
+  --no-box-signals --wave-pullback long --exit target-trail --cost-bps 5
+
+# Chart it
+python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward \
+  --tickers AMD --days 21 --end 2026-09-30 --no-box-signals --wave-pullback long
+```
+
 ---
 
 ## Setup
@@ -125,6 +149,8 @@ Retires once the wave in progress grows past the small-wave size.
 | `breakdown` | wide | first close below box low − 1 bar length | box low | entry − max(box height, median down-wave) |
 | `drive long` | — | first bar of the session closes green (`--opening-drive`) | first bar's low | entry + median up-wave |
 | `drive short` | — | first bar of the session closes red (`--opening-drive`) | first bar's high | entry − median down-wave |
+| `pullback long` | — | after a strong up wave touched its 38.2% retracement, first green bar closing between the 61.8% level and the impulse high (`--wave-pullback`) | 78.6% retracement | impulse high |
+| `pullback short` | — | mirror after a strong down wave (red bar) | 78.6% retracement | impulse low |
 
 - **Stop-and-reverse is off by default.** A wide-box breakout/breakdown that follows a fade on
   the same box would stop the fade out and reverse it. It lost in every test, so it only fires
@@ -135,6 +161,16 @@ Retires once the wave in progress grows past the small-wave size.
   switch or repeat suppression. In testing they were traded with a *give-back* exit — out once
   32% of the best open profit is given back, after a move of at least 0.25 × risk — rather than
   the target; this script reports the target-based R/R only.
+- **Wave pullback is off by default.** `--wave-pullback both|long|short` adds the pullback
+  signals above. An impulse is a finished wave at least `--strong-wave-ratio` (2) × the median
+  lookback wave size; waves force-ended at the session close don't count. A setup is cancelled
+  when price hits the 78.6% stop or closes beyond the impulse extreme before an entry, and at
+  the session close. Not gated by the regime switch or repeat suppression. Shorts lost in
+  testing — use `long`. Best traded with the backtest's `target-trail` exit, since R/R to the
+  impulse extreme is usually only 0.5–1.5.
+- **Switches:** `--no-box-signals` turns off every box signal (boxes and their R/R are still
+  computed and drawn), so the opening drive or the pullback can run on their own.
+  `--no-gap-signals` drops gap signals and keeps them in `gap_skipped_signals`.
 - Each box fires each signal at most once.
 - **Gap signals:** a signal on a session's first bar from a box formed in an earlier session is
   labelled `gap breakout`, `gap fade short`, etc.
@@ -179,6 +215,10 @@ Signals the regime blocks are kept in `regime_skipped_signals` and counted in th
 | | `--reversion-box-bars` | 6 | Wide-box threshold in bar lengths (999 disables fades) |
 | Signals | `--stop-and-reverse` | off | Fire the breakout/breakdown that reverses a stopped wide-box fade |
 | | `--opening-drive` | `off` | First-bar signal: `both`, `long` (green bar) or `short` (red bar) |
+| | `--wave-pullback` | `off` | Pullback after a strong wave: `both`, `long` or `short` |
+| | `--strong-wave-ratio` | 2 | Impulse threshold in median lookback wave sizes |
+| | `--no-box-signals` | — | Turn off breakouts, breakdowns and fades |
+| | `--no-gap-signals` | — | Drop gap signals |
 | R/R | `--box-stop-ratio` | 0.2 | Breakout stop back inside the box (1.0 = opposite edge) |
 | | `--min-risk-pct` | 0.001 | Risk floor as a fraction of price |
 | | `--repeat-overlap-bars` | 1.0 | Same-session repeat suppression distance |
@@ -238,7 +278,8 @@ breakout that stopped a fade out (only with `--stop-and-reverse`). The `latest` 
 ### Chart
 - **Top panel:** candles, MA 8/20/50/200, up/down wave legs (start price → extreme), boxes (blue
   = narrow, orange = wide), signal markers (filled = in-session, hollow = gap; green/red =
-  breakout/breakdown, cyan/orange = fade long/short, diamonds = opening drive), and dotted
+  breakout/breakdown, cyan/orange = fade long/short, diamonds = opening drive, circles = wave
+  pullback), and dotted
   opening-range high/low lines (first `--opening-range-bars` bars) for every session.
 - **Bottom panel:** long and short R/R per bar, capped at 10, with a dotted line at 1.
 - **Hover** any bar for its close, regime, MAs, wave number and direction, lookback up/down
@@ -275,7 +316,7 @@ python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_rew
 | Option | Default | Meaning |
 |---|---|---|
 | `--start` / `--end` | required / today | Backtest window (sessions); 45 calendar days before `--start` are loaded for warm-up |
-| `--exit` | `target` | `target`: the signal's stop or target. `giveback`: the stop, or once up `--giveback-arm-r` × risk, the first close that gives back `--giveback` of the best open profit. `eod`: the stop, else the session close |
+| `--exit` | `target` | `target`: the signal's stop or target. `target-trail`: the stop until the target is reached, then the give-back trail instead of taking profit. `giveback`: the stop, or once up `--giveback-arm-r` × risk, the first close that gives back `--giveback` of the best open profit. `eod`: the stop, else the session close |
 | `--compare-exits` | off | Also print all three exits side by side |
 | `--giveback` / `--giveback-arm-r` | 0.32 / 0.25 | Give-back exit settings |
 | `--cost-bps` | 0 | Round-trip cost taken off every trade |

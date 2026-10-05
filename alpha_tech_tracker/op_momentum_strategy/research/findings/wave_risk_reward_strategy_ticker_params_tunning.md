@@ -20,8 +20,12 @@ earlier findings: [`WAVE_RISK_REWARD_FINDINGS.md`](WAVE_RISK_REWARD_FINDINGS.md)
 - **Tuning META's box settings on 3 months does not survive out of sample.** Of 864 setting/exit
   pairs, 23 were profitable on Jul–Oct and only 6 of those also on Jan–Jun. The best tuned
   setting (+4.45%) lost 2.55% on the earlier 6 months; the 15 best had a median of −2.33% there.
-- **Ticker selection looks more promising than per-ticker tuning:** the setup only works clearly
-  on strongly trending, high-volatility names.
+- **Ticker selection looks more promising than per-ticker tuning:** the box and opening-drive
+  setup only works clearly on strongly trending, high-volatility names.
+- **AMD (Finding 4):** box signals have no directional edge (−10.73% before costs over 3 months);
+  more fades only reach breakeven; the **wave pullback long** — added for AMD's impulse-wave
+  style — made +4.36% (Jul–Oct) and +5.55% on the unseen Jan–Jun, and also held up on SNDK and
+  META.
 
 ## Method
 
@@ -169,6 +173,63 @@ Patterns:
 
 ---
 
+## Finding 4 — AMD: why box signals fail, and the wave pullback
+
+### Box signals, Jul 2 – Oct 2 2026 (65 sessions)
+
+| Configuration (5 bps unless noted) | Trades | Win | Total |
+|---|---|---|---|
+| box signals, `--exit target`, no costs | 47 | 26% | −10.73% |
+| box signals, `--exit giveback` | 47 | 36% | −8.64% |
+| box signals, `--exit eod` | 47 | 21% | −20.39% |
+| box, `--regime-switch off`, `--exit eod` | 106 | 21% | −38.19% |
+| box + `--opening-drive long`, `--exit giveback` | 82 | 45% | −2.23% (the drive alone +6.41%, 35 trades) |
+
+AMD buy and hold +17.7% (Jul −12%, Aug +2%, Sep +33%); green first bar with the give-back exit
++0.183% per trade vs +0.032% for buying every morning.
+
+### Why the box signals fail
+
+| AMD narrow-box breaks | Value |
+|---|---|
+| Moved the signal's way after 15 / 60 min | 44% / 48% (median ≈ −0.02%) |
+| Box height | 0.34 × ADR |
+| Stop distance (20% of the box) | ≈ 1 average 5-min bar range |
+| Stopped out / target reached first | 67% / 4% |
+| Median best open profit | 1.26R against a ≈ 3.5R target |
+
+- **No direction:** a break of a small intraday box is a coin flip on AMD; the MA-stack regime
+  adds nothing (the signals it blocked did the same as the ones it allowed).
+- **Geometry:** a stop within one bar range and a 3.5R target need a clean trend. Widening the
+  stop (`--box-stop-ratio` 0.5 / 1.0) raised the win rate (36% → 51%) but not the total
+  (−8.6% to −9.8%) — the missing piece is direction, not room.
+- **Gap signals chase:** entered 0.85 box heights past the edge, then reversed (30% / 40% the
+  signal's way at 15 / 60 min); −8.12% of the −8.64% total.
+- **Context matters** (narrow-box breaks pooled over AMD, SNDK and META, 178 breaks, 60-minute
+  move): breaks that were also a new session high/low averaged +0.362% (46) vs −0.185% for the
+  rest (132); with breakout-bar volume ≥ 1.5× average as well, 64% win and +1.09% mean — but only
+  22 breaks.
+
+### More fades and stop-and-reverse
+
+Varying `--reversion-box-bars` (6 / 5 / 4 / 3), the regime switch and stop-and-reverse (target
+exit, 5 bps): the best was **fade threshold 4, `ma-stack`, stop-and-reverse off: −3.22% over 64
+trades, +2.35% without gap signals** (fades 37 trades, +3.40%). Allowing fades in trends made
+them lose; stop-and-reverse lost in 23 of 24 settings; gap signals were the largest loss in
+every setting. Not validated out of sample.
+
+### Wave pullback
+
+AMD has few tight boxes and moves in impulse waves, so `--wave-pullback` was added (main doc,
+Finding 15). Pullback longs, threshold 2, `--exit target-trail`, 5 bps:
+
+| | Trades | Win | Total | Avg / trade |
+|---|---|---|---|---|
+| Jul 2 – Oct 2 | 18 | 61% | **+4.36%** | +0.242% |
+| Jan 2 – Jul 1 (unseen) | 27 | 56% | **+5.55%** | +0.205% |
+
+The only AMD setup positive in both windows; pullback shorts lost (−3.34% / −12.48%, `target`).
+
 ## Recommendations
 
 1. **Choose tickers before tuning settings.** The same configuration ranges from +156.66% (SNDK)
@@ -178,7 +239,9 @@ Patterns:
 2. **Treat per-ticker settings with suspicion.** On META, 3-month tuning barely predicted the
    previous 6 months (correlation +0.26). Any per-ticker setting needs an out-of-sample check.
 3. **The regime switch may need to be per ticker** — it helped QQQ + SNDK and hurt META.
-4. **Still untested:** a bear-market year for SNDK-like names, and costs other than 5 bps.
+4. **For AMD-like names (impulse waves, few tight boxes)** use the wave pullback long with
+   `--no-box-signals --exit target-trail`; it also held up on SNDK and META.
+5. **Still untested:** a bear-market year for SNDK-like names, and costs other than 5 bps.
 
 ## Reproduction
 

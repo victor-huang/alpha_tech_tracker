@@ -6,6 +6,10 @@ Research log for `analysis_scripts/wave_risk_reward.py` (usage:
 
 ## Summary
 
+- **Most consistent signal so far (Finding 15):** wave pullback longs — buy the bounce after a
+  strong up wave pulls back into its 38.2–61.8% retracement, stop at 78.6%, held past the impulse
+  high (`--exit target-trail`). Positive on AMD, SNDK and META in both Jul–Oct and the unseen
+  Jan–Jun 2026 (+1.35% to +10.96%, 5 bps costs); pullback shorts lost almost everywhere.
 - **Best result so far (Finding 14):** default box signals plus `--opening-drive both`, with 5 bps
   round-trip costs, on QQQ + SNDK, Jun 1 – Oct 2 2026: **+75.04%** over 311 trades holding to the
   session close (`--exit eod`), **+49.45%** with the give-back exit; every full month positive in
@@ -346,6 +350,42 @@ trades), gap +15.83% / +9.54% (21), narrow-box breaks +5.45% / +6.91% (89), fade
   choice; Finding 12's mirror test is the evidence that the first-bar direction is not pure drift.
 - **QQQ loses in every row with costs** — this configuration is not a QQQ strategy.
 
+## Finding 15 — Wave pullback: buy the bounce after a strong wave
+
+`--wave-pullback` (built from the observation that AMD trades in impulse waves rather than tight
+boxes): an **impulse** is a finished wave at least `--strong-wave-ratio` (default 2, chosen
+before testing) × the median lookback wave size. After the pullback touches the impulse's 38.2%
+retracement, the first bar closing back in the impulse direction between the 61.8% level and
+the impulse extreme fires; stop at the 78.6% retracement, target the impulse extreme. The new
+backtest exit `target-trail` holds until the target, then trails with the give-back rule.
+
+Pullback trades only (`--no-box-signals`), 5 bps costs. **Longs, threshold 2:**
+
+| Ticker | Window | Trades | Win | `target` | **`target-trail`** | `eod` |
+|---|---|---|---|---|---|---|
+| AMD | Jul 2 – Oct 2 | 18 | 61% | +4.17% | **+4.36%** | +3.85% |
+| AMD | Jan 2 – Jul 1 (unseen) | 27 | 56% | +5.09% | **+5.55%** | +6.11% |
+| SNDK | Jul 2 – Oct 2 | 17 | 59% | +2.48% | **+5.16%** | −8.26% |
+| SNDK | Jan 2 – Jul 1 (unseen) | 35 | 57–63% | +1.44% | **+10.96%** | +8.36% |
+| META | Jul 2 – Oct 2 | 18 | 39–44% | −2.99% | **+1.35%** | −2.00% |
+| META | Jan 2 – Jul 1 (unseen) | 32 | 62% | +0.48% | **+1.62%** | +4.49% |
+
+**Shorts, threshold 2, `target`:** Jul–Oct AMD −3.34%, SNDK −8.14%, META −2.81%; Jan–Jun AMD
+−12.48%, SNDK −8.93%, META −4.45%.
+
+- **Long-only with `target-trail` is positive in all six ticker/window cells** — the most
+  consistent result in this study. The fixed target caps winners: R/R to the impulse high is
+  typically 0.5–1.5.
+- **Against drift:** on AMD about +0.2% per pullback trade vs about 0% for buying every morning
+  (ticker-tuning doc, Finding 4); on SNDK below its buy-every-morning baseline (+0.73% / trade),
+  where drift dominates.
+- **Threshold:** 1.5 loses everywhere (AMD −9.37%, SNDK −27.80%, META −8.14% on Jul–Oct,
+  `target`, longs and shorts); 3 gives too few trades (4–12 longs per window).
+- **Regime:** longs in an up MA stack did well on AMD and SNDK (73–79% win on Jan–Jun) but not on
+  META (5 trades), so the regime switch does not gate pullbacks.
+- **Caveats:** 17–35 long trades per ticker per window; both windows were mostly up-markets,
+  which may explain why shorts lose; per-trade gains are small (+0.05% to +0.31%).
+
 ---
 
 ## Current best configuration (as of 2026-10-04)
@@ -409,7 +449,9 @@ settings were chosen on this same data.
 
 ## Open questions and next steps
 
-0. **Give-back exit and opening drive** — the committed backtest now has the give-back exit and
+0. **Wave pullback** — validate `--wave-pullback long --exit target-trail` on more tickers and a
+   bear period; test it combined with the opening drive (both with `--no-box-signals`).
+1. **Give-back exit and opening drive** — the committed backtest now has the give-back exit and
    costs; next, test `--opening-drive` and the give-back exit on a bear period (for example 2022
    from cached history) and on a wider ticker set. Recheck Findings 11–12 with legs built from
    the `Wave` module.
@@ -438,6 +480,12 @@ trade rules in [Method](#method) (usage in the guide's *Backtesting* section). F
     --regime-switch off --stop-and-reverse
 # Finding 11 (leg catch, 1/7 large, 3/45 medium)
 ... wave_risk_reward_backtest --tickers SNDK --start 2026-08-03 --end 2026-10-02 --legs
+```
+
+```bash
+# Finding 15 (pullback longs, e.g. AMD Jan-Jun: 27 trades, +5.55%)
+... wave_risk_reward_backtest --tickers AMD --start 2026-01-02 --end 2026-07-01 \
+    --no-box-signals --wave-pullback long --exit target-trail --cost-bps 5
 ```
 
 The forward-return tables (Finding 5), the efficiency-ratio prototype (Finding 8), the
