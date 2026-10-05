@@ -75,6 +75,14 @@ Deep bounce= `--deep-bounce both|long|short` (off by default): when a down wave 
              start). Mirror after a big up wave (bounce short on a red bar). Setups cancel on
              the stop, on a close past the target, and at the session close. Not gated by
              the regime switch.
+Overnight  = `--overnight-hold always|ma200|ma20-ma200|ma50-rising` (off by default): buy the
+hold         session's last regular bar (the 15:55 bar close, a market-on-close order) and
+             exit at the next session's first bar open (market-on-open). No stop or target.
+             The filter uses daily moving averages of session closes including today's:
+             ma200 = close above the daily MA200 (recommended), ma20-ma200 = above both,
+             ma50-rising = daily MA50 above its level 10 sessions earlier. Half-day sessions
+             (no 15:55 bar) are skipped. With a moving-average filter the scripts load about a
+             year of warm-up history.
 Switches   = `--no-box-signals` turns off every box signal (breakout, breakdown, fades;
              boxes and their R/R are still computed and drawn), so the opening drive or
              the wave pullback can run on their own. `--no-gap-signals` drops box signals
@@ -97,7 +105,7 @@ the latest snapshot.
 import argparse
 import statistics
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, time, timedelta
 from pathlib import Path
 from typing import Optional
 
@@ -128,7 +136,11 @@ DEFAULT_MIN_BOX_WAVES = 2
 DEFAULT_SMALL_WAVE_RATIO = 1.5
 DEFAULT_MAX_BOX_HEIGHT_RATIO = 2.0
 DEFAULT_REVERSION_BOX_BARS = 6.0
-LONG_SIGNALS = ("breakout", "fade_long", "drive_long", "pullback_long", "bounce_long")
+LONG_SIGNALS = ("breakout", "fade_long", "drive_long", "pullback_long", "bounce_long", "overnight_long")
+OVERNIGHT_HOLD_MODES = ("off", "always", "ma200", "ma20-ma200", "ma50-rising")
+OVERNIGHT_ENTRY_TIME = time(15, 55)
+OVERNIGHT_WARMUP_SESSIONS = 210  # daily MA200 plus a margin
+OVERNIGHT_NOMINAL_RISK_PCT = 0.01  # no stop: R is measured against 1% of the entry price
 DEEP_BOUNCE_MODES = ("off", "both", "long", "short")
 DEFAULT_DEEP_WAVE_RATIO = 2.0
 DEFAULT_DEEP_BOUNCE_TARGET_FIB = 0.5
@@ -166,6 +178,7 @@ class WaveRiskRewardParams:
     opening_drive: str = "off"
     wave_pullback: str = "off"
     deep_bounce: str = "off"
+    overnight_hold: str = "off"
     deep_wave_ratio: float = DEFAULT_DEEP_WAVE_RATIO
     deep_bounce_target_fib: float = DEFAULT_DEEP_BOUNCE_TARGET_FIB
     deep_bounce_stop_buffer: float = DEFAULT_DEEP_BOUNCE_STOP_BUFFER
@@ -541,6 +554,30 @@ def bounce_risk_reward(setup, entry, min_risk_pct=0.001):
     return {"entry": entry, "stop": stop, "target": target, "risk": risk, "reward": reward, "rr": reward / risk}
 
 
+def overnight_filter_ok(mode, closes):
+    """Whether the overnight hold is allowed, given session closes up to and including today's."""
+    def moving_average(n, sessions_back=0):
+        history = closes[:len(closes) - sessions_back] if sessions_back else closes
+        return statistics.mean(history[-n:]) if len(history) >= n else None
+
+    if mode == "always":
+        return True
+    if mode == "ma200":
+        ma200 = moving_average(200)
+        return ma200 is not None and closes[-1] > ma200
+    if mode == "ma20-ma200":
+        ma20, ma200 = moving_average(20), moving_average(200)
+        return ma200 is not None and closes[-1] > ma20 and closes[-1] > ma200
+    if mode == "ma50-rising":
+        now, before = moving_average(50), moving_average(50, sessions_back=10)
+        return before is not None and now > before
+    return False
+
+
+def overnight_needs_history(mode):
+    return mode in ("ma200", "ma20-ma200", "ma50-rising")
+
+
 def _box_signal(box, close):
     """Signal the close triggers in `box`, or None; each box fires each signal once."""
     if box["mode"] == "reversion":
@@ -595,6 +632,8 @@ def analyze_bars(bars, params=None):
     session_bar_index = or_high = or_low = None
     pullback_setup = None
     bounce_setup = None
+    session_closes = []
+    previous_close = None
 
     bar_range = bars["high"] - bars["low"]
     avg_bar_range_pct = (bar_range / bars["close"]).rolling(
@@ -782,6 +821,28 @@ def analyze_bars(bars, params=None):
             if outcome:
                 pullback_setup = None
 
+        if is_session_open_bar and previous_close is not None:
+            session_closes.append(previous_close)
+        previous_close = close
+        overnight_signal = None
+        if (params.overnight_hold != "off" and timestamp.time() >= OVERNIGHT_ENTRY_TIME
+                and overnight_filter_ok(params.overnight_hold, session_closes + [close])):
+            overnight_signal = {
+                "time": timestamp,
+                "signal": "overnight_long",
+                "gap": False,
+                "price": close,
+                "box_low": None,
+                "box_high": None,
+                "box_mode": "overnight",
+                "reverses": None,
+                "risk_reward": {"entry": close, "stop": None, "target": None,
+                                "risk": close * OVERNIGHT_NOMINAL_RISK_PCT, "reward": None, "rr": None},
+                "regime": regime,
+                "bias": bias,
+            }
+            signals.append(overnight_signal)
+
         bounce_signal = None
         if bounce_setup:
             outcome = advance_bounce_setup(bounce_setup, bar)
@@ -829,7 +890,8 @@ def analyze_bars(bars, params=None):
             "or_high": or_high if opening_range_done else None,
             "or_low": or_low if opening_range_done else None,
             "signal": " + ".join(
-                _signal_label(fired) for fired in (signal, drive_signal, pullback_signal, bounce_signal) if fired
+                _signal_label(fired)
+                for fired in (signal, drive_signal, pullback_signal, bounce_signal, overnight_signal) if fired
             ) or None,
             "min_wave_price_change": min_wave_change,
         }
@@ -870,7 +932,18 @@ def _signal_range_text(signal):
         return f"impulse {signal['box_low']:.2f}-{signal['box_high']:.2f}"
     if signal["box_mode"] == "deep wave":
         return f"deep wave {signal['box_low']:.2f}-{signal['box_high']:.2f}"
+    if signal["box_mode"] == "overnight":
+        return "market-on-close entry"
     return f"{signal['box_mode']} box {signal['box_low']:.2f}-{signal['box_high']:.2f}"
+
+
+def _rr_text(signal, width=""):
+    rr = signal["risk_reward"]
+    if signal["signal"] == "overnight_long":
+        return "hold to next open"
+    if not rr:
+        return "R/R n/a"
+    return f"R/R {rr['rr']:{width}.2f}  stop {rr['stop']:.2f}  target {rr['target']:.2f}"
 
 
 def _fmt(value, spec=".2f"):
@@ -991,15 +1064,13 @@ def build_chart(ticker, bars, result, display_start):
         ("pullback short", "circle", "#d62728"),
         ("bounce long", "star", "#2ca02c"),
         ("bounce short", "star", "#d62728"),
+        ("overnight long", "square", "#9467bd"),
     )
     for kind, symbol, color in marker_styles:
         picked = [signal for signal in signals if _signal_label(signal) == kind]
         texts = []
         for signal in picked:
-            rr = signal["risk_reward"]
-            rr_text = (
-                f"R/R {rr['rr']:.2f}  stop {rr['stop']:.2f}  target {rr['target']:.2f}" if rr else "R/R n/a"
-            )
+            rr_text = _rr_text(signal)
             reverses_text = f" (stops & reverses {signal['reverses'].replace('_', ' ')})" if signal["reverses"] else ""
             texts.append(
                 f"{kind}{reverses_text} {signal['time']:%m-%d %H:%M} @ {signal['price']:.2f}<br>"
@@ -1055,8 +1126,9 @@ def _print_ticker_summary(ticker, result, display_start, chart_path):
         + "".join(
             f"   {sum(1 for s in shown_signals if s['signal'] == name)} {name.replace('_', ' ')}"
             for name in ("breakout", "breakdown", "fade_long", "fade_short", "drive_long", "drive_short",
-                         "pullback_long", "pullback_short", "bounce_long", "bounce_short")
-            if not name.startswith(("drive", "pullback", "bounce")) or any(s["signal"] == name for s in shown_signals)
+                         "pullback_long", "pullback_short", "bounce_long", "bounce_short", "overnight_long")
+            if not name.startswith(("drive", "pullback", "bounce", "overnight"))
+            or any(s["signal"] == name for s in shown_signals)
         )
         + f"   ({sum(1 for s in shown_signals if s['gap'])} gap,"
         f" {sum(1 for s in shown_signals if s['reverses'])} stop-and-reverse,"
@@ -1066,8 +1138,7 @@ def _print_ticker_summary(ticker, result, display_start, chart_path):
     )
     print("=" * 100)
     for signal in shown_signals:
-        rr = signal["risk_reward"]
-        rr_text = f"R/R {rr['rr']:5.2f}  stop {rr['stop']:.2f}  target {rr['target']:.2f}" if rr else "R/R n/a"
+        rr_text = _rr_text(signal, width="5")
         print(
             f"  {signal['time']:%Y-%m-%d %H:%M}  {_signal_label(signal):14}  @ {signal['price']:.2f}"
             f"  {signal['regime']:5}"
@@ -1130,6 +1201,11 @@ def add_strategy_arguments(parser):
         "--opening-drive", default="off", choices=OPENING_DRIVE_MODES,
         help="Signal on the session's first bar: green -> drive long, red -> drive short, stop at"
              " the bar's extreme; both, long or short (default: off)",
+    )
+    parser.add_argument(
+        "--overnight-hold", default="off", choices=OVERNIGHT_HOLD_MODES,
+        help="Buy the session's 15:55 close and exit at the next open; always, or filtered by the daily"
+             " trend: ma200 (close above the daily MA200, recommended), ma20-ma200, ma50-rising (default: off)",
     )
     parser.add_argument(
         "--deep-bounce", default="off", choices=DEEP_BOUNCE_MODES,
@@ -1229,6 +1305,7 @@ def params_from_args(args):
         pullback_stop_fib=args.pullback_stop_fib,
         pullback_target_ext=args.pullback_target_ext,
         deep_bounce=args.deep_bounce,
+        overnight_hold=args.overnight_hold,
         deep_wave_ratio=args.deep_wave_ratio,
         deep_bounce_target_fib=args.deep_bounce_target_fib,
         deep_bounce_stop_buffer=args.deep_bounce_stop_buffer,
@@ -1265,7 +1342,8 @@ def main():
     feed = DataFeed.SIP if args.feed == "sip" else DataFeed.IEX
     requested_end = date.fromisoformat(args.end) if args.end else date.today()
     end_date = clamp_end_for_sip(requested_end, feed)
-    start_date = end_date - timedelta(days=int((args.days + WARMUP_SESSIONS) * 1.6) + 5)
+    warmup = OVERNIGHT_WARMUP_SESSIONS if overnight_needs_history(args.overnight_hold) else WARMUP_SESSIONS
+    start_date = end_date - timedelta(days=int((args.days + warmup) * 1.6) + 5)
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 

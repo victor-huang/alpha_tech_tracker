@@ -14,6 +14,8 @@ Exit       = `--exit target`: the signal's stop or target, whichever comes first
              `--exit eod`: the stop, else the session's last close.
              Every mode exits at the session close at the latest. A bar touching both stop
              and target counts as the stop; a gap through the stop fills at the bar's open.
+             Overnight-hold signals always exit at the next session's first bar open,
+             whatever `--exit` says.
 Costs      = `--cost-bps` round trip, taken off every trade's return.
 
 `--legs` adds a hindsight leg report: legs are pivot-to-pivot moves on 5-min closes within a
@@ -46,9 +48,11 @@ from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.ticker_stats_repor
 )
 from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward import (
     LONG_SIGNALS,
+    OVERNIGHT_WARMUP_SESSIONS,
     add_moving_averages,
     add_strategy_arguments,
     analyze_bars,
+    overnight_needs_history,
     params_from_args,
     regular_hours,
 )
@@ -65,7 +69,7 @@ DEFAULT_MEDIUM_LEG_ADR = 0.40
 EARLY_LEG_FRACTION = 0.5
 SIGNAL_GROUPS = (
     "narrow-box break", "fade", "wide-box break", "stop-and-reverse", "opening drive", "wave pullback",
-    "deep bounce", "gap",
+    "deep bounce", "overnight hold", "gap",
 )
 CSV_FIELDS = [
     "ticker", "signal", "group", "regime", "entry_time", "exit_time", "side", "entry", "exit",
@@ -80,6 +84,8 @@ def signal_group(signal):
         return "wave pullback"
     if signal["signal"].startswith("bounce"):
         return "deep bounce"
+    if signal["signal"].startswith("overnight"):
+        return "overnight hold"
     if signal["gap"]:
         return "gap"
     if signal["signal"].startswith("fade"):
@@ -113,6 +119,8 @@ class TradeSimulator:
         rr = signal["risk_reward"]
         i = self.position[signal["time"]]
         end = self.session_end[i]
+        if signal["signal"] == "overnight_long":
+            return self._overnight_trade(signal, i, end)
         if not rr or end == i:
             return None
 
@@ -154,6 +162,28 @@ class TradeSimulator:
             "gross_pct": side * (exit_price - entry) / entry * 100,
         }
 
+    def _overnight_trade(self, signal, i, end):
+        """Buy the signal bar's close, sell the next session's first bar open."""
+        next_open_index = end + 1
+        if next_open_index >= len(self.close):
+            return None
+        entry, exit_price = self.close[i], self.open[next_open_index]
+        return {
+            "signal": signal["signal"],
+            "group": signal_group(signal),
+            "regime": signal["regime"],
+            "entry_time": signal["time"],
+            "exit_time": self.index[next_open_index],
+            "side": 1,
+            "entry": float(entry),
+            "exit": float(exit_price),
+            "stop": None,
+            "target": None,
+            "outcome": "next open",
+            "risk": signal["risk_reward"]["risk"],
+            "gross_pct": (exit_price - entry) / entry * 100,
+        }
+
 
 def apply_costs(trade, cost_bps):
     net_pct = trade["gross_pct"] - cost_bps / 100
@@ -170,7 +200,8 @@ def summarize(trades):
         "avg_pct": statistics.mean(returns),
         "avg_r": statistics.mean(trade["net_r"] for trade in trades),
         "total_pct": sum(returns),
-        "outcomes": {o: sum(trade["outcome"] == o for trade in trades) for o in ("target", "giveback", "stop", "eod")},
+        "outcomes": {o: sum(trade["outcome"] == o for trade in trades)
+                     for o in ("target", "giveback", "stop", "eod", "next open")},
     }
 
 
@@ -241,10 +272,10 @@ def grade_legs(legs, signals, trades_by_signal_time):
 def _fmt_summary(summary):
     if not summary:
         return "trades    0"
-    outcomes = " / ".join(f"{summary['outcomes'][o]}" for o in ("target", "giveback", "stop", "eod"))
+    outcomes = " / ".join(f"{summary['outcomes'][o]}" for o in ("target", "giveback", "stop", "eod", "next open"))
     return (f"trades {summary['trades']:>4}  win {summary['win']:4.0%}  avg {summary['avg_pct']:+7.3f}%"
             f"  avg R {summary['avg_r']:+5.2f}  total {summary['total_pct']:+8.2f}%"
-            f"  (target/giveback/stop/eod {outcomes})")
+            f"  (target/giveback/stop/eod/next-open {outcomes})")
 
 
 def _print_breakdown(title, groups):
@@ -358,7 +389,10 @@ def main(argv=None):
     args = parse_args(argv)
     feed = DataFeed.SIP if args.feed == "sip" else DataFeed.IEX
     args.end = clamp_end_for_sip(args.end or date.today(), feed)
-    raw = fetch_bars(args.tickers, args.start - timedelta(days=WARMUP_CALENDAR_DAYS), args.end,
+    warmup_days = int(OVERNIGHT_WARMUP_SESSIONS * 1.5) if overnight_needs_history(args.overnight_hold) else WARMUP_CALENDAR_DAYS
+    # an overnight hold entered on the last session exits at the following open, so load a few days more
+    fetch_end = clamp_end_for_sip(args.end + timedelta(days=7), feed) if args.overnight_hold != "off" else args.end
+    raw = fetch_bars(args.tickers, args.start - timedelta(days=warmup_days), fetch_end,
                      allow_intraday=True, feed=feed)
     bars_by_ticker = OrderedDict()
     for ticker in args.tickers:

@@ -22,6 +22,7 @@ from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward i
     pullback_risk_reward,
     opening_drive_signal,
     opening_range_bias,
+    overnight_filter_ok,
     regime_allows,
     regular_hours,
     reversion_box_risk_reward,
@@ -1201,3 +1202,65 @@ class TestAnalyzeBarsDeepBounce:
         analyze_bars(self._bars([]), params)
 
         assert setup.call_args.args[2:] == (3.0, "long", 1.0, 0.2)
+
+
+class TestOvernightFilterOk:
+    def test_always_allows(self):
+        assert overnight_filter_ok("always", [100.0]) is True
+
+    def test_ma200_needs_close_above_daily_ma200(self):
+        closes = [100.0] * 199 + [110.0]
+
+        assert overnight_filter_ok("ma200", closes) is True
+
+    def test_ma200_blocks_close_below_daily_ma200(self):
+        closes = [100.0] * 199 + [90.0]
+
+        assert overnight_filter_ok("ma200", closes) is False
+
+    def test_ma200_blocks_without_200_sessions(self):
+        assert overnight_filter_ok("ma200", [100.0] * 150 + [110.0]) is False
+
+    def test_ma20_ma200_needs_both(self):
+        closes = [100.0] * 180 + [120.0] * 19 + [110.0]
+
+        assert overnight_filter_ok("ma20-ma200", closes) is False
+
+    def test_ma50_rising(self):
+        closes = [100.0 + i for i in range(60)]
+
+        assert overnight_filter_ok("ma50-rising", closes) is True
+
+    def test_ma50_falling_blocks(self):
+        closes = [160.0 - i for i in range(60)]
+
+        assert overnight_filter_ok("ma50-rising", closes) is False
+
+
+class TestAnalyzeBarsOvernightHold:
+    def _two_sessions(self):
+        return pd.concat([
+            _bars("2026-09-01 15:45", [100.0, 100.5, 101.0]),
+            _bars("2026-09-02 09:30", [102.0]),
+        ])
+
+    def test_off_by_default(self):
+        assert analyze_bars(self._two_sessions(), _params())["signals"] == []
+
+    def test_buys_the_1555_close(self):
+        signals = analyze_bars(self._two_sessions(), _params(overnight_hold="always"))["signals"]
+
+        assert [(s["signal"], s["time"], s["price"]) for s in signals] == [
+            ("overnight_long", _timestamp("2026-09-01 15:55"), 101.0)
+        ]
+
+    def test_ma200_filter_blocks_without_history(self):
+        assert analyze_bars(self._two_sessions(), _params(overnight_hold="ma200"))["signals"] == []
+
+    def test_daily_closes_feed_the_filter(self, mocker):
+        allow = mocker.patch(f"{MODULE}.overnight_filter_ok", return_value=True)
+        bars = pd.concat([self._two_sessions(), _bars("2026-09-02 15:55", [103.0])])
+
+        analyze_bars(bars, _params(overnight_hold="ma200"))
+
+        assert allow.call_args_list[-1].args == ("ma200", [101.0, 103.0])

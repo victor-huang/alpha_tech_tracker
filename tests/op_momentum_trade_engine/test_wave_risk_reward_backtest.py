@@ -49,6 +49,7 @@ class TestSignalGroup:
         ({"signal": "drive_long"}, "opening drive"),
         ({"signal": "pullback_short"}, "wave pullback"),
         ({"signal": "bounce_long"}, "deep bounce"),
+        ({"signal": "overnight_long"}, "overnight hold"),
         ({"gap": True}, "gap"),
         ({"signal": "fade_short"}, "fade"),
         ({"reverses": "fade_short"}, "stop-and-reverse"),
@@ -140,6 +141,25 @@ class TestTradeSimulator:
         trade = TradeSimulator(bars).run(_signal("2026-09-01 10:00", target=105.0), "target-trail", 0.32, 0.25)
 
         assert (trade["outcome"], trade["exit"]) == ("eod", 101.2)
+
+    def test_overnight_hold_exits_at_next_session_open(self):
+        bars = pd.concat([
+            _bars("2026-09-01 15:50", [(100, 100, 100, 100), (100, 101, 99, 100.5)]),
+            _bars("2026-09-02 09:30", [(102.0, 103, 101, 102.5)]),
+        ])
+        signal = _signal("2026-09-01 15:55", name="overnight_long", risk_reward={"stop": None, "target": None, "risk": 1.0})
+
+        trade = TradeSimulator(bars).run(signal, "target")
+
+        assert (trade["outcome"], trade["entry"], trade["exit"]) == ("next open", 100.5, 102.0)
+        assert trade["exit_time"] == _timestamp("2026-09-02 09:30")
+        assert trade["gross_pct"] == pytest.approx(1.4925, rel=1e-3)
+
+    def test_overnight_hold_without_next_session_is_not_traded(self):
+        bars = _bars("2026-09-01 15:50", [(100, 100, 100, 100), (100, 101, 99, 100.5)])
+        signal = _signal("2026-09-01 15:55", name="overnight_long", risk_reward={"stop": None, "target": None, "risk": 1.0})
+
+        assert TradeSimulator(bars).run(signal, "target") is None
 
     def test_signal_on_last_bar_of_session_is_not_traded(self):
         bars = _bars("2026-09-01 15:55", [(100, 100, 100, 100)])
