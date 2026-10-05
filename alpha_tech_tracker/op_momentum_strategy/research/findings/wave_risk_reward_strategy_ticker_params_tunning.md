@@ -629,13 +629,27 @@ trade independently. 5 bps.
 | AMD, 2025 | +2% / +12%, +65% / −6% | pullback long C1 (target), bounce short (target-trail), overnight ma200 | +14.35% / +64.03% |
 | AMAT, Oct 2025 – Oct 2026 | +28% / +25%, +60% / −3% | drive short (eod), pullback long C1 (target), overnight always | +27.12% / +54.61% |
 | AMAT, 2025 | −1% / +19%, −2% / +37% | box break (giveback), drive long (giveback), pullback long (eod), overnight ma200 | +14.70% / +14.60% |
+| SNDK, Oct 2025 – Oct 2026 | +134% / +148%, +84% / +33% | drive long (eod), overnight always, bounce long (eod), drive short (target), box break, box fade, box gap, pullback long C1 (giveback) | +228.09% / +169.05% |
+| SNPS, Oct 2025 – Oct 2026 | −9% / −11%, +25% / −1% | bounce long (target-trail), box gap (eod), pullback long C1 (eod) | +15.93% / +5.79% |
+| MSFT, Oct 2025 – Oct 2026 | −11% / −19%, +12% / +23% | box fade (eod), box gap (target), pullback long C1 (target) | +4.42% / +10.91% |
+| META, Oct 2025 – Oct 2026 | −5% / −16%, +16% / +10% | **none** | — |
+| LLY, Oct 2025 – Oct 2026 | +3% / +10%, +40% / −13% | **none** (overnight −1.32% / +28.70%) | — |
 
 - On AMD the scan independently recovers the setups found by hand in Findings 7–13.
 - **AMAT's recommendation changed with its regime:** in the last 12 months its gains came
   overnight (+60% in the second half vs −3% in-session) and the overnight hold led; in 2025 its
   gains came in-session (+19% / +37%) and the intraday long setups led. Re-run the scan as the
   regime changes; the overnight / in-session line in the report shows which way a ticker leans.
-- Pullback long C1 was recommended in all three runs.
+- **Pullback long C1 was recommended for 5 of the 7 tickers** (AMD, AMAT, SNPS, MSFT, SNDK) — the
+  most portable intraday setup, though it trades rarely and earns modest amounts.
+- **The overnight hold qualified only where gains came overnight in both halves** (SNDK, AMAT, AMD
+  2025). MSFT, SNPS, META and LLY had negative overnight returns in Q4 2025 – Q1 2026, consistent
+  with Finding 14: they would not have ranked near the top on momentum then.
+- **SNDK's +228% / +169% adds eight setups that are all long the same rally** — not diversified;
+  the core is the long opening drive held to the close (+88.06% / +74.76%) and the overnight hold
+  (+81.53% / +64.24%).
+- **META and LLY have no setup that made money in both halves** — a valid answer: don't trade them
+  for now; re-scan as they change (LLY's overnight hold turned strongly positive in the second half).
 - Limits: one split per run (two halves), results add up only if each setup gets its own capital,
   and the setups themselves were developed on AMD/SNDK/META data.
 
