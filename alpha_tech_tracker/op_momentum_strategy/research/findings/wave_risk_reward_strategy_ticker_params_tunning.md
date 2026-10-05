@@ -48,6 +48,14 @@ earlier findings: [`WAVE_RISK_REWARD_FINDINGS.md`](WAVE_RISK_REWARD_FINDINGS.md)
   open (`--overnight-hold`). On AMD with the daily-MA200 filter: +63.73% in 2025 and +43.73% in
   2026, and it sat out most of 2022 (+1.34%). Across 24 tickers it was positive on 19 of 24 in
   2025 and 18 of 23 in 2026 (median +23.5% / +10.7%, every day, 5 bps).
+- **Which tickers to hold overnight (Finding 14):** rank monthly by 120-session total return
+  (momentum) and hold the top 3–5. Chosen on 2025 (+60.52% vs +26.45% for all 24 tickers) and it
+  held on 2026 (+67.86% vs +16.99%). A ticker's own overnight history does not predict its next
+  overnight returns (correlation +0.01).
+- **A per-ticker setup scan (Finding 15):** `wave_risk_reward_scan.py` backtests every setup on
+  a ticker, picks exits on the first half of the period, checks them on the second, and recommends
+  the setups that made money in both. AMAT's recommendation changed with its regime (overnight
+  hold when its gains came overnight, intraday longs when they came in-session).
 
 ## Method
 
@@ -575,6 +583,67 @@ python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_rew
   --tickers AMD --start 2025-01-02 --end 2025-12-31 --no-box-signals --overnight-hold ma200 --cost-bps 5
 ```
 
+## Finding 14 — Which tickers to hold overnight: momentum
+
+Monthly walk-forward on the 24 cached tickers, Jan 2025 – Sep 2026: at each month start, rank
+tickers using only data up to the previous session, hold the picks overnight every night of the
+month (15:55 close → next open, 5 bps per night), equal weight. Nights with |log gap| > 0.5 are
+treated as splits (flat). Totals are the average per ticker held, summed over the months.
+Baseline — all 24 tickers every night: **+26.45% (2025), +16.99% (Jan–Sep 2026)**.
+
+| Ranked by (trailing) | Picks | 2025 | 2026 | Beats all 24 in both |
+|---|---|---|---|---|
+| **total return, 120 sessions (momentum)** | **top 3** | **+60.52%** | **+67.86%** | **yes** |
+| total return, 120 sessions | top 5 | +33.09% | +51.98% | yes |
+| total return, 60 sessions | top 5 | +40.62% | +38.29% | yes |
+| total return, 60 sessions | top 10 | +35.07% | +33.63% | yes |
+| overnight return, 60 sessions | top 3 | +41.01% | +25.88% | yes |
+| overnight return, 120 sessions | top 3 | +7.18% | +68.20% | no |
+| overnight minus in-session, 60 / 120 sessions | top 3–10 | +9.6% to +22.9% | +3.9% to +51.1% | mostly no |
+| close above daily MA200 | all that qualify | +23.27% | +28.30% | no |
+
+- **Every momentum variant beat holding all tickers in both years**, and the bottom-ranked
+  tickers did much worse (120-session top 3 vs bottom 3: +60.52% vs +11.50% in 2025, +67.86% vs
+  +4.27% in 2026). The best rule on 2025 was also the best on 2026.
+- **A ticker's own overnight history does not select:** overnight returns in consecutive
+  60-session blocks are uncorrelated (+0.01), and "gains come overnight" picked worse tickers than
+  its bottom ranks.
+- **Top-3 picks:** 2025 mostly OKLO, HOOD, RKLB, PLTR; 2026 mostly SNDK (11 of 21 months) and MU
+  (10). 14 of 21 months positive; worst month −10.4% (Feb 2026), best +29.9% (Oct 2025). Top 5:
+  also 14 of 21, worst −12.4% (LUNR −49.5% in March 2025).
+- **Caveat — biased universe:** the 24 tickers were cached because they were hot names in
+  2025–26, so momentum is picking from a list already full of winners. The real test is a broad
+  universe (e.g. the Nasdaq-100), not yet cached.
+
+## Finding 15 — Finding the setups for a new ticker: `wave_risk_reward_scan.py`
+
+The scan backtests every setup on its own over a period split in two halves by session count:
+box breaks, box fades, gap signals, drive long/short, pullback long/short, pullback long C1, deep
+bounce long/short, overnight always / ma200. Each intraday setup's exit is chosen on the first
+half and checked on the second. Recommended = positive in both halves with ≥ 5 trades in each
+(one per overlapping family, by first half); the combination's result is the sum, since the setups
+trade independently. 5 bps.
+
+| Ticker, period | Overnight / in-session (1st half, 2nd half) | Recommended (exit) | Combined 1st / 2nd half |
+|---|---|---|---|
+| AMD, 2025 | +2% / +12%, +65% / −6% | pullback long C1 (target), bounce short (target-trail), overnight ma200 | +14.35% / +64.03% |
+| AMAT, Oct 2025 – Oct 2026 | +28% / +25%, +60% / −3% | drive short (eod), pullback long C1 (target), overnight always | +27.12% / +54.61% |
+| AMAT, 2025 | −1% / +19%, −2% / +37% | box break (giveback), drive long (giveback), pullback long (eod), overnight ma200 | +14.70% / +14.60% |
+
+- On AMD the scan independently recovers the setups found by hand in Findings 7–13.
+- **AMAT's recommendation changed with its regime:** in the last 12 months its gains came
+  overnight (+60% in the second half vs −3% in-session) and the overnight hold led; in 2025 its
+  gains came in-session (+19% / +37%) and the intraday long setups led. Re-run the scan as the
+  regime changes; the overnight / in-session line in the report shows which way a ticker leans.
+- Pullback long C1 was recommended in all three runs.
+- Limits: one split per run (two halves), results add up only if each setup gets its own capital,
+  and the setups themselves were developed on AMD/SNDK/META data.
+
+```bash
+python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward_scan \
+  --tickers AMAT --start 2025-10-01 --end 2026-10-02
+```
+
 ## Recommendations
 
 1. **Choose tickers before tuning settings.** The same configuration ranges from +156.66% (SNDK)
@@ -603,7 +672,10 @@ python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_rew
    in-session split before using it, and skip earnings nights if possible.
 10. **Don't rely on a regime indicator to switch setups** (Finding 12); if rotating, use only the
     wave setups and a slow rule (top 2 by trailing 40 sessions).
-11. **Still untested:** a bear-market year for SNDK-like names, costs other than 5 bps, and a
+11. **For a new ticker, run the scan** (Finding 15) on the last 12 months, trade the recommended
+    setups, and re-run it periodically; for the overnight hold, prefer tickers in the top 3–5 by
+    120-session momentum (Finding 14).
+12. **Still untested:** a bear-market year for SNDK-like names, costs other than 5 bps, and a
    one-position-at-a-time rule for combined setups.
 
 ## Reproduction

@@ -29,6 +29,24 @@ python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_rew
   --tickers AMD --start 2025-01-02 --end 2025-12-31 --no-box-signals --overnight-hold ma200 --cost-bps 5
 ```
 
+### Find the setups for a new ticker
+
+`analysis_scripts/wave_risk_reward_scan.py` backtests every setup (box breaks, fades, gaps,
+opening drive, pullback, deep bounce, overnight hold) on a ticker, chooses each intraday setup's
+exit on the first half of the period, checks it on the second half, and recommends the setups that
+made money in both, with their combined result
+([ticker-tuning doc, Finding 15](../research/findings/wave_risk_reward_strategy_ticker_params_tunning.md#finding-15--finding-the-setups-for-a-new-ticker-wave_risk_reward_scanpy)):
+
+```bash
+python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward_scan \
+  --tickers AMAT --start 2025-10-01 --end 2026-10-02     # default: the last 12 months
+```
+
+Options: `--tickers` (one or more), `--start` / `--end`, `--cost-bps` (5), `--min-trades` (5 per
+half), `--feed`, `--workers` (8). Takes about 1.5 minutes per ticker. The report's
+overnight / in-session line shows which way the ticker leans: gains overnight → the overnight hold;
+gains in-session → the intraday long setups. Re-run it as the ticker's behaviour changes.
+
 ### Box signals + opening drive (QQQ + SNDK)
 
 From [Finding 14](../research/findings/WAVE_RISK_REWARD_FINDINGS.md#finding-14--opening-drive--exits-with-costs-jun-1--oct-2)
