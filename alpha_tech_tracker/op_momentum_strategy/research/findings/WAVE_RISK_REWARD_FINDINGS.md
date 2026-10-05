@@ -10,6 +10,10 @@ Research log for `analysis_scripts/wave_risk_reward.py` (usage:
   strong up wave pulls back into its 38.2–61.8% retracement, stop at 78.6%, held past the impulse
   high (`--exit target-trail`). Positive on AMD, SNDK and META in both Jul–Oct and the unseen
   Jan–Jun 2026 (+1.35% to +10.96%, 5 bps costs); pullback shorts lost almost everywhere.
+  **It did not hold in 2025:** the default lost on AMD (−7.50%), SNDK (−10.68%) and META
+  (−2.64%); only coarser waves (`--min-wave-bar-ranges 3`) stayed positive on AMD in both years —
+  see Findings 5–8 of
+  [`wave_risk_reward_strategy_ticker_params_tunning.md`](wave_risk_reward_strategy_ticker_params_tunning.md).
 - **Best result so far (Finding 14):** default box signals plus `--opening-drive both`, with 5 bps
   round-trip costs, on QQQ + SNDK, Jun 1 – Oct 2 2026: **+75.04%** over 311 trades holding to the
   session close (`--exit eod`), **+49.45%** with the give-back exit; every full month positive in
@@ -373,8 +377,8 @@ Pullback trades only (`--no-box-signals`), 5 bps costs. **Longs, threshold 2:**
 **Shorts, threshold 2, `target`:** Jul–Oct AMD −3.34%, SNDK −8.14%, META −2.81%; Jan–Jun AMD
 −12.48%, SNDK −8.93%, META −4.45%.
 
-- **Long-only with `target-trail` is positive in all six ticker/window cells** — the most
-  consistent result in this study. The fixed target caps winners: R/R to the impulse high is
+- **Long-only with `target-trail` is positive in all six 2026 ticker/window cells** — but not in
+  2025 (default: AMD −7.50%, SNDK −10.68%, META −2.64%; ticker-tuning doc, Finding 8). The fixed target caps winners: R/R to the impulse high is
   typically 0.5–1.5.
 - **Against drift:** on AMD about +0.2% per pullback trade vs about 0% for buying every morning
   (ticker-tuning doc, Finding 4); on SNDK below its buy-every-morning baseline (+0.73% / trade),
@@ -449,8 +453,8 @@ settings were chosen on this same data.
 
 ## Open questions and next steps
 
-0. **Wave pullback** — validate `--wave-pullback long --exit target-trail` on more tickers and a
-   bear period; test it combined with the opening drive (both with `--no-box-signals`).
+0. **Wave pullback** — 2025 did not confirm the 2026 edge; validate the coarser-wave version
+   (`--min-wave-bar-ranges 3`) on more tickers and a bear period before relying on it.
 1. **Give-back exit and opening drive** — the committed backtest now has the give-back exit and
    costs; next, test `--opening-drive` and the give-back exit on a bear period (for example 2022
    from cached history) and on a wider ticker set. Recheck Findings 11–12 with legs built from

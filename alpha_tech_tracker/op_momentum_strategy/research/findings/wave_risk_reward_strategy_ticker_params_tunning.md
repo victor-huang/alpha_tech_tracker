@@ -24,8 +24,12 @@ earlier findings: [`WAVE_RISK_REWARD_FINDINGS.md`](WAVE_RISK_REWARD_FINDINGS.md)
   setup only works clearly on strongly trending, high-volatility names.
 - **AMD (Finding 4):** box signals have no directional edge (−10.73% before costs over 3 months);
   more fades only reach breakeven; the **wave pullback long** — added for AMD's impulse-wave
-  style — made +4.36% (Jul–Oct) and +5.55% on the unseen Jan–Jun, and also held up on SNDK and
-  META.
+  style — made +4.36% (Jul–Oct) and +5.55% on the unseen Jan–Jun 2026.
+- **But the pullback edge did not last into 2025 (Findings 5–8).** Tuning AMD's pullback settings
+  overfit (best Jan–Jun setting +46.49%, then −11.14% on Jul–Oct); monthly re-tuning on 4 weeks
+  lost in 2025 (−2.68%); the default lost 7.50% on AMD 2025. Only coarser waves (C1,
+  `--min-wave-bar-ranges 3`) stayed positive on AMD in both years. The run-up and volatility
+  triggers did not hold across years.
 
 ## Method
 
@@ -230,6 +234,113 @@ Finding 15). Pullback longs, threshold 2, `--exit target-trail`, 5 bps:
 
 The only AMD setup positive in both windows; pullback shorts lost (−3.34% / −12.48%, `target`).
 
+## Finding 5 — Tuning AMD's pullback settings (Jan–Jun tune, Jul–Oct 2026 check)
+
+New options made the pullback levels tunable (`--pullback-touch-fib`, `--pullback-floor-fib`,
+`--pullback-stop-fib`, `--pullback-target-ext`). Grid: wave size 1.5 / 2 / 3, impulse threshold
+1.5 / 1.75 / 2 / 2.5 / 3, touch 23.6 / 38.2 / 50%, entry floor 50 / 61.8 / 78.6%, stop 78.6 /
+88.6 / 100 / 115%, target extension 1.0 / 1.272 / 1.618, five exits — 7,425 setting/exit pairs,
+pullback longs only, 5 bps. A fast replay (impulses recorded once per wave size, pullback logic
+replayed) reproduced the real script exactly (default: 27 trades +5.55%, 18 trades +4.36%).
+
+| | Tune: Jan 2 – Jul 1 | Check: Jul 2 – Oct 2 |
+|---|---|---|
+| best tuned (wave 1.5, threshold 1.5, touch 23.6%, held to close) | +46.49% (82 trades) | **−11.14%** |
+| 20 best tuned | median +44.90% | **0 of 20 positive**, median −12.40% |
+| default | +5.55% | +4.36% |
+
+- AMD rose **147%** Jan–Jun (vs +17.7% Jul–Oct); 99% of settings made money there, so tuning
+  rewarded the loosest dip-buying. **Correlation of tune vs check: −0.48.**
+- Reverse direction (tune on the choppier Jul–Oct, check Jan–Jun): the 20 best were all positive
+  on Jan–Jun (median +8.82%) — settings that survive chop also survive a trend.
+- Families that held on Jul–Oct across all their combinations: wave size 3 (99% positive vs 34%
+  for 1.5), threshold 3 (97%), touch 50% (77%).
+
+Candidates in the real backtest (pullback longs, 5 bps):
+
+| Setting | AMD Jan–Jun | AMD Jul–Oct | SNDK Jan–Jun | SNDK Jul–Oct | META Jan–Jun | META Jul–Oct |
+|---|---|---|---|---|---|---|
+| default | +5.55% | +4.36% | +10.96% | +5.16% | +1.62% | +1.35% |
+| C1: wave size 3 | +3.62% | +4.29% | +9.53% | +4.21% | +2.38% | +3.67% |
+| C2: wave 3, threshold 1.75, touch 23.6%, trail 25% | +16.22% | +12.52% | +9.07% | −0.94% | −0.36% | +3.71% |
+| C3: wave 3, threshold 1.5, touch/floor 50%, trail 25% | +8.08% | +9.56% | −3.32% | −1.83% | −0.86% | −3.70% |
+| C4: wave 2, threshold 1.75, touch/floor 50%, trail 25% | +9.61% | +8.95% | −4.09% | −2.74% | +0.12% | −3.91% |
+
+C2 was chosen on AMD's Jul–Oct (in-sample there); C3 and C4 are clearly fitted to AMD.
+
+## Finding 6 — Rolling walk-forward: tune on 4 weeks, trade the next month
+
+Each month, the best setting over the previous 20 sessions (≥ 3 trades) is traded the following
+month. Fixed settings and the hindsight-best per month for comparison (AMD, pullback longs, 5 bps):
+
+| | 2026 Feb–Sep | months > 0 | 2025 Feb–Dec | months > 0 |
+|---|---|---|---|---|
+| default (fixed) | +10.37% | 4/8 | −7.86% | 3/11 |
+| C1 (fixed) | +7.87% | 4/8 | **+5.36%** | **7/11** |
+| C2 (fixed) | **+29.25%** | **8/8** | −1.16% | 5/11 |
+| re-tuned monthly | +24.74% | 7/8 | −2.68% | 4/11 |
+| re-tuned, strict family (wave ≥ 2, threshold ≥ 1.75, target exits) | +20.29% | 6/8 | −1.59% | 3/11 |
+| hindsight best each month (ceiling) | +80.97% | 8/8 | +71.65% | 11/11 |
+
+- **Re-tuning chases the last regime.** In 2026 it moved to the loosest settings after the
+  April–June run (AMD +74% / +46% / +13%) and lost **14.65% in July** when AMD fell 18%; strict
+  settings came through almost unhurt (C2 +1.83%, default −3.31%). The pick changed every month.
+- The hindsight ceiling shows the opportunity exists, but a 4-week lookback cannot find it.
+
+**Triggers** (conditions over the trailing 20 sessions vs the default's next 20 sessions; rolling
+daily, overlapping samples):
+
+| Condition | 2026 next-20 mean (% > 0) | 2025 next-20 mean (% > 0) |
+|---|---|---|
+| strategy made money / lost money | +1.29% (64%) / +1.26% (54%) | −1.06% (28%) / −0.54% (36%) |
+| AMD up > 10% / not | +0.85% (52%) / +1.54% (63%) | −1.18% (26%) / −0.37% (38%) |
+| daily range above / at or below median | −0.27% (42%) / **+2.82% (76%)** | −0.57% (40%) / −0.89% (26%) |
+
+- The strategy's own recent result predicts nothing.
+- **Volatility reversed between years** (calm was good in 2026, slightly worse in 2025); as a
+  gate it also removed good trades (C2 2026: +29.25% → +13–21%).
+- Only the run-up pattern pointed the same way in both years — tested in Finding 8.
+
+## Finding 7 — AMD, full year 2025 (nothing tuned on it)
+
+AMD 2025: +75.1% buy and hold (122.29 → 214.18), mostly calm (daily range 3–4%; April 6.2%,
+Oct–Nov 5–5.6%). 5 bps costs:
+
+| Configuration | Trades | Win | Total | Same in 2026 |
+|---|---|---|---|---|
+| pullback long, default, target-trail | 62 | 44% | **−7.50%** (3/11 months up) | positive |
+| **pullback long, C1** | 23 | 61% | **+5.36%** (7/11) | positive |
+| pullback long, C2 | 52 | 54% | −1.16% (5/11) | positive |
+| pullback short, default | 49 | 59% | +4.01% | lost |
+| box signals, target exit | 169 | 36% | −3.03% | lost |
+| long opening drive, held to close | 135 | 32% | +12.05% | lost |
+| long opening drive, give-back exit | 135 | 44% | −10.58% | +6.41% (3 months) |
+| buy 09:35 every day, held to close | 250 | 23% | +8.24% | — |
+
+The default pullback lost even in AMD's strongest months (June +28%: −2.72%; July +27%:
+−0.27%). The direction that works flips by year: pullback shorts and the long drive held to the
+close made money in 2025 and lost in 2026.
+
+## Finding 8 — Run-up filter (negative) and pullback longs across years
+
+**Filter:** skip a pullback long when the ticker's return over the previous 20 sessions (close 21
+sessions back to yesterday's close) exceeds a threshold. Tested at 5 / 10 / 15 / 20% on AMD, SNDK
+and META, 2025 and Jan–Oct 2026, for the default, C1 and C2: at every threshold it improved only
+**1–2 of 6** ticker/year cells and lowered the combined total in almost every case. It helps in
+losing years (SNDK 2025 default −10.68% → up to +2.88%) but removes the best trades in winning
+years (AMD 2026 default +9.91% → about +0.5%). Not useful.
+
+Pullback longs without the filter (target-trail, 5 bps):
+
+| Setting | AMD 2025 | AMD 2026 | SNDK 2025 | SNDK 2026 | META 2025 | META 2026 | Positive |
+|---|---|---|---|---|---|---|---|
+| default | −7.50% | +9.91% | −10.68% | +16.12% | −2.64% | +2.97% | 3/6 |
+| **C1** (`--min-wave-bar-ranges 3`) | **+5.36%** | **+7.91%** | −12.75% | **+13.74%** | −2.34% | **+6.05%** | **4/6** |
+| C2 (AMD-tuned) | −1.16% | +28.73% | −5.08% | +8.13% | −7.14% | +3.35% | 3/6 |
+
+All three lost on SNDK and META in 2025. C1 is the most consistent, and the only one positive on
+AMD in both years.
+
 ## Recommendations
 
 1. **Choose tickers before tuning settings.** The same configuration ranges from +156.66% (SNDK)
@@ -239,9 +350,15 @@ The only AMD setup positive in both windows; pullback shorts lost (−3.34% / �
 2. **Treat per-ticker settings with suspicion.** On META, 3-month tuning barely predicted the
    previous 6 months (correlation +0.26). Any per-ticker setting needs an out-of-sample check.
 3. **The regime switch may need to be per ticker** — it helped QQQ + SNDK and hurt META.
-4. **For AMD-like names (impulse waves, few tight boxes)** use the wave pullback long with
-   `--no-box-signals --exit target-trail`; it also held up on SNDK and META.
-5. **Still untested:** a bear-market year for SNDK-like names, and costs other than 5 bps.
+4. **For AMD-like names (impulse waves, few tight boxes)** the wave pullback long is the best
+   option tested, but use **C1** (`--no-box-signals --wave-pullback long
+   --min-wave-bar-ranges 3 --exit target-trail`) — the only setting positive on AMD in both 2025
+   and 2026. Expect a small edge with few trades.
+5. **Don't re-tune monthly, and don't loosen settings after a run-up** (Finding 6). Fixed strict
+   settings beat 4-week re-tuning in both years.
+6. **Triggers tested and rejected:** the strategy's own recent result, a volatility gate, and the
+   run-up filter (Findings 6 and 8).
+7. **Still untested:** a bear-market year for SNDK-like names, and costs other than 5 bps.
 
 ## Reproduction
 

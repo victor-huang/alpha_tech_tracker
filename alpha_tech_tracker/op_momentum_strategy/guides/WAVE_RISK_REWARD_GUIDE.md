@@ -44,12 +44,14 @@ python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_rew
 To run it on other tickers or dates, change `--tickers`, `--start`/`--end` (backtest) or
 `--days`/`--end` (chart).
 
-### Most consistent signal so far — wave pullback longs
+### Most consistent signal in 2026 — wave pullback longs
 
 From [Finding 15](../research/findings/WAVE_RISK_REWARD_FINDINGS.md#finding-15--wave-pullback-buy-the-bounce-after-a-strong-wave):
 buy the bounce after a strong up wave pulls back into its 38.2–61.8% retracement, held past the
 impulse high with `--exit target-trail` (5 bps costs). Positive on all three tickers in both
-windows; smaller per ticker than the opening drive on SNDK, but the only setup that works on AMD:
+2026 windows. **It did not hold in 2025** (default lost on AMD, SNDK and META); the coarser-wave
+version (`--min-wave-bar-ranges 3`) was the only setting positive on AMD in both years — see the
+[ticker-tuning doc](../research/findings/wave_risk_reward_strategy_ticker_params_tunning.md), Findings 5–8:
 
 | Ticker | Jul 2 – Oct 2 | Jan 2 – Jul 1 (not used to build it) |
 |---|---|---|
