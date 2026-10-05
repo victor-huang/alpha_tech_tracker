@@ -17,6 +17,20 @@ did the trade look like at that moment?*
 
 ## Best configuration so far — copy and run
 
+### Overnight hold (biggest result)
+
+Buy the 15:55 close, sell the next open — no intraday trading at all
+([ticker-tuning doc, Finding 13](../research/findings/wave_risk_reward_strategy_ticker_params_tunning.md#finding-13--overnight-hold-buy-the-close-sell-the-next-open)).
+AMD with the daily-MA200 filter: **+63.73% (2025), +43.73% (Jan–Oct 2026), +1.34% (2022 bear
+market)**; every day it was positive on 19 of 24 tickers in 2025 and 18 of 23 in 2026 (5 bps).
+
+```bash
+python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward_backtest \
+  --tickers AMD --start 2025-01-02 --end 2025-12-31 --no-box-signals --overnight-hold ma200 --cost-bps 5
+```
+
+### Box signals + opening drive (QQQ + SNDK)
+
 From [Finding 14](../research/findings/WAVE_RISK_REWARD_FINDINGS.md#finding-14--opening-drive--exits-with-costs-jun-1--oct-2)
 (QQQ + SNDK, Jun 1 – Oct 2 2026, 5 bps round-trip costs): default box signals plus the opening
 drive made **+75.04%** held to the session close and **+49.45%** with the give-back exit —
@@ -155,6 +169,7 @@ Retires once the wave in progress grows past the small-wave size.
 | `pullback short` | — | mirror after a strong down wave (red bar) | 78.6% retracement | impulse low |
 | `bounce long` | — | first green bar after a deep down wave finishes (`--deep-bounce`) | wave low − 0.1 × wave size | half way back up the wave |
 | `bounce short` | — | mirror after a big up wave (red bar) | wave high + 0.1 × wave size | half way back down |
+| `overnight long` | — | the session's 15:55 bar, when the `--overnight-hold` filter allows | none | exits at the next session's open |
 
 - **Stop-and-reverse is off by default.** A wide-box breakout/breakdown that follows a fade on
   the same box would stop the fade out and reverse it. It lost in every test, so it only fires
@@ -177,6 +192,14 @@ Retires once the wave in progress grows past the small-wave size.
   back the other way while price is still short of the target; cancelled on the stop, a close past
   the target, or the session close. Not gated by the regime switch. Made money on AMD in 2026 and
   lost in 2025 (ticker-tuning doc, Finding 9).
+- **Overnight hold is off by default.** `--overnight-hold always|ma200|ma20-ma200|ma50-rising`
+  buys the 15:55 close (market-on-close) and exits at the next open (market-on-open). Filters use
+  daily moving averages of session closes including today's: `ma200` = close above the daily
+  MA200 (recommended), `ma20-ma200` = above both, `ma50-rising` = daily MA50 above its level 10
+  sessions earlier. With a moving-average filter the scripts load about a year of warm-up
+  history. Half-day sessions (no 15:55 bar) are skipped. The backtest always exits these trades
+  at the next open and loads a few days past `--end` so a year-end trade can exit. The cached bars
+  are not split-adjusted, so a split shows as a fake overnight gap.
 - **Switches:** `--no-box-signals` turns off every box signal (boxes and their R/R are still
   computed and drawn), so the opening drive or the pullback can run on their own.
   `--no-gap-signals` drops gap signals and keeps them in `gap_skipped_signals`.
@@ -234,6 +257,7 @@ Signals the regime blocks are kept in `regime_skipped_signals` and counted in th
 | | `--deep-wave-ratio` | 2 | Deep-wave threshold in median lookback wave sizes |
 | | `--deep-bounce-target-fib` | 0.5 | Target as a fraction of the wave back from its extreme (1.0 = its start) |
 | | `--deep-bounce-stop-buffer` | 0.1 | Stop beyond the wave extreme, as a fraction of the wave size |
+| | `--overnight-hold` | `off` | Buy the 15:55 close, sell the next open: `always`, `ma200`, `ma20-ma200`, `ma50-rising` |
 | | `--no-box-signals` | — | Turn off breakouts, breakdowns and fades |
 | | `--no-gap-signals` | — | Drop gap signals |
 | R/R | `--box-stop-ratio` | 0.2 | Breakout stop back inside the box (1.0 = opposite edge) |
@@ -300,7 +324,7 @@ breakout that stopped a fade out (only with `--stop-and-reverse`). The `latest` 
 - **Top panel:** candles, MA 8/20/50/200, up/down wave legs (start price → extreme), boxes (blue
   = narrow, orange = wide), signal markers (filled = in-session, hollow = gap; green/red =
   breakout/breakdown, cyan/orange = fade long/short, diamonds = opening drive, circles = wave
-  pullback, stars = deep bounce), and dotted
+  pullback, stars = deep bounce, squares = overnight hold), and dotted
   opening-range high/low lines (first `--opening-range-bars` bars) for every session.
 - **Bottom panel:** long and short R/R per bar, capped at 10, with a dotted line at 1.
 - **Hover** any bar for its close, regime, MAs, wave number and direction, lookback up/down

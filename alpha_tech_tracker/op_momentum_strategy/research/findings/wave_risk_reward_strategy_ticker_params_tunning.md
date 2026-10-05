@@ -40,6 +40,14 @@ earlier findings: [`WAVE_RISK_REWARD_FINDINGS.md`](WAVE_RISK_REWARD_FINDINGS.md)
   (`--deep-bounce short`) made +9.11% on 2025 and lost 14–31% in 2026. In 2025 almost all of
   AMD's +77% came overnight (in-session only +6%), so intraday rallies faded; in 2026 the session
   itself rose 86%, so dips recovered. Trailing in-session drift is a candidate regime switch.
+- **No indicator picks the setup in advance (Finding 12):** daily-trend rules, 12 intraday
+  indicators (~2,500 rules) and rotating by the setups' own recent results were chosen on 2025 and
+  failed on 2026, or only worked in a narrow pocket. Rotating among the five wave setups with a
+  slow rule was positive in both years, but no better than C1 alone in 2025.
+- **The overnight hold is the biggest find (Finding 13):** buy the 15:55 close, sell the next
+  open (`--overnight-hold`). On AMD with the daily-MA200 filter: +63.73% in 2025 and +43.73% in
+  2026, and it sat out most of 2022 (+1.34%). Across 24 tickers it was positive on 19 of 24 in
+  2025 and 18 of 23 in 2026 (median +23.5% / +10.7%, every day, 5 bps).
 
 ## Method
 
@@ -466,6 +474,107 @@ python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_rew
   --deep-bounce short --exit target-trail --cost-bps 5
 ```
 
+## Finding 12 — Picking the setup in advance: indicators and rotation (negative)
+
+The question: can something known each morning tell a 2026-style day (dips recover → long
+setups) from a 2025-style day (rallies fade → short big-wave tops)? Long side = deep bounce long +
+pullback long; short side = `--deep-bounce short`; target-trail, 5 bps. Rules were chosen on 2025
+and tested unchanged on Jan–Oct 2026; each indicator uses data up to the previous close.
+
+**Daily trend** (above daily MA20 / 50 / 200, MA20 and MA50 slope, MA20 > MA50, full stack, 20-day
+return, 20-day in-session drift; singles and AND/OR pairs, 243 rules):
+
+| | 2025 | 2026 |
+|---|---|---|
+| short Jan–May, long Jun–Dec (switch on the daily trend) | **−15.26%** | — |
+| "above daily MA200 → long, else short" | −13.69% | +29.59% |
+| 20 best rules on 2025 | +3.3% to +6.9% | **1 of 20 positive**, median −11.74% |
+| MA20 > MA50 > MA200 and 20-day return up → long, else short | +3.27% | +11.40% |
+
+In 2025 the long setups lost every month after AMD turned up (Jun–Dec −14.66%) while the short
+made +9.70% in that uptrend — the daily trend shows which way AMD moves across days, not whether
+intraday dips recover.
+
+**Intraday indicators** (trailing 20 sessions: dip-recovery rate, rally-fade rate, in-session vs
+overnight return, close location, 5-min autocorrelation, closes above VWAP, gap-fill rate, ADR,
+relative strength vs QQQ, QQQ above MA50, QQQ in-session drift, setup momentum; ~2,500 rules):
+the 20 best on 2025 were **all negative on 2026** (median −16.02%). The one survivor, "5-min
+autocorrelation > 0 → long, else short" (+8.31% / +16.63%), was fragile: neighbouring
+cutoffs/lookbacks often lost in one year, the 10-session lookback lost in 2025 at every cutoff,
+SNDK lost in 2025 at every setting and META in most.
+
+**Rotation by the setups' own recent results** (shadow-trade every setup; trade those with
+traction, using only trades closed before the day; every variant reported, none chosen):
+
+| Universe | 2025 | 2026 |
+|---|---|---|
+| all 10 setups (box, drive, pullback, bounce, both sides) | 11 of 12 rules negative | mixed |
+| five wave setups (bounce long/short, pullback long/short, C1) | 3 of 12 positive | **12 of 12 positive** (+7.23% to +28.84%) |
+| best slow rules, five wave setups | top 2 by trailing 40 sessions +2.04%; top 1 by 60 sessions +2.62%; last 10 trades +1.53% | +12.33%; +9.36%; +7.23% |
+
+Rotation catches a strong edge (2026's deep-bounce long) but not a small, steady one (2025's
+short): normal losing streaks switch it off. Each setup's edge persisted for several quarters,
+then flipped around the turn of the year — a trailing rule sees the flip about a quarter late.
+
+## Finding 13 — Overnight hold: buy the close, sell the next open
+
+`--overnight-hold always|ma200|ma20-ma200|ma50-rising`: buy the session's 15:55 bar close
+(market-on-close), sell the next session's first bar open (market-on-open), no stop or target.
+Filters use daily moving averages of session closes including today's.
+
+**Why:** every other setup here is flat by the close, and AMD's return often comes overnight:
+
+| AMD | Buy and hold | Overnight part | In-session part |
+|---|---|---|---|
+| 2022 | −55% | −22% | −42% |
+| 2023 | +124% | +21% | **+89%** |
+| 2024 | −10% | **+64%** | −46% |
+| 2025 | +77% | **+68%** | +6% |
+| Jan–Oct 2026 | +196% | +59% | **+86%** |
+
+**AMD, 5 bps:**
+
+| Filter | 2022 | 2023 | 2024 | 2025 | Jan–Oct 2026 | Total |
+|---|---|---|---|---|---|---|
+| every day | **−31.87%** | +5.02% | +44.23% | +51.28% | +43.73% | +112.39% |
+| **close above daily MA200** | **+1.34%** (45 trades) | −3.89% | +13.41% | **+63.73%** | **+43.73%** | **+118.32%** |
+| close above MA20 and MA200 | −14.17% | +0.48% | +17.67% | +60.93% | +35.23% | +100.14% |
+| daily MA50 rising | −23.82% | +13.49% | +9.38% | +69.24% | +37.80% | +106.09% |
+
+The MA200 filter sat out most of the 2022 bear market at the cost of a smaller 2024 (AMD spent
+much of 2024 below its MA200 while still gaining overnight). Worst single nights: −6% to −11%.
+
+**24 tickers, 5 bps** (AMD APP ARM AVGO COIN CRWD DDOG HOOD IONQ JPM LLY LUNR META MU NVDA OKLO
+PLTR QCOM QQQ RDDT RKLB SNDK SNOW TSLA):
+
+| Filter | 2025: positive / median | Jan–Oct 2026*: positive / median / worst ticker |
+|---|---|---|
+| every day | **19 / 24**, **+23.51%** | **18 / 23**, **+10.70%**, APP −62.42% |
+| close above daily MA200 | 18 / 24, +22.55% | 16 / 23, +3.69%, TSLA −17.31% |
+| daily MA50 rising | 20 / 24, +22.64% | 13 / 23, +1.00%, RDDT −24.91% |
+
+\* CRWD excluded in 2026: a 4-for-1 split on 2026-07-02 (772.45 close → 191.44 open) shows as a
+−75% night because the cached 5-min bars are not split-adjusted.
+
+- **Every day was positive in both years on 14 tickers** (AMD, AVGO, DDOG, HOOD, IONQ, META, MU,
+  NVDA, OKLO, PLTR, QQQ, RKLB, SNDK, SNOW); with the MA200 filter on 12. Biggest: SNDK (+92% /
+  +106%), MU (+73% / +97%), AVGO, APP 2025, OKLO, AMD.
+- **The filter trades upside for protection.** In 2026 MA200 cut big losers (APP −62% → −8%,
+  COIN −29% → +7%, TSLA −26% → −17%) but also skipped winners still gaining overnight while below
+  their MA200 (OKLO, IONQ, RKLB, SNOW), so its median fell to +3.69%.
+- **Consistent losers** are tickers whose gains come in-session: CRWD and LLY 2025, QCOM and ARM
+  2025, JPM — the in-session / overnight split decides it, as on AMD.
+
+**Caveats:** overnight gap risk (single nights −10% to −36%, e.g. LUNR −35.8%, IONQ/OKLO −22%),
+earnings nights (no earnings calendar here), market-on-close / market-on-open fills may cost more
+than 5 bps, unadjusted data breaks around splits, and the long-only overnight effect is a known
+anomaly that can fade. It has also only been tested in 2022–2026.
+
+```bash
+python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward_backtest \
+  --tickers AMD --start 2025-01-02 --end 2025-12-31 --no-box-signals --overnight-hold ma200 --cost-bps 5
+```
+
 ## Recommendations
 
 1. **Choose tickers before tuning settings.** The same configuration ranges from +156.66% (SNDK)
@@ -489,9 +598,12 @@ python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_rew
    run-up filter (Findings 6 and 8).
 8. **AMD in a 2025-style year (gains overnight, flat sessions):** short the tops of big up waves,
    `--no-box-signals --deep-bounce short --exit target-trail` (+9.11% on 2025; Finding 11).
-9. **Next to test:** a regime switch on trailing in-session drift that picks between the
-   2026-style longs and the 2025-style shorts (Finding 11).
-10. **Still untested:** a bear-market year for SNDK-like names, costs other than 5 bps, and a
+9. **Overnight hold as a core setup (Finding 13):** `--overnight-hold ma200` for protection or
+   `always` for upside, on tickers whose returns come overnight; check a ticker's overnight vs
+   in-session split before using it, and skip earnings nights if possible.
+10. **Don't rely on a regime indicator to switch setups** (Finding 12); if rotating, use only the
+    wave setups and a slow rule (top 2 by trailing 40 sessions).
+11. **Still untested:** a bear-market year for SNDK-like names, costs other than 5 bps, and a
    one-position-at-a-time rule for combined setups.
 
 ## Reproduction

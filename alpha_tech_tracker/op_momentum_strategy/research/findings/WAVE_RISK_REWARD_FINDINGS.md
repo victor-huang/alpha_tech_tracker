@@ -10,6 +10,10 @@ Research log for `analysis_scripts/wave_risk_reward.py` (usage:
   (deep bounce + pullback long, +29.59% Jan–Oct 2026) — both lose on 2025, when shorting the tops
   of big up waves worked instead (+9.11%). AMD's 2025 gains came overnight while its 2026 gains
   came in-session, which decides whether intraday dip-buying or rally-fading pays.
+- **Overnight hold (ticker-tuning doc, Finding 13) — the biggest result so far:** buy the 15:55
+  close, sell the next open (`--overnight-hold`). AMD with the daily-MA200 filter: +63.73% (2025),
+  +43.73% (Jan–Oct 2026), +1.34% in the 2022 bear market. Positive on 19 of 24 tickers in 2025
+  and 18 of 23 in 2026 every day (median +23.5% / +10.7%, 5 bps).
 - **Most consistent signal so far (Finding 15):** wave pullback longs — buy the bounce after a
   strong up wave pulls back into its 38.2–61.8% retracement, stop at 78.6%, held past the impulse
   high (`--exit target-trail`). Positive on AMD, SNDK and META in both Jul–Oct and the unseen
