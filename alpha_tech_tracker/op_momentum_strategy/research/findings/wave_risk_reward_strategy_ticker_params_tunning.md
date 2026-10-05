@@ -36,6 +36,10 @@ earlier findings: [`WAVE_RISK_REWARD_FINDINGS.md`](WAVE_RISK_REWARD_FINDINGS.md)
 - **Best AMD 2026 combination (Finding 10):** deep bounce + pullback long, +29.59% over Jan–Oct
   2026 with `target-trail` (110 trades, at most 2 open at once) — but −18.81% on 2025. The
   setups that work on AMD in 2026 are the same dip-buying idea and share the same bad year.
+- **AMD 2025 works the other way (Finding 11):** shorting the top of a big up wave
+  (`--deep-bounce short`) made +9.11% on 2025 and lost 14–31% in 2026. In 2025 almost all of
+  AMD's +77% came overnight (in-session only +6%), so intraday rallies faded; in 2026 the session
+  itself rose 86%, so dips recovered. Trailing in-session drift is a candidate regime switch.
 
 ## Method
 
@@ -405,6 +409,63 @@ python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_rew
   --deep-bounce long --wave-pullback long --exit target-trail --cost-bps 5
 ```
 
+## Finding 11 — Shorting the top of a big up wave, and why AMD's years are opposites
+
+`--deep-bounce short`: after an up wave at least `--deep-wave-ratio` × the median lookback wave
+size finishes, short the first red bar; stop at the wave high + 0.1 × wave size, target
+`--deep-bounce-target-fib` of the wave back down. Same grid as Finding 9 (depth 1.5 / 2 / 3 ×
+target 0.5 / 1.0 × four exits × with/without a price-below-MA200 filter), box signals off, 5 bps.
+Depth 2, target half way:
+
+| Exit | **2025** | Jan 2 – Oct 2 2026 | Jul 2 – Oct 2 2026 |
+|---|---|---|---|
+| `target` | 81 trades, 70% win, **+3.99%** | −13.88% | −0.53% |
+| `target-trail` | 81, 68%, **+9.11%** | −20.90% | −4.06% |
+| `giveback` | 81, 70%, **+7.08%** | −20.61% | −4.87% |
+| `eod` | 81, 53%, **+4.34%** | −27.12% | −4.83% |
+
+- All 8 depth-2 setting/exit combinations were positive on 2025 (target 1.0: +3.14% to +6.28%);
+  depth 3 smaller (+1.2% to +3.6%); depth 1.5 lost.
+- It is the mirror of the deep-bounce long: heavy losses in 2026 (−14% to −31% over Jan–Oct).
+- Requiring a downtrend (price below the 5-min MA200) made it worse: the rallies worth fading in
+  2025 happened while AMD trended up.
+
+### Overnight vs in-session returns
+
+| AMD | Total | Overnight (prior close → open) | In-session (open → close) | Dips ≥ 2% that recovered over half | Rallies ≥ 2% that gave back over half |
+|---|---|---|---|---|---|
+| 2025 | +77% | **+68%** | **+6%** | 32% of 98 | 39% of 98 |
+| Jan–Oct 2026 | +196% | +59% | **+86%** | 46% of 76 | 35% of 98 |
+
+In 2025 almost all of AMD's gain came **overnight**; within the session price went roughly
+nowhere, so intraday rallies faded and dips kept falling. In 2026 buyers lifted the stock
+**during** the session, so dips recovered. Every setup here trades only within the session, which
+is why dip-buying and rally-fading swap places between the two years.
+
+### Working AMD setups by year type (5 bps)
+
+| Year type | Setup | Result |
+|---|---|---|
+| **2025-style** (gains overnight, flat in-session) | deep-bounce short, depth 2, `target-trail` | **+9.11%** (2025) |
+| | long opening drive, held to the close | +12.05% (2025) |
+| | pullback short, default | +4.01% (2025) |
+| **2026-style** (strong in-session drift) | deep bounce long + pullback long, `target-trail` | **+29.59%** (Jan–Oct 2026) |
+| **Both years** | pullback long C1 (`--min-wave-bar-ranges 3`) | +5.36% (2025), +7.91% (2026) |
+
+**Candidate regime switch (untested):** in-session drift is measurable in real time — e.g. the sum
+of open-to-close returns, or the dip-recovery rate, over the trailing 20 sessions. Trade the long
+dip-buying setups when it is positive and short the tops of big up waves when it is flat or
+negative. Unlike the triggers rejected in Findings 6 and 8, it has a mechanism behind it; it still
+needs a point-in-time backtest across both years.
+
+Run the 2025-style setup:
+
+```bash
+python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward_backtest \
+  --tickers AMD --start 2025-01-02 --end 2025-12-31 --no-box-signals \
+  --deep-bounce short --exit target-trail --cost-bps 5
+```
+
 ## Recommendations
 
 1. **Choose tickers before tuning settings.** The same configuration ranges from +156.66% (SNDK)
@@ -426,9 +487,12 @@ python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_rew
    settings beat 4-week re-tuning in both years.
 7. **Triggers tested and rejected:** the strategy's own recent result, a volatility gate, and the
    run-up filter (Findings 6 and 8).
-8. **Still untested:** a bear-market year for SNDK-like names, costs other than 5 bps, a
-   one-position-at-a-time rule for combined setups, and a regime signal that tells a 2026-style
-   year (dips recover) from a 2025-style year (dips don't) in advance.
+8. **AMD in a 2025-style year (gains overnight, flat sessions):** short the tops of big up waves,
+   `--no-box-signals --deep-bounce short --exit target-trail` (+9.11% on 2025; Finding 11).
+9. **Next to test:** a regime switch on trailing in-session drift that picks between the
+   2026-style longs and the 2025-style shorts (Finding 11).
+10. **Still untested:** a bear-market year for SNDK-like names, costs other than 5 bps, and a
+   one-position-at-a-time rule for combined setups.
 
 ## Reproduction
 

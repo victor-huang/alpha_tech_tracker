@@ -6,8 +6,10 @@ Research log for `analysis_scripts/wave_risk_reward.py` (usage:
 
 ## Summary
 
-- **AMD (ticker-tuning doc, Findings 9–10):** a deep-bounce signal and the best 2026 combination
-  (deep bounce + pullback long, +29.59% Jan–Oct 2026) — both lose on 2025.
+- **AMD (ticker-tuning doc, Findings 9–11):** a deep-bounce signal and the best 2026 combination
+  (deep bounce + pullback long, +29.59% Jan–Oct 2026) — both lose on 2025, when shorting the tops
+  of big up waves worked instead (+9.11%). AMD's 2025 gains came overnight while its 2026 gains
+  came in-session, which decides whether intraday dip-buying or rally-fading pays.
 - **Most consistent signal so far (Finding 15):** wave pullback longs — buy the bounce after a
   strong up wave pulls back into its 38.2–61.8% retracement, stop at 78.6%, held past the impulse
   high (`--exit target-trail`). Positive on AMD, SNDK and META in both Jul–Oct and the unseen
