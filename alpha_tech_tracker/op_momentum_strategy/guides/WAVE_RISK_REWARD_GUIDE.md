@@ -217,6 +217,10 @@ Signals the regime blocks are kept in `regime_skipped_signals` and counted in th
 | | `--opening-drive` | `off` | First-bar signal: `both`, `long` (green bar) or `short` (red bar) |
 | | `--wave-pullback` | `off` | Pullback after a strong wave: `both`, `long` or `short` |
 | | `--strong-wave-ratio` | 2 | Impulse threshold in median lookback wave sizes |
+| | `--pullback-touch-fib` | 0.382 | Retracement the pullback must touch before an entry |
+| | `--pullback-floor-fib` | 0.618 | Deepest retracement an entry bar may close at |
+| | `--pullback-stop-fib` | 0.786 | Retracement where the stop sits (1.0 = impulse start) |
+| | `--pullback-target-ext` | 1.0 | Target = impulse start + ext × impulse size (1.0 = impulse extreme) |
 | | `--no-box-signals` | — | Turn off breakouts, breakdowns and fades |
 | | `--no-gap-signals` | — | Drop gap signals |
 | R/R | `--box-stop-ratio` | 0.2 | Breakout stop back inside the box (1.0 = opposite edge) |

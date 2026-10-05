@@ -61,7 +61,10 @@ Pullback   = `--wave-pullback both|long|short` (off by default): when a finished
              pullback to touch its 38.2% retracement, then the first bar closing back in
              the impulse direction (green for an up impulse) between the 61.8% level and
              the impulse extreme fires pullback long / short. Stop at the 78.6%
-             retracement, target the impulse extreme. A setup is cancelled when price hits
+             retracement, target the impulse extreme. The levels are tunable:
+             `--pullback-touch-fib`, `--pullback-floor-fib`, `--pullback-stop-fib`, and
+             `--pullback-target-ext` (target = impulse start + ext x impulse size; 1.0 =
+             the extreme, 1.272 / 1.618 = extensions). A setup is cancelled when price hits
              the stop or closes beyond the extreme first, and at the session close. Not
              gated by the regime switch or repeat suppression.
 Switches   = `--no-box-signals` turns off every box signal (breakout, breakdown, fades;
@@ -153,6 +156,10 @@ class WaveRiskRewardParams:
     box_signals: bool = True
     gap_signals: bool = True
     strong_wave_ratio: float = DEFAULT_STRONG_WAVE_RATIO
+    pullback_touch_fib: float = PULLBACK_TOUCH_FIB
+    pullback_floor_fib: float = PULLBACK_FLOOR_FIB
+    pullback_stop_fib: float = PULLBACK_STOP_FIB
+    pullback_target_ext: float = 1.0
     opening_range_bars: int = DEFAULT_OPENING_RANGE_BARS
     max_ma200_distance_bars: float = DEFAULT_MAX_MA200_DISTANCE_BARS
     minimum_wave_price_change: Optional[float] = None
@@ -408,9 +415,10 @@ def opening_drive_risk_reward(direction, entry, stop, waves, min_risk_pct=0.001)
     }
 
 
-def new_pullback_setup(impulse, lookback, strong_wave_ratio, mode):
+def new_pullback_setup(impulse, lookback, strong_wave_ratio, mode, touch_fib=PULLBACK_TOUCH_FIB,
+                       floor_fib=PULLBACK_FLOOR_FIB, stop_fib=PULLBACK_STOP_FIB, target_ext=1.0):
     """Pullback setup for a just-finished `impulse` wave at least `strong_wave_ratio` x the median
-    size of the other lookback waves, or None."""
+    size of the other lookback waves, or None. The retracement levels travel with the setup."""
     direction = impulse.direction()
     if direction not in ("up", "down") or mode == "off":
         return None
@@ -422,7 +430,10 @@ def new_pullback_setup(impulse, lookback, strong_wave_ratio, mode):
     median_size = statistics.median(others)
     if median_size <= 0 or impulse.price_range() < strong_wave_ratio * median_size:
         return None
-    return {"direction": direction, "low": float(impulse.low), "high": float(impulse.high), "touched": False}
+    return {
+        "direction": direction, "low": float(impulse.low), "high": float(impulse.high), "touched": False,
+        "touch_fib": touch_fib, "floor_fib": floor_fib, "stop_fib": stop_fib, "target_ext": target_ext,
+    }
 
 
 def fib_level(setup, fraction):
@@ -435,13 +446,13 @@ def advance_pullback_setup(setup, bar):
     """Feed one bar to `setup`: "fire" on a bounce from the retracement zone, "cancel", or None."""
     up = setup["direction"] == "up"
     extreme = setup["high"] if up else setup["low"]
-    stop = fib_level(setup, PULLBACK_STOP_FIB)
+    stop = fib_level(setup, setup.get("stop_fib", PULLBACK_STOP_FIB))
     if (bar["low"] <= stop) if up else (bar["high"] >= stop):
         return "cancel"
-    touch = fib_level(setup, PULLBACK_TOUCH_FIB)
+    touch = fib_level(setup, setup.get("touch_fib", PULLBACK_TOUCH_FIB))
     if (bar["low"] <= touch) if up else (bar["high"] >= touch):
         setup["touched"] = True
-    floor = fib_level(setup, PULLBACK_FLOOR_FIB)
+    floor = fib_level(setup, setup.get("floor_fib", PULLBACK_FLOOR_FIB))
     bounced = bar["close"] > bar["open"] if up else bar["close"] < bar["open"]
     in_zone = (floor <= bar["close"] < extreme) if up else (extreme < bar["close"] <= floor)
     if setup["touched"] and bounced and in_zone:
@@ -452,10 +463,11 @@ def advance_pullback_setup(setup, bar):
 
 
 def pullback_risk_reward(setup, entry, min_risk_pct=0.001):
-    """Stop at the 78.6% retracement, target the impulse extreme."""
+    """Stop at the setup's stop retracement, target impulse start + target_ext x impulse size."""
     up = setup["direction"] == "up"
-    stop = fib_level(setup, PULLBACK_STOP_FIB)
-    target = setup["high"] if up else setup["low"]
+    stop = fib_level(setup, setup.get("stop_fib", PULLBACK_STOP_FIB))
+    extension = setup.get("target_ext", 1.0) * (setup["high"] - setup["low"])
+    target = setup["low"] + extension if up else setup["high"] - extension
     risk = entry - stop if up else stop - entry
     reward = target - entry if up else entry - target
     if risk <= 0 or reward <= 0:
@@ -562,7 +574,9 @@ def analyze_bars(bars, params=None):
         elif new_wave and params.wave_pullback != "off":
             impulse_lookback = select_lookback_waves(waves[:-1], params.lookback_waves, params.lookback_bars)
             pullback_setup = new_pullback_setup(
-                waves[-2], impulse_lookback, params.strong_wave_ratio, params.wave_pullback
+                waves[-2], impulse_lookback, params.strong_wave_ratio, params.wave_pullback,
+                params.pullback_touch_fib, params.pullback_floor_fib, params.pullback_stop_fib,
+                params.pullback_target_ext,
             ) or pullback_setup
 
         current_wave = waves[-1]
@@ -1036,6 +1050,13 @@ def add_strategy_arguments(parser):
         help="A wave is an impulse when it is at least this many x the median lookback wave size"
              f" (default: {DEFAULT_STRONG_WAVE_RATIO:g})",
     )
+    for flag, default, meaning in (
+        ("--pullback-touch-fib", PULLBACK_TOUCH_FIB, "retracement the pullback must touch"),
+        ("--pullback-floor-fib", PULLBACK_FLOOR_FIB, "deepest retracement an entry bar may close at"),
+        ("--pullback-stop-fib", PULLBACK_STOP_FIB, "retracement where the stop sits (1.0 = impulse start)"),
+        ("--pullback-target-ext", 1.0, "target = impulse start + this x impulse size (1.0 = impulse extreme)"),
+    ):
+        parser.add_argument(flag, type=float, default=default, help=f"Wave pullback: {meaning} (default: {default:g})")
     parser.add_argument(
         "--opening-range-bars", type=int, default=DEFAULT_OPENING_RANGE_BARS,
         help=f"5-min bars in the opening range, normally 3-6 (default: {DEFAULT_OPENING_RANGE_BARS})",
@@ -1084,6 +1105,10 @@ def params_from_args(args):
         opening_drive=args.opening_drive,
         wave_pullback=args.wave_pullback,
         strong_wave_ratio=args.strong_wave_ratio,
+        pullback_touch_fib=args.pullback_touch_fib,
+        pullback_floor_fib=args.pullback_floor_fib,
+        pullback_stop_fib=args.pullback_stop_fib,
+        pullback_target_ext=args.pullback_target_ext,
         box_signals=args.box_signals,
         gap_signals=args.gap_signals,
         opening_range_bars=args.opening_range_bars,

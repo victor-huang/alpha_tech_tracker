@@ -958,6 +958,32 @@ class TestAdvancePullbackSetup:
         assert advance_pullback_setup(setup, {"open": 104.5, "high": 105.0, "low": 103.8, "close": 104.0}) == "fire"
 
 
+class TestPullbackCustomLevels:
+    def _setup(self, **levels):
+        return dict(_up_setup(), **levels)
+
+    def test_deeper_touch_level_waits_for_deeper_pullback(self):
+        setup = self._setup(touch_fib=0.5)
+
+        assert advance_pullback_setup(setup, {"open": 105.5, "high": 106.4, "low": 105.4, "close": 106.2}) is None
+        assert setup["touched"] is False
+
+    def test_wider_stop_survives_786(self):
+        setup = self._setup(stop_fib=1.0)
+
+        assert advance_pullback_setup(setup, {"open": 104.0, "high": 104.1, "low": 102.0, "close": 103.0}) is None
+
+    def test_target_extension_beyond_impulse_high(self):
+        result = pullback_risk_reward(self._setup(target_ext=1.272), 105.5, min_risk_pct=0.0)
+
+        assert result["target"] == pytest.approx(112.72)
+
+    def test_stop_at_impulse_start(self):
+        result = pullback_risk_reward(self._setup(stop_fib=1.0), 105.5, min_risk_pct=0.0)
+
+        assert result["stop"] == pytest.approx(100.0)
+
+
 class TestPullbackRiskReward:
     def test_long_stops_at_786_and_targets_impulse_high(self):
         result = pullback_risk_reward(_up_setup(), 105.5, min_risk_pct=0.0)
@@ -1018,7 +1044,16 @@ class TestAnalyzeBarsWavePullback:
 
         analyze_bars(self._bars([]), WaveRiskRewardParams(wave_pullback="both", strong_wave_ratio=3.0))
 
-        assert setup.call_args.args[2:] == (3.0, "both")
+        assert setup.call_args.args[2:4] == (3.0, "both")
+
+    def test_pullback_levels_reach_setup(self, mocker):
+        setup = self._patch_setup(mocker)
+        params = WaveRiskRewardParams(wave_pullback="long", pullback_touch_fib=0.5, pullback_floor_fib=0.7,
+                                      pullback_stop_fib=1.0, pullback_target_ext=1.272)
+
+        analyze_bars(self._bars([]), params)
+
+        assert setup.call_args.args[4:] == (0.5, 0.7, 1.0, 1.272)
 
 
 class TestAnalyzeBarsSignalSwitches:
