@@ -11,7 +11,11 @@ from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward i
     find_consolidation,
     is_reversion_box,
     ma_stack_regime,
+    advance_bounce_setup,
     advance_pullback_setup,
+    bounce_levels,
+    bounce_risk_reward,
+    new_bounce_setup,
     fib_level,
     new_pullback_setup,
     opening_drive_risk_reward,
@@ -1093,3 +1097,107 @@ class TestAnalyzeBarsSignalSwitches:
         signals = analyze_bars(bars, _params(gap_signals=False))["signals"]
 
         assert [s["signal"] for s in signals] == ["breakout"]
+
+
+def _long_bounce():
+    return {"side": "up", "low": 100.0, "high": 110.0, "target_fib": 0.5, "stop_buffer": 0.1}
+
+
+class TestNewBounceSetup:
+    def _lookback(self, wave_size, direction="down"):
+        wave = _wave("2026-09-01 11:00", 100.0, 100.0 + wave_size, direction)
+        small = [_wave(f"2026-09-01 {9 + i}:30", 100.0, 101.0, "up") for i in range(2)]
+        return wave, small + [wave]
+
+    def test_deep_down_wave_sets_up_long(self):
+        wave, lookback = self._lookback(2.5)
+
+        setup = new_bounce_setup(wave, lookback, deep_wave_ratio=2.0, mode="both")
+
+        assert (setup["side"], setup["low"], setup["high"]) == ("up", 100.0, 102.5)
+
+    def test_big_up_wave_sets_up_short(self):
+        wave, lookback = self._lookback(2.5, direction="up")
+
+        assert new_bounce_setup(wave, lookback, deep_wave_ratio=2.0, mode="both")["side"] == "down"
+
+    def test_shallow_wave_has_no_setup(self):
+        wave, lookback = self._lookback(1.5)
+
+        assert new_bounce_setup(wave, lookback, deep_wave_ratio=2.0, mode="both") is None
+
+    def test_long_mode_ignores_up_wave(self):
+        wave, lookback = self._lookback(2.5, direction="up")
+
+        assert new_bounce_setup(wave, lookback, deep_wave_ratio=2.0, mode="long") is None
+
+
+class TestBounceLevels:
+    def test_long_stop_below_low_and_target_half_way(self):
+        assert bounce_levels(_long_bounce()) == (pytest.approx(99.0), pytest.approx(105.0))
+
+    def test_short_mirrors(self):
+        setup = dict(_long_bounce(), side="down")
+
+        assert bounce_levels(setup) == (pytest.approx(111.0), pytest.approx(105.0))
+
+
+class TestAdvanceBounceSetup:
+    def test_green_bar_below_target_fires(self):
+        assert advance_bounce_setup(_long_bounce(), {"open": 102.0, "high": 103.2, "low": 101.8, "close": 103.0}) == "fire"
+
+    def test_red_bar_waits(self):
+        assert advance_bounce_setup(_long_bounce(), {"open": 103.0, "high": 103.2, "low": 101.8, "close": 102.0}) is None
+
+    def test_close_past_target_cancels(self):
+        assert advance_bounce_setup(_long_bounce(), {"open": 104.0, "high": 105.5, "low": 103.8, "close": 105.2}) == "cancel"
+
+    def test_stop_cancels(self):
+        assert advance_bounce_setup(_long_bounce(), {"open": 101.0, "high": 101.2, "low": 98.9, "close": 100.5}) == "cancel"
+
+
+class TestBounceRiskReward:
+    def test_long_reward_to_target_over_risk_to_stop(self):
+        result = bounce_risk_reward(_long_bounce(), 103.0, min_risk_pct=0.0)
+
+        assert (result["stop"], result["target"]) == (pytest.approx(99.0), pytest.approx(105.0))
+        assert result["rr"] == pytest.approx(2.0 / 4.0)
+
+
+class TestAnalyzeBarsDeepBounce:
+    """Ten falling bars make a down wave (110 -> 100); a 25% bounce ends it."""
+
+    def _bars(self, after_split):
+        falling = [(c + 1.0, c + 1.2, c - 0.2, c) for c in [109.0 - i for i in range(10)]]
+        split = [(100.0, 102.7, 99.9, 102.5)]
+        index = pd.date_range(_timestamp("2026-09-01 10:00"), periods=11 + len(after_split), freq="5min")
+        return pd.DataFrame(falling + split + after_split, columns=["open", "high", "low", "close"], index=index)
+
+    def _patch_setup(self, mocker):
+        return mocker.patch(f"{MODULE}.new_bounce_setup", side_effect=lambda *a: _long_bounce())
+
+    def test_off_by_default(self, mocker):
+        setup = self._patch_setup(mocker)
+
+        analyze_bars(self._bars([]))
+
+        setup.assert_not_called()
+
+    def test_split_bar_bounce_fires_bounce_long(self, mocker):
+        self._patch_setup(mocker)
+
+        signals = analyze_bars(self._bars([]), WaveRiskRewardParams(deep_bounce="long"))["signals"]
+
+        assert [(s["signal"], s["time"], s["price"]) for s in signals] == [
+            ("bounce_long", _timestamp("2026-09-01 10:50"), 102.5)
+        ]
+        assert signals[0]["risk_reward"]["target"] == pytest.approx(105.0)
+
+    def test_settings_reach_setup(self, mocker):
+        setup = self._patch_setup(mocker)
+        params = WaveRiskRewardParams(deep_bounce="long", deep_wave_ratio=3.0, deep_bounce_target_fib=1.0,
+                                      deep_bounce_stop_buffer=0.2)
+
+        analyze_bars(self._bars([]), params)
+
+        assert setup.call_args.args[2:] == (3.0, "long", 1.0, 0.2)

@@ -48,6 +48,7 @@ class TestSignalGroup:
     @pytest.mark.parametrize("overrides, group", [
         ({"signal": "drive_long"}, "opening drive"),
         ({"signal": "pullback_short"}, "wave pullback"),
+        ({"signal": "bounce_long"}, "deep bounce"),
         ({"gap": True}, "gap"),
         ({"signal": "fade_short"}, "fade"),
         ({"reverses": "fade_short"}, "stop-and-reverse"),

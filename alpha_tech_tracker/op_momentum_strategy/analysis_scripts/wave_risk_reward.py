@@ -67,6 +67,14 @@ Pullback   = `--wave-pullback both|long|short` (off by default): when a finished
              the extreme, 1.272 / 1.618 = extensions). A setup is cancelled when price hits
              the stop or closes beyond the extreme first, and at the session close. Not
              gated by the regime switch or repeat suppression.
+Deep bounce= `--deep-bounce both|long|short` (off by default): when a down wave at least
+             `--deep-wave-ratio` x the median lookback wave size finishes, the first green
+             bar fires bounce long while price is still below the target. Stop at the
+             wave low - `--deep-bounce-stop-buffer` x wave size, target
+             `--deep-bounce-target-fib` of the wave back up (0.5 = half way, 1.0 = its
+             start). Mirror after a big up wave (bounce short on a red bar). Setups cancel on
+             the stop, on a close past the target, and at the session close. Not gated by
+             the regime switch.
 Switches   = `--no-box-signals` turns off every box signal (breakout, breakdown, fades;
              boxes and their R/R are still computed and drawn), so the opening drive or
              the wave pullback can run on their own. `--no-gap-signals` drops box signals
@@ -120,7 +128,11 @@ DEFAULT_MIN_BOX_WAVES = 2
 DEFAULT_SMALL_WAVE_RATIO = 1.5
 DEFAULT_MAX_BOX_HEIGHT_RATIO = 2.0
 DEFAULT_REVERSION_BOX_BARS = 6.0
-LONG_SIGNALS = ("breakout", "fade_long", "drive_long", "pullback_long")
+LONG_SIGNALS = ("breakout", "fade_long", "drive_long", "pullback_long", "bounce_long")
+DEEP_BOUNCE_MODES = ("off", "both", "long", "short")
+DEFAULT_DEEP_WAVE_RATIO = 2.0
+DEFAULT_DEEP_BOUNCE_TARGET_FIB = 0.5
+DEFAULT_DEEP_BOUNCE_STOP_BUFFER = 0.1
 WAVE_PULLBACK_MODES = ("off", "both", "long", "short")
 DEFAULT_STRONG_WAVE_RATIO = 2.0
 PULLBACK_TOUCH_FIB = 0.382
@@ -153,6 +165,10 @@ class WaveRiskRewardParams:
     stop_and_reverse: bool = False
     opening_drive: str = "off"
     wave_pullback: str = "off"
+    deep_bounce: str = "off"
+    deep_wave_ratio: float = DEFAULT_DEEP_WAVE_RATIO
+    deep_bounce_target_fib: float = DEFAULT_DEEP_BOUNCE_TARGET_FIB
+    deep_bounce_stop_buffer: float = DEFAULT_DEEP_BOUNCE_STOP_BUFFER
     box_signals: bool = True
     gap_signals: bool = True
     strong_wave_ratio: float = DEFAULT_STRONG_WAVE_RATIO
@@ -476,6 +492,55 @@ def pullback_risk_reward(setup, entry, min_risk_pct=0.001):
     return {"entry": entry, "stop": stop, "target": target, "risk": risk, "reward": reward, "rr": reward / risk}
 
 
+def new_bounce_setup(wave, lookback, deep_wave_ratio, mode, target_fib=DEFAULT_DEEP_BOUNCE_TARGET_FIB,
+                     stop_buffer=DEFAULT_DEEP_BOUNCE_STOP_BUFFER):
+    """Bounce setup after a just-finished `wave` at least `deep_wave_ratio` x the median size of the
+    other lookback waves: a down wave sets up a long, an up wave a short. None otherwise."""
+    side = {"down": "up", "up": "down"}.get(wave.direction())
+    if side is None or mode == "off" or (mode == "long" and side != "up") or (mode == "short" and side != "down"):
+        return None
+    others = [w.price_range() for w in lookback if w is not wave]
+    if len(others) < 2:
+        return None
+    median_size = statistics.median(others)
+    if median_size <= 0 or wave.price_range() < deep_wave_ratio * median_size:
+        return None
+    return {"side": side, "low": float(wave.low), "high": float(wave.high),
+            "target_fib": target_fib, "stop_buffer": stop_buffer}
+
+
+def bounce_levels(setup):
+    """(stop, target) for a bounce setup."""
+    size = setup["high"] - setup["low"]
+    if setup["side"] == "up":
+        return setup["low"] - setup["stop_buffer"] * size, setup["low"] + setup["target_fib"] * size
+    return setup["high"] + setup["stop_buffer"] * size, setup["high"] - setup["target_fib"] * size
+
+
+def advance_bounce_setup(setup, bar):
+    """Feed one bar to a bounce setup: "fire" on the first bar closing the bounce's way, "cancel", or None."""
+    up = setup["side"] == "up"
+    stop, target = bounce_levels(setup)
+    if (bar["low"] <= stop) if up else (bar["high"] >= stop):
+        return "cancel"
+    if (bar["close"] >= target) if up else (bar["close"] <= target):
+        return "cancel"
+    if (bar["close"] > bar["open"]) if up else (bar["close"] < bar["open"]):
+        return "fire"
+    return None
+
+
+def bounce_risk_reward(setup, entry, min_risk_pct=0.001):
+    up = setup["side"] == "up"
+    stop, target = bounce_levels(setup)
+    risk = entry - stop if up else stop - entry
+    reward = target - entry if up else entry - target
+    if risk <= 0 or reward <= 0:
+        return None
+    risk = max(risk, entry * min_risk_pct)
+    return {"entry": entry, "stop": stop, "target": target, "risk": risk, "reward": reward, "rr": reward / risk}
+
+
 def _box_signal(box, close):
     """Signal the close triggers in `box`, or None; each box fires each signal once."""
     if box["mode"] == "reversion":
@@ -529,6 +594,7 @@ def analyze_bars(bars, params=None):
     last_fired = {}
     session_bar_index = or_high = or_low = None
     pullback_setup = None
+    bounce_setup = None
 
     bar_range = bars["high"] - bars["low"]
     avg_bar_range_pct = (bar_range / bars["close"]).rolling(
@@ -568,6 +634,15 @@ def analyze_bars(bars, params=None):
             new_wave = waves[-1].count(timestamp, bar, time_increment=BAR_INTERVAL)
             if new_wave:
                 waves.append(new_wave)
+
+        if is_session_open_bar:
+            bounce_setup = None
+        elif new_wave and params.deep_bounce != "off":
+            bounce_lookback = select_lookback_waves(waves[:-1], params.lookback_waves, params.lookback_bars)
+            bounce_setup = new_bounce_setup(
+                waves[-2], bounce_lookback, params.deep_wave_ratio, params.deep_bounce,
+                params.deep_bounce_target_fib, params.deep_bounce_stop_buffer,
+            ) or bounce_setup
 
         if is_session_open_bar:
             pullback_setup = None
@@ -707,6 +782,27 @@ def analyze_bars(bars, params=None):
             if outcome:
                 pullback_setup = None
 
+        bounce_signal = None
+        if bounce_setup:
+            outcome = advance_bounce_setup(bounce_setup, bar)
+            if outcome == "fire":
+                bounce_signal = {
+                    "time": timestamp,
+                    "signal": "bounce_long" if bounce_setup["side"] == "up" else "bounce_short",
+                    "gap": False,
+                    "price": close,
+                    "box_low": bounce_setup["low"],
+                    "box_high": bounce_setup["high"],
+                    "box_mode": "deep wave",
+                    "reverses": None,
+                    "risk_reward": bounce_risk_reward(bounce_setup, close, params.min_risk_pct),
+                    "regime": regime,
+                    "bias": bias,
+                }
+                signals.append(bounce_signal)
+            if outcome:
+                bounce_setup = None
+
         if active_box:
             if active_box["mode"] == "reversion":
                 retire = active_box["breakout_at"] is not None or active_box["breakdown_at"] is not None
@@ -733,7 +829,7 @@ def analyze_bars(bars, params=None):
             "or_high": or_high if opening_range_done else None,
             "or_low": or_low if opening_range_done else None,
             "signal": " + ".join(
-                _signal_label(fired) for fired in (signal, drive_signal, pullback_signal) if fired
+                _signal_label(fired) for fired in (signal, drive_signal, pullback_signal, bounce_signal) if fired
             ) or None,
             "min_wave_price_change": min_wave_change,
         }
@@ -772,6 +868,8 @@ def _signal_range_text(signal):
         return f"first bar {signal['box_low']:.2f}-{signal['box_high']:.2f}"
     if signal["box_mode"] == "impulse":
         return f"impulse {signal['box_low']:.2f}-{signal['box_high']:.2f}"
+    if signal["box_mode"] == "deep wave":
+        return f"deep wave {signal['box_low']:.2f}-{signal['box_high']:.2f}"
     return f"{signal['box_mode']} box {signal['box_low']:.2f}-{signal['box_high']:.2f}"
 
 
@@ -891,6 +989,8 @@ def build_chart(ticker, bars, result, display_start):
         ("drive short", "diamond", "#d62728"),
         ("pullback long", "circle", "#2ca02c"),
         ("pullback short", "circle", "#d62728"),
+        ("bounce long", "star", "#2ca02c"),
+        ("bounce short", "star", "#d62728"),
     )
     for kind, symbol, color in marker_styles:
         picked = [signal for signal in signals if _signal_label(signal) == kind]
@@ -955,8 +1055,8 @@ def _print_ticker_summary(ticker, result, display_start, chart_path):
         + "".join(
             f"   {sum(1 for s in shown_signals if s['signal'] == name)} {name.replace('_', ' ')}"
             for name in ("breakout", "breakdown", "fade_long", "fade_short", "drive_long", "drive_short",
-                         "pullback_long", "pullback_short")
-            if not name.startswith(("drive", "pullback")) or any(s["signal"] == name for s in shown_signals)
+                         "pullback_long", "pullback_short", "bounce_long", "bounce_short")
+            if not name.startswith(("drive", "pullback", "bounce")) or any(s["signal"] == name for s in shown_signals)
         )
         + f"   ({sum(1 for s in shown_signals if s['gap'])} gap,"
         f" {sum(1 for s in shown_signals if s['reverses'])} stop-and-reverse,"
@@ -1030,6 +1130,25 @@ def add_strategy_arguments(parser):
         "--opening-drive", default="off", choices=OPENING_DRIVE_MODES,
         help="Signal on the session's first bar: green -> drive long, red -> drive short, stop at"
              " the bar's extreme; both, long or short (default: off)",
+    )
+    parser.add_argument(
+        "--deep-bounce", default="off", choices=DEEP_BOUNCE_MODES,
+        help="Buy the first green bar after a deep down wave (short the mirror after a big up wave);"
+             " both, long or short (default: off)",
+    )
+    parser.add_argument(
+        "--deep-wave-ratio", type=float, default=DEFAULT_DEEP_WAVE_RATIO,
+        help=f"A wave is deep when it is at least this many x the median lookback wave size (default: {DEFAULT_DEEP_WAVE_RATIO:g})",
+    )
+    parser.add_argument(
+        "--deep-bounce-target-fib", type=float, default=DEFAULT_DEEP_BOUNCE_TARGET_FIB,
+        help="Deep bounce target as a fraction of the wave back from its extreme (0.5 = half way, 1.0 = its"
+             f" start) (default: {DEFAULT_DEEP_BOUNCE_TARGET_FIB:g})",
+    )
+    parser.add_argument(
+        "--deep-bounce-stop-buffer", type=float, default=DEFAULT_DEEP_BOUNCE_STOP_BUFFER,
+        help="Deep bounce stop beyond the wave extreme, as a fraction of the wave size"
+             f" (default: {DEFAULT_DEEP_BOUNCE_STOP_BUFFER:g})",
     )
     parser.add_argument(
         "--no-box-signals", dest="box_signals", action="store_false",
@@ -1109,6 +1228,10 @@ def params_from_args(args):
         pullback_floor_fib=args.pullback_floor_fib,
         pullback_stop_fib=args.pullback_stop_fib,
         pullback_target_ext=args.pullback_target_ext,
+        deep_bounce=args.deep_bounce,
+        deep_wave_ratio=args.deep_wave_ratio,
+        deep_bounce_target_fib=args.deep_bounce_target_fib,
+        deep_bounce_stop_buffer=args.deep_bounce_stop_buffer,
         box_signals=args.box_signals,
         gap_signals=args.gap_signals,
         opening_range_bars=args.opening_range_bars,

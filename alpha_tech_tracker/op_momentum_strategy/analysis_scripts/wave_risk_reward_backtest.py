@@ -64,7 +64,8 @@ DEFAULT_LARGE_LEG_ADR = 0.75
 DEFAULT_MEDIUM_LEG_ADR = 0.40
 EARLY_LEG_FRACTION = 0.5
 SIGNAL_GROUPS = (
-    "narrow-box break", "fade", "wide-box break", "stop-and-reverse", "opening drive", "wave pullback", "gap",
+    "narrow-box break", "fade", "wide-box break", "stop-and-reverse", "opening drive", "wave pullback",
+    "deep bounce", "gap",
 )
 CSV_FIELDS = [
     "ticker", "signal", "group", "regime", "entry_time", "exit_time", "side", "entry", "exit",
@@ -77,6 +78,8 @@ def signal_group(signal):
         return "opening drive"
     if signal["signal"].startswith("pullback"):
         return "wave pullback"
+    if signal["signal"].startswith("bounce"):
+        return "deep bounce"
     if signal["gap"]:
         return "gap"
     if signal["signal"].startswith("fade"):
