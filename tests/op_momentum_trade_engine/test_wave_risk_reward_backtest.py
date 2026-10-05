@@ -47,6 +47,7 @@ def _signal(time, name="breakout", stop=99.0, target=102.0, risk=1.0, **override
 class TestSignalGroup:
     @pytest.mark.parametrize("overrides, group", [
         ({"signal": "drive_long"}, "opening drive"),
+        ({"signal": "pullback_short"}, "wave pullback"),
         ({"gap": True}, "gap"),
         ({"signal": "fade_short"}, "fade"),
         ({"reverses": "fade_short"}, "stop-and-reverse"),
@@ -122,6 +123,22 @@ class TestTradeSimulator:
         trade = TradeSimulator(bars).run(_signal("2026-09-01 10:00", target=110.0), "giveback", 0.32, 0.25)
 
         assert trade["outcome"] == "eod"
+
+    def test_target_trail_holds_past_target_then_trails(self):
+        closes = [100, 101, 102.5, 104, 103.4, 102.6]
+        bars = _bars("2026-09-01 10:00", [(c, c + 0.1, c - 0.1, c) for c in closes])
+
+        trade = TradeSimulator(bars).run(_signal("2026-09-01 10:00", target=102.0), "target-trail", 0.32, 0.25)
+
+        assert (trade["outcome"], trade["exit"]) == ("giveback", 102.6)
+
+    def test_target_trail_does_not_trail_before_target(self):
+        closes = [100, 101, 101.5, 100.9, 101.2]
+        bars = _bars("2026-09-01 10:00", [(c, c + 0.1, c - 0.1, c) for c in closes])
+
+        trade = TradeSimulator(bars).run(_signal("2026-09-01 10:00", target=105.0), "target-trail", 0.32, 0.25)
+
+        assert (trade["outcome"], trade["exit"]) == ("eod", 101.2)
 
     def test_signal_on_last_bar_of_session_is_not_traded(self):
         bars = _bars("2026-09-01 15:55", [(100, 100, 100, 100)])
@@ -222,7 +239,7 @@ class TestRunBacktest:
 
         trades_by_exit, _, sessions = run_backtest({"SNDK": self._bars()}, args)
 
-        assert set(trades_by_exit) == {"target", "giveback", "eod"}
+        assert set(trades_by_exit) == {"target", "target-trail", "giveback", "eod"}
         assert trades_by_exit["target"][0]["net_pct"] == pytest.approx(1.95)
         assert trades_by_exit["target"][0]["ticker"] == "SNDK"
         assert sessions == 1

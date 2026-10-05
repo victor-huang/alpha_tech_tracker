@@ -7,6 +7,8 @@ script, so any configuration there can be backtested here. Every signal between 
 Entry      = the signal bar's close, in the signal's direction (breakout, fade long and drive
              long buy; the rest short). Signals on a session's last bar are skipped.
 Exit       = `--exit target`: the signal's stop or target, whichever comes first.
+             `--exit target-trail`: the stop until the target is reached, then the
+             give-back trail below instead of taking profit at the target.
              `--exit giveback`: the stop, or once the trade is up `--giveback-arm-r` x risk,
              the first close that gives back `--giveback` of the best close-to-close profit.
              `--exit eod`: the stop, else the session's last close.
@@ -53,7 +55,7 @@ from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward i
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import fetch_bars
 
 DEFAULT_TICKERS = ["QQQ", "SNDK"]
-EXIT_MODES = ("target", "giveback", "eod")
+EXIT_MODES = ("target", "target-trail", "giveback", "eod")
 DEFAULT_GIVEBACK = 0.32
 DEFAULT_GIVEBACK_ARM_R = 0.25
 WARMUP_CALENDAR_DAYS = 45  # MA200 and the wave lookback; also 20 prior sessions for leg ADR
@@ -62,7 +64,7 @@ DEFAULT_LARGE_LEG_ADR = 0.75
 DEFAULT_MEDIUM_LEG_ADR = 0.40
 EARLY_LEG_FRACTION = 0.5
 SIGNAL_GROUPS = (
-    "narrow-box break", "fade", "wide-box break", "stop-and-reverse", "opening drive", "gap",
+    "narrow-box break", "fade", "wide-box break", "stop-and-reverse", "opening drive", "wave pullback", "gap",
 )
 CSV_FIELDS = [
     "ticker", "signal", "group", "regime", "entry_time", "exit_time", "side", "entry", "exit",
@@ -73,6 +75,8 @@ CSV_FIELDS = [
 def signal_group(signal):
     if signal["signal"].startswith("drive"):
         return "opening drive"
+    if signal["signal"].startswith("pullback"):
+        return "wave pullback"
     if signal["gap"]:
         return "gap"
     if signal["signal"].startswith("fade"):
@@ -113,16 +117,19 @@ class TradeSimulator:
         entry, stop, target = self.close[i], rr["stop"], rr["target"]
         exit_index, exit_price, outcome = end, self.close[end], "eod"
         peak = entry
+        target_reached = False
         for j in range(i + 1, end + 1):
             if (self.low[j] <= stop) if side == 1 else (self.high[j] >= stop):
                 fill = min(self.open[j], stop) if side == 1 else max(self.open[j], stop)
                 exit_index, exit_price, outcome = j, fill, "stop"
                 break
-            if exit_mode == "target" and ((self.high[j] >= target) if side == 1 else (self.low[j] <= target)):
+            hit_target = (self.high[j] >= target) if side == 1 else (self.low[j] <= target)
+            if exit_mode == "target" and hit_target:
                 exit_index, exit_price, outcome = j, target, "target"
                 break
-            if exit_mode == "giveback":
-                peak = max(peak, self.close[j]) if side == 1 else min(peak, self.close[j])
+            target_reached = target_reached or hit_target
+            peak = max(peak, self.close[j]) if side == 1 else min(peak, self.close[j])
+            if exit_mode == "giveback" or (exit_mode == "target-trail" and target_reached):
                 move = (peak - entry) * side
                 if move >= arm_r * rr["risk"] and (peak - self.close[j]) * side >= giveback * move:
                     exit_index, exit_price, outcome = j, self.close[j], "giveback"

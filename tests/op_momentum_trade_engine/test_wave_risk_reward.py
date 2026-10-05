@@ -11,7 +11,11 @@ from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward i
     find_consolidation,
     is_reversion_box,
     ma_stack_regime,
+    advance_pullback_setup,
+    fib_level,
+    new_pullback_setup,
     opening_drive_risk_reward,
+    pullback_risk_reward,
     opening_drive_signal,
     opening_range_bias,
     regime_allows,
@@ -859,3 +863,198 @@ class TestAnalyzeBarsOpeningDrive:
         snapshots = analyze_bars(bars, WaveRiskRewardParams(opening_drive="both"))["snapshots"]
 
         assert snapshots["signal"].iloc[0] == "drive long"
+
+
+def _up_setup():
+    return {"direction": "up", "low": 100.0, "high": 110.0, "touched": False}
+
+
+def _down_setup():
+    return {"direction": "down", "low": 100.0, "high": 110.0, "touched": False}
+
+
+class TestNewPullbackSetup:
+    def _lookback(self, impulse_size):
+        impulse = _wave("2026-09-01 11:00", 100.0, 100.0 + impulse_size, "up")
+        small = [_wave(f"2026-09-01 {9 + i}:30", 100.0, 101.0, "down") for i in range(2)]
+        return impulse, small + [impulse]
+
+    def test_strong_up_wave_starts_setup(self):
+        impulse, lookback = self._lookback(2.5)
+
+        setup = new_pullback_setup(impulse, lookback, strong_wave_ratio=2.0, mode="both")
+
+        assert (setup["direction"], setup["low"], setup["high"]) == ("up", 100.0, 102.5)
+
+    def test_ordinary_wave_has_no_setup(self):
+        impulse, lookback = self._lookback(1.5)
+
+        assert new_pullback_setup(impulse, lookback, strong_wave_ratio=2.0, mode="both") is None
+
+    def test_short_mode_ignores_up_impulse(self):
+        impulse, lookback = self._lookback(2.5)
+
+        assert new_pullback_setup(impulse, lookback, strong_wave_ratio=2.0, mode="short") is None
+
+    def test_needs_two_other_waves_to_measure_strength(self):
+        impulse, lookback = self._lookback(2.5)
+
+        assert new_pullback_setup(impulse, lookback[1:], strong_wave_ratio=2.0, mode="both") is None
+
+
+class TestFibLevel:
+    def test_up_impulse_levels_measure_down_from_high(self):
+        assert fib_level(_up_setup(), 0.5) == pytest.approx(105.0)
+        assert fib_level(_up_setup(), 0.786) == pytest.approx(102.14)
+
+    def test_down_impulse_levels_measure_up_from_low(self):
+        assert fib_level(_down_setup(), 0.382) == pytest.approx(103.82)
+
+
+class TestAdvancePullbackSetup:
+    def test_no_signal_before_touching_382(self):
+        setup = _up_setup()
+
+        assert advance_pullback_setup(setup, {"open": 107.0, "high": 107.6, "low": 106.9, "close": 107.5}) is None
+
+    def test_green_bar_after_touch_fires(self):
+        setup = _up_setup()
+        advance_pullback_setup(setup, {"open": 106.8, "high": 106.9, "low": 105.0, "close": 105.2})
+
+        outcome = advance_pullback_setup(setup, {"open": 105.2, "high": 106.0, "low": 105.1, "close": 105.9})
+
+        assert outcome == "fire"
+
+    def test_touch_and_bounce_on_same_bar_fires(self):
+        setup = _up_setup()
+
+        assert advance_pullback_setup(setup, {"open": 105.5, "high": 106.4, "low": 105.0, "close": 106.2}) == "fire"
+
+    def test_red_bar_after_touch_waits(self):
+        setup = _up_setup()
+
+        assert advance_pullback_setup(setup, {"open": 106.5, "high": 106.6, "low": 105.0, "close": 105.4}) is None
+        assert setup["touched"] is True
+
+    def test_green_bar_below_618_does_not_fire(self):
+        setup = _up_setup()
+        advance_pullback_setup(setup, {"open": 104.0, "high": 104.1, "low": 103.0, "close": 103.2})
+
+        assert advance_pullback_setup(setup, {"open": 103.0, "high": 103.7, "low": 102.9, "close": 103.6}) is None
+
+    def test_reaching_786_cancels(self):
+        setup = _up_setup()
+
+        assert advance_pullback_setup(setup, {"open": 104.0, "high": 104.1, "low": 102.0, "close": 103.0}) == "cancel"
+
+    def test_close_above_impulse_high_cancels(self):
+        setup = _up_setup()
+
+        assert advance_pullback_setup(setup, {"open": 109.0, "high": 110.6, "low": 108.9, "close": 110.5}) == "cancel"
+
+    def test_down_impulse_fires_on_red_bar_after_rally(self):
+        setup = _down_setup()
+
+        assert advance_pullback_setup(setup, {"open": 104.5, "high": 105.0, "low": 103.8, "close": 104.0}) == "fire"
+
+
+class TestPullbackRiskReward:
+    def test_long_stops_at_786_and_targets_impulse_high(self):
+        result = pullback_risk_reward(_up_setup(), 105.5, min_risk_pct=0.0)
+
+        assert result["stop"] == pytest.approx(102.14)
+        assert result["target"] == 110.0
+        assert result["rr"] == pytest.approx(4.5 / 3.36)
+
+    def test_short_mirrors(self):
+        result = pullback_risk_reward(_down_setup(), 104.5, min_risk_pct=0.0)
+
+        assert (result["stop"], result["target"]) == (pytest.approx(107.86), 100.0)
+
+
+class TestAnalyzeBarsWavePullback:
+    """Ten rising bars make an up wave (100 -> 110); a 25% drop ends it; then the pullback."""
+
+    def _bars(self, after_split):
+        rising = [(c - 1.0, c + 0.2, c - 1.2, c) for c in [101.0 + i for i in range(10)]]
+        split = [(110.0, 110.1, 107.3, 107.5)]
+        index = pd.date_range(_timestamp("2026-09-01 10:00"), periods=11 + len(after_split), freq="5min")
+        return pd.DataFrame(rising + split + after_split, columns=["open", "high", "low", "close"], index=index)
+
+    def _patch_setup(self, mocker):
+        return mocker.patch(f"{MODULE}.new_pullback_setup", side_effect=lambda *a: _up_setup())
+
+    def test_off_by_default(self, mocker):
+        setup = self._patch_setup(mocker)
+
+        analyze_bars(self._bars([(106.2, 106.8, 106.0, 106.5)]))
+
+        setup.assert_not_called()
+
+    def test_bounce_after_strong_wave_fires_pullback_long(self, mocker):
+        self._patch_setup(mocker)
+        bars = self._bars([(106.2, 106.8, 106.0, 106.5)])
+
+        signals = analyze_bars(bars, WaveRiskRewardParams(wave_pullback="both"))["signals"]
+
+        assert [(s["signal"], s["time"], s["price"]) for s in signals] == [
+            ("pullback_long", _timestamp("2026-09-01 10:55"), 106.5)
+        ]
+        assert signals[0]["risk_reward"]["target"] == 110.0
+
+    def test_setup_expires_at_session_close(self, mocker):
+        self._patch_setup(mocker)
+        bars = pd.concat([
+            self._bars([]),
+            _bars("2026-09-02 09:30", [106.5]).assign(open=106.2, high=106.8, low=106.0),
+        ])
+
+        signals = analyze_bars(bars, WaveRiskRewardParams(wave_pullback="both"))["signals"]
+
+        assert signals == []
+
+    def test_strong_wave_ratio_reaches_setup(self, mocker):
+        setup = self._patch_setup(mocker)
+
+        analyze_bars(self._bars([]), WaveRiskRewardParams(wave_pullback="both", strong_wave_ratio=3.0))
+
+        assert setup.call_args.args[2:] == (3.0, "both")
+
+
+class TestAnalyzeBarsSignalSwitches:
+    def test_no_box_signals_keeps_boxes_but_fires_nothing(self, mocker):
+        mocker.patch(f"{MODULE}.find_consolidation", return_value=_box(100.0, 101.0, median_wave_size=10.0))
+        bars = _bars("2026-09-01 10:00", [100.5, 101.5])
+
+        result = analyze_bars(bars, _params(box_signals=False))
+
+        assert result["signals"] == []
+        assert len(result["boxes"]) == 1
+
+    def test_no_box_signals_keeps_opening_drive(self, mocker):
+        mocker.patch(f"{MODULE}.find_consolidation", return_value=_box(100.0, 101.0, median_wave_size=10.0))
+        bars = _bars("2026-09-02 09:30", [101.5, 101.6]).assign(open=[100.5, 101.5])
+
+        signals = analyze_bars(bars, _params(box_signals=False, opening_drive="both"))["signals"]
+
+        assert [s["signal"] for s in signals] == ["drive_long"]
+
+    def test_no_gap_signals_skips_gap_breakout(self, mocker):
+        mocker.patch(f"{MODULE}.find_consolidation", return_value=_box(100.0, 101.0, median_wave_size=10.0))
+        bars = pd.concat([
+            _bars("2026-09-01 15:55", [100.5]),
+            _bars("2026-09-02 09:30", [101.5]),
+        ])
+
+        result = analyze_bars(bars, _params(gap_signals=False))
+
+        assert result["signals"] == []
+        assert [s["signal"] for s in result["gap_skipped_signals"]] == ["breakout"]
+
+    def test_no_gap_signals_keeps_in_session_breakout(self, mocker):
+        mocker.patch(f"{MODULE}.find_consolidation", return_value=_box(100.0, 101.0, median_wave_size=10.0))
+        bars = _bars("2026-09-02 09:30", [100.5, 101.5])
+
+        signals = analyze_bars(bars, _params(gap_signals=False))["signals"]
+
+        assert [s["signal"] for s in signals] == ["breakout"]

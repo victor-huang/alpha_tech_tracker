@@ -56,6 +56,19 @@ drive        session fires drive long at its close with the stop at the bar's lo
              direction. In testing it was traded with a give-back exit (out once 32% of
              the best open profit is given back, after a move of 0.25 x risk), which
              this script does not model.
+Pullback   = `--wave-pullback both|long|short` (off by default): when a finished wave is at
+             least `--strong-wave-ratio` x the median lookback wave size, wait for the
+             pullback to touch its 38.2% retracement, then the first bar closing back in
+             the impulse direction (green for an up impulse) between the 61.8% level and
+             the impulse extreme fires pullback long / short. Stop at the 78.6%
+             retracement, target the impulse extreme. A setup is cancelled when price hits
+             the stop or closes beyond the extreme first, and at the session close. Not
+             gated by the regime switch or repeat suppression.
+Switches   = `--no-box-signals` turns off every box signal (breakout, breakdown, fades;
+             boxes and their R/R are still computed and drawn), so the opening drive or
+             the wave pullback can run on their own. `--no-gap-signals` drops box signals
+             fired on a session's first bar from an earlier session's box; they are kept
+             in `gap_skipped_signals`.
 Wave size  = a wave may only end once its range reaches `--min-wave-bar-ranges` x the
              average 5-min bar range % of the trailing `--volatility-window-bars` bars,
              so wave counts are comparable across tickers. `--min-wave-price-change`
@@ -104,7 +117,12 @@ DEFAULT_MIN_BOX_WAVES = 2
 DEFAULT_SMALL_WAVE_RATIO = 1.5
 DEFAULT_MAX_BOX_HEIGHT_RATIO = 2.0
 DEFAULT_REVERSION_BOX_BARS = 6.0
-LONG_SIGNALS = ("breakout", "fade_long", "drive_long")
+LONG_SIGNALS = ("breakout", "fade_long", "drive_long", "pullback_long")
+WAVE_PULLBACK_MODES = ("off", "both", "long", "short")
+DEFAULT_STRONG_WAVE_RATIO = 2.0
+PULLBACK_TOUCH_FIB = 0.382
+PULLBACK_FLOOR_FIB = 0.618
+PULLBACK_STOP_FIB = 0.786
 OPENING_DRIVE_MODES = ("off", "both", "long", "short")
 REGIME_SIGNALS = {"up": ("breakout",), "down": ("breakdown",), "range": ("fade_long", "fade_short")}
 REGIME_SWITCHES = ("ma-stack", "opening-range", "off")
@@ -131,6 +149,10 @@ class WaveRiskRewardParams:
     regime_switch: str = "ma-stack"
     stop_and_reverse: bool = False
     opening_drive: str = "off"
+    wave_pullback: str = "off"
+    box_signals: bool = True
+    gap_signals: bool = True
+    strong_wave_ratio: float = DEFAULT_STRONG_WAVE_RATIO
     opening_range_bars: int = DEFAULT_OPENING_RANGE_BARS
     max_ma200_distance_bars: float = DEFAULT_MAX_MA200_DISTANCE_BARS
     minimum_wave_price_change: Optional[float] = None
@@ -386,6 +408,62 @@ def opening_drive_risk_reward(direction, entry, stop, waves, min_risk_pct=0.001)
     }
 
 
+def new_pullback_setup(impulse, lookback, strong_wave_ratio, mode):
+    """Pullback setup for a just-finished `impulse` wave at least `strong_wave_ratio` x the median
+    size of the other lookback waves, or None."""
+    direction = impulse.direction()
+    if direction not in ("up", "down") or mode == "off":
+        return None
+    if (mode == "long" and direction != "up") or (mode == "short" and direction != "down"):
+        return None
+    others = [wave.price_range() for wave in lookback if wave is not impulse]
+    if len(others) < 2:
+        return None
+    median_size = statistics.median(others)
+    if median_size <= 0 or impulse.price_range() < strong_wave_ratio * median_size:
+        return None
+    return {"direction": direction, "low": float(impulse.low), "high": float(impulse.high), "touched": False}
+
+
+def fib_level(setup, fraction):
+    """Price `fraction` of the way back from the impulse extreme towards its start."""
+    size = setup["high"] - setup["low"]
+    return setup["high"] - fraction * size if setup["direction"] == "up" else setup["low"] + fraction * size
+
+
+def advance_pullback_setup(setup, bar):
+    """Feed one bar to `setup`: "fire" on a bounce from the retracement zone, "cancel", or None."""
+    up = setup["direction"] == "up"
+    extreme = setup["high"] if up else setup["low"]
+    stop = fib_level(setup, PULLBACK_STOP_FIB)
+    if (bar["low"] <= stop) if up else (bar["high"] >= stop):
+        return "cancel"
+    touch = fib_level(setup, PULLBACK_TOUCH_FIB)
+    if (bar["low"] <= touch) if up else (bar["high"] >= touch):
+        setup["touched"] = True
+    floor = fib_level(setup, PULLBACK_FLOOR_FIB)
+    bounced = bar["close"] > bar["open"] if up else bar["close"] < bar["open"]
+    in_zone = (floor <= bar["close"] < extreme) if up else (extreme < bar["close"] <= floor)
+    if setup["touched"] and bounced and in_zone:
+        return "fire"
+    if (bar["close"] >= extreme) if up else (bar["close"] <= extreme):
+        return "cancel"
+    return None
+
+
+def pullback_risk_reward(setup, entry, min_risk_pct=0.001):
+    """Stop at the 78.6% retracement, target the impulse extreme."""
+    up = setup["direction"] == "up"
+    stop = fib_level(setup, PULLBACK_STOP_FIB)
+    target = setup["high"] if up else setup["low"]
+    risk = entry - stop if up else stop - entry
+    reward = target - entry if up else entry - target
+    if risk <= 0 or reward <= 0:
+        return None
+    risk = max(risk, entry * min_risk_pct)
+    return {"entry": entry, "stop": stop, "target": target, "risk": risk, "reward": reward, "rr": reward / risk}
+
+
 def _box_signal(box, close):
     """Signal the close triggers in `box`, or None; each box fires each signal once."""
     if box["mode"] == "reversion":
@@ -432,11 +510,13 @@ def analyze_bars(bars, params=None):
     suppressed_signals = []
     regime_skipped_signals = []
     reversal_skipped_signals = []
+    gap_skipped_signals = []
     snapshots = []
     current_box = None
     retired_box_keys = set()
     last_fired = {}
     session_bar_index = or_high = or_low = None
+    pullback_setup = None
 
     bar_range = bars["high"] - bars["low"]
     avg_bar_range_pct = (bar_range / bars["close"]).rolling(
@@ -456,6 +536,7 @@ def analyze_bars(bars, params=None):
             min_wave_change = params.min_wave_bar_ranges * float(avg_bar_range_pct[timestamp])
 
         is_session_open_bar = not waves or session != waves[-1].df.index[-1].date()
+        new_wave = None
         if is_session_open_bar:
             session_bar_index, or_high, or_low = 0, bar["high"], bar["low"]
         else:
@@ -475,6 +556,14 @@ def analyze_bars(bars, params=None):
             new_wave = waves[-1].count(timestamp, bar, time_increment=BAR_INTERVAL)
             if new_wave:
                 waves.append(new_wave)
+
+        if is_session_open_bar:
+            pullback_setup = None
+        elif new_wave and params.wave_pullback != "off":
+            impulse_lookback = select_lookback_waves(waves[:-1], params.lookback_waves, params.lookback_bars)
+            pullback_setup = new_pullback_setup(
+                waves[-2], impulse_lookback, params.strong_wave_ratio, params.wave_pullback
+            ) or pullback_setup
 
         current_wave = waves[-1]
         lookback = select_lookback_waves(waves[:-1], params.lookback_waves, params.lookback_bars)
@@ -519,7 +608,7 @@ def analyze_bars(bars, params=None):
                 "down", close, lookback, active_box, params.min_risk_pct, params.box_stop_ratio
             )
 
-        if not active_box:
+        if not active_box or not params.box_signals:
             name = None
         elif bias:
             name = _bias_fade_signal(active_box, close, bias)
@@ -544,7 +633,10 @@ def analyze_bars(bars, params=None):
             active_box[f"{name}_at"] = timestamp
             edge = active_box["high"] if name in UPPER_EDGE_SIGNALS else active_box["low"]
             tolerance = params.repeat_overlap_bars * float(session_avg_bar_range[timestamp])
-            if params.regime_switch != "off" and not bias and not regime_allows(name, regime):
+            if signal["gap"] and not params.gap_signals:
+                gap_skipped_signals.append(signal)
+                signal = None
+            elif params.regime_switch != "off" and not bias and not regime_allows(name, regime):
                 regime_skipped_signals.append(signal)
                 signal = None
             elif signal["reverses"] and not params.stop_and_reverse:
@@ -580,6 +672,27 @@ def analyze_bars(bars, params=None):
                 }
                 signals.append(drive_signal)
 
+        pullback_signal = None
+        if pullback_setup:
+            outcome = advance_pullback_setup(pullback_setup, bar)
+            if outcome == "fire":
+                pullback_signal = {
+                    "time": timestamp,
+                    "signal": "pullback_long" if pullback_setup["direction"] == "up" else "pullback_short",
+                    "gap": False,
+                    "price": close,
+                    "box_low": pullback_setup["low"],
+                    "box_high": pullback_setup["high"],
+                    "box_mode": "impulse",
+                    "reverses": None,
+                    "risk_reward": pullback_risk_reward(pullback_setup, close, params.min_risk_pct),
+                    "regime": regime,
+                    "bias": bias,
+                }
+                signals.append(pullback_signal)
+            if outcome:
+                pullback_setup = None
+
         if active_box:
             if active_box["mode"] == "reversion":
                 retire = active_box["breakout_at"] is not None or active_box["breakdown_at"] is not None
@@ -605,7 +718,9 @@ def analyze_bars(bars, params=None):
             "bias": bias,
             "or_high": or_high if opening_range_done else None,
             "or_low": or_low if opening_range_done else None,
-            "signal": " + ".join(_signal_label(fired) for fired in (signal, drive_signal) if fired) or None,
+            "signal": " + ".join(
+                _signal_label(fired) for fired in (signal, drive_signal, pullback_signal) if fired
+            ) or None,
             "min_wave_price_change": min_wave_change,
         }
         for period in MA_PERIODS:
@@ -629,6 +744,7 @@ def analyze_bars(bars, params=None):
         "suppressed_signals": suppressed_signals,
         "regime_skipped_signals": regime_skipped_signals,
         "reversal_skipped_signals": reversal_skipped_signals,
+        "gap_skipped_signals": gap_skipped_signals,
     }
 
 
@@ -640,6 +756,8 @@ def _signal_label(signal):
 def _signal_range_text(signal):
     if signal["box_mode"] == "opening":
         return f"first bar {signal['box_low']:.2f}-{signal['box_high']:.2f}"
+    if signal["box_mode"] == "impulse":
+        return f"impulse {signal['box_low']:.2f}-{signal['box_high']:.2f}"
     return f"{signal['box_mode']} box {signal['box_low']:.2f}-{signal['box_high']:.2f}"
 
 
@@ -757,6 +875,8 @@ def build_chart(ticker, bars, result, display_start):
         ("gap fade short", "triangle-down-open", "#ff7f0e"),
         ("drive long", "diamond", "#2ca02c"),
         ("drive short", "diamond", "#d62728"),
+        ("pullback long", "circle", "#2ca02c"),
+        ("pullback short", "circle", "#d62728"),
     )
     for kind, symbol, color in marker_styles:
         picked = [signal for signal in signals if _signal_label(signal) == kind]
@@ -810,6 +930,7 @@ def _print_ticker_summary(ticker, result, display_start, chart_path):
     suppressed = [signal for signal in result["suppressed_signals"] if signal["time"] >= display_start]
     regime_skipped = [signal for signal in result["regime_skipped_signals"] if signal["time"] >= display_start]
     reversal_skipped = [signal for signal in result["reversal_skipped_signals"] if signal["time"] >= display_start]
+    gap_skipped = [signal for signal in result["gap_skipped_signals"] if signal["time"] >= display_start]
     last = snapshots.iloc[-1]
 
     print("\n" + "=" * 100)
@@ -819,13 +940,15 @@ def _print_ticker_summary(ticker, result, display_start, chart_path):
         f" {sum(1 for w in shown_waves if w.direction() == 'down')} down)"
         + "".join(
             f"   {sum(1 for s in shown_signals if s['signal'] == name)} {name.replace('_', ' ')}"
-            for name in ("breakout", "breakdown", "fade_long", "fade_short", "drive_long", "drive_short")
-            if not name.startswith("drive") or any(s["signal"] == name for s in shown_signals)
+            for name in ("breakout", "breakdown", "fade_long", "fade_short", "drive_long", "drive_short",
+                         "pullback_long", "pullback_short")
+            if not name.startswith(("drive", "pullback")) or any(s["signal"] == name for s in shown_signals)
         )
         + f"   ({sum(1 for s in shown_signals if s['gap'])} gap,"
         f" {sum(1 for s in shown_signals if s['reverses'])} stop-and-reverse,"
         f" {len(suppressed)} repeats suppressed, {len(regime_skipped)} skipped by regime,"
-        f" {len(reversal_skipped)} stop-and-reverse skipped)"
+        f" {len(reversal_skipped)} stop-and-reverse skipped"
+        + (f", {len(gap_skipped)} gap skipped" if gap_skipped else "") + ")"
     )
     print("=" * 100)
     for signal in shown_signals:
@@ -895,6 +1018,25 @@ def add_strategy_arguments(parser):
              " the bar's extreme; both, long or short (default: off)",
     )
     parser.add_argument(
+        "--no-box-signals", dest="box_signals", action="store_false",
+        help="Turn off every box signal (breakouts, breakdowns, fades); boxes are still drawn",
+    )
+    parser.add_argument(
+        "--no-gap-signals", dest="gap_signals", action="store_false",
+        help="Drop box signals fired on a session's first bar from an earlier session's box",
+    )
+    parser.add_argument(
+        "--wave-pullback", default="off", choices=WAVE_PULLBACK_MODES,
+        help="Buy the bounce after a strong up wave pulls back to its 38.2-61.8%% retracement"
+             " (short the mirror); stop at 78.6%%, target the impulse extreme; both, long or short"
+             " (default: off)",
+    )
+    parser.add_argument(
+        "--strong-wave-ratio", type=float, default=DEFAULT_STRONG_WAVE_RATIO,
+        help="A wave is an impulse when it is at least this many x the median lookback wave size"
+             f" (default: {DEFAULT_STRONG_WAVE_RATIO:g})",
+    )
+    parser.add_argument(
         "--opening-range-bars", type=int, default=DEFAULT_OPENING_RANGE_BARS,
         help=f"5-min bars in the opening range, normally 3-6 (default: {DEFAULT_OPENING_RANGE_BARS})",
     )
@@ -940,6 +1082,10 @@ def params_from_args(args):
         regime_switch=args.regime_switch,
         stop_and_reverse=args.stop_and_reverse,
         opening_drive=args.opening_drive,
+        wave_pullback=args.wave_pullback,
+        strong_wave_ratio=args.strong_wave_ratio,
+        box_signals=args.box_signals,
+        gap_signals=args.gap_signals,
         opening_range_bars=args.opening_range_bars,
         max_ma200_distance_bars=args.max_ma200_distance_bars,
         minimum_wave_price_change=args.min_wave_price_change,
