@@ -27,9 +27,13 @@ python -m alpha_tech_tracker.op_momentum_strategy.wave_setup_monitor status
 python -m alpha_tech_tracker.op_momentum_strategy.wave_setup_monitor stop
 ```
 
-The process runs one session and exits at 16:05 ET. Start it each trading morning before
-09:25 (cron/launchd), so the overnight holds get their sell-at-the-open alert. On weekends and
-NYSE holidays it exits straight away.
+The process runs one session and exits 5 minutes after the close. Start it each trading morning
+before 09:25 (cron/launchd), so the overnight holds get their sell-at-the-open alert. On weekends
+and NYSE holidays (including MLK Day, Presidents' Day and Juneteenth) it exits straight away. On
+early-close days (13:00: July 3 Mon–Thu, the day after Thanksgiving, Dec 24) the close alerts move
+with the close and the overnight hold is skipped, as in the backtest. Started after the open, the
+overnight sell alert says "now" and the exit is priced on the first bar it sees (outcome
+`late open`).
 
 ## Alerts
 
@@ -40,6 +44,8 @@ NYSE holidays it exits straight away.
 | ~15:50 (once every ticker's 15:45 bar is in, 15:51 latest) | `SELL` / `COVER ... at the close (MOC)` for open intraday trades; `BUY ... at the close (MOC)` for overnight holds | Uses the 15:45 bar's close. `SKIP` when the next open carries an earnings release. |
 | 09:25 next morning | `SELL ... at the open (MOO before 09:28)` | For each overnight hold in the state file. |
 | 16:05 | Session summary | Closed trades with P&L, holds carried overnight. |
+| Start-up | `monitor started for <date>: N tickers` | Daily sign of life; also notes an early close. |
+| No 1-min bar for 5 min in the session | `no market data since HH:MM ...`, then `market data restored ...` | Sent once per outage. The stream is reconnected every 2 min meanwhile; the gap's bars are backfilled when data returns, but signals and stop checks inside it are missed. |
 
 Every alert is also appended to `logs/wave_setup_alerts_<date>.csv`; the log is
 `logs/wave_setup_monitor_<date>.log`.

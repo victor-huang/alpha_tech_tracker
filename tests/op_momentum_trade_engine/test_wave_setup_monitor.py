@@ -1,6 +1,6 @@
 import csv
 import json
-from datetime import date, datetime
+from datetime import date, datetime, time
 from types import SimpleNamespace
 
 import numpy as np
@@ -17,7 +17,10 @@ from alpha_tech_tracker.op_momentum_strategy.wave_setup_monitor import (
     build_setup_spec,
     evaluate_setup,
     generate_config,
+    is_trading_day,
     load_config,
+    previous_trading_day,
+    session_close,
 )
 
 ET = pytz.timezone("America/New_York")
@@ -454,3 +457,130 @@ class TestOnMinuteBar:
 
         assert [a[1] for a in add] == [_ts("2026-10-06 09:31")]
         assert monitor.last_minute_at is not None
+
+
+class TestMarketCalendar:
+    @pytest.mark.parametrize("day", [date(2027, 1, 18), date(2027, 2, 15), date(2026, 6, 19), date(2026, 11, 26)])
+    def test_holidays_are_not_trading_days(self, day):
+        assert not is_trading_day(day)
+
+    def test_columbus_day_trades(self):
+        assert is_trading_day(date(2026, 10, 12))
+
+    def test_previous_trading_day_skips_the_weekend_and_mlk(self):
+        assert previous_trading_day(date(2027, 1, 19)) == date(2027, 1, 15)
+
+    @pytest.mark.parametrize("day, close", [
+        (date(2026, 11, 27), time(13, 0)),
+        (date(2026, 12, 24), time(13, 0)),
+        (date(2025, 7, 3), time(13, 0)),
+        (date(2026, 10, 6), time(16, 0)),
+    ])
+    def test_early_closes(self, day, close):
+        assert session_close(day) == close
+
+
+class TestEarlyCloseDay:
+    def test_close_alert_moves_with_the_close_and_skips_the_overnight_hold(self, tmp_path):
+        clock = _Clock("2026-11-27 12:50")
+        history = {"AMD": _history([("2026-11-27 12:45", 102.0)])}
+        monitor, alerts = _monitor(tmp_path, {"AMD": ["drive long", "overnight always"]}, clock, history)
+        monitor.prepare()
+        monitor.trades.append(LiveTrade(ticker="AMD", setup="drive long", exit_mode="eod", entry_time=_ts(
+            "2026-11-27 09:30"), side=1, entry=101.0, stop=100.0, target=103.0, risk=1.0,
+            last_bar=_ts("2026-11-27 12:45")))
+
+        monitor.tick()
+
+        assert alerts == ["[wave] SELL AMD | drive long | at the close (MOC) | +0.99% at 102.00"]
+        assert (monitor.last_bar, monitor.session_end) == (time(12, 55), time(13, 5))
+
+
+class TestDataOutage:
+    def _started(self, tmp_path, clock):
+        monitor, alerts = _monitor(tmp_path, {"AMD": ["drive long"]}, clock)
+        monitor.prepare()
+        monitor.start_stream()
+        return monitor, alerts
+
+    def test_alerts_once_when_data_stops_and_again_when_it_returns(self, tmp_path):
+        clock = _Clock("2026-10-06 09:00")
+        monitor, alerts = self._started(tmp_path, clock)
+
+        for stamp in ("2026-10-06 09:34", "2026-10-06 09:35", "2026-10-06 09:40"):
+            clock.set(stamp)
+            monitor.tick()
+        assert alerts == ["[wave] no market data since 09:30; no alerts until it returns (check the feed / data "
+                          "subscription, see the log)"]
+
+        clock.set("2026-10-06 09:41")
+        monitor.on_minute_bar(SimpleNamespace(symbol="AMD", timestamp=_ts("2026-10-06 09:40"), open=1, high=1, low=1,
+                                              close=1))
+        assert alerts[-1].startswith("[wave] market data restored at 09:41 after a gap from 09:30")
+        assert monitor.backfill == (_ts("2026-10-06 09:30"), _ts("2026-10-06 09:41"))
+
+    def test_reconnects_at_most_every_timeout(self, tmp_path, mocker):
+        clock = _Clock("2026-10-06 09:00")
+        monitor, _ = self._started(tmp_path, clock)
+        reconnect = mocker.spy(monitor.client, "reconnect")
+
+        for stamp in ("2026-10-06 09:33", "2026-10-06 09:34", "2026-10-06 09:36"):
+            clock.set(stamp)
+            monitor.tick()
+
+        assert reconnect.call_count == 2
+
+
+class TestLateStart:
+    def _hold(self):
+        return LiveTrade(ticker="AMD", setup="overnight always", exit_mode="next open",
+                         entry_time=_ts("2026-10-05 15:45"), side=1, entry=100.0, status="open",
+                         last_bar=_ts("2026-10-05 15:55"))
+
+    def test_sell_alert_after_the_open_says_now(self, tmp_path):
+        (tmp_path / "state.json").write_text(json.dumps({"session": "2026-10-05", "trades": [self._hold().to_dict()]}))
+        clock = _Clock("2026-10-06 11:00")
+        monitor, alerts = _monitor(tmp_path, {"AMD": ["overnight always"]}, clock)
+        monitor.prepare()
+
+        monitor.tick()
+
+        assert "SELL AMD | overnight always | now (monitor started after the open)" in alerts[0]
+
+    def test_exit_on_a_later_first_bar_is_marked_late(self, tmp_path):
+        (tmp_path / "state.json").write_text(json.dumps({"session": "2026-10-05", "trades": [self._hold().to_dict()]}))
+        clock = _Clock("2026-10-06 11:05")
+        monitor, _ = _monitor(tmp_path, {"AMD": ["overnight always"]}, clock)
+        monitor.prepare()
+
+        monitor._on_five_min_bar("AMD", _bar("2026-10-06 11:00", 104.0, 104.0, 104.0, 104.0))
+
+        assert (monitor.trades[0].outcome, monitor.trades[0].exit_price) == ("late open", 104.0)
+
+
+class TestFinish:
+    def test_state_is_saved_when_the_summary_notification_fails(self, tmp_path):
+        clock = _Clock("2026-10-06 16:05")
+        monitor, _ = _monitor(tmp_path, {"AMD": ["overnight always"]}, clock)
+        monitor.prepare()
+        monitor.trades.append(LiveTrade(ticker="AMD", setup="overnight always", exit_mode="next open",
+                                        entry_time=_ts("2026-10-06 15:45"), side=1, entry=100.0, status="open",
+                                        last_bar=_ts("2026-10-06 15:55")))
+
+        def broken(message):
+            raise OSError("telegram down")
+
+        monitor.notify = broken
+        monitor.finish()
+
+        saved = json.loads((tmp_path / "state.json").read_text())
+        assert [t["setup"] for t in saved["trades"]] == ["overnight always"]
+
+    def test_missing_daily_history_is_reported_at_start(self, tmp_path):
+        clock = _Clock("2026-10-06 09:00")
+        monitor, alerts = _monitor(tmp_path, {"AMD": ["overnight ma200"]}, clock, closes={"AMD": [100.0] * 50})
+
+        monitor.prepare()
+
+        assert alerts == ["[wave] overnight moving-average filter has too little daily history for AMD; their "
+                          "filtered overnight holds will not fire today"]

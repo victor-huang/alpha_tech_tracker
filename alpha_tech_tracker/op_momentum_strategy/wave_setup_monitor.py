@@ -30,7 +30,9 @@ the period ends). The first period after a (re)start is refetched whole.
 
 State (alerted signals, open trades, overnight holds) is kept in a JSON file so a restart does
 not repeat alerts and the next morning knows what to sell. The process runs one session and
-exits at SESSION_END; schedule `start` each trading morning (e.g. 09:00 ET).
+exits 5 minutes after the close; schedule `start` each trading morning (e.g. 09:00 ET). Early-close
+days (13:00) move the close alerts with the close and skip the overnight hold, like the backtest.
+A data outage of 5 minutes is notified once, and its bars are backfilled when the data returns.
 
   # 1. Config: each ticker's top 3 setups from a setup report
   python -m alpha_tech_tracker.op_momentum_strategy.wave_setup_monitor config \\
@@ -61,6 +63,13 @@ from typing import Optional
 import pandas as pd
 import pytz
 from alpaca.data.enums import DataFeed
+from pandas.tseries.holiday import (
+    AbstractHolidayCalendar,
+    Holiday,
+    USMartinLutherKingJr,
+    USPresidentsDay,
+    nearest_workday,
+)
 
 from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.earnings_calendar import (
     earnings_windows,
@@ -98,7 +107,7 @@ from alpha_tech_tracker.op_momentum_strategy.cli.daemon import (
     _write_pid,
 )
 from alpha_tech_tracker.op_momentum_strategy.config import _load_config, _notify, disable_notifications
-from alpha_tech_tracker.op_momentum_strategy.contract_selector import _is_nyse_holiday, _prior_trading_day
+from alpha_tech_tracker.op_momentum_strategy.contract_selector import _NYSEHolidayCalendar
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import fetch_daily_bars
 
 logger = logging.getLogger(__name__)
@@ -112,9 +121,12 @@ WARMUP_CALENDAR_DAYS = 20
 DAILY_HISTORY_DAYS = 420
 MARKET_OPEN = time(9, 30)
 PRE_OPEN_ALERT = time(9, 25)
+REGULAR_CLOSE = time(16, 0)
+EARLY_CLOSE = time(13, 0)
 DEFAULT_CLOSE_DECISION_BAR = time(15, 45)
-LAST_BAR = time(15, 55)
-SESSION_END = time(16, 5)
+AFTER_CLOSE_MINUTES = 5
+OUTAGE_ALERT_SECONDS = 300
+OVERNIGHT_MIN_DAILY_CLOSES = 200
 FLUSH_GRACE_SECONDS = 20
 STREAM_TIMEOUT_SECONDS = 120
 DELAYED_DATA_MINUTES = 16  # Alpaca plans without real-time SIP only serve SIP history older than 15 min
@@ -129,6 +141,44 @@ EXIT_TEXT = {
 
 def _now_et():
     return datetime.now(ET)
+
+
+class _MarketHolidayCalendar(AbstractHolidayCalendar):
+    """The repo's NYSE calendar plus the holidays it lacks (MLK, Presidents' Day, Juneteenth)."""
+
+    rules = _NYSEHolidayCalendar.rules + [
+        USMartinLutherKingJr,
+        USPresidentsDay,
+        Holiday("Juneteenth", month=6, day=19, start_date="2022-01-01", observance=nearest_workday),
+    ]
+
+
+_HOLIDAYS = _MarketHolidayCalendar()
+
+
+def is_trading_day(day):
+    if day.weekday() >= 5:
+        return False
+    return pd.Timestamp(day) not in _HOLIDAYS.holidays(start=f"{day.year}-01-01", end=f"{day.year}-12-31")
+
+
+def previous_trading_day(day):
+    day -= timedelta(days=1)
+    while not is_trading_day(day):
+        day -= timedelta(days=1)
+    return day
+
+
+def session_close(day):
+    """13:00 on NYSE early-close days (July 3 Mon-Thu, the day after Thanksgiving, Dec 24 on a
+    trading day), else 16:00."""
+    if day.month == 7 and day.day == 3 and day.weekday() <= 3:
+        return EARLY_CLOSE
+    if day.month == 11 and day.weekday() == 4 and 23 <= day.day <= 29:
+        return EARLY_CLOSE
+    if day.month == 12 and day.day == 24 and is_trading_day(day):
+        return EARLY_CLOSE
+    return REGULAR_CLOSE
 
 
 # ---------------------------------------------------------------------------
@@ -362,10 +412,9 @@ class WaveSetupMonitor:
         self.now = now
         self.releases_loader = releases_loader
         self.daily_closes_loader = daily_closes_loader or _load_daily_closes
-        self.close_decision_bar = close_decision_bar
-        decision_end = datetime.combine(date.today(), close_decision_bar) + timedelta(minutes=BAR_MINUTES)
-        self.close_alert_at = decision_end.time()
-        self.close_alert_latest = (decision_end + timedelta(minutes=1)).time()
+        self.decision_lead = datetime.combine(date.today(), REGULAR_CLOSE) - datetime.combine(date.today(),
+                                                                                                close_decision_bar)
+        self._set_session_times(_now_et().date())
         self.lock = threading.RLock()
         self.aggregator = FiveMinAggregator(self._on_five_min_bar)
         self.bars = {}
@@ -381,6 +430,19 @@ class WaveSetupMonitor:
         self.refetch_before = None
         self.pending = []
         self.backfill = None
+        self.last_reconnect_at = None
+        self.outage_from = None
+
+    def _set_session_times(self, day):
+        """Close-relative times for the day: the decision bar, the last bar, the close alert, the end."""
+        close = datetime.combine(day, session_close(day))
+        self.close_time = close.time()
+        self.half_day = self.close_time < REGULAR_CLOSE
+        self.close_decision_bar = (close - self.decision_lead).time()
+        self.last_bar = (close - timedelta(minutes=BAR_MINUTES)).time()
+        self.close_alert_at = (close - self.decision_lead + timedelta(minutes=BAR_MINUTES)).time()
+        self.close_alert_latest = (close - self.decision_lead + timedelta(minutes=BAR_MINUTES + 1)).time()
+        self.session_end = (close + timedelta(minutes=AFTER_CLOSE_MINUTES)).time()
 
     # --- lifecycle -------------------------------------------------------
 
@@ -388,6 +450,7 @@ class WaveSetupMonitor:
         """Warm up history, earnings windows and daily closes, restore state, catch up open trades."""
         now = self.now()
         self.session = now.date()
+        self._set_session_times(self.session)
         history = self._warmup(now)
         for ticker in self.tickers:
             frame = history.get(ticker)
@@ -403,6 +466,10 @@ class WaveSetupMonitor:
                               for s in specs if s.overnight and overnight_needs_history(s.params.overnight_hold)})
         if needs_daily:
             self.daily_closes = self.daily_closes_loader(needs_daily, self.session)
+            short = [t for t in needs_daily if len(self.daily_closes.get(t, [])) < OVERNIGHT_MIN_DAILY_CLOSES]
+            if short:
+                self._system_alert(f"overnight moving-average filter has too little daily history for "
+                                   f"{', '.join(short)}; their filtered overnight holds will not fire today")
         self._load_state()
         self._catch_up_trades()
         self.refetch_before = period_start(now) + timedelta(minutes=BAR_MINUTES)
@@ -415,7 +482,8 @@ class WaveSetupMonitor:
         backfill the gap once it can be queried (tick).
         """
         if now.time() < MARKET_OPEN:
-            end = ET.localize(datetime.combine(_prior_trading_day(now.date()), time(16, 0)))
+            previous = previous_trading_day(now.date())
+            end = ET.localize(datetime.combine(previous, session_close(previous)))
         else:
             end = now
         start = end - timedelta(days=WARMUP_CALENDAR_DAYS)
@@ -427,7 +495,7 @@ class WaveSetupMonitor:
             delayed_end = now - timedelta(minutes=DELAYED_DATA_MINUTES)
             logger.warning("Feed refuses recent data (%s); warming up to %s and backfilling the rest later",
                            error, f"{delayed_end:%H:%M}")
-            self.backfill = (delayed_end, now)
+            self._schedule_backfill(delayed_end, now)
             return self.client.warmup(self.tickers, start, delayed_end)
 
     def _run_backfill(self, now):
@@ -485,19 +553,23 @@ class WaveSetupMonitor:
                     last = self._last_close(trade.ticker)
                     if last is not None:
                         trade.close_at(self.bars[trade.ticker].index[-1], last, "close")
-            self._session_summary()
-            self._save_state()
+            try:
+                self._session_summary()
+            finally:
+                self._save_state()
 
     def run(self, poll_seconds=1.0):
         today = self.now().date()
-        if today.weekday() >= 5 or _is_nyse_holiday(today):
+        if not is_trading_day(today):
             logger.info("Market closed today (%s); nothing to monitor", today)
             return
         self.prepare()
         self.start_stream()
+        self._system_alert(f"monitor started for {today}: {len(self.tickers)} tickers ({', '.join(self.tickers)})"
+                           + (f"; early close at {self.close_time:%H:%M}" if self.half_day else ""), level=logging.INFO)
         logger.info("Monitoring %s", ", ".join(f"{t}: {[s.name for s in self.setups[t]]}" for t in self.tickers))
         try:
-            while self.now().time() < SESSION_END:
+            while self.now().time() < self.session_end:
                 self.tick()
                 time_module.sleep(poll_seconds)
         finally:
@@ -512,10 +584,16 @@ class WaveSetupMonitor:
         if ticker not in self.setups:
             return
         timestamp = bar.timestamp.astimezone(ET)
-        if timestamp.date() != self.session or not (MARKET_OPEN <= timestamp.time() < time(16, 0)):
+        if timestamp.date() != self.session or not (MARKET_OPEN <= timestamp.time() < self.close_time):
             return
         with self.lock:
-            self.last_minute_at = self.now()
+            now = self.now()
+            if self.outage_from is not None:
+                self._system_alert(f"market data restored at {now:%H:%M} after a gap from {self.outage_from:%H:%M}; "
+                                   "signals and stop checks in the gap were missed, check open positions")
+                self._schedule_backfill(self.outage_from, now)
+                self.outage_from = None
+            self.last_minute_at = now
             self.aggregator.add(ticker, timestamp, float(bar.open), float(bar.high), float(bar.low), float(bar.close))
 
     def _on_five_min_bar(self, ticker, bar):
@@ -608,17 +686,21 @@ class WaveSetupMonitor:
             if trade.ticker != ticker or trade.status in ("closed",) or bar["time"] <= trade.last_bar:
                 continue
             if trade.overnight:
-                if trade.status == "pending" and bar["time"].time() == LAST_BAR:
+                if trade.status == "pending" and bar["time"].time() == self.last_bar:
                     trade.entry, trade.peak, trade.status, trade.last_bar = bar["close"], bar["close"], "open", bar["time"]
                 elif trade.status == "open" and trade.entry_time.date() < bar["time"].date():
-                    trade.close_at(bar["time"], bar["open"], "next open")
+                    outcome = "next open" if bar["time"].time() == MARKET_OPEN else "late open"
+                    if outcome == "late open":
+                        logger.warning("%s: first bar today is %s, not the open; overnight exit priced there",
+                                       ticker, f"{bar['time']:%H:%M}")
+                    trade.close_at(bar["time"], bar["open"], outcome)
                     self._alert(trade, "SOLD", trade.exit_price,
                                 f"SOLD {ticker} | overnight hold | open {trade.exit_price:.2f} | "
                                 f"{trade.pnl_pct():+.2f}% from {trade.entry:.2f}", notify=False)
                 continue
             if trade.status == "closing":
                 trade.last_bar = bar["time"]
-                if bar["time"].time() == LAST_BAR:
+                if bar["time"].time() == self.last_bar:
                     trade.close_at(bar["time"], bar["close"], "close")
                 continue
             outcome = trade.on_bar(bar)
@@ -627,7 +709,7 @@ class WaveSetupMonitor:
                 self._alert(trade, action, trade.exit_price,
                             f"{action} {ticker} | {trade.setup} | {outcome} hit on the {bar['time']:%H:%M} bar "
                             f"@ {trade.exit_price:.2f} | {trade.pnl_pct():+.2f}%")
-            elif bar["time"].time() == LAST_BAR:
+            elif bar["time"].time() == self.last_bar:
                 trade.close_at(bar["time"], bar["close"], "close")
 
     def _close_alerts(self):
@@ -642,6 +724,9 @@ class WaveSetupMonitor:
             self._alert(trade, action, last, f"{action} {trade.ticker} | {trade.setup} | at the close (MOC){pnl}")
         for ticker, specs in self.setups.items():
             for spec in (s for s in specs if s.overnight):
+                if self.half_day:
+                    logger.info("%s: %s skipped on an early-close day (the backtest skips them)", ticker, spec.name)
+                    continue
                 self._overnight_entry(ticker, spec)
 
     def _overnight_entry(self, ticker, spec):
@@ -672,10 +757,12 @@ class WaveSetupMonitor:
                                         f"({bar_time:%H:%M} bar) | sell at the next open")
 
     def _pre_open_alerts(self):
+        before_open = self.now().time() < MARKET_OPEN
         for trade in self.trades:
             if trade.overnight and trade.status == "open" and trade.entry_time.date() < self.session:
-                self._alert(trade, "SELL", None, f"SELL {trade.ticker} | {trade.setup} | at the open (MOO before "
-                                                 f"09:28), bought {trade.entry:.2f} on {trade.entry_time:%m-%d}")
+                when = "at the open (MOO before 09:28)" if before_open else "now (monitor started after the open)"
+                self._alert(trade, "SELL", None, f"SELL {trade.ticker} | {trade.setup} | {when}, "
+                                                 f"bought {trade.entry:.2f} on {trade.entry_time:%m-%d}")
 
     def _catch_up_trades(self):
         """Replay today's warm-up bars through trades restored from the state file."""
@@ -699,16 +786,35 @@ class WaveSetupMonitor:
         return float(frame["close"].iloc[-1])
 
     def _watchdog(self, now):
-        if not (MARKET_OPEN <= now.time() < time(16, 0)) or self.stream_started_at is None:
+        """Reconnect a silent stream, and tell the user once when market data has stopped."""
+        if not (MARKET_OPEN <= now.time() < self.close_time) or self.stream_started_at is None:
             return
         last = self.last_minute_at or max(self.stream_started_at, ET.localize(datetime.combine(now.date(), MARKET_OPEN)))
-        if (now - last).total_seconds() > STREAM_TIMEOUT_SECONDS:
-            logger.warning("No 1-min bar for %.0fs; reconnecting the stream", (now - last).total_seconds())
-            self.last_minute_at = now
+        silent = (now - last).total_seconds()
+        reconnect_due = self.last_reconnect_at is None or (now - self.last_reconnect_at).total_seconds() > STREAM_TIMEOUT_SECONDS
+        if silent > STREAM_TIMEOUT_SECONDS and reconnect_due:
+            logger.warning("No 1-min bar for %.0fs; reconnecting the stream", silent)
+            self.last_reconnect_at = now
             try:
                 self.client.reconnect()
             except Exception:
                 logger.exception("Stream reconnect failed")
+        if silent >= OUTAGE_ALERT_SECONDS and self.outage_from is None:
+            self.outage_from = last
+            self._system_alert(f"no market data since {last:%H:%M}; no alerts until it returns "
+                               "(check the feed / data subscription, see the log)")
+
+    def _schedule_backfill(self, gap_start, gap_end):
+        if self.backfill is not None:
+            gap_start, gap_end = min(gap_start, self.backfill[0]), max(gap_end, self.backfill[1])
+        self.backfill = (gap_start, gap_end)
+
+    def _system_alert(self, message, level=logging.WARNING):
+        logger.log(level, "SYSTEM %s", message)
+        try:
+            self.notify(f"[wave] {message}")
+        except Exception:
+            logger.exception("Notification failed")
 
     def _alert(self, trade, action, price, message, notify=True, ticker=None, setup=None):
         now = self.now()
@@ -739,7 +845,10 @@ class WaveSetupMonitor:
         lines = [f"{t.ticker} {t.setup} {t.outcome} {t.pnl_pct():+.2f}%" for t in closed]
         lines += [f"{t.ticker} {t.setup} holding overnight from {t.entry:.2f}" for t in holding]
         total = sum(t.pnl_pct() for t in closed)
-        self.notify(f"[wave] {self.session} summary: {len(closed)} closed, {total:+.2f}% summed\n" + "\n".join(lines))
+        try:
+            self.notify(f"[wave] {self.session} summary: {len(closed)} closed, {total:+.2f}% summed\n" + "\n".join(lines))
+        except Exception:
+            logger.exception("Summary notification failed")
 
     # --- state -----------------------------------------------------------
 
