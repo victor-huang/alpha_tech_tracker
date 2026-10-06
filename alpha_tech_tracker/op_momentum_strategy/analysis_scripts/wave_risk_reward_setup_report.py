@@ -39,6 +39,7 @@ from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward_b
 )
 from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward_scan import (
     BOX_GROUPS,
+    FAMILIES,
     INTRADAY_EXITS,
     SETUP_RUNS,
     _load_bars,
@@ -99,6 +100,34 @@ def _run(job):
     else:
         out[name] = {mode: trades_by_exit[mode] for mode in INTRADAY_EXITS}
     return ticker, out
+
+
+def top_setups_by_ticker(trade_rows, top_n=3):
+    """{ticker: [(setup, total %), ...]}: each ticker's best setups over the report window.
+
+    `trade_rows` are trades.csv rows (dicts). Only each setup's fixed exit (REPORT_EXITS) counts,
+    setups that lost money are left out, and overlapping setups (FAMILIES: overnight always / ma200,
+    pullback long / C1) count once, keeping the better one.
+    """
+    totals = OrderedDict()
+    for row in trade_rows:
+        if REPORT_EXITS.get(row["setup"]) != row["exit"]:
+            continue
+        by_setup = totals.setdefault(row["ticker"], {})
+        by_setup[row["setup"]] = by_setup.get(row["setup"], 0.0) + float(row["net_pct"])
+    ranked = OrderedDict()
+    for ticker, by_setup in totals.items():
+        chosen, used = [], []
+        for setup, total in sorted(by_setup.items(), key=lambda item: item[1], reverse=True):
+            family = next((f for f in FAMILIES if setup in f), {setup})
+            if total <= 0 or family in used:
+                continue
+            chosen.append((setup, total))
+            used.append(family)
+            if len(chosen) == top_n:
+                break
+        ranked[ticker] = chosen
+    return ranked
 
 
 def ticker_overview(ticker, start, end, feed, windows):

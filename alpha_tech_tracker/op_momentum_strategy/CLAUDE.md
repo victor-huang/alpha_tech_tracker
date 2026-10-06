@@ -47,6 +47,7 @@ The same signal logic drives both **live trading** (`trade_engine.py`) and **bac
 | `option_fair_price_tester.py` | Live paper-account shadow-test for `get_fair_price()` — buys, places limit sell, escalates, records fills to CSV |
 | `position_sizer.py` | `PositionSizer`: `compute()` for options, `compute_stock()` for stock sizing |
 | `bar_recorder.py` | `BarRecorder`: records live 1-min and 5-min bars to CSV during trading sessions |
+| `wave_setup_monitor.py` | Alerts-only daemon (`config`/`run`/`start`/`stop`/`status`/`restart`) for each ticker's top wave_risk_reward setups from a setup report: streams 1-min bars through the trade engine's `--market-data-source` switch, builds 5-min bars, re-runs `analyze_bars` per setup in a process pool, and sends BUY/SHORT, SELL/COVER (backtest exit rules), close (MOC) and overnight next-open alerts via `_notify` + `logs/wave_setup_alerts_<date>.csv`. State in `logs/wave_setup_monitor_state.json`. See `guides/WAVE_SETUP_MONITOR_GUIDE.md` |
 
 ### Documentation Structure
 
@@ -87,6 +88,7 @@ op_momentum_strategy/
 | `guides/REPLAY_VALIDATION.md` | Replay vs backtest validation process |
 | `guides/TICKER_SELECTION.md` | Ticker pool selection criteria and history |
 | `guides/INTRADAY_LEG_ANALYSIS_GUIDE.md` | How to run `daily_longest_leg.py` (daily routine, top up/down legs for a day) and `intraday_leg_timing.py`; flags, output columns, caveats |
+| `guides/WAVE_SETUP_MONITOR_GUIDE.md` | How to configure and run `wave_setup_monitor.py`: config from a setup report, alerts and their timing (MOC cutoffs), data sources, state/restarts, differences from the backtest |
 | `guides/WAVE_RISK_REWARD_GUIDE.md` | How to run `wave_risk_reward.py`: waves, consolidation boxes, breakout/fade signals, R/R and regime switch; every option, chart and console output. Findings in `research/findings/WAVE_RISK_REWARD_FINDINGS.md` |
 | `guides/BACKTEST_VS_LIVE.md` | Structural differences between backtest and live engine |
 | `research/params/overview.md` | When/how to re-tune params & scoring: 5-step protocol, validation gates |
