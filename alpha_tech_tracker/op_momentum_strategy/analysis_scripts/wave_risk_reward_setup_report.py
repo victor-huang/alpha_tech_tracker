@@ -82,13 +82,12 @@ def stats(trades):
 
 
 def _run(job):
-    ticker, name, start, end, cost_bps, feed_name, earnings = job
+    ticker, name, start, end, cost_bps, feed_name, earnings, windows = job
     feed = DataFeed.SIP if feed_name == "sip" else DataFeed.IEX
     bars = _load_bars(ticker, start, end, feed)
     args = parse_backtest_args(["--tickers", ticker, "--start", start.isoformat(), "--compare-exits",
                                 "--cost-bps", str(cost_bps), "--earnings", earnings] + SETUP_RUNS[name])
     args.end = end
-    windows = ticker_earnings_windows(ticker, bars)
     trades_by_exit = run_backtest(OrderedDict([(ticker, bars)]), args, {ticker: windows})[0]
     out = OrderedDict()
     if name == "box signals":
@@ -102,14 +101,14 @@ def _run(job):
     return ticker, out
 
 
-def ticker_overview(ticker, start, end, feed):
+def ticker_overview(ticker, start, end, feed, windows):
     bars = _load_bars(ticker, start, end, feed)
     daily = bars.groupby(bars.index.date).agg(open=("open", "first"), close=("close", "last"))
     previous_close = daily["close"].shift(1)
     window = daily[(daily.index >= start) & (daily.index <= end)]
     overnight = sum(math.log(o / p) for o, p in zip(window["open"], previous_close.loc[window.index]) if p == p)
     session = sum(math.log(c / o) for c, o in zip(window["close"], window["open"]))
-    reaction = sorted(d for d in ticker_earnings_windows(ticker, bars)["reaction"] if start <= d <= end)
+    reaction = sorted(d for d in windows["reaction"] if start <= d <= end)
     return {"sessions": len(window), "buy_hold": (window["close"].iloc[-1] / window["open"].iloc[0] - 1) * 100,
             "overnight": math.exp(overnight) * 100 - 100, "in_session": math.exp(session) * 100 - 100,
             "earnings": OrderedDict((d, (daily.loc[d, "close"] / previous_close.loc[d] - 1) * 100) for d in reaction)}
@@ -233,14 +232,17 @@ def main(argv=None):
     feed = DataFeed.SIP if args.feed == "sip" else DataFeed.IEX
     end = clamp_end_for_sip(args.end or date.today(), feed)
     start = args.start or end - timedelta(days=91)
-    jobs = [(t, name, start, end, args.cost_bps, args.feed, args.earnings) for t in args.tickers for name in SETUP_RUNS]
+    # loaded once per ticker here, not in every worker, so parallel jobs never race on the calendar cache
+    windows = OrderedDict((t, ticker_earnings_windows(t, _load_bars(t, start, end, feed))) for t in args.tickers)
+    jobs = [(t, name, start, end, args.cost_bps, args.feed, args.earnings, windows[t])
+            for t in args.tickers for name in SETUP_RUNS]
     results = OrderedDict((t, OrderedDict()) for t in args.tickers)
     with ProcessPoolExecutor(max_workers=args.workers) as pool:
         for ticker, out in pool.map(_run, jobs):
             results[ticker].update(out)
     for ticker in results:
         results[ticker] = OrderedDict((s, results[ticker][s]) for s in REPORT_EXITS)
-    overviews = OrderedDict((t, ticker_overview(t, start, end, feed)) for t in args.tickers)
+    overviews = OrderedDict((t, ticker_overview(t, start, end, feed, windows[t])) for t in args.tickers)
     folder = f"{start}_{end}" + (f"_earnings-{args.earnings}" if args.earnings != "off" else "")
     out_dir = write_outputs(results, overviews, start, end, args.cost_bps,
                             Path(args.out_dir) if args.out_dir else DEFAULT_OUT_ROOT / folder, args.earnings)

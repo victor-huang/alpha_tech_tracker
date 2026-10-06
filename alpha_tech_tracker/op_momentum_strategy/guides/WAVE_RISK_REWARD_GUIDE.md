@@ -74,7 +74,14 @@ to the cache; no cache and no network means no filter, with a message).
 
 - **Reaction session:** a release before the open → that session; at or after noon → the next
   session; unknown time (Yahoo shows 12 AM) → both.
-- **Eve:** the session before a reaction session.
+- **Eve:** the last session before the release reaches the market (the release day itself for an
+  after-close release). It is found from the release time, so a release after today's close
+  marks today even before the reacting session exists, which is what the live chart needs.
+- Yahoo times in another US zone (e.g. PDT) are converted to Eastern. A page without the earnings
+  table counts as a failed download (cached copy or warning, never cached as "no releases"), and a
+  ticker with no release in the last 183 days prints a warning.
+- The setup report and the scan load the calendar once per ticker before starting their worker
+  processes; the cache file is written atomically.
 - A trade **carries an earnings reaction** when it is an overnight hold entered on an eve
   (it holds through the release gap) or an intraday signal on a reaction session.
 - **The overnight hold skips the night into a release by default**, even with `--earnings off`

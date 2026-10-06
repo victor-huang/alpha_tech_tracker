@@ -28,6 +28,7 @@ from datetime import date, timedelta
 
 from alpaca.data.enums import DataFeed
 
+from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.earnings_calendar import ticker_earnings_windows
 from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.ticker_stats_report import (
     clamp_end_for_sip,
 )
@@ -114,14 +115,14 @@ def _load_bars(ticker, start, end, feed):
 
 
 def _run_setup(job):
-    ticker, name, start, end, cost_bps, feed_name, earnings = job
+    ticker, name, start, end, cost_bps, feed_name, earnings, windows = job
     feed = DataFeed.SIP if feed_name == "sip" else DataFeed.IEX
     bars = _load_bars(ticker, start, end, feed)
     args = parse_backtest_args(["--tickers", ticker, "--start", start.isoformat(), "--compare-exits",
                                 "--cost-bps", str(cost_bps), "--earnings", earnings] + SETUP_RUNS[name])
     args.end = end
-    trades_by_exit = run_backtest(OrderedDict([(ticker, bars)]), args)[0]
-    return job, trades_by_exit
+    trades_by_exit = run_backtest(OrderedDict([(ticker, bars)]), args, {ticker: windows})[0]
+    return name, trades_by_exit
 
 
 def scan_ticker(ticker, start, end, cost_bps, feed_name, workers, earnings="off"):
@@ -129,12 +130,14 @@ def scan_ticker(ticker, start, end, cost_bps, feed_name, workers, earnings="off"
     bars = _load_bars(ticker, start, end, feed)
     sessions = sorted(d for d in set(bars.index.date) if start <= d <= end)
     halves = split_halves(sessions)
-    jobs = [(ticker, name, start, end, cost_bps, feed_name, earnings) for name in SETUP_RUNS]
+    # loaded once here, not in every worker, so parallel jobs never race on the calendar cache
+    windows = ticker_earnings_windows(ticker, bars)
+    jobs = [(ticker, name, start, end, cost_bps, feed_name, earnings, windows) for name in SETUP_RUNS]
     with ProcessPoolExecutor(max_workers=workers) as pool:
         outputs = dict(pool.map(_run_setup, jobs))
 
     rows = OrderedDict()
-    for (_, name, *_), trades_by_exit in outputs.items():
+    for name, trades_by_exit in outputs.items():
         if name == "box signals":
             for label in sorted(set(BOX_GROUPS.values())):
                 groups = [g for g, lab in BOX_GROUPS.items() if lab == label]
