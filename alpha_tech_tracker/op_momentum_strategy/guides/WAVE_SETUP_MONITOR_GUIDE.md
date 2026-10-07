@@ -20,20 +20,142 @@ python -m alpha_tech_tracker.op_momentum_strategy.wave_setup_monitor config \
   --report alpha_tech_tracker/op_momentum_strategy/backtest_result/wave_setups/2026-07-06_2026-10-05 \
   --tickers AMD META GOOGL AMAT SHOP SPOT
 
-# 3. Run: foreground, or as a daemon
-python -m alpha_tech_tracker.op_momentum_strategy.wave_setup_monitor run
+# 3. Start the daemon (TradeStation data), then check it
 python -m alpha_tech_tracker.op_momentum_strategy.wave_setup_monitor start --market-data-source tradestation
 python -m alpha_tech_tracker.op_momentum_strategy.wave_setup_monitor status
-python -m alpha_tech_tracker.op_momentum_strategy.wave_setup_monitor stop
 ```
 
 The process runs one session and exits 5 minutes after the close. Start it each trading morning
-before 09:25 (cron/launchd), so the overnight holds get their sell-at-the-open alert. On weekends
-and NYSE holidays (including MLK Day, Presidents' Day and Juneteenth) it exits straight away. On
-early-close days (13:00: July 3 Mon–Thu, the day after Thanksgiving, Dec 24) the close alerts move
-with the close and the overnight hold is skipped, as in the backtest. Started after the open, the
-overnight sell alert says "now" and the exit is priced on the first bar it sees (outcome
-`late open`).
+before 09:25 ET so the overnight holds get their sell-at-the-open alert (see Scheduling). On
+weekends and NYSE holidays (including MLK Day, Presidents' Day and Juneteenth) it exits straight
+away. On early-close days (13:00: July 3 Mon–Thu, the day after Thanksgiving, Dec 24) the close
+alerts move with the close and the overnight hold is skipped, as in the backtest. Started after
+the open, the overnight sell alert says "now" and the exit is priced on the first bar it sees
+(outcome `late open`).
+
+## Weekly refresh (recommended recipe)
+
+Research (Findings 17–18 in the ticker-tuning doc) found the most robust way to choose the setups:
+**long setups and overnight holds only, ranked by their last-3-month total, top 3 positive with at
+least 3 trades, re-picked every week.** `config --refresh` does it in one step: it runs the setup
+report over the trailing window ending today, then writes the config from its last 63 sessions.
+
+```bash
+python -m alpha_tech_tracker.op_momentum_strategy.wave_setup_monitor config --refresh \
+  --tickers MDB GOOGL APP AMD META MSFT AMAT SPOT MRNA TSLA QQQ SNPS LLY COIN SHOP CRWV CRM NVDA PLTR AVGO \
+  --types long overnight --min-trades 3 --workers 4
+```
+
+- The report lands in `backtest_result/wave_setups/monitor_refresh/<start>_<end>/`; the config
+  records its `window`, `types` and `min_trades`.
+- It takes roughly 1–3 minutes per ticker (`--workers` processes; each needs ~150–250 MB, so
+  use 1–2 on a small box, or refresh on another machine and copy the config).
+- Schedule it once a week before the session, e.g. Monday 05:00 PT, ahead of the 06:00 `start`:
+  `0 5 * * 1 cd ... && ... wave_setup_monitor config --refresh --tickers ... --types long overnight --min-trades 3 --workers 1`.
+- `config --report DIR` (no `--refresh`) still builds a config from an existing report;
+  `--lookback-sessions N` ranks on its last N sessions only.
+
+## Running the daemon
+
+### Before the first run
+
+1. **Python:** the `alpha_tech_tracker` virtualenv, with `PYTHONPATH` set to the repo root; run
+   the commands from the repo root.
+2. **config.json** (`op_momentum_strategy/config.json`): Telegram/ClickSend settings for the alerts
+   (the same ones the trade engine uses), and the data source's credentials.
+3. **Data source:**
+   - TradeStation: run `tradestation_auth.py` once so `config.json` holds a valid session. Check it with
+     `TradeStationAPIClient(...).verify_session()` or a 60 s foreground trial (below).
+   - Alpaca: `ALPACA_API_KEY` / `ALPACA_SECRET_KEY`; see Data plan for SIP vs IEX.
+4. **Monitor config:** `logs/wave_setup_monitor_config.json`, written by the `config` command
+   (Quick start step 2). It needs the setup report's `trades.csv`, which is local data: on another
+   machine, generate the config where the report is and copy the JSON over.
+
+### Commands
+
+| Command | What it does |
+|---|---|
+| `run` | Foreground, logs to the terminal and the log file. Ctrl-C to stop. Writes the PID file, so `status`/`stop` work too. |
+| `start` | Background daemon for the rest of the session. Refuses if one is already running. |
+| `status` | `Monitor running (PID n)` or `Monitor is not running.` |
+| `stop` | SIGTERM (SIGKILL after 10 s); the monitor saves its state and sends the summary first. |
+| `restart` | `stop` then `start`. State is kept: no repeated alerts, overnight holds remembered. |
+
+Every command takes the same options (`--market-data-source`, `--workers`, `--no-notify`, ...);
+pass them to `start`/`restart`, not to `stop`/`status`.
+
+**Trial run** before relying on it — 60 s in the foreground, no notifications, scratch state:
+
+```bash
+timeout 60 python -m alpha_tech_tracker.op_momentum_strategy.wave_setup_monitor run \
+  --market-data-source tradestation --no-notify --state-file /tmp/wsm_trial.json --log-file /tmp/wsm_trial.log
+grep -E "warmup|stream|SYSTEM|ERROR" /tmp/wsm_trial.log
+```
+
+Expect one `TS warmup <ticker> — N bars` line per ticker, `starting live 1-min stream`, and
+`SYSTEM monitor started`.
+
+### Files
+
+| File | Contents |
+|---|---|
+| `logs/wave_setup_monitor_config.json` | Tickers and setups to watch |
+| `logs/wave_setup_monitor_<date>.log` | Log: 5-min bars, alerts (`ALERT ...`), system messages (`SYSTEM ...`), errors |
+| `logs/wave_setup_alerts_<date>.csv` | One row per alert: time, ticker, setup, action, price, stop, target, message |
+| `logs/wave_setup_monitor_state.json` | Alerted signals, open trades, overnight holds (do not delete while holding overnight) |
+| `logs/wave_setup_monitor.pid` | PID of the running monitor |
+
+Follow the day with `tail -f logs/wave_setup_monitor_$(date +%F).log | grep -E "ALERT|SYSTEM|ERROR"`.
+
+### macOS
+
+- `start` launches a separate `run --detached` process in its own session. macOS crashes a
+  double-forked child once it touches system frameworks (segfault "crashed on child side of
+  fork"), so the Linux-style fork is not used there.
+- **Sleep stops it.** Keep the Mac awake while it runs: `caffeinate -i -w $(cat logs/wave_setup_monitor.pid) &`
+  blocks idle sleep until the monitor exits; closing the lid still sleeps the Mac. A sleep longer
+  than 5 minutes in the session triggers the `no market data` alert.
+
+### Linux / EC2
+
+- `start` double-forks into a daemon (the trade engine's helpers); stdout/stderr go to the log.
+- **Memory:** each monitor uses about 150–250 MB (pandas, warm-up bars, streams), plus about
+  100 MB per `--workers` process. On a small box use `--workers 0` (evaluate in the main
+  process; ~1.5 s per ticker per bar, fine for a handful of tickers) and check
+  `free -m` first. On the 905 MB / no-swap EC2 box that already runs the bar broadcaster and two
+  trade engines (~240 MB free), starting the monitor made the box stop answering SSH (likely
+  out of memory). Add swap or use a bigger instance before running it there, e.g.
+  `sudo fallocate -l 2G /swapfile && sudo chmod 600 /swapfile && sudo mkswap /swapfile && sudo swapon /swapfile`.
+- The `local_ts_broadcast` source only serves the broadcaster's own ticker list
+  (`bar_broadcaster.py --tickers`, default V3 pool); for other tickers use `tradestation`.
+
+### Scheduling
+
+Start it every weekday at 09:00 ET; on holidays it exits by itself, and a second `start` while
+one is running is refused.
+
+Linux (cron; the EC2 crontab uses `CRON_TZ=America/Los_Angeles`, so 06:00 PT = 09:00 ET):
+
+```
+CRON_TZ=America/Los_Angeles
+0 6 * * 1-5 cd /home/ec2-user/alpha_tech_tracker && PYTHONPATH=/home/ec2-user/alpha_tech_tracker /home/ec2-user/.pyenv/versions/alpha_tech_tracker/bin/python -m alpha_tech_tracker.op_momentum_strategy.wave_setup_monitor start --market-data-source tradestation --workers 0 >> /home/ec2-user/wave_setup_monitor_cron.log 2>&1
+```
+
+macOS: a launchd agent (`~/Library/LaunchAgents/com.alphatech.wave-setup-monitor.plist`) that runs the
+same `start` command at 06:00 local (Pacific) Monday–Friday, then
+`launchctl load ~/Library/LaunchAgents/com.alphatech.wave-setup-monitor.plist`. The Mac must be awake
+at that time (System Settings → Battery → Options, or `pmset repeat wake MTWRF 05:55:00`).
+
+### Troubleshooting
+
+| Symptom | Cause / fix |
+|---|---|
+| `insufficient subscription` in the log, `no market data` alert | Alpaca account without real-time SIP: use `--market-data-source tradestation` or `--feed iex` |
+| `subscription does not permit querying recent SIP data` | Delayed-SIP Alpaca plan: start before 09:30, or accept the backfilled gap after a restart |
+| `TradeStation session invalid — run tradestation_auth.py first` | Session expired: re-run `tradestation_auth.py` |
+| `status` says not running right after `start` on macOS, log has no traceback | An old build double-forked; update the code (the macOS start re-executes instead) |
+| `Monitor already running (PID n)` | `stop` first, or `restart`; a stale PID file of a dead process is ignored |
+| No alerts at all during the session | A quiet day can have no signals (and then no 16:05 summary). Check the log: a `5-min <ticker> HH:MM ...` line per ticker every 5 minutes means data is flowing; look for `SYSTEM` / `ERROR` lines otherwise |
 
 ## Alerts
 
@@ -122,6 +244,10 @@ difference is the close rule below (GOOGL drive long on Sep 30 hit its stop afte
 | `config --report DIR` | — | Setup report folder with trades.csv |
 | `config --tickers ...` | every ticker in the report | Tickers to monitor |
 | `config --top N` | 3 | Setups per ticker (one per overlapping family, money-makers only) |
+| `config --types ...` | all | Setup types to consider: `long`, `short`, `box`, `overnight` (recommended: `long overnight`) |
+| `config --min-trades N` | 1 | Trades a setup needs in the window (recommended: 3) |
+| `config --lookback-sessions N` | whole report (63 with `--refresh`) | Rank on the report's last N sessions |
+| `config --refresh` | off | Run the setup report for `--tickers` over the trailing window ending today first |
 | `--config PATH` | `logs/wave_setup_monitor_config.json` | Config to write / read |
 | `--market-data-source` | config.json, else alpaca | `alpaca`, `tradestation` (run `tradestation_auth.py` first), `local_ts_broadcast` |
 | `--feed` | `sip` | Alpaca feed |

@@ -694,6 +694,95 @@ in the window:
   `--earnings skip`. Overnight results in Findings 13–15 were run before this default and
   include the earnings nights.
 
+## Finding 17 — Rotating setups forward: how often to re-pick (walk-forward, no hindsight)
+
+`analysis_scripts/wave_setup_walk_forward.py`. Each ticker trades the top 3 setups of a trailing
+look-back (fixed exits, one per family, money-makers only), re-picked every block; $10k per ticker
+in three $3,333 sleeves, fixed size, 5 bps. Picks only use trades entered before the block. A
+setting is only trusted when it was chosen on an earlier calibration period.
+
+**2-week rotation, SNDK MDB GOOGL APP, Jul 6 – Oct 6 2026:** +$1,293 (+3.2% of $40k), against
++$4,847 for the hindsight top 3 and −$5,495 buy & hold. SNDK alone +$2,035; MDB and APP negative.
+A setup's last 2 weeks barely predicted its next 2.
+
+**Look-back x hold sweep (same window, 12 settings):** −$783 to +$1,293, and every setting lost
+money in the second half (after Aug 20). Choosing the best one afterwards is hindsight: picked on
+Feb 17 – Jul 2 instead (24 settings), the winner (10-session look-back, 20-session hold) made
++$1,214 in the test, 14th of 24 (median +$1,374).
+
+**Keep a setup until it loses over 2 weeks** (2-month look-back, user-defined in advance):
++$1,777 on Feb 17 – Jul 2 and +$1,805 on Jul 6 – Oct 6 (+4.5% of $40k), vs re-picking every 2 weeks
+on the same look-back (+$2,573 / +$1,496). The order of the rules flips between periods — noise.
+
+**3-month look-back, how often to update** (calibration Sep 2 2025 – Jul 2 2026; test Jul 6 – Oct 6):
+
+| Update | Calibration | Test |
+|---|---|---|
+| every week (chosen on calibration) | +$12,157 | +$1,081 |
+| every 2 weeks | +$11,129 | +$956 |
+| every 4 weeks | +$11,929 | +$804 |
+| keep until a 2-week loss | +$10,691 | +$1,096 |
+| keep until a 4-week loss | +$10,023 | +$1,068 |
+| every 8 weeks | +$9,605 | +$350 |
+| every 3 months | +$10,388 | −$261 |
+| every 6 months | +$7,751 | −$85 |
+
+**Decay of a pick** (average $ per ticker per 2 weeks after the pick): calibration +$132, +$113,
++$121, +$95, +$98, +$101 over 12 weeks; test +$60, +$86, +$43, then −$69, −$56, −$144. Picks went
+stale after 4–6 weeks in the test, so update every 1–2 weeks (it costs little when nothing changes).
+
+## Finding 18 — What picks setups that keep working (selection research, no hindsight)
+
+`analysis_scripts/wave_setup_selection_research.py`. Every week, for each ticker x setup: track-record
+measures and ticker / QQQ conditions known before the week, and the setup's next-week result.
+Calibration Sep 2 2025 – Jul 2 2026 (42 weeks), test Jul 6 – Oct 6 2026 (13 weeks); every result
+also with trades capped at ±10% (AMD's Oct 2025 and MRNA's Aug 2026 news gaps). Three baskets:
+10 tickers with SNDK, 10 without SNDK (TSLA instead), and 20 tickers (MDB GOOGL APP AMD META MSFT
+AMAT SPOT MRNA TSLA QQQ SNPS LLY COIN SHOP CRWV CRM NVDA PLTR AVGO; SNDK excluded as an outlier,
+SPCX dropped because the symbol changed from an ETF to a new stock in 2026, CRWD for its split).
+
+**Ranking measure:** the plain 3-month total beat recency-weighted, consistency, risk-adjusted
+(t-stat), win rate, profit factor and "positive on both 1 and 3 months" — in both periods, raw and
+capped, in all three baskets.
+
+**Setup types:** short and box setups lost money the following week on average, in both periods,
+even with a positive 3-month record (e.g. 10 tickers with SNDK: −0.25% / −0.10% per setup-week for
+shorts, −0.13% / −0.16% for box). Dropping them (R1) beat keeping them (R0) everywhere:
+
+| Basket ($10k per ticker, weekly) | R0 calibration / test | R1 calibration / test | R1 test capped |
+|---|---|---|---|
+| 10 with SNDK | +$13,316 / +$7,269 | +$17,635 / +$7,875 | +$4,630 |
+| 10 without SNDK | +$4,861 / +$5,647 | +$8,386 / +$5,701 | +$2,625 |
+| 20 tickers | +$10,681 / +$8,294 | +$13,178 / +$9,127 | +$5,622 |
+
+On 20 tickers R1 was up in all 3 test months and on 14 of 20 tickers in each period.
+
+**Conditions (switch signals):**
+- A setup's own 3-month record is the most consistent: overnight holds with a positive record
+  +0.67% vs +0.11% the next week (calibration) and +0.34% vs −0.32% (test, without SNDK).
+- Long setups' edge came mostly from SNDK; without it they were flat in calibration.
+- Ticker or QQQ trend flips sign for overnight holds between periods (good on strong tickers in
+  calibration, bad in the test) — not a usable switch.
+- Rejected rules: long setups only above MA50 (R2) — better in calibration, worse in the test, in
+  all three baskets; pausing a setup type after a losing month across tickers (R3) — worst rule
+  every time, because overnight losing streaks reverse quickly (−147 in March then +135 in April,
+  −104 in July then +214 in August, summed 1-month results).
+
+**Ticker momentum on top of R1** (keep the top 3 / 5 tickers by 20/60/120-session return, $10k per
+kept ticker): always about doubles the calibration return on capital used, but the test does not
+agree — on 10 tickers the calibration pick beat "all tickers" (11.1% vs 5.7% raw), on 20 tickers it
+lost (2.4% vs 4.6% raw), and the best look-back changes between periods. It also leaves most of
+the capital idle (+$720 vs +$9,127 on 20 tickers in the test). Not adopted.
+
+**Overnight short** (short the 15:55 close, cover at the next open, mirror of the overnight hold):
+lost on 11 of 11 tickers in calibration (−628% summed) and 8 of 11 in the test (−133%); only
+shorting when the long overnight hold lost over 3 months still lost (−100% / −10%). Not added.
+
+**Recipe (R1):** every week, rank each ticker's long setups (drive long, pullback long, C1, bounce
+long) and overnight holds by their last-3-month total, trade the top 3 that are positive with at
+least 3 trades (one per family). About +0.7% a month on the full capital in calibration and
++0.9–1.5% a month in the test on 20 tickers; most of the return comes from whichever tickers trend.
+
 ## Recommendations
 
 1. **Choose tickers before tuning settings.** The same configuration ranges from +156.66% (SNDK)
@@ -727,6 +816,12 @@ in the window:
     120-session momentum (Finding 14).
 12. **Still untested:** a bear-market year for SNDK-like names, costs other than 5 bps, and a
    one-position-at-a-time rule for combined setups.
+13. **Pick setups with R1 (Finding 18):** long setups and overnight holds only, ranked by their
+    3-month total, top 3 positive with ≥ 3 trades. Skip short and box setups.
+14. **Update the picks every week or two (Finding 17);** picks held 8+ weeks lost money in the
+    2026 test. The monitor does this with `config --refresh --types long overnight --min-trades 3`.
+15. **Prefer a broad pool (20+ liquid tickers) over filtering it** — momentum ticker filters, MA50
+    gates and pausing setup types after a bad month all failed out of sample (Finding 18).
 
 ## Reproduction
 
