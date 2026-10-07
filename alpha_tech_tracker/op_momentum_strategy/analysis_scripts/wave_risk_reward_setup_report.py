@@ -59,6 +59,14 @@ REPORT_EXITS = OrderedDict([
     ("overnight always", "next open"),
     ("overnight ma200", "next open"),
 ])
+SETUP_TYPES = OrderedDict([
+    ("box break", "box"), ("box fade", "box"), ("box gap", "box"),
+    ("drive long", "long"), ("drive short", "short"),
+    ("pullback long", "long"), ("pullback short", "short"), ("pullback long C1", "long"),
+    ("bounce long", "long"), ("bounce short", "short"),
+    ("overnight always", "overnight"), ("overnight ma200", "overnight"),
+])
+TYPE_CHOICES = ("long", "short", "box", "overnight")
 DEFAULT_OUT_ROOT = Path(__file__).resolve().parent.parent / "backtest_result" / "wave_setups"
 TRADE_FIELDS = ["ticker", "setup", "exit", "entry_time", "exit_time", "side", "entry", "exit_price",
                 "outcome", "net_pct", "earnings"]
@@ -102,25 +110,29 @@ def _run(job):
     return ticker, out
 
 
-def top_setups_by_ticker(trade_rows, top_n=3):
+def top_setups_by_ticker(trade_rows, top_n=3, types=None, min_trades=1):
     """{ticker: [(setup, total %), ...]}: each ticker's best setups over the report window.
 
     `trade_rows` are trades.csv rows (dicts). Only each setup's fixed exit (REPORT_EXITS) counts,
-    setups that lost money are left out, and overlapping setups (FAMILIES: overnight always / ma200,
-    pullback long / C1) count once, keeping the better one.
+    setups that lost money or have fewer than `min_trades` trades are left out, `types` (SETUP_TYPES
+    values, e.g. long / overnight) limits the setups considered, and overlapping setups (FAMILIES:
+    overnight always / ma200, pullback long / C1) count once, keeping the better one.
     """
-    totals = OrderedDict()
+    totals, counts = OrderedDict(), {}
     for row in trade_rows:
         if REPORT_EXITS.get(row["setup"]) != row["exit"]:
             continue
+        if types and SETUP_TYPES[row["setup"]] not in types:
+            continue
         by_setup = totals.setdefault(row["ticker"], {})
         by_setup[row["setup"]] = by_setup.get(row["setup"], 0.0) + float(row["net_pct"])
+        counts[(row["ticker"], row["setup"])] = counts.get((row["ticker"], row["setup"]), 0) + 1
     ranked = OrderedDict()
     for ticker, by_setup in totals.items():
         chosen, used = [], []
         for setup, total in sorted(by_setup.items(), key=lambda item: item[1], reverse=True):
             family = next((f for f in FAMILIES if setup in f), {setup})
-            if total <= 0 or family in used:
+            if total <= 0 or counts[(ticker, setup)] < min_trades or family in used:
                 continue
             chosen.append((setup, total))
             used.append(family)

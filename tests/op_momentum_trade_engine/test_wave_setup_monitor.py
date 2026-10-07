@@ -59,10 +59,45 @@ class TestBuildSetupSpec:
 class TestGenerateConfig:
     def _report(self, tmp_path, rows):
         with (tmp_path / "trades.csv").open("w", newline="") as handle:
-            writer = csv.DictWriter(handle, fieldnames=["ticker", "setup", "exit", "net_pct"])
+            writer = csv.DictWriter(handle, fieldnames=["ticker", "setup", "exit", "net_pct", "entry_time"])
             writer.writeheader()
-            writer.writerows(rows)
+            writer.writerows([dict({"entry_time": "2026-09-01 10:00:00-04:00"}, **row) for row in rows])
         return tmp_path
+
+    def test_types_limit_the_setups(self, tmp_path):
+        report = self._report(tmp_path, [
+            {"ticker": "AMD", "setup": "drive short", "exit": "eod", "net_pct": 9.0},
+            {"ticker": "AMD", "setup": "drive long", "exit": "eod", "net_pct": 3.0},
+        ])
+
+        config = generate_config(report, ["AMD"], types=["long", "overnight"])
+
+        assert [s["setup"] for s in config["tickers"]["AMD"]] == ["drive long"]
+        assert config["types"] == ["long", "overnight"]
+
+    def test_setups_need_the_minimum_trades(self, tmp_path):
+        report = self._report(tmp_path, [
+            {"ticker": "AMD", "setup": "bounce long", "exit": "target", "net_pct": 9.0},
+            {"ticker": "AMD", "setup": "drive long", "exit": "eod", "net_pct": 1.0},
+            {"ticker": "AMD", "setup": "drive long", "exit": "eod", "net_pct": 1.0},
+        ])
+
+        config = generate_config(report, ["AMD"], min_trades=2)
+
+        assert [s["setup"] for s in config["tickers"]["AMD"]] == ["drive long"]
+
+    def test_lookback_ranks_only_the_last_sessions(self, tmp_path):
+        report = self._report(tmp_path, [
+            {"ticker": "AMD", "setup": "bounce long", "exit": "target", "net_pct": 9.0,
+             "entry_time": "2026-08-03 10:00:00-04:00"},
+            {"ticker": "AMD", "setup": "drive long", "exit": "eod", "net_pct": 1.0,
+             "entry_time": "2026-09-01 09:30:00-04:00"},
+        ])
+
+        config = generate_config(report, ["AMD"], lookback_sessions=1)
+
+        assert [s["setup"] for s in config["tickers"]["AMD"]] == ["drive long"]
+        assert config["window"] == "2026-09-01..2026-09-01"
 
     def test_picks_each_tickers_best_setups_one_per_family(self, tmp_path):
         report = self._report(tmp_path, [
@@ -584,3 +619,39 @@ class TestFinish:
 
         assert alerts == ["[wave] overnight moving-average filter has too little daily history for AMD; their "
                           "filtered overnight holds will not fire today"]
+
+
+class TestStartOnMacOS:
+    def test_start_launches_a_detached_run_instead_of_forking(self, tmp_path, mocker):
+        config = tmp_path / "config.json"
+        config.write_text(json.dumps({"tickers": {"AMD": ["drive long"]}}))
+        mocker.patch.object(monitor_module.sys, "platform", "darwin")
+        mocker.patch.object(monitor_module, "_load_config")
+        daemonize = mocker.patch.object(monitor_module, "_daemonize")
+        popen = mocker.patch.object(monitor_module.subprocess, "Popen", return_value=SimpleNamespace(pid=4321))
+        log_file = str(tmp_path / "monitor.log")
+
+        monitor_module.main(["start", "--config", str(config), "--pid-file", str(tmp_path / "m.pid"),
+                             "--log-file", log_file, "--market-data-source", "tradestation"])
+
+        daemonize.assert_not_called()
+        command = popen.call_args.args[0]
+        assert command[1:4] == ["-m", monitor_module.MODULE, "run"]
+        assert command[-3:] == ["--detached", "--log-file", log_file]
+        assert popen.call_args.kwargs["start_new_session"] is True
+
+
+class TestConfigRefresh:
+    def test_refresh_runs_the_setup_report_then_ranks_its_last_63_sessions(self, tmp_path, mocker):
+        report_dir = tmp_path / "report"
+        mocker.patch.object(monitor_module, "refresh_report", return_value=report_dir)
+        generate = mocker.patch.object(monitor_module, "generate_config", return_value={
+            "window": "w", "types": ["long"], "tickers": {}})
+        config_path = tmp_path / "config.json"
+
+        monitor_module.main(["config", "--refresh", "--tickers", "AMD", "META", "--types", "long", "overnight",
+                             "--min-trades", "3", "--config", str(config_path), "--workers", "0"])
+
+        assert monitor_module.refresh_report.call_args.args == (["AMD", "META"], 63, 1)
+        assert generate.call_args.args == (str(report_dir), ["AMD", "META"], 3, ["long", "overnight"], 3, 63)
+        assert json.loads(config_path.read_text())["window"] == "w"

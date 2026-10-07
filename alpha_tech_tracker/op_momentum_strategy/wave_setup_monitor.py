@@ -51,6 +51,7 @@ import logging
 import logging.handlers
 import os
 import signal as signal_module
+import subprocess
 import sys
 import threading
 import time as time_module
@@ -92,8 +93,12 @@ from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward_b
     signal_group,
 )
 from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward_scan import BOX_GROUPS, SETUP_RUNS
+from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.ticker_stats_report import clamp_end_for_sip
 from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward_setup_report import (
+    DEFAULT_OUT_ROOT as SETUP_REPORT_ROOT,
     REPORT_EXITS,
+    TYPE_CHOICES,
+    main as setup_report_main,
     top_setups_by_ticker,
 )
 from alpha_tech_tracker.op_momentum_strategy.cli.clients import _build_market_data_client
@@ -116,6 +121,9 @@ ET = pytz.timezone("America/New_York")
 DEFAULT_CONFIG = Path(_LOG_DIR) / "wave_setup_monitor_config.json"
 DEFAULT_STATE = Path(_LOG_DIR) / "wave_setup_monitor_state.json"
 PID_FILE = os.path.join(_LOG_DIR, "wave_setup_monitor.pid")
+MODULE = "alpha_tech_tracker.op_momentum_strategy.wave_setup_monitor"
+REFRESH_LOOKBACK_SESSIONS = 63
+DEFAULT_REFRESH_ROOT = SETUP_REPORT_ROOT / "monitor_refresh"
 WARMUP_SESSIONS = 10
 WARMUP_CALENDAR_DAYS = 20
 DAILY_HISTORY_DAYS = 420
@@ -208,11 +216,20 @@ def build_setup_spec(name):
     return SetupSpec(name, REPORT_EXITS[name], params, groups)
 
 
-def generate_config(report_dir, tickers, top_n=3):
-    """Monitor config from a setup report folder: each ticker's top setups by fixed-exit total."""
+def generate_config(report_dir, tickers, top_n=3, types=None, min_trades=1, lookback_sessions=None):
+    """Monitor config from a setup report folder: each ticker's top setups by fixed-exit total.
+
+    `types` limits the setup types (e.g. long, overnight), `min_trades` is the trades a setup needs,
+    and `lookback_sessions` ranks on the report's last N sessions only.
+    """
     report_dir = Path(report_dir)
     with (report_dir / "trades.csv").open() as handle:
-        ranked = top_setups_by_ticker(csv.DictReader(handle), top_n)
+        rows = list(csv.DictReader(handle))
+    days = sorted({row["entry_time"][:10] for row in rows})
+    if lookback_sessions:
+        days = days[-lookback_sessions:]
+        rows = [row for row in rows if row["entry_time"][:10] >= days[0]]
+    ranked = top_setups_by_ticker(rows, top_n, types, min_trades)
     missing = [t for t in tickers if t not in ranked]
     if missing:
         raise ValueError(f"{', '.join(missing)} not in {report_dir}; run the setup report for them first")
@@ -222,10 +239,24 @@ def generate_config(report_dir, tickers, top_n=3):
     return {
         "generated": date.today().isoformat(),
         "source": str(report_dir),
+        "window": f"{days[0]}..{days[-1]}" if days else "",
         "top_n": top_n,
+        "types": list(types) if types else "all",
+        "min_trades": min_trades,
         "tickers": {t: [{"setup": s, "report_total_pct": round(total, 2)} for s, total in ranked[t]]
                     for t in tickers if ranked[t]},
     }
+
+
+def refresh_report(tickers, lookback_sessions, workers):
+    """Run the setup report over the trailing window ending today; returns its folder."""
+    end = clamp_end_for_sip(date.today(), DataFeed.SIP)
+    start = end - timedelta(days=int(lookback_sessions * 1.5) + 10)
+    out_dir = DEFAULT_REFRESH_ROOT / f"{start}_{end}"
+    print(f"Refreshing the setup report for {len(tickers)} tickers, {start}..{end} -> {out_dir}", flush=True)
+    setup_report_main(["--tickers", *tickers, "--start", start.isoformat(), "--end", end.isoformat(),
+                       "--workers", str(workers), "--out-dir", str(out_dir)])
+    return out_dir
 
 
 def load_config(path):
@@ -948,6 +979,18 @@ def _run_monitor(args):
         logger.info("Stopped")
 
 
+def _start_detached(argv, log_file):
+    """macOS: a forked child crashes once it touches system frameworks (fork safety), so start a
+    fresh `run` process in its own session instead of double-forking."""
+    child_args = list(sys.argv[1:] if argv is None else argv)
+    child_args[child_args.index("start" if "start" in child_args else "restart")] = "run"
+    child_args += ["--detached", "--log-file", log_file]
+    with open(log_file, "a") as log, open(os.devnull) as dev_null:
+        process = subprocess.Popen([sys.executable, "-m", MODULE] + child_args, stdin=dev_null, stdout=log,
+                                   stderr=log, start_new_session=True, cwd=os.getcwd())
+    print(f"Monitor started (PID {process.pid})")
+
+
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("action", choices=["config", "run", "start", "stop", "status", "restart"])
@@ -955,6 +998,13 @@ def parse_args(argv=None):
     parser.add_argument("--report", help="config: setup report folder with trades.csv")
     parser.add_argument("--tickers", nargs="+", help="config: tickers to monitor (default: every ticker in the report)")
     parser.add_argument("--top", type=int, default=3, help="config: setups per ticker (default: 3)")
+    parser.add_argument("--types", nargs="+", choices=TYPE_CHOICES,
+                        help="config: only these setup types; the recommended set is `long overnight` (Finding 18)")
+    parser.add_argument("--min-trades", type=int, default=1, help="config: trades a setup needs (recommended: 3)")
+    parser.add_argument("--lookback-sessions", type=int,
+                        help=f"config: rank on the report's last N sessions (with --refresh: {REFRESH_LOOKBACK_SESSIONS})")
+    parser.add_argument("--refresh", action="store_true",
+                        help="config: first run the setup report for --tickers over the trailing window ending today")
     parser.add_argument("--market-data-source", choices=["alpaca", "tradestation", "local_ts_broadcast"],
                         help="Market data provider (default: config.json market_data_source, else alpaca)")
     parser.add_argument("--feed", default="sip", choices=["sip", "iex"], help="Alpaca feed (default: sip)")
@@ -968,6 +1018,7 @@ def parse_args(argv=None):
     parser.add_argument("--log-file", help="Default: logs/wave_setup_monitor_<date>.log")
     parser.add_argument("--log-level", default="INFO", choices=["DEBUG", "INFO", "WARNING", "ERROR"])
     parser.add_argument("--no-notify", action="store_true", help="Log and write the CSV only, no Telegram/SMS")
+    parser.add_argument("--detached", action="store_true", help=argparse.SUPPRESS)
     return parser.parse_args(argv)
 
 
@@ -977,18 +1028,24 @@ def main(argv=None):
     log_file = args.log_file or os.path.join(_LOG_DIR, f"wave_setup_monitor_{date.today()}.log")
 
     if args.action == "config":
+        if args.refresh:
+            if not args.tickers:
+                sys.exit("config --refresh needs --tickers")
+            args.report = str(refresh_report(args.tickers, args.lookback_sessions or REFRESH_LOOKBACK_SESSIONS,
+                                             max(1, args.workers)))
         if not args.report:
-            sys.exit("config needs --report <setup report folder>")
+            sys.exit("config needs --report <setup report folder> (or --refresh --tickers ...)")
         tickers = args.tickers
         if not tickers:
             with (Path(args.report) / "trades.csv").open() as handle:
                 tickers = list(dict.fromkeys(row["ticker"] for row in csv.DictReader(handle)))
-        config = generate_config(args.report, tickers, args.top)
+        lookback = args.lookback_sessions or (REFRESH_LOOKBACK_SESSIONS if args.refresh else None)
+        config = generate_config(args.report, tickers, args.top, args.types, args.min_trades, lookback)
         Path(args.config).parent.mkdir(parents=True, exist_ok=True)
         Path(args.config).write_text(json.dumps(config, indent=1))
         for ticker, setups in config["tickers"].items():
             print(f"{ticker:6} " + ", ".join(f"{s['setup']} ({s['report_total_pct']:+.2f}%)" for s in setups))
-        print(f"config written to {args.config}")
+        print(f"config written to {args.config} (window {config['window']}, types {config['types']})")
         return
 
     _load_config()
@@ -996,8 +1053,15 @@ def main(argv=None):
         disable_notifications()
 
     if args.action == "run":
-        _configure_logging(log_file, args.log_level, to_stream=True)
-        _run_monitor(args)
+        pid = _read_pid(args.pid_file)
+        if pid and pid != os.getpid() and _is_running(pid):
+            sys.exit(f"Monitor already running (PID {pid}). Use 'stop' first.")
+        _write_pid(args.pid_file)
+        try:
+            _configure_logging(log_file, args.log_level, to_stream=not args.detached)
+            _run_monitor(args)
+        finally:
+            _remove_pid(args.pid_file)
         return
     if args.action == "status":
         pid = _read_pid(args.pid_file)
@@ -1011,7 +1075,10 @@ def main(argv=None):
     if pid and _is_running(pid):
         sys.exit(f"Monitor already running (PID {pid}). Use 'restart' or 'stop' first.")
     load_config(args.config)
-    print(f"Starting monitor daemon — logs: {log_file}")
+    print(f"Starting monitor daemon — logs: {log_file}", flush=True)
+    if sys.platform == "darwin":
+        _start_detached(argv, log_file)
+        return
     _daemonize(log_file)
     _write_pid(args.pid_file)
     try:

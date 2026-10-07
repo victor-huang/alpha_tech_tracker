@@ -41,6 +41,14 @@ class TestSelectSetups:
 
         assert picked == [("drive long", 2.0), ("bounce long", 1.0)]
 
+    def test_needs_the_minimum_total_and_trades(self):
+        trades = _trades([("AMD", "drive long", 0, 2.0), ("AMD", "bounce long", 0, 6.0), ("AMD", "pullback long", 0, 3.0),
+                          ("AMD", "pullback long", 1, 3.0)])
+
+        picked = select_setups(trades, "AMD", SESSIONS[0:2], top_n=3, min_total_pct=5.0, min_trades=2)
+
+        assert picked == [("pullback long", 6.0)]
+
     def test_leaves_out_losing_setups(self):
         trades = _trades([("AMD", "drive long", 0, -2.0)])
 
@@ -82,3 +90,35 @@ class TestPeriodTable:
 
         assert grid.loc["All", "Total"] == pytest.approx(6.0)
         assert grid.loc["META", "2026-07"] == pytest.approx(-4.0)
+
+
+class TestKeepUntilLoss:
+    def _run(self, rows):
+        return walk_forward(_trades(rows), ["AMD"], SESSIONS, SESSIONS[2], lookback=2, hold=3, top_n=1,
+                            capital=1000.0, keep_until_loss=True)
+
+    def test_keeps_a_setup_that_made_money_even_if_another_ranks_higher(self):
+        _, selections = self._run([
+            ("AMD", "drive long", 0, 1.0),
+            ("AMD", "drive long", 2, 0.5), ("AMD", "bounce long", 3, 9.0),
+        ])
+
+        assert [s["setups"] for s in selections] == ["drive long (+1.00%)", "drive long (+1.00%)"]
+
+    def test_replaces_a_setup_that_lost_money_with_the_best_other_one(self):
+        traded, selections = self._run([
+            ("AMD", "drive long", 0, 1.0), ("AMD", "bounce long", 1, 0.5),
+            ("AMD", "drive long", 2, -0.4), ("AMD", "bounce long", 3, 0.2),
+            ("AMD", "drive long", 5, 3.0), ("AMD", "bounce long", 6, 2.0),
+        ])
+
+        assert selections[1]["setups"] == "bounce long (+0.20%) (dropped drive long)"
+        assert list(traded["setup"]) == ["drive long", "bounce long"]
+
+
+class TestTypes:
+    def test_select_keeps_only_the_given_types(self):
+        trades = _trades([("AMD", "drive short", 0, 9.0), ("AMD", "overnight always", 0, 2.0)])
+
+        assert select_setups(trades, "AMD", SESSIONS[0:2], top_n=3, types=["long", "overnight"]) == [
+            ("overnight always", 2.0)]

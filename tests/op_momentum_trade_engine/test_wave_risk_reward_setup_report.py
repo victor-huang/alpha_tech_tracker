@@ -8,6 +8,7 @@ import pytest
 from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward_setup_report import (
     REPORT_EXITS,
     build_report,
+    top_setups_by_ticker,
     period_totals,
     stats,
     week_start,
@@ -100,3 +101,16 @@ class TestWriteOutputs:
         assert [(r["ticker"], r["setup"], r["exit"], r["net_pct"]) for r in rows] == [("AMD", "drive long", "eod", "1.5")]
         assert (out_dir / "report.md").exists()
         assert (out_dir / "summary.csv").exists()
+
+
+class TestTopSetupsByTicker:
+    def _row(self, setup, exit_mode, pnl):
+        return {"ticker": "AMD", "setup": setup, "exit": exit_mode, "net_pct": pnl}
+
+    def test_types_and_min_trades_filter_the_ranking(self):
+        rows = [self._row("drive short", "eod", 9.0), self._row("bounce long", "target", 5.0),
+                self._row("drive long", "eod", 1.0), self._row("drive long", "eod", 1.0)]
+
+        ranked = top_setups_by_ticker(rows, top_n=3, types=["long"], min_trades=2)
+
+        assert ranked["AMD"] == [("drive long", 2.0)]
