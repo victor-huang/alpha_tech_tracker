@@ -1,10 +1,12 @@
 """Setup report: every wave_risk_reward setup on every ticker, with weekly and monthly breakdowns.
 
-Runs each setup on its own (box breaks, fades, gaps, opening drive long/short, pullback long/short,
-pullback long C1, deep bounce long/short, overnight always/ma200) for every ticker over
+Runs each setup on its own (box breaks, fades, gaps, opening drive long/short, drive fade
+long/short, pullback long/short, pullback long C1, deep bounce long/short, overnight always/ma200)
+for every ticker over
 `--start`..`--end`, with all exits. Weekly and monthly tables use one exit per setup fixed in
 advance (REPORT_EXITS) so they are not picked with hindsight; every trade for every exit is in
-the trades CSV.
+the trades CSV. `--setups` runs a subset; the opt-in setups (OPT_IN_SETUPS: drive fade, tested
+negative in Finding 19) only run when named there.
 
 Every trade is flagged when it carries an earnings reaction (earnings_calendar.py): the
 report lists each ticker's earnings sessions and splits the fixed-exit totals into earnings
@@ -39,7 +41,9 @@ from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward_b
 )
 from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward_scan import (
     BOX_GROUPS,
+    DEFAULT_SETUP_RUNS,
     FAMILIES,
+    OPT_IN_SETUPS,
     INTRADAY_EXITS,
     SETUP_RUNS,
     _load_bars,
@@ -51,6 +55,8 @@ REPORT_EXITS = OrderedDict([
     ("box gap", "target"),
     ("drive long", "eod"),
     ("drive short", "eod"),
+    ("drive fade long", "target"),
+    ("drive fade short", "target"),
     ("pullback long", "target-trail"),
     ("pullback short", "target-trail"),
     ("pullback long C1", "target-trail"),
@@ -61,7 +67,7 @@ REPORT_EXITS = OrderedDict([
 ])
 SETUP_TYPES = OrderedDict([
     ("box break", "box"), ("box fade", "box"), ("box gap", "box"),
-    ("drive long", "long"), ("drive short", "short"),
+    ("drive long", "long"), ("drive short", "short"), ("drive fade long", "long"), ("drive fade short", "short"),
     ("pullback long", "long"), ("pullback short", "short"), ("pullback long C1", "long"),
     ("bounce long", "long"), ("bounce short", "short"),
     ("overnight always", "overnight"), ("overnight ma200", "overnight"),
@@ -159,23 +165,30 @@ def _pct(value):
     return f"{value:+.2f}%"
 
 
+def report_setups(results):
+    """The REPORT_EXITS setups present in the results (those that were run), in report order."""
+    present = set().union(*(setups.keys() for setups in results.values())) if results else set()
+    return OrderedDict((s, e) for s, e in REPORT_EXITS.items() if s in present)
+
+
 def build_report(results, overviews, start, end, cost_bps, earnings="off"):
+    exits = report_setups(results)
     earnings_note = {"off": "", "skip": " Trades carrying an earnings reaction are skipped.",
                      "only": " Only trades carrying an earnings reaction are kept."}[earnings]
     lines = [f"# Wave setup report {start} .. {end}", "",
              f"Every setup backtested on its own, {cost_bps:g} bps round trip. Weekly and monthly tables use a fixed "
-             "exit per setup: " + ", ".join(f"{s} = {e}" for s, e in REPORT_EXITS.items()) + ". "
+             "exit per setup: " + ", ".join(f"{s} = {e}" for s, e in exits.items()) + ". "
              "Totals are sums of per-trade returns (not compounded); setups trade independently." + earnings_note, ""]
 
     lines += ["## Summary (fixed exits)", "",
               "| Setup | " + " | ".join(results) + " |", "|---|" + "---|" * len(results)]
-    for setup, exit_mode in REPORT_EXITS.items():
+    for setup, exit_mode in exits.items():
         cells = [_pct(stats(results[t][setup][exit_mode])["total"]) for t in results]
         lines.append(f"| {setup} ({exit_mode}) | " + " | ".join(cells) + " |")
     lines += ["", "| Ticker | Buy & hold | Overnight | In-session | Best setup (fixed exit) |", "|---|---|---|---|---|"]
     for t, ov in overviews.items():
-        best = max(REPORT_EXITS, key=lambda s: stats(results[t][s][REPORT_EXITS[s]])["total"])
-        best_total = stats(results[t][best][REPORT_EXITS[best]])["total"]
+        best = max(exits, key=lambda s: stats(results[t][s][exits[s]])["total"])
+        best_total = stats(results[t][best][exits[best]])["total"]
         lines.append(f"| {t} | {_pct(ov['buy_hold'])} | {_pct(ov['overnight'])} | {_pct(ov['in_session'])} | "
                      f"{best} {_pct(best_total)} |")
 
@@ -189,7 +202,7 @@ def build_report(results, overviews, start, end, cost_bps, earnings="off"):
                      or "none in the window") + ".", "",
                   "### All exits (trades / win / total)", "",
                   "| Setup | target | target-trail | giveback | eod | next open |", "|---|---|---|---|---|---|"]
-        for setup in REPORT_EXITS:
+        for setup in exits:
             cells = []
             for mode in list(INTRADAY_EXITS) + ["next open"]:
                 trades = setups[setup].get(mode)
@@ -203,7 +216,7 @@ def build_report(results, overviews, start, end, cost_bps, earnings="off"):
         if any("earnings" in t for by_exit in setups.values() for trades in by_exit.values() for t in trades):
             lines += ["", "### Earnings vs other trades (fixed exits, trades / total)", "",
                       "| Setup | earnings | other |", "|---|---|---|"]
-            for setup, exit_mode in REPORT_EXITS.items():
+            for setup, exit_mode in exits.items():
                 cells = []
                 for flag in (True, False):
                     s = stats([t for t in setups[setup][exit_mode] if t.get("earnings") == flag])
@@ -216,7 +229,7 @@ def build_report(results, overviews, start, end, cost_bps, earnings="off"):
             lines += ["", f"### {title} (fixed exits)", "",
                       "| Setup | " + " | ".join(label(p) for p in periods) + " | Total |",
                       "|---|" + "---|" * (len(periods) + 1)]
-            for setup, exit_mode in REPORT_EXITS.items():
+            for setup, exit_mode in exits.items():
                 totals = period_totals(setups[setup][exit_mode], key)
                 cells = [_pct(totals[p]) if p in totals else "" for p in periods]
                 lines.append(f"| {setup} | " + " | ".join(cells) + f" | {_pct(sum(totals.values()))} |")
@@ -265,6 +278,9 @@ def parse_args(argv=None):
                         help="skip: drop trades that carry an earnings reaction; only: keep just them (default: off)")
     parser.add_argument("--out-dir", help="Output folder (default: backtest_result/wave_setups/<start>_<end>)")
     parser.add_argument("--workers", type=int, default=8)
+    parser.add_argument("--setups", nargs="+", choices=list(SETUP_RUNS),
+                        help="Run only these setups (default: all but the opt-in ones, OPT_IN_SETUPS: "
+                             + ", ".join(OPT_IN_SETUPS) + ")")
     return parser.parse_args(argv)
 
 
@@ -276,13 +292,13 @@ def main(argv=None):
     # loaded once per ticker here, not in every worker, so parallel jobs never race on the calendar cache
     windows = OrderedDict((t, ticker_earnings_windows(t, _load_bars(t, start, end, feed))) for t in args.tickers)
     jobs = [(t, name, start, end, args.cost_bps, args.feed, args.earnings, windows[t])
-            for t in args.tickers for name in SETUP_RUNS]
+            for t in args.tickers for name in (args.setups or DEFAULT_SETUP_RUNS)]
     results = OrderedDict((t, OrderedDict()) for t in args.tickers)
     with ProcessPoolExecutor(max_workers=args.workers) as pool:
         for ticker, out in pool.map(_run, jobs):
             results[ticker].update(out)
     for ticker in results:
-        results[ticker] = OrderedDict((s, results[ticker][s]) for s in REPORT_EXITS)
+        results[ticker] = OrderedDict((s, results[ticker][s]) for s in REPORT_EXITS if s in results[ticker])
     overviews = OrderedDict((t, ticker_overview(t, start, end, feed, windows[t])) for t in args.tickers)
     folder = f"{start}_{end}" + (f"_earnings-{args.earnings}" if args.earnings != "off" else "")
     out_dir = write_outputs(results, overviews, start, end, args.cost_bps,

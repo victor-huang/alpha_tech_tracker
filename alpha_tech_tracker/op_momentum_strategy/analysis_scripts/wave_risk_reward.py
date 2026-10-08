@@ -56,6 +56,11 @@ drive        session fires drive long at its close with the stop at the bar's lo
              direction. In testing it was traded with a give-back exit (out once 32% of
              the best open profit is given back, after a move of 0.25 x risk), which
              this script does not model.
+Drive fade = `--drive-fade both|long|short` (off by default): the opposite of the opening
+             drive. A green first bar fires drive fade short at its close, a red one drive
+             fade long. Stop beyond the first bar's extreme by `--drive-fade-stop-buffer`
+             x its range (default 0.1); target the bar's other extreme (the opening move
+             given back). Skipped when the close leaves no room to the target.
 Pullback   = `--wave-pullback both|long|short` (off by default): when a finished wave is at
              least `--strong-wave-ratio` x the median lookback wave size, wait for the
              pullback to touch its 38.2% retracement, then the first bar closing back in
@@ -148,7 +153,8 @@ DEFAULT_MIN_BOX_WAVES = 2
 DEFAULT_SMALL_WAVE_RATIO = 1.5
 DEFAULT_MAX_BOX_HEIGHT_RATIO = 2.0
 DEFAULT_REVERSION_BOX_BARS = 6.0
-LONG_SIGNALS = ("breakout", "fade_long", "drive_long", "pullback_long", "bounce_long", "overnight_long")
+LONG_SIGNALS = ("breakout", "fade_long", "drive_long", "drive_fade_long", "pullback_long", "bounce_long",
+                "overnight_long")
 OVERNIGHT_HOLD_MODES = ("off", "always", "ma200", "ma20-ma200", "ma50-rising")
 OVERNIGHT_ENTRY_TIME = time(15, 55)
 OVERNIGHT_WARMUP_SESSIONS = 210  # daily MA200 plus a margin
@@ -164,6 +170,8 @@ PULLBACK_TOUCH_FIB = 0.382
 PULLBACK_FLOOR_FIB = 0.618
 PULLBACK_STOP_FIB = 0.786
 OPENING_DRIVE_MODES = ("off", "both", "long", "short")
+DRIVE_FADE_MODES = ("off", "both", "long", "short")
+DEFAULT_DRIVE_FADE_STOP_BUFFER = 0.1
 REGIME_SIGNALS = {"up": ("breakout",), "down": ("breakdown",), "range": ("fade_long", "fade_short")}
 REGIME_SWITCHES = ("ma-stack", "opening-range", "off")
 DEFAULT_OPENING_RANGE_BARS = 3
@@ -189,6 +197,8 @@ class WaveRiskRewardParams:
     regime_switch: str = "ma-stack"
     stop_and_reverse: bool = False
     opening_drive: str = "off"
+    drive_fade: str = "off"
+    drive_fade_stop_buffer: float = DEFAULT_DRIVE_FADE_STOP_BUFFER
     wave_pullback: str = "off"
     deep_bounce: str = "off"
     overnight_hold: str = "off"
@@ -457,6 +467,28 @@ def opening_drive_risk_reward(direction, entry, stop, waves, min_risk_pct=0.001)
         "reward": reward,
         "rr": reward / risk,
     }
+
+
+def drive_fade_signal(bar, mode, stop_buffer=DEFAULT_DRIVE_FADE_STOP_BUFFER):
+    """(signal name, stop, target) fading the session's first bar: green -> drive_fade_short, red ->
+    drive_fade_long; stop beyond the bar's extreme by stop_buffer x its range, target its other extreme."""
+    size = bar["high"] - bar["low"]
+    if bar["close"] > bar["open"] and mode in ("both", "short"):
+        return "drive_fade_short", bar["high"] + stop_buffer * size, bar["low"]
+    if bar["close"] < bar["open"] and mode in ("both", "long"):
+        return "drive_fade_long", bar["low"] - stop_buffer * size, bar["high"]
+    return None
+
+
+def drive_fade_risk_reward(direction, entry, stop, target, min_risk_pct=0.001):
+    """R/R for a drive fade; None when the entry leaves no room to the target."""
+    is_long = direction == "up"
+    risk = entry - stop if is_long else stop - entry
+    reward = target - entry if is_long else entry - target
+    if risk <= 0 or reward <= 0:
+        return None
+    risk = max(risk, entry * min_risk_pct)
+    return {"entry": entry, "stop": stop, "target": target, "risk": risk, "reward": reward, "rr": reward / risk}
 
 
 def new_pullback_setup(impulse, lookback, strong_wave_ratio, mode, touch_fib=PULLBACK_TOUCH_FIB,
@@ -824,6 +856,27 @@ def analyze_bars(bars, params=None, earnings_windows=None):
                 }
                 signals.append(drive_signal)
 
+        fade_signal = None
+        if params.drive_fade != "off" and session_bar_index == 0:
+            fade = drive_fade_signal(bar, params.drive_fade, params.drive_fade_stop_buffer)
+            fade_rr = fade and drive_fade_risk_reward(
+                "up" if fade[0] == "drive_fade_long" else "down", close, fade[1], fade[2], params.min_risk_pct)
+            if fade_rr:
+                fade_signal = {
+                    "time": timestamp,
+                    "signal": fade[0],
+                    "gap": False,
+                    "price": close,
+                    "box_low": bar["low"],
+                    "box_high": bar["high"],
+                    "box_mode": "opening",
+                    "reverses": None,
+                    "risk_reward": fade_rr,
+                    "regime": regime,
+                    "bias": bias,
+                }
+                signals.append(fade_signal)
+
         pullback_signal = None
         if pullback_setup:
             outcome = advance_pullback_setup(pullback_setup, bar)
@@ -915,7 +968,8 @@ def analyze_bars(bars, params=None, earnings_windows=None):
             "or_low": or_low if opening_range_done else None,
             "signal": " + ".join(
                 _signal_label(fired)
-                for fired in (signal, drive_signal, pullback_signal, bounce_signal, overnight_signal) if fired
+                for fired in (signal, drive_signal, fade_signal, pullback_signal, bounce_signal, overnight_signal)
+                if fired
             ) or None,
             "min_wave_price_change": min_wave_change,
         }
@@ -1098,6 +1152,8 @@ def build_chart(ticker, bars, result, display_start):
         ("gap fade short", "triangle-down-open", "#ff7f0e"),
         ("drive long", "diamond", "#2ca02c"),
         ("drive short", "diamond", "#d62728"),
+        ("drive fade long", "diamond-open", "#2ca02c"),
+        ("drive fade short", "diamond-open", "#d62728"),
         ("pullback long", "circle", "#2ca02c"),
         ("pullback short", "circle", "#d62728"),
         ("bounce long", "star", "#2ca02c"),
@@ -1173,7 +1229,7 @@ def _print_ticker_summary(ticker, result, display_start, chart_path):
         + "".join(
             f"   {sum(1 for s in shown_signals if s['signal'] == name)} {name.replace('_', ' ')}"
             for name in ("breakout", "breakdown", "fade_long", "fade_short", "drive_long", "drive_short",
-                         "pullback_long", "pullback_short", "bounce_long", "bounce_short", "overnight_long")
+                         "drive_fade_long", "drive_fade_short", "pullback_long", "pullback_short", "bounce_long", "bounce_short", "overnight_long")
             if not name.startswith(("drive", "pullback", "bounce", "overnight"))
             or any(s["signal"] == name for s in shown_signals)
         )
@@ -1248,6 +1304,16 @@ def add_strategy_arguments(parser):
         "--stop-and-reverse", action="store_true",
         help="Fire the breakout/breakdown that stops a wide-box fade out and reverses it"
              " (default: off)",
+    )
+    parser.add_argument(
+        "--drive-fade", default="off", choices=DRIVE_FADE_MODES,
+        help="Fade the session's first bar: green -> drive fade short, red -> drive fade long; stop beyond the"
+             " bar's extreme, target its other extreme; both, long or short (default: off)",
+    )
+    parser.add_argument(
+        "--drive-fade-stop-buffer", type=float, default=DEFAULT_DRIVE_FADE_STOP_BUFFER,
+        help="Drive fade stop beyond the first bar's extreme, as a fraction of its range"
+             f" (default: {DEFAULT_DRIVE_FADE_STOP_BUFFER:g})",
     )
     parser.add_argument(
         "--opening-drive", default="off", choices=OPENING_DRIVE_MODES,
@@ -1361,6 +1427,8 @@ def params_from_args(args):
         regime_switch=args.regime_switch,
         stop_and_reverse=args.stop_and_reverse,
         opening_drive=args.opening_drive,
+        drive_fade=args.drive_fade,
+        drive_fade_stop_buffer=args.drive_fade_stop_buffer,
         wave_pullback=args.wave_pullback,
         strong_wave_ratio=args.strong_wave_ratio,
         pullback_touch_fib=args.pullback_touch_fib,

@@ -79,7 +79,7 @@ DEFAULT_LARGE_LEG_ADR = 0.75
 DEFAULT_MEDIUM_LEG_ADR = 0.40
 EARLY_LEG_FRACTION = 0.5
 SIGNAL_GROUPS = (
-    "narrow-box break", "fade", "wide-box break", "stop-and-reverse", "opening drive", "wave pullback",
+    "narrow-box break", "fade", "wide-box break", "stop-and-reverse", "opening drive", "drive fade", "wave pullback",
     "deep bounce", "overnight hold", "gap",
 )
 CSV_FIELDS = [
@@ -89,6 +89,8 @@ CSV_FIELDS = [
 
 
 def signal_group(signal):
+    if signal["signal"].startswith("drive_fade"):
+        return "drive fade"
     if signal["signal"].startswith("drive"):
         return "opening drive"
     if signal["signal"].startswith("pullback"):

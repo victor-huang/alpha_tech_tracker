@@ -60,6 +60,11 @@ class TestSignalGroup:
         assert signal_group(_signal("2026-09-01 10:00", **overrides)) == group
 
 
+class TestSignalGroupDriveFade:
+    def test_drive_fade_has_its_own_group(self):
+        assert signal_group(_signal("2026-09-01 09:30", name="drive_fade_short")) == "drive fade"
+
+
 class TestTradeSimulator:
     def test_long_exits_at_target(self):
         bars = _bars("2026-09-01 10:00", [(100, 100, 100, 100), (100, 102.5, 99.5, 101), (101, 101, 101, 101)])

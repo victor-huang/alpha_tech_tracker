@@ -8,6 +8,7 @@ import pytest
 from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward_setup_report import (
     REPORT_EXITS,
     build_report,
+    report_setups,
     top_setups_by_ticker,
     period_totals,
     stats,
@@ -114,3 +115,10 @@ class TestTopSetupsByTicker:
         ranked = top_setups_by_ticker(rows, top_n=3, types=["long"], min_trades=2)
 
         assert ranked["AMD"] == [("drive long", 2.0)]
+
+
+class TestReportSetups:
+    def test_lists_only_the_setups_that_were_run_in_report_order(self):
+        results = OrderedDict(AMD=OrderedDict([("overnight always", {}), ("drive long", {})]))
+
+        assert list(report_setups(results)) == ["drive long", "overnight always"]

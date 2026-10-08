@@ -21,6 +21,8 @@ from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward i
     new_pullback_setup,
     opening_drive_risk_reward,
     pullback_risk_reward,
+    drive_fade_risk_reward,
+    drive_fade_signal,
     opening_drive_signal,
     opening_range_bias,
     needs_earnings_calendar,
@@ -766,6 +768,41 @@ class TestAnalyzeBarsOpeningRangeBias:
         assert (last["or_high"], last["or_low"]) == (pytest.approx(101.1), pytest.approx(100.4))
         assert last["bias"] == "bearish"
         assert last["regime"] == "or-bearish"
+
+
+class TestDriveFadeSignal:
+    def test_green_first_bar_is_a_fade_short_with_stop_above_the_high(self):
+        bar = {"open": 100.0, "high": 102.0, "low": 99.0, "close": 101.5}
+
+        assert drive_fade_signal(bar, "both", stop_buffer=0.1) == ("drive_fade_short", pytest.approx(102.3), 99.0)
+
+    def test_red_first_bar_is_a_fade_long_with_stop_below_the_low(self):
+        bar = {"open": 101.0, "high": 102.0, "low": 99.0, "close": 99.5}
+
+        assert drive_fade_signal(bar, "both", stop_buffer=0.1) == ("drive_fade_long", pytest.approx(98.7), 102.0)
+
+    def test_mode_limits_the_side(self):
+        assert drive_fade_signal({"open": 100.0, "high": 102.0, "low": 99.0, "close": 101.5}, "long") is None
+
+    def test_no_room_to_the_target_is_no_trade(self):
+        assert drive_fade_risk_reward("down", 99.0, 102.3, 99.0) is None
+
+
+class TestAnalyzeBarsDriveFade:
+    def test_fires_on_the_first_bar_with_the_fade_levels(self):
+        sessions = TestAnalyzeBarsOpeningDrive()
+        bars = sessions._session((100.0, 102.0, 99.0, 101.5))
+
+        signals = analyze_bars(bars, WaveRiskRewardParams(drive_fade="both"))["signals"]
+
+        assert [(s["signal"], s["price"]) for s in signals] == [("drive_fade_short", 101.5)]
+        rr = signals[0]["risk_reward"]
+        assert (rr["stop"], rr["target"]) == (pytest.approx(102.3), 99.0)
+
+    def test_off_by_default(self):
+        bars = TestAnalyzeBarsOpeningDrive()._session((100.0, 102.0, 99.0, 101.5))
+
+        assert analyze_bars(bars)["signals"] == []
 
 
 class TestOpeningDriveSignal:

@@ -4,6 +4,9 @@ import pandas as pd
 import pytest
 
 from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward_scan import (
+    DEFAULT_SETUP_RUNS,
+    OPT_IN_SETUPS,
+    SETUP_RUNS,
     evaluate_setup,
     half_stats,
     recommend,
@@ -89,3 +92,10 @@ class TestSessionSplit:
 
         assert overnight == pytest.approx(105.0 / 102.0 * 100 - 100)
         assert session == pytest.approx(110.0 / 105.0 * 100 - 100)
+
+
+class TestDefaultSetupRuns:
+    def test_opt_in_setups_are_left_out_by_default(self):
+        assert set(OPT_IN_SETUPS) <= set(SETUP_RUNS)
+        assert not set(OPT_IN_SETUPS) & set(DEFAULT_SETUP_RUNS)
+        assert len(DEFAULT_SETUP_RUNS) == len(SETUP_RUNS) - len(OPT_IN_SETUPS)

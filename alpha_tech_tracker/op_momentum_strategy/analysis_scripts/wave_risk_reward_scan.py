@@ -48,6 +48,8 @@ SETUP_RUNS = OrderedDict([
     ("box signals", []),
     ("drive long", ["--no-box-signals", "--opening-drive", "long"]),
     ("drive short", ["--no-box-signals", "--opening-drive", "short"]),
+    ("drive fade long", ["--no-box-signals", "--drive-fade", "long"]),
+    ("drive fade short", ["--no-box-signals", "--drive-fade", "short"]),
     ("pullback long", ["--no-box-signals", "--wave-pullback", "long"]),
     ("pullback short", ["--no-box-signals", "--wave-pullback", "short"]),
     ("pullback long C1", ["--no-box-signals", "--wave-pullback", "long", "--min-wave-bar-ranges", "3"]),
@@ -56,6 +58,9 @@ SETUP_RUNS = OrderedDict([
     ("overnight always", ["--no-box-signals", "--overnight-hold", "always"]),
     ("overnight ma200", ["--no-box-signals", "--overnight-hold", "ma200"]),
 ])
+# Tested negative (ticker-tuning doc, Finding 19): only run when asked for (setup report --setups).
+OPT_IN_SETUPS = ("drive fade long", "drive fade short")
+DEFAULT_SETUP_RUNS = [name for name in SETUP_RUNS if name not in OPT_IN_SETUPS]
 BOX_GROUPS = {"narrow-box break": "box break", "wide-box break": "box break", "fade": "box fade", "gap": "box gap"}
 FAMILIES = ({"pullback long", "pullback long C1"}, {"overnight always", "overnight ma200"})
 DEFAULT_MIN_TRADES = 5
@@ -132,7 +137,7 @@ def scan_ticker(ticker, start, end, cost_bps, feed_name, workers, earnings="off"
     halves = split_halves(sessions)
     # loaded once here, not in every worker, so parallel jobs never race on the calendar cache
     windows = ticker_earnings_windows(ticker, bars)
-    jobs = [(ticker, name, start, end, cost_bps, feed_name, earnings, windows) for name in SETUP_RUNS]
+    jobs = [(ticker, name, start, end, cost_bps, feed_name, earnings, windows) for name in DEFAULT_SETUP_RUNS]
     with ProcessPoolExecutor(max_workers=workers) as pool:
         outputs = dict(pool.map(_run_setup, jobs))
 
