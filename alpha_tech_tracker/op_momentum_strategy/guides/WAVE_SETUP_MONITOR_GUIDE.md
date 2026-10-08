@@ -202,6 +202,7 @@ The config lists setup names from the setup report. Each uses the scan's options
 |---|---|
 | box break / box fade / box gap | target or stop |
 | drive long / drive short | stop, else the close |
+| drive fade long / drive fade short | target (the first bar's other extreme) or stop |
 | pullback long / short / long C1 | stop until the target, then trail (32% give-back) |
 | bounce long / short | target or stop |
 | overnight always / ma200 | buy at the close, sell at the next open; skips the night into earnings |

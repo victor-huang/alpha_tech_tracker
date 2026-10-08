@@ -241,6 +241,8 @@ Retires once the wave in progress grows past the small-wave size.
 | `breakdown` | wide | first close below box low − 1 bar length | box low | entry − max(box height, median down-wave) |
 | `drive long` | — | first bar of the session closes green (`--opening-drive`) | first bar's low | entry + median up-wave |
 | `drive short` | — | first bar of the session closes red (`--opening-drive`) | first bar's high | entry − median down-wave |
+| `drive fade short` | — | first bar of the session closes green (`--drive-fade`) | first bar's high + 0.1 × its range | first bar's low |
+| `drive fade long` | — | first bar of the session closes red (`--drive-fade`) | first bar's low − 0.1 × its range | first bar's high |
 | `pullback long` | — | after a strong up wave touched its 38.2% retracement, first green bar closing between the 61.8% level and the impulse high (`--wave-pullback`) | 78.6% retracement | impulse high |
 | `pullback short` | — | mirror after a strong down wave (red bar) | 78.6% retracement | impulse low |
 | `bounce long` | — | first green bar after a deep down wave finishes (`--deep-bounce`) | wave low − 0.1 × wave size | half way back up the wave |
@@ -256,6 +258,13 @@ Retires once the wave in progress grows past the small-wave size.
   switch or repeat suppression. In testing they were traded with a *give-back* exit — out once
   32% of the best open profit is given back, after a move of at least 0.25 × risk — rather than
   the target; this script reports the target-based R/R only.
+- **Drive fade is off by default.** `--drive-fade both|long|short` bets against the first bar:
+  short after a green one, long after a red one, out at the bar's other extreme or beyond its
+  own extreme (`--drive-fade-stop-buffer`, default 0.1 × the bar's range). It is the opening
+  drive reversed with a stop of its own (the plain mirror of a drive trade has no stop).
+  Skipped when the close leaves no room to the target. Tested negative (ticker-tuning doc,
+  Finding 19), so it is opt-in: the setup report, scan and the monitor's `config --refresh`
+  skip it unless named with `--setups "drive fade long" "drive fade short"` (target exit).
 - **Wave pullback is off by default.** `--wave-pullback both|long|short` adds the pullback
   signals above. An impulse is a finished wave at least `--strong-wave-ratio` (2) × the median
   lookback wave size; waves force-ended at the session close don't count. A setup is cancelled
@@ -323,6 +332,8 @@ Signals the regime blocks are kept in `regime_skipped_signals` and counted in th
 | | `--reversion-box-bars` | 6 | Wide-box threshold in bar lengths (999 disables fades) |
 | Signals | `--stop-and-reverse` | off | Fire the breakout/breakdown that reverses a stopped wide-box fade |
 | | `--opening-drive` | `off` | First-bar signal: `both`, `long` (green bar) or `short` (red bar) |
+| | `--drive-fade` | `off` | Fade the first bar: `both`, `long` (after a red bar) or `short` (after a green bar) |
+| | `--drive-fade-stop-buffer` | 0.1 | Drive fade stop beyond the first bar's extreme, × its range |
 | | `--wave-pullback` | `off` | Pullback after a strong wave: `both`, `long` or `short` |
 | | `--strong-wave-ratio` | 2 | Impulse threshold in median lookback wave sizes |
 | | `--pullback-touch-fib` | 0.382 | Retracement the pullback must touch before an entry |

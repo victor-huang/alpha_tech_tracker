@@ -783,6 +783,50 @@ long) and overnight holds by their last-3-month total, trade the top 3 that are 
 least 3 trades (one per family). About +0.7% a month on the full capital in calibration and
 +0.9–1.5% a month in the test on 20 tickers; most of the return comes from whichever tickers trend.
 
+## Finding 19 — Betting against losing setups: reversals and the drive fade (negative)
+
+**Reversing setups that lost money.** A reversed setup takes the opposite side at the same entry and
+exits at the same moment (net % = −original − 0.10% for costs on both sides). Added to the weekly
+ranking (20 tickers, Finding 18 data) as a candidate whenever a setup's 3-month total was ≤ −X%,
+the reversed picks lost money at every threshold, in both periods, raw and capped:
+
+| Ranking | Reverse below | Calibration | Test | Reversed picks (calibration / test) |
+|---|---|---|---|---|
+| all setups | — | +$10,449 | +$8,294 | — |
+| | −10% | +$4,290 | +$4,805 | −$5,281 / −$2,919 |
+| R1 | — | +$12,962 | +$9,072 | — |
+| | −10% | +$6,370 | +$5,676 | −$5,236 / −$2,862 |
+
+Setups down >10% over 3 months earned about +0.4% the next week on average (they bounced), so the
+reversal lost about 0.5% per pick-week. FN's opening drive long (−23.4% Jul 10 – Oct 7 2026)
+illustrates both problems: most of the loss came in July, before a −10% rule could see it
+(reversing from the first eligible week, Aug 10, made +3.7%, not the hindsight +20.2%), and the plain
+mirror of a drive trade has no stop — it caps the win at the original's stop and takes the full
+move on trend days (Oct 6: −10.5% in one week).
+
+**The drive fade** (`--drive-fade`, the opening drive reversed with its own stop: short after a green
+first bar, stop above its high + 0.1 × its range, target its low; mirror for red bars). On 21 tickers
+(the Finding 18 pool + FN), Jun 2025 – Oct 2026, target exit: drive fade short −299.8% over 3,441
+trades and drive fade long −207.4% over 3,668, each positive on 3 of 21 tickers. A positive 3-month
+record did not help (next week −0.25% calibration, −0.23% test). Added to the ranking it lowered
+every result (R0 test +$9,272 → +$7,484; R1 +$10,005 → +$9,316).
+
+**Drive fade variants** (`analysis_scripts/wave_drive_fade_variants.py`, 68,340 simulated trades:
+4 exits × 3 stop cushions × 18 filters known at 9:35, calibration Sep 2 2025 – Jul 2 2026, test
+Jul 6 – Oct 6 2026). Every exit and stop lost in both periods without a filter (best: −224.9% /
+−147.6%); a wider stop or holding to the close was worse. Of 168 variants with ≥ 150 calibration
+trades, 3 were positive in calibration and none in the test (best: fading gaps ≥ 0.5 ADR, +36% →
+−75%). Filters tried: stretch from the 5-min MA200 (5/10/20 bar ranges), correction (below MA50,
+above MA200), downtrend, with / against the daily trend, 20-day return, big first bars, gaps.
+Correction + MA200 stretch ≥ 10 was the only one positive in both periods (+22.1% on 104 trades,
++4.6% on 41) — too few trades to trade; worth re-checking on a later window. "With the daily trend
++ stretch" lost in calibration and won in the test: regime-dependent, like the overnight hold.
+
+**Conclusion:** the opening move tends to continue, and a setup's losing streak tends to end
+rather than continue — betting against either did not work out of sample. The drive fade stays in
+the code but is opt-in (`OPT_IN_SETUPS`): the setup report, scan and `config --refresh` skip it
+unless named with `--setups`, so a lucky 3 months cannot put it into the monitor's top 3.
+
 ## Recommendations
 
 1. **Choose tickers before tuning settings.** The same configuration ranges from +156.66% (SNDK)
@@ -822,6 +866,8 @@ least 3 trades (one per family). About +0.7% a month on the full capital in cali
     2026 test. The monitor does this with `config --refresh --types long overnight --min-trades 3`.
 15. **Prefer a broad pool (20+ liquid tickers) over filtering it** — momentum ticker filters, MA50
     gates and pausing setup types after a bad month all failed out of sample (Finding 18).
+16. **Don't bet against losing setups** — neither reversing them nor fading the opening drive held
+    up out of sample (Finding 19).
 
 ## Reproduction
 
