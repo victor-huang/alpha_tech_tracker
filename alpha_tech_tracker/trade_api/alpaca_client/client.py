@@ -4,7 +4,7 @@ import os
 import random
 import string
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 
 from alpaca.trading.client import TradingClient
 from alpaca.data.historical import StockHistoricalDataClient, OptionHistoricalDataClient
@@ -13,9 +13,15 @@ from alpaca.trading.requests import (
     LimitOrderRequest,
     GetOptionContractsRequest,
 )
-from alpaca.trading.enums import OrderSide, TimeInForce
+from alpaca.trading.enums import AssetStatus, OrderSide, TimeInForce
 from alpaca.data.enums import DataFeed
-from alpaca.data.requests import StockLatestQuoteRequest, OptionLatestQuoteRequest, OptionLatestTradeRequest
+from alpaca.data.requests import (
+    OptionBarsRequest,
+    OptionLatestQuoteRequest,
+    OptionLatestTradeRequest,
+    StockLatestQuoteRequest,
+)
+from alpaca.data.timeframe import TimeFrame
 
 from alpha_tech_tracker.trade_api.execution_client import ExecutionClient, InsufficientFundsError
 
@@ -316,6 +322,7 @@ class AlpacaAPIClient(ExecutionClient):
         strike_price_lte=None,
         limit=100,
         fetch_all_pages=False,
+        status=None,
     ):
         contracts = []
         page_token = None
@@ -331,6 +338,7 @@ class AlpacaAPIClient(ExecutionClient):
                 strike_price_lte=strike_price_lte,
                 limit=limit,
                 page_token=page_token,
+                status=status,
             )
             response = self._trading_client.get_option_contracts(request)
             contracts.extend(
@@ -364,6 +372,42 @@ class AlpacaAPIClient(ExecutionClient):
             }
             for contract in contracts
         ]
+
+    def get_option_contracts_in_window(
+        self, underlying_symbol, expiration_date_gte, expiration_date_lte
+    ):
+        """Every contract expiring in the window, including ones already expired,
+        so a past session's volume is not undercounted by weeklies that have
+        since expired.
+        """
+        contracts = []
+        for status in (AssetStatus.ACTIVE, AssetStatus.INACTIVE):
+            contracts.extend(
+                self.get_options_contracts(
+                    underlying_symbol,
+                    expiration_date_gte=expiration_date_gte,
+                    expiration_date_lte=expiration_date_lte,
+                    limit=10000,
+                    fetch_all_pages=True,
+                    status=status,
+                )
+            )
+        return contracts
+
+    def get_option_daily_volumes(self, option_symbols, start_date, end_date, chunk_size=100):
+        """{occ_symbol: {session_date: volume}} from daily option bars."""
+        volumes = {}
+        for i in range(0, len(option_symbols), chunk_size):
+            request = OptionBarsRequest(
+                symbol_or_symbols=option_symbols[i : i + chunk_size],
+                timeframe=TimeFrame.Day,
+                start=datetime.combine(start_date, datetime.min.time()),
+                end=datetime.combine(end_date + timedelta(days=1), datetime.min.time()),
+            )
+            bars = self._option_data_client.get_option_bars(request)
+            for symbol, rows in bars.data.items():
+                volumes[symbol] = {bar.timestamp.date(): int(bar.volume) for bar in rows}
+        return volumes
 
     def get_options_open_interest(
         self,

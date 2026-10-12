@@ -1,10 +1,12 @@
 """Write one dated watch-list folder: stats text, candidates, option OI, chart."""
 
 import argparse
+import io
 import json
 import subprocess
 import sys
 from argparse import Namespace
+from contextlib import redirect_stdout
 from pathlib import Path
 
 from alpha_tech_tracker.op_momentum_strategy.analysis_scripts import ticker_stats_report as R
@@ -46,19 +48,29 @@ def _report_args(tickers, weeks, end, bands, skip_options=False):
     )
 
 
-def write_stats_text(out_dir, tickers, weeks, end, chart_path):
-    """Capture the report exactly as the CLI prints it."""
+def write_stats_text(out_dir, tickers, weeks, end, chart_path, results):
+    """Capture the report as the CLI prints it. The options-volume table is
+    rendered from the already-fetched `results` rather than fetched a second
+    time by the subprocess.
+    """
     command = [
         sys.executable, "-m", REPORT_MODULE,
         "--tickers", *tickers,
         "--weeks", *[str(w) for w in weeks],
         "--chart-out", str(chart_path),
+        "--skip-option-volume",
     ]
     if end:
         command += ["--end", end]
     completed = subprocess.run(command, capture_output=True, text=True)
+    option_volume = io.StringIO()
+    with redirect_stdout(option_volume):
+        R._print_option_volume_table(
+            results, R.OPTION_VOLUME_BASELINE, R.OPTION_VOLUME_MAX_DTE,
+            R.OPTION_VOLUME_STRIKES, R.OPTION_VOLUME_SPIKE,
+        )
     target = out_dir / "ticker_stats.txt"
-    target.write_text(completed.stdout + completed.stderr)
+    target.write_text(completed.stdout + option_volume.getvalue() + completed.stderr)
     return target, completed.returncode
 
 
@@ -162,18 +174,22 @@ def _candidate_table(rows):
     if not rows:
         return "_none enterable_\n"
     header = (
-        "| tkr | intraday hit | EOD hit | avg 15:50 | worst | trend | C/P | vol |\n"
-        "|---|---:|---:|---:|---:|---|---:|---:|\n"
+        "| tkr | intraday hit | EOD hit | avg 15:50 | worst | trend | C/P | vol | opt vol |\n"
+        "|---|---:|---:|---:|---:|---|---:|---:|---:|\n"
     )
     lines = []
     for row in rows:
         eod = f"{row['eod_hit']:.0f}%" if row["eod_hit"] is not None else "n/a"
         vol = f"{row['vol_ratio']:.2f}x" if row["vol_ratio"] else "n/a"
         ratio = f"{row['call_put']:.2f}" if row["call_put"] is not None else "n/a"
+        opt_vol = (
+            f"{row['option_volume_ratio']:.2f}x"
+            if row.get("option_volume_ratio") is not None else "n/a"
+        )
         lines.append(
             f"| {row['ticker']} | {row['intraday_hit']:.0f}% | {eod} |"
             f" {row['edge']:+.2f}% | {row['worst']:+.2f}% | {row['trend']} |"
-            f" {ratio} | {vol} |"
+            f" {ratio} | {vol} | {opt_vol} |"
         )
     return header + "\n".join(lines) + "\n"
 
@@ -185,7 +201,40 @@ def _blocked_note(blocked):
     return f"\nBlocked: {', '.join(parts)}\n"
 
 
-def write_watchlist(out_dir, enterable, blocked, context, week_count):
+def _ratio_text(value):
+    return f"{value:.1f}x" if value is not None else "n/a"
+
+
+def _option_volume_spike_line(results):
+    spikes = []
+    for ticker, stats in (results or {}).items():
+        row = stats.get("option_volume") or {}
+        if row.get("spike_sides"):
+            spikes.append(
+                f"{ticker} ({_ratio_text(row['total_ratio'])} total,"
+                f" calls {_ratio_text(row['call_ratio'])}, puts {_ratio_text(row['put_ratio'])})"
+            )
+    if not spikes:
+        return "No options-volume spikes (2x+ vs the prior 10 sessions).\n"
+    return f"**Options-volume spikes**: {', '.join(spikes)}\n"
+
+
+def dump_option_volume(out_dir, results, context):
+    """Daily option volume vs its baseline per ticker — historical, unlike OI."""
+    payload = {"as_of": str(context["end_date"]), "tickers": {}}
+    for ticker, stats in results.items():
+        row = stats.get("option_volume")
+        if row is None:
+            continue
+        payload["tickers"][ticker] = {
+            key: (str(value) if key == "session" else value) for key, value in row.items()
+        }
+    target = out_dir / "option_volume.json"
+    target.write_text(json.dumps(payload, indent=2))
+    return target
+
+
+def write_watchlist(out_dir, enterable, blocked, context, week_count, results=None):
     allows = context["benchmark_allows_longs"]
     gate_line = (
         f"{context['regime_symbol']} regime unavailable" if allows is None
@@ -200,6 +249,7 @@ Ranked over the trailing {week_count} week(s). **{gate_line}**
 Direction is decided by each ticker's opening range at 09:45, not in advance. A
 candidate only trades if its OR closes on the biased side.
 
+{_option_volume_spike_line(results)}
 ## Long candidates
 
 {_candidate_table(enterable['long'][:SHORTLIST_SIZE])}{_blocked_note(blocked['long'])}
@@ -224,8 +274,10 @@ captures near zero — any edge is in the exit, not the pick. See
 | file | |
 |---|---|
 | `ticker_stats.txt` | full report output |
-| `option_open_interest.json` | OI at bands {BANDS} for the {context['expiry']} expiry |
+| `option_open_interest.json` | OI at bands {BANDS} for the {context['expiry']} expiry — live-ATM and week-pinned skew per ticker |
+| `option_volume.json` | day's call/put option volume vs the prior 10-session average |
 | `range_distribution.pdf` | 20-session daily range% histogram per ticker |
+| `hold_window_winrate.txt` | per-ticker win rate + median return at +15m/+30m/+1h/+2h/+5h/EOD |
 """
     target = out_dir / "watchlist.md"
     target.write_text(body)
@@ -271,7 +323,7 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
 
     stats_path, code = write_stats_text(
-        out_dir, args.tickers, args.weeks, args.end, out_dir / "range_distribution.pdf"
+        out_dir, args.tickers, args.weeks, args.end, out_dir / "range_distribution.pdf", results
     )
     if code != 0:
         print(f"WARNING: report exited {code}; see {stats_path}")
@@ -279,7 +331,8 @@ def main():
     enterable, blocked = build_shortlist(
         results, rank_weeks, context["benchmark_allows_longs"]
     )
-    watchlist_path = write_watchlist(out_dir, enterable, blocked, context, rank_weeks)
+    watchlist_path = write_watchlist(out_dir, enterable, blocked, context, rank_weeks, results)
+    option_volume_path = dump_option_volume(out_dir, results, context)
     oi_path = (
         dump_option_open_interest(out_dir, results, context)
         if not args.skip_options else None
@@ -294,7 +347,8 @@ def main():
             print(f"WARNING: hold-window win-rate screener exited {wr_code}; see {winrate_path}")
 
     print(f"\nwatch-list log written to {out_dir}")
-    for path in (stats_path, watchlist_path, oi_path, winrate_path, out_dir / "range_distribution.pdf"):
+    for path in (stats_path, watchlist_path, oi_path, option_volume_path, winrate_path,
+                 out_dir / "range_distribution.pdf"):
         if path and path.exists():
             print(f"  {path.name:28} {path.stat().st_size:>9,} bytes")
     for side in ("long", "short"):

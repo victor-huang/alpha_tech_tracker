@@ -1,6 +1,8 @@
 """Per-ticker opening-range, option-skew, volume and volatility stats."""
 
 import argparse
+import bisect
+from collections import defaultdict
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
 
@@ -40,6 +42,10 @@ SESSIONS_PER_WEEK = 5
 SNAPSHOT_CHECKPOINTS_PT = ["10:00", "11:20"]
 PT_TO_ET_HOURS = 3  # fixed offset used throughout this project for PT checkpoints
 PIN_MA_PERIOD = 50
+OPTION_VOLUME_BASELINE = 10
+OPTION_VOLUME_MAX_DTE = 45
+OPTION_VOLUME_STRIKES = 20
+OPTION_VOLUME_SPIKE = 2.0
 
 
 def _fmt_ratio(value):
@@ -317,6 +323,7 @@ def build_watchlist(results, week_count, min_sessions=2):
                 "trend": trend[max(trend)]["label"] if trend else "n/a",
                 "call_put": band["call_put"] if band else None,
                 "vol_ratio": (stats["volume"] or {}).get("ratio"),
+                "option_volume_ratio": (stats.get("option_volume") or {}).get("total_ratio"),
                 "gate": "EXT" if blocked else ("REGIME" if regime_blocked else "ok"),
             }
         )
@@ -628,6 +635,143 @@ def compute_week_pin_price(daily: pd.DataFrame, session_date: date, ma_period=PI
     return float(value), pin_asof
 
 
+def _strike_window(strikes, spot, strikes_around):
+    """(low, high) strike bounds `strikes_around` listed strikes either side of spot."""
+    atm = bisect.bisect_left(strikes, spot)
+    if atm == len(strikes) or (atm > 0 and spot - strikes[atm - 1] <= strikes[atm] - spot):
+        atm -= 1
+    return strikes[max(0, atm - strikes_around)], strikes[min(len(strikes) - 1, atm + strikes_around)]
+
+
+def _counted_sessions(contract, strikes, closes, max_dte, strikes_around, window_cache):
+    """Sessions where this contract counts: 0..max_dte days to expiry and within
+    `strikes_around` strikes of that session's own close.
+    """
+    expiry = date.fromisoformat(contract["expiration_date"])
+    for session, close in closes.items():
+        if not 0 <= (expiry - session).days <= max_dte:
+            continue
+        key = (contract["expiration_date"], session)
+        if key not in window_cache:
+            window_cache[key] = _strike_window(strikes, close, strikes_around)
+        low, high = window_cache[key]
+        if low <= contract["strike_price"] <= high:
+            yield session
+
+
+def _strikes_by_expiry(contracts):
+    strikes = defaultdict(set)
+    for contract in contracts:
+        strikes[contract["expiration_date"]].add(contract["strike_price"])
+    return {expiry: sorted(ks) for expiry, ks in strikes.items()}
+
+
+def _contract_side(option_type):
+    value = getattr(option_type, "value", option_type)
+    return "call" if str(value).lower() == "call" else "put"
+
+
+def aggregate_option_volume(contracts, volumes, closes, max_dte=OPTION_VOLUME_MAX_DTE,
+                            strikes_around=OPTION_VOLUME_STRIKES):
+    """{session: {"call": n, "put": n}} summed over the contracts that count on
+    each session. Same-day-expiry contracts are kept: dropping them makes every
+    weekly-expiry Friday look artificially quiet.
+    """
+    strikes_by_expiry = _strikes_by_expiry(contracts)
+    totals = defaultdict(lambda: {"call": 0, "put": 0})
+    window_cache = {}
+    for contract in contracts:
+        daily = volumes.get(contract["symbol"])
+        if not daily:
+            continue
+        side = _contract_side(contract["option_type"])
+        for session in _counted_sessions(
+            contract, strikes_by_expiry[contract["expiration_date"]], closes,
+            max_dte, strikes_around, window_cache,
+        ):
+            totals[session][side] += daily.get(session, 0)
+    return dict(totals)
+
+
+def compute_option_volume_stats(per_session, session_date, baseline_sessions=OPTION_VOLUME_BASELINE,
+                                spike_mult=OPTION_VOLUME_SPIKE):
+    """Latest session's call/put/total volume against the average of the prior
+    `baseline_sessions` sessions. Monthly expiry days are left out of the
+    baseline because the expiring monthly inflates their volume.
+    """
+    sessions = sorted(d for d in per_session if d <= session_date)
+    if len(sessions) < 2:
+        return None
+    latest = sessions[-1]
+    prior = [d for d in sessions[:-1] if main_monthly_expiry(d) != d]
+    baseline = prior[-baseline_sessions:]
+    if not baseline:
+        return None
+
+    def average(side):
+        return sum(per_session[d][side] for d in baseline) / len(baseline)
+
+    def ratio(value, base):
+        return value / base if base else None
+
+    calls, puts = per_session[latest]["call"], per_session[latest]["put"]
+    call_avg, put_avg = average("call"), average("put")
+    stats = {
+        "session": latest,
+        "baseline_sessions": len(baseline),
+        "calls": calls,
+        "puts": puts,
+        "total": calls + puts,
+        "call_avg": call_avg,
+        "put_avg": put_avg,
+        "total_avg": call_avg + put_avg,
+        "call_ratio": ratio(calls, call_avg),
+        "put_ratio": ratio(puts, put_avg),
+        "total_ratio": ratio(calls + puts, call_avg + put_avg),
+        "volume_put_call": ratio(puts, calls),
+        "monthly_expiry_session": main_monthly_expiry(latest) == latest,
+    }
+    stats["spike_sides"] = [
+        side for side in ("total", "call", "put")
+        if stats[f"{side}_ratio"] is not None and stats[f"{side}_ratio"] >= spike_mult
+    ]
+    return stats
+
+
+def fetch_option_volume_stats(client, ticker, daily, session_date, baseline_sessions,
+                              max_dte, strikes_around, spike_mult):
+    """Options-volume spike stats for one ticker, or {"error": ...}."""
+    if daily.empty:
+        return {"error": "no daily bars"}
+    start = session_date - timedelta(days=max(21, baseline_sessions * 2 + 1))
+    closes = {
+        (stamp.date() if hasattr(stamp, "date") else stamp): float(close)
+        for stamp, close in daily["Close"].items()
+    }
+    closes = {d: c for d, c in closes.items() if start <= d <= session_date}
+    try:
+        contracts = client.get_option_contracts_in_window(
+            ticker, start, session_date + timedelta(days=max_dte)
+        )
+        strikes_by_expiry = _strikes_by_expiry(contracts)
+        window_cache = {}
+        counted = [
+            contract for contract in contracts
+            if next(_counted_sessions(
+                contract, strikes_by_expiry[contract["expiration_date"]], closes,
+                max_dte, strikes_around, window_cache,
+            ), None) is not None
+        ]
+        volumes = client.get_option_daily_volumes(
+            [contract["symbol"] for contract in counted], start, session_date
+        )
+    except Exception as exc:
+        return {"error": f"{type(exc).__name__}: {exc}"}
+    per_session = aggregate_option_volume(contracts, volumes, closes, max_dte, strikes_around)
+    return compute_option_volume_stats(per_session, session_date, baseline_sessions, spike_mult) \
+        or {"error": "not enough sessions with option volume"}
+
+
 def compute_option_skew(client, ticker, expiry, bands, spot):
     """Call/put OI ratios per strike band. OI is the prior session's OCC figure."""
     widest = max(bands)
@@ -824,6 +968,42 @@ def _print_option_skew_pinned_table(results, ma_period=PIN_MA_PERIOD):
         print(f"\nopen interest as of: {', '.join(oi_dates)}")
 
 
+def _print_option_volume_table(results, baseline_sessions, max_dte, strikes_around, spike_mult):
+    print("\n" + "=" * 112)
+    print(f"OPTIONS VOLUME   (calls + puts expiring in 0-{max_dte} days, +/-{strikes_around} strikes of "
+          f"each session's close, vs the prior {baseline_sessions}-session average)")
+    print(f"SPIKE = a side at {spike_mult:g}x or more of its own average;"
+          " monthly expiry days are left out of the baseline")
+    print("=" * 112)
+    print(
+        f"{'tkr':6} {'session':>11} {'calls':>11} {'puts':>11} {'total':>11}"
+        f" {'call x':>7} {'put x':>7} {'total x':>8} {'vol P/C':>8}  flag"
+    )
+
+    def fmt_x(value):
+        return f"{value:.2f}x" if value is not None else "n/a"
+
+    rows = []
+    for ticker, stats in results.items():
+        row = stats.get("option_volume")
+        if not row:
+            continue
+        if "error" in row:
+            print(f"{ticker:6} ERROR: {row['error'][:80]}")
+            continue
+        rows.append((ticker, row))
+    for ticker, row in sorted(rows, key=lambda pair: -(pair[1]["total_ratio"] or 0)):
+        flag = "SPIKE " + "+".join(row["spike_sides"]) if row["spike_sides"] else ""
+        if row.get("monthly_expiry_session"):
+            flag = (flag + " (monthly expiry day)").strip()
+        vol_pc = f"{row['volume_put_call']:.2f}" if row["volume_put_call"] is not None else "n/a"
+        print(
+            f"{ticker:6} {str(row['session']):>11} {row['calls']:>11,} {row['puts']:>11,}"
+            f" {row['total']:>11,} {fmt_x(row['call_ratio']):>7} {fmt_x(row['put_ratio']):>7}"
+            f" {fmt_x(row['total_ratio']):>8} {vol_pc:>8}  {flag}"
+        )
+
+
 def _print_volume_table(results, or_bars):
     print("\n" + "=" * 104)
     print(
@@ -978,6 +1158,26 @@ def parse_args():
              f"(default: {' '.join(SNAPSHOT_CHECKPOINTS_PT)}); converted to ET "
              f"with a fixed +{PT_TO_ET_HOURS}h offset",
     )
+    parser.add_argument(
+        "--skip-option-volume", action="store_true",
+        help="Skip the options-volume spike table (fetches daily option bars per ticker)",
+    )
+    parser.add_argument(
+        "--option-volume-baseline", type=int, default=OPTION_VOLUME_BASELINE,
+        help=f"Prior sessions averaged for the options-volume baseline (default: {OPTION_VOLUME_BASELINE})",
+    )
+    parser.add_argument(
+        "--option-volume-dte", type=int, default=OPTION_VOLUME_MAX_DTE,
+        help=f"Count contracts expiring 0..N days out (default: {OPTION_VOLUME_MAX_DTE})",
+    )
+    parser.add_argument(
+        "--option-volume-strikes", type=int, default=OPTION_VOLUME_STRIKES,
+        help=f"Strikes either side of each session's close (default: {OPTION_VOLUME_STRIKES})",
+    )
+    parser.add_argument(
+        "--option-volume-spike", type=float, default=OPTION_VOLUME_SPIKE,
+        help=f"Flag a side at this multiple of its average (default: {OPTION_VOLUME_SPIKE:g})",
+    )
     return parser.parse_args()
 
 
@@ -1063,6 +1263,14 @@ def collect_results(args):
                 compute_option_skew(client, ticker, expiry, args.bands, pin_price)
                 if pin_price else {"error": "insufficient history for MA50 pin"}
             ),
+            "option_volume": None if getattr(args, "skip_option_volume", False)
+            else fetch_option_volume_stats(
+                client, ticker, daily_bars, end_date,
+                getattr(args, "option_volume_baseline", OPTION_VOLUME_BASELINE),
+                getattr(args, "option_volume_dte", OPTION_VOLUME_MAX_DTE),
+                getattr(args, "option_volume_strikes", OPTION_VOLUME_STRIKES),
+                getattr(args, "option_volume_spike", OPTION_VOLUME_SPIKE),
+            ),
         }
 
     return results, {
@@ -1103,6 +1311,11 @@ def main():
     if not args.skip_options:
         _print_option_skew_table(results)
         _print_option_skew_pinned_table(results)
+    if not args.skip_option_volume:
+        _print_option_volume_table(
+            results, args.option_volume_baseline, args.option_volume_dte,
+            args.option_volume_strikes, args.option_volume_spike,
+        )
     _print_volume_table(results, args.or_bars)
     _print_movement_table(results)
 

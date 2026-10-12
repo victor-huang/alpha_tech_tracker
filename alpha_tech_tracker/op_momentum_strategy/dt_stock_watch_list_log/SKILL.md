@@ -13,7 +13,7 @@ export PYTHONPATH=/Users/victorhuang/work/alpha_tech_tracker
 python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.dt_watch_list_log
 ```
 
-That writes five files into `dt_stock_watch_list_log/<as_of-date>/` and prints the
+That writes six files into `dt_stock_watch_list_log/<as_of-date>/` and prints the
 mechanical candidate lists. Takes 1-3 minutes; longer on a cold cache.
 
 Useful flags:
@@ -27,6 +27,7 @@ Useful flags:
 | `--skip-options` | off | **required with a past `--end`** (see Pitfalls) |
 | `--wr-lookback` | `10` | sessions of history for the hold-window win-rate table (10 ≈ 2 weeks) |
 | `--skip-winrate` | off | skip the hold-window win-rate table |
+| report `--skip-option-volume` | off | skip the options-volume spike table (adds ~1-2 min per run) |
 
 ## What lands in the folder
 
@@ -35,6 +36,7 @@ Useful flags:
 | `ticker_stats.txt` | the full report, exactly as the CLI prints it |
 | `watchlist.md` | gate state, mechanical long/short candidates, review notes |
 | `option_open_interest.json` | OI at strike bands 12/16/20 for the main monthly expiry — `live_atm` (re-centered on today's spot) and `week_pinned` (ATM window fixed to last Friday's 50-session MA, see Pitfalls) per ticker |
+| `option_volume.json` | day's call/put option volume vs the prior 10-session average, with spike flags |
 | `range_distribution.pdf` | 20-session daily range% histogram per ticker |
 | `hold_window_winrate.txt` | per-ticker win rate + median return at +15m/+30m/+1h/+2h/+5h/EOD, trailing `--wr-lookback` sessions (from `ma_open_range_momentum_screener.py backtest`) |
 
@@ -56,6 +58,11 @@ candidate using the other columns, and say why. Check each against:
   move even with no real change in open interest (see Pitfalls).
 - **vol** — opening volume ≥1.5x its own baseline was the strongest quality filter
   found in backtesting; below 1x is a caution.
+- **opt vol** — the day's option volume vs its prior 10-session average (contracts
+  expiring 0-45 days out, ±20 strikes of each session's own close). 2x+ is flagged
+  as a spike at the top of `watchlist.md`; read the call and put ratios separately —
+  a put-led spike and a call-led spike mean different things. Monthly expiry days
+  are left out of the baseline and marked when they are the session itself.
 - **intraday hit vs EOD hit** — high EOD with low intraday means small grinding wins,
   not momentum. Low EOD with high intraday means it travels then gives it back.
 - **worst** — the worst session on that side. A positive `worst` means no losing
