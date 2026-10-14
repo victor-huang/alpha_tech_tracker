@@ -56,6 +56,32 @@ earlier findings: [`WAVE_RISK_REWARD_FINDINGS.md`](WAVE_RISK_REWARD_FINDINGS.md)
   a ticker, picks exits on the first half of the period, checks them on the second, and recommends
   the setups that made money in both. AMAT's recommendation changed with its regime (overnight
   hold when its gains came overnight, intraday longs when they came in-session).
+- **Back to 2020 (Findings 21–24, split-adjusted bars):** the weekly top-3 rotation that worked in
+  2025–26 made only +3.3% over 2020–24 (all types) and about +12% (R1) on the allocated capital.
+  Every short, box and bounce setup lost money in almost every year; only overnight holds and drive
+  long made money, and both are long exposure. A choppy-ticker filter, a 10-session track-record
+  filter and an MA50 gate did not help (Findings 20–21).
+- **What does carry forward (Findings 22–24, chosen on 2020–22, checked on 2023–26):** overnight
+  MA200 on the 2 strongest tickers (furthest above their 200-day MA and up most today), only when
+  QQQ is above its 200-day MA, plus drive long on the 2 most volatile tickers that trigger. Up in 6
+  of 7 years on four $10k slots (2022 −7%, 2021/2023/2025 +12–18%, 2024 +41%, 2020 +81%,
+  2026 YTD +93%, +69% without MRNA), worst drawdown −$9.9k. **But see Finding 30: these numbers
+  are on a ticker list chosen with hindsight.**
+- **Without hindsight in the ticker list the edge mostly disappears (Finding 30):** on the actual
+  Nasdaq-100's top 8 by the previous month's return, the same strategy made +70% compounded Jan 2020 –
+  Oct 2026 (QQQ +253%, SPY +142%), vs +586% on the research list. Its advantage is defensive (2022
+  −2.5% vs QQQ −33%); no setup earns in a bear market, so stepping aside is the defense (Finding 29).
+- **The intraday clock is the same every year since 2020 (Finding 26):** the opening run tops at
+  10:00, the morning low lands at 10:35–10:45 and its rebound tops at 11:35–11:45; 72–76% of the
+  day's strongest up waves start before 11:30. Drive long's 65% failure rate in 2026 is normal, and
+  a bad week does not predict the next (Finding 25).
+- **But the clock can't be traded from a confirmed turn (Finding 27):** the morning-dip "second wave"
+  entry (`--second-wave long`) lost in every form tried, and selling drive long earlier than the close
+  always did worse.
+- **Drive long's stop (Finding 28):** re-entering after the stop-out doesn't pay; the first bar's low is
+  the right stop on the 2 most volatile tickers, while a 2% stop suits drive long on every signal
+  (+28% profit in 2023–26 at about the same drawdown). Trading it only while the ticker is above its
+  daily MA20 cut drawdowns on 22 of 28 tickers but total profit from +474% to +178%.
 
 ## Method
 
@@ -827,6 +853,519 @@ rather than continue — betting against either did not work out of sample. The 
 the code but is opt-in (`OPT_IN_SETUPS`): the setup report, scan and `config --refresh` skip it
 unless named with `--setups`, so a lucky 3 months cannot put it into the monitor's top 3.
 
+## Finding 20 — Drive long vs drive short as a trend read, and the choppy-ticker filter (negative)
+
+Studies run 2026-10-09/10 on the 21 tickers of the two setup tapes (the EC2 seven, the 13-ticker set
+and LLY), drive long and drive short held to the close, 5 bps.
+
+**Live week check (Oct 5–9 2026).** The EC2 monitor's drive alerts for Oct 7–9 summed to +20.7%
+against +21.2% in the backtest of the same days; the gap is the 15:45 reference price used for the
+MOC sell alert. Over the week the 13 tickers whose top 3 included a drive setup made +31.3% (52
+trades, 42% winners) vs +29.9% for every drive trade on all 21 (105 trades).
+
+**Long minus short P&L reads the in-session trend.** Over Sep 21 – Oct 9 2026 (15 sessions), a
+ticker's drive-long minus drive-short total correlated +0.84 with its summed open-to-close move,
++0.66 with its close-to-close return and −0.53 with its overnight gaps — by construction, since both
+trades run from 09:35 to the close. Tickers that rose mostly overnight (SNPS +33%, gaps +20%) or
+gapped up and sold off in session (CRWV) read the other way. Both sides losing marked a choppy
+ticker (DDOG +27% on the period, drive long −8.8%, short −7.1%).
+
+**Choppy filter: skip a ticker's drive trades when both sides lost over the last N sessions.**
+Weekly decisions, 27 tickers. Next-week result of the drive setups a 3-month ranking would trade,
+average per setup-week, choppy vs not:
+
+| Period | 10 sessions | 15 sessions | 20 sessions |
+|---|---|---|---|
+| Jan–Aug 2025 (new data) | −0.06% vs −0.28% | +0.16% vs −0.33% | +0.24% vs −0.35% |
+| Sep–Dec 2025 | −0.21% vs −0.05% | −0.44% vs −0.00% | −0.39% vs −0.02% |
+| Sep 2025 – Jul 2026 | −0.07% vs +0.17% | +0.12% vs +0.11% | +0.22% vs +0.09% |
+| Jul – Oct 2026 | −0.22% vs +0.63% | −0.26% vs +0.57% | +0.20% vs +0.49% |
+
+The sign flips between periods and between look-backs (the 15-session filter would have cost 27
+points in Sep 2025 – Jul 2026). Not adopted: a short losing streak on both sides doesn't predict the
+next week. Side result: in Jan–Aug 2025 the drive setups a 3-month ranking would pick lost money
+(−175% summed over 785 setup-weeks) — the first sign that the 2025–26 results were regime-specific.
+
+## Finding 21 — The monitor's approach back to 2020 (split-adjusted)
+
+Setup reports for 2020–2024, one per year (each starting the previous Sep 15 for the look-back),
+on split-adjusted Alpaca bars (`Adjustment.SPLIT`, cached separately from the unadjusted cache, so
+CRWD can be included). Tickers per year are those listed by the previous October: 21 in 2020 (AMAT
+AMD AVGO CHTR CLS CRM CRWD DDOG FN GOOGL LLY MDB META MRNA MSFT NVDA QQQ SHOP SNPS SPOT TSLA), + PLTR
+SNOW in 2021, + APP COIN in 2022–23, + ARM in 2024. Yahoo has no earnings history this far back for
+some tickers, so their overnight holds include earnings nights.
+
+**Weekly top-3 rotation** (63-session look-back, re-picked every 5 sessions, $10k per ticker in 3
+sleeves; return on the allocated capital):
+
+| Year | Tickers | R0 (all types, the monitor) | R1 (long + overnight) | Ticker buy & hold (avg) | QQQ |
+|---|---|---|---|---|---|
+| 2020 | 21 | +3.4% | +6.6% | +131% | +46% |
+| 2021 | 23 | +2.3% | +2.9% | +43% | +26% |
+| 2022 | 25 | −4.2% | −3.8% | −44% | −33% |
+| 2023 | 25 | −2.3% | +0.3% | +110% | +52% |
+| 2024 | 26 | +4.5% | +6.4% | +79% | +26% |
+
+All of the profit came from overnight holds (+8.6, +4.5, −2.1, −0.3, +6.3 points under R0); long
+intraday, short intraday and box setups were flat to negative every year. Picking a ticker's best
+recent setup did not carry forward the way it did in Sep 2025 – Oct 2026 (Findings 17–18).
+
+**Every setup, every signal** (fixed exits, $k at $10k per trade):
+
+| Setup | 2020 | 2021 | 2022 | 2023 | 2024 | Sep 2025 – Oct 2026 |
+|---|---|---|---|---|---|---|
+| overnight ma200 | +57.9 | +13.6 | −26.2 | −10.6 | +57.7 | +59.5 |
+| overnight always | +55.3 | +27.6 | −112.5 | −6.8 | +73.9 | +78.1 |
+| drive long | −0.2 | +5.0 | −11.9 | +5.8 | +7.0 | +36.2 |
+| pullback long C1 | −2.8 | +3.7 | −1.0 | +6.4 | −2.6 | 0.0 |
+| pullback long | −7.4 | +1.0 | −1.1 | +3.7 | −6.2 | −2.3 |
+| drive short | −33.7 | −13.8 | +14.6 | −32.6 | −17.7 | +0.8 |
+| bounce long / short, box break / fade / gap, pullback short | negative in every period except pullback short 2021 (+1.0) | | | | | |
+
+**Drive long and pullback long with filters** ($10k per trade, return on the money deployed): every
+signal, drive long made +$5.7k over 14,927 trades in 2020–24 (+0.004% per trade) and pullback long
+−$10.0k. Trading a setup only when it made money on that ticker over the previous 10 sessions made
+both worse (−$10.5k / −$8.6k). Only taking signals with the ticker above its 50-day MA improved drive
+long to +$14.9k over 9,146 trades (+0.016%), all from 2020; it lost more in 2022 (−0.12% per trade vs
+−0.04%) and didn't help pullback long (−$6.4k). Sep 2025 – Oct 2026 was the exception for drive long
+(+0.12% per trade every signal, +0.17% above MA50).
+
+## Finding 22 — Mixing setups and tickers (chosen on 2020–22, tested on 2023–26)
+
+All choices made on 2020–2022 only; 2023, 2024 and Sep 2025 – Oct 2026 are out of sample.
+
+- **Setups:** only overnight ma200 was positive over 2020–22 (+$45.3k); on the test it made +$106.6k,
+  up in 2 of 3 periods (2023 −$10.6k).
+- **Ticker x setup pairs** that made money in all 3 calibration years (13 pairs, e.g. AMD/drive long,
+  TSLA/box break, MRNA/pullback long C1) lost $6.0k in the test, 0 of 3 periods up. A ticker's fit
+  with a setup doesn't persist.
+- **Rolling ranking with longer memory** (each ticker's top 3 by the last 63/126/252 sessions,
+  re-picked monthly): +$33k to +$100k in the test, no better than trading the long setups everywhere.
+- **Ticker volatility** (20-day stdev of daily returns, ranked across tickers each day, known before
+  the day) was the one selection that held: the more volatile half beat the calmer half for both
+  setups in calibration and test — drive long +$41.3k vs +$7.8k in the test, overnight ma200
+  +$62.1k vs +$44.4k.
+
+Drive long + overnight ma200 on the more volatile half: +50%, +10%, −18%, 0%, +31% on peak capital
+in use for 2020–24 and +53% for Sep 2025 – Oct 2026 (QQQ +46, +26, −33, +52, +26%). It behaves like
+part-time long exposure, losing less than QQQ in 2022 and missing 2023.
+
+## Finding 23 — Picking the top 2 tickers from daily candles and moving averages
+
+Daily candles rebuilt from the backtest bars. About 25 features known at the signal: the previous
+days' candle (body and wicks in ATR units, close location in the range, inside day, NR7, up/down
+streak), distance from the 10/20/50/200-day MAs and the slopes of the 20/50-day MAs, 1/5/20-day
+returns, ATR%, distance from the 20-day high and low, today's opening gap (drive setups, entry
+09:35), and today's candle through the 15:45 bar (overnight, entry at the close). Each day the top 2
+tickers with a signal are traded; features chosen on 2020–22.
+
+**Measure features by the top 2's average result, not by daily rank correlation.** Rank correlation
+said to avoid volatile tickers for drive long: with a 30% win rate, volatile names lose a little
+more on most days but win far more on the few trend days that make the money. Scoring each feature
+by the average net % of the top 2 it picks matches P&L.
+
+**Overnight ma200 — the strongest names carry overnight.** The top 2 by a composite of distance
+above the 200-day MA (yesterday and at 15:45) and today's return so far, average net % per trade:
+
+| Period | Top 2 | All signals | Random 2 | Bottom 2 | Return on two $10k slots |
+|---|---|---|---|---|---|
+| 2022 (calibration) | −0.15% | −0.22% | −0.19% | −0.16% | −34% |
+| 2023 | +0.03% | −0.02% | −0.00% | +0.00% | +7% |
+| 2024 | +0.22% | +0.12% | +0.17% | +0.07% | +54% |
+| 2025 | +0.05% | +0.08% | +0.14% | +0.01% | +13% |
+| 2026 (Jan 1 – Oct 6) | +0.47% | +0.10% | +0.05% | +0.09% | +90% |
+
+Distance above the 200-day MA alone beat the average in all 3 calibration and all 3 earlier test
+periods. 2025 is the one test year where the top 2 did worse than random. The profit is spread
+across tickers (without the best ticker: 2024 +$7.3k, 2026 +$7.4k); 2026 includes one +84% MRNA
+night (Aug 18). Worst nights −14%.
+
+**Drive long:** no candle or MA composite (nor a ridge fit on all features) beat taking every
+signal on the test years; only higher ATR% did, in every test period. **Drive short:** nothing
+worked; every selection lost in 2023 and 2024 (shorting after an up-streak only reached about
+break-even). Drop drive short.
+
+## Finding 24 — When not to trade
+
+Market-level rules on top of Finding 23's picks (overnight top 2 by strength, drive long top 2 by
+ATR%), each known before the trade, chosen on 2020–22. P&L $k at $10k per trade:
+
+| Overnight top 2, trade only when… | 2020 | 2021 | 2022 | 2023 | 2024 | 2025 | 2026 |
+|---|---|---|---|---|---|---|---|
+| always | +33.2 | +1.3 | −6.7 | +1.0 | +10.3 | +3.6 | +15.2 |
+| QQQ above its 200-day MA | +28.8 | +1.3 | −0.7 | +0.1 | +10.3 | +5.5 | +14.6 |
+| ≥ 40% of tickers above their 200-day MA (chosen on 2020–22) | +30.8 | +1.3 | −1.6 | +0.4 | +10.3 | +4.4 | +13.7 |
+| QQQ above its 20-day MA | +25.1 | +1.3 | −3.1 | −1.0 | +7.9 | −1.6 | +9.3 |
+
+| Drive long top 2, trade only when… | 2020 | 2021 | 2022 | 2023 | 2024 | 2025 | 2026 |
+|---|---|---|---|---|---|---|---|
+| always | +3.6 | +5.8 | −2.2 | +4.7 | +6.1 | +0.2 | +22.4 |
+| QQQ above its 20-day MA (chosen on 2020–22) | +8.8 | +6.7 | +7.0 | +3.4 | +0.5 | −1.3 | +12.2 |
+| QQQ above its 200-day MA | +5.7 | +5.8 | −4.4 | +4.7 | +6.1 | −4.5 | +22.4 |
+
+The rules work like insurance: each cuts the 2022 loss and costs profit in rising years. QQQ above
+its 200-day MA is the cheap one for overnight holds: it saved $6.0k in 2022 and $1.9k in 2025 (the
+Mar–May tariff selloff), and cost $4.4k in 2020 (the V-shaped COVID rebound) and $1.5k across 2023
+and 2026. Short-term rules (QQQ 20-day) and the strategy's own last
+20 sessions cost far more than they saved. Drive long is better without a rule.
+
+**Combined:** overnight top 2 only when QQQ closed above its 200-day MA, drive long top 2 always
+(four $10k slots, return on $40k):
+
+| Year | P&L | Return | Capped ±10% | Max drawdown | Months up |
+|---|---|---|---|---|---|
+| 2020 | +$32.3k | +81% | +64% | −$6.8k | 10/12 |
+| 2021 | +$7.1k | +18% | +11% | −$5.7k | 8/12 |
+| 2022 | −$2.9k | −7% | −12% | −$9.9k | 5/12 |
+| 2023 | +$4.9k | +12% | +8% | −$3.5k | 8/12 |
+| 2024 | +$16.4k | +41% | +39% | −$4.7k | 7/12 |
+| 2025 | +$5.7k | +14% | +12% | −$6.6k | 6/12 |
+| 2026 (to Oct 6) | +$37.0k | +93% | +68% | −$6.0k | 9/10 |
+
+2026 without MRNA (excluded from the pool, so other tickers fill its slots): +$27.4k, +69% (+63% capped),
+same drawdown. MRNA added 103 trades for +$9.8k: drive long +$6.4k; overnight +$3.4k, of which the +84%
+night on Aug 18 was +$8.4k and its other 61 nights lost about $5k.
+
+Without the QQQ rule: 2022 −22%, 2025 +10% with a −$10.7k drawdown. Results swing with whether
+volatile growth stocks trend that year. Caveats: one bear market in the data; 2 positions per setup
+is concentrated; 2025 is split-adjusted on 26 tickers, 2026 comes from the unadjusted 2025–26
+reports (22 tickers, including SNDK and CRWV, without CRWD, CLS, SNOW, DDOG, ARM and CHTR).
+
+## Finding 25 — Drive long failure weeks in 2026, and what follows them
+
+Every drive long signal in 2026 (Jan 2 – Oct 7, 2,065 signals on 22 tickers, held to the close with the
+first bar's low as the stop): 65.4% failed (net ≤ 0). That is the setup's normal state — a few
+all-day trends pay for many early stop-outs; 77% of the failed trades were stopped by 10:30 and 89%
+by noon.
+
+**Weeks with more than 70% failing** (13 of 41): Jan 26–30 (85%, −42.8% summed), Mar 9–27 (81%, 77%,
+76%; the only month above 70% and the only losing month, −42.9%), Apr 6–10 (80%, while QQQ rose
+4.5%), May 18–22, Jun 8–19, Jul 13–24, Sep 8–18 and Sep 28 – Oct 2 (88%, −34.0%, the worst). Only the
+March sell-off and July lined up with a falling QQQ; April and June were up weeks where the open
+faded.
+
+**A bad week doesn't predict the next one.** In 2026, 9 of the 13 bad weeks were followed by a
+profitable week (next week +0.25% per trade vs +0.10% after other weeks; e.g. Jan 26–30 −42.8 then
++32.8, May 18–22 then +37.3). Across 2020–2026 the link disappears: correlation of a week's failure
+rate with the next week's result +0.05 over 354 weeks, negative in 2020–21 (−0.30, −0.15) and
+positive from 2022. After the worst weeks (> 74% failing) the next week averaged +0.00% per trade,
+the same as any week. One small, fairly consistent effect: the day after a day with > 80% failing
+was better than other days in 6 of 7 years (about +0.09% per trade; 2026 the exception).
+
+So don't pause drive long after a bad week or cut size after a bad day — consistent with the
+negative equity-curve rules in Findings 20 and 24.
+
+## Finding 26 — When the strongest up wave happens (2020–2026, wave module)
+
+Each session split into waves by `analyze_bars` (default wave settings, as the setups use); 2020–25
+on the split-adjusted bars with each year's tickers (Finding 21), 2026 on the 21 non-QQQ tickers of
+the 2025–26 reports; about 39,000 ticker-days and 254,000 waves. Picking the day's strongest wave
+uses the whole day, so this describes the intraday rhythm; it is not a signal by itself.
+
+**The day's strongest up wave** (largest % up wave per ticker-day):
+
+| Year | Median start | Median top | Typical gain | Starts 9:30–10:00 | 10:00–11:30 | 11:30–13:30 | After 13:30 |
+|---|---|---|---|---|---|---|---|
+| 2020 | 10:20 | 11:35 | 1.73% | 42% | 30% | 16% | 12% |
+| 2021 | 10:15 | 11:25 | 1.48% | 43% | 30% | 16% | 11% |
+| 2022 | 10:20 | 11:35 | 2.14% | 41% | 29% | 17% | 12% |
+| 2023 | 10:15 | 11:35 | 1.52% | 43% | 30% | 18% | 9% |
+| 2024 | 10:15 | 11:25 | 1.54% | 45% | 29% | 18% | 9% |
+| 2025 | 10:20 | 11:35 | 1.64% | 43% | 29% | 18% | 10% |
+| 2026 | 10:10 | 11:20 | 1.98% | 46% | 30% | 15% | 8% |
+
+Median duration 50 minutes every year; 72–76% start before 11:30.
+
+**Buying at the open:** on 46–50% of ticker-days the first wave is up from the open. It tops at a
+median of **10:00 in every year** (middle half 9:45–10:25), gains 1.4–2.0%, and is the day's strongest
+up wave 59–65% of the time (65% in 2026).
+
+**Morning sell-off and the second wave** (largest down wave starting before 11:30, then the up wave
+right after it): the sell-off starts at 09:50–09:55, the **morning low lands at 10:35–10:45 every
+year**, and the rebound tops at 11:35–11:45 after recovering 70–76% of the drop (median drop −1.3%
+to −1.9%, rebound +1.0% to +1.4%). The rebound is the day's strongest up wave 40–45% of the time.
+
+Within 2026 the timing barely moved by month; March–April ran 10–20 minutes later (March sell-off
+start 10:00 and low 10:45; April's strongest wave 10:20–12:00, the year's longest) and moves shrank
+from September (to about 1.0–1.5%). 2026 differs from earlier years only in degree: bigger moves, a
+slightly earlier and more decisive open, fewer afternoon waves. The 2022 bear market had the same
+clock with bigger moves.
+
+**For the setups:** drive long buys at 09:35, just before the opening run usually tops (10:00); on
+about half the days the stock then sells off to around 10:40, where the first-bar-low stop is hit.
+Most of the day's up move is done by about 11:45 while drive long holds to the close.
+
+## Finding 27 — Buying the morning dip ("second wave") and selling drive long early (negative)
+
+Both ideas from Finding 26, tested 2020–2026 on every signal (2020–25 split-adjusted with each year's
+tickers, 2026 on the 22 tickers of the 2025–26 reports), 5 bps, chosen on 2020–22 and checked on
+2023–26.
+
+**The setup:** `--second-wave long` in `wave_risk_reward.py`, the morning dip "second wave" long entry.
+When the wave module turns up (price takes back 23.6% of the down wave, after at least 7 bars) from a
+down wave whose low came inside `--second-wave-window` (default 10:15–11:15) and that is at least
+`--second-wave-ratio` (1.0) x the median lookback wave, buy that bar's close; stop below the dip's
+lowest low minus 0.1 x the dip, target 61.8% of the dip back; one per session, none after
+`--second-wave-latest-entry` (12:00 — a turn can be confirmed hours after the low). Opt-in like the
+drive fade (`OPT_IN_SETUPS`). The backtest also gained `--exit time` (stop, else the close of the bar
+ending at `--exit-time`), and `analyze_bars` now records each wave's `confirmed_at` bar.
+
+**Drive long exits** (average net % per trade, every signal):
+
+| Exit | 2020–22 | 2023–26 | Later years up |
+|---|---|---|---|
+| Hold to close (current) | −0.008% | +0.046% | 4 of 4 |
+| 14:00 | −0.019% | +0.046% | 4 of 4 |
+| 13:00 / 12:00 | −0.019% / −0.015% | +0.026% / +0.019% | 2 of 4 |
+| 11:30 / 11:00 / 10:30 | −0.029% / −0.033% / −0.023% | +0.008% / −0.004% / −0.009% | 1 of 4 |
+| End of the first up wave (wave turn) | −0.038% | −0.003% | 1 of 4 |
+| Giveback / target | −0.048% / −0.051% | +0.002% / −0.021% | 1 of 4 |
+
+The earlier the exit, the worse: 58–68% of drive long trades are stopped every year, and the setup
+lives on the third of days that trend into the close. Keep holding to the close.
+
+**The second wave, as designed:** lost in every year (−0.01% to −0.11% per trade at the defaults). Of 672
+variants (low window 10:00–11:30 / 10:15–11:15 / 10:30–11:00, dip 0.5–2 x median, targets 50–100%,
+two stops, seven exits), 6 were positive on 2020–22 — all on 2020 alone — and none on 2023–26. The
+"recovers 73% of the drop" in Finding 26 is measured from the low, known only afterwards; by the
+time the wave module confirms the turn about a quarter of the rebound is gone, and many confirmed
+turns are pauses before a lower low.
+
+**Variants tried after that** (all negative or too thin to trade):
+- *Shallow dips above the 5-min MA200* (dip 0.5–1 x median, dip low or entry above MA200; 39% of
+  dips qualify): with the target exit −0.05% / −0.05% per trade (2020–22 / 2023–26), 0 of 7 years
+  up. Shallow dips beat deep ones in both periods (averaged over every window, target and exit:
+  −0.040% vs −0.056% and −0.020% vs −0.053%) — the one consistent pattern; the MA200 filter added
+  nothing (slightly better in calibration, worse later).
+- *Hold the rebound to the close:* the best exit for the rebound too (average over variants
+  −0.020% / +0.016% vs −0.059% / −0.040% for the target), but still about break-even. The
+  calibration pick (shallow, dip low ≥ 0.5% above MA200, low 10:30–11:00) went +0.076% → −0.010%.
+  The steadiest version — any dip, entry above MA200, low 10:30–11:00, held to close — was up in 6
+  of 7 years but lost on 2020–22 overall (−0.023% / +0.051%); on the seven EC2 tickers in 2026 it
+  made +0.04% per trade (175 trades, +7.7% summed), winning on AMD, MDB, SNPS, APP and SNDK and
+  losing on CRWV (−13.8%) and MRNA, the names that trend from the open (drive long on the same
+  tickers: +0.48% per trade, +323% summed).
+- *Buy after the first large down wave of the morning* (window 09:30–12:00, first dip ≥ 1/1.5/2/3 x
+  median, low by 10:30/11:00/12:00, with and without the MA200 filter; candidates generated against
+  a 100% target so strong rebounds are not dropped): 0 of 320 variants positive on 2020–22, and the
+  bigger the dip the worse (held to close, low by 11:00: −0.041% / −0.020% at 1x, −0.070% / −0.046%
+  at 2x). A large first dip is more often the start of a down day. Only 2026 paid for buying big dips
+  above MA200 (+0.13% to +0.68% per trade) — a dips-get-bought year; the 2020–22 pick still lost 4.5%
+  on the EC2 tickers in 2026.
+
+**Conclusion:** buying morning weakness has no lasting edge on these tickers; shallower dips are less
+bad than deep ones, and any long that buys strength should be held to the close. The second wave
+stays in the code, opt-in.
+
+## Finding 28 — Drive long risk controls: re-entry, wider stops, a daily MA switch, and drawdown
+
+Drive long re-simulated straight from the 5-min bars (green first bar, buy its close, hold to the
+close; the baseline matches the backtest exactly), 20,246 drive long days 2020–2026 (2020–25
+split-adjusted with each year's tickers, 2026 on the 22 tickers of the 2025–26 reports), 5 bps,
+chosen on 2020–22 and checked on 2023–26. Drawdown = largest peak-to-trough fall of daily P&L at $10k
+per trade.
+
+**Re-entering after the stop-out.** About two-thirds of drive long trades are stopped (58% in 2026), at
+a median 09:45; 56% of those close back above the entry later (median 10:25). Buying again once on
+that close and holding to the close:
+
+| Re-entry rule | 2020–22 | 2023–26 | Years up | Added per drive long day (2023–26) |
+|---|---|---|---|---|
+| Any time, stop at the low since the stop-out | −0.054% | +0.009% | 3 of 7 | +0.003% |
+| Any time, original stop | −0.055% | +0.008% | 3 of 7 | +0.003% |
+| Any time, no stop | −0.038% | +0.038% | 4 of 7 | +0.013% |
+| By 14:00, no stop | −0.037% | +0.049% | 5 of 7 | +0.015% |
+| By 11:00, low since the stop-out | −0.064% | +0.013% | 3 of 7 | +0.003% |
+
+Every version lost on 2020–22; re-entries won 36–50% (retaking the entry often tops out again). On the
+seven EC2 tickers in 2026 the 197 re-entries summed −15.8% (CRWV −16.0%, MDB −10.3%, MRNA −9.6%; SNPS
++10.8%, SNDK +9.2%, AMD +2.7%) against +323% for drive long itself. Not adopted.
+
+**Wider stops** (15 rules known at entry: the first bar's low minus 0–3 x its range or 2/4/8 x the
+average 5-min bar, 1/2/3% below entry, 0.5/1 x the 20-day average daily range below entry, the
+previous day's low, no stop):
+
+*Every drive long signal* (about 11–12 trades a day):
+
+| Stop | Avg 2020–22 | Avg 2023–26 | P&L 2023–26 | Max DD 2020–22 | Max DD 2023–26 | Worst day |
+|---|---|---|---|---|---|---|
+| First bar's low (current) | −0.008% | +0.046% | +$54.5k | −$35.9k | −$19.4k | −$2.6k |
+| 2% below entry | −0.006% | +0.059% | +$69.8k | −$37.7k | −$20.3k | −$3.9k |
+| 0.5 x daily range below entry | +0.005% | +0.059% | +$69.4k | −$43.8k | −$20.1k | −$4.1k |
+| 4 x avg 5-min bar below the low | +0.004% | +0.077% | +$90.7k | −$51.7k | −$23.3k | −$10.3k |
+| 2 x first bar's range below the low | −0.007% | +0.080% | +$94.4k | −$57.9k | −$23.4k | −$7.5k |
+| Previous day's low | +0.007% | +0.059% | +$63.1k | −$52.1k | −$28.3k | −$11.1k |
+| No stop | +0.009% | +0.081% | +$94.7k | −$67.6k | −$27.2k | −$13.9k |
+
+2020–22 can't separate the stops (all within ±0.02% per trade of zero); later, wider stops add
++0.01% to +0.04% per trade, paid for with deeper drawdowns and worse single days. A 2% stop (or 0.5 x
+the daily range) is the best trade-off: +28% more profit in 2023–26 at nearly the same drawdown.
+
+*Top 2 most volatile per day* (20-day average daily range; the strategy's drive long leg, two $10k
+slots):
+
+| Stop | Avg 2020–22 | Avg 2023–26 | P&L 2023–26 | Max DD 2020–22 | Max DD 2023–26 | Worst day | Return / DD 2023–26 |
+|---|---|---|---|---|---|---|---|
+| First bar's low (current) | +0.006% | +0.225% | +$42.6k | −$14.7k | −$6.4k | −$1.0k | 6.6 |
+| 1% below entry | −0.029% | +0.189% | +$35.7k | −$13.8k | −$6.3k | −$0.4k | 5.7 |
+| 3% below entry | −0.051% | +0.249% | +$47.1k | −$20.9k | −$8.7k | −$0.6k | 5.4 |
+| 4 x avg 5-min bar below the low | −0.054% | +0.225% | +$42.5k | −$22.6k | −$8.1k | −$1.8k | 5.2 |
+| No stop | +0.036% | +0.219% | +$41.4k | −$18.2k | −$10.0k | −$2.2k | 4.2 |
+
+On volatile tickers the first bar is already wide (median risk 1.26% of price), so a wider stop adds no
+return later and raises the drawdown 30–60%; it also made 2022 much worse (−0.24% to −0.37% per trade
+vs −0.12%). This selection uses the daily range rather than Finding 23–24's ATR% (gaps included), so
+its 2022 differs slightly from those findings.
+
+**Conclusion:** keep the first-bar-low stop on the strategy's drive long leg (best return per unit of
+drawdown, smallest worst day, best 2022). For drive long on every signal or a broad list, a 2% stop
+below entry (or 0.5 x the daily range) adds about +0.013% per trade at nearly the same drawdown. No
+stop and re-entry after the stop-out are not worth it.
+
+**A per-ticker daily MA switch** (take drive long only while the stock is above its daily MA: on once a
+daily close breaks above it, off once one breaks below; yesterday's close vs its MA, known pre-open).
+58% of drive long days come while the stock is above its 20-day MA.
+
+| All tickers, $10k per trade | Avg 2020–22 | Avg 2023–26 | P&L 2020–22 | Max DD 2020–22 | P&L 2023–26 | Max DD 2023–26 |
+|---|---|---|---|---|---|---|
+| Pure drive long | −0.008% | +0.046% | −$7.1k | −$35.9k | +$54.5k | −$19.4k |
+| Only above daily MA20 | +0.010% | +0.019% | +$4.6k | −$14.0k | +$13.2k | −$21.0k |
+| Only above daily MA50 | +0.003% | +0.044% | +$1.7k | −$20.3k | +$31.7k | −$10.5k |
+| Only above daily MA10 | +0.002% | +0.030% | +$1.0k | −$17.2k | +$20.3k | −$11.1k |
+| Only below daily MA20 | −0.031% | +0.087% | −$11.7k | −$31.2k | +$41.3k | −$15.2k |
+
+The switch helped in 2020–22 (2022 above all) and backfired in 2023–26, where signals below the 20-day MA
+were the best (+0.087% per trade): a stock that has pulled back below its MA20 and opens green often
+starts a strong rebound day. Per ticker (28 tickers, summed net % per trade over the years each has
+data):
+
+| | Pure | Above MA20 | Above MA50 |
+|---|---|---|---|
+| Summed over tickers, 2020–2026 | +474% | +178% | +333% |
+| 2020–22 / 2023–26 | −71% / +545% | +46% / +132% | +17% / +317% |
+| Tickers with a better total | — | 13 of 28 | 12 of 28 |
+| Tickers with a smaller drawdown | — | 22 of 28 | 21 of 28 |
+| Median return / drawdown per ticker | 0.40 | 0.02 | 0.27 |
+
+It splits by ticker type: of the 13 tickers where drive long lost money, the MA20 switch improved 11 (CRM
+−61.9% → +3.4%, SNPS −10.0% → +36.9%, DDOG −53.6% → −10.8%); of the 15 where it made money it improved
+only SHOP and LLY and gutted the trenders (TSLA +84.2% → +9.0%, APP +82.7% → +10.5%, CLS +54.4% → +2.4%,
+AMD +37.0% → −15.9%). Which group a ticker belongs to isn't known in advance (Finding 22), and the
+strategy's top-2-by-volatility pick favours the trenders, where the switch hurts most. On the seven EC2
+tickers in 2026 it raised the average trade (+0.59% vs +0.48%) but cut the total from +323% to +215% on
+45% fewer trades, without a smaller combined drawdown (−37.8% vs −32.9% summed); it helped MDB (−1.3% →
++12.2%) and MRNA's drawdown (−44% → −28%) and erased CRWV (+49.9% → +1.0%).
+
+Not adopted: the switch lowers drawdown on most tickers but costs more return than it saves. The QQQ
+200-day rule (overnight only, Finding 24) and the volatility pick are the cheaper risk controls.
+
+## Finding 29 — Offense plus defense: no setup earns in a bear market; step aside instead
+
+The offense is Finding 23–24's pair: overnight ma200 on the 2 strongest tickers and drive long on the 2
+most volatile, $10k per trade, four slots ($40k). The search was for a defensive leg for the bear regime
+(QQQ's previous close below its 200-day MA: 21 sessions in 2020, 234 in 2022, 19 in 2023, 46 in 2025, 12
+in 2026), on the same ticker list as Findings 21–24.
+
+**Every setup in the bear regime** (every signal, fixed exits): over 2020–22 all lost except box gap
+(+$0.6k). Drive short made +0.03% per trade in the 2022 bear regime but −0.84% in the March 2020 crash —
+bear-market rebounds stop shorts out; shorts only paid in January 2022, before QQQ crossed below its
+MA200. Drive long lost −$16.0k in 2020–22 bear days and made +$16.3k in 2023–26 ones (the April 2025
+rebound); overnight ma200 lost −$14.9k / −$1.2k.
+
+**Combinations** (return on $40k; the 2023–26 drawdown in brackets):
+
+| Combination | 2020 | 2021 | 2022 | 2023 | 2024 | 2025 | 2026 | Max DD 2020–22 |
+|---|---|---|---|---|---|---|---|---|
+| A offense always on | +92.0 | +17.7 | −22.3 | +14.3 | +40.9 | +9.6 | +94.0 | −37.9% (−26.8%) |
+| B overnight off in bear (Finding 24) | +80.9 | +17.7 | −7.2 | +12.1 | +40.9 | +14.2 | +92.5 | −29.3% (−16.7%) |
+| C everything off in bear | +86.1 | +17.7 | −12.9 | +11.9 | +40.9 | +2.6 | +92.3 | −16.6% (−22.6%) |
+| C + drive short (top 2 by ATR%) in bear | +77.3 | +17.7 | −13.7 | +7.0 | +40.9 | −9.0 | +100.3 | −29.2% (−34.1%) |
+| C + drive short (top 2 by up-streak) in bear | +79.2 | +17.7 | −9.2 | +7.3 | +40.9 | +1.1 | +99.9 | −18.1% (−24.1%) |
+| C + pullback long C1 in bear | +82.3 | +17.7 | −11.5 | +20.9 | +40.9 | +2.6 | +96.8 | −24.8% (−22.6%) |
+| C + drive short when QQQ < its MA50 | +77.4 | +20.6 | −19.3 | +11.5 | +30.1 | +2.2 | +98.8 | −22.4% (−26.2%) |
+| Drive long / drive short switched by QQQ's MA50, no overnight | +13.1 | +12.1 | −5.2 | +0.7 | −0.7 | −5.4 | +46.1 | −23.5% (−24.8%) |
+
+A $10k short QQQ held while QQQ is below its MA200 made +11.7% in 2022 but lost in every other bear stretch
+(2020 −13.4%, 2023 −11.6%, 2025 −7.0%, 2026 −4.3%). Most of 2022's loss in B and C is the MA200's lag
+(January 2022, before the switch turned). B had the best 2022, 2025 and 2023–26 drawdown; C the smallest
+2020–22 and overall drawdown (−22.6% vs −29.3%).
+
+On this ticker list, Jan 2020 – Oct 9 2026: B +251% simple ($10k per trade), +586% compounded yearly; C
++239% / +494%; B capped at ±10% per trade about +190% / +352%. Buy and hold over the same period (daily
+SIP bars, first 2020 open to the Oct 9 2026 close): QQQ +250% (+266% with dividends), max drawdown −35.6%;
+SPY +141% (+165%), −34.2%. **Finding 30 shows these strategy numbers depend on the ticker list.**
+
+## Finding 30 — Ticker selection without hindsight: the edge was mostly the ticker list
+
+Findings 21–29 chose their rules without hindsight but ran on a ticker list assembled in 2026 from names
+already known to be strong. Here the same strategy (same setups, top-2 selection, B and C rules, 5 bps,
+split-adjusted bars fetched directly) runs on universes that could have been picked at the time.
+
+**Yearly: the top 8 Nasdaq-100 members by the previous calendar year's return.** Membership was
+reconstructed from memory at first (spot checks against the change log below agree: ENPH, TTD and ZM were
+not members at the end of 2019); the yearly picks were not re-run on the verified membership.
+
+| (return on $40k) | 2020 | 2021 | 2022 | 2023 | 2024 | 2025 | 2026 | Compounded | Max DD |
+|---|---|---|---|---|---|---|---|---|---|
+| A always on | +8.0 | −6.4 | −28.4 | −20.8 | +33.7 | −11.4 | +48.5 | +0.8% | −75% |
+| B | +5.4 | −6.4 | −20.5 | −24.1 | +33.7 | −9.8 | +47.8 | +6.0% | −69% |
+| C | +16.0 | −6.4 | −9.4 | −27.1 | +33.7 | −17.4 | +46.3 | +15.9% | −60% |
+
+Drive long lost in 6 of 7 years. A year's winners often reverse (2021's list was 2020's pandemic winners
+PTON, ZM, DOCU, PDD, MRNA) or are low-volatility (2023's was 2022's defensive winners VRTX, TMUS, ORLY,
+GILD, BKR — the worst year, −24%).
+
+**Monthly: the top 8 by the previous calendar month's return, on actual membership.** Membership on any
+date is rebuilt from Wikipedia's current constituents table with every dated change after that date undone
+(228 changes since 2007; 101–103 members at each year-end, GOOG and GOOGL counted separately; only GOOGL
+traded). Monthly returns come from Alpaca daily closes (compounding weekly returns gives the same number);
+all 169 tickers that were members at some month-end Nov 2019 – Sep 2026 had data, delisted ones included.
+82 months picked 140 different tickers, most often TSLA (24 months), AMD (19), NVDA (18).
+
+| (return on $40k) | 2020 | 2021 | 2022 | 2023 | 2024 | 2025 | 2026 | Compounded | Capped ±10% | Max DD |
+|---|---|---|---|---|---|---|---|---|---|---|
+| A always on | +42.9 | −3.8 | −27.7 | −16.1 | +26.6 | −12.3 | +33.3 | +23.4% | +10.4% | −58% |
+| **B overnight off in bear** | +38.6 | −3.8 | −2.5 | −16.1 | +26.6 | −7.7 | +33.7 | **+70.3%** | +51.4% | −33% |
+| C all off in bear | +36.2 | −3.8 | −4.9 | −16.9 | +26.6 | −9.3 | +35.1 | +60.5% | +55.1% | −36% |
+| QQQ buy & hold | +47.6 | +26.8 | −33.1 | +53.8 | +24.8 | +20.2 | +22.3 | +253% | | −36% |
+| SPY buy & hold | +16.3 | +26.9 | −19.5 | +24.3 | +23.3 | +16.4 | +14.2 | +142% | | −34% |
+
+B's legs ($k): drive long +7.9, −1.3, +0.4, −0.1, +4.9, −3.4, +6.1; overnight +7.6, −0.2, −1.4, −6.3, +5.8,
++0.3, +7.4. Its profit came from the months the picks held that year's leaders (2020 TSLA +$7.4k, FI,
+ZM, PDD; 2024 NVDA, AMD, CEG, TSLA; 2026 SNDK +$8.8k, MU +$5.3k).
+
+**All 8 tickers instead of the top 2** (every signal, eight $10k slots, return on $80k): A +4.5%, B +38.4%
+(max DD −36%), C +58.5% (−25%) compounded; average trade +0.008% / +0.019% / +0.028%. By leg: overnight
+ma200 with the QQQ rule alone +49.3% (max DD −20%, +0.037% per trade, down only in 2022 −4.0% and 2023
+−9.7%); drive long on every signal −6.4% (−0.006% per trade, 4 of 7 years down). The top-2 selection adds
+value (B +70% vs +38%); drive long needs it to have any edge.
+
+**Why the original list did so much better:**
+
+| | 2020 | 2021 | 2022 | 2023 | 2024 | 2025 | 2026 |
+|---|---|---|---|---|---|---|---|
+| Original list: average stock's return that year | +137% | +44% | −44% | +116% | +79% | +42% | +72% |
+| Monthly top 8: return in the months held, compounded | +110% | +28% | −24% | +44% | +7% | +33% | +39% |
+| Original list / top 8: average daily move | 2.5 / 2.5% | 2.0 / 1.8% | 3.0 / 2.2% | 2.0 / 1.7% | 2.2 / 1.8% | 2.3 / 2.0% | 2.9 / 3.0% |
+| Overnight ma200 per trade, original / top 8 | +0.13 / +0.09% | +0.03 / +0.03% | −0.21 / −0.20% | −0.02 / −0.05% | +0.12 / +0.04% | +0.08 / +0.05% | +0.11 / +0.07% |
+| Drive long per trade, original / top 8 | 0.00 / −0.04% | +0.02 / +0.01% | −0.04 / −0.10% | +0.02 / −0.01% | +0.02 / +0.04% | +0.03 / −0.01% | +0.17 / +0.10% |
+
+- The original list is mostly stocks now known to have had exceptional years: its average stock beat QQQ
+  in 5 of 7 years, often 2–3x. Nine of its tickers were never in the Nasdaq-100 (SNDK, CRWV, COIN, FN, CLS,
+  SPOT, LLY, CRM, SNOW), so no index rule could have found them.
+- Both setups earn from stocks that keep trending (overnight drift in a steady uptrend; days that run
+  open to close), so per-trade results were 1.5–3x higher on the original list in up years.
+- It is trend persistence, not volatility: both universes move about the same each day; last month's
+  winners stall (2024: +7% in the months held vs +79% for the original list).
+- A few big winners carry the original list (2026: median stock +9%, average +72%).
+
+**Conclusion:** on a universe chosen without hindsight the strategy makes about 8% a year (B, monthly top
+8) against about 20% for QQQ, with a similar drawdown; its one clear advantage is the bear market (2022
+−2.5% vs −33%). The +586% on the original list is mostly the ticker list. The setups help with timing; the
+edge comes from holding stocks that keep trending, and last month's return doesn't find them reliably. The
+overnight leg with the QQQ rule is the most robust piece (+49% alone on all eight monthly tickers, −20%
+drawdown).
+
 ## Recommendations
 
 1. **Choose tickers before tuning settings.** The same configuration ranges from +156.66% (SNDK)
@@ -861,13 +1400,51 @@ unless named with `--setups`, so a lucky 3 months cannot put it into the monitor
 12. **Still untested:** a bear-market year for SNDK-like names, costs other than 5 bps, and a
    one-position-at-a-time rule for combined setups.
 13. **Pick setups with R1 (Finding 18):** long setups and overnight holds only, ranked by their
-    3-month total, top 3 positive with ≥ 3 trades. Skip short and box setups.
+    3-month total, top 3 positive with ≥ 3 trades. Skip short and box setups. Back to 2020 it made
+    only about +2.4% a year (Finding 21) — treat its 2025–26 results as regime-specific.
 14. **Update the picks every week or two (Finding 17);** picks held 8+ weeks lost money in the
     2026 test. The monitor does this with `config --refresh --types long overnight --min-trades 3`.
 15. **Prefer a broad pool (20+ liquid tickers) over filtering it** — momentum ticker filters, MA50
     gates and pausing setup types after a bad month all failed out of sample (Finding 18).
 16. **Don't bet against losing setups** — neither reversing them nor fading the opening drive held
     up out of sample (Finding 19).
+17. **Trade only drive long and overnight ma200** (Findings 21–22). Every short, box and bounce
+    setup lost money in almost every year 2020–2026, and no ticker selection rescued drive short
+    (Finding 23).
+18. **Select tickers across the pool, not setups per ticker** (Findings 22–23): overnight ma200 on
+    the 2 tickers furthest above their 200-day MA and up most at 15:45; drive long on the 2 most
+    volatile tickers (20-day ATR%) that trigger. A ticker's fit with a setup, its recent setup
+    results (10 sessions or a choppy streak) and candle shapes did not carry forward (Findings 20–23).
+19. **Skip overnight holds when QQQ closed below its 200-day MA** (Finding 24) — cheap insurance
+    against a 2022-style bear market. Don't gate drive long, and avoid short-term market rules
+    (QQQ 20-day MA) and equity-curve rules.
+20. **Size for long exposure:** the combined strategy made money in 6 of 7 years but swings from
+    +12% to +93% with the growth-stock trend, lost 7% in 2022, and 2 positions per setup is
+    concentrated (worst nights −14%). Before trading it, re-run 2026 on the same 26 tickers plus
+    SNDK/CRWV with split-adjusted bars, and check costs above 5 bps.
+21. **Keep trading drive long through bad weeks** (Finding 25): a > 70% failure week says nothing
+    about the next one across 2020–2026.
+22. **Hold drive long to the close and don't buy the morning dip (Finding 27):** every earlier exit
+    (10:30–14:00, the end of the first up wave, giveback, target) did worse, and the second-wave
+    entry lost in every form tried (as designed, shallow + MA200, held to close, first large dip).
+    If a dip entry is ever revisited, prefer shallow dips and hold to the close; "any dip, entry
+    above MA200, low 10:30–11:00, held to close" is the one version worth re-checking on new data.
+23. **Drive long stops (Finding 28):** keep the first bar's low as the stop on the 2 most volatile
+    tickers (the strategy's leg); for drive long on every signal or a broad list use 2% below entry
+    (or 0.5 x the 20-day average daily range). Don't re-enter after the stop-out, and don't drop the
+    stop — no stop roughly doubles the drawdown. Don't gate drive long by the ticker's own daily
+    MA20/MA50: it rescues choppy names but guts the trending ones, which the volatility pick favours.
+24. **Treat results on a hand-picked ticker list as an upper bound (Finding 30).** The same strategy made
+    +586% on the research list and +70% on the actual Nasdaq-100's monthly top 8 (QQQ +253%). Any new
+    result should be checked on a universe chosen without hindsight (the monthly-membership pipeline).
+25. **If trading the strategy:** re-pick the tickers each month from actual Nasdaq-100 members by the
+    previous month's return, keep the top-2 selection, and keep the QQQ 200-day rule; the overnight leg
+    is the most robust part. The EC2 monitor's hand-picked list carries the hindsight risk of Finding 30.
+26. **No setup earns in a bear market (Finding 29).** Step aside (B or C) instead of adding shorts or a
+    short-QQQ hedge, both of which lost in the 2020, 2023 and 2025 bear stretches.
+27. **Next research:** ticker selection that finds stocks which keep trending (2–6-month lookbacks, new
+    52-week highs, smoothness or share of up days, relative strength vs QQQ), tested on the monthly
+    membership; and a QQQ core with the overnight leg as an overlay.
 
 ## Reproduction
 
@@ -895,3 +1472,43 @@ one-off scripts that were not committed; the grid and split above are enough to 
 top of `TradeSimulator` and `apply_costs` in the backtest module. Running a window on its own
 (as in the last command) loads its own warm-up; that command reproduces the split-run numbers
 exactly (110 trades, +0.80%), but other settings may differ slightly.
+
+**Findings 20–30** came from one-off scripts that were not committed. To rebuild them:
+1. Split-adjusted bars: point `op_momentum_backtest._CACHE_DIR` at a separate folder and wrap
+   `StockBarsRequest` with `adjustment=Adjustment.SPLIT` (both set in a `sitecustomize.py` on
+   `PYTHONPATH`, so process-pool workers get them too) — never mix adjusted bars into
+   `market_data/cache/`.
+2. One setup report per year: `wave_risk_reward_setup_report --tickers <year's tickers>
+   --start <year-1>-09-15 --end <year>-12-31` (2025: `--setups "drive long" "drive short"
+   "overnight ma200"`), keeping each year's trades with the fixed exits (`load_trades`).
+3. Weekly rotation: `walk_forward(trades, tickers, sessions, start, 63, 5, 3, 10000, 0.0, 1, False,
+   types)` from `wave_setup_walk_forward.py` per year.
+4. Daily candles from the same bars (full session and through the 15:45 bar); features use only
+   prior days, plus today's open (drive) or today's candle to 15:45 (overnight). Top 2 per day by
+   feature rank; features and rules chosen on 2020–22 only.
+5. Finding 26: `analyze_bars(_load_bars(ticker, <year-1>-09-15, <year>-12-31, DataFeed.SIP))["waves"]`
+   per ticker-year (same range as the yearly reports, so the split-adjusted cache hits); per wave
+   take `w.df.index[0]` as the start, `wave_end_time(w)` as the top or bottom, and
+   `wave_end_price(w) / wave_start_price(w) − 1` as the move.
+6. Finding 27: one `analyze_bars` pass per ticker-year with `opening_drive="long"`, `second_wave="long"`,
+   a wide `second_wave_window`, `second_wave_ratio=0.5` and `second_wave_once_per_session=False` (every
+   candidate, filtered afterwards; take the first passing candidate per session), then
+   `TradeSimulator.run(signal, exit, exit_at=...)` per exit; the "wave turn" exit sells at the
+   `confirmed_at` bar of the first wave after the entry whose previous wave was up.
+7. Finding 28: per ticker-year from the same bars — green first bar, entry its close; stop hit when a
+   later bar's low reaches it (fill at the lower of that bar's open and the stop), else the session's
+   last close; average 5-min bar = mean high-low of the previous 78 bars, daily range = 20-session mean
+   (high − low) / close of earlier sessions. Re-entry: the first bar from the stop bar on whose close
+   is above the original entry. Drawdown from daily P&L summed at $10k per trade. MA switch: daily
+   closes from the same bars, `close > close.rolling(n).mean()` shifted one session. (2026 bars: load with
+   an end date whose +7-day fetch window matches the cached file, or the loader asks Alpaca for recent
+   SIP data the subscription refuses.)
+8. Findings 29–30: QQQ regime = previous close vs its 200-day (or 50-day) MA from daily closes.
+   Nasdaq-100 membership from the raw wikitext of Wikipedia's "List of NASDAQ-100 companies" (current
+   table) and "Historical components of the Nasdaq-100" (dated changes), fetched 2026-10-11 with
+   `index.php?title=...&action=raw`; undo every change after the date. Daily closes and 5-min bars come
+   straight from Alpaca (`StockBarsRequest`, `Adjustment.SPLIT`, SIP, ending at the last completed
+   session), not through the cache loader. Signals from `analyze_bars(bars, WaveRiskRewardParams(
+   box_signals=False, opening_drive="long", overnight_hold="ma200"), ticker_earnings_windows(...))` per
+   ticker-year with 13 months of warm-up; selection features from the same bars (prior-day ATR20%,
+   distance above the daily MA200 yesterday and at 15:45, return to 15:45).
