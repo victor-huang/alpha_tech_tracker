@@ -92,6 +92,8 @@ class ReversalWatch:
         session and the sessions holding the BARS_PER_SESSION bars before it are replayed.
         """
         watch = cls(ticker, patterns)
+        prices = frame[["open", "high", "low", "close"]]
+        frame = frame[((prices > 0) & (prices < float("inf"))).all(axis=1)]
         if frame.empty:
             return watch
         dates = frame.index.date

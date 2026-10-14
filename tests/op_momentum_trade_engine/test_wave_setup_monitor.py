@@ -536,6 +536,16 @@ class TestSignalStatsAlert:
         assert warmup.call_args.args[2] == _ts("2026-10-05 16:00")
 
     def test_error_is_logged_not_raised(self, tmp_path, mocker):
+        monitor, alerts = self._monitor(tmp_path, mocker, stats_tickers=["AMD"],
+                                        stats_daily_loader=lambda tickers, session: {})
+        monitor.prepare()
+        mocker.patch.object(monitor_module, "signal_stats", side_effect=ValueError)
+
+        monitor.send_signal_stats()
+
+        assert alerts == []
+
+    def test_missing_daily_closes_are_noted(self, tmp_path, mocker):
         def failing_loader(tickers, session):
             raise RuntimeError("no daily data")
 
@@ -544,7 +554,54 @@ class TestSignalStatsAlert:
 
         monitor.send_signal_stats()
 
-        assert alerts == []
+        assert alerts[0].splitlines()[-1] == "overnight ma200: daily closes unavailable, no holds counted"
+
+    def test_a_ticker_whose_history_fails_is_listed(self, tmp_path, mocker):
+        monitor, alerts = self._monitor(tmp_path, mocker, stats_tickers=["AMD", "META"],
+                                        stats_daily_loader=lambda tickers, session: {})
+        monitor.prepare()
+        mocker.patch.object(monitor.client, "warmup", side_effect=RuntimeError("TradeStation error"))
+
+        monitor.send_signal_stats()
+
+        assert alerts[0].splitlines()[-1] == "no data: META"
+
+    def test_sent_once_per_session(self, tmp_path, mocker):
+        monitor, alerts = self._monitor(tmp_path, mocker, stats_tickers=["AMD"],
+                                        stats_daily_loader=lambda tickers, session: {})
+        monitor.prepare()
+        mocker.patch.object(monitor_module, "signal_stats", return_value="signal stats ...")
+        monitor.send_signal_stats()
+        restarted, restarted_alerts = self._monitor(tmp_path, mocker, stats_tickers=["AMD"],
+                                                    stats_daily_loader=lambda tickers, session: {})
+        restarted.prepare()
+
+        restarted.send_signal_stats()
+
+        assert (len(alerts), restarted_alerts) == (1, [])
+
+    def test_history_requests_take_the_client_lock(self, tmp_path, mocker):
+        monitor, _ = self._monitor(tmp_path, mocker, stats_tickers=["AMD", "META"],
+                                   stats_daily_loader=lambda tickers, session: {})
+        monitor.prepare()
+        mocker.patch.object(monitor_module, "signal_stats", return_value="signal stats ...")
+        held = []
+        monitor.client.warmup = lambda tickers, start, end: held.append(monitor.client_lock.locked()) or {}
+
+        monitor.send_signal_stats()
+
+        assert held == [True]
+
+    def test_earnings_windows_reach_the_stats(self, tmp_path, mocker):
+        release = ET.localize(datetime(2026, 10, 5, 16, 5))
+        monitor, _ = self._monitor(tmp_path, mocker, stats_tickers=["AMD"], releases={"AMD": [release]},
+                                   stats_daily_loader=lambda tickers, session: {})
+        monitor.prepare()
+        stats = mocker.patch.object(monitor_module, "signal_stats", return_value="signal stats ...")
+
+        monitor.send_signal_stats()
+
+        assert date(2026, 10, 5) in stats.call_args.args[2]["AMD"]["eve"]
 
     def test_end_to_end_message(self, tmp_path, mocker):
         monitor, alerts = self._monitor(tmp_path, mocker, stats_tickers=["AMD"],
@@ -553,7 +610,58 @@ class TestSignalStatsAlert:
 
         monitor.send_signal_stats()
 
-        assert alerts[0].splitlines()[0] == "[wave] signal stats, last 1 sessions (10-05 to 10-05), 1 tickers:"
+        assert alerts[0].splitlines()[0] == "[wave] signal stats, last 1 session (10-05 to 10-05), 1 ticker:"
+
+    def test_run_starts_the_stats_thread(self, tmp_path, mocker):
+        clock = _Clock("2026-10-06 16:10")
+        monitor, _ = _monitor(tmp_path, {"AMD": []}, clock, stats_tickers=["AMD"])
+        mocker.patch.object(monitor, "prepare")
+        mocker.patch.object(monitor, "start_stream")
+        mocker.patch.object(monitor, "finish")
+        thread = mocker.patch.object(monitor_module.threading, "Thread")
+
+        monitor.run()
+
+        assert thread.call_args.kwargs["target"] == monitor.send_signal_stats
+        thread.return_value.start.assert_called_once()
+
+
+class TestLoadDailyCloseSeries:
+    def test_closes_before_the_session_by_date(self, mocker):
+        daily = pd.DataFrame({"close": [10.0, 11.0, 12.0]},
+                             index=pd.to_datetime(["2026-10-02", "2026-10-05", "2026-10-06"]))
+        mocker.patch.object(monitor_module, "fetch_daily_bars", return_value={"AMD": daily})
+
+        closes = monitor_module._load_daily_close_series(["AMD", "META"], date(2026, 10, 6))
+
+        assert closes["AMD"].to_dict() == {date(2026, 10, 2): 10.0, date(2026, 10, 5): 11.0}
+        assert closes["META"].empty
+
+
+class TestReversalAfterErrors:
+    def test_watch_error_rebuilds_the_watch(self, tmp_path, mocker):
+        clock = _Clock("2026-09-01 11:00")
+        monitor, _ = _monitor(tmp_path, {"AMD": []}, clock)
+        monitor.prepare()
+        broken = monitor.reversal_watches["AMD"]
+        mocker.patch.object(broken, "update", side_effect=ZeroDivisionError)
+
+        monitor._on_five_min_bar("AMD", _bar("2026-09-01 11:00", 100.0, 100.2, 99.8, 100.0))
+
+        assert monitor.reversal_watches["AMD"] is not broken
+
+    def test_failed_backfill_pauses_reversal_alerts(self, tmp_path, mocker):
+        clock = _Clock("2026-09-01 11:30")
+        monitor, alerts = _monitor(tmp_path, {"AMD": []}, clock)
+        monitor.prepare()
+        mocker.patch.object(monitor.client, "fetch_bars", side_effect=RuntimeError("down"))
+        monitor.backfill = (_ts("2026-09-01 10:30"), _ts("2026-09-01 10:46"))
+        monitor._run_backfill(clock())
+        mocker.patch.object(monitor.reversal_watches["AMD"], "update", return_value=[_reversal("2026-09-01 11:30")])
+
+        monitor._on_five_min_bar("AMD", _bar("2026-09-01 11:30", 100.0, 100.2, 99.8, 100.0))
+
+        assert alerts == []
 
 
 class TestReversalArguments:

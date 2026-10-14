@@ -466,12 +466,14 @@ class WaveSetupMonitor:
         self.daily_closes_loader = daily_closes_loader or _load_daily_closes
         self.reversal_patterns = tuple(reversal_patterns)
         self.reversal_watches = {}
+        self.reversal_paused = False
         self.stats_tickers = tuple(stats_tickers)
         self.stats_daily_loader = stats_daily_loader or _load_daily_close_series
         self.decision_lead = datetime.combine(date.today(), REGULAR_CLOSE) - datetime.combine(date.today(),
                                                                                                 close_decision_bar)
         self._set_session_times(_now_et().date())
         self.lock = threading.RLock()
+        self.client_lock = threading.Lock()  # history requests share the client's session with the stats thread
         self.aggregator = FiveMinAggregator(self._on_five_min_bar)
         self.bars = {}
         self.window_start = {}
@@ -545,7 +547,7 @@ class WaveSetupMonitor:
             end = now
         start = end - timedelta(days=WARMUP_CALENDAR_DAYS)
         try:
-            return self.client.warmup(self.tickers, start, end)
+            return self._history("warmup", self.tickers, start, end)
         except Exception as error:
             if "recent" not in str(error).lower():
                 raise
@@ -553,7 +555,7 @@ class WaveSetupMonitor:
             logger.warning("Feed refuses recent data (%s); warming up to %s and backfilling the rest later",
                            error, f"{delayed_end:%H:%M}")
             self._schedule_backfill(delayed_end, now)
-            return self.client.warmup(self.tickers, start, delayed_end)
+            return self._history("warmup", self.tickers, start, delayed_end)
 
     def _run_backfill(self, now):
         """Insert the bars skipped at a delayed-feed start; they update history only (no alerts)."""
@@ -562,9 +564,12 @@ class WaveSetupMonitor:
             return
         self.backfill = None
         try:
-            fetched = self.client.fetch_bars(self.tickers, gap_start, gap_end)
+            fetched = self._history("fetch_bars", self.tickers, gap_start, gap_end)
         except Exception:
             logger.warning("Backfill of %s-%s failed", f"{gap_start:%H:%M}", f"{gap_end:%H:%M}", exc_info=True)
+            if self.reversal_watches:
+                self.reversal_paused = True
+                logger.warning("Reversal alerts paused for the session: their waves miss the gap's bars")
             return
         for ticker in self.tickers:
             frame = fetched.get(ticker)
@@ -583,8 +588,18 @@ class WaveSetupMonitor:
         self.client.start()
         self.stream_started_at = self.now()
 
+    def _history(self, method, tickers, start, end):
+        """A history request to the market data client, one at a time."""
+        with self.client_lock:
+            return getattr(self.client, method)(tickers, start, end)
+
     def send_signal_stats(self):
-        """Start-up alert: recent drive long / overnight win rates (signal_stats). Errors are logged, not raised."""
+        """Start-up alert, once per session: recent drive long / overnight win rates (signal_stats).
+
+        Errors are logged, not raised.
+        """
+        if self.done.get("signal_stats"):
+            return
         try:
             message = self._signal_stats_message()
         except Exception:
@@ -595,30 +610,41 @@ class WaveSetupMonitor:
             self.notify(f"[wave] {message}")
         except Exception:
             logger.exception("Notification failed")
+        with self.lock:
+            self.done["signal_stats"] = True
+            self._save_state()
 
     def _signal_stats_message(self):
         previous = previous_trading_day(self.session)
         end = ET.localize(datetime.combine(previous, session_close(previous)))
-        bars = {t: frame for t, frame in self.bars.items()}
-        extra = [t for t in self.stats_tickers if t not in bars]
-        if extra:
-            fetched = self.client.warmup(extra, end - timedelta(days=WARMUP_CALENDAR_DAYS), end)
-            for ticker in extra:
-                frame = fetched.get(ticker)
-                if frame is not None and not frame.empty:
-                    bars[ticker] = regular_hours(frame)
-        tickers = list(bars)
-        daily = self.stats_daily_loader(tickers, self.session)
-        windows = {}
-        for ticker in tickers:
+        bars = dict(self.bars)
+        for ticker in (t for t in self.stats_tickers if t not in bars):
             try:
-                sessions = sorted(set(bars[ticker].index.date) | {self.session})
+                frame = self._history("warmup", [ticker], end - timedelta(days=WARMUP_CALENDAR_DAYS), end).get(ticker)
+            except Exception:
+                logger.warning("%s: signal stats history unavailable", ticker, exc_info=True)
+                continue
+            if frame is not None and not frame.empty:
+                bars[ticker] = regular_hours(frame)
+        notes = []
+        try:
+            daily = self.stats_daily_loader(list(bars), self.session)
+        except Exception:
+            logger.warning("Daily closes unavailable for the signal stats", exc_info=True)
+            daily = {}
+            notes.append(f"overnight {DEFAULT_STATS_OVERNIGHT}: daily closes unavailable, no holds counted")
+        windows = {}
+        for ticker, frame in bars.items():
+            try:
+                sessions = sorted(set(frame.index.date) | {self.session})
                 windows[ticker] = earnings_windows(self.releases_loader(ticker), sessions)
             except Exception:
                 logger.warning("%s: earnings calendar unavailable; its overnight stats include earnings nights",
                                ticker, exc_info=True)
-        return signal_stats(bars, daily, windows, self.stats_tickers, self.tickers, self.session,
-                            DEFAULT_STATS_SESSIONS, DEFAULT_STATS_DAYS, DEFAULT_STATS_OVERNIGHT)
+        future = self.executor.submit(signal_stats, bars, daily, windows, self.stats_tickers, self.tickers,
+                                      self.session, DEFAULT_STATS_SESSIONS, DEFAULT_STATS_DAYS,
+                                      DEFAULT_STATS_OVERNIGHT, notes)
+        return future.result()
 
     def tick(self):
         """Periodic work: flush late 5-min bars, scheduled alerts, stream watchdog."""
@@ -717,7 +743,8 @@ class WaveSetupMonitor:
     def _refetch_bar(self, ticker, partial):
         """The first period after a (re)start only has the minutes streamed since; fetch it whole."""
         try:
-            fetched = self.client.fetch_bars([ticker], partial["time"], partial["time"] + timedelta(minutes=BAR_MINUTES))
+            fetched = self._history("fetch_bars", [ticker], partial["time"],
+                                    partial["time"] + timedelta(minutes=BAR_MINUTES))
             frame = fetched.get(ticker)
             if frame is not None and not frame.empty:
                 row = regular_hours(frame).loc[partial["time"]]
@@ -752,10 +779,12 @@ class WaveSetupMonitor:
         try:
             fired = [s for s in watch.update(bar["time"], bar) if s.key not in self.alerted]
         except Exception:
-            logger.exception("%s: reversal check failed on the %s bar", ticker, f"{bar['time']:%H:%M}")
+            logger.exception("%s: reversal check failed on the %s bar; rebuilding its watch", ticker,
+                             f"{bar['time']:%H:%M}")
+            self._rebuild_reversal_watch(ticker)
             return
         # until a delayed-feed gap is backfilled the watch's waves miss bars
-        if self.backfill is not None or bar["time"].time() >= self.last_bar:
+        if self.backfill is not None or self.reversal_paused or bar["time"].time() >= self.last_bar:
             return
         for side in ("bottom", "top"):
             signals = [s for s in fired if s.side == side]

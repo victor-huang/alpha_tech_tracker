@@ -8,12 +8,13 @@ sessions for the monitored tickers:
               daily moving-average filter passes, sell the next session's open; nights into an earnings release
               are skipped
 
-Each trade is counted on its entry session, and an overnight hold only once the next open is in. No costs, like
-the setup report's default.
+Each trade is counted on its entry session; an overnight hold whose next open is not in yet is pending. No costs,
+like the setup report's default. Early-close days have no 15:55 bar and so no overnight hold, like the backtest.
 """
 
 from dataclasses import dataclass
 from datetime import date
+from typing import Optional
 
 import pandas as pd
 
@@ -45,7 +46,7 @@ class Result:
     ticker: str
     kind: str
     day: date
-    pct: float
+    pct: Optional[float]  # None: an overnight hold still waiting for the next open
 
 
 def drive_long_results(ticker, bars, days):
@@ -63,14 +64,14 @@ def drive_long_results(ticker, bars, days):
 
 
 def overnight_results(ticker, bars, daily_closes, windows, days, mode=DEFAULT_STATS_OVERNIGHT):
-    """Overnight holds entered on `days` whose next open is in the bars.
+    """Overnight holds entered on `days`, each sold at the next session's open in the bars (pending without one).
 
     `daily_closes` is a Series of daily closes indexed by date; the filter uses the closes before the entry session
     plus the 15:55 bar's close. `windows` are earnings windows (earnings_calendar.earnings_windows) or None.
     """
     sessions = sorted(set(bars.index.date))
     results = []
-    for session, next_session in zip(sessions, sessions[1:]):
+    for position, session in enumerate(sessions):
         if session not in days:
             continue
         day_bars = bars[bars.index.date == session]
@@ -83,38 +84,47 @@ def overnight_results(ticker, bars, daily_closes, windows, days, mode=DEFAULT_ST
         closes = [float(c) for d, c in daily_closes.items() if d < session] + [entry]
         if not overnight_filter_ok(mode, closes):
             continue
-        exit_price = float(bars[bars.index.date == next_session]["open"].iloc[0])
+        if position + 1 == len(sessions):
+            results.append(Result(ticker, "overnight", session, None))
+            continue
+        exit_price = float(bars[bars.index.date == sessions[position + 1]]["open"].iloc[0])
         results.append(Result(ticker, "overnight", session, (exit_price - entry) / entry * 100))
     return results
 
 
+def _plural(count, word):
+    return f"{count} {word}" + ("" if count == 1 else "s")
+
+
 def _summary(results):
-    if not results:
-        return "no trades"
-    wins = sum(r.pct > 0 for r in results)
-    average = sum(r.pct for r in results) / len(results)
-    return f"{wins}/{len(results)} won ({wins / len(results):.0%}), avg {average:+.2f}%"
+    done = [r for r in results if r.pct is not None]
+    pending = len(results) - len(done)
+    if not done:
+        return f"{pending} pending (exit at the next open)" if pending else "no trades"
+    wins = sum(r.pct > 0 for r in done)
+    average = sum(r.pct for r in done) / len(done)
+    text = f"{wins}/{len(done)} won ({wins / len(done):.0%}), avg {average:+.2f}%"
+    return text + (f", {pending} pending" if pending else "")
 
 
-def stats_message(results, stats_tickers, monitor_tickers, stats_days, recent_days, overnight_mode, missing=()):
+def stats_message(results, stats_tickers, monitor_tickers, stats_days, recent_days, overnight_mode, missing=(),
+                  notes=()):
     """The start-up alert text from drive long / overnight `results` (Result list)."""
     if not stats_days:
         return "signal stats: no completed sessions in the history"
     pooled = [r for r in results if r.ticker in stats_tickers and r.day in stats_days]
-    lines = [f"signal stats, last {len(stats_days)} sessions ({min(stats_days):%m-%d} to {max(stats_days):%m-%d}), "
-             f"{len(set(stats_tickers) - set(missing))} tickers:",
+    lines = [f"signal stats, last {_plural(len(stats_days), 'session')} ({min(stats_days):%m-%d} to "
+             f"{max(stats_days):%m-%d}), {_plural(len(set(stats_tickers) - set(missing)), 'ticker')}:",
              f"drive long: {_summary([r for r in pooled if r.kind == 'drive'])}",
              f"overnight {overnight_mode}: {_summary([r for r in pooled if r.kind == 'overnight'])}",
              f"monitored ({' '.join(monitor_tickers)}), by day:"]
     for day in recent_days:
         mine = [r for r in results if r.ticker in monitor_tickers and r.day == day]
-        overnight = [r for r in mine if r.kind == "overnight"]
-        overnight_text = "pending (exits at the next open)" if day == recent_days[-1] and not overnight \
-            else _summary(overnight)
         lines.append(f"{day:%m-%d} drive long {_summary([r for r in mine if r.kind == 'drive'])} | "
-                     f"overnight {overnight_text}")
+                     f"overnight {_summary([r for r in mine if r.kind == 'overnight'])}")
     if missing:
         lines.append(f"no data: {' '.join(missing)}")
+    lines += list(notes)
     return "\n".join(lines)
 
 
@@ -127,8 +137,12 @@ def completed_sessions(bars_by_ticker, before):
 
 
 def signal_stats(bars_by_ticker, daily_by_ticker, windows_by_ticker, stats_tickers, monitor_tickers, before,
-                 sessions=DEFAULT_STATS_SESSIONS, days=DEFAULT_STATS_DAYS, overnight_mode=DEFAULT_STATS_OVERNIGHT):
-    """The start-up alert text: drive long and overnight results over sessions before `before`."""
+                 sessions=DEFAULT_STATS_SESSIONS, days=DEFAULT_STATS_DAYS, overnight_mode=DEFAULT_STATS_OVERNIGHT,
+                 notes=()):
+    """The start-up alert text: drive long and overnight results entered in sessions before `before`.
+
+    Bars from `before` on are used only for the next open that ends an overnight hold.
+    """
     completed = completed_sessions(bars_by_ticker, before)
     stats_days, recent_days = set(completed[-sessions:]), completed[-days:]
     wanted = stats_days | set(recent_days)
@@ -138,9 +152,8 @@ def signal_stats(bars_by_ticker, daily_by_ticker, windows_by_ticker, stats_ticke
         if bars is None or bars.empty:
             missing.append(ticker)
             continue
-        bars = bars[bars.index.date < before]
-        results += drive_long_results(ticker, bars, wanted)
+        results += drive_long_results(ticker, bars[bars.index.date < before], wanted)
         results += overnight_results(ticker, bars, daily_by_ticker.get(ticker, pd.Series(dtype=float)),
                                      windows_by_ticker.get(ticker), wanted, overnight_mode)
     return stats_message(results, stats_tickers, monitor_tickers, stats_days, recent_days, overnight_mode,
-                         [t for t in missing if t in stats_tickers])
+                         [t for t in missing if t in stats_tickers], notes)

@@ -152,6 +152,12 @@ class TestReversalWatchFromBars:
 
         assert update.call_args_list[0].args[1] == _ts("2026-09-15 09:30")
 
+    def test_skips_invalid_rows(self):
+        frame = _amd_bars("2026-09-01")
+        frame.loc[frame.index[-1], "close"] = float("nan")
+
+        assert ReversalWatch.from_bars("AMD", frame).last_time == frame.index[-2]
+
     def test_empty_frame(self):
         assert ReversalWatch.from_bars("AMD", _amd_bars("2026-09-01").iloc[:0]).last_time is None
 

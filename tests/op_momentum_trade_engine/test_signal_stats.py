@@ -1,4 +1,5 @@
 from datetime import date, datetime, time, timedelta
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -15,6 +16,7 @@ from alpha_tech_tracker.op_momentum_strategy.signal_stats import (
 
 ET = pytz.timezone("America/New_York")
 MON, TUE, WED = date(2026, 10, 12), date(2026, 10, 13), date(2026, 10, 14)
+FIXTURES = Path(__file__).parent / "fixtures"
 
 
 def _session(day, close=100.0, first_open=None):
@@ -43,8 +45,20 @@ class TestOvernightResults:
 
         assert results == [Result("AMD", "overnight", MON, pytest.approx(1.0))]
 
-    def test_no_result_until_the_next_open(self):
+    def test_pending_until_the_next_open(self):
         bars = _session(MON)
+
+        assert overnight_results("AMD", bars, pd.Series(dtype=float), None, {MON}, mode="always") == [
+            Result("AMD", "overnight", MON, None)]
+
+    def test_no_entry_is_not_pending(self):
+        bars = _session(MON)
+        closes = pd.Series([110.0] * 200, index=[MON - timedelta(days=i) for i in range(1, 201)])
+
+        assert overnight_results("AMD", bars, closes, None, {MON}, mode="ma200") == []
+
+    def test_no_hold_on_an_early_close_day(self):
+        bars = _bars(_session(MON).iloc[:42], _session(TUE))
 
         assert overnight_results("AMD", bars, pd.Series(dtype=float), None, {MON}, mode="always") == []
 
@@ -86,6 +100,15 @@ class TestDriveLongResults:
         assert results == [Result("AMD", "drive", MON, 1.5)]
         assert run.call_args.args[1] == "eod"
 
+    def test_real_drive_long_stops_at_the_first_bars_low(self):
+        frame = pd.read_csv(FIXTURES / "amd_5min_2026-09-16.csv", index_col="time")
+        frame.index = pd.to_datetime(frame.index, utc=True).tz_convert(ET)
+
+        results = drive_long_results("AMD", frame, {date(2026, 9, 16)})
+
+        assert results == [Result("AMD", "drive", date(2026, 9, 16), pytest.approx((514.16 - 519.12) / 519.12 * 100,
+                                                                                 abs=0.01))]
+
     def test_ignores_other_signals_and_days(self, mocker):
         mocker.patch.object(stats_module, "analyze_bars", return_value={"signals": [
             self._signal(MON, "drive_short"), self._signal(TUE)]})
@@ -98,7 +121,7 @@ class TestStatsMessage:
     def _results(self):
         return [Result("AMD", "drive", MON, 2.0), Result("AMD", "drive", TUE, -1.0),
                 Result("META", "drive", TUE, 1.0), Result("AMD", "overnight", MON, 0.5),
-                Result("META", "overnight", MON, -0.5)]
+                Result("META", "overnight", MON, -0.5), Result("AMD", "overnight", TUE, None)]
 
     def test_pooled_and_by_day(self):
         message = stats_message(self._results(), ["AMD", "META"], ["AMD"], {MON, TUE}, [MON, TUE], "ma200")
@@ -106,10 +129,10 @@ class TestStatsMessage:
         assert message.splitlines() == [
             "signal stats, last 2 sessions (10-12 to 10-13), 2 tickers:",
             "drive long: 2/3 won (67%), avg +0.67%",
-            "overnight ma200: 1/2 won (50%), avg +0.00%",
+            "overnight ma200: 1/2 won (50%), avg +0.00%, 1 pending",
             "monitored (AMD), by day:",
             "10-12 drive long 1/1 won (100%), avg +2.00% | overnight 1/1 won (100%), avg +0.50%",
-            "10-13 drive long 0/1 won (0%), avg -1.00% | overnight pending (exits at the next open)"]
+            "10-13 drive long 0/1 won (0%), avg -1.00% | overnight 1 pending (exit at the next open)"]
 
     def test_day_without_trades(self):
         message = stats_message([], ["AMD"], ["AMD"], {MON, TUE}, [MON, TUE], "ma200")
@@ -119,8 +142,13 @@ class TestStatsMessage:
     def test_names_tickers_without_data(self):
         message = stats_message([], ["AMD", "META"], ["AMD"], {MON}, [MON], "ma200", missing=["META"])
 
-        assert message.splitlines()[0].endswith("1 tickers:")
+        assert message.splitlines()[0] == "signal stats, last 1 session (10-12 to 10-12), 1 ticker:"
         assert message.splitlines()[-1] == "no data: META"
+
+    def test_notes_end_the_message(self):
+        message = stats_message([], ["AMD"], ["AMD"], {MON}, [MON], "ma200", notes=["daily closes unavailable"])
+
+        assert message.splitlines()[-1] == "daily closes unavailable"
 
     def test_no_sessions(self):
         assert stats_message([], ["AMD"], ["AMD"], set(), [], "ma200") == (
@@ -146,6 +174,13 @@ class TestSignalStats:
         signal_stats(bars, {}, {}, ["AMD"], ["AMD"], date(2026, 10, 15), sessions=2, days=1)
 
         assert drive.call_args.args[2] == {TUE, WED}
+
+    def test_todays_open_ends_the_last_night(self):
+        bars = {"AMD": _bars(_session(MON, 100.0), _session(TUE, 100.0, first_open=102.0).iloc[:1])}
+
+        message = signal_stats(bars, {}, {}, ["AMD"], ["AMD"], TUE, days=1, overnight_mode="always")
+
+        assert "10-12 drive long no trades | overnight 1/1 won (100%), avg +2.00%" in message
 
     def test_reports_stats_tickers_without_bars(self, mocker):
         mocker.patch.object(stats_module, "drive_long_results", return_value=[])

@@ -181,17 +181,18 @@ bar on.
 
 ## Signal stats
 
-Sent once when the monitor starts (with the midnight cron restart, just after midnight): how drive
+Sent once per session when the monitor starts (with the midnight cron restart, just after
+midnight; a later restart the same session does not resend it): how drive
 long and the overnight hold have been doing lately, as a guide to how much to trust today's signals.
 
 ```
 signal stats, last 10 sessions (09-30 to 10-13), 21 tickers:
 drive long: 30/106 won (28%), avg +0.03%
-overnight ma200: 83/133 won (62%), avg +0.06%
+overnight ma200: 83/133 won (62%), avg +0.06%, 15 pending
 monitored (MRNA SNDK APP AMD MDB CRWV SNPS), by day:
 10-09 drive long 1/4 won (25%), avg +2.64% | overnight 2/5 won (40%), avg -0.70%
 10-12 drive long 0/1 won (0%), avg -1.35% | overnight 0/5 won (0%), avg -2.52%
-10-13 drive long 4/6 won (67%), avg +0.99% | overnight pending (exits at the next open)
+10-13 drive long 4/6 won (67%), avg +0.99% | overnight 5 pending (exit at the next open)
 ```
 
 - **First block:** the last 10 completed sessions, pooled over the stats tickers (`--stats-tickers`;
@@ -201,11 +202,20 @@ monitored (MRNA SNDK APP AMD MDB CRWV SNPS), by day:
 - **Drive long** is the setup report's `drive long`: the first bar green, stop at its low, held to
   the close. **Overnight** is `overnight ma200`: buy the 15:55 bar's close when it is above the
   200-day average, sell the next open, skip nights into earnings. A trade counts on its entry
-  session; the latest session's overnight hold is pending until the next open. No costs.
-- The numbers match `wave_risk_reward_backtest` trade for trade (AMD, SNDK, MRNA, Sep 30 – Oct 13
-  2026). Tickers the monitor does not watch are fetched from the market data source (about 30 s
-  for 21 tickers, in the background, so the stream is not delayed). A failure is logged and sends
-  nothing. `--no-signal-stats` turns it off.
+  session; a hold bought but not yet sold (the latest night, before the open) is counted as
+  pending, not as a win or loss. "no trades" means nothing was entered. Early-close days have no
+  15:55 bar and so no hold, like the backtest. No costs.
+- The numbers match `wave_risk_reward_backtest` trade for trade (AMD, SNDK, MRNA, MSFT, COIN, META,
+  AMAT, DDOG checked).
+- Tickers the monitor does not watch are fetched from the market data source one at a time (about
+  30 s for 21 tickers). It runs in a background thread after the stream starts and the
+  computation goes to the `--workers` pool; with `--workers 0` it shares the main process, which
+  can delay bar handling a little in the first minute if started during the session. History
+  requests take turns with the monitor's own refetches and backfills, since they share the
+  client's session.
+- A ticker whose history fails is listed under `no data`; missing daily closes are noted and count
+  no overnight holds; any other failure is logged and sends nothing. `--no-signal-stats` turns it
+  off.
 
 ## Reversal alerts
 
@@ -243,9 +253,10 @@ closes as the market does.
   full replay). The replay sends no alerts, so a reversal on the bar closed just before a restart
   is not alerted.
 - **Gaps:** after a delayed-feed start no reversal alerts are sent until the gap is backfilled; then
-  the watch is rebuilt. A late or out-of-order bar also rebuilds it, without an alert.
+  the watch is rebuilt. If the backfill fails, reversal alerts stay off for the rest of the session.
+  A late or out-of-order bar also rebuilds the watch, without an alert.
 - **Bad data:** a bar with a zero or missing price is skipped. An error in the reversal check is
-  logged and never stops the setup alerts for that bar.
+  logged, rebuilds the watch, and never stops the setup alerts for that bar.
 - **Wave size:** the watch always uses the default wave size (`--min-wave-bar-ranges 2`), whatever
   the setups use.
 
