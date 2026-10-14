@@ -17,6 +17,9 @@ plus a CSV log:
                MOC cutoff (15:55) but not NYSE's (15:50): `--close-decision-bar 15:40` decides on
                the 15:40 bar and alerts about 15:45 instead.
   09:25        SELL at the open (MOO, before the 09:28 cutoff) for overnight holds.
+  Start-up    drive long and overnight hold win rates: the last 10 sessions pooled over the stats
+               tickers (`--stats-tickers`), and day by day for the last 3 sessions over the monitored
+               tickers (signal_stats). `--no-signal-stats` turns it off.
   LOW? / HIGH? information only, no trade: a reversal candle (piercing / dark cloud, push, long tail
                confirmed by the next bar) on a bar near the low of a down wave or the high of an up wave
                (reversal_watch), up to the bar before the last. `--reversal-patterns` picks the patterns,
@@ -122,6 +125,13 @@ from alpha_tech_tracker.op_momentum_strategy.reversal_watch import (
     PATTERNS as REVERSAL_PATTERNS,
     ReversalWatch,
     reversal_message,
+)
+from alpha_tech_tracker.op_momentum_strategy.signal_stats import (
+    DEFAULT_STATS_DAYS,
+    DEFAULT_STATS_OVERNIGHT,
+    DEFAULT_STATS_SESSIONS,
+    DEFAULT_STATS_TICKERS,
+    signal_stats,
 )
 
 logger = logging.getLogger(__name__)
@@ -442,7 +452,8 @@ class WaveSetupMonitor:
     def __init__(self, setups_by_ticker, market_data_client, state_file=DEFAULT_STATE, alerts_dir=_LOG_DIR,
                  executor=None, notify=_notify, now=_now_et, releases_loader=load_releases,
                  daily_closes_loader=None, close_decision_bar=DEFAULT_CLOSE_DECISION_BAR,
-                 reversal_patterns=REVERSAL_PATTERNS):
+                 reversal_patterns=REVERSAL_PATTERNS, stats_tickers=DEFAULT_STATS_TICKERS,
+                 stats_daily_loader=None):
         self.setups = setups_by_ticker
         self.tickers = list(setups_by_ticker)
         self.client = market_data_client
@@ -455,6 +466,8 @@ class WaveSetupMonitor:
         self.daily_closes_loader = daily_closes_loader or _load_daily_closes
         self.reversal_patterns = tuple(reversal_patterns)
         self.reversal_watches = {}
+        self.stats_tickers = tuple(stats_tickers)
+        self.stats_daily_loader = stats_daily_loader or _load_daily_close_series
         self.decision_lead = datetime.combine(date.today(), REGULAR_CLOSE) - datetime.combine(date.today(),
                                                                                                 close_decision_bar)
         self._set_session_times(_now_et().date())
@@ -570,6 +583,43 @@ class WaveSetupMonitor:
         self.client.start()
         self.stream_started_at = self.now()
 
+    def send_signal_stats(self):
+        """Start-up alert: recent drive long / overnight win rates (signal_stats). Errors are logged, not raised."""
+        try:
+            message = self._signal_stats_message()
+        except Exception:
+            logger.exception("Signal stats failed")
+            return
+        logger.info("SIGNAL STATS\n%s", message)
+        try:
+            self.notify(f"[wave] {message}")
+        except Exception:
+            logger.exception("Notification failed")
+
+    def _signal_stats_message(self):
+        previous = previous_trading_day(self.session)
+        end = ET.localize(datetime.combine(previous, session_close(previous)))
+        bars = {t: frame for t, frame in self.bars.items()}
+        extra = [t for t in self.stats_tickers if t not in bars]
+        if extra:
+            fetched = self.client.warmup(extra, end - timedelta(days=WARMUP_CALENDAR_DAYS), end)
+            for ticker in extra:
+                frame = fetched.get(ticker)
+                if frame is not None and not frame.empty:
+                    bars[ticker] = regular_hours(frame)
+        tickers = list(bars)
+        daily = self.stats_daily_loader(tickers, self.session)
+        windows = {}
+        for ticker in tickers:
+            try:
+                sessions = sorted(set(bars[ticker].index.date) | {self.session})
+                windows[ticker] = earnings_windows(self.releases_loader(ticker), sessions)
+            except Exception:
+                logger.warning("%s: earnings calendar unavailable; its overnight stats include earnings nights",
+                               ticker, exc_info=True)
+        return signal_stats(bars, daily, windows, self.stats_tickers, self.tickers, self.session,
+                            DEFAULT_STATS_SESSIONS, DEFAULT_STATS_DAYS, DEFAULT_STATS_OVERNIGHT)
+
     def tick(self):
         """Periodic work: flush late 5-min bars, scheduled alerts, stream watchdog."""
         now = self.now()
@@ -610,6 +660,8 @@ class WaveSetupMonitor:
             return
         self.prepare()
         self.start_stream()
+        if self.stats_tickers:
+            threading.Thread(target=self.send_signal_stats, name="signal-stats", daemon=True).start()
         self._system_alert(f"monitor started for {today}: {len(self.tickers)} tickers ({', '.join(self.tickers)})"
                            + (f"; early close at {self.close_time:%H:%M}" if self.half_day else ""), level=logging.INFO)
         logger.info("Monitoring %s", ", ".join(f"{t}: {[s.name for s in self.setups[t]]}" for t in self.tickers))
@@ -968,6 +1020,21 @@ def _empty_bars():
     return pd.DataFrame(columns=["open", "high", "low", "close"], index=pd.DatetimeIndex([], tz=ET), dtype=float)
 
 
+def _load_daily_close_series(tickers, session):
+    """Split-adjusted daily closes before `session` as {ticker: Series by date}, for the start-up signal stats."""
+    daily = fetch_daily_bars(tickers, session - timedelta(days=DAILY_HISTORY_DAYS), session - timedelta(days=1))
+    out = {}
+    for ticker in tickers:
+        frame = daily.get(ticker)
+        if frame is None or frame.empty:
+            out[ticker] = pd.Series(dtype=float)
+            continue
+        column = "Close" if "Close" in frame.columns else "close"
+        closes = pd.Series([float(c) for c in frame[column]], index=[pd.Timestamp(d).date() for d in frame.index])
+        out[ticker] = closes[[d < session for d in closes.index]]
+    return out
+
+
 def _load_daily_closes(tickers, session):
     """Split-adjusted daily closes before `session`, for the overnight moving-average filters."""
     daily = fetch_daily_bars(tickers, session - timedelta(days=DAILY_HISTORY_DAYS), session - timedelta(days=1))
@@ -1018,7 +1085,8 @@ def _run_monitor(args):
     executor = InlineExecutor() if args.workers == 0 else ProcessPoolExecutor(max_workers=args.workers)
     monitor = WaveSetupMonitor(setups, build_market_data_client(args), state_file=args.state_file, executor=executor,
                                close_decision_bar=datetime.strptime(args.close_decision_bar, "%H:%M").time(),
-                               reversal_patterns=[] if args.no_reversal_alerts else args.reversal_patterns)
+                               reversal_patterns=[] if args.no_reversal_alerts else args.reversal_patterns,
+                               stats_tickers=[] if args.no_signal_stats else args.stats_tickers)
 
     def _stop(signum, frame):
         raise KeyboardInterrupt
@@ -1068,6 +1136,10 @@ def parse_args(argv=None):
                         help="Reversal candles alerted (information only) near wave lows/highs (default: all: "
                              "piercing = piercing / dark cloud, push, long_tail = long tail confirmed by the next bar)")
     parser.add_argument("--no-reversal-alerts", action="store_true", help="No reversal candle alerts")
+    parser.add_argument("--stats-tickers", nargs="+", default=list(DEFAULT_STATS_TICKERS),
+                        help="Tickers pooled in the start-up drive long / overnight win rates (default: the 21 "
+                             "setup-tape tickers)")
+    parser.add_argument("--no-signal-stats", action="store_true", help="No start-up signal stats alert")
     parser.add_argument("--state-file", default=str(DEFAULT_STATE))
     parser.add_argument("--pid-file", default=PID_FILE)
     parser.add_argument("--log-file", help="Default: logs/wave_setup_monitor_<date>.log")

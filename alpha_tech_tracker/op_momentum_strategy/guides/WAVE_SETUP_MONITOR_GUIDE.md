@@ -167,6 +167,7 @@ at that time (System Settings → Battery → Options, or `pmset repeat wake MTW
 | 09:25 next morning | `SELL ... at the open (MOO before 09:28)` | For each overnight hold in the state file. |
 | 16:05 | Session summary | Closed trades with P&L, holds carried overnight. |
 | Start-up | `monitor started for <date>: N tickers` | Daily sign of life; also notes an early close. |
+| Start-up, about 30 s later | `signal stats, last 10 sessions ...` | Drive long and overnight hold win rates. See [Signal stats](#signal-stats). |
 | No 1-min bar for 5 min in the session | `no market data since HH:MM ...`, then `market data restored ...` | Sent once per outage. The stream is reconnected every 2 min meanwhile; the gap's bars are backfilled when data returns, but signals and stop checks inside it are missed. |
 | A reversal candle near a wave's low or high | `LOW?` / `HIGH? ticker \| pattern(s) \| ~price (HH:MM bar close) \| wave down/up N avg bars, low/high so far` | Information only: no trade is opened or tracked. See [Reversal alerts](#reversal-alerts). |
 
@@ -177,6 +178,34 @@ Every alert is also appended to `logs/wave_setup_alerts_<date>.csv`; the log is
 For NYSE-listed tickers (SPOT, CRM, LLY, ...) use `--close-decision-bar 15:40`: the decision
 uses the 15:40 bar and the alert comes about 15:45. Entries are not alerted from the decision
 bar on.
+
+## Signal stats
+
+Sent once when the monitor starts (with the midnight cron restart, just after midnight): how drive
+long and the overnight hold have been doing lately, as a guide to how much to trust today's signals.
+
+```
+signal stats, last 10 sessions (09-30 to 10-13), 21 tickers:
+drive long: 30/106 won (28%), avg +0.03%
+overnight ma200: 83/133 won (62%), avg +0.06%
+monitored (MRNA SNDK APP AMD MDB CRWV SNPS), by day:
+10-09 drive long 1/4 won (25%), avg +2.64% | overnight 2/5 won (40%), avg -0.70%
+10-12 drive long 0/1 won (0%), avg -1.35% | overnight 0/5 won (0%), avg -2.52%
+10-13 drive long 4/6 won (67%), avg +0.99% | overnight pending (exits at the next open)
+```
+
+- **First block:** the last 10 completed sessions, pooled over the stats tickers (`--stats-tickers`;
+  default the 21 setup-tape tickers: the 7 EC2 tickers, SPOT COIN MSFT SNOW CRWD AMAT FN DDOG ARM CLS
+  META SPCX CHTR, and LLY).
+- **By day:** the last 3 completed sessions, over the monitored tickers.
+- **Drive long** is the setup report's `drive long`: the first bar green, stop at its low, held to
+  the close. **Overnight** is `overnight ma200`: buy the 15:55 bar's close when it is above the
+  200-day average, sell the next open, skip nights into earnings. A trade counts on its entry
+  session; the latest session's overnight hold is pending until the next open. No costs.
+- The numbers match `wave_risk_reward_backtest` trade for trade (AMD, SNDK, MRNA, Sep 30 – Oct 13
+  2026). Tickers the monitor does not watch are fetched from the market data source (about 30 s
+  for 21 tickers, in the background, so the stream is not delayed). A failure is logged and sends
+  nothing. `--no-signal-stats` turns it off.
 
 ## Reversal alerts
 
@@ -299,5 +328,7 @@ difference is the close rule below (GOOGL drive long on Sep 30 hit its stop afte
 | `--workers` | CPUs − 1 | Processes evaluating setups (0 = main process) |
 | `--reversal-patterns ...` | `piercing push long_tail` | Reversal candles alerted (information only) |
 | `--no-reversal-alerts` | off | No reversal alerts |
+| `--stats-tickers ...` | the 21 setup-tape tickers | Tickers pooled in the start-up signal stats |
+| `--no-signal-stats` | off | No start-up signal stats |
 | `--no-notify` | off | Log and CSV only |
 | `--state-file`, `--pid-file`, `--log-file`, `--log-level` | under `logs/` | |

@@ -506,6 +506,56 @@ class TestReversalAlerts:
         assert len(alerts) == 1 and alerts[0].startswith("[wave] LOW? AMD | piercing + push")
 
 
+class TestSignalStatsAlert:
+    def _monitor(self, tmp_path, mocker, **kwargs):
+        clock = _Clock("2026-10-06 09:00")
+        history = {"AMD": _history([("2026-10-05 15:55", 100.0)]), "META": _history([("2026-10-05 15:55", 50.0)])}
+        return _monitor(tmp_path, {"AMD": ["drive long"]}, clock, history=history, **kwargs)
+
+    def test_sends_the_stats_at_start(self, tmp_path, mocker):
+        monitor, alerts = self._monitor(tmp_path, mocker, stats_tickers=["AMD", "META"],
+                                        stats_daily_loader=lambda tickers, session: {})
+        monitor.prepare()
+        stats = mocker.patch.object(monitor_module, "signal_stats", return_value="signal stats ...")
+
+        monitor.send_signal_stats()
+
+        assert alerts == ["[wave] signal stats ..."]
+        assert sorted(stats.call_args.args[0]) == ["AMD", "META"]
+
+    def test_fetches_only_the_stats_tickers_it_does_not_monitor(self, tmp_path, mocker):
+        monitor, _ = self._monitor(tmp_path, mocker, stats_tickers=["AMD", "META"],
+                                   stats_daily_loader=lambda tickers, session: {})
+        monitor.prepare()
+        mocker.patch.object(monitor_module, "signal_stats", return_value="signal stats ...")
+        warmup = mocker.spy(monitor.client, "warmup")
+
+        monitor.send_signal_stats()
+
+        assert warmup.call_args.args[0] == ["META"]
+        assert warmup.call_args.args[2] == _ts("2026-10-05 16:00")
+
+    def test_error_is_logged_not_raised(self, tmp_path, mocker):
+        def failing_loader(tickers, session):
+            raise RuntimeError("no daily data")
+
+        monitor, alerts = self._monitor(tmp_path, mocker, stats_tickers=["AMD"], stats_daily_loader=failing_loader)
+        monitor.prepare()
+
+        monitor.send_signal_stats()
+
+        assert alerts == []
+
+    def test_end_to_end_message(self, tmp_path, mocker):
+        monitor, alerts = self._monitor(tmp_path, mocker, stats_tickers=["AMD"],
+                                        stats_daily_loader=lambda tickers, session: {})
+        monitor.prepare()
+
+        monitor.send_signal_stats()
+
+        assert alerts[0].splitlines()[0] == "[wave] signal stats, last 1 sessions (10-05 to 10-05), 1 tickers:"
+
+
 class TestReversalArguments:
     def test_all_patterns_by_default(self):
         args = parse_args(["run"])
@@ -518,6 +568,19 @@ class TestReversalArguments:
     def test_unknown_pattern_is_rejected(self):
         with pytest.raises(SystemExit):
             parse_args(["run", "--reversal-patterns", "engulfing"])
+
+
+class TestSignalStatsArguments:
+    def test_the_21_setup_tape_tickers_by_default(self):
+        args = parse_args(["run"])
+
+        assert (len(args.stats_tickers), args.no_signal_stats) == (21, False)
+
+    def test_chosen_tickers(self):
+        assert parse_args(["run", "--stats-tickers", "AMD", "META"]).stats_tickers == ["AMD", "META"]
+
+    def test_turned_off(self):
+        assert parse_args(["run", "--no-signal-stats"]).no_signal_stats
 
 
 class TestMonitorClose:
