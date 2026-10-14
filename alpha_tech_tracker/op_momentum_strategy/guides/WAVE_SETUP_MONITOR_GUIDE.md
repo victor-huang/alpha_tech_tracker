@@ -168,7 +168,7 @@ at that time (System Settings → Battery → Options, or `pmset repeat wake MTW
 | 16:05 | Session summary | Closed trades with P&L, holds carried overnight. |
 | Start-up | `monitor started for <date>: N tickers` | Daily sign of life; also notes an early close. |
 | No 1-min bar for 5 min in the session | `no market data since HH:MM ...`, then `market data restored ...` | Sent once per outage. The stream is reconnected every 2 min meanwhile; the gap's bars are backfilled when data returns, but signals and stop checks inside it are missed. |
-| A reversal candle near a wave's low or high | `LOW?` / `HIGH? ticker \| pattern(s) \| ~price \| wave size, low/high so far \| study precision \| info only` | Information only: no trade is opened or tracked. See [Reversal alerts](#reversal-alerts). |
+| A reversal candle near a wave's low or high | `LOW?` / `HIGH? ticker \| pattern(s) \| ~price (HH:MM bar close) \| wave down/up N avg bars, low/high so far` | Information only: no trade is opened or tracked. See [Reversal alerts](#reversal-alerts). |
 
 Every alert is also appended to `logs/wave_setup_alerts_<date>.csv`; the log is
 `logs/wave_setup_monitor_<date>.log`.

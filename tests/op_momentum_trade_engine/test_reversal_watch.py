@@ -83,14 +83,11 @@ class TestReversalWatchReplay:
 class TestReversalMessage:
     def test_one_pattern(self):
         assert reversal_message([_signal("piercing", "bottom")]) == (
-            "LOW? AMD | piercing | ~454.10 (10:30 bar close) | wave down 5.5 avg bars, low 452.30 | at the real low "
-            "(2025 / 2026): piercing 69% / 56%; any near-low bar 31% / 29% | info only")
+            "LOW? AMD | piercing | ~454.10 (10:30 bar close) | wave down 5.5 avg bars, low 452.30")
 
     def test_patterns_on_one_bar_share_an_alert(self):
-        message = reversal_message([_signal("piercing", "top"), _signal("push", "top")])
-
-        assert message.startswith("HIGH? AMD | dark cloud + push | ~454.10")
-        assert "dark cloud 65% / 61%, push 59% / 61%; any near-high bar 29% / 27%" in message
+        assert reversal_message([_signal("piercing", "top"), _signal("push", "top")]) == (
+            "HIGH? AMD | dark cloud + push | ~454.10 (10:30 bar close) | wave up 5.5 avg bars, high 452.30")
 
     @pytest.mark.parametrize("pattern,side,name", [("long_tail", "bottom", "long tail + confirm"),
                                                    ("piercing", "top", "dark cloud")])

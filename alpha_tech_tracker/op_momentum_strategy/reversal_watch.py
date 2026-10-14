@@ -39,11 +39,6 @@ FIRST_CANDIDATE_BAR = 2  # the session's third bar (09:40), as in the study
 PATTERN_NAMES = {("piercing", "bottom"): "piercing", ("piercing", "top"): "dark cloud",
                  ("push", "bottom"): "push", ("push", "top"): "push",
                  ("long_tail", "bottom"): "long tail + confirm", ("long_tail", "top"): "long tail + confirm"}
-# share of firings within one bar of the real extreme, 7 monitored tickers pooled, 2025 / 2026
-STUDY_PRECISION = {("piercing", "bottom"): "69% / 56%", ("piercing", "top"): "65% / 61%",
-                   ("push", "bottom"): "65% / 53%", ("push", "top"): "59% / 61%",
-                   ("long_tail", "bottom"): "55% / 53%", ("long_tail", "top"): "51% / 51%"}
-STUDY_BASELINE = {"bottom": "31% / 29%", "top": "29% / 27%"}
 
 
 @dataclass
@@ -66,11 +61,8 @@ def reversal_message(signals):
     first = signals[0]
     wave, extreme = ("down", "low") if first.side == "bottom" else ("up", "high")
     names = " + ".join(PATTERN_NAMES[(s.pattern, s.side)] for s in signals)
-    precision = ", ".join(f"{PATTERN_NAMES[(s.pattern, s.side)]} {STUDY_PRECISION[(s.pattern, s.side)]}"
-                          for s in signals)
     return (f"{extreme.upper()}? {first.ticker} | {names} | ~{first.price:.2f} ({first.time:%H:%M} bar close) | "
-            f"wave {wave} {first.move_bars:.1f} avg bars, {extreme} {first.extreme:.2f} | at the real {extreme} "
-            f"(2025 / 2026): {precision}; any near-{extreme} bar {STUDY_BASELINE[first.side]} | info only")
+            f"wave {wave} {first.move_bars:.1f} avg bars, {extreme} {first.extreme:.2f}")
 
 
 def _candle(bar):

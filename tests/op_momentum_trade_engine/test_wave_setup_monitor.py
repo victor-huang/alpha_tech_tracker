@@ -359,8 +359,7 @@ class TestReversalAlerts:
         monitor._on_five_min_bar("AMD", _amd_bar("2026-09-01 10:30"))
 
         assert alerts == ["[wave] LOW? AMD | piercing + push | ~454.10 (10:30 bar close) | wave down 5.5 avg bars, "
-                          "low 452.30 | at the real low (2025 / 2026): piercing 69% / 56%, push 65% / 53%; any "
-                          "near-low bar 31% / 29% | info only"]
+                          "low 452.30"]
 
     def test_alert_is_logged_to_the_csv(self, tmp_path):
         clock = _Clock("2026-09-01 10:30")
