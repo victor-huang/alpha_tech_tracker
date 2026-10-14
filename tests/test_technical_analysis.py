@@ -1,6 +1,5 @@
 import datetime
 
-import ipdb
 import numpy
 import pandas as pd
 import pytest
@@ -160,6 +159,154 @@ def test_push_reversal():
     price_data = [[101, 96, 100, 96], [96.2, 101.3, 101.5, 96]]
 
     assert ta.push_reversal(price_data, trend="down") == True
+
+
+class TestPiercingReversalMinimum:
+    # AMD 2026-02-10 09:45 and 09:50 ET, a wave low; the second body is 0.79% of its open, average 5-min bar 0.81
+    AMD_PIERCING = [[214.72, 216.72, 217.05, 214.26], [216.40, 214.71, 217.00, 214.66]]
+
+    def test_default_minimum_keeps_the_daily_1_5_percent(self):
+        assert ta.piercing_reversal(self.AMD_PIERCING) is False
+
+    def test_intraday_minimum_detects_the_5min_piercing(self):
+        assert ta.piercing_reversal(self.AMD_PIERCING, daily_movement_minimum=0.81 / 216.40) is True
+
+
+class TestPushReversalDoji:
+    def test_first_candle_with_no_body_is_not_a_push(self):
+        # close, open, high, low
+        price_data = [[100, 100, 101, 99], [101.6, 100, 101.8, 99.9]]
+
+        assert ta.push_reversal(price_data) is False
+
+    def test_amd_5min_push_at_a_low(self):
+        # AMD 2026-01-23 09:35 and 09:40 ET, a wave low, average 5-min bar 1.05
+        price_data = [[259.08, 262.28, 263.10, 258.06], [262.83, 259.08, 263.00, 258.78]]
+
+        assert ta.push_reversal(price_data, daily_movement_minimum=1.05 / 262.83) is True
+
+
+class TestDarkCloudReversal:
+    # close, open, high, low
+    UP_CANDLE = [102, 100, 102.2, 99.8]
+
+    def test_opens_above_the_close_and_closes_below_the_midpoint(self):
+        assert ta.dark_cloud_reversal([self.UP_CANDLE, [100.6, 102.5, 102.8, 100.5]]) is True
+
+    def test_close_above_the_midpoint_is_not_a_dark_cloud(self):
+        assert ta.dark_cloud_reversal([self.UP_CANDLE, [101.4, 102.5, 102.8, 101.3]]) is False
+
+    def test_open_below_the_first_close_is_not_a_dark_cloud(self):
+        assert ta.dark_cloud_reversal([self.UP_CANDLE, [100.6, 101.9, 102.1, 100.5]]) is False
+
+    def test_close_below_the_first_open_is_an_engulfing_not_a_dark_cloud(self):
+        assert ta.dark_cloud_reversal([self.UP_CANDLE, [99.5, 102.5, 102.8, 99.4]]) is False
+
+    def test_needs_an_up_candle_first(self):
+        assert ta.dark_cloud_reversal([[100, 102, 102.2, 99.8], [100.6, 102.5, 102.8, 100.5]]) is False
+
+    def test_second_body_below_the_minimum_is_not_a_signal(self):
+        assert ta.dark_cloud_reversal([self.UP_CANDLE, [101.2, 102.1, 102.3, 101.1]], daily_movement_minimum=0.015) is False
+
+    def test_amd_5min_dark_cloud_at_a_high(self):
+        # AMD 2026-02-20 09:40 and 09:45 ET, a wave high, average 5-min bar 0.79
+        price_data = [[202.64, 201.62, 203.50, 201.43], [201.68, 202.68, 203.09, 201.62]]
+
+        assert ta.dark_cloud_reversal(price_data, daily_movement_minimum=0.79 / 201.68) is True
+
+
+class TestConfirmedLongTailReversal:
+    # close, open, high, low
+    HAMMER = [100.5, 99.5, 101, 98]
+    SHOOTING_STAR = [100.5, 100.2, 103, 100]
+
+    def test_hammer_confirmed_by_a_close_above_its_high(self):
+        price_data = [self.HAMMER, [101.5, 100.6, 101.8, 100.4]]
+
+        assert ta.confirmed_long_tail_reversal(price_data) is True
+
+    def test_hammer_without_a_close_above_its_high_is_not_confirmed(self):
+        price_data = [self.HAMMER, [100.9, 100.6, 101.8, 100.4]]
+
+        assert ta.confirmed_long_tail_reversal(price_data) is False
+
+    def test_candle_that_is_not_a_long_tail_never_confirms(self):
+        price_data = [[98.2, 100.8, 101, 98], [101.5, 100.6, 101.8, 100.4]]
+
+        assert ta.confirmed_long_tail_reversal(price_data) is False
+
+    def test_shooting_star_confirmed_by_a_close_below_its_low(self):
+        price_data = [self.SHOOTING_STAR, [99.5, 100.4, 100.6, 99.3]]
+
+        assert ta.confirmed_long_tail_reversal(price_data, trend="down") is True
+
+    def test_shooting_star_without_a_close_below_its_low_is_not_confirmed(self):
+        price_data = [self.SHOOTING_STAR, [100.1, 100.4, 100.6, 99.9]]
+
+        assert ta.confirmed_long_tail_reversal(price_data, trend="down") is False
+
+    def test_amd_5min_bottom_with_the_average_bar_as_minimum(self):
+        # AMD 2026-10-13 11:35 and 11:40 ET, average 5-min bar 1.79
+        price_data = [[586.05, 585.59, 586.66, 584.66], [587.55, 585.90, 588.13, 585.75]]
+
+        assert ta.confirmed_long_tail_reversal(price_data, daily_movement_minimum=1.79 / 586.05) is True
+
+    def test_amd_5min_top_with_the_average_bar_as_minimum(self):
+        # AMD 2026-10-13 12:55 and 13:00 ET
+        price_data = [[599.68, 600.37, 601.49, 599.55], [597.40, 599.61, 600.25, 596.50]]
+
+        assert (
+            ta.confirmed_long_tail_reversal(price_data, trend="down", daily_movement_minimum=1.79 / 599.68)
+            is True
+        )
+
+
+class TestVolumeLongWickReversal:
+    # close, open, high, low
+    HAMMER = [100.5, 100.2, 101, 98]
+    SHOOTING_STAR = [99.6, 99.9, 102, 99]
+
+    def test_long_lower_wick_on_heavy_volume(self):
+        assert ta.volume_long_wick_reversal(*self.HAMMER, volume=2000, average_volume=1000) is True
+
+    def test_long_lower_wick_on_ordinary_volume_is_not_a_signal(self):
+        assert ta.volume_long_wick_reversal(*self.HAMMER, volume=1400, average_volume=1000) is False
+
+    def test_heavy_volume_with_a_short_lower_wick_is_not_a_signal(self):
+        assert ta.volume_long_wick_reversal(100.5, 98.4, 101, 98, volume=2000, average_volume=1000) is False
+
+    def test_long_upper_wick_on_heavy_volume_for_a_top(self):
+        assert ta.volume_long_wick_reversal(*self.SHOOTING_STAR, volume=2000, average_volume=1000, trend="down") is True
+
+    def test_long_lower_wick_does_not_count_for_a_top(self):
+        assert ta.volume_long_wick_reversal(*self.HAMMER, volume=2000, average_volume=1000, trend="down") is False
+
+    def test_thresholds_are_configurable(self):
+        assert (
+            ta.volume_long_wick_reversal(*self.HAMMER, volume=1400, average_volume=1000, volume_multiple=1.3, wick_ratio=0.7)
+            is True
+        )
+
+    def test_candle_below_the_minimum_movement_is_not_a_signal(self):
+        assert (
+            ta.volume_long_wick_reversal(*self.HAMMER, volume=2000, average_volume=1000, daily_movement_minimum=0.05)
+            is False
+        )
+
+    def test_flat_candle_or_missing_average_volume_is_not_a_signal(self):
+        assert ta.volume_long_wick_reversal(100, 100, 100, 100, volume=2000, average_volume=1000) is False
+        assert ta.volume_long_wick_reversal(*self.HAMMER, volume=2000, average_volume=0) is False
+
+    def test_amd_5min_bottom(self):
+        # AMD 2026-01-08 10:00 ET, a wave low: lower wick 66% of the range on 3.0x the previous 78 bars' volume
+        assert ta.volume_long_wick_reversal(205.90, 206.20, 206.34, 205.05, volume=919412, average_volume=304333) is True
+
+    def test_amd_5min_top(self):
+        # AMD 2026-01-14 10:25 ET, a wave high: upper wick 57% of the range on 3.3x volume
+        assert (
+            ta.volume_long_wick_reversal(222.22, 222.86, 223.91, 222.08, volume=1607948, average_volume=487206, trend="down")
+            is True
+        )
 
 
 def test_gap_move():

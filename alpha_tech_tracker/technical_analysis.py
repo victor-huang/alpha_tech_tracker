@@ -205,11 +205,16 @@ def engulfing_reversal(price_data, trend="up", daily_movement_minimum=None):
     return detected
 
 
-def piercing_reversal(price_data, trend="up"):
+def piercing_reversal(price_data, trend="up", daily_movement_minimum=0.015):
+    """
+    :daily_movement_minimum: default to 0.015 (1.5%), the second candle's minimum body as a fraction of its open;
+        on intraday bars pass the ticker's average bar range as a fraction of price
+    trend="down" keeps its original, looser rule (the second candle need not close below the first candle's
+    midpoint); dark_cloud_reversal is the strict bearish counterpart
+    """
     # data point order: close, open, high, low
     detected = False
     d = price_data
-    daily_movement_minimum = 0.015  # percentage
 
     firt_day_candle_mid_point = abs(d[0][0] - d[0][1]) / 2.0
 
@@ -256,6 +261,10 @@ def push_reversal(price_data, trend="up", daily_movement_minimum=0.015):
     first_candle_direction = day1_price[0] - day1_price[1]
     second_candle_direction = day2_price[0] - day2_price[1]
 
+    # a first candle with no body (a doji) has nothing to push back against
+    if first_candle_direction == 0:
+        return False
+
     day1_move_price_precentage = abs(first_candle_direction) / day1_price[0]
     day2_move_price_precentage = abs(second_candle_direction) / day2_price[0]
 
@@ -299,6 +308,93 @@ def push_reversal(price_data, trend="up", daily_movement_minimum=0.015):
         detected = True
 
     return detected
+
+
+def dark_cloud_reversal(price_data, daily_movement_minimum=0.015):
+    """
+    bearish counterpart of piercing_reversal: after an up candle, a down candle that opens above its close and
+    closes below the middle of its body, but above its open. On 5-min bars it marked wave highs 50-100% of the
+    time, though rarely (research/ticker_characteristic).
+    :price_data: two consecutive candles [(close, open, high, low), (close, open, high, low)]
+    :daily_movement_minimum: default to 0.015 (1.5%), the second candle's minimum body as a fraction of its open;
+        on intraday bars pass the ticker's average bar range as a fraction of price
+    """
+    # data point order: close, open, high, low
+    first, second = price_data[0], price_data[1]
+
+    if abs(second[0] - second[1]) / second[1] < daily_movement_minimum:
+        return False
+
+    if not first[0] > first[1]:
+        return False
+
+    first_candle_mid_point = (first[0] + first[1]) / 2.0
+
+    return second[1] > first[0] and first[1] < second[0] < first_candle_mid_point
+
+
+def confirmed_long_tail_reversal(price_data, trend="up", daily_movement_minimum=0.01):
+    """
+    a long tail reversal candle (doji, long shadow or hammer) confirmed by the next candle closing beyond it:
+    above its high for trend="up", below its low for trend="down". The confirmation costs one candle; on 5-min
+    bars it was the most reliable reversal signal at wave lows and highs for every ticker studied
+    (research/ticker_characteristic). On intraday bars pass the ticker's average bar range as a fraction of
+    price as `daily_movement_minimum`.
+    :price_data: the long tail candle and the candle after it [(close, open, high, low), (close, open, high, low)]
+    :daily_movement_minimum: default to 0.01 (1%), the long tail candle's minimum range as a fraction of its open
+    """
+    # data point order: close, open, high, low
+    signal_candle = price_data[0]
+    confirmation_candle = price_data[1]
+
+    if not long_tail_reversal(
+        *signal_candle, trend=trend, daily_movement_minimum=daily_movement_minimum
+    ):
+        return False
+
+    if trend == "up":
+        return confirmation_candle[0] > signal_candle[2]
+
+    return confirmation_candle[0] < signal_candle[3]
+
+
+def volume_long_wick_reversal(
+    close,
+    open,
+    high,
+    low,
+    volume,
+    average_volume,
+    trend="up",
+    wick_ratio=0.5,
+    volume_multiple=1.5,
+    daily_movement_minimum=None,
+):
+    """
+    a candle with a long wick on the reversal side traded on heavy volume: the lower wick for trend="up",
+    the upper wick for trend="down", at least `wick_ratio` of the candle's range, on at least
+    `volume_multiple` x `average_volume`. On 5-min bars the second most reliable reversal signal at wave lows
+    and highs after confirmed_long_tail_reversal, with no wait for a confirming candle
+    (research/ticker_characteristic); the wick alone, without the volume, is no signal.
+    :average_volume: the reference volume, e.g. the mean volume of the previous 78 5-min bars
+    :daily_movement_minimum: optional minimum range as a fraction of the open (default: no minimum)
+    """
+    candle_range = high - low
+    if candle_range <= 0 or not average_volume:
+        return False
+
+    if daily_movement_minimum is not None and candle_range / open < daily_movement_minimum:
+        return False
+
+    if volume < average_volume * volume_multiple:
+        return False
+
+    if trend == "up":
+        wick = min(open, close) - low
+    else:
+        wick = high - max(open, close)
+
+    return wick / candle_range >= wick_ratio
 
 
 def gap_move(price_data, trend="up", daily_movement_minimum=1):

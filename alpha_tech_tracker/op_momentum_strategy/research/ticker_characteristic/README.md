@@ -18,6 +18,12 @@ Conventions, so the pages stay comparable:
 - **Precision** = hits / firings of a signal; **lift** = precision / the baseline share of candidates that are
   hits; **recall** = the share of all hits the signal fires on.
 - **Every result names its years.** A pattern found on one year counts only once it holds on another.
+- **Pattern functions** live in `alpha_tech_tracker/technical_analysis.py`: `long_tail_reversal`,
+  `long_tail_reversal_combo`, `engulfing_reversal`, `piercing_reversal`, `push_reversal`, and from these studies
+  `confirmed_long_tail_reversal` (long tail + the next candle closing beyond it), `volume_long_wick_reversal`
+  (a 50%+ wick on 1.5x volume) and `dark_cloud_reversal` (the strict bearish piercing). On 5-min bars pass the
+  ticker's average bar range as a fraction of price as `daily_movement_minimum` (the defaults are for daily
+  candles).
 
 | Ticker | Page | Last updated |
 |---|---|---|
