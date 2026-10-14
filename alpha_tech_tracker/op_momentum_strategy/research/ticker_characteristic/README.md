@@ -59,5 +59,8 @@ The seven tickers on the EC2 wave monitor, studied the same way. What they share
 | SNDK | 31% / 34% | 52% / 60% | 47% / 48% | 53% / 58% | 1.36x vs 1.01x |
 | SNPS | 33% / 31% | 53% / 54% | 42% / 40% | 50% / 47% | 0.93x vs 0.77x |
 
+Piercing / dark cloud, push and long tail + confirm are alerted live by the wave setup monitor
+(`reversal_watch.py`, information only; see `guides/WAVE_SETUP_MONITOR_GUIDE.md`, Reversal alerts).
+
 Pairs are 2025 / 2026 precision. These are measures of finding the extreme, not of profit; trading them (with
 stops, the top signals as exits and costs) is the next step, on years they were not found on.

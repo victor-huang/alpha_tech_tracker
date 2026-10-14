@@ -168,6 +168,7 @@ at that time (System Settings → Battery → Options, or `pmset repeat wake MTW
 | 16:05 | Session summary | Closed trades with P&L, holds carried overnight. |
 | Start-up | `monitor started for <date>: N tickers` | Daily sign of life; also notes an early close. |
 | No 1-min bar for 5 min in the session | `no market data since HH:MM ...`, then `market data restored ...` | Sent once per outage. The stream is reconnected every 2 min meanwhile; the gap's bars are backfilled when data returns, but signals and stop checks inside it are missed. |
+| A reversal candle near a wave's low or high | `LOW?` / `HIGH? ticker \| pattern(s) \| ~price \| wave size, low/high so far \| study precision \| info only` | Information only: no trade is opened or tracked. See [Reversal alerts](#reversal-alerts). |
 
 Every alert is also appended to `logs/wave_setup_alerts_<date>.csv`; the log is
 `logs/wave_setup_monitor_<date>.log`.
@@ -176,6 +177,37 @@ Every alert is also appended to `logs/wave_setup_alerts_<date>.csv`; the log is
 For NYSE-listed tickers (SPOT, CRM, LLY, ...) use `--close-decision-bar 15:40`: the decision
 uses the 15:40 bar and the alert comes about 15:45. Entries are not alerted from the decision
 bar on.
+
+## Reversal alerts
+
+On by default for every ticker in the config: a message when a reversal candle shows up near the
+low of a down wave or the high of an up wave. It does not open a trade and it was never backtested
+for P&L. It says a wave may be turning, which can help you judge an entry or exit.
+
+**When it fires** (`reversal_watch.py`): each closed 5-min bar goes through the wave model the way
+`analyze_bars` builds it. A bar is a *candidate low* when the current wave is down, it has fallen at
+least 3 average bars (the trailing 78-bar mean high − low) from its high to this bar's low, and
+this bar's low is within 1 average bar of the wave's lowest low. A candidate high is the mirror.
+On a candidate it checks three patterns, with the minimum candle size set to the average bar:
+
+| Pattern | Bars | At the real low (2025 / 2026) | At the real high (2025 / 2026) | Firings |
+|---|---|---|---|---|
+| `piercing`: piercing line at lows, dark cloud cover at highs | previous + this | 69% / 56% | 65% / 61% | about 1 a month per ticker per side |
+| `push` | previous + this | 65% / 53% | 59% / 61% | about 1–2 a month per ticker per side |
+| `long_tail`: long tail on a candidate, next bar closes beyond it | this + next (alerts one bar late) | 55% / 53% | 51% / 51% | about 1 every 2 days per ticker per side |
+| *any candidate bar (baseline)* | | 31% / 29% | 29% / 27% | |
+
+"At the real low" means within one bar of the finished wave's lowest low, pooled over the seven
+monitored tickers (AMD, APP, CRWV, MDB, MRNA, SNDK, SNPS) from
+[research/ticker_characteristic](../research/ticker_characteristic/README.md). A replay of those
+bars through `ReversalWatch` fires on the same bars as the study (2025 and 2026, all seven tickers).
+Patterns that fire on the same bar and side share one alert. Not alerted: the session's first two
+bars, which are not candidates, and the last bar, which closes at 16:00.
+
+`--reversal-patterns piercing push` picks the patterns (default: all three) and
+`--no-reversal-alerts` turns them off. They are logged to the alerts CSV with action `LOW?` /
+`HIGH?` and setup `reversal <patterns>`. A restart does not repeat them. At startup each ticker's
+warm-up bars are replayed through the wave model (about 1 s per ticker); the replay sends no alerts.
 
 ## Data plan
 
@@ -254,5 +286,7 @@ difference is the close rule below (GOOGL drive long on Sep 30 hit its stop afte
 | `--feed` | `sip` | Alpaca feed |
 | `--close-decision-bar` | `15:45` | `15:40` to alert about 15:45 for NYSE MOC |
 | `--workers` | CPUs − 1 | Processes evaluating setups (0 = main process) |
+| `--reversal-patterns ...` | `piercing push long_tail` | Reversal candles alerted (information only) |
+| `--no-reversal-alerts` | off | No reversal alerts |
 | `--no-notify` | off | Log and CSV only |
 | `--state-file`, `--pid-file`, `--log-file`, `--log-level` | under `logs/` | |

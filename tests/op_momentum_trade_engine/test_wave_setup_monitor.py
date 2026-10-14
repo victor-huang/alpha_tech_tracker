@@ -1,6 +1,7 @@
 import csv
 import json
 from datetime import date, datetime, time
+from pathlib import Path
 from types import SimpleNamespace
 
 import numpy as np
@@ -10,6 +11,7 @@ import pytz
 
 from alpha_tech_tracker.op_momentum_strategy import wave_setup_monitor as monitor_module
 from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward_backtest import TradeSimulator
+from alpha_tech_tracker.op_momentum_strategy.reversal_watch import ReversalSignal
 from alpha_tech_tracker.op_momentum_strategy.wave_setup_monitor import (
     FiveMinAggregator,
     LiveTrade,
@@ -19,12 +21,14 @@ from alpha_tech_tracker.op_momentum_strategy.wave_setup_monitor import (
     generate_config,
     is_trading_day,
     load_config,
+    parse_args,
     previous_trading_day,
     session_close,
 )
 
 ET = pytz.timezone("America/New_York")
 SESSION = date(2026, 10, 6)
+FIXTURES = Path(__file__).parent / "fixtures"
 
 
 def _ts(text):
@@ -265,13 +269,13 @@ class _Clock:
         self.value = _ts(text)
 
 
-def _monitor(tmp_path, setups, clock, history=None, releases=None, closes=None):
+def _monitor(tmp_path, setups, clock, history=None, releases=None, closes=None, **kwargs):
     alerts = []
     monitor = WaveSetupMonitor(
         {t: [build_setup_spec(s) for s in names] for t, names in setups.items()},
         FakeClient(history or {}), state_file=tmp_path / "state.json", alerts_dir=tmp_path,
         notify=alerts.append, now=clock, releases_loader=lambda t: (releases or {}).get(t, []),
-        daily_closes_loader=lambda tickers, session: closes or {})
+        daily_closes_loader=lambda tickers, session: closes or {}, **kwargs)
     return monitor, alerts
 
 
@@ -325,6 +329,115 @@ class TestMonitorSignals:
         monitor._on_five_min_bar("AMD", _bar("2026-10-06 15:45", 100.0, 100.0, 100.0, 100.0))
 
         evaluate.assert_not_called()
+
+
+def _amd_history(until):
+    """AMD 5-min bars for 2026-08-31 and 2026-09-01 before `until`, as the market data client returns them."""
+    frame = pd.read_csv(FIXTURES / "amd_5min_2026-09-01.csv", index_col="time")
+    frame.index = pd.to_datetime(frame.index, utc=True).tz_convert(ET)
+    return frame[frame.index < _ts(until)].rename(columns=str.capitalize)
+
+
+def _amd_bar(text):
+    frame = pd.read_csv(FIXTURES / "amd_5min_2026-09-01.csv", index_col="time")
+    frame.index = pd.to_datetime(frame.index, utc=True).tz_convert(ET)
+    return {"time": _ts(text), **frame.loc[_ts(text)].to_dict()}
+
+
+def _reversal(text):
+    return ReversalSignal(ticker="AMD", time=_ts(text), side="bottom", pattern="push", price=100.0, extreme=99.5,
+                          move_bars=3.2)
+
+
+class TestReversalAlerts:
+    def test_patterns_on_one_bar_send_one_alert(self, tmp_path):
+        clock = _Clock("2026-09-01 10:30")
+        monitor, alerts = _monitor(tmp_path, {"AMD": []}, clock, history={"AMD": _amd_history("2026-09-01 10:30")})
+        monitor.prepare()
+
+        clock.set("2026-09-01 10:35")
+        monitor._on_five_min_bar("AMD", _amd_bar("2026-09-01 10:30"))
+
+        assert alerts == ["[wave] LOW? AMD | piercing + push | ~454.10 (10:30 bar close) | wave down 5.5 avg bars, "
+                          "low 452.30 | at the real low (2025 / 2026): piercing 69% / 56%, push 65% / 53%; any "
+                          "near-low bar 31% / 29% | info only"]
+
+    def test_alert_is_logged_to_the_csv(self, tmp_path):
+        clock = _Clock("2026-09-01 10:30")
+        monitor, _ = _monitor(tmp_path, {"AMD": []}, clock, history={"AMD": _amd_history("2026-09-01 10:30")})
+        monitor.prepare()
+
+        monitor._on_five_min_bar("AMD", _amd_bar("2026-09-01 10:30"))
+
+        with (tmp_path / "wave_setup_alerts_2026-09-01.csv").open() as handle:
+            row = list(csv.DictReader(handle))[-1]
+        assert (row["ticker"], row["setup"], row["action"], row["price"]) == (
+            "AMD", "reversal piercing + push", "LOW?", "454.095")
+
+    def test_warm_up_bars_alert_nothing(self, tmp_path):
+        clock = _Clock("2026-09-01 10:40")
+        monitor, alerts = _monitor(tmp_path, {"AMD": []}, clock, history={"AMD": _amd_history("2026-09-01 10:40")})
+
+        monitor.prepare()
+
+        assert alerts == []
+
+    def test_restart_does_not_repeat_an_alert(self, tmp_path):
+        clock = _Clock("2026-09-01 10:30")
+        first, _ = _monitor(tmp_path, {"AMD": []}, clock, history={"AMD": _amd_history("2026-09-01 10:30")})
+        first.prepare()
+        first._on_five_min_bar("AMD", _amd_bar("2026-09-01 10:30"))
+        restarted, alerts = _monitor(tmp_path, {"AMD": []}, clock, history={"AMD": _amd_history("2026-09-01 10:30")})
+        restarted.prepare()
+
+        restarted._on_five_min_bar("AMD", _amd_bar("2026-09-01 10:30"))
+
+        assert alerts == []
+
+    def test_turned_off_alerts_nothing(self, tmp_path):
+        clock = _Clock("2026-09-01 10:30")
+        monitor, alerts = _monitor(tmp_path, {"AMD": []}, clock, history={"AMD": _amd_history("2026-09-01 10:30")},
+                                   reversal_patterns=[])
+        monitor.prepare()
+
+        monitor._on_five_min_bar("AMD", _amd_bar("2026-09-01 10:30"))
+
+        assert alerts == []
+
+    def test_no_alert_on_the_sessions_last_bar(self, tmp_path, mocker):
+        clock = _Clock("2026-09-01 15:55")
+        monitor, alerts = _monitor(tmp_path, {"AMD": []}, clock, history={"AMD": _amd_history("2026-09-01 15:55")})
+        monitor.prepare()
+        mocker.patch.object(monitor.reversal_watches["AMD"], "update", return_value=[_reversal("2026-09-01 15:55")])
+
+        monitor._on_five_min_bar("AMD", _bar("2026-09-01 15:55", 100.0, 100.2, 99.8, 100.0))
+
+        assert alerts == []
+
+    def test_backfilled_bars_reach_the_watch(self, tmp_path):
+        clock = _Clock("2026-10-06 11:16")
+        monitor, _ = _monitor(tmp_path, {"AMD": []}, clock, history={"AMD": _history([("2026-10-06 10:35", 100.0)])})
+        monitor.prepare()
+        monitor.client.fetch_bars = lambda tickers, start, end: {"AMD": _history([("2026-10-06 10:40", 101.0)])}
+        monitor.backfill = (_ts("2026-10-06 10:40"), _ts("2026-10-06 10:45"))
+
+        monitor._run_backfill(clock())
+
+        assert monitor.reversal_watches["AMD"].last_time == _ts("2026-10-06 10:40")
+
+
+class TestReversalArguments:
+    def test_all_patterns_by_default(self):
+        args = parse_args(["run"])
+
+        assert (args.reversal_patterns, args.no_reversal_alerts) == (["piercing", "push", "long_tail"], False)
+
+    def test_chosen_patterns(self):
+        assert parse_args(["run", "--reversal-patterns", "push", "piercing"]).reversal_patterns == ["push", "piercing"]
+
+    def test_unknown_pattern_is_rejected(self):
+        with pytest.raises(SystemExit):
+            parse_args(["run", "--reversal-patterns", "engulfing"])
 
 
 class TestMonitorClose:

@@ -17,6 +17,10 @@ plus a CSV log:
                MOC cutoff (15:55) but not NYSE's (15:50): `--close-decision-bar 15:40` decides on
                the 15:40 bar and alerts about 15:45 instead.
   09:25        SELL at the open (MOO, before the 09:28 cutoff) for overnight holds.
+  LOW? / HIGH? information only, no trade: a reversal candle (piercing / dark cloud, push, long tail
+               confirmed by the next bar) on a bar near the low of a down wave or the high of an up wave
+               (reversal_watch), up to the bar before the last. `--reversal-patterns` picks the patterns,
+               `--no-reversal-alerts` turns them off.
 
 Signals come from `wave_risk_reward.analyze_bars` with each setup's options (wave_risk_reward_scan
 SETUP_RUNS), re-run on a window of the last WARMUP_SESSIONS sessions whose start is fixed for the
@@ -114,6 +118,11 @@ from alpha_tech_tracker.op_momentum_strategy.cli.daemon import (
 from alpha_tech_tracker.op_momentum_strategy.config import _load_config, _notify, disable_notifications
 from alpha_tech_tracker.op_momentum_strategy.contract_selector import _NYSEHolidayCalendar
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import fetch_daily_bars
+from alpha_tech_tracker.op_momentum_strategy.reversal_watch import (
+    PATTERNS as REVERSAL_PATTERNS,
+    ReversalWatch,
+    reversal_message,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -432,7 +441,8 @@ class InlineExecutor:
 class WaveSetupMonitor:
     def __init__(self, setups_by_ticker, market_data_client, state_file=DEFAULT_STATE, alerts_dir=_LOG_DIR,
                  executor=None, notify=_notify, now=_now_et, releases_loader=load_releases,
-                 daily_closes_loader=None, close_decision_bar=DEFAULT_CLOSE_DECISION_BAR):
+                 daily_closes_loader=None, close_decision_bar=DEFAULT_CLOSE_DECISION_BAR,
+                 reversal_patterns=REVERSAL_PATTERNS):
         self.setups = setups_by_ticker
         self.tickers = list(setups_by_ticker)
         self.client = market_data_client
@@ -443,6 +453,8 @@ class WaveSetupMonitor:
         self.now = now
         self.releases_loader = releases_loader
         self.daily_closes_loader = daily_closes_loader or _load_daily_closes
+        self.reversal_patterns = tuple(reversal_patterns)
+        self.reversal_watches = {}
         self.decision_lead = datetime.combine(date.today(), REGULAR_CLOSE) - datetime.combine(date.today(),
                                                                                                 close_decision_bar)
         self._set_session_times(_now_et().date())
@@ -488,6 +500,7 @@ class WaveSetupMonitor:
             bars = regular_hours(frame) if frame is not None and not frame.empty else _empty_bars()
             bars = bars[bars.index + timedelta(minutes=BAR_MINUTES) <= now]
             self.bars[ticker] = bars
+            self._rebuild_reversal_watch(ticker)
             prior = sorted(d for d in set(bars.index.date) if d < self.session)
             first = prior[-WARMUP_SESSIONS] if len(prior) >= WARMUP_SESSIONS else (prior[0] if prior else self.session)
             self.window_start[ticker] = ET.localize(datetime.combine(first, time(0, 0)))
@@ -548,6 +561,7 @@ class WaveSetupMonitor:
             missing = missing[~missing.index.isin(self.bars[ticker].index)]
             if not missing.empty:
                 self.bars[ticker] = pd.concat([self.bars[ticker], missing]).sort_index()
+                self._rebuild_reversal_watch(ticker)
                 logger.info("%s: backfilled %d bars from %s", ticker, len(missing), f"{gap_start:%H:%M}")
         self._save_state()
 
@@ -643,6 +657,7 @@ class WaveSetupMonitor:
         logger.info("5-min %-6s %s O=%.2f H=%.2f L=%.2f C=%.2f (%d min)", ticker, f"{bar['time']:%H:%M}",
                     bar["open"], bar["high"], bar["low"], bar["close"], bar.get("minutes", BAR_MINUTES))
         self._update_trades(ticker, bar)
+        self._check_reversals(ticker, bar)
         if bar["time"].time() < self.close_decision_bar:
             self._submit_evaluations(ticker, bar["time"])
         self._save_state()
@@ -662,6 +677,29 @@ class WaveSetupMonitor:
         return partial
 
     # --- signals ---------------------------------------------------------
+
+    def _rebuild_reversal_watch(self, ticker):
+        """Replay the ticker's bars into a fresh watch, so it knows the current wave; replays alert nothing."""
+        if not self.reversal_patterns:
+            return
+        watch = ReversalWatch(ticker, self.reversal_patterns)
+        watch.replay(self.bars[ticker])
+        self.reversal_watches[ticker] = watch
+
+    def _check_reversals(self, ticker, bar):
+        watch = self.reversal_watches.get(ticker)
+        if watch is None:
+            return
+        fired = [s for s in watch.update(bar["time"], bar) if s.key not in self.alerted]
+        if bar["time"].time() >= self.last_bar:
+            return
+        for side in ("bottom", "top"):
+            signals = [s for s in fired if s.side == side]
+            if not signals:
+                continue
+            self.alerted.update(s.key for s in signals)
+            self._alert(None, "LOW?" if side == "bottom" else "HIGH?", signals[0].price, reversal_message(signals),
+                        ticker=ticker, setup="reversal " + " + ".join(s.pattern for s in signals))
 
     def _submit_evaluations(self, ticker, bar_time):
         frame = add_moving_averages(self.bars[ticker])
@@ -967,7 +1005,8 @@ def _run_monitor(args):
     setups = load_config(args.config)
     executor = InlineExecutor() if args.workers == 0 else ProcessPoolExecutor(max_workers=args.workers)
     monitor = WaveSetupMonitor(setups, build_market_data_client(args), state_file=args.state_file, executor=executor,
-                               close_decision_bar=datetime.strptime(args.close_decision_bar, "%H:%M").time())
+                               close_decision_bar=datetime.strptime(args.close_decision_bar, "%H:%M").time(),
+                               reversal_patterns=[] if args.no_reversal_alerts else args.reversal_patterns)
 
     def _stop(signum, frame):
         raise KeyboardInterrupt
@@ -1013,6 +1052,10 @@ def parse_args(argv=None):
     parser.add_argument("--close-decision-bar", default=f"{DEFAULT_CLOSE_DECISION_BAR:%H:%M}", choices=["15:40", "15:45"],
                         help="Bar whose close decides the close/overnight alerts: 15:45 alerts about 15:50 (Nasdaq "
                              "MOC cutoff 15:55), 15:40 about 15:45 (NYSE MOC cutoff 15:50) (default: 15:45)")
+    parser.add_argument("--reversal-patterns", nargs="+", choices=REVERSAL_PATTERNS, default=list(REVERSAL_PATTERNS),
+                        help="Reversal candles alerted (information only) near wave lows/highs (default: all: "
+                             "piercing = piercing / dark cloud, push, long_tail = long tail confirmed by the next bar)")
+    parser.add_argument("--no-reversal-alerts", action="store_true", help="No reversal candle alerts")
     parser.add_argument("--state-file", default=str(DEFAULT_STATE))
     parser.add_argument("--pid-file", default=PID_FILE)
     parser.add_argument("--log-file", help="Default: logs/wave_setup_monitor_<date>.log")
