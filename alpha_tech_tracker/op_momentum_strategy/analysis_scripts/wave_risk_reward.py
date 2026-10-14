@@ -1111,6 +1111,8 @@ def _signal_range_text(signal):
         return f"impulse {signal['box_low']:.2f}-{signal['box_high']:.2f}"
     if signal["box_mode"] == "deep wave":
         return f"deep wave {signal['box_low']:.2f}-{signal['box_high']:.2f}"
+    if signal["box_mode"] == "morning dip":
+        return f"morning dip {signal['box_low']:.2f}-{signal['box_high']:.2f}"
     if signal["box_mode"] == "overnight":
         return "market-on-close entry"
     return f"{signal['box_mode']} box {signal['box_low']:.2f}-{signal['box_high']:.2f}"
@@ -1480,7 +1482,8 @@ def add_strategy_arguments(parser):
     )
     parser.add_argument(
         "--second-wave-latest-entry", type=time.fromisoformat, default=DEFAULT_SECOND_WAVE_LATEST_ENTRY,
-        help=f"Skip a turn confirmed after this HH:MM (default: {DEFAULT_SECOND_WAVE_LATEST_ENTRY:%H:%M})",
+        help="Skip a turn confirmed on a bar starting after this HH:MM; a turn on that bar itself enters at its close"
+             f" (default: {DEFAULT_SECOND_WAVE_LATEST_ENTRY:%H:%M})",
     )
     parser.add_argument(
         "--no-box-signals", dest="box_signals", action="store_false",

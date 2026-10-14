@@ -70,6 +70,15 @@ class TestSignalGroupSecondWave:
         assert signal_group(_signal("2026-09-01 10:50", name="second_wave_long")) == "second wave"
 
 
+class TestExitTimeArgument:
+    def test_exit_time_on_a_bar_boundary_is_accepted(self):
+        assert parse_args(["--start", "2026-09-01", "--exit", "time", "--exit-time", "12:15"]).exit_time == time(12, 15)
+
+    def test_exit_time_off_a_bar_boundary_is_rejected(self):
+        with pytest.raises(SystemExit):
+            parse_args(["--start", "2026-09-01", "--exit", "time", "--exit-time", "11:32"])
+
+
 class TestTradeSimulatorTimeExit:
     def _bars(self):
         """Entry bar 09:35, then flat bars to 11:30 closing at 101, then a bar at 11:30 closing at 103."""

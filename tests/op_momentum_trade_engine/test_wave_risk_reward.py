@@ -1381,6 +1381,13 @@ class TestSecondWaveRiskReward:
         assert second_wave_risk_reward(_second_wave_setup(), 103.0) is None
 
 
+class TestSecondWaveSignalText:
+    def test_morning_dip_range_is_labelled_without_box(self):
+        signal = {"box_mode": "morning dip", "box_low": 100.0, "box_high": 104.0}
+
+        assert wave_risk_reward._signal_range_text(signal) == "morning dip 100.00-104.00"
+
+
 class TestAnalyzeBarsSecondWave:
     """Ten falling bars from 10:00 make a down wave with its low on the 10:45 bar; the 10:50 bar turns it up."""
 

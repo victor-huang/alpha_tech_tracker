@@ -10,7 +10,9 @@ For each period it reports P&L, return and max drawdown of buy and hold against:
 
 Every trade is `--size` dollars (not compounded) with `--cost-bps` round-trip costs; drive long exits at
 the close as the overnight hold enters, so both legs share one slot. Buy and hold buys `--size` at the
-period's first open and sells at its last close. Drawdowns are on the summed P&L, as % of `--size`.
+period's first open and sells at its last close, paying the same round-trip cost once. Drawdowns, as % of
+`--size`: the strategies' on their summed P&L from zero, buy and hold's on daily closes from the first open.
+An overnight hold entered on a period's last day is counted in that period.
 
 Bars are split-adjusted Alpaca SIP 5-min bars fetched directly (about 14 months of warm-up for the
 daily MA200), ending at today at the latest; needs ALPACA_API_KEY and ALPACA_SECRET_KEY. Earnings
@@ -117,11 +119,16 @@ def overnight_trades(bars, mode, skip_earnings, earnings_windows, cost_bps=DEFAU
     return pd.DataFrame(rows, columns=["day", "time", "net_pct"])
 
 
-def buy_and_hold(bars, start, end):
-    """(return %, max drawdown % of daily closes) from the period's first open to its last close."""
+def buy_and_hold(bars, start, end, cost_bps=DEFAULT_COST_BPS):
+    """(return % net of one round-trip cost, max drawdown %) from the period's first open to its last close, or
+    (NaN, NaN) when no bars fall in the period. The drawdown runs on daily closes from the first open."""
     span = bars[(bars.index.date >= start) & (bars.index.date <= end)]
-    closes = span["close"].groupby(span.index.date).last()
-    return (span["close"].iloc[-1] / span["open"].iloc[0] - 1) * 100, ((closes / closes.cummax()) - 1).min() * 100
+    if span.empty:
+        return float("nan"), float("nan")
+    first_open = span["open"].iloc[0]
+    closes = pd.concat([pd.Series([first_open]), span["close"].groupby(span.index.date).last().reset_index(drop=True)])
+    drawdown = ((closes / closes.cummax()) - 1).min() * 100
+    return (span["close"].iloc[-1] / first_open - 1) * 100 - cost_bps / 100, drawdown
 
 
 def strategy_result(trades, start, end, size=DEFAULT_SIZE):
@@ -129,7 +136,8 @@ def strategy_result(trades, start, end, size=DEFAULT_SIZE):
     window = trades[(trades["day"] >= start) & (trades["day"] <= end)].sort_values("time")
     pnl = window["net_pct"] / 100 * size
     curve = pnl.cumsum()
-    drawdown = (curve - curve.cummax()).min() if len(curve) else 0.0
+    # the running peak starts at zero P&L, so losses before the first gain count as drawdown
+    drawdown = (curve - curve.cummax().clip(lower=0.0)).min() if len(curve) else 0.0
     return {"P&L $": pnl.sum(), "return %": 100 * pnl.sum() / size, "max DD %": 100 * drawdown / size, "trades": len(window)}
 
 
@@ -146,7 +154,11 @@ def compare(bars, periods, earnings_windows, size=DEFAULT_SIZE, cost_bps=DEFAULT
     rows = []
     for start, end in periods:
         label = f"{start:%m/%d/%Y}-{end:%m/%d/%Y}"
-        hold_return, hold_drawdown = buy_and_hold(bars, start, end)
+        hold_return, hold_drawdown = buy_and_hold(bars, start, end, cost_bps)
+        if pd.isna(hold_return):
+            rows.append({"period": label, "strategy": "no bars in this period", "P&L $": 0.0, "return %": 0.0,
+                         "max DD %": 0.0, "trades": 0, "vs buy & hold $": 0.0})
+            continue
         hold_pnl = size * hold_return / 100
         rows.append({"period": label, "strategy": "buy & hold", "P&L $": hold_pnl, "return %": hold_return,
                      "max DD %": hold_drawdown, "trades": 1, "vs buy & hold $": 0.0})
@@ -180,7 +192,8 @@ def main(argv=None):
     last = max(end for _, end in args.periods)
     bars = fetch_bars(ticker, first - timedelta(days=WARMUP_DAYS), last + timedelta(days=5))
     if args.since:
-        bars = bars[bars.index.date >= args.since]
+        # recompute the moving averages so a reused symbol's pre-listing prices do not leak into them
+        bars = add_moving_averages(bars.loc[bars.index.date >= args.since, ["open", "high", "low", "close"]])
     table = compare(bars, args.periods, ticker_earnings_windows(ticker, bars), args.size, args.cost_bps, args.avg_bar_stop)
     pd.set_option("display.width", 250)
     for label, rows in table.groupby("period", sort=False):

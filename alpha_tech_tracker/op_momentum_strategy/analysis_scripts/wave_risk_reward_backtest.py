@@ -366,6 +366,17 @@ def write_csv(trades, out_path):
     return out_path
 
 
+def _bar_end_time(text):
+    """'HH:MM' on a 5-min bar boundary -> time; the time exit sells at the close of the bar ending then."""
+    try:
+        value = time.fromisoformat(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"expected HH:MM, got {text!r}")
+    if value.minute % 5 or value.second:
+        raise argparse.ArgumentTypeError(f"{text} is not on a 5-minute bar boundary")
+    return value
+
+
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -376,7 +387,7 @@ def parse_args(argv=None):
     parser.add_argument("--feed", default="sip", choices=["sip", "iex"])
     parser.add_argument("--exit", default="target", choices=EXIT_MODES + (TIME_EXIT,), help="Exit model (default: target)")
     parser.add_argument(
-        "--exit-time", type=time.fromisoformat, default=DEFAULT_EXIT_TIME,
+        "--exit-time", type=_bar_end_time, default=DEFAULT_EXIT_TIME,
         help=f"time exit: sell at the close of the bar ending at this HH:MM (default: {DEFAULT_EXIT_TIME:%H:%M})",
     )
     parser.add_argument("--compare-exits", action="store_true", help="Also print every exit model side by side")

@@ -80,9 +80,16 @@ class TestBuyAndHold:
         bars = pd.concat([_session("2026-09-01", [(100, 101, 99, 100), (100, 110, 99, 110)]),
                           _session("2026-09-02", [(110, 111, 98, 99)])])
 
-        result, _ = buy_and_hold(bars, date(2026, 9, 1), date(2026, 9, 2))
+        result, _ = buy_and_hold(bars, date(2026, 9, 1), date(2026, 9, 2), cost_bps=0.0)
 
         assert result == pytest.approx(-1.0)
+
+    def test_return_pays_one_round_trip_cost(self):
+        bars = _session("2026-09-01", [(100, 101, 99, 100), (100, 110, 99, 110)])
+
+        result, _ = buy_and_hold(bars, date(2026, 9, 1), date(2026, 9, 1), cost_bps=5.0)
+
+        assert result == pytest.approx(10.0 - 0.05)
 
     def test_drawdown_from_the_highest_daily_close(self):
         bars = pd.concat([_session("2026-09-01", [(100, 111, 99, 110)]), _session("2026-09-02", [(110, 111, 98, 99)])])
@@ -90,6 +97,20 @@ class TestBuyAndHold:
         _, drawdown = buy_and_hold(bars, date(2026, 9, 1), date(2026, 9, 2))
 
         assert drawdown == pytest.approx(-10.0)
+
+    def test_drawdown_counts_a_fall_from_the_first_open(self):
+        bars = _session("2026-09-01", [(100, 100, 95, 95), (95, 95, 90, 90), (90, 90, 86, 86)])
+
+        _, drawdown = buy_and_hold(bars, date(2026, 9, 1), date(2026, 9, 1))
+
+        assert drawdown == pytest.approx(-14.0)
+
+    def test_period_without_bars_is_nan(self):
+        bars = _session("2026-09-01", [(100, 101, 99, 100)])
+
+        result, drawdown = buy_and_hold(bars, date(2026, 8, 1), date(2026, 8, 5))
+
+        assert pd.isna(result) and pd.isna(drawdown)
 
 
 class TestStrategyResult:
@@ -107,6 +128,13 @@ class TestStrategyResult:
 
         assert result["max DD %"] == pytest.approx(-3.0)
 
+    def test_losses_before_any_gain_count_as_drawdown(self):
+        trades = self._trades().assign(net_pct=[-1.0, 0.5, 0.2])
+
+        result = strategy_result(trades, date(2026, 9, 1), date(2026, 9, 3), size=10000)
+
+        assert result["max DD %"] == pytest.approx(-1.0)
+
     def test_only_trades_inside_the_period_count(self):
         result = strategy_result(self._trades(), date(2026, 9, 2), date(2026, 9, 2), size=10000)
 
@@ -123,6 +151,17 @@ class TestCompare:
 
         assert table.iloc[0].strategy == "buy & hold"
         assert table["vs buy & hold $"].iloc[0] == 0.0
+
+
+class TestCompareEmptyPeriod:
+    def test_period_without_bars_gets_a_row_instead_of_failing(self, mocker):
+        mocker.patch(f"{MODULE}.overnight_trades", return_value=pd.DataFrame(columns=["day", "time", "net_pct"]))
+        bars = pd.concat([_flat_history("2026-09-01"), _session("2026-09-02", [(100, 101.2, 99.8, 101), (101, 102, 100.9, 101.5)])])
+
+        table = compare(bars, [(date(2026, 8, 1), date(2026, 8, 5)), (date(2026, 9, 2), date(2026, 9, 2))], earnings_windows=None)
+
+        assert list(table.strategy[table.period == "08/01/2026-08/05/2026"]) == ["no bars in this period"]
+        assert (table.period == "09/02/2026-09/02/2026").sum() > 1
 
 
 class TestMain:

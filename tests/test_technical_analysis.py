@@ -298,6 +298,11 @@ class TestVolumeLongWickReversal:
         assert ta.volume_long_wick_reversal(100, 100, 100, 100, volume=2000, average_volume=1000) is False
         assert ta.volume_long_wick_reversal(*self.HAMMER, volume=2000, average_volume=0) is False
 
+    def test_missing_volume_or_average_volume_is_not_a_signal(self):
+        # e.g. the first bars of a rolling average are NaN
+        assert ta.volume_long_wick_reversal(*self.HAMMER, volume=2000, average_volume=float("nan")) is False
+        assert ta.volume_long_wick_reversal(*self.HAMMER, volume=float("nan"), average_volume=1000) is False
+
     def test_amd_5min_bottom(self):
         # AMD 2026-01-08 10:00 ET, a wave low: lower wick 66% of the range on 3.0x the previous 78 bars' volume
         assert ta.volume_long_wick_reversal(205.90, 206.20, 206.34, 205.05, volume=919412, average_volume=304333) is True

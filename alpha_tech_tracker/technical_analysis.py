@@ -371,7 +371,8 @@ def volume_long_wick_reversal(
     if daily_movement_minimum is not None and candle_range / open < daily_movement_minimum:
         return False
 
-    if volume < average_volume * volume_multiple:
+    # written as "not >=" so a missing (NaN) volume or average volume fails instead of passing
+    if not volume >= average_volume * volume_multiple:
         return False
 
     if trend == "up":
