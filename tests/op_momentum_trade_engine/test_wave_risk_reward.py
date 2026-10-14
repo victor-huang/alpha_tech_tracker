@@ -1,5 +1,5 @@
 import math
-from datetime import date
+from datetime import date, time
 
 import pandas as pd
 import pytest
@@ -17,6 +17,8 @@ from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward i
     bounce_levels,
     bounce_risk_reward,
     new_bounce_setup,
+    new_second_wave_setup,
+    second_wave_risk_reward,
     fib_level,
     new_pullback_setup,
     opening_drive_risk_reward,
@@ -1314,6 +1316,119 @@ class TestAnalyzeBarsDeepBounce:
         analyze_bars(self._bars([]), params)
 
         assert setup.call_args.args[2:] == (3.0, "long", 1.0, 0.2)
+
+
+def _dip(low_time="2026-09-01 10:40", low=100.0, high=104.0, wick_low=99.6):
+    wave = _wave("2026-09-01 10:00", low, high, "down", length=9)
+    wave.low_date = _timestamp(low_time)
+    wave.df.loc[wave.df.index[-1], "low"] = wick_low
+    return wave
+
+
+def _dip_lookback(dip):
+    return [_wave(f"2026-09-01 09:{30 + 10 * i}", 100.0, 103.0, "up") for i in range(2)] + [dip]
+
+
+def _second_wave_setup(**overrides):
+    return dict({"low": 100.0, "high": 104.0, "wick_low": 99.6, "low_time": _timestamp("2026-09-01 10:40"),
+                 "ratio": 1.33, "target_fib": 0.618, "stop_buffer": 0.1}, **overrides)
+
+
+class TestNewSecondWaveSetup:
+    def test_dip_with_low_inside_window_sets_up(self):
+        dip = _dip()
+
+        setup = new_second_wave_setup(dip, _dip_lookback(dip))
+
+        assert (setup["low"], setup["high"], setup["wick_low"]) == (100.0, 104.0, 99.6)
+        assert setup["ratio"] == pytest.approx(4.0 / 3.0)
+
+    def test_low_before_window_has_no_setup(self):
+        dip = _dip(low_time="2026-09-01 10:05")
+
+        assert new_second_wave_setup(dip, _dip_lookback(dip)) is None
+
+    def test_low_after_window_has_no_setup(self):
+        dip = _dip(low_time="2026-09-01 11:20")
+
+        assert new_second_wave_setup(dip, _dip_lookback(dip)) is None
+
+    def test_dip_smaller_than_ratio_has_no_setup(self):
+        dip = _dip(high=102.0)
+
+        assert new_second_wave_setup(dip, _dip_lookback(dip), min_ratio=1.0) is None
+
+    def test_up_wave_has_no_setup(self):
+        wave = _wave("2026-09-01 10:00", 100.0, 104.0, "up")
+        wave.high_date = wave.low_date = _timestamp("2026-09-01 10:40")
+
+        assert new_second_wave_setup(wave, _dip_lookback(wave)) is None
+
+    def test_window_is_configurable(self):
+        dip = _dip(low_time="2026-09-01 10:05")
+
+        assert new_second_wave_setup(dip, _dip_lookback(dip), window=(time(10, 0), time(11, 0))) is not None
+
+
+class TestSecondWaveRiskReward:
+    def test_stop_below_wick_low_and_target_part_way_back(self):
+        result = second_wave_risk_reward(_second_wave_setup(), 101.0, min_risk_pct=0.0)
+
+        assert (result["stop"], result["target"]) == (pytest.approx(99.2), pytest.approx(102.472))
+        assert result["rr"] == pytest.approx(1.472 / 1.8)
+
+    def test_entry_past_target_has_no_trade(self):
+        assert second_wave_risk_reward(_second_wave_setup(), 103.0) is None
+
+
+class TestAnalyzeBarsSecondWave:
+    """Ten falling bars from 10:00 make a down wave with its low on the 10:45 bar; the 10:50 bar turns it up."""
+
+    def _bars(self):
+        falling = [(c + 1.0, c + 1.2, c - 0.2, c) for c in [109.0 - i for i in range(10)]]
+        index = pd.date_range(_timestamp("2026-09-01 10:00"), periods=11, freq="5min")
+        return pd.DataFrame(falling + [(100.0, 102.7, 99.9, 102.5)], columns=["open", "high", "low", "close"],
+                            index=index)
+
+    def _patch_setup(self, mocker):
+        return mocker.patch(f"{MODULE}.new_second_wave_setup", side_effect=lambda *a: _second_wave_setup(target_fib=0.786))
+
+    def test_off_by_default(self, mocker):
+        setup = self._patch_setup(mocker)
+
+        analyze_bars(self._bars())
+
+        setup.assert_not_called()
+
+    def test_turn_bar_fires_second_wave_long(self, mocker):
+        self._patch_setup(mocker)
+
+        signals = analyze_bars(self._bars(), WaveRiskRewardParams(second_wave="long"))["signals"]
+
+        assert [(s["signal"], s["time"], s["price"]) for s in signals] == [
+            ("second_wave_long", _timestamp("2026-09-01 10:50"), 102.5)
+        ]
+        assert signals[0]["dip_low_time"] == _timestamp("2026-09-01 10:40")
+
+    def test_settings_reach_setup(self, mocker):
+        setup = self._patch_setup(mocker)
+        params = WaveRiskRewardParams(second_wave="long", second_wave_window=(time(10, 0), time(11, 0)),
+                                      second_wave_ratio=1.5, second_wave_target_fib=0.786, second_wave_stop_buffer=0.2)
+
+        analyze_bars(self._bars(), params)
+
+        assert setup.call_args.args[2:] == ((time(10, 0), time(11, 0)), 1.5, 0.786, 0.2)
+
+    def test_turn_after_latest_entry_is_skipped(self, mocker):
+        self._patch_setup(mocker)
+        params = WaveRiskRewardParams(second_wave="long", second_wave_latest_entry=time(10, 45))
+
+        assert analyze_bars(self._bars(), params)["signals"] == []
+
+    def test_turn_records_when_it_was_confirmed(self):
+        waves = analyze_bars(self._bars())["waves"]
+
+        assert waves[-1].confirmed_at == _timestamp("2026-09-01 10:50")
 
 
 class TestOvernightFilterOk:

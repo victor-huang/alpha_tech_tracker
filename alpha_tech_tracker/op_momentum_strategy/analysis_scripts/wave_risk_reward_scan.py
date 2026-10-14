@@ -55,11 +55,13 @@ SETUP_RUNS = OrderedDict([
     ("pullback long C1", ["--no-box-signals", "--wave-pullback", "long", "--min-wave-bar-ranges", "3"]),
     ("bounce long", ["--no-box-signals", "--deep-bounce", "long"]),
     ("bounce short", ["--no-box-signals", "--deep-bounce", "short"]),
+    ("second wave long", ["--no-box-signals", "--second-wave", "long"]),
     ("overnight always", ["--no-box-signals", "--overnight-hold", "always"]),
     ("overnight ma200", ["--no-box-signals", "--overnight-hold", "ma200"]),
 ])
-# Tested negative (ticker-tuning doc, Finding 19): only run when asked for (setup report --setups).
-OPT_IN_SETUPS = ("drive fade long", "drive fade short")
+# Tested negative (ticker-tuning doc: drive fade Finding 19, second wave Finding 27): only run when asked
+# for (setup report --setups).
+OPT_IN_SETUPS = ("drive fade long", "drive fade short", "second wave long")
 DEFAULT_SETUP_RUNS = [name for name in SETUP_RUNS if name not in OPT_IN_SETUPS]
 BOX_GROUPS = {"narrow-box break": "box break", "wide-box break": "box break", "fade": "box fade", "gap": "box gap"}
 FAMILIES = ({"pullback long", "pullback long C1"}, {"overnight always", "overnight ma200"})

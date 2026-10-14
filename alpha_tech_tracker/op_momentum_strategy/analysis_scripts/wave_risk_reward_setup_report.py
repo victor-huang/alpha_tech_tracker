@@ -1,12 +1,12 @@
 """Setup report: every wave_risk_reward setup on every ticker, with weekly and monthly breakdowns.
 
 Runs each setup on its own (box breaks, fades, gaps, opening drive long/short, drive fade
-long/short, pullback long/short, pullback long C1, deep bounce long/short, overnight always/ma200)
-for every ticker over
-`--start`..`--end`, with all exits. Weekly and monthly tables use one exit per setup fixed in
-advance (REPORT_EXITS) so they are not picked with hindsight; every trade for every exit is in
-the trades CSV. `--setups` runs a subset; the opt-in setups (OPT_IN_SETUPS: drive fade, tested
-negative in Finding 19) only run when named there.
+long/short, pullback long/short, pullback long C1, deep bounce long/short, second wave long,
+overnight always/ma200) for every ticker over `--start`..`--end`, with all exits. Weekly and
+monthly tables use one exit per setup fixed in advance (REPORT_EXITS) so they are not picked with
+hindsight; every trade for every exit is in the trades CSV. `--setups` runs a subset; the opt-in
+setups (OPT_IN_SETUPS: drive fade and second wave, tested negative in Findings 19 and 27) only run
+when named there.
 
 Every trade is flagged when it carries an earnings reaction (earnings_calendar.py): the
 report lists each ticker's earnings sessions and splits the fixed-exit totals into earnings
@@ -62,6 +62,7 @@ REPORT_EXITS = OrderedDict([
     ("pullback long C1", "target-trail"),
     ("bounce long", "target"),
     ("bounce short", "target"),
+    ("second wave long", "target"),
     ("overnight always", "next open"),
     ("overnight ma200", "next open"),
 ])
@@ -69,7 +70,7 @@ SETUP_TYPES = OrderedDict([
     ("box break", "box"), ("box fade", "box"), ("box gap", "box"),
     ("drive long", "long"), ("drive short", "short"), ("drive fade long", "long"), ("drive fade short", "short"),
     ("pullback long", "long"), ("pullback short", "short"), ("pullback long C1", "long"),
-    ("bounce long", "long"), ("bounce short", "short"),
+    ("bounce long", "long"), ("bounce short", "short"), ("second wave long", "long"),
     ("overnight always", "overnight"), ("overnight ma200", "overnight"),
 ])
 TYPE_CHOICES = ("long", "short", "box", "overnight")

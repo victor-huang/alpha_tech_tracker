@@ -247,6 +247,7 @@ Retires once the wave in progress grows past the small-wave size.
 | `pullback short` | — | mirror after a strong down wave (red bar) | 78.6% retracement | impulse low |
 | `bounce long` | — | first green bar after a deep down wave finishes (`--deep-bounce`) | wave low − 0.1 × wave size | half way back up the wave |
 | `bounce short` | — | mirror after a big up wave (red bar) | wave high + 0.1 × wave size | half way back down |
+| `second wave long` | — | the bar where the wave module turns up from a morning dip whose low came 10:15–11:15 and that is ≥ 1 × the median wave (`--second-wave`) | dip's lowest low − 0.1 × dip size | 61.8% of the dip back up |
 | `overnight long` | — | the session's 15:55 bar, when the `--overnight-hold` filter allows | none | exits at the next session's open |
 
 - **Stop-and-reverse is off by default.** A wide-box breakout/breakdown that follows a fade on
@@ -277,6 +278,16 @@ Retires once the wave in progress grows past the small-wave size.
   back the other way while price is still short of the target; cancelled on the stop, a close past
   the target, or the session close. Not gated by the regime switch. Made money on AMD in 2026 and
   lost in 2025 (ticker-tuning doc, Finding 9).
+- **Second wave is off by default.** `--second-wave long` is the morning dip "second wave" long
+  entry from the ticker-tuning doc's Finding 26: the morning low lands at 10:35–10:45 in every year
+  since 2020 and its rebound recovers about 73% of the drop. When the wave module turns up from a
+  down wave whose low came inside `--second-wave-window` (10:15-11:15) and that is at least
+  `--second-wave-ratio` (1.0) × the median lookback wave size, it buys that bar's close — the turn
+  is confirmed once price takes back 23.6% of the dip. One per session, and not after
+  `--second-wave-latest-entry` (12:00). Tested negative over 2020–2026 in every form tried — as
+  designed, shallow dips above the 5-min MA200, held to the close, after the first large dip
+  (Finding 27) — so it is opt-in in the setup report, scan and monitor refresh. The same study found
+  `--exit time` (sell drive long by a clock time) worse than holding to the close at every time tried.
 - **Overnight hold is off by default.** `--overnight-hold always|ma200|ma20-ma200|ma50-rising`
   buys the 15:55 close (market-on-close) and exits at the next open (market-on-open). Filters use
   daily moving averages of session closes including today's: `ma200` = close above the daily
@@ -344,6 +355,12 @@ Signals the regime blocks are kept in `regime_skipped_signals` and counted in th
 | | `--deep-wave-ratio` | 2 | Deep-wave threshold in median lookback wave sizes |
 | | `--deep-bounce-target-fib` | 0.5 | Target as a fraction of the wave back from its extreme (1.0 = its start) |
 | | `--deep-bounce-stop-buffer` | 0.1 | Stop beyond the wave extreme, as a fraction of the wave size |
+| | `--second-wave` | `off` | Morning dip "second wave" long entry: `long` |
+| | `--second-wave-window` | 10:15-11:15 | The dip's low must fall inside this window |
+| | `--second-wave-ratio` | 1.0 | Minimum dip size in median lookback wave sizes |
+| | `--second-wave-target-fib` | 0.618 | Target as a fraction of the dip back up from its low |
+| | `--second-wave-stop-buffer` | 0.1 | Stop below the dip's lowest low, as a fraction of the dip size |
+| | `--second-wave-latest-entry` | 12:00 | Skip a turn confirmed after this time |
 | | `--overnight-hold` | `off` | Buy the 15:55 close, sell the next open: `always`, `ma200`, `ma20-ma200`, `ma50-rising` |
 | | `--earnings` | `off` | Earnings calendar: `skip` trades that carry a release reaction, or keep `only` them |
 | | `--overnight-include-earnings` | — | Hold overnight into earnings releases too (skipped by default) |
@@ -450,7 +467,7 @@ python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_rew
 | Option | Default | Meaning |
 |---|---|---|
 | `--start` / `--end` | required / today | Backtest window (sessions); 45 calendar days before `--start` are loaded for warm-up |
-| `--exit` | `target` | `target`: the signal's stop or target. `target-trail`: the stop until the target is reached, then the give-back trail instead of taking profit. `giveback`: the stop, or once up `--giveback-arm-r` × risk, the first close that gives back `--giveback` of the best open profit. `eod`: the stop, else the session close |
+| `--exit` | `target` | `target`: the signal's stop or target. `target-trail`: the stop until the target is reached, then the give-back trail instead of taking profit. `giveback`: the stop, or once up `--giveback-arm-r` × risk, the first close that gives back `--giveback` of the best open profit. `eod`: the stop, else the session close. `time`: the stop, else the close of the bar ending at `--exit-time` (default 11:30; not part of `--compare-exits`) |
 | `--compare-exits` | off | Also print all three exits side by side |
 | `--giveback` / `--giveback-arm-r` | 0.32 / 0.25 | Give-back exit settings |
 | `--cost-bps` | 0 | Round-trip cost taken off every trade |

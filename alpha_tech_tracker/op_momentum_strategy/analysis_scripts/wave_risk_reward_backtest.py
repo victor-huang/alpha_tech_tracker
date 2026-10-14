@@ -12,6 +12,8 @@ Exit       = `--exit target`: the signal's stop or target, whichever comes first
              `--exit giveback`: the stop, or once the trade is up `--giveback-arm-r` x risk,
              the first close that gives back `--giveback` of the best close-to-close profit.
              `--exit eod`: the stop, else the session's last close.
+             `--exit time`: the stop, else the close of the bar ending at `--exit-time`
+             (default 11:30; not part of `--compare-exits`).
              Every mode exits at the session close at the latest. A bar touching both stop
              and target counts as the stop; a gap through the stop fills at the bar's open.
              Overnight-hold signals always exit at the next session's first bar open,
@@ -39,7 +41,7 @@ import argparse
 import csv
 import statistics
 from collections import OrderedDict
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 
 import numpy as np
@@ -57,6 +59,7 @@ from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.ticker_stats_repor
     clamp_end_for_sip,
 )
 from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward import (
+    BAR_INTERVAL,
     LONG_SIGNALS,
     OVERNIGHT_WARMUP_SESSIONS,
     add_moving_averages,
@@ -71,6 +74,8 @@ from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import fetch_b
 
 DEFAULT_TICKERS = ["QQQ", "SNDK"]
 EXIT_MODES = ("target", "target-trail", "giveback", "eod")
+TIME_EXIT = "time"
+DEFAULT_EXIT_TIME = time(11, 30)
 DEFAULT_GIVEBACK = 0.32
 DEFAULT_GIVEBACK_ARM_R = 0.25
 WARMUP_CALENDAR_DAYS = 45  # MA200 and the wave lookback; also 20 prior sessions for leg ADR
@@ -80,7 +85,7 @@ DEFAULT_MEDIUM_LEG_ADR = 0.40
 EARLY_LEG_FRACTION = 0.5
 SIGNAL_GROUPS = (
     "narrow-box break", "fade", "wide-box break", "stop-and-reverse", "opening drive", "drive fade", "wave pullback",
-    "deep bounce", "overnight hold", "gap",
+    "deep bounce", "second wave", "overnight hold", "gap",
 )
 CSV_FIELDS = [
     "ticker", "signal", "group", "regime", "entry_time", "exit_time", "side", "entry", "exit",
@@ -97,6 +102,8 @@ def signal_group(signal):
         return "wave pullback"
     if signal["signal"].startswith("bounce"):
         return "deep bounce"
+    if signal["signal"].startswith("second_wave"):
+        return "second wave"
     if signal["signal"].startswith("overnight"):
         return "overnight hold"
     if signal["gap"]:
@@ -127,8 +134,9 @@ class TradeSimulator:
                 last = i
             self.session_end[i] = last
 
-    def run(self, signal, exit_mode, giveback=DEFAULT_GIVEBACK, arm_r=DEFAULT_GIVEBACK_ARM_R):
-        """One trade for `signal`, or None when it has no stop/target or fires on the last bar."""
+    def run(self, signal, exit_mode, giveback=DEFAULT_GIVEBACK, arm_r=DEFAULT_GIVEBACK_ARM_R, exit_at=DEFAULT_EXIT_TIME):
+        """One trade for `signal`, or None when it has no stop/target, fires on the last bar, or (time exit)
+        fires at or after the exit bar."""
         rr = signal["risk_reward"]
         i = self.position[signal["time"]]
         end = self.session_end[i]
@@ -136,6 +144,10 @@ class TradeSimulator:
             return self._overnight_trade(signal, i, end)
         if not rr or end == i:
             return None
+        if exit_mode == TIME_EXIT:
+            exit_bar_start = (datetime.combine(date(2000, 1, 1), exit_at) - BAR_INTERVAL).time()
+            if self.index[i].time() >= exit_bar_start:
+                return None
 
         side = 1 if signal["signal"] in LONG_SIGNALS else -1
         entry, stop, target = self.close[i], rr["stop"], rr["target"]
@@ -146,6 +158,9 @@ class TradeSimulator:
             if (self.low[j] <= stop) if side == 1 else (self.high[j] >= stop):
                 fill = min(self.open[j], stop) if side == 1 else max(self.open[j], stop)
                 exit_index, exit_price, outcome = j, fill, "stop"
+                break
+            if exit_mode == TIME_EXIT and self.index[j].time() >= exit_bar_start:
+                exit_index, exit_price, outcome = j, self.close[j], "time"
                 break
             hit_target = (self.high[j] >= target) if side == 1 else (self.low[j] <= target)
             if exit_mode == "target" and hit_target:
@@ -359,7 +374,11 @@ def parse_args(argv=None):
     parser.add_argument("--start", required=True, type=date.fromisoformat, help="First session YYYY-MM-DD")
     parser.add_argument("--end", type=date.fromisoformat, help="Last session YYYY-MM-DD (default: today)")
     parser.add_argument("--feed", default="sip", choices=["sip", "iex"])
-    parser.add_argument("--exit", default="target", choices=EXIT_MODES, help="Exit model (default: target)")
+    parser.add_argument("--exit", default="target", choices=EXIT_MODES + (TIME_EXIT,), help="Exit model (default: target)")
+    parser.add_argument(
+        "--exit-time", type=time.fromisoformat, default=DEFAULT_EXIT_TIME,
+        help=f"time exit: sell at the close of the bar ending at this HH:MM (default: {DEFAULT_EXIT_TIME:%H:%M})",
+    )
     parser.add_argument("--compare-exits", action="store_true", help="Also print every exit model side by side")
     parser.add_argument(
         "--giveback", type=float, default=DEFAULT_GIVEBACK,
@@ -399,7 +418,7 @@ def run_backtest(bars_by_ticker, args, earnings_windows_by_ticker=None):
         simulator = TradeSimulator(bars)
         for mode in exit_modes:
             for signal in signals:
-                trade = simulator.run(signal, mode, args.giveback, args.giveback_arm_r)
+                trade = simulator.run(signal, mode, args.giveback, args.giveback_arm_r, args.exit_time)
                 if trade:
                     if windows is not None:
                         trade["earnings"] = in_earnings_window(signal, windows)

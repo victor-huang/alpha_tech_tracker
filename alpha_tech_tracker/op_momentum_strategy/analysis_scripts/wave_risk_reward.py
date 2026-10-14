@@ -80,6 +80,17 @@ Deep bounce= `--deep-bounce both|long|short` (off by default): when a down wave 
              start). Mirror after a big up wave (bounce short on a red bar). Setups cancel on
              the stop, on a close past the target, and at the session close. Not gated by
              the regime switch.
+Second wave= `--second-wave long` (off by default), the morning dip "second wave" long entry:
+             when the wave module turns up from a down wave whose low came inside
+             `--second-wave-window` (default 10:15-11:15) and that is at least
+             `--second-wave-ratio` x the median lookback wave size (default 1.0), buy that
+             bar's close (the turn is confirmed once price takes back 23.6% of the dip).
+             Stop at the dip's lowest low - `--second-wave-stop-buffer` x the dip size
+             (default 0.1), target `--second-wave-target-fib` of the dip back up (default
+             0.618). One per session, and only until `--second-wave-latest-entry` (default
+             12:00), so a turn confirmed in the afternoon is skipped. Not gated by the
+             regime switch. Built on Finding 26 (the morning low lands at 10:35-10:45 and its
+             rebound recovers about 73% of it); tested negative in Finding 27.
 Overnight  = `--overnight-hold always|ma200|ma20-ma200|ma50-rising` (off by default): buy the
 hold         session's last regular bar (the 15:55 bar close, a market-on-close order) and
              exit at the next session's first bar open (market-on-open). No stop or target.
@@ -154,7 +165,7 @@ DEFAULT_SMALL_WAVE_RATIO = 1.5
 DEFAULT_MAX_BOX_HEIGHT_RATIO = 2.0
 DEFAULT_REVERSION_BOX_BARS = 6.0
 LONG_SIGNALS = ("breakout", "fade_long", "drive_long", "drive_fade_long", "pullback_long", "bounce_long",
-                "overnight_long")
+                "second_wave_long", "overnight_long")
 OVERNIGHT_HOLD_MODES = ("off", "always", "ma200", "ma20-ma200", "ma50-rising")
 OVERNIGHT_ENTRY_TIME = time(15, 55)
 OVERNIGHT_WARMUP_SESSIONS = 210  # daily MA200 plus a margin
@@ -164,6 +175,12 @@ DEEP_BOUNCE_MODES = ("off", "both", "long", "short")
 DEFAULT_DEEP_WAVE_RATIO = 2.0
 DEFAULT_DEEP_BOUNCE_TARGET_FIB = 0.5
 DEFAULT_DEEP_BOUNCE_STOP_BUFFER = 0.1
+SECOND_WAVE_MODES = ("off", "long")
+DEFAULT_SECOND_WAVE_WINDOW = (time(10, 15), time(11, 15))
+DEFAULT_SECOND_WAVE_RATIO = 1.0
+DEFAULT_SECOND_WAVE_TARGET_FIB = 0.618
+DEFAULT_SECOND_WAVE_STOP_BUFFER = 0.1
+DEFAULT_SECOND_WAVE_LATEST_ENTRY = time(12, 0)
 WAVE_PULLBACK_MODES = ("off", "both", "long", "short")
 DEFAULT_STRONG_WAVE_RATIO = 2.0
 PULLBACK_TOUCH_FIB = 0.382
@@ -207,6 +224,13 @@ class WaveRiskRewardParams:
     deep_wave_ratio: float = DEFAULT_DEEP_WAVE_RATIO
     deep_bounce_target_fib: float = DEFAULT_DEEP_BOUNCE_TARGET_FIB
     deep_bounce_stop_buffer: float = DEFAULT_DEEP_BOUNCE_STOP_BUFFER
+    second_wave: str = "off"
+    second_wave_window: tuple = DEFAULT_SECOND_WAVE_WINDOW
+    second_wave_ratio: float = DEFAULT_SECOND_WAVE_RATIO
+    second_wave_target_fib: float = DEFAULT_SECOND_WAVE_TARGET_FIB
+    second_wave_stop_buffer: float = DEFAULT_SECOND_WAVE_STOP_BUFFER
+    second_wave_latest_entry: time = DEFAULT_SECOND_WAVE_LATEST_ENTRY
+    second_wave_once_per_session: bool = True
     box_signals: bool = True
     gap_signals: bool = True
     strong_wave_ratio: float = DEFAULT_STRONG_WAVE_RATIO
@@ -601,6 +625,36 @@ def bounce_risk_reward(setup, entry, min_risk_pct=0.001):
     return {"entry": entry, "stop": stop, "target": target, "risk": risk, "reward": reward, "rr": reward / risk}
 
 
+def new_second_wave_setup(dip, lookback, window=DEFAULT_SECOND_WAVE_WINDOW, min_ratio=DEFAULT_SECOND_WAVE_RATIO,
+                          target_fib=DEFAULT_SECOND_WAVE_TARGET_FIB, stop_buffer=DEFAULT_SECOND_WAVE_STOP_BUFFER):
+    """Morning dip setup from a just-finished down wave `dip` whose low time falls inside `window` and whose
+    size is at least `min_ratio` x the median size of the other lookback waves. None otherwise."""
+    if dip.direction() != "down" or not window[0] <= dip.low_date.time() <= window[1]:
+        return None
+    others = [w.price_range() for w in lookback if w is not dip]
+    if len(others) < 2:
+        return None
+    median_size = statistics.median(others)
+    size = dip.price_range()
+    if median_size <= 0 or size < min_ratio * median_size:
+        return None
+    return {"low": float(dip.low), "high": float(dip.high), "wick_low": float(dip.df["low"].min()),
+            "low_time": dip.low_date, "ratio": size / median_size, "target_fib": target_fib,
+            "stop_buffer": stop_buffer}
+
+
+def second_wave_risk_reward(setup, entry, min_risk_pct=0.001):
+    """Long R/R: stop below the dip's lowest low, target `target_fib` of the dip back up; None without room."""
+    size = setup["high"] - setup["low"]
+    stop = setup["wick_low"] - setup["stop_buffer"] * size
+    target = setup["low"] + setup["target_fib"] * size
+    risk, reward = entry - stop, target - entry
+    if risk <= 0 or reward <= 0:
+        return None
+    risk = max(risk, entry * min_risk_pct)
+    return {"entry": entry, "stop": stop, "target": target, "risk": risk, "reward": reward, "rr": reward / risk}
+
+
 def overnight_filter_ok(mode, closes):
     """Whether the overnight hold is allowed, given session closes up to and including today's."""
     def moving_average(n, sessions_back=0):
@@ -688,6 +742,7 @@ def analyze_bars(bars, params=None, earnings_windows=None):
     session_bar_index = or_high = or_low = None
     pullback_setup = None
     bounce_setup = None
+    second_wave_session = None
     session_closes = []
     previous_close = None
 
@@ -729,6 +784,8 @@ def analyze_bars(bars, params=None, earnings_windows=None):
             new_wave = waves[-1].count(timestamp, bar, time_increment=BAR_INTERVAL)
             if new_wave:
                 waves.append(new_wave)
+        # the bar on which the turn became known (the wave itself is back-dated to the bar after the extreme)
+        waves[-1].confirmed_at = getattr(waves[-1], "confirmed_at", None) or timestamp
 
         if is_session_open_bar:
             bounce_setup = None
@@ -941,6 +998,35 @@ def analyze_bars(bars, params=None, earnings_windows=None):
             if outcome:
                 bounce_setup = None
 
+        second_wave_signal = None
+        if (params.second_wave != "off" and new_wave and not is_session_open_bar
+                and timestamp.time() <= params.second_wave_latest_entry
+                and not (params.second_wave_once_per_session and second_wave_session == session)):
+            dip_lookback = select_lookback_waves(waves[:-1], params.lookback_waves, params.lookback_bars)
+            dip_setup = new_second_wave_setup(
+                waves[-2], dip_lookback, params.second_wave_window, params.second_wave_ratio,
+                params.second_wave_target_fib, params.second_wave_stop_buffer,
+            )
+            dip_rr = dip_setup and second_wave_risk_reward(dip_setup, close, params.min_risk_pct)
+            if dip_rr:
+                second_wave_signal = {
+                    "time": timestamp,
+                    "signal": "second_wave_long",
+                    "gap": False,
+                    "price": close,
+                    "box_low": dip_setup["low"],
+                    "box_high": dip_setup["high"],
+                    "box_mode": "morning dip",
+                    "reverses": None,
+                    "risk_reward": dip_rr,
+                    "regime": regime,
+                    "bias": bias,
+                    "dip_low_time": dip_setup["low_time"],
+                    "dip_ratio": dip_setup["ratio"],
+                }
+                signals.append(second_wave_signal)
+                second_wave_session = session
+
         if active_box:
             if active_box["mode"] == "reversion":
                 retire = active_box["breakout_at"] is not None or active_box["breakdown_at"] is not None
@@ -968,7 +1054,8 @@ def analyze_bars(bars, params=None, earnings_windows=None):
             "or_low": or_low if opening_range_done else None,
             "signal": " + ".join(
                 _signal_label(fired)
-                for fired in (signal, drive_signal, fade_signal, pullback_signal, bounce_signal, overnight_signal)
+                for fired in (signal, drive_signal, fade_signal, pullback_signal, bounce_signal, second_wave_signal,
+                              overnight_signal)
                 if fired
             ) or None,
             "min_wave_price_change": min_wave_change,
@@ -1158,6 +1245,7 @@ def build_chart(ticker, bars, result, display_start):
         ("pullback short", "circle", "#d62728"),
         ("bounce long", "star", "#2ca02c"),
         ("bounce short", "star", "#d62728"),
+        ("second wave long", "hexagon", "#2ca02c"),
         ("overnight long", "square", "#9467bd"),
     )
     for kind, symbol, color in marker_styles:
@@ -1229,8 +1317,9 @@ def _print_ticker_summary(ticker, result, display_start, chart_path):
         + "".join(
             f"   {sum(1 for s in shown_signals if s['signal'] == name)} {name.replace('_', ' ')}"
             for name in ("breakout", "breakdown", "fade_long", "fade_short", "drive_long", "drive_short",
-                         "drive_fade_long", "drive_fade_short", "pullback_long", "pullback_short", "bounce_long", "bounce_short", "overnight_long")
-            if not name.startswith(("drive", "pullback", "bounce", "overnight"))
+                         "drive_fade_long", "drive_fade_short", "pullback_long", "pullback_short", "bounce_long", "bounce_short",
+                         "second_wave_long", "overnight_long")
+            if not name.startswith(("drive", "pullback", "bounce", "second_wave", "overnight"))
             or any(s["signal"] == name for s in shown_signals)
         )
         + f"   ({sum(1 for s in shown_signals if s['gap'])} gap,"
@@ -1256,6 +1345,17 @@ def _print_ticker_summary(ticker, result, display_start, chart_path):
     print(f"latest {snapshots.index[-1]:%Y-%m-%d %H:%M}")
     print("  " + _bar_hover_text(last).replace("<br>", "\n  "))
     print(f"chart: {chart_path}")
+
+
+def _time_window(text):
+    """'HH:MM-HH:MM' -> (time, time)."""
+    try:
+        start, end = (time.fromisoformat(part.strip()) for part in text.split("-"))
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"expected HH:MM-HH:MM, got {text!r}")
+    if end < start:
+        raise argparse.ArgumentTypeError(f"window end {end:%H:%M} is before its start {start:%H:%M}")
+    return start, end
 
 
 def add_strategy_arguments(parser):
@@ -1356,6 +1456,33 @@ def add_strategy_arguments(parser):
              f" (default: {DEFAULT_DEEP_BOUNCE_STOP_BUFFER:g})",
     )
     parser.add_argument(
+        "--second-wave", default="off", choices=SECOND_WAVE_MODES,
+        help="Morning dip \"second wave\" long entry: buy the wave module's turn up from a morning dip (default: off)",
+    )
+    parser.add_argument(
+        "--second-wave-window", type=_time_window,
+        default=DEFAULT_SECOND_WAVE_WINDOW,
+        help="The dip's low must fall inside this HH:MM-HH:MM window (default: "
+             f"{DEFAULT_SECOND_WAVE_WINDOW[0]:%H:%M}-{DEFAULT_SECOND_WAVE_WINDOW[1]:%H:%M})",
+    )
+    parser.add_argument(
+        "--second-wave-ratio", type=float, default=DEFAULT_SECOND_WAVE_RATIO,
+        help=f"Minimum dip size as a multiple of the median lookback wave size (default: {DEFAULT_SECOND_WAVE_RATIO:g})",
+    )
+    parser.add_argument(
+        "--second-wave-target-fib", type=float, default=DEFAULT_SECOND_WAVE_TARGET_FIB,
+        help=f"Target as a fraction of the dip back up from its low (default: {DEFAULT_SECOND_WAVE_TARGET_FIB:g})",
+    )
+    parser.add_argument(
+        "--second-wave-stop-buffer", type=float, default=DEFAULT_SECOND_WAVE_STOP_BUFFER,
+        help="Stop below the dip's lowest low, as a fraction of the dip size"
+             f" (default: {DEFAULT_SECOND_WAVE_STOP_BUFFER:g})",
+    )
+    parser.add_argument(
+        "--second-wave-latest-entry", type=time.fromisoformat, default=DEFAULT_SECOND_WAVE_LATEST_ENTRY,
+        help=f"Skip a turn confirmed after this HH:MM (default: {DEFAULT_SECOND_WAVE_LATEST_ENTRY:%H:%M})",
+    )
+    parser.add_argument(
         "--no-box-signals", dest="box_signals", action="store_false",
         help="Turn off every box signal (breakouts, breakdowns, fades); boxes are still drawn",
     )
@@ -1442,6 +1569,12 @@ def params_from_args(args):
         deep_wave_ratio=args.deep_wave_ratio,
         deep_bounce_target_fib=args.deep_bounce_target_fib,
         deep_bounce_stop_buffer=args.deep_bounce_stop_buffer,
+        second_wave=args.second_wave,
+        second_wave_window=args.second_wave_window,
+        second_wave_ratio=args.second_wave_ratio,
+        second_wave_target_fib=args.second_wave_target_fib,
+        second_wave_stop_buffer=args.second_wave_stop_buffer,
+        second_wave_latest_entry=args.second_wave_latest_entry,
         box_signals=args.box_signals,
         gap_signals=args.gap_signals,
         opening_range_bars=args.opening_range_bars,

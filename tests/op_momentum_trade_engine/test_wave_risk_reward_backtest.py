@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, time
 
 import pandas as pd
 import pytest
@@ -63,6 +63,40 @@ class TestSignalGroup:
 class TestSignalGroupDriveFade:
     def test_drive_fade_has_its_own_group(self):
         assert signal_group(_signal("2026-09-01 09:30", name="drive_fade_short")) == "drive fade"
+
+
+class TestSignalGroupSecondWave:
+    def test_second_wave_has_its_own_group(self):
+        assert signal_group(_signal("2026-09-01 10:50", name="second_wave_long")) == "second wave"
+
+
+class TestTradeSimulatorTimeExit:
+    def _bars(self):
+        """Entry bar 09:35, then flat bars to 11:30 closing at 101, then a bar at 11:30 closing at 103."""
+        rows = [(100, 100, 100, 100)] + [(101, 101.2, 100.5, 101)] * 22 + [(101, 103.2, 100.9, 103)]
+        return _bars("2026-09-01 09:35", rows)
+
+    def test_sells_at_close_of_bar_ending_at_exit_time(self):
+        trade = TradeSimulator(self._bars()).run(_signal("2026-09-01 09:35", stop=99.0, target=150.0), "time",
+                                                 exit_at=time(11, 30))
+
+        assert (trade["outcome"], trade["exit_time"], trade["exit"]) == ("time", _timestamp("2026-09-01 11:25"), 101)
+
+    def test_stop_still_applies_before_exit_time(self):
+        bars = _bars("2026-09-01 09:35", [(100, 100, 100, 100), (100, 100.2, 98.5, 99.0)] + [(99, 99, 99, 99)] * 30)
+
+        trade = TradeSimulator(bars).run(_signal("2026-09-01 09:35", stop=99.0), "time", exit_at=time(11, 30))
+
+        assert trade["outcome"] == "stop"
+
+    def test_signal_at_or_after_exit_bar_is_not_traded(self):
+        assert TradeSimulator(self._bars()).run(_signal("2026-09-01 11:30"), "time", exit_at=time(11, 30)) is None
+
+    def test_target_is_ignored(self):
+        trade = TradeSimulator(self._bars()).run(_signal("2026-09-01 09:35", stop=99.0, target=101.1), "time",
+                                                 exit_at=time(11, 35))
+
+        assert (trade["outcome"], trade["exit"]) == ("time", 103)
 
 
 class TestTradeSimulator:
