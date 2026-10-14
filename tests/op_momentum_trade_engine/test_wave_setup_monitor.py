@@ -344,8 +344,8 @@ def _amd_bar(text):
     return {"time": _ts(text), **frame.loc[_ts(text)].to_dict()}
 
 
-def _reversal(text):
-    return ReversalSignal(ticker="AMD", time=_ts(text), side="bottom", pattern="push", price=100.0, extreme=99.5,
+def _reversal(text, side="bottom"):
+    return ReversalSignal(ticker="AMD", time=_ts(text), side=side, pattern="push", price=100.0, extreme=99.5,
                           move_bars=3.2)
 
 
@@ -412,6 +412,72 @@ class TestReversalAlerts:
         monitor._on_five_min_bar("AMD", _bar("2026-09-01 15:55", 100.0, 100.2, 99.8, 100.0))
 
         assert alerts == []
+        assert monitor.alerted == set()
+
+    def test_no_alert_on_an_early_close_days_last_bar(self, tmp_path, mocker):
+        clock = _Clock("2026-11-27 12:55")
+        monitor, alerts = _monitor(tmp_path, {"AMD": []}, clock)
+        monitor.prepare()
+        mocker.patch.object(monitor.reversal_watches["AMD"], "update", return_value=[_reversal("2026-11-27 12:55")])
+
+        monitor._on_five_min_bar("AMD", _bar("2026-11-27 12:55", 100.0, 100.2, 99.8, 100.0))
+
+        assert alerts == []
+
+    def test_a_low_and_a_high_on_one_bar_send_two_alerts(self, tmp_path, mocker):
+        clock = _Clock("2026-09-01 11:00")
+        monitor, alerts = _monitor(tmp_path, {"AMD": []}, clock)
+        monitor.prepare()
+        mocker.patch.object(monitor.reversal_watches["AMD"], "update", return_value=[
+            _reversal("2026-09-01 11:00", "bottom"), _reversal("2026-09-01 11:00", "top")])
+
+        monitor._on_five_min_bar("AMD", _bar("2026-09-01 11:00", 100.0, 100.2, 99.8, 100.0))
+
+        assert [a.split(" | ")[0] for a in alerts] == ["[wave] LOW? AMD", "[wave] HIGH? AMD"]
+
+    def test_watch_error_does_not_block_the_setups(self, tmp_path, mocker):
+        clock = _Clock("2026-09-01 11:00")
+        monitor, alerts = _monitor(tmp_path, {"AMD": ["drive long"]}, clock)
+        monitor.prepare()
+        mocker.patch.object(monitor.reversal_watches["AMD"], "update", side_effect=ZeroDivisionError)
+        evaluate = mocker.patch.object(monitor, "_submit_evaluations")
+
+        monitor._on_five_min_bar("AMD", _bar("2026-09-01 11:00", 100.0, 100.2, 99.8, 100.0))
+
+        evaluate.assert_called_once()
+        assert alerts == []
+
+    def test_watch_rebuild_error_turns_off_its_alerts(self, tmp_path, mocker):
+        clock = _Clock("2026-09-01 11:00")
+        mocker.patch.object(monitor_module.ReversalWatch, "from_bars", side_effect=ValueError)
+        monitor, _ = _monitor(tmp_path, {"AMD": []}, clock)
+
+        monitor.prepare()
+
+        assert monitor.reversal_watches == {}
+
+    def test_no_alert_until_a_delayed_feed_gap_is_backfilled(self, tmp_path, mocker):
+        clock = _Clock("2026-09-01 11:00")
+        monitor, alerts = _monitor(tmp_path, {"AMD": []}, clock)
+        monitor.prepare()
+        monitor.backfill = (_ts("2026-09-01 10:30"), _ts("2026-09-01 10:46"))
+        mocker.patch.object(monitor.reversal_watches["AMD"], "update", return_value=[_reversal("2026-09-01 11:00")])
+
+        monitor._on_five_min_bar("AMD", _bar("2026-09-01 11:00", 100.0, 100.2, 99.8, 100.0))
+
+        assert alerts == []
+
+    def test_out_of_order_bar_rebuilds_the_watch_silently(self, tmp_path, mocker):
+        clock = _Clock("2026-09-01 10:40")
+        monitor, alerts = _monitor(tmp_path, {"AMD": []}, clock, history={"AMD": _amd_history("2026-09-01 10:40")})
+        monitor.prepare()
+        monitor.bars["AMD"] = monitor.bars["AMD"].drop(_ts("2026-09-01 10:30"))
+        stale = monitor.reversal_watches["AMD"]
+
+        monitor._on_five_min_bar("AMD", _amd_bar("2026-09-01 10:30"))
+
+        assert alerts == []
+        assert monitor.reversal_watches["AMD"] is not stale
 
     def test_backfilled_bars_reach_the_watch(self, tmp_path):
         clock = _Clock("2026-10-06 11:16")
@@ -423,6 +489,21 @@ class TestReversalAlerts:
         monitor._run_backfill(clock())
 
         assert monitor.reversal_watches["AMD"].last_time == _ts("2026-10-06 10:40")
+
+    def test_backfill_replay_alerts_nothing_and_later_bars_still_alert(self, tmp_path):
+        clock = _Clock("2026-09-01 10:30")
+        history = _amd_history("2026-09-01 10:30")
+        monitor, alerts = _monitor(tmp_path, {"AMD": []}, clock,
+                                   history={"AMD": history[history.index < _ts("2026-09-01 10:00")]})
+        monitor.prepare()
+        gap = history[history.index >= _ts("2026-09-01 10:00")]
+        monitor.client.fetch_bars = lambda tickers, start, end: {"AMD": gap}
+        monitor.backfill = (_ts("2026-09-01 10:00"), _ts("2026-09-01 10:14"))
+        monitor._run_backfill(clock())
+
+        monitor._on_five_min_bar("AMD", _amd_bar("2026-09-01 10:30"))
+
+        assert len(alerts) == 1 and alerts[0].startswith("[wave] LOW? AMD | piercing + push")
 
 
 class TestReversalArguments:

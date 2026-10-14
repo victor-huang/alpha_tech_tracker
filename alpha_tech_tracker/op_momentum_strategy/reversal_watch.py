@@ -19,6 +19,7 @@ research/ticker_characteristic (7 tickers, 2025 and 2026; about 27-31% of candid
 These say where a wave may be turning, not that a trade pays: they have not been backtested for P&L.
 """
 
+import math
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime
@@ -83,20 +84,35 @@ class ReversalWatch:
         self.last_time = None
         self.session_bar = 0
 
-    def replay(self, frame):
-        """Warm up from a frame of bars (open, high, low, close); fires nothing."""
-        for stamp, row in frame.iterrows():
-            self.update(stamp, {k: float(row[k]) for k in ("open", "high", "low", "close")})
+    @classmethod
+    def from_bars(cls, ticker, frame, patterns=PATTERNS):
+        """A watch warmed up on `frame` (sorted bars: open, high, low, close); the replay fires nothing.
+
+        Waves reset at each session open and the averages look back BARS_PER_SESSION bars, so only the last
+        session and the sessions holding the BARS_PER_SESSION bars before it are replayed.
+        """
+        watch = cls(ticker, patterns)
+        if frame.empty:
+            return watch
+        dates = frame.index.date
+        before_last_session = int((dates < dates[-1]).sum())
+        start = max(0, before_last_session - BARS_PER_SESSION)
+        start = int((dates < dates[start]).sum())
+        for stamp, row in frame.iloc[start:].iterrows():
+            watch.update(stamp, {k: float(row[k]) for k in ("open", "high", "low", "close")})
+        return watch
 
     def update(self, time, bar):
         if self.last_time is not None and time <= self.last_time:
             return []
+        bar = {k: float(bar[k]) for k in ("open", "high", "low", "close")}
+        if not all(math.isfinite(v) and v > 0 for v in bar.values()):
+            return []
         self.last_time = time
-        bar = {k: bar[k] for k in ("open", "high", "low", "close")}
         average_bar = sum(self.ranges) / len(self.ranges) if len(self.ranges) >= MIN_AVERAGE_BARS else None
         bar_range = bar["high"] - bar["low"]
         self.ranges.append(bar_range)
-        self.range_pcts.append(bar_range / bar["close"] if bar["close"] else 0.0)
+        self.range_pcts.append(bar_range / bar["close"])
         self.session_bar = 0 if self._count(time, bar) else self.session_bar + 1
 
         current = {"time": time, "bar": bar, "sides": []}

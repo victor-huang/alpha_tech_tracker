@@ -4,7 +4,13 @@ import pandas as pd
 import pytest
 import pytz
 
-from alpha_tech_tracker.op_momentum_strategy.reversal_watch import ReversalSignal, ReversalWatch, reversal_message
+from alpha_tech_tracker.op_momentum_strategy import reversal_watch as reversal_module
+from alpha_tech_tracker.op_momentum_strategy.reversal_watch import (
+    MIN_AVERAGE_BARS,
+    ReversalSignal,
+    ReversalWatch,
+    reversal_message,
+)
 
 ET = pytz.timezone("America/New_York")
 FIXTURES = Path(__file__).parent / "fixtures"
@@ -17,6 +23,10 @@ def _amd_bars(day):
     return frame
 
 
+def _ts(text):
+    return pd.Timestamp(text, tz=ET)
+
+
 def _fired(watch, frame):
     signals = []
     for stamp, row in frame.iterrows():
@@ -25,8 +35,12 @@ def _fired(watch, frame):
 
 
 def _signal(pattern, side, price=454.095):
-    return ReversalSignal(ticker="AMD", time=ET.localize(pd.Timestamp("2026-09-01 10:30").to_pydatetime()),
-                          side=side, pattern=pattern, price=price, extreme=452.3, move_bars=5.48)
+    return ReversalSignal(ticker="AMD", time=_ts("2026-09-01 10:30"), side=side, pattern=pattern, price=price,
+                          extreme=452.3, move_bars=5.48)
+
+
+def _bar(price):
+    return {"open": price, "high": price + 1.0, "low": price - 1.0, "close": price}
 
 
 class TestReversalWatchSignals:
@@ -52,32 +66,94 @@ class TestReversalWatchSignals:
 
         assert {pattern for _, pattern, _ in fired} == {"push"}
 
-    def test_fires_nothing_before_the_average_bar_is_known(self):
+
+class TestReversalWatchCandidates:
+    def test_no_average_bar_before_enough_bars(self):
+        watch = ReversalWatch("AMD")
         frame = _amd_bars("2026-09-01")
 
-        fired = _fired(ReversalWatch("AMD"), frame[frame.index.date == frame.index[-1].date()])
+        _fired(watch, frame.iloc[:MIN_AVERAGE_BARS])
 
-        assert not [f for f in fired if f[0] < "2026-09-01 11:10"]
+        assert watch.previous["average_bar"] is None
+
+    def test_average_bar_once_enough_bars(self):
+        watch = ReversalWatch("AMD")
+        frame = _amd_bars("2026-09-01")
+
+        _fired(watch, frame.iloc[:MIN_AVERAGE_BARS + 1])
+
+        assert watch.previous["average_bar"] == pytest.approx((frame.high - frame.low).iloc[:MIN_AVERAGE_BARS].mean())
+
+    def test_no_signal_on_the_sessions_first_two_bars(self, mocker):
+        mocker.patch.object(ReversalWatch, "_candidate_sides", return_value=[("bottom", 3.0, 99.0)])
+        mocker.patch.object(reversal_module, "push_reversal", return_value=True)
+
+        fired = _fired(ReversalWatch("AMD", patterns=["push"]), _amd_bars("2026-09-01"))
+
+        assert [f[0] for f in fired if f[0] >= "2026-08-31 15:55"][:2] == ["2026-08-31 15:55", "2026-09-01 09:40"]
 
 
-class TestReversalWatchReplay:
-    def test_replay_fires_nothing_and_the_next_bar_still_fires(self):
+class TestReversalWatchBadBars:
+    def test_zero_price_bar_is_skipped(self):
+        watch = ReversalWatch("AMD")
+
+        assert watch.update(_ts("2026-09-01 09:30"), {"open": 0.0, "high": 0.0, "low": 0.0, "close": 0.0}) == []
+        assert watch.last_time is None
+
+    def test_nan_bar_is_skipped(self):
+        watch = ReversalWatch("AMD")
+
+        watch.update(_ts("2026-09-01 09:30"), {**_bar(100.0), "high": float("nan")})
+
+        assert (watch.last_time, len(watch.ranges)) == (None, 0)
+
+    def test_signals_after_a_skipped_bar_are_unchanged(self):
         frame = _amd_bars("2026-09-01")
         watch = ReversalWatch("AMD")
-        signal_bar = frame.index.get_loc(pd.Timestamp("2026-09-01 10:30", tz=ET))
+        _fired(watch, frame[frame.index < _ts("2026-09-01 10:30")])
+        watch.update(_ts("2026-09-01 10:26"), {**_bar(450.0), "close": float("nan")})
 
-        watch.replay(frame.iloc[:signal_bar])
-        fired = watch.update(frame.index[signal_bar], frame.iloc[signal_bar].to_dict())
+        fired = watch.update(_ts("2026-09-01 10:30"), frame.loc[_ts("2026-09-01 10:30")].to_dict())
 
         assert {(s.pattern, s.side) for s in fired} == {("piercing", "bottom"), ("push", "bottom")}
 
     def test_ignores_a_bar_it_has_already_seen(self):
         frame = _amd_bars("2026-09-01")
-        watch = ReversalWatch("AMD")
-        signal_bar = frame.index.get_loc(pd.Timestamp("2026-09-01 10:30", tz=ET))
-        watch.replay(frame.iloc[:signal_bar + 1])
+        watch = ReversalWatch.from_bars("AMD", frame[frame.index <= _ts("2026-09-01 10:30")])
 
-        assert watch.update(frame.index[signal_bar], frame.iloc[signal_bar].to_dict()) == []
+        assert watch.update(_ts("2026-09-01 10:30"), frame.loc[_ts("2026-09-01 10:30")].to_dict()) == []
+
+
+class TestReversalWatchFromBars:
+    def test_replay_fires_nothing_and_the_next_bar_still_fires(self):
+        frame = _amd_bars("2026-09-01")
+        watch = ReversalWatch.from_bars("AMD", frame[frame.index < _ts("2026-09-01 10:30")])
+
+        fired = watch.update(_ts("2026-09-01 10:30"), frame.loc[_ts("2026-09-01 10:30")].to_dict())
+
+        assert {(s.pattern, s.side) for s in fired} == {("piercing", "bottom"), ("push", "bottom")}
+
+    def test_matches_a_full_replay(self):
+        frame = pd.concat([_amd_bars("2026-09-01"), _amd_bars("2026-09-16")])
+        cut = _ts("2026-09-16 09:50")
+        full = ReversalWatch("AMD")
+        _fired(full, frame[frame.index < cut])
+
+        fast = ReversalWatch.from_bars("AMD", frame[frame.index < cut])
+
+        rest = frame[frame.index >= cut]
+        assert _fired(fast, rest) == _fired(full, rest)
+
+    def test_replays_only_the_recent_sessions(self, mocker):
+        frame = pd.concat([_amd_bars("2026-09-01"), _amd_bars("2026-09-16")])
+        update = mocker.spy(ReversalWatch, "update")
+
+        ReversalWatch.from_bars("AMD", frame)
+
+        assert update.call_args_list[0].args[1] == _ts("2026-09-15 09:30")
+
+    def test_empty_frame(self):
+        assert ReversalWatch.from_bars("AMD", _amd_bars("2026-09-01").iloc[:0]).last_time is None
 
 
 class TestReversalMessage:

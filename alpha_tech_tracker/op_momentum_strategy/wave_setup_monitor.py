@@ -679,19 +679,31 @@ class WaveSetupMonitor:
     # --- signals ---------------------------------------------------------
 
     def _rebuild_reversal_watch(self, ticker):
-        """Replay the ticker's bars into a fresh watch, so it knows the current wave; replays alert nothing."""
+        """A fresh watch from the ticker's bars, so it knows the current wave; the replay alerts nothing."""
         if not self.reversal_patterns:
             return
-        watch = ReversalWatch(ticker, self.reversal_patterns)
-        watch.replay(self.bars[ticker])
-        self.reversal_watches[ticker] = watch
+        try:
+            self.reversal_watches[ticker] = ReversalWatch.from_bars(ticker, self.bars[ticker].sort_index(),
+                                                                    self.reversal_patterns)
+        except Exception:
+            self.reversal_watches.pop(ticker, None)
+            logger.exception("%s: reversal watch rebuild failed; no reversal alerts for it", ticker)
 
     def _check_reversals(self, ticker, bar):
+        """Reversal alerts for a new bar; never in the way of the setups (errors are logged, not raised)."""
         watch = self.reversal_watches.get(ticker)
         if watch is None:
             return
-        fired = [s for s in watch.update(bar["time"], bar) if s.key not in self.alerted]
-        if bar["time"].time() >= self.last_bar:
+        if watch.last_time is not None and bar["time"] <= watch.last_time:
+            self._rebuild_reversal_watch(ticker)
+            return
+        try:
+            fired = [s for s in watch.update(bar["time"], bar) if s.key not in self.alerted]
+        except Exception:
+            logger.exception("%s: reversal check failed on the %s bar", ticker, f"{bar['time']:%H:%M}")
+            return
+        # until a delayed-feed gap is backfilled the watch's waves miss bars
+        if self.backfill is not None or bar["time"].time() >= self.last_bar:
             return
         for side in ("bottom", "top"):
             signals = [s for s in fired if s.side == side]

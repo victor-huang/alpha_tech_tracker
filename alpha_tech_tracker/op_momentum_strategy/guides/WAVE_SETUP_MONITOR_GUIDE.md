@@ -202,12 +202,23 @@ monitored tickers (AMD, APP, CRWV, MDB, MRNA, SNDK, SNPS) from
 [research/ticker_characteristic](../research/ticker_characteristic/README.md). A replay of those
 bars through `ReversalWatch` fires on the same bars as the study (2025 and 2026, all seven tickers).
 Patterns that fire on the same bar and side share one alert. Not alerted: the session's first two
-bars, which are not candidates, and the last bar, which closes at 16:00.
+bars, which are not candidates, and the last bar (15:55, or 12:55 on an early-close day), which
+closes as the market does.
 
 `--reversal-patterns piercing push` picks the patterns (default: all three) and
 `--no-reversal-alerts` turns them off. They are logged to the alerts CSV with action `LOW?` /
-`HIGH?` and setup `reversal <patterns>`. A restart does not repeat them. At startup each ticker's
-warm-up bars are replayed through the wave model (about 1 s per ticker); the replay sends no alerts.
+`HIGH?` and setup `reversal <patterns>`. A restart does not repeat them.
+
+- **Warm-up:** at startup each ticker's last sessions are replayed through the wave model (about
+  0.1 s per ticker; enough for the current wave and the 78-bar averages, and the same signals as a
+  full replay). The replay sends no alerts, so a reversal on the bar closed just before a restart
+  is not alerted.
+- **Gaps:** after a delayed-feed start no reversal alerts are sent until the gap is backfilled; then
+  the watch is rebuilt. A late or out-of-order bar also rebuilds it, without an alert.
+- **Bad data:** a bar with a zero or missing price is skipped. An error in the reversal check is
+  logged and never stops the setup alerts for that bar.
+- **Wave size:** the watch always uses the default wave size (`--min-wave-bar-ranges 2`), whatever
+  the setups use.
 
 ## Data plan
 
