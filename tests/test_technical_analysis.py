@@ -186,33 +186,34 @@ class TestPushReversalDoji:
         assert ta.push_reversal(price_data, daily_movement_minimum=1.05 / 262.83) is True
 
 
-class TestDarkCloudReversal:
+class TestPiercingReversalBearish:
     # close, open, high, low
     UP_CANDLE = [102, 100, 102.2, 99.8]
+    NO_MINIMUM = 0.0
 
     def test_opens_above_the_close_and_closes_below_the_midpoint(self):
-        assert ta.dark_cloud_reversal([self.UP_CANDLE, [100.6, 102.5, 102.8, 100.5]]) is True
+        assert ta.piercing_reversal([self.UP_CANDLE, [100.6, 102.5, 102.8, 100.5]], trend="down", daily_movement_minimum=self.NO_MINIMUM) is True
 
     def test_close_above_the_midpoint_is_not_a_dark_cloud(self):
-        assert ta.dark_cloud_reversal([self.UP_CANDLE, [101.4, 102.5, 102.8, 101.3]]) is False
+        assert ta.piercing_reversal([self.UP_CANDLE, [101.4, 102.5, 102.8, 101.3]], trend="down", daily_movement_minimum=self.NO_MINIMUM) is False
 
     def test_open_below_the_first_close_is_not_a_dark_cloud(self):
-        assert ta.dark_cloud_reversal([self.UP_CANDLE, [100.6, 101.9, 102.1, 100.5]]) is False
+        assert ta.piercing_reversal([self.UP_CANDLE, [100.6, 101.9, 102.1, 100.5]], trend="down", daily_movement_minimum=self.NO_MINIMUM) is False
 
     def test_close_below_the_first_open_is_an_engulfing_not_a_dark_cloud(self):
-        assert ta.dark_cloud_reversal([self.UP_CANDLE, [99.5, 102.5, 102.8, 99.4]]) is False
+        assert ta.piercing_reversal([self.UP_CANDLE, [99.5, 102.5, 102.8, 99.4]], trend="down", daily_movement_minimum=self.NO_MINIMUM) is False
 
     def test_needs_an_up_candle_first(self):
-        assert ta.dark_cloud_reversal([[100, 102, 102.2, 99.8], [100.6, 102.5, 102.8, 100.5]]) is False
+        assert ta.piercing_reversal([[100, 102, 102.2, 99.8], [100.6, 102.5, 102.8, 100.5]], trend="down", daily_movement_minimum=self.NO_MINIMUM) is False
 
     def test_second_body_below_the_minimum_is_not_a_signal(self):
-        assert ta.dark_cloud_reversal([self.UP_CANDLE, [101.2, 102.1, 102.3, 101.1]], daily_movement_minimum=0.015) is False
+        assert ta.piercing_reversal([self.UP_CANDLE, [101.2, 102.1, 102.3, 101.1]], trend="down", daily_movement_minimum=0.015) is False
 
     def test_amd_5min_dark_cloud_at_a_high(self):
         # AMD 2026-02-20 09:40 and 09:45 ET, a wave high, average 5-min bar 0.79
         price_data = [[202.64, 201.62, 203.50, 201.43], [201.68, 202.68, 203.09, 201.62]]
 
-        assert ta.dark_cloud_reversal(price_data, daily_movement_minimum=0.79 / 201.68) is True
+        assert ta.piercing_reversal(price_data, trend="down", daily_movement_minimum=0.79 / 201.68) is True
 
 
 class TestConfirmedLongTailReversal:

@@ -207,10 +207,13 @@ def engulfing_reversal(price_data, trend="up", daily_movement_minimum=None):
 
 def piercing_reversal(price_data, trend="up", daily_movement_minimum=0.015):
     """
+    trend="up" (piercing line): after a down candle, an up candle that opens below its close and closes above the
+    middle of its body, but below its open.
+    trend="down" (dark cloud cover): after an up candle, a down candle that opens above its close and closes below
+    the middle of its body, but above its open. On 5-min bars it marked wave highs 50-100% of the time, though
+    rarely (research/ticker_characteristic).
     :daily_movement_minimum: default to 0.015 (1.5%), the second candle's minimum body as a fraction of its open;
         on intraday bars pass the ticker's average bar range as a fraction of price
-    trend="down" keeps its original, looser rule (the second candle need not close below the first candle's
-    midpoint); dark_cloud_reversal is the strict bearish counterpart
     """
     # data point order: close, open, high, low
     detected = False
@@ -219,7 +222,7 @@ def piercing_reversal(price_data, trend="up", daily_movement_minimum=0.015):
     firt_day_candle_mid_point = abs(d[0][0] - d[0][1]) / 2.0
 
     is_first_day_down = d[0][0] < d[0][1]
-    is_second_day_up = d[1][0] > d[1][1]
+    is_first_day_up = d[0][0] > d[0][1]
 
     is_second_candle_close_above_mid_point = (
         d[1][0] > d[0][0] + firt_day_candle_mid_point
@@ -238,11 +241,16 @@ def piercing_reversal(price_data, trend="up", daily_movement_minimum=0.015):
             and is_close_below_first_candle_open
         ):
             detected = True
-    elif not is_first_day_down and trend == "down":
+    elif is_first_day_up and trend == "down":
+        is_second_candle_open_above_first_day_close = d[1][1] > d[0][0]
+        is_second_candle_close_below_mid_point = (
+            d[1][0] < d[0][0] - firt_day_candle_mid_point
+        )
+        is_close_above_first_candle_open = d[1][0] > d[0][1]
         if (
-            not is_second_candle_close_above_mid_point
-            and not is_second_candle_open_below_firt_day_close
-            and not is_close_below_first_candle_open
+            is_second_candle_open_above_first_day_close
+            and is_second_candle_close_below_mid_point
+            and is_close_above_first_candle_open
         ):
             detected = True
 
@@ -308,29 +316,6 @@ def push_reversal(price_data, trend="up", daily_movement_minimum=0.015):
         detected = True
 
     return detected
-
-
-def dark_cloud_reversal(price_data, daily_movement_minimum=0.015):
-    """
-    bearish counterpart of piercing_reversal: after an up candle, a down candle that opens above its close and
-    closes below the middle of its body, but above its open. On 5-min bars it marked wave highs 50-100% of the
-    time, though rarely (research/ticker_characteristic).
-    :price_data: two consecutive candles [(close, open, high, low), (close, open, high, low)]
-    :daily_movement_minimum: default to 0.015 (1.5%), the second candle's minimum body as a fraction of its open;
-        on intraday bars pass the ticker's average bar range as a fraction of price
-    """
-    # data point order: close, open, high, low
-    first, second = price_data[0], price_data[1]
-
-    if abs(second[0] - second[1]) / second[1] < daily_movement_minimum:
-        return False
-
-    if not first[0] > first[1]:
-        return False
-
-    first_candle_mid_point = (first[0] + first[1]) / 2.0
-
-    return second[1] > first[0] and first[1] < second[0] < first_candle_mid_point
 
 
 def confirmed_long_tail_reversal(price_data, trend="up", daily_movement_minimum=0.01):
