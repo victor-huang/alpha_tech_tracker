@@ -66,6 +66,7 @@ op_momentum_strategy/
 │   ├── findings/        ← narrative research docs and sweep results
 │   ├── params/          ← parameter tuning and walkforward studies
 │   ├── ticker_selection/← win-rate backtest and ticker pool research
+│   ├── ticker_characteristic/ ← one page per ticker: candle patterns at wave lows/highs, ticker-specific results (AMD, APP, CRWV, MDB, MRNA, SNDK, SNPS; README compares them)
 │   ├── windows/         ← trading window experiments (M1/M2/A1/A2 sweeps)
 │   ├── regime_analysis/ ← year-by-year screener analyses (2016–2026)
 │   └── experiments/     ← specific experiment results (reentry, noise, replay)
