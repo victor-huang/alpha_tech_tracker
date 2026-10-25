@@ -82,6 +82,15 @@ earlier findings: [`WAVE_RISK_REWARD_FINDINGS.md`](WAVE_RISK_REWARD_FINDINGS.md)
   the right stop on the 2 most volatile tickers, while a 2% stop suits drive long on every signal
   (+28% profit in 2023–26 at about the same drawdown). Trading it only while the ticker is above its
   daily MA20 cut drawdowns on 22 of 28 tickers but total profit from +474% to +178%.
+- **Share of the daily range caught (Findings 31–34, SNDK, SPOT, CRWD 2025–26):** the best setup, drive long held to
+  the close, catches about 0.10 of SNDK's average daily range per session (7% of its up waves). Re-picking setups
+  every 2 weeks on 20 sessions (+10%) did far worse than always drive long (+143%), and SNDK / QQQ MA crosses and
+  QQQ trend changes did not predict drive long's bad days. Riding several waves can't catch more: a confirmed wave
+  turn or reversal candle comes about 0.2 ADR after the low, while legs are only 0.3–0.4 ADR. A trailing stop helps
+  a little in strong uptrends and a 10:30 day-type switch in choppy stretches; limit entries at VWAP / MA20 / the dip
+  all lost. Drive long keeps about half of a trending stock's intraday move after the first bar.
+- **Re-entering drive long above the stop-out level (Finding 35)** added +54 points over 11 ticker-periods of 2025–26
+  (better in 6), mainly where drive long struggled; not yet checked on 2020–24.
 
 ## Method
 
@@ -1366,6 +1375,161 @@ edge comes from holding stocks that keep trending, and last month's return doesn
 overnight leg with the QQQ rule is the most robust piece (+49% alone on all eight monthly tickers, −20%
 drawdown).
 
+## Finding 31 — Scoring setups by the share of the daily range they catch, and a 2-week picker with trend events (SNDK 2026)
+
+`analysis_scripts/wave_capture.py`. A ticker moves its average daily range (ADR: mean regular-hours high − low of
+the previous 20 sessions, known before the open) through one or a few strong waves. A setup's **ADR capture** on a
+session is its net dollars per share (5 bps) divided by that session's ADR, 0 on sessions without a trade. SNDK
+2026 (Jan 2 – Oct 23, 204 sessions): median ADR $84.79 (6.7% of price); the finished up waves add up to a median
+1.09 ADR per session, the largest single up wave 0.52 ADR.
+
+| Setup / exit (whole test, hindsight) | ADR captured per session | Share of the day's up waves | Total |
+|---|---|---|---|
+| drive long / hold to the close | **0.100** | 7% | +142.8% |
+| drive long / giveback | 0.056 | 3% | +75.4% |
+| drive long / target-trail | 0.052 | 3% | +73.5% |
+| pullback long / target-trail | 0.016 | 2% | +21.3% |
+| box break / hold to the close | 0.013 | 1% | +14.2% |
+| every other setup | ≤ 0.014 | | |
+
+**A 2-week picker** (each block trades the setup x exit with the best ADR capture over the previous 20 sessions,
+positive, ≥ 3 trades; $10k per trade). Events known at the previous close could end a block early: SNDK or QQQ
+crossing their daily MA20/50/200, or QQQ's trend state changing (up = close > MA20 and MA20 above its level 5
+sessions back, down = the mirror).
+
+| Variant | Return | Max drawdown | Sessions in drive long |
+|---|---|---|---|
+| Re-pick every 2 weeks only | +9.8% | −$1.5k | 59% |
+| + re-pick on any event | +47.1% | −$1.6k | 66% |
+| + re-pick on QQQ MA crosses only | +58.8% | −$1.6k | 63% |
+| + re-pick on QQQ trend changes only | +56.0% | −$1.1k | 63% |
+| + re-pick on SNDK MA crosses only | +45.7% | −$1.6k | |
+| Step aside after a downward event, re-pick on an upward one | +42.4% | −$1.1k | 42% (74 sessions aside) |
+| Step aside while QQQ's trend is down | +22.5% | −$1.6k | |
+| *Always drive long, hold to the close* | *+142.8%* | | *100%* |
+
+Drive long wins 43% of the time, so a normal losing patch moved the 20-session ranking to bounce long, bounce short,
+box break, drive short or box gap, which lost in total. The event variants did better mostly because the extra
+re-picks returned to drive long sooner. The events did not predict trouble: drive long on the session after a
+downward event (17 trades) won 47% and averaged +2.09%, after an upward one (20) +2.53%, with no event (69) +0.82%,
+against +1.35% overall.
+
+## Finding 32 — Wave riders: the confirmation lag eats the wave (SNDK, chosen on 2025, tested on 2026)
+
+`analysis_scripts/wave_rider.py`. Long-only riders on the wave model replayed bar by bar with looser settings (a
+turn needs the wave `min_length` 3/5/7 bars long, `min_ranges` 1.5/2/3 average bars, and a `bounce` retrace of
+23.6/38.2%; the model's default is 7 bars, 2, 23.6%), flat at the close, 5 bps. Settings chosen on Feb 14 –
+Dec 31 2025 (201 sessions), tested on Jan 2 – Oct 23 2026 (204). The drive baseline reproduces the setup report
+(+142.8% in 2026).
+
+| Rider (best 2025 setting) | 2025 | 2025 ADR capture | 2026 | 2026 ADR capture |
+|---|---|---|---|---|
+| drive (green first bar, stop its low, hold to the close) | +2.0% | 0.009 | **+142.8%** | **0.100** |
+| drive-trail (stop raised to each new dip low) | +5.9% | 0.008 | +145.5% | 0.103 |
+| trail (drive or any turn up, trailing stop, re-enter on turns up) | **+34.5%** | **0.023** | +103.5% | 0.078 |
+| drive-ride (sell at the first turn down, then higher-low entries) | +22.9% | 0.016 | +100.9% | 0.067 |
+| turn (buy each turn up, sell each turn down) | +30.7% | 0.021 | −25.9% | −0.022 |
+| higher-low (as turn, only on higher lows) | +22.5% | 0.012 | −15.7% | −0.016 |
+
+Trail was the steadiest (every setting up in both years, about +30% / +80–118%); selling at each turn down lost in
+the trending year. **Why riding more waves does not catch more** — SNDK up legs from the dip's low, in ADR:
+
+| Wave setting | Up legs per session | Leg size (mean) | Lost waiting to enter | Given back waiting to exit | Kept |
+|---|---|---|---|---|---|
+| default (7 bars, 23.6%, 2) | 2.7 | 0.38 | 0.20 | 0.17 | ≈ 0.00 |
+| 5 bars, 38.2%, 1.5 | 2.1 | 0.43 | 0.24 | 0.19 | ≈ 0.01 |
+| 3 bars, 23.6%, 1.5 | 3.9 | 0.33 | 0.17 | 0.16 | ≈ 0.00 |
+
+A confirmed turn comes after about half the leg; exiting on the next confirmed turn gives back most of the rest.
+Drive long works because it enters at 09:35 without a confirmation and holds through pullbacks.
+
+**Reversal-candle entries** (the monitor's `ReversalWatch` LOW?/HIGH? signals; same periods): reversal-close
+(buy LOW?, hold) +25.7% / +1.4%; reversal-trail +27.3% / +4.9%; reversal-high (sell the first HIGH?) +14.4% /
+−1.5%. The entry is 0.20–0.21 ADR above the dip's low (the long tail needs a confirming bar and the wave's low is
+often 2+ bars back), the median best move after entry only 0.24–0.28 ADR, 53–59% are stopped and the low holds for
+the rest of the day 41–47% of the time — about breakeven. As a second leg next to drive long ("drive +
+reversal-trail", two positions at most): +29.3% / +147.7% (ADR capture 0.104), the best over both years.
+
+## Finding 33 — Day type at 10:30 and limit entries (SNDK, test May 15 – Oct 16 2026)
+
+Settings chosen on Feb 14 2025 – May 14 2026 (293 sessions), tested on May 15 – Oct 16 2026 (107 sessions).
+
+- **Day type:** from the first 12 bars, net move = (10:25 close − open) / ADR, efficiency = |net move| / the path
+  travelled. A trend-up day has net move ≥ N and efficiency ≥ E. `daytype-cut` sells the drive at 10:30 unless it is
+  a trend-up day; `daytype-switch` also trades reversal-trail entries after 10:30 on other days; `daytype-trend`
+  also buys the 10:25 close on trend-up days.
+- **Limit entries:** a buy limit at a level known one bar ahead (session VWAP; the 5-min MA20 while rising; the last
+  dip low + 0.05 ADR), filled when the bar trades down to it (only if the previous close was above), 10:00–15:00,
+  at most 2 a day, stop 0.05/0.1/0.2 ADR below, a bar reaching both counted as stopped, trailing stop.
+
+| Rider (best calibration setting) | Calibration | Calibration ADR capture | Test | Test ADR capture |
+|---|---|---|---|---|
+| drive | +71.6% | 0.044 | +72.2% | 0.086 |
+| drive-trail | +83.0% | 0.046 | **+73.6%** | **0.089** |
+| drive-trail + reversal-trail (2 legs) | +101.1% | 0.051 | +71.6% | 0.091 |
+| daytype-switch E0.25 N0.2 (#1 on calibration) | **+108.0%** | **0.060** | +69.9% | 0.082 |
+| daytype-cut E0.25 N0.2 | +76.9% | 0.047 | +69.8% | 0.084 |
+| daytype-trend E0.25 N0.2 | +100.7% | 0.053 | +60.2% | 0.070 |
+| limit at the dip retest, 0.1 buffer | +47.3% | 0.028 | −3.5% | −0.017 |
+| limit at VWAP, 0.1 buffer | +18.0% | 0.004 | −6.8% | −0.015 |
+| limit at the 5-min MA20, 0.1 buffer | +8.0% | 0.001 | −19.3% | −0.026 |
+
+Every limit entry lost on the test (10–13% won at the 0.05 buffer). The 10:30 measures barely predict the rest of
+the day (rank correlation with "long from the 10:25 close to the close", calibration / test): net move +0.05 /
++0.08, efficiency +0.05 / +0.26, first pullback depth −0.04 / −0.15, wave turns −0.04 / −0.04, morning range +0.09 /
++0.18. Nothing predicted when reversal trading after 10:30 pays (about 0 in every quintile, both periods).
+
+## Finding 34 — The SNDK riders on SPOT and CRWD; where the return comes from; what drive long keeps
+
+SNDK's chosen settings applied unchanged (`wave_rider.py` now rescales 5-min sessions that are not split-adjusted
+against the daily closes, e.g. CRWD's 4-for-1 on 2026-07-02):
+
+| Period | Buy and hold | Drive | Drive-trail | Drive-trail + reversal-trail | Day-type switch |
+|---|---|---|---|---|---|
+| SNDK May 15 – Oct 16 2026 | −1.6% | +72.2% | **+73.6%** | +71.6% | +69.9% |
+| CRWD May 1 – Oct 23 2026 | +126.6% | +40.8% | **+44.0%** | +36.7% | +31.8% |
+| SPOT 2026 | −0.3% | **+8.1%** | +3.2% | +3.6% | −4.9% |
+| CRWD May 2025 – Apr 2026 | +3.3% | −7.1% | −11.0% | −18.3% | **+9.4%** |
+| SPOT 2025 | | +17.6% | | | **+29.2%** |
+
+In strong intraday uptrends the trailing stop adds 1.5–3 points; in flat or choppy stretches it loses, and the
+day-type switch is the reverse. The ticker's trend sets most of the result. The best of the whole grid on CRWD's test
+caught 0.105 ADR per session, about SNDK's ceiling.
+
+**Intraday vs overnight** (daily split-adjusted bars, log-split): CRWD May–Oct 2026 made +133.6% open-to-close and
+−3.0% from the overnight gaps (60% of sessions closed above their open; gaps 51% up). The year before: +1.0% / +2.3%.
+SNDK May–Oct 2026: −3.8% / +2.3%; SPOT 2026: +2.8% / −3.0%.
+
+**What drive long keeps** (CRWD May–Oct 2026, summed daily open-to-close moves +93.4%): drive long caught +44.6%
+before costs (48%; +41.7% after). The first 5-min bar of the days it traded was worth +79.9% (bought at its close,
+and partly selection: a green bar is up by definition); the 24 stopped days recovered +16.2% after the stop-out; the
+64 red-first-bar days it skipped lost −47.3% (44% up, average −0.74%; traded days averaged +2.43%).
+
+## Finding 35 — Re-entering drive long above the stop-out level
+
+Re-buy the first close back above the stop-out level (the first bar's low), until 15:00, held to the close — a lower
+and earlier trigger than Finding 28's "back above the entry". Change vs drive long (summed %, 5 bps):
+
+| Ticker / period | Drive | Above the stop level, once (stop: low since the stop-out) | Once, no stop | Unlimited | Above the entry (Finding 28) |
+|---|---|---|---|---|---|
+| CRWD May–Oct 2026 | +40.8% | +4.0 | +8.5 | +4.8 | +4.6 |
+| CRWD May 2025 – Apr 2026 | +2.9% | +16.2 | +28.5 | +22.5 | +9.2 |
+| SNDK May–Oct 2026 | +72.2% | −4.5 | −27.4 | −6.7 | −8.9 |
+| SNDK Feb 2025 – May 2026 | +70.3% | +25.0 | +39.3 | +19.5 | +18.2 |
+| SPOT 2026 | +8.1% | −5.8 | −8.7 | −9.5 | −1.8 |
+| AMD 2026 | −18.2% | +29.5 | +27.6 | +15.6 | +0.7 |
+| SNPS 2026 | −8.6% | +17.5 | +19.2 | +13.5 | +9.0 |
+| MRNA 2026 | +123.7% | 0.0 | +13.8 | +9.9 | −1.7 |
+| APP 2026 | +33.9% | +4.7 | +1.4 | +4.3 | −3.2 |
+| MDB 2026 | +5.3% | −7.8 | −10.8 | −16.2 | −12.4 |
+| CRWV 2026 | +48.4% | −25.2 | −24.4 | −33.6 | −16.6 |
+| **Sum / better in** | | **+53.6 / 6 of 11** | **+67.0 / 7 of 11** | +24.1 / 7 of 11 | −2.9 / 5 of 11 |
+
+Re-entries won 31–49% (54–63% without a stop) but buy back lower. It helped where drive long struggled (AMD −18% →
++11% with the drawdown −$3.4k → −$1.3k; SNPS; CRWD's and SNDK's choppy stretches) and hurt in one-way runs (CRWV,
+SNDK May–Oct, MDB, SPOT). No stop made the most but doubled SNDK's May–Oct drawdown (−$0.9k → −$2.1k). Only 2025–26
+tested; Finding 28's re-entries all lost on 2020–22.
+
 ## Recommendations
 
 1. **Choose tickers before tuning settings.** The same configuration ranges from +156.66% (SNDK)
@@ -1446,6 +1610,19 @@ drawdown).
     52-week highs, smoothness or share of up days, relative strength vs QQQ), tested on the monthly
     membership; and a QQQ core with the overnight leg as an overlay.
 
+28. **Score setups by the share of the daily range they catch (Finding 31),** not by total return, and don't
+    re-pick a 43%-win setup on 20 sessions: the picker kept leaving drive long after normal losing patches. Daily MA
+    crosses and QQQ trend changes did not predict drive long's bad days; don't step aside on them.
+29. **Don't enter on confirmed wave turns or reversal candles (Findings 32–33).** The confirmation costs about
+    0.2 ADR on legs of 0.3–0.4 ADR. Drive long held to the close stays the default intraday setup; a trailing stop
+    under each dip and a 10:30 day-type switch only help in one kind of market each (uptrend / chop), and limit
+    entries at VWAP, the 5-min MA20 or the dip lost out of sample.
+30. **Check a ticker's intraday vs overnight split before the overnight hold (Finding 34):** CRWD's 2026 rise was all
+    intraday (+134% open to close, −3% overnight).
+31. **Re-entry above the stop-out level (Finding 35)** is the one drive long add-on that held up on 2025–26 (once,
+    stop at the low since the stop-out). Run it through 2020–24 (Finding 28's harness) before adding it to the
+    monitor.
+
 ## Reproduction
 
 ```bash
@@ -1512,3 +1689,19 @@ exactly (110 trades, +0.80%), but other settings may differ slightly.
    box_signals=False, opening_drive="long", overnight_hold="ma200"), ticker_earnings_windows(...))` per
    ticker-year with 13 months of warm-up; selection features from the same bars (prior-day ATR20%,
    distance above the daily MA200 yesterday and at 15:45, return to 15:45).
+9. Findings 31–35 (committed scripts):
+   ```bash
+   # Finding 31: setup report covering the look-back, then the capture score and the 2-week picker
+   python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward_setup_report \
+     --tickers SNDK --start 2025-11-03 --end 2026-10-23 --cost-bps 5 --out-dir <dir>
+   python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_capture --ticker SNDK \
+     --trades <dir>/trades.csv --start 2026-01-02 --end 2026-10-23
+   # Findings 32-35: every rider x wave setting, chosen on --calibration, reported on --test
+   python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_rider --ticker SNDK \
+     --calibration 2025-02-14:2025-12-31 --test 2026-01-02:2026-10-23
+   python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_rider --ticker SNDK \
+     --calibration 2025-02-14:2026-05-14 --test 2026-05-15:2026-10-16
+   ```
+   The confirmation-lag table, the reversal-entry diagnostics, the drive long decomposition and the 11-case
+   re-entry table were one-off scripts on `wave_events` / `ride` / `load_rider_bars` from `wave_rider.py`;
+   intraday vs overnight from `fetch_daily_bars` (log open / previous close vs close / open).
