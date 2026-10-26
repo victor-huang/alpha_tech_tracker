@@ -24,7 +24,8 @@ plus a CSV log:
                stop-out, covered at the close) and overnight (short the close, cover at the next open) by
                default; retest (a sell limit at the retest of the last confirmed rally high, trailing stop) is
                opt-in, it did not hold up out of sample. On `--short-tickers`, default the config's tickers
-               plus QQQ; `--short-setups` picks them, `--no-short-setups` turns them off.
+               plus QQQ; `--short-setups` picks them, `--no-short-setups` turns them off. On gated sessions
+               the long overnight holds are skipped, and a configured `drive short` is not alerted twice.
   Start-up    drive long and overnight hold win rates: the last 10 sessions pooled over the stats
                tickers (`--stats-tickers`), and day by day for the last 3 sessions over the monitored
                tickers (signal_stats). `--no-signal-stats` turns it off.
@@ -177,6 +178,7 @@ OVERNIGHT_MIN_DAILY_CLOSES = 200
 FLUSH_GRACE_SECONDS = 20
 STREAM_TIMEOUT_SECONDS = 120
 RETEST_CANCEL = f"{RETEST_WINDOW[1]:%H:%M}"
+CONFIG_DRIVE_SHORT = "drive short"
 DELAYED_DATA_MINUTES = 16  # Alpaca plans without real-time SIP only serve SIP history older than 15 min
 BAR_MINUTES = 5
 EXIT_TEXT = {
@@ -474,7 +476,8 @@ class WaveSetupMonitor:
                  executor=None, notify=_notify, now=_now_et, releases_loader=load_releases,
                  daily_closes_loader=None, close_decision_bar=DEFAULT_CLOSE_DECISION_BAR,
                  reversal_patterns=REVERSAL_PATTERNS, stats_tickers=DEFAULT_STATS_TICKERS,
-                 stats_daily_loader=None, short_setups=DEFAULT_SHORT_SETUPS, short_gate="qqq-ma50", short_tickers=None):
+                 stats_daily_loader=None, short_setups=DEFAULT_SHORT_SETUPS, short_gate="qqq-ma50", short_tickers=None,
+                 extra_tickers=()):
         self.setups = setups_by_ticker
         self.tickers = list(setups_by_ticker)
         self.client = market_data_client
@@ -497,6 +500,8 @@ class WaveSetupMonitor:
         self.short_gate_text = ""
         self.short_watches = {}
         self.short_adr = {}
+        # streamed only for the short setups or an open overnight trade: no reversal alerts, not in the signal stats
+        self.extra_tickers = set(extra_tickers)
         self.decision_lead = datetime.combine(date.today(), REGULAR_CLOSE) - datetime.combine(date.today(),
                                                                                                 close_decision_bar)
         self._set_session_times(_now_et().date())
@@ -670,7 +675,8 @@ class WaveSetupMonitor:
             except Exception:
                 logger.warning("%s: earnings calendar unavailable; its overnight stats include earnings nights",
                                ticker, exc_info=True)
-        future = self.executor.submit(signal_stats, bars, daily, windows, self.stats_tickers, self.tickers,
+        monitored = [t for t in self.tickers if t not in self.extra_tickers]
+        future = self.executor.submit(signal_stats, bars, daily, windows, self.stats_tickers, monitored,
                                       self.session, DEFAULT_STATS_SESSIONS, DEFAULT_STATS_DAYS,
                                       DEFAULT_STATS_OVERNIGHT, notes)
         return future.result()
@@ -792,7 +798,7 @@ class WaveSetupMonitor:
 
     def _rebuild_reversal_watch(self, ticker):
         """A fresh watch from the ticker's bars, so it knows the current wave; the replay alerts nothing."""
-        if not self.reversal_patterns:
+        if not self.reversal_patterns or ticker in self.extra_tickers:
             return
         try:
             self.reversal_watches[ticker] = ReversalWatch.from_bars(ticker, self.bars[ticker].sort_index(),
@@ -877,21 +883,24 @@ class WaveSetupMonitor:
     def _drive_short(self, ticker, bar):
         stamp, session = bar["time"], self.session.isoformat()
         name, reentry_name = SHORT_NAMES["drive"], SHORT_NAMES["drive re-entry"]
+        drives = {name, CONFIG_DRIVE_SHORT}
         if stamp.time() == MARKET_OPEN:
             key = f"{ticker}|{name}|{session}"
-            if bar["close"] < bar["open"] and key not in self.alerted:
+            # a configured "drive short" setup alerts the same trade; its stop-out still gets the re-entry
+            has_config_drive = any(spec.name == CONFIG_DRIVE_SHORT for spec in self.setups.get(ticker, []))
+            if bar["close"] < bar["open"] and key not in self.alerted and not has_config_drive:
                 self.alerted.add(key)
                 self._open_short(ticker, name, "drive_short", stamp, bar["close"], bar["high"],
                                  f"SHORT {ticker} | {name} | ~{bar['close']:.2f} (09:30 bar close) | stop {bar['high']:.2f}"
                                  f" | cover at the close")
             return
         key = f"{ticker}|{reentry_name}|{session}"
-        stopped = next((t for t in self.trades if t.ticker == ticker and t.setup == name and t.outcome == "stop"
-                        and t.entry_time.date() == self.session), None)
+        stopped = next((t for t in self.trades if t.ticker == ticker and t.setup in drives and t.side == -1
+                        and t.outcome == "stop" and t.entry_time.date() == self.session), None)
         if (stopped is None or key in self.alerted or stamp <= stopped.exit_time or stamp.time() >= REENTRY_LATEST
                 or stamp.time() >= self.close_decision_bar):
             return
-        level = stopped.entry + stopped.risk
+        level = stopped.stop
         if bar["close"] < level:
             self.alerted.add(key)
             self._open_short(ticker, reentry_name, "drive_short_reentry", stamp, bar["close"], None,
@@ -1046,6 +1055,9 @@ class WaveSetupMonitor:
                 if self.half_day:
                     logger.info("%s: %s skipped on an early-close day (the backtest skips them)", ticker, spec.name)
                     continue
+                if self.shorts_on:
+                    self._skip_overnight_hold(ticker, spec)
+                    continue
                 self._overnight_entry(ticker, spec)
         if self.shorts_on and "overnight" in self.short_setups:
             for ticker in self.short_tickers:
@@ -1053,6 +1065,17 @@ class WaveSetupMonitor:
                     logger.info("%s: short overnight skipped on an early-close day", ticker)
                     continue
                 self._overnight_short_entry(ticker)
+
+    def _skip_overnight_hold(self, ticker, spec):
+        """On a session the short gate is on, long overnight holds are skipped (no long setup earns in a falling
+        market, and the overnight short may be alerted for the same ticker)."""
+        key = f"{ticker}|{spec.name}|{self.session.isoformat()}"
+        if key in self.alerted:
+            return
+        self.alerted.add(key)
+        self._alert(None, "SKIP", self._last_close(ticker),
+                    f"SKIP {ticker} | {spec.name} | short setups are on today ({self.short_gate_text})",
+                    ticker=ticker, setup=spec.name)
 
     def _overnight_entry(self, ticker, spec):
         last = self._last_close(ticker)
@@ -1273,20 +1296,31 @@ def build_market_data_client(args):
     return AlpacaMarketDataClient(os.environ.get("ALPACA_API_KEY"), os.environ.get("ALPACA_SECRET_KEY"), feed)
 
 
+def open_overnight_tickers(state_file):
+    """Tickers with an overnight trade still open or pending in the state file (they must be streamed to exit)."""
+    try:
+        state = json.loads(Path(state_file).read_text())
+    except (OSError, ValueError):
+        return []
+    return sorted({t["ticker"] for t in state.get("trades", [])
+                   if t.get("exit_mode") == "next open" and t.get("status") in ("open", "pending")})
+
+
 def _run_monitor(args):
     setups = load_config(args.config)
+    configured = set(setups)
     short_setups = [] if args.no_short_setups or args.short_gate == "off" else args.short_setups
     short_tickers = args.short_tickers or list(setups) + [GATE_TICKER]
-    if short_setups:
-        for ticker in short_tickers:
-            setups.setdefault(ticker, [])
+    for ticker in (short_tickers if short_setups else []) + open_overnight_tickers(args.state_file):
+        setups.setdefault(ticker, [])
     executor = InlineExecutor() if args.workers == 0 else ProcessPoolExecutor(max_workers=args.workers)
     monitor = WaveSetupMonitor(setups, build_market_data_client(args), state_file=args.state_file, executor=executor,
                                close_decision_bar=datetime.strptime(args.close_decision_bar, "%H:%M").time(),
                                reversal_patterns=[] if args.no_reversal_alerts else args.reversal_patterns,
                                stats_tickers=[] if args.no_signal_stats else args.stats_tickers,
                                short_setups=short_setups, short_gate=args.short_gate,
-                               short_tickers=short_tickers if short_setups else [])
+                               short_tickers=short_tickers if short_setups else [],
+                               extra_tickers=set(setups) - configured)
 
     def _stop(signum, frame):
         raise KeyboardInterrupt

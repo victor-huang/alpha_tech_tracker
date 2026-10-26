@@ -21,6 +21,7 @@ from alpha_tech_tracker.op_momentum_strategy.wave_setup_monitor import (
     generate_config,
     is_trading_day,
     load_config,
+    open_overnight_tickers,
     parse_args,
     previous_trading_day,
     session_close,
@@ -816,6 +817,86 @@ class TestShortSetups:
         monitor._on_five_min_bar("AMD", _bar("2026-10-06 09:30", 100.0, 101.0, 98.5, 99.0))
 
         assert alerts == []
+
+
+class TestShortReviewFixes:
+    def test_gated_session_skips_the_long_overnight_hold(self, tmp_path):
+        clock = _Clock("2026-10-06 15:50")
+        monitor, alerts = _monitor(tmp_path, {"AMD": ["overnight always"]}, clock,
+                                   history={"AMD": _history([("2026-10-06 15:45", 100.0)])},
+                                   closes={**QQQ_FALLING, "AMD": [100.0] * 250})
+        monitor.prepare()
+
+        monitor.tick()
+
+        assert alerts[0].startswith("[wave] SKIP AMD | overnight always | short setups are on today (short setups on: QQQ")
+        assert [t.setup for t in monitor.trades] == ["short overnight"]
+
+    def test_ungated_session_keeps_the_long_overnight_hold(self, tmp_path):
+        clock = _Clock("2026-10-06 15:50")
+        monitor, alerts = _monitor(tmp_path, {"AMD": ["overnight always"]}, clock,
+                                   history={"AMD": _history([("2026-10-06 15:45", 100.0)])},
+                                   closes={**QQQ_RISING, "AMD": [100.0] * 250})
+        monitor.prepare()
+
+        monitor.tick()
+
+        assert [t.setup for t in monitor.trades] == ["overnight always"]
+
+    def test_configured_drive_short_is_not_alerted_twice(self, tmp_path, mocker):
+        mocker.patch.object(monitor_module, "evaluate_setup", return_value=[])
+        monitor, alerts = _monitor(tmp_path, {"AMD": ["drive short"]}, _Clock("2026-10-06 09:35"), closes=QQQ_FALLING)
+        monitor.prepare()
+
+        monitor._on_five_min_bar("AMD", _bar("2026-10-06 09:30", 100.0, 101.0, 98.5, 99.0))
+
+        assert alerts == []
+
+    def test_configured_drive_short_stop_out_gets_the_re_entry(self, tmp_path, mocker):
+        mocker.patch.object(monitor_module, "evaluate_setup", return_value=[])
+        monitor, alerts = _monitor(tmp_path, {"AMD": ["drive short"]}, _Clock("2026-10-06 09:40"), closes=QQQ_FALLING)
+        monitor.prepare()
+        config_trade = LiveTrade(ticker="AMD", setup="drive short", exit_mode="eod", side=-1, entry=99.0, stop=101.0,
+                                 target=97.0, risk=2.0, entry_time=_ts("2026-10-06 09:30"), last_bar=_ts("2026-10-06 09:30"))
+        config_trade.close_at(_ts("2026-10-06 09:35"), 101.0, "stop")
+        monitor.trades.append(config_trade)
+
+        monitor._on_five_min_bar("AMD", _bar("2026-10-06 09:40", 101.2, 101.3, 100.2, 100.5))
+
+        assert alerts == ["[wave] SHORT AMD | short drive re-entry | ~100.50 (09:40 bar close), back below the "
+                          "stop-out level 101.00 | no stop | cover at the close"]
+
+    def test_extra_tickers_get_no_reversal_watch(self, tmp_path):
+        monitor, _ = _monitor(tmp_path, {"AMD": [], "QQQ": []}, _Clock("2026-10-06 09:00"), extra_tickers={"QQQ"})
+
+        monitor.prepare()
+
+        assert set(monitor.reversal_watches) == {"AMD"}
+
+    def test_extra_tickers_are_left_out_of_the_signal_stats(self, tmp_path, mocker):
+        monitor, _ = _monitor(tmp_path, {"AMD": [], "QQQ": []}, _Clock("2026-10-06 09:00"), extra_tickers={"QQQ"},
+                              stats_tickers=["AMD"], stats_daily_loader=lambda tickers, session: {})
+        monitor.prepare()
+        stats = mocker.patch.object(monitor_module, "signal_stats", return_value="signal stats ...")
+
+        monitor.send_signal_stats()
+
+        assert stats.call_args.args[4] == ["AMD"]
+
+
+class TestOpenOvernightTickers:
+    def test_tickers_with_open_or_pending_overnight_trades(self, tmp_path):
+        state = tmp_path / "state.json"
+        state.write_text(json.dumps({"trades": [
+            {"ticker": "QQQ", "exit_mode": "next open", "status": "open"},
+            {"ticker": "MRNA", "exit_mode": "next open", "status": "pending"},
+            {"ticker": "AMD", "exit_mode": "next open", "status": "closed"},
+            {"ticker": "SNDK", "exit_mode": "eod", "status": "open"}]}))
+
+        assert open_overnight_tickers(state) == ["MRNA", "QQQ"]
+
+    def test_missing_state_file(self, tmp_path):
+        assert open_overnight_tickers(tmp_path / "none.json") == []
 
 
 class TestShortArguments:

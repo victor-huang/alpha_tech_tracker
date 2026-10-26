@@ -1638,7 +1638,8 @@ chosen setting (0.2 buffer, 3 / 23.6% / 3.0) went from +68.5 / +52.3 / +11.9% to
 - The gate was chosen on 2026 (it beat QQQ below its MA20, MA20 below MA50 and QQQ's trend state); it is a placeholder for
   a better market indicator.
 
-The wave setup monitor alerts the two reliable shorts on gated sessions (`short_setups.py`; retest opt-in).
+The wave setup monitor alerts the two reliable shorts on gated sessions (`short_setups.py`; retest opt-in) and skips
+its long overnight holds on those sessions, so it never buys and shorts the same close.
 
 ## Recommendations
 

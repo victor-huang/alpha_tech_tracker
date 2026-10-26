@@ -211,6 +211,14 @@ else here.
 The edges are thin (+0.06–0.15% per trade, summed at $10k per trade, 5 bps, no borrow cost) and the overnight short
 carries gap risk; `--no-short-setups` turns them all off.
 
+- **On a gated session the long overnight holds are skipped** (`SKIP ... short setups are on today`): no long setup
+  earned in a falling market, and the overnight short may be alerted for the same ticker.
+- **A configured `drive short` setup** already alerts the red-first-bar short, so the monitor doesn't send a second
+  one for that ticker; its stop-out still gets the re-entry.
+- **Tickers added only for shorts** (QQQ by default) get no reversal alerts and are left out of the start-up stats.
+- **An open overnight trade in the state file keeps its ticker streamed** at the next start, whatever the config or
+  flags, so its next-open SELL / COVER alert and exit are not lost.
+
 ## Signal stats
 
 Sent once per session when the monitor starts (with the midnight cron restart, just after
