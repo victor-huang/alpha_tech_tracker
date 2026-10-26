@@ -89,6 +89,10 @@ earlier findings: [`WAVE_RISK_REWARD_FINDINGS.md`](WAVE_RISK_REWARD_FINDINGS.md)
   turn or reversal candle comes about 0.2 ADR after the low, while legs are only 0.3–0.4 ADR. A trailing stop helps
   a little in strong uptrends and a 10:30 day-type switch in choppy stretches; limit entries at VWAP / MA20 / the dip
   all lost. Drive long keeps about half of a trending stock's intraday move after the first bar.
+- **A ticker's intraday vs overnight split doesn't pick its setup (Finding 36):** within a window it always matches the
+  better family, but measured on the previous 63 or 126 sessions it chose next month's winner 52–53% of the time
+  (16 tickers, Jul 2025 – Oct 2026). Overnight holds won in H2 2025 and drive long in 2026 across the board; running
+  both was the steadiest. Drive-trail beat drive long on 8 of 11 single-ticker checks, re-entry on 4 of 11.
 - **Re-entering drive long above the stop-out level (Finding 35)** added +54 points over 11 ticker-periods of 2025–26
   (better in 6), mainly where drive long struggled; not yet checked on 2020–24.
 
@@ -1530,6 +1534,58 @@ Re-entries won 31–49% (54–63% without a stop) but buy back lower. It helped 
 SNDK May–Oct, MDB, SPOT). No stop made the most but doubled SNDK's May–Oct drawdown (−$0.9k → −$2.1k). Only 2025–26
 tested; Finding 28's re-entries all lost on 2020–22.
 
+## Finding 36 — Ticker checks, and whether the intraday vs overnight split picks the setup (no)
+
+`analysis_scripts/ticker_setup_check.py` (split-adjusted bars, 5 bps, $10k per trade). **Single-ticker checks**
+(drive-trail and re-entry as in Findings 32 and 35; overnight = MA200 filter, earnings nights skipped):
+
+| Ticker / period | Buy and hold | Intraday / overnight (same window) | Drive | Drive-trail | Re-entry | Overnight |
+|---|---|---|---|---|---|---|
+| 7 EC2 tickers, 2026 | | | +327% | **+355%** | +348% | |
+| CRWD May 1 – Oct 23 | +126.6% | +133.6 / −3.0 | +40.8 | +44.0 | **+44.8** | |
+| PLTR Jun 25 – Oct 23 | +76.6% | +57.3 / +12.3 | +11.2 | +15.6 | **+20.6** | |
+| SPCX Jul 28 – Oct 23 | +34.9% | | +21.8 | **+24.0** | +14.0 | |
+| DDOG May 7 – Oct 23 | +43.4% | +99.0 / −27.9 | +7.7 | **+10.0** | +5.9 | |
+| SNOW Jun 29 – Oct 23 | +29.7% | +28.3 / +1.1 | +9.2 | **+9.6** | +2.8 | −23.0 (+0.2 with the +23% earnings night) |
+| LLY May 1 – Oct 23 | +34.2% | −4.5 / +40.5 | +2.2 | +5.2 | −4.4 | **+20.1** |
+| CRM Aug 28 – Oct 23 | −0.8% | −6.4 / +6.1 | −8.0 | −7.6 | −10.6 | **+3.6** |
+| MU May 1 – Oct 23 | +71.5% | +3.5 / +65.7 | +18.7 | +17.7 | +15.5 | **+42.6** (+58.8 with earnings) |
+| FIX Aug 10 – Oct 23 | −32.0% | −27.8 / −5.8 | **+7.8** | +6.2 | +5.6 | +3.0 (always: −1.8) |
+| FIX Apr 8 – Oct 23 | −23.1% | −32.8 / +14.5 | −14.2 | −17.8 | −13.8 | **+21.1** (always: +16.3) |
+
+- Drive-trail beat drive long on 8 of 11 checks (small margins), lost on MU and both FIX windows.
+- Re-entry beat drive long on 4 of 11 (the 7 EC2 tickers, CRWD, PLTR, FIX Apr) — where stop-outs recovered (PLTR's 26 stopped days
+  later gained +21.3%; DDOG's, SNOW's, MU's kept falling).
+- The green-first-bar filter keeps drive long out of weak stocks' worst days (FIX Aug–Oct +7.8% while the stock fell
+  32%: its 32 red-first-bar days lost −44.4%). Most green days' gain is in the first 5-min bar, before the 09:35 entry
+  (DDOG +89.7% vs +10.7% kept after it; PLTR, SNOW and LLY alike).
+- The MA200 filter mattered only on falling FIX (+3.0% vs −1.8%, +21.1% vs +16.3%).
+
+**The split picked the winner only in hindsight.** Within each window the split matched the better family, but the
+same window decided both. Walk-forward on 16 tickers (SNDK MRNA APP AMD MDB CRWV SNPS CRWD PLTR DDOG SNOW LLY CRM MU
+FIX SPOT), Jul 2025 – Oct 2026, 256 ticker-months: each month trade drive long if the previous 63 / 126 sessions'
+intraday return beat the overnight return, else the overnight hold (always when under 200 daily closes):
+
+| Rule (summed %) | 2025 H2 | 2026 | Total | Ticker-months up |
+|---|---|---|---|---|
+| Always drive long | +27.9 | **+397.5** | +425 | 53% |
+| Always overnight | **+415.2** | +149.4 | +565 | 43% |
+| Split, previous 63 sessions | +315.1 | +253.1 | +568 | 50% |
+| Split, previous 126 sessions | +210.9 | +295.0 | +506 | 47% |
+| Split, aside when the better side was negative (63 / 126) | | | +549 / +482 | 46% / 42% |
+| Both families (two positions) | +443.1 | +546.9 | **+990** | 56% |
+| *Hindsight: the better family each month* | *+596.9* | *+926.9* | *+1,524* | *73%* |
+
+The split chose next month's better family 53% (63 sessions) and 52% (126) of the time; the rank correlation
+between the past split (overnight − intraday) and next month's (overnight − drive) result was +0.00 / −0.01. The
+swing was market-wide — overnight holds won in H2 2025, drive long in 2026 — and a ticker's own split did not track
+it. It helped only where one family was consistently bad (MDB +27.5 vs overnight −30.9; CRM, LLY) and cost elsewhere
+(AMD +8.7 vs overnight +94.3; FIX −0.4 vs +53.7).
+
+The split is still useful descriptively: where a ticker has been earning, its up-session and up-gap rates, and how
+much overnight risk it carries (MU's last 20 sessions to Oct 23: −14.5% overnight, 42% of gaps up, worst −5.6%,
+against +65.7% over May–Oct). `ticker_setup_check.py` prints it for the whole window and the last 20 / 60 sessions.
+
 ## Recommendations
 
 1. **Choose tickers before tuning settings.** The same configuration ranges from +156.66% (SNDK)
@@ -1617,8 +1673,10 @@ tested; Finding 28's re-entries all lost on 2020–22.
     0.2 ADR on legs of 0.3–0.4 ADR. Drive long held to the close stays the default intraday setup; a trailing stop
     under each dip and a 10:30 day-type switch only help in one kind of market each (uptrend / chop), and limit
     entries at VWAP, the 5-min MA20 or the dip lost out of sample.
-30. **Check a ticker's intraday vs overnight split before the overnight hold (Finding 34):** CRWD's 2026 rise was all
-    intraday (+134% open to close, −3% overnight).
+30. **Use a ticker's intraday vs overnight split as information, not a rule (Findings 34, 36):** it shows where the
+    ticker has been earning and its overnight risk, but the past split chose next month's better family only 52–53% of
+    the time. Running both drive long and the overnight hold was the steadiest; skip overnight holds by judgement in a
+    market down wave (`ticker_setup_check.py` shows the last 20 / 60 sessions' gaps).
 31. **Re-entry above the stop-out level (Finding 35)** is the one drive long add-on that held up on 2025–26 (once,
     stop at the low since the stop-out). Run it through 2020–24 (Finding 28's harness) before adding it to the
     monitor.
@@ -1702,6 +1760,10 @@ exactly (110 trades, +0.80%), but other settings may differ slightly.
    python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_rider --ticker SNDK \
      --calibration 2025-02-14:2026-05-14 --test 2026-05-15:2026-10-16
    ```
+   Finding 36: `python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.ticker_setup_check MU LLY
+   --start 2026-05-01` per ticker and window; the walk-forward split test was a one-off script on the same helpers
+   (`load_rider_bars`, `ride("drive")`, `overnight_results` with the MA200 filter and earnings windows, daily
+   split-adjusted bars for the split), one row per ticker-month.
    The confirmation-lag table, the reversal-entry diagnostics, the drive long decomposition and the 11-case
    re-entry table were one-off scripts on `wave_events` / `ride` / `load_rider_bars` from `wave_rider.py`;
    intraday vs overnight from `fetch_daily_bars` (log open / previous close vs close / open).
