@@ -17,6 +17,14 @@ plus a CSV log:
                MOC cutoff (15:55) but not NYSE's (15:50): `--close-decision-bar 15:40` decides on
                the 15:40 bar and alerts about 15:45 instead.
   09:25        SELL at the open (MOO, before the 09:28 cutoff) for overnight holds.
+  SHORT / SHORT LIMIT / SHORTED / LOWER STOP / COVER
+               down-market shorts (short_setups), only on sessions the gate allows (`--short-gate`, default
+               QQQ's previous close below its 50-day MA; the start-up alert says whether they are on):
+               drive (a red first bar shorted at 09:35, stop its high, one re-entry below that high after a
+               stop-out, covered at the close) and overnight (short the close, cover at the next open) by
+               default; retest (a sell limit at the retest of the last confirmed rally high, trailing stop) is
+               opt-in, it did not hold up out of sample. On `--short-tickers`, default the config's tickers
+               plus QQQ; `--short-setups` picks them, `--no-short-setups` turns them off.
   Start-up    drive long and overnight hold win rates: the last 10 sessions pooled over the stats
                tickers (`--stats-tickers`), and day by day for the last 3 sessions over the monitored
                tickers (signal_stats). `--no-signal-stats` turns it off.
@@ -126,6 +134,18 @@ from alpha_tech_tracker.op_momentum_strategy.reversal_watch import (
     ReversalWatch,
     reversal_message,
 )
+from alpha_tech_tracker.op_momentum_strategy.short_setups import (
+    DEFAULT_SHORT_SETUPS,
+    GATE_TICKER,
+    GATES as SHORT_GATES,
+    REENTRY_LATEST,
+    RETEST_WINDOW,
+    SETUP_NAMES as SHORT_NAMES,
+    SHORT_SETUPS,
+    RetestShort,
+    gate_status,
+    next_session_adr,
+)
 from alpha_tech_tracker.op_momentum_strategy.signal_stats import (
     DEFAULT_STATS_DAYS,
     DEFAULT_STATS_OVERNIGHT,
@@ -156,6 +176,7 @@ OUTAGE_ALERT_SECONDS = 300
 OVERNIGHT_MIN_DAILY_CLOSES = 200
 FLUSH_GRACE_SECONDS = 20
 STREAM_TIMEOUT_SECONDS = 120
+RETEST_CANCEL = f"{RETEST_WINDOW[1]:%H:%M}"
 DELAYED_DATA_MINUTES = 16  # Alpaca plans without real-time SIP only serve SIP history older than 15 min
 BAR_MINUTES = 5
 EXIT_TEXT = {
@@ -361,10 +382,10 @@ class LiveTrade:
         if self.status != "open":
             return None
         side, entry, stop, target = self.side, self.entry, self.stop, self.target
-        if (bar["low"] <= stop) if side == 1 else (bar["high"] >= stop):
+        if stop is not None and ((bar["low"] <= stop) if side == 1 else (bar["high"] >= stop)):
             fill = min(bar["open"], stop) if side == 1 else max(bar["open"], stop)
             return self._close(bar["time"], fill, "stop")
-        hit_target = (bar["high"] >= target) if side == 1 else (bar["low"] <= target)
+        hit_target = target is not None and ((bar["high"] >= target) if side == 1 else (bar["low"] <= target))
         if self.exit_mode == "target" and hit_target:
             return self._close(bar["time"], target, "target")
         self.target_reached = bool(self.target_reached or hit_target)
@@ -453,7 +474,7 @@ class WaveSetupMonitor:
                  executor=None, notify=_notify, now=_now_et, releases_loader=load_releases,
                  daily_closes_loader=None, close_decision_bar=DEFAULT_CLOSE_DECISION_BAR,
                  reversal_patterns=REVERSAL_PATTERNS, stats_tickers=DEFAULT_STATS_TICKERS,
-                 stats_daily_loader=None):
+                 stats_daily_loader=None, short_setups=DEFAULT_SHORT_SETUPS, short_gate="qqq-ma50", short_tickers=None):
         self.setups = setups_by_ticker
         self.tickers = list(setups_by_ticker)
         self.client = market_data_client
@@ -469,6 +490,13 @@ class WaveSetupMonitor:
         self.reversal_paused = False
         self.stats_tickers = tuple(stats_tickers)
         self.stats_daily_loader = stats_daily_loader or _load_daily_close_series
+        self.short_setups = tuple(short_setups)
+        self.short_gate = short_gate
+        self.short_tickers = [t for t in (short_tickers if short_tickers is not None else self.tickers) if t in self.setups]
+        self.shorts_on = False
+        self.short_gate_text = ""
+        self.short_watches = {}
+        self.short_adr = {}
         self.decision_lead = datetime.combine(date.today(), REGULAR_CLOSE) - datetime.combine(date.today(),
                                                                                                 close_decision_bar)
         self._set_session_times(_now_et().date())
@@ -530,6 +558,7 @@ class WaveSetupMonitor:
                 self._system_alert(f"overnight moving-average filter has too little daily history for "
                                    f"{', '.join(short)}; their filtered overnight holds will not fire today")
         self._load_state()
+        self._prepare_shorts()
         self._catch_up_trades()
         self.refetch_before = period_start(now) + timedelta(minutes=BAR_MINUTES)
         self._save_state()
@@ -691,6 +720,9 @@ class WaveSetupMonitor:
         self._system_alert(f"monitor started for {today}: {len(self.tickers)} tickers ({', '.join(self.tickers)})"
                            + (f"; early close at {self.close_time:%H:%M}" if self.half_day else ""), level=logging.INFO)
         logger.info("Monitoring %s", ", ".join(f"{t}: {[s.name for s in self.setups[t]]}" for t in self.tickers))
+        if self.short_setups and self.short_tickers:
+            self._system_alert(f"{self.short_gate_text} ({', '.join(self.short_setups)} on "
+                               f"{', '.join(self.short_tickers)})", level=logging.INFO)
         try:
             while self.now().time() < self.session_end:
                 self.tick()
@@ -736,6 +768,7 @@ class WaveSetupMonitor:
                     bar["open"], bar["high"], bar["low"], bar["close"], bar.get("minutes", BAR_MINUTES))
         self._update_trades(ticker, bar)
         self._check_reversals(ticker, bar)
+        self._check_shorts(ticker, bar)
         if bar["time"].time() < self.close_decision_bar:
             self._submit_evaluations(ticker, bar["time"])
         self._save_state()
@@ -793,6 +826,129 @@ class WaveSetupMonitor:
             self.alerted.update(s.key for s in signals)
             self._alert(None, "LOW?" if side == "bottom" else "HIGH?", signals[0].price, reversal_message(signals),
                         ticker=ticker, setup="reversal " + " + ".join(s.pattern for s in signals))
+
+    # --- down-market shorts --------------------------------------------------
+
+    def _prepare_shorts(self):
+        """Decide today's gate, and rebuild each short ticker's retest watch from the bars so far (no alerts)."""
+        if not self.short_setups or not self.short_tickers:
+            return
+        try:
+            closes = self.daily_closes_loader([GATE_TICKER], self.session).get(GATE_TICKER, [])
+            self.shorts_on, self.short_gate_text = gate_status(self.short_gate, closes)
+        except Exception:
+            logger.exception("Short gate failed; short setups off today")
+            self.shorts_on, self.short_gate_text = False, "short setups off: the gate's daily closes are unavailable"
+        logger.info(self.short_gate_text)
+        if "retest" not in self.short_setups:
+            return
+        for ticker in self.short_tickers:
+            bars = self.bars[ticker]
+            self.short_adr[ticker] = next_session_adr(bars, self.session)
+            watch = RetestShort(ticker)
+            previous = [d for d in sorted(set(bars.index.date)) if d < self.session][-1:]
+            for stamp, row in bars[bars.index.date >= (previous[0] if previous else self.session)].iterrows():
+                bar = {k: float(row[k]) for k in ("open", "high", "low", "close")}
+                adr = self.short_adr[ticker] if stamp.date() == self.session else None
+                watch.update(stamp, bar, adr, in_position=True)
+            watch.entries = sum(1 for t in self.trades if t.ticker == ticker and t.setup == SHORT_NAMES["retest"]
+                                and t.entry_time.date() == self.session)
+            self.short_watches[ticker] = watch
+
+    def _open_short(self, ticker, setup, signal, bar_time, entry, stop, message):
+        trade = LiveTrade(ticker=ticker, setup=setup, signal=signal, exit_mode="eod", entry_time=bar_time, side=-1,
+                          entry=entry, stop=stop, target=None, risk=None if stop is None else stop - entry,
+                          last_bar=bar_time)
+        self.trades.append(trade)
+        self._alert(trade, "SHORT", entry, message)
+        return trade
+
+    def _check_shorts(self, ticker, bar):
+        if not self.shorts_on or ticker not in self.short_tickers or bar["time"].date() != self.session:
+            return
+        try:
+            if "drive" in self.short_setups:
+                self._drive_short(ticker, bar)
+            if "retest" in self.short_setups:
+                self._retest_short(ticker, bar)
+        except Exception:
+            logger.exception("%s: short check failed on the %s bar", ticker, f"{bar['time']:%H:%M}")
+
+    def _drive_short(self, ticker, bar):
+        stamp, session = bar["time"], self.session.isoformat()
+        name, reentry_name = SHORT_NAMES["drive"], SHORT_NAMES["drive re-entry"]
+        if stamp.time() == MARKET_OPEN:
+            key = f"{ticker}|{name}|{session}"
+            if bar["close"] < bar["open"] and key not in self.alerted:
+                self.alerted.add(key)
+                self._open_short(ticker, name, "drive_short", stamp, bar["close"], bar["high"],
+                                 f"SHORT {ticker} | {name} | ~{bar['close']:.2f} (09:30 bar close) | stop {bar['high']:.2f}"
+                                 f" | cover at the close")
+            return
+        key = f"{ticker}|{reentry_name}|{session}"
+        stopped = next((t for t in self.trades if t.ticker == ticker and t.setup == name and t.outcome == "stop"
+                        and t.entry_time.date() == self.session), None)
+        if (stopped is None or key in self.alerted or stamp <= stopped.exit_time or stamp.time() >= REENTRY_LATEST
+                or stamp.time() >= self.close_decision_bar):
+            return
+        level = stopped.entry + stopped.risk
+        if bar["close"] < level:
+            self.alerted.add(key)
+            self._open_short(ticker, reentry_name, "drive_short_reentry", stamp, bar["close"], None,
+                             f"SHORT {ticker} | {reentry_name} | ~{bar['close']:.2f} ({stamp:%H:%M} bar close), back "
+                             f"below the stop-out level {level:.2f} | no stop | cover at the close")
+
+    def _retest_short(self, ticker, bar):
+        watch = self.short_watches.get(ticker)
+        if watch is None:
+            return
+        stamp, name = bar["time"], SHORT_NAMES["retest"]
+        mine = [t for t in self.trades if t.ticker == ticker and t.setup == name and t.entry_time.date() == self.session]
+        open_trade = next((t for t in mine if t.status == "open"), None)
+        had_position = open_trade is not None or any(t.exit_time == stamp for t in mine)
+        last = stamp.time() >= self.last_bar or stamp.time() >= self.close_decision_bar
+        for event in watch.update(stamp, bar, self.short_adr.get(ticker), had_position, last):
+            if event["kind"] == "trail" and open_trade is not None and event["peak"] < open_trade.stop:
+                open_trade.stop = event["peak"]
+                self._alert(open_trade, "LOWER STOP", event["peak"],
+                            f"LOWER STOP {ticker} | {name} | stop {event['peak']:.2f} (new lower rally high)")
+            elif event["kind"] == "entry":
+                key = f"{ticker}|{name}|{stamp.isoformat()}"
+                if key in self.alerted:
+                    continue
+                self.alerted.add(key)
+                trade = self._open_short(ticker, name, "retest_short", stamp, event["fill"], event["stop"],
+                                         f"SHORTED {ticker} | {name} | limit filled ~{event['fill']:.2f} ({stamp:%H:%M}"
+                                         f" bar) | stop {event['stop']:.2f} | cover at the close")
+                if event["stopped"]:
+                    trade.close_at(stamp, event["stop"], "stop")
+                    self._alert(trade, "COVER", trade.exit_price,
+                                f"COVER {ticker} | {name} | stop hit on the fill bar @ {trade.exit_price:.2f} | "
+                                f"{trade.pnl_pct():+.2f}%")
+            elif event["kind"] == "arm":
+                self._alert(None, "SHORT LIMIT", event["level"],
+                            f"SHORT LIMIT {ticker} | {name} | sell limit {event['level']:.2f} from the next bar | stop "
+                            f"{event['stop']:.2f} once filled | cancel at {RETEST_CANCEL} or when replaced",
+                            ticker=ticker, setup=name)
+
+    def _overnight_short_entry(self, ticker):
+        name = SHORT_NAMES["overnight"]
+        last = self._last_close(ticker)
+        bar_time = self.bars[ticker].index[-1] if not self.bars[ticker].empty else None
+        key = f"{ticker}|{name}|{self.session.isoformat()}"
+        if last is None or bar_time is None or bar_time.date() != self.session or key in self.alerted:
+            return
+        self.alerted.add(key)
+        if in_earnings_window({"signal": "overnight_long", "time": bar_time}, self.windows[ticker]):
+            self._alert(None, "SKIP", last, f"SKIP {ticker} | {name} | earnings release before the next open",
+                        ticker=ticker, setup=name)
+            return
+        trade = LiveTrade(ticker=ticker, setup=name, signal="overnight_short", exit_mode="next open",
+                          entry_time=bar_time, side=-1, entry=last, stop=None, target=None, risk=None,
+                          status="pending", last_bar=bar_time)
+        self.trades.append(trade)
+        self._alert(trade, "SHORT", last, f"SHORT {ticker} | {name} | at the close (MOC), ref {last:.2f} "
+                                          f"({bar_time:%H:%M} bar) | cover at the next open")
 
     def _submit_evaluations(self, ticker, bar_time):
         frame = add_moving_averages(self.bars[ticker])
@@ -856,8 +1012,9 @@ class WaveSetupMonitor:
                         logger.warning("%s: first bar today is %s, not the open; overnight exit priced there",
                                        ticker, f"{bar['time']:%H:%M}")
                     trade.close_at(bar["time"], bar["open"], outcome)
-                    self._alert(trade, "SOLD", trade.exit_price,
-                                f"SOLD {ticker} | overnight hold | open {trade.exit_price:.2f} | "
+                    done = "SOLD" if trade.side == 1 else "COVERED"
+                    self._alert(trade, done, trade.exit_price,
+                                f"{done} {ticker} | {trade.setup} | open {trade.exit_price:.2f} | "
                                 f"{trade.pnl_pct():+.2f}% from {trade.entry:.2f}", notify=False)
                 continue
             if trade.status == "closing":
@@ -890,6 +1047,12 @@ class WaveSetupMonitor:
                     logger.info("%s: %s skipped on an early-close day (the backtest skips them)", ticker, spec.name)
                     continue
                 self._overnight_entry(ticker, spec)
+        if self.shorts_on and "overnight" in self.short_setups:
+            for ticker in self.short_tickers:
+                if self.half_day:
+                    logger.info("%s: short overnight skipped on an early-close day", ticker)
+                    continue
+                self._overnight_short_entry(ticker)
 
     def _overnight_entry(self, ticker, spec):
         last = self._last_close(ticker)
@@ -923,8 +1086,9 @@ class WaveSetupMonitor:
         for trade in self.trades:
             if trade.overnight and trade.status == "open" and trade.entry_time.date() < self.session:
                 when = "at the open (MOO before 09:28)" if before_open else "now (monitor started after the open)"
-                self._alert(trade, "SELL", None, f"SELL {trade.ticker} | {trade.setup} | {when}, "
-                                                 f"bought {trade.entry:.2f} on {trade.entry_time:%m-%d}")
+                action, verb = ("SELL", "bought") if trade.side == 1 else ("COVER", "shorted")
+                self._alert(trade, action, None, f"{action} {trade.ticker} | {trade.setup} | {when}, "
+                                                 f"{verb} {trade.entry:.2f} on {trade.entry_time:%m-%d}")
 
     def _catch_up_trades(self):
         """Replay today's warm-up bars through trades restored from the state file."""
@@ -1111,11 +1275,18 @@ def build_market_data_client(args):
 
 def _run_monitor(args):
     setups = load_config(args.config)
+    short_setups = [] if args.no_short_setups or args.short_gate == "off" else args.short_setups
+    short_tickers = args.short_tickers or list(setups) + [GATE_TICKER]
+    if short_setups:
+        for ticker in short_tickers:
+            setups.setdefault(ticker, [])
     executor = InlineExecutor() if args.workers == 0 else ProcessPoolExecutor(max_workers=args.workers)
     monitor = WaveSetupMonitor(setups, build_market_data_client(args), state_file=args.state_file, executor=executor,
                                close_decision_bar=datetime.strptime(args.close_decision_bar, "%H:%M").time(),
                                reversal_patterns=[] if args.no_reversal_alerts else args.reversal_patterns,
-                               stats_tickers=[] if args.no_signal_stats else args.stats_tickers)
+                               stats_tickers=[] if args.no_signal_stats else args.stats_tickers,
+                               short_setups=short_setups, short_gate=args.short_gate,
+                               short_tickers=short_tickers if short_setups else [])
 
     def _stop(signum, frame):
         raise KeyboardInterrupt
@@ -1165,6 +1336,15 @@ def parse_args(argv=None):
                         help="Reversal candles alerted (information only) near wave lows/highs (default: all: "
                              "piercing = piercing / dark cloud, push, long_tail = long tail confirmed by the next bar)")
     parser.add_argument("--no-reversal-alerts", action="store_true", help="No reversal candle alerts")
+    parser.add_argument("--short-setups", nargs="+", choices=SHORT_SETUPS, default=list(DEFAULT_SHORT_SETUPS),
+                        help="Down-market shorts alerted on gated sessions (default: drive overnight; retest is "
+                             "opt-in, it did not hold up out of sample)")
+    parser.add_argument("--no-short-setups", action="store_true", help="No short setups")
+    parser.add_argument("--short-gate", choices=SHORT_GATES, default="qqq-ma50",
+                        help="When shorts are on: qqq-ma50 = QQQ's previous close below its 50-day MA (default), "
+                             "always, off")
+    parser.add_argument("--short-tickers", nargs="+", help="Tickers for the short setups (default: the config's "
+                                                           "tickers plus QQQ)")
     parser.add_argument("--stats-tickers", nargs="+", default=list(DEFAULT_STATS_TICKERS),
                         help="Tickers pooled in the start-up drive long / overnight win rates (default: the 21 "
                              "setup-tape tickers)")

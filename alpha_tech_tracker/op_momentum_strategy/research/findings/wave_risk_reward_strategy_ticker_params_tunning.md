@@ -89,6 +89,10 @@ earlier findings: [`WAVE_RISK_REWARD_FINDINGS.md`](WAVE_RISK_REWARD_FINDINGS.md)
   turn or reversal candle comes about 0.2 ADR after the low, while legs are only 0.3–0.4 ADR. A trailing stop helps
   a little in strong uptrends and a 10:30 day-type switch in choppy stretches; limit entries at VWAP / MA20 / the dip
   all lost. Drive long keeps about half of a trending stock's intraday move after the first bar.
+- **Down-market shorts (Finding 37, nine down windows 2020–2026, gate: QQQ below its 50-day MA):** only the overnight
+  short (7 of 9 windows, +1,114 summed, big in gap-driven crashes, −211 in up-market 2026) and the drive short with one
+  re-entry below the stop level (7 of 9, +318) held up. The rally-high retest short looked best until a same-bar
+  look-ahead was fixed; then it lost (5 of 9, −229).
 - **A ticker's intraday vs overnight split doesn't pick its setup (Finding 36):** within a window it always matches the
   better family, but measured on the previous 63 or 126 sessions it chose next month's winner 52–53% of the time
   (16 tickers, Jul 2025 – Oct 2026). Overnight holds won in H2 2025 and drive long in 2026 across the board; running
@@ -1478,7 +1482,8 @@ Settings chosen on Feb 14 2025 – May 14 2026 (293 sessions), tested on May 15 
 | limit at VWAP, 0.1 buffer | +18.0% | 0.004 | −6.8% | −0.015 |
 | limit at the 5-min MA20, 0.1 buffer | +8.0% | 0.001 | −19.3% | −0.026 |
 
-Every limit entry lost on the test (10–13% won at the 0.05 buffer). The 10:30 measures barely predict the rest of
+Every limit entry lost on the test (10–13% won at the 0.05 buffer). (The dip-retest numbers carry a same-bar
+look-ahead fixed later, see Finding 37; they lost anyway.) The 10:30 measures barely predict the rest of
 the day (rank correlation with "long from the 10:25 close to the close", calibration / test): net move +0.05 /
 +0.08, efficiency +0.05 / +0.26, first pullback depth −0.04 / −0.15, wave turns −0.04 / −0.04, morning range +0.09 /
 +0.18. Nothing predicted when reversal trading after 10:30 pays (about 0 in every quintile, both periods).
@@ -1586,6 +1591,55 @@ The split is still useful descriptively: where a ticker has been earning, its up
 much overnight risk it carries (MU's last 20 sessions to Oct 23: −14.5% overnight, 42% of gaps up, worst −5.6%,
 against +65.7% over May–Oct). `ticker_setup_check.py` prints it for the whole window and the last 20 / 60 sessions.
 
+## Finding 37 — Short setups for down markets (2020–2026), and a look-ahead in the dip / rally-high limit
+
+Every long rider of `wave_rider.py` was run on price-flipped bars (`flip_bars`: price → k / price, so rallies become
+drops and highs become lows; `short_pct` maps a trade back to the real short — a drive long on flipped bars equals a
+drive short exactly), plus an overnight short (short the 15:55 close, cover at the next open), 8 wave settings, 5 bps,
+no borrow cost. Tickers: the 16 of Finding 36 plus QQQ, and for 2020–25 also AAPL MSFT NVDA GOOGL AMZN META TSLA AVGO
+(25; tickers not yet listed skipped, splits rescaled). Down windows, by QQQ:
+
+| Window | QQQ | Intraday / overnight |
+|---|---|---|
+| 2020 Covid crash (Feb 20 – Mar 23) | −27.9% | −3.9 / −25.0% |
+| 2021 Feb 16 – Mar 8 | −11.1% | −8.0 / −3.3% |
+| 2022 full bear year | −33.3% | −14.8 / −21.7% |
+| 2023 Jul 20 – Oct 26 | −10.2% | −10.0 / −0.2% |
+| 2024 Jul 11 – Aug 7 | −13.6% | −12.2 / −1.5% |
+| 2025 tariff drop (Feb 19 – Apr 8) | −22.7% | −13.4 / −10.8% |
+| 2026 Jan 29 – Mar 31 | −8.8% | −2.4 / −6.5% |
+| 2026 Jun 1 – Jul 30 | −7.3% | −10.1 / +3.2% |
+| 2026 Oct 6 – 23 | −7.4% | −3.0 / −4.5% |
+
+**A look-ahead, found while writing the monitor version.** The limit at the last confirmed dip (shorts: rally high)
+used the level on the bar whose close confirmed it, so it could fill before the level was known. Fixed in
+`ride_limit` (the level counts from the next bar; test added). The rally-high retest short had looked like the one
+short that worked everywhere (2026: all 24 variants up in Jan–Mar, 19 in Jun–Jul); fixed, 6 of 24 in Jun–Jul, and the
+chosen setting (0.2 buffer, 3 / 23.6% / 3.0) went from +68.5 / +52.3 / +11.9% to +44.3 / +4.0 / −0.8% on the three
+2026 windows. Finding 33's long `limit-dip` numbers carry the same flaw (they already lost out of sample).
+
+**With the gate on (QQQ's previous close below its 50-day MA)**, summed % at $10k per trade:
+
+| Short setup | 2020 | 2021 | 2022 | 2023 | 2024 | 2025 | 2026 Jan–Mar | 2026 Jun–Jul | 2026 Oct | Down windows up | Sum | 2026 elsewhere |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **Overnight short** | +478.6 | −71.5 | +251.9 | +20.8 | +57.3 | +383.2 | +32.8 | −72.0 | +32.8 | **7/9** | **+1,114** | −211.0 |
+| **Drive short + one re-entry below the stop level (no stop on it)** | −114.6 | +95.1 | +89.9 | +110.6 | +33.6 | +70.4 | +25.9 | +13.0 | −5.9 | **7/9** | **+318** | −17.5 |
+| Drive short + re-entry (stop: high since the stop-out) | −180.5 | +91.3 | +95.4 | +96.4 | −5.7 | +82.3 | +15.8 | −0.9 | −7.9 | 5/9 | +186 | +6.2 |
+| Drive short (red first bar, stop its high) | −120.3 | +51.9 | +68.7 | +95.0 | −51.0 | +67.1 | +12.0 | +3.1 | −4.3 | 6/9 | +122 | +10.9 |
+| 10:30 trend-down day (daytype-trend) | −68.6 | +18.9 | +133.4 | +53.8 | −13.5 | −14.7 | +44.9 | +10.5 | −13.7 | 5/9 | +151 | −1.5 |
+| Retest of the last rally high (fixed) | +49.8 | +30.1 | −322.7 | +3.0 | −1.1 | −26.9 | +58.8 | −21.7 | +2.1 | 5/9 | −229 | −48.0 |
+
+- Without the gate the overnight short made +1,590 in the down windows but −698 in the rest of 2026; the drive short +
+  re-entry (no stop) +689 / −240. The gate costs the overnight short some crash nights and keeps most of the up-market
+  losses away. Per trade the edges are thin: +0.15% (overnight), +0.06% (drive + re-entry).
+- The overnight short pays in declines driven by gaps (2020, 2022, 2025) and loses in session-driven ones (2021, Jun–Jul
+  2026); the drive short is the reverse in 2020 (overnight crash) and strong in 2023 and 2025.
+- Shorting rallies into VWAP or the 5-min MA20, confirmed wave turns down and reversal HIGH? entries lost in most windows.
+- The gate was chosen on 2026 (it beat QQQ below its MA20, MA20 below MA50 and QQQ's trend state); it is a placeholder for
+  a better market indicator.
+
+The wave setup monitor alerts the two reliable shorts on gated sessions (`short_setups.py`; retest opt-in).
+
 ## Recommendations
 
 1. **Choose tickers before tuning settings.** The same configuration ranges from +156.66% (SNDK)
@@ -1681,6 +1735,11 @@ against +65.7% over May–Oct). `ticker_setup_check.py` prints it for the whole 
     stop at the low since the stop-out). Run it through 2020–24 (Finding 28's harness) before adding it to the
     monitor.
 
+32. **Shorts only in down markets (Finding 37):** the overnight short and the drive short with one re-entry, switched on
+    by QQQ closing below its 50-day MA (or a better market indicator once tested); the wave setup monitor alerts them.
+    Expect thin edges (+0.06–0.15% per trade) and size the overnight short for gap risk. Don't short rallies into VWAP /
+    MA20, confirmed turns down or the retest of the last rally high.
+
 ## Reproduction
 
 ```bash
@@ -1764,6 +1823,10 @@ exactly (110 trades, +0.80%), but other settings may differ slightly.
    --start 2026-05-01` per ticker and window; the walk-forward split test was a one-off script on the same helpers
    (`load_rider_bars`, `ride("drive")`, `overnight_results` with the MA200 filter and earnings windows, daily
    split-adjusted bars for the split), one row per ticker-month.
+   Finding 37: per ticker and window, `bars, _ = load_rider_bars(...)` (45-day warm-up), `flipped, k = flip_bars(bars)`,
+   `wave_events(flipped, *setting, reversals=reversal_signals(flipped))`, every rider through `ride`, each trade through
+   `short_pct(k, entry, exit, 5)`; the overnight short from the real bars' 15:55 close and next open; the gate from QQQ's
+   daily closes shifted one session.
    The confirmation-lag table, the reversal-entry diagnostics, the drive long decomposition and the 11-case
    re-entry table were one-off scripts on `wave_events` / `ride` / `load_rider_bars` from `wave_rider.py`;
    intraday vs overnight from `fetch_daily_bars` (log open / previous close vs close / open).

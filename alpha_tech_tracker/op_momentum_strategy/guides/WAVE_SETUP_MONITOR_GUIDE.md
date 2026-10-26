@@ -167,6 +167,9 @@ at that time (System Settings → Battery → Options, or `pmset repeat wake MTW
 | 09:25 next morning | `SELL ... at the open (MOO before 09:28)` | For each overnight hold in the state file. |
 | 16:05 | Session summary | Closed trades with P&L, holds carried overnight. |
 | Start-up | `monitor started for <date>: N tickers` | Daily sign of life; also notes an early close. |
+| Start-up | `short setups on: QQQ closed X, below its 50-day MA Y (drive, overnight on ...)` (or `off`) | Whether today's down-market shorts are on. See [Short alerts](#short-alerts). |
+| 09:35, on a gated session | `SHORT ticker \| short drive \| ~price \| stop` | Red first bar. A stop-out may be followed by one `SHORT ... short drive re-entry` (no stop). |
+| ~15:50, on a gated session | `SHORT ticker \| short overnight \| at the close (MOC)` | Covered by `COVER ... at the open (MOO)` the next morning; `SKIP` before earnings. |
 | Start-up, about 30 s later | `signal stats, last 10 sessions ...` | Drive long and overnight hold win rates. See [Signal stats](#signal-stats). |
 | No 1-min bar for 5 min in the session | `no market data since HH:MM ...`, then `market data restored ...` | Sent once per outage. The stream is reconnected every 2 min meanwhile; the gap's bars are backfilled when data returns, but signals and stop checks inside it are missed. |
 | A reversal candle near a wave's low or high | `LOW?` / `HIGH? ticker \| pattern(s) \| ~price (HH:MM bar close) \| wave down/up N avg bars, low/high so far` | Information only: no trade is opened or tracked. See [Reversal alerts](#reversal-alerts). |
@@ -178,6 +181,35 @@ Every alert is also appended to `logs/wave_setup_alerts_<date>.csv`; the log is
 For NYSE-listed tickers (SPOT, CRM, LLY, ...) use `--close-decision-bar 15:40`: the decision
 uses the 15:40 bar and the alert comes about 15:45. Entries are not alerted from the decision
 bar on.
+
+## Short alerts
+
+On sessions where the market gate is on, the monitor also alerts down-market shorts (`short_setups.py`). They are the
+two shorts that held up in nine down markets 2020–2026 (ticker-tuning doc, Finding 37); alerts only, like everything
+else here.
+
+- **Gate:** decided once per session from the previous daily close. Default `--short-gate qqq-ma50`: on when QQQ closed
+  below its 50-day moving average. `always` and `off` are the other choices; the gate is one function
+  (`short_setups.gate_status`) so a better market indicator can replace it. The start-up alert says on or off and why.
+- **Tickers:** `--short-tickers`, default the config's tickers plus QQQ (added to the stream).
+- **drive:** a red first 5-min bar → `SHORT ... ~close (09:30 bar close) | stop its high | cover at the close`. If the
+  stop is hit, one re-entry when a bar closes back below that high before 15:00 → `SHORT ... short drive re-entry |
+  no stop | cover at the close`. Both are covered by the 15:50 `COVER ... at the close (MOC)` alert.
+- **overnight:** at the close decision (15:50 alert) → `SHORT ... short overnight | at the close (MOC)`; the next
+  morning `COVER ... at the open (MOO before 09:28)`. Skipped the night into an earnings release (`SKIP`) and on
+  early-close days.
+- **retest** (opt-in: `--short-setups drive overnight retest`): `SHORT LIMIT` when a new rally high is confirmed (a
+  sell limit just below it for the next bar), `SHORTED` when it fills, `LOWER STOP` on each new lower rally high,
+  covered at the close. It lost out of sample once a look-ahead in its study was fixed; it is there for testing.
+
+| Short setup (gate on) | Down windows up | Sum, 9 down windows | 2026 outside them |
+|---|---|---|---|
+| overnight | 7 of 9 | +1,114% | −211% |
+| drive + re-entry | 7 of 9 | +318% | −17% |
+| retest (opt-in) | 5 of 9 | −229% | −48% |
+
+The edges are thin (+0.06–0.15% per trade, summed at $10k per trade, 5 bps, no borrow cost) and the overnight short
+carries gap risk; `--no-short-setups` turns them all off.
 
 ## Signal stats
 
@@ -339,6 +371,10 @@ difference is the close rule below (GOOGL drive long on Sep 30 hit its stop afte
 | `--workers` | CPUs − 1 | Processes evaluating setups (0 = main process) |
 | `--reversal-patterns ...` | `piercing push long_tail` | Reversal candles alerted (information only) |
 | `--no-reversal-alerts` | off | No reversal alerts |
+| `--short-setups ...` | `drive overnight` | Down-market shorts alerted on gated sessions (`retest` opt-in) |
+| `--no-short-setups` | off | No short setups |
+| `--short-gate` | `qqq-ma50` | When shorts are on: `qqq-ma50`, `always`, `off` |
+| `--short-tickers ...` | config tickers + QQQ | Tickers for the short setups |
 | `--stats-tickers ...` | the 21 setup-tape tickers | Tickers pooled in the start-up signal stats |
 | `--no-signal-stats` | off | No start-up signal stats |
 | `--no-notify` | off | Log and CSV only |

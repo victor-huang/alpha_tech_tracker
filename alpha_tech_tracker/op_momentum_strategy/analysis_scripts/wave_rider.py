@@ -52,6 +52,10 @@ Re-entry after a drive long stop-out (re-entries until REENTER_LATEST, held to t
   reenter-entry             re-buy the first close back above the original entry (Finding 28's rule); stop at the
                             low since the stop-out; once
 
+Shorts: `flip_bars` maps prices to k / price (rallies become drops, highs become lows), so every long rider and the
+wave model run unchanged on the flipped bars; `short_pct(k, entry, exit)` turns a flipped trade back into the real
+short's net %. Finding 37 ran the short study this way.
+
 Score: dollars per share caught per session / the ADR known before the open (mean of the previous `--adr-sessions`
 sessions' high - low), sessions without a trade counting 0. Settings are chosen on the calibration period and
 reported on the test period.
@@ -299,6 +303,8 @@ def ride_limit(kind, buffer, bars):
         if position and bar["low"] <= position["stop"]:
             trades.append((position["time"], position["entry"], bar["time"], min(bar["open"], position["stop"]), "stop"))
             position, exited = None, True
+        # a dip confirmed at this bar's close is only known for the next bar's limit
+        known_dip = last_dip
         if bar["turn"] == "up":
             last_dip = bar["dip_low"]
             if position:
@@ -320,11 +326,11 @@ def ride_limit(kind, buffer, bars):
             if i < 4 or level is None or not level > bars[i - 4].get("ma_20", float("inf")):
                 continue
         else:
-            level = None if last_dip is None else last_dip + LIMIT_DIP_OFFSET * adr
+            level = None if known_dip is None else known_dip + LIMIT_DIP_OFFSET * adr
         if level is None or level != level or not previous["close"] > level or bar["low"] > level:
             continue
         fill = min(bar["open"], level)
-        stop = (last_dip if kind == "dip" else level) - buffer * adr
+        stop = (known_dip if kind == "dip" else level) - buffer * adr
         if fill <= stop:
             continue
         entries += 1
@@ -367,6 +373,26 @@ def day_type_study(events, adr, periods):
                       f" with reversal_rest {ranks[feature].corr(ranks['reversal_rest']):+.2f})",
                       table.T.to_string(float_format=lambda x: f"{x:.3f}"), ""]
     return lines
+
+
+def flip_bars(bars):
+    """(bars with prices mapped to k / price, k): a long rider on the flipped bars is a short on the real ones."""
+    k = float(bars["close"].median()) ** 2
+    out = pd.DataFrame(index=bars.index)
+    out["open"], out["close"] = k / bars["open"], k / bars["close"]
+    out["high"], out["low"] = k / bars["low"], k / bars["high"]
+    for column in ("vwap", "ma_20"):
+        if column in bars:
+            out[column] = k / bars[column]
+    adr = session_adr(out, 20)
+    out["adr"] = [adr.get(d) for d in out.index.date]
+    return out, k
+
+
+def short_pct(k, entry, exit_price, cost_bps=0.0):
+    """The real short's net % for a trade taken on flipped bars at `entry` and closed at `exit_price`."""
+    short_entry, cover = k / entry, k / exit_price
+    return (short_entry - cover) / short_entry * 100 - cost_bps / 100
 
 
 def score(trades_by_session, adr, sessions, cost_bps):

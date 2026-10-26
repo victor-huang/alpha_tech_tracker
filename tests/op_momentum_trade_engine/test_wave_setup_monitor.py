@@ -664,6 +664,174 @@ class TestReversalAfterErrors:
         assert alerts == []
 
 
+QQQ_FALLING = {"QQQ": [100.0] * 49 + [90.0]}
+QQQ_RISING = {"QQQ": [100.0] * 49 + [110.0]}
+RETEST_ON = ("retest", "drive", "overnight")
+
+
+class TestShortSetups:
+    def _monitor(self, tmp_path, clock, closes=None, **kwargs):
+        return _monitor(tmp_path, {"AMD": []}, clock, closes=QQQ_FALLING if closes is None else closes, **kwargs)
+
+    def test_gate_on_when_qqq_is_below_its_50_day_ma(self, tmp_path):
+        monitor, _ = self._monitor(tmp_path, _Clock("2026-10-06 09:00"))
+
+        monitor.prepare()
+
+        assert monitor.shorts_on
+        assert monitor.short_gate_text == "short setups on: QQQ closed 90.00, below its 50-day MA 99.80"
+
+    def test_no_drive_short_when_the_gate_is_off(self, tmp_path):
+        monitor, alerts = self._monitor(tmp_path, _Clock("2026-10-06 09:35"), closes=QQQ_RISING)
+        monitor.prepare()
+
+        monitor._on_five_min_bar("AMD", _bar("2026-10-06 09:30", 100.0, 101.0, 98.5, 99.0))
+
+        assert alerts == []
+
+    def test_red_first_bar_alerts_a_drive_short(self, tmp_path):
+        monitor, alerts = self._monitor(tmp_path, _Clock("2026-10-06 09:35"))
+        monitor.prepare()
+
+        monitor._on_five_min_bar("AMD", _bar("2026-10-06 09:30", 100.0, 101.0, 98.5, 99.0))
+
+        assert alerts == ["[wave] SHORT AMD | short drive | ~99.00 (09:30 bar close) | stop 101.00 | cover at the close"]
+        assert (monitor.trades[0].side, monitor.trades[0].stop) == (-1, 101.0)
+
+    def test_re_entry_below_the_stop_out_level_after_a_stop(self, tmp_path):
+        monitor, alerts = self._monitor(tmp_path, _Clock("2026-10-06 09:35"))
+        monitor.prepare()
+        monitor._on_five_min_bar("AMD", _bar("2026-10-06 09:30", 100.0, 101.0, 98.5, 99.0))
+        monitor._on_five_min_bar("AMD", _bar("2026-10-06 09:35", 99.5, 101.5, 99.4, 101.2))
+
+        monitor._on_five_min_bar("AMD", _bar("2026-10-06 09:40", 101.2, 101.3, 100.2, 100.5))
+
+        assert alerts[1].startswith("[wave] COVER AMD | short drive | stop hit on the 09:35 bar @ 101.00")
+        assert alerts[2] == ("[wave] SHORT AMD | short drive re-entry | ~100.50 (09:40 bar close), back below the "
+                             "stop-out level 101.00 | no stop | cover at the close")
+        assert monitor.trades[-1].stop is None
+
+    def test_only_one_re_entry(self, tmp_path):
+        monitor, alerts = self._monitor(tmp_path, _Clock("2026-10-06 09:35"))
+        monitor.prepare()
+        for stamp, bar in (("09:30", (100.0, 101.0, 98.5, 99.0)), ("09:35", (99.5, 101.5, 99.4, 101.2)),
+                           ("09:40", (101.2, 101.3, 100.2, 100.5)), ("09:45", (100.5, 100.6, 100.0, 100.2))):
+            monitor._on_five_min_bar("AMD", _bar(f"2026-10-06 {stamp}", *bar))
+
+        assert sum("re-entry" in a for a in alerts) == 1
+
+    def test_no_stop_short_holds_to_the_close(self, tmp_path):
+        trade = LiveTrade(ticker="AMD", setup="short drive re-entry", exit_mode="eod", entry_time=_ts("2026-10-06 09:40"),
+                          side=-1, entry=100.0, stop=None, target=None, risk=None, last_bar=_ts("2026-10-06 09:40"))
+
+        assert trade.on_bar(_bar("2026-10-06 09:45", 100.0, 130.0, 99.0, 125.0)) is None
+
+    def test_retest_fill_opens_a_short_with_its_stop(self, tmp_path, mocker):
+        monitor, alerts = self._monitor(tmp_path, short_setups=RETEST_ON, clock=_Clock("2026-10-06 10:05"))
+        monitor.prepare()
+        mocker.patch.object(monitor.short_watches["AMD"], "update",
+                            return_value=[{"kind": "entry", "fill": 109.5, "stop": 112.0, "stopped": False}])
+
+        monitor._on_five_min_bar("AMD", _bar("2026-10-06 10:05", 108.0, 109.8, 107.9, 109.0))
+
+        assert alerts == ["[wave] SHORTED AMD | short retest | limit filled ~109.50 (10:05 bar) | stop 112.00 | cover "
+                          "at the close"]
+        assert (monitor.trades[0].setup, monitor.trades[0].entry) == ("short retest", 109.5)
+
+    def test_retest_stopped_on_the_fill_bar(self, tmp_path, mocker):
+        monitor, alerts = self._monitor(tmp_path, short_setups=RETEST_ON, clock=_Clock("2026-10-06 10:05"))
+        monitor.prepare()
+        mocker.patch.object(monitor.short_watches["AMD"], "update",
+                            return_value=[{"kind": "entry", "fill": 109.5, "stop": 112.0, "stopped": True}])
+
+        monitor._on_five_min_bar("AMD", _bar("2026-10-06 10:05", 108.0, 112.5, 107.9, 112.0))
+
+        assert alerts[1].startswith("[wave] COVER AMD | short retest | stop hit on the fill bar @ 112.00")
+        assert monitor.trades[0].status == "closed"
+
+    def test_new_lower_high_lowers_the_stop(self, tmp_path, mocker):
+        monitor, alerts = self._monitor(tmp_path, short_setups=RETEST_ON, clock=_Clock("2026-10-06 10:30"))
+        monitor.prepare()
+        monitor.trades.append(LiveTrade(ticker="AMD", setup="short retest", exit_mode="eod", side=-1, entry=109.5,
+                                        stop=112.0, target=None, entry_time=_ts("2026-10-06 10:05"),
+                                        last_bar=_ts("2026-10-06 10:25")))
+        mocker.patch.object(monitor.short_watches["AMD"], "update", return_value=[{"kind": "trail", "peak": 108.0}])
+
+        monitor._on_five_min_bar("AMD", _bar("2026-10-06 10:30", 107.0, 107.5, 106.5, 106.8))
+
+        assert monitor.trades[0].stop == 108.0
+        assert alerts == ["[wave] LOWER STOP AMD | short retest | stop 108.00 (new lower rally high)"]
+
+    def test_armed_limit_is_alerted(self, tmp_path, mocker):
+        monitor, alerts = self._monitor(tmp_path, short_setups=RETEST_ON, clock=_Clock("2026-10-06 10:00"))
+        monitor.prepare()
+        mocker.patch.object(monitor.short_watches["AMD"], "update",
+                            return_value=[{"kind": "arm", "level": 109.5, "stop": 112.0}])
+
+        monitor._on_five_min_bar("AMD", _bar("2026-10-06 10:00", 108.0, 108.5, 107.0, 107.5))
+
+        assert alerts == ["[wave] SHORT LIMIT AMD | short retest | sell limit 109.50 from the next bar | stop 112.00 "
+                          "once filled | cancel at 15:00 or when replaced"]
+
+    def test_overnight_short_at_the_close_and_cover_next_morning(self, tmp_path):
+        clock = _Clock("2026-10-06 15:50")
+        monitor, alerts = self._monitor(tmp_path, clock, history={"AMD": _history([("2026-10-06 15:45", 100.0)])})
+        monitor.prepare()
+        monitor.tick()
+        assert alerts[-1] == "[wave] SHORT AMD | short overnight | at the close (MOC), ref 100.00 (15:45 bar) | cover at the next open"
+        monitor.finish()
+
+        clock.set("2026-10-07 09:00")
+        nxt, next_alerts = self._monitor(tmp_path, clock)
+        nxt.prepare()
+        nxt.tick()
+        clock.set("2026-10-07 09:25")
+        nxt.tick()
+
+        assert next_alerts[-1] == "[wave] COVER AMD | short overnight | at the open (MOO before 09:28), shorted 100.00 on 10-06"
+
+    def test_overnight_short_skips_the_night_into_earnings(self, tmp_path):
+        clock = _Clock("2026-10-06 15:50")
+        release = ET.localize(datetime(2026, 10, 6, 16, 5))
+        monitor, alerts = self._monitor(tmp_path, clock, history={"AMD": _history([("2026-10-06 15:45", 100.0)])},
+                                        releases={"AMD": [release]})
+        monitor.prepare()
+
+        monitor.tick()
+
+        assert alerts[-1] == "[wave] SKIP AMD | short overnight | earnings release before the next open"
+        assert monitor.trades == []
+
+    def test_retest_is_off_by_default(self, tmp_path):
+        monitor, _ = self._monitor(tmp_path, _Clock("2026-10-06 10:00"))
+
+        monitor.prepare()
+
+        assert monitor.short_watches == {}
+
+    def test_short_tickers_limit_the_shorts(self, tmp_path):
+        monitor, alerts = self._monitor(tmp_path, _Clock("2026-10-06 09:35"), short_tickers=["QQQ"])
+        monitor.prepare()
+
+        monitor._on_five_min_bar("AMD", _bar("2026-10-06 09:30", 100.0, 101.0, 98.5, 99.0))
+
+        assert alerts == []
+
+
+class TestShortArguments:
+    def test_all_three_by_default_with_the_qqq_gate(self):
+        args = parse_args(["run"])
+
+        assert (args.short_setups, args.short_gate, args.no_short_setups) == (["drive", "overnight"], "qqq-ma50", False)
+
+    def test_retest_is_opt_in(self):
+        assert parse_args(["run", "--short-setups", "retest", "drive"]).short_setups == ["retest", "drive"]
+
+    def test_unknown_gate_is_rejected(self):
+        with pytest.raises(SystemExit):
+            parse_args(["run", "--short-gate", "vix"])
+
+
 class TestReversalArguments:
     def test_all_patterns_by_default(self):
         args = parse_args(["run"])

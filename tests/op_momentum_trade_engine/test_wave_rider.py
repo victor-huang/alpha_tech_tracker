@@ -7,9 +7,11 @@ import pytz
 from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_rider import (
     DAYTYPE_BARS,
     day_type,
+    flip_bars,
     ride,
     score,
     session_adr,
+    short_pct,
     split_factors,
     wave_events,
 )
@@ -148,6 +150,18 @@ class TestLimitEntries:
 
         assert ride("limit-vwap b0.1", bars) == [(_time(6), 101.0, _time(6), 100.0, "stop")]
 
+    def test_dip_level_is_used_from_the_bar_after_its_turn(self):
+        bars = [_bar(0, 101, 101.5, 99.5, 100)] + [_flat(i, 102) for i in range(1, 6)]
+        bars += [_bar(6, 101.5, 102.5, 100.1, 102.0, turn="up", dip_low=100.0), _flat(7, 104)]
+
+        assert ride("limit-dip b0.1", bars) == []
+
+    def test_dip_retest_fills_after_the_turn(self):
+        bars = [_bar(0, 101, 101.5, 99.5, 100)] + [_flat(i, 102) for i in range(1, 5)]
+        bars += [_flat(5, 102, turn="up", dip_low=100.0), _bar(6, 101.0, 101.1, 100.3, 100.8), _flat(7, 104)]
+
+        assert ride("limit-dip b0.1", bars) == [(_time(6), 100.5, _time(7), 104, "close")]
+
     def test_no_fill_when_price_stays_above(self):
         assert ride("limit-vwap b0.1", self._session(_flat(6, 102, vwap=101.0))) == []
 
@@ -231,3 +245,31 @@ class TestSplitFactors:
         bars = self._bars({DAY: 101.0})
 
         assert split_factors(bars, {DAY: 100.0}) == {}
+
+
+class TestFlipForShorts:
+    def _bars(self):
+        index = pd.DatetimeIndex([_time(i) for i in range(3)])
+        return pd.DataFrame({"open": [100.0, 99.0, 97.0], "high": [101.0, 99.5, 98.0], "low": [98.5, 97.0, 96.0],
+                             "close": [99.0, 97.5, 96.5]}, index=index)
+
+    def test_rallies_become_drops_and_highs_become_lows(self):
+        flipped, k = flip_bars(self._bars())
+
+        assert flipped["low"].iloc[0] == pytest.approx(k / 101.0)
+        assert flipped["close"].is_monotonic_increasing
+
+    def test_a_flipped_long_maps_back_to_the_real_short(self):
+        flipped, k = flip_bars(self._bars())
+
+        assert short_pct(k, flipped["close"].iloc[0], flipped["close"].iloc[2]) == pytest.approx((99.0 - 96.5) / 99.0 * 100)
+
+    def test_drive_on_flipped_bars_is_a_drive_short(self):
+        bars = self._bars()
+        flipped, k = flip_bars(bars)
+        events = [{"time": t, "open": r.open, "high": r.high, "low": r.low, "close": r.close, "turn": None,
+                   "dip_low": None, "low_stop": None, "high_signal": False} for t, r in flipped.iterrows()]
+
+        (_, entry, _, exit_price, reason), = ride("drive", events)
+
+        assert (k / entry, k / exit_price, reason) == (pytest.approx(99.0), pytest.approx(96.5), "close")
