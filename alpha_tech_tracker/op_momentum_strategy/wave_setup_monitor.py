@@ -578,7 +578,7 @@ class WaveSetupMonitor:
                                    f"{', '.join(short)}; their filtered overnight holds will not fire today")
         self._load_state()
         self._prepare_shorts()
-        self._prepare_drive_trail()
+        self._prepare_drive_trail(through_today=False)
         self._catch_up_trades()
         self.refetch_before = period_start(now) + timedelta(minutes=BAR_MINUTES)
         self._save_state()
@@ -629,7 +629,7 @@ class WaveSetupMonitor:
             if not missing.empty:
                 self.bars[ticker] = pd.concat([self.bars[ticker], missing]).sort_index()
                 self._rebuild_reversal_watch(ticker)
-                self._prepare_drive_trail([ticker])
+                self._rebuild_drive_trail(ticker)
                 logger.info("%s: backfilled %d bars from %s", ticker, len(missing), f"{gap_start:%H:%M}")
         self._save_state()
 
@@ -855,8 +855,8 @@ class WaveSetupMonitor:
     def _drive_tickers(self):
         return [t for t, specs in self.setups.items() if any(spec.name == DRIVE_LONG for spec in specs)]
 
-    def _prepare_drive_trail(self, tickers=None):
-        """Rebuild drive long tickers' wave turns from the previous session and today's bars (no alerts)."""
+    def _prepare_drive_trail(self, tickers=None, through_today=True):
+        """Rebuild drive long tickers' wave turns from the previous session (and today's bars, `through_today`)."""
         if not self.drive_trail:
             return
         for ticker in tickers or self._drive_tickers():
@@ -865,10 +865,42 @@ class WaveSetupMonitor:
             tracker = TurnTracker(*DRIVE_TRAIL_SETTING)
             bars = self.bars[ticker].sort_index()
             previous = [d for d in sorted(set(bars.index.date)) if d < self.session][-1:]
-            for stamp, row in bars[bars.index.date >= (previous[0] if previous else self.session)].iterrows():
+            replay = bars[bars.index.date >= (previous[0] if previous else self.session)]
+            if not through_today:
+                replay = replay[replay.index.date < self.session]
+            for stamp, row in replay.iterrows():
                 tracker.turn(stamp, {k: float(row[k]) for k in ("open", "high", "low", "close")})
-            tracker.last_time = bars.index[-1] if not bars.empty else None
+            tracker.last_time = replay.index[-1] if not replay.empty else None
             self.drive_trackers[ticker] = tracker
+
+    def _rebuild_drive_trail(self, ticker):
+        """Rebuild a ticker's turns after a backfill or an out-of-order bar, and raise open drive longs' stops to dips
+        confirmed after their entry that the live path missed (one alert per trade; affects later bars only)."""
+        if not self.drive_trail or ticker not in self._drive_tickers():
+            return
+        self._prepare_drive_trail([ticker], through_today=False)
+        tracker = self.drive_trackers[ticker]
+        raised = {}
+        for stamp, row in self.bars[ticker].sort_index().iterrows():
+            if stamp.date() != self.session:
+                continue
+            tracker.last_time = stamp
+            turn = tracker.turn(stamp, {k: float(row[k]) for k in ("open", "high", "low", "close")})
+            if turn and turn[0] == "up":
+                for trade in self._open_drive_longs(ticker):
+                    if trade.entry_time < stamp and turn[1] > trade.stop:
+                        trade.stop = raised[id(trade)] = turn[1]
+        self._alert_raised(ticker, raised, "caught up after a data gap")
+
+    def _open_drive_longs(self, ticker):
+        return [t for t in self.trades if t.ticker == ticker and t.setup in (DRIVE_LONG, DRIVE_REENTRY) and t.side == 1
+                and t.status == "open" and t.stop is not None]
+
+    def _alert_raised(self, ticker, raised, why):
+        for trade in self._open_drive_longs(ticker):
+            if id(trade) in raised:
+                self._alert(trade, "RAISE STOP", trade.stop,
+                            f"RAISE STOP {ticker} | {trade.setup} | stop {trade.stop:.2f} ({why})")
 
     def _drive_long_options(self, ticker, bar):
         """After the bar's stop checks: raise open drive longs' stops to a newly confirmed dip low (`--drive-trail`),
@@ -883,24 +915,26 @@ class WaveSetupMonitor:
         except Exception:
             logger.exception("%s: drive long option failed on the %s bar", ticker, f"{bar['time']:%H:%M}")
 
-    def _trail_drive_long(self, ticker, bar):
+    def _trail_drive_long(self, ticker, bar, alert=True):
+        """Raise open drive longs' stops when this bar confirms a higher dip; returns {id(trade): new stop}."""
         tracker = self.drive_trackers.get(ticker)
         if tracker is None:
-            return
+            return {}
         if tracker.last_time is not None and bar["time"] <= tracker.last_time:
-            self._prepare_drive_trail([ticker])
-            return
+            self._rebuild_drive_trail(ticker)
+            return {}
         tracker.last_time = bar["time"]
         turn = tracker.turn(bar["time"], bar)
         if not turn or turn[0] != "up":
-            return
-        dip = turn[1]
-        for trade in self.trades:
-            if (trade.ticker == ticker and trade.setup in (DRIVE_LONG, DRIVE_REENTRY) and trade.side == 1
-                    and trade.status == "open" and trade.stop is not None and dip > trade.stop):
-                trade.stop = dip
-                self._alert(trade, "RAISE STOP", dip,
-                            f"RAISE STOP {ticker} | {trade.setup} | stop {dip:.2f} (new higher dip low)")
+            return {}
+        raised = {}
+        for trade in self._open_drive_longs(ticker):
+            if turn[1] > trade.stop:
+                trade.stop = raised[id(trade)] = turn[1]
+                if alert:
+                    self._alert(trade, "RAISE STOP", turn[1],
+                                f"RAISE STOP {ticker} | {trade.setup} | stop {turn[1]:.2f} (new higher dip low)")
+        return raised
 
     def _reenter_drive_long(self, ticker, bar):
         stamp = bar["time"]
@@ -1205,13 +1239,20 @@ class WaveSetupMonitor:
                                                  f"{verb} {trade.entry:.2f} on {trade.entry_time:%m-%d}")
 
     def _catch_up_trades(self):
-        """Replay today's warm-up bars through trades restored from the state file."""
+        """Replay today's warm-up bars through trades restored from the state file: each bar's stop checks, then
+        (`--drive-trail`) its raise, as live; one RAISE STOP alert per drive long whose stop moved."""
         for ticker in self.tickers:
+            raised = {}
             for stamp, row in self.bars[ticker].iterrows():
                 if stamp.date() != self.session:
                     continue
-                self._update_trades(ticker, {"time": stamp, "open": float(row["open"]), "high": float(row["high"]),
-                                             "low": float(row["low"]), "close": float(row["close"])})
+                bar = {"time": stamp, "open": float(row["open"]), "high": float(row["high"]), "low": float(row["low"]),
+                       "close": float(row["close"])}
+                self._update_trades(ticker, bar)
+                if self.drive_trail:
+                    raised.update(self._trail_drive_long(ticker, bar, alert=False))
+            if raised:
+                self._alert_raised(ticker, raised, "caught up after a restart")
 
     # --- helpers ---------------------------------------------------------
 

@@ -965,6 +965,54 @@ class TestDriveTrail:
         assert monitor.drive_trackers == {}
 
 
+class TestDriveTrailCatchUp:
+    def _restored(self, tmp_path, trade):
+        (tmp_path / "state.json").write_text(json.dumps({"session": "2026-10-06", "alerted": [], "done": {},
+                                                         "trades": [trade.to_dict()]}))
+
+    def _history(self, lows):
+        index = pd.DatetimeIndex([_ts(f"2026-10-06 {t}") for t in ("09:30", "09:35", "09:40")])
+        return pd.DataFrame({"Open": [101.0, 101.5, 101.6], "High": [101.5, 102.0, 102.0], "Low": lows,
+                             "Close": [101.0, 101.8, 101.7], "Volume": 1.0}, index=index)
+
+    def test_restart_raises_the_restored_stop_once(self, tmp_path, mocker):
+        mocker.patch.object(monitor_module, "evaluate_setup", return_value=[])
+        mocker.patch.object(monitor_module.TurnTracker, "turn", side_effect=[None, ("up", 100.6), None])
+        self._restored(tmp_path, _drive_long(entry_time="2026-10-06 09:30"))
+        monitor, alerts = _monitor(tmp_path, {"AMD": ["drive long"]}, _Clock("2026-10-06 09:45"), drive_trail=True,
+                                   history={"AMD": self._history([100.8, 101.0, 101.2])})
+
+        monitor.prepare()
+
+        assert monitor.trades[0].stop == 100.6
+        assert alerts == ["[wave] RAISE STOP AMD | drive long | stop 100.60 (caught up after a restart)"]
+
+    def test_restart_replay_checks_the_raised_stop_on_later_bars(self, tmp_path, mocker):
+        mocker.patch.object(monitor_module, "evaluate_setup", return_value=[])
+        mocker.patch.object(monitor_module.TurnTracker, "turn", side_effect=[None, ("up", 100.6), None])
+        self._restored(tmp_path, _drive_long(entry_time="2026-10-06 09:30"))
+        monitor, alerts = _monitor(tmp_path, {"AMD": ["drive long"]}, _Clock("2026-10-06 09:45"), drive_trail=True,
+                                   history={"AMD": self._history([100.8, 100.5, 100.4])})
+
+        monitor.prepare()
+
+        assert (monitor.trades[0].outcome, monitor.trades[0].exit_price) == ("stop", 100.6)
+
+    def test_out_of_order_bar_raises_missed_stops(self, tmp_path, mocker):
+        mocker.patch.object(monitor_module, "evaluate_setup", return_value=[])
+        monitor, alerts = _monitor(tmp_path, {"AMD": ["drive long"]}, _Clock("2026-10-06 09:45"), drive_trail=True,
+                                   history={"AMD": self._history([100.8, 101.0, 101.2])})
+        monitor.prepare()
+        monitor.trades.append(_drive_long(entry_time="2026-10-06 09:30"))
+        monitor.bars["AMD"] = monitor.bars["AMD"].drop(_ts("2026-10-06 09:35"))
+        mocker.patch.object(monitor_module.TurnTracker, "turn", side_effect=[None, ("up", 100.6), None])
+
+        monitor._on_five_min_bar("AMD", _bar("2026-10-06 09:35", 101.5, 102.0, 101.0, 101.8))
+
+        assert monitor.trades[0].stop == 100.6
+        assert alerts == ["[wave] RAISE STOP AMD | drive long | stop 100.60 (caught up after a data gap)"]
+
+
 class TestDriveReentry:
     def _monitor(self, tmp_path, clock, **kwargs):
         history = {"AMD": _history([("2026-10-06 09:30", 101.0), ("2026-10-06 09:35", 99.6),

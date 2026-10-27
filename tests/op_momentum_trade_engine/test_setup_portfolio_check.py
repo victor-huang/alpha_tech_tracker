@@ -5,6 +5,7 @@ import pytest
 import pytz
 
 from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.setup_portfolio_check import (
+    parse_args,
     plans,
     summarize,
     trail_reentry,
@@ -102,3 +103,11 @@ class TestSummarize:
 
     def test_no_trades(self):
         assert summarize(pd.DataFrame(columns=["day", "pct", "dollars"]), 10000.0)["trades"] == 0
+
+
+class TestParseArgs:
+    def test_overnight_mode_defaults_to_ma200(self):
+        assert parse_args(["AMD", "--start", "2026-01-02"]).overnight_mode == "ma200"
+
+    def test_overnight_mode_always(self):
+        assert parse_args(["AMD", "--start", "2026-01-02", "--overnight-mode", "always"]).overnight_mode == "always"

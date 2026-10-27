@@ -195,7 +195,10 @@ Two opt-in changes to the config's `drive long` trades (off by default; ticker-t
   stop at the low since the stop-out. It helped where stop-outs recovered (PLTR, AMD, SNPS) and hurt where they kept
   falling (CRWV, DDOG, MDB): better in 6 of 11 ticker-periods of 2025–26, not yet checked on 2020–24.
 
-With both on, the re-entry is trailed too and its stop-out level is the raised stop; that combination was not tested.
+With both on, the re-entry is trailed too and its stop-out level is the raised stop; that combination was not tested. After a
+restart the day's bars are replayed through open drive longs in order (stop check, then raise) and a raised stop gets
+one `RAISE STOP ... (caught up after a restart)` alert; after a data gap or an out-of-order bar, dips confirmed after a
+trade's entry raise its stop for the bars to come (`... (caught up after a data gap)`).
 
 ## Short alerts
 

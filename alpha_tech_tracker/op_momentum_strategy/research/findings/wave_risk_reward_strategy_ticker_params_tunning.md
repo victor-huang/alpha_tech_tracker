@@ -1702,7 +1702,10 @@ short is on, so `--short-setups drive` keeps them:
 | FANG BABA OKLO PANW | +$184 (+1.8%) | **+$1,305 (+13.1%)** |
 | **Total** | **+$2,968** | **+$12,694** |
 
-Better in all six groups, with a smaller drawdown in four. The case for the overnight short rests on crashes (2020,
+Better in all six groups, with a smaller drawdown in four. The script models a generic mix (every ticker runs every leg, the overnight long
+with the MA200 filter); the monitor runs only each ticker's configured setups, and EC2 holds `overnight always` on MRNA
+SNDK AMD SNPS. On those four, `--overnight-mode always` changed the totals by +$233 (defaults: +$6,999 → +$7,231) and
++$371 (`--short-setups drive`: +$8,887 → +$9,258), so the comparison holds. The case for the overnight short rests on crashes (2020,
 2022, 2025, Finding 37), which 2026 did not have; the default keeps it so a crash is covered.
 
 ## Recommendations

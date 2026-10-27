@@ -9,13 +9,18 @@ position per ticker at a time, not compounded):
   drive + re-entry         drive long, one re-entry on a close back above the first bar's low (before 15:00)
   drive-trail + re-entry   the monitor with --drive-trail --drive-reentry
   drive short + re-entry   red first bar shorted, stop its high, one re-entry back below it with no stop
-  overnight long           buy the 15:55 close, sell the next open; MA200 filter, earnings nights skipped
+  overnight long           buy the 15:55 close, sell the next open; earnings nights skipped; `--overnight-mode`
+                           ma200 (the default, `overnight ma200`) or always (`overnight always`, no filter)
   overnight short          short the 15:55 close, cover the next open; earnings nights skipped
 
 The short legs and the overnight long follow the monitor's market gate (QQQ's previous close below its 50-day MA):
 shorts only on gated sessions, the overnight long only on the others. Plans combine the legs; "monitor rules" is what
 the monitor alerts with its defaults (plus the chosen drive long variant); with `--short-setups drive` the monitor keeps
 the overnight long on gated sessions too.
+
+It models a generic mix: every ticker runs every leg. The monitor runs only the setups each ticker's config lists (e.g.
+drive long only where the config has `drive long`), so this compares the legs, it is not a replay of the configured
+monitor.
 
   python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.setup_portfolio_check SNDK APP SPOT MDB \\
     --start 2026-01-02 --end 2026-10-23
@@ -96,7 +101,7 @@ def _event_bars(frame):
 
 def ticker_legs(job):
     """Every leg's trades for one ticker over start..end: DataFrame(ticker, day, leg, pct), and its buy-and-hold %."""
-    ticker, start, end, cost_bps = job
+    ticker, start, end, cost_bps, overnight_mode = job
     bars, _ = load_rider_bars(ticker, start - timedelta(days=WARMUP_DAYS), end, DataFeed.SIP, 20)
     daily = fetch_daily_bars([ticker], start - timedelta(days=DAILY_HISTORY_DAYS), end)[ticker]
     closes = pd.Series([float(c) for c in daily["Close"]], index=[pd.Timestamp(d).date() for d in daily.index])
@@ -121,7 +126,7 @@ def ticker_legs(job):
     for day, evs in _event_bars(flipped).items():
         for _, e, _, x, _ in ride("reenter-stoplevel-nostop", evs):
             add(day, "drive short + re-entry", short_pct(k, e, x, cost_bps))
-    for r in overnight_results(ticker, bars, closes, windows, {d for d in sessions if start <= d <= end}, "ma200"):
+    for r in overnight_results(ticker, bars, closes, windows, {d for d in sessions if start <= d <= end}, overnight_mode):
         if r.pct is not None:
             add(r.day, "overnight long", r.pct - cost_bps / 100)
     for today, nxt in zip(sessions, sessions[1:]):
@@ -183,6 +188,8 @@ def parse_args(argv=None):
     parser.add_argument("--end", type=date.fromisoformat, help="Default: the last completed session")
     parser.add_argument("--capital", type=float, default=10000.0, help="Split equally across the tickers")
     parser.add_argument("--cost-bps", type=float, default=5.0)
+    parser.add_argument("--overnight-mode", choices=("ma200", "always"), default="ma200",
+                        help="Overnight long filter: ma200 (overnight ma200) or always (overnight always)")
     return parser.parse_args(argv)
 
 
@@ -190,7 +197,8 @@ def main(argv=None):
     args = parse_args(argv)
     end = clamp_end_for_sip(args.end or date.today(), DataFeed.SIP)
     with ProcessPoolExecutor(max_workers=min(8, len(args.tickers))) as pool:
-        results = list(pool.map(ticker_legs, [(t, args.start, end, args.cost_bps) for t in args.tickers]))
+        results = list(pool.map(ticker_legs, [(t, args.start, end, args.cost_bps, args.overnight_mode)
+                                              for t in args.tickers]))
     trades = pd.concat([r[0] for r in results])
     buy_hold = {r[1]: r[2] for r in results}
     gated = gated_sessions(args.start, end)
@@ -198,7 +206,8 @@ def main(argv=None):
     trades["dollars"] = trades["pct"] / 100 * args.capital / len(args.tickers)
     pd.set_option("display.width", 250)
     print(f"{len(args.tickers)} tickers, {args.start} to {end}, ${args.capital:,.0f} (${args.capital / len(args.tickers):,.0f} "
-          f"per ticker per trade), {args.cost_bps:g} bps; gated sessions: {len({d for d in gated if args.start <= d <= end})}")
+          f"per ticker per trade), {args.cost_bps:g} bps, overnight long {args.overnight_mode}; gated sessions: "
+          f"{len({d for d in gated if args.start <= d <= end})}")
     table = pd.DataFrame({name: summarize(trades[mask(trades)], args.capital) for name, mask in plans().items()}).T
     print(table.to_string(float_format=lambda v: f"{v:+,.1f}"))
     average = sum(buy_hold.values()) / len(buy_hold)
