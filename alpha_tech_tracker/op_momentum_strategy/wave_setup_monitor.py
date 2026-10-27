@@ -26,6 +26,11 @@ plus a CSV log:
                opt-in, it did not hold up out of sample. On `--short-tickers`, default the config's tickers
                plus QQQ; `--short-setups` picks them, `--no-short-setups` turns them off. On gated sessions
                the long overnight holds are skipped, and a configured `drive short` is not alerted twice.
+  RAISE STOP / BUY (re-entry)
+               opt-in drive long options: `--drive-trail` raises an open drive long's stop to each new
+               confirmed dip low (wave setting 7 bars / 38.2% / 1.5); `--drive-reentry` buys once after a
+               drive long stop-out when a bar closes back above the stop-out level (before 15:00), stop the
+               low since the stop-out, held to the close (Findings 32, 35, 36).
   Start-up    drive long and overnight hold win rates: the last 10 sessions pooled over the stats
                tickers (`--stats-tickers`), and day by day for the last 3 sessions over the monitored
                tickers (signal_stats). `--no-signal-stats` turns it off.
@@ -144,6 +149,7 @@ from alpha_tech_tracker.op_momentum_strategy.short_setups import (
     SETUP_NAMES as SHORT_NAMES,
     SHORT_SETUPS,
     RetestShort,
+    TurnTracker,
     gate_status,
     next_session_adr,
 )
@@ -179,6 +185,10 @@ FLUSH_GRACE_SECONDS = 20
 STREAM_TIMEOUT_SECONDS = 120
 RETEST_CANCEL = f"{RETEST_WINDOW[1]:%H:%M}"
 CONFIG_DRIVE_SHORT = "drive short"
+DRIVE_LONG = "drive long"
+DRIVE_REENTRY = "drive long re-entry"
+DRIVE_TRAIL_SETTING = (7, 0.382, 1.5)  # wave setting the drive-trail was chosen with (ticker-tuning doc, Finding 32)
+DRIVE_REENTRY_LATEST = time(15, 0)
 DELAYED_DATA_MINUTES = 16  # Alpaca plans without real-time SIP only serve SIP history older than 15 min
 BAR_MINUTES = 5
 EXIT_TEXT = {
@@ -477,7 +487,7 @@ class WaveSetupMonitor:
                  daily_closes_loader=None, close_decision_bar=DEFAULT_CLOSE_DECISION_BAR,
                  reversal_patterns=REVERSAL_PATTERNS, stats_tickers=DEFAULT_STATS_TICKERS,
                  stats_daily_loader=None, short_setups=DEFAULT_SHORT_SETUPS, short_gate="qqq-ma50", short_tickers=None,
-                 extra_tickers=()):
+                 extra_tickers=(), drive_trail=False, drive_reentry=False):
         self.setups = setups_by_ticker
         self.tickers = list(setups_by_ticker)
         self.client = market_data_client
@@ -502,6 +512,9 @@ class WaveSetupMonitor:
         self.short_adr = {}
         # streamed only for the short setups or an open overnight trade: no reversal alerts, not in the signal stats
         self.extra_tickers = set(extra_tickers)
+        self.drive_trail = drive_trail
+        self.drive_reentry = drive_reentry
+        self.drive_trackers = {}
         self.decision_lead = datetime.combine(date.today(), REGULAR_CLOSE) - datetime.combine(date.today(),
                                                                                                 close_decision_bar)
         self._set_session_times(_now_et().date())
@@ -564,6 +577,7 @@ class WaveSetupMonitor:
                                    f"{', '.join(short)}; their filtered overnight holds will not fire today")
         self._load_state()
         self._prepare_shorts()
+        self._prepare_drive_trail()
         self._catch_up_trades()
         self.refetch_before = period_start(now) + timedelta(minutes=BAR_MINUTES)
         self._save_state()
@@ -614,6 +628,7 @@ class WaveSetupMonitor:
             if not missing.empty:
                 self.bars[ticker] = pd.concat([self.bars[ticker], missing]).sort_index()
                 self._rebuild_reversal_watch(ticker)
+                self._prepare_drive_trail([ticker])
                 logger.info("%s: backfilled %d bars from %s", ticker, len(missing), f"{gap_start:%H:%M}")
         self._save_state()
 
@@ -773,6 +788,7 @@ class WaveSetupMonitor:
         logger.info("5-min %-6s %s O=%.2f H=%.2f L=%.2f C=%.2f (%d min)", ticker, f"{bar['time']:%H:%M}",
                     bar["open"], bar["high"], bar["low"], bar["close"], bar.get("minutes", BAR_MINUTES))
         self._update_trades(ticker, bar)
+        self._drive_long_options(ticker, bar)
         self._check_reversals(ticker, bar)
         self._check_shorts(ticker, bar)
         if bar["time"].time() < self.close_decision_bar:
@@ -832,6 +848,80 @@ class WaveSetupMonitor:
             self.alerted.update(s.key for s in signals)
             self._alert(None, "LOW?" if side == "bottom" else "HIGH?", signals[0].price, reversal_message(signals),
                         ticker=ticker, setup="reversal " + " + ".join(s.pattern for s in signals))
+
+    # --- drive long options ---------------------------------------------------
+
+    def _drive_tickers(self):
+        return [t for t, specs in self.setups.items() if any(spec.name == DRIVE_LONG for spec in specs)]
+
+    def _prepare_drive_trail(self, tickers=None):
+        """Rebuild drive long tickers' wave turns from the previous session and today's bars (no alerts)."""
+        if not self.drive_trail:
+            return
+        for ticker in tickers or self._drive_tickers():
+            if ticker not in self._drive_tickers():
+                continue
+            tracker = TurnTracker(*DRIVE_TRAIL_SETTING)
+            bars = self.bars[ticker].sort_index()
+            previous = [d for d in sorted(set(bars.index.date)) if d < self.session][-1:]
+            for stamp, row in bars[bars.index.date >= (previous[0] if previous else self.session)].iterrows():
+                tracker.turn(stamp, {k: float(row[k]) for k in ("open", "high", "low", "close")})
+            tracker.last_time = bars.index[-1] if not bars.empty else None
+            self.drive_trackers[ticker] = tracker
+
+    def _drive_long_options(self, ticker, bar):
+        """After the bar's stop checks: raise open drive longs' stops to a newly confirmed dip low (`--drive-trail`),
+        and buy once back above a drive long's stop-out level (`--drive-reentry`)."""
+        if bar["time"].date() != self.session:
+            return
+        try:
+            if self.drive_trail:
+                self._trail_drive_long(ticker, bar)
+            if self.drive_reentry:
+                self._reenter_drive_long(ticker, bar)
+        except Exception:
+            logger.exception("%s: drive long option failed on the %s bar", ticker, f"{bar['time']:%H:%M}")
+
+    def _trail_drive_long(self, ticker, bar):
+        tracker = self.drive_trackers.get(ticker)
+        if tracker is None:
+            return
+        if tracker.last_time is not None and bar["time"] <= tracker.last_time:
+            self._prepare_drive_trail([ticker])
+            return
+        tracker.last_time = bar["time"]
+        turn = tracker.turn(bar["time"], bar)
+        if not turn or turn[0] != "up":
+            return
+        dip = turn[1]
+        for trade in self.trades:
+            if (trade.ticker == ticker and trade.setup in (DRIVE_LONG, DRIVE_REENTRY) and trade.side == 1
+                    and trade.status == "open" and trade.stop is not None and dip > trade.stop):
+                trade.stop = dip
+                self._alert(trade, "RAISE STOP", dip,
+                            f"RAISE STOP {ticker} | {trade.setup} | stop {dip:.2f} (new higher dip low)")
+
+    def _reenter_drive_long(self, ticker, bar):
+        stamp = bar["time"]
+        key = f"{ticker}|{DRIVE_REENTRY}|{self.session.isoformat()}"
+        stopped = next((t for t in self.trades if t.ticker == ticker and t.setup == DRIVE_LONG and t.side == 1
+                        and t.outcome == "stop" and t.entry_time.date() == self.session), None)
+        if (stopped is None or key in self.alerted or stamp <= stopped.exit_time
+                or stamp.time() >= DRIVE_REENTRY_LATEST or stamp.time() >= self.close_decision_bar):
+            return
+        level = stopped.stop
+        if not bar["close"] > level:
+            return
+        frame = self.bars[ticker]
+        low_since = float(frame[(frame.index >= stopped.exit_time) & (frame.index <= stamp)]["low"].min())
+        self.alerted.add(key)
+        trade = LiveTrade(ticker=ticker, setup=DRIVE_REENTRY, signal="drive_long_reentry", exit_mode="eod",
+                          entry_time=stamp, side=1, entry=bar["close"], stop=low_since, target=None,
+                          risk=bar["close"] - low_since, last_bar=stamp)
+        self.trades.append(trade)
+        self._alert(trade, "BUY", trade.entry,
+                    f"BUY {ticker} | {DRIVE_REENTRY} | ~{trade.entry:.2f} ({stamp:%H:%M} bar close), back above the "
+                    f"stop-out level {level:.2f} | stop {low_since:.2f} | hold to the close")
 
     # --- down-market shorts --------------------------------------------------
 
@@ -1320,7 +1410,8 @@ def _run_monitor(args):
                                stats_tickers=[] if args.no_signal_stats else args.stats_tickers,
                                short_setups=short_setups, short_gate=args.short_gate,
                                short_tickers=short_tickers if short_setups else [],
-                               extra_tickers=set(setups) - configured)
+                               extra_tickers=set(setups) - configured,
+                               drive_trail=args.drive_trail, drive_reentry=args.drive_reentry)
 
     def _stop(signum, frame):
         raise KeyboardInterrupt
@@ -1370,6 +1461,11 @@ def parse_args(argv=None):
                         help="Reversal candles alerted (information only) near wave lows/highs (default: all: "
                              "piercing = piercing / dark cloud, push, long_tail = long tail confirmed by the next bar)")
     parser.add_argument("--no-reversal-alerts", action="store_true", help="No reversal candle alerts")
+    parser.add_argument("--drive-trail", action="store_true",
+                        help="Raise an open drive long's stop to each new confirmed dip low (RAISE STOP alerts)")
+    parser.add_argument("--drive-reentry", action="store_true",
+                        help="After a drive long stop-out, BUY once when a bar closes back above the stop-out level "
+                             "(before 15:00), stop the low since the stop-out, held to the close")
     parser.add_argument("--short-setups", nargs="+", choices=SHORT_SETUPS, default=list(DEFAULT_SHORT_SETUPS),
                         help="Down-market shorts alerted on gated sessions (default: drive overnight; retest is "
                              "opt-in, it did not hold up out of sample)")

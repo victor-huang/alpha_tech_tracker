@@ -182,6 +182,21 @@ For NYSE-listed tickers (SPOT, CRM, LLY, ...) use `--close-decision-bar 15:40`: 
 uses the 15:40 bar and the alert comes about 15:45. Entries are not alerted from the decision
 bar on.
 
+## Drive long options
+
+Two opt-in changes to the config's `drive long` trades (off by default; ticker-tuning doc, Findings 32, 35, 36):
+
+- **`--drive-trail`:** while a drive long is open, each newly confirmed dip (the wave model with 7-bar waves, 38.2%
+  retrace, 1.5 average bars) raises its stop to the dip's low → `RAISE STOP ticker | drive long | stop X`. The bar's
+  stop check comes first, then the raise. It beat plain drive long on 8 of 13 single-ticker checks by small margins:
+  it helps in strong uptrends and gives a little back in chop.
+- **`--drive-reentry`:** after a drive long is stopped out, one `BUY ticker | drive long re-entry | ... back above the
+  stop-out level X | stop Y | hold to the close` when a bar closes back above the stop that was hit, before 15:00;
+  stop at the low since the stop-out. It helped where stop-outs recovered (PLTR, AMD, SNPS) and hurt where they kept
+  falling (CRWV, DDOG, MDB): better in 6 of 11 ticker-periods of 2025–26, not yet checked on 2020–24.
+
+With both on, the re-entry is trailed too and its stop-out level is the raised stop; that combination was not tested.
+
 ## Short alerts
 
 On sessions where the market gate is on, the monitor also alerts down-market shorts (`short_setups.py`). They are the
@@ -379,6 +394,8 @@ difference is the close rule below (GOOGL drive long on Sep 30 hit its stop afte
 | `--workers` | CPUs − 1 | Processes evaluating setups (0 = main process) |
 | `--reversal-patterns ...` | `piercing push long_tail` | Reversal candles alerted (information only) |
 | `--no-reversal-alerts` | off | No reversal alerts |
+| `--drive-trail` | off | Raise an open drive long's stop to each new confirmed dip low |
+| `--drive-reentry` | off | One drive long re-entry back above the stop-out level |
 | `--short-setups ...` | `drive overnight` | Down-market shorts alerted on gated sessions (`retest` opt-in) |
 | `--no-short-setups` | off | No short setups |
 | `--short-gate` | `qqq-ma50` | When shorts are on: `qqq-ma50`, `always`, `off` |

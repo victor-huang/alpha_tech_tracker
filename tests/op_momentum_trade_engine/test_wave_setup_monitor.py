@@ -899,6 +899,127 @@ class TestOpenOvernightTickers:
         assert open_overnight_tickers(tmp_path / "none.json") == []
 
 
+def _drive_long(entry_time="2026-10-06 09:30", entry=101.0, stop=100.0, **kwargs):
+    return LiveTrade(ticker="AMD", setup="drive long", signal="drive_long", exit_mode="eod", side=1, entry=entry,
+                     stop=stop, target=103.0, risk=entry - stop, entry_time=_ts(entry_time), last_bar=_ts(entry_time),
+                     **kwargs)
+
+
+class TestDriveTrail:
+    def _monitor(self, tmp_path, clock, **kwargs):
+        return _monitor(tmp_path, {"AMD": ["drive long"]}, clock, drive_trail=True, **kwargs)
+
+    def test_new_higher_dip_raises_the_stop(self, tmp_path, mocker):
+        mocker.patch.object(monitor_module, "evaluate_setup", return_value=[])
+        monitor, alerts = self._monitor(tmp_path, _Clock("2026-10-06 10:30"))
+        monitor.prepare()
+        monitor.trades.append(_drive_long())
+        mocker.patch.object(monitor.drive_trackers["AMD"], "turn", return_value=("up", 100.6))
+
+        monitor._on_five_min_bar("AMD", _bar("2026-10-06 10:30", 101.5, 102.0, 101.2, 101.8))
+
+        assert monitor.trades[0].stop == 100.6
+        assert alerts == ["[wave] RAISE STOP AMD | drive long | stop 100.60 (new higher dip low)"]
+
+    def test_lower_dip_leaves_the_stop(self, tmp_path, mocker):
+        mocker.patch.object(monitor_module, "evaluate_setup", return_value=[])
+        monitor, alerts = self._monitor(tmp_path, _Clock("2026-10-06 10:30"))
+        monitor.prepare()
+        monitor.trades.append(_drive_long())
+        mocker.patch.object(monitor.drive_trackers["AMD"], "turn", return_value=("up", 99.8))
+
+        monitor._on_five_min_bar("AMD", _bar("2026-10-06 10:30", 101.5, 102.0, 101.2, 101.8))
+
+        assert (monitor.trades[0].stop, alerts) == (100.0, [])
+
+    def test_stop_is_checked_before_it_is_raised(self, tmp_path, mocker):
+        mocker.patch.object(monitor_module, "evaluate_setup", return_value=[])
+        monitor, alerts = self._monitor(tmp_path, _Clock("2026-10-06 10:30"))
+        monitor.prepare()
+        monitor.trades.append(_drive_long())
+        mocker.patch.object(monitor.drive_trackers["AMD"], "turn", return_value=("up", 100.6))
+
+        monitor._on_five_min_bar("AMD", _bar("2026-10-06 10:30", 100.4, 100.5, 99.9, 100.2))
+
+        assert (monitor.trades[0].outcome, monitor.trades[0].exit_price) == ("stop", 100.0)
+        assert not any("RAISE STOP" in a for a in alerts)
+
+    def test_off_by_default(self, tmp_path):
+        monitor, _ = _monitor(tmp_path, {"AMD": ["drive long"]}, _Clock("2026-10-06 09:00"))
+
+        monitor.prepare()
+
+        assert monitor.drive_trackers == {}
+
+
+class TestDriveReentry:
+    def _monitor(self, tmp_path, clock, **kwargs):
+        history = {"AMD": _history([("2026-10-06 09:30", 101.0), ("2026-10-06 09:35", 99.6),
+                                    ("2026-10-06 09:40", 99.2)])}
+        return _monitor(tmp_path, {"AMD": ["drive long"]}, clock, history=history, drive_reentry=True, **kwargs)
+
+    def _stopped(self, exit_price=100.0):
+        trade = _drive_long()
+        trade.close_at(_ts("2026-10-06 09:35"), exit_price, "stop")
+        return trade
+
+    def test_buys_back_above_the_stop_out_level(self, tmp_path, mocker):
+        mocker.patch.object(monitor_module, "evaluate_setup", return_value=[])
+        monitor, alerts = self._monitor(tmp_path, _Clock("2026-10-06 09:45"))
+        monitor.prepare()
+        monitor.trades.append(self._stopped())
+
+        monitor._on_five_min_bar("AMD", _bar("2026-10-06 09:45", 99.6, 100.4, 99.5, 100.3))
+
+        assert alerts == ["[wave] BUY AMD | drive long re-entry | ~100.30 (09:45 bar close), back above the stop-out "
+                          "level 100.00 | stop 99.20 | hold to the close"]
+        assert (monitor.trades[-1].side, monitor.trades[-1].stop) == (1, 99.2)
+
+    def test_level_is_the_stop_not_a_gapped_fill(self, tmp_path, mocker):
+        mocker.patch.object(monitor_module, "evaluate_setup", return_value=[])
+        monitor, alerts = self._monitor(tmp_path, _Clock("2026-10-06 09:45"))
+        monitor.prepare()
+        monitor.trades.append(self._stopped(exit_price=99.0))
+
+        monitor._on_five_min_bar("AMD", _bar("2026-10-06 09:45", 99.6, 99.9, 99.5, 99.8))
+
+        assert alerts == []
+
+    def test_only_once(self, tmp_path, mocker):
+        mocker.patch.object(monitor_module, "evaluate_setup", return_value=[])
+        monitor, alerts = self._monitor(tmp_path, _Clock("2026-10-06 09:45"))
+        monitor.prepare()
+        monitor.trades.append(self._stopped())
+        monitor._on_five_min_bar("AMD", _bar("2026-10-06 09:45", 99.6, 100.4, 99.5, 100.3))
+        monitor.trades[-1].close_at(_ts("2026-10-06 09:50"), 99.2, "stop")
+
+        monitor._on_five_min_bar("AMD", _bar("2026-10-06 09:55", 99.4, 100.6, 99.3, 100.5))
+
+        assert sum("re-entry" in a for a in alerts) == 1
+
+    def test_not_after_1500(self, tmp_path, mocker):
+        mocker.patch.object(monitor_module, "evaluate_setup", return_value=[])
+        monitor, alerts = self._monitor(tmp_path, _Clock("2026-10-06 15:05"))
+        monitor.prepare()
+        monitor.trades.append(self._stopped())
+
+        monitor._on_five_min_bar("AMD", _bar("2026-10-06 15:00", 99.6, 100.4, 99.5, 100.3))
+
+        assert alerts == []
+
+
+class TestDriveOptionArguments:
+    def test_off_by_default(self):
+        args = parse_args(["run"])
+
+        assert (args.drive_trail, args.drive_reentry) == (False, False)
+
+    def test_turned_on(self):
+        args = parse_args(["run", "--drive-trail", "--drive-reentry"])
+
+        assert (args.drive_trail, args.drive_reentry) == (True, True)
+
+
 class TestShortArguments:
     def test_all_three_by_default_with_the_qqq_gate(self):
         args = parse_args(["run"])

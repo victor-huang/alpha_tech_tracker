@@ -54,16 +54,17 @@ def gate_status(gate, closes):
     return last < ma, f"short setups {state}: {GATE_TICKER} closed {last:.2f}, {relation} its {GATE_MA}-day MA {ma:.2f}"
 
 
-class RallyTracker:
-    """Bar-by-bar wave replay (waves reset at each session open) reporting confirmed turns down and the rally high."""
+class TurnTracker:
+    """Bar-by-bar wave replay (waves reset at each session open) reporting each confirmed turn: ("down", the rally's
+    high) or ("up", the dip's low), extremes on wicks."""
 
     def __init__(self, min_length, bounce, min_ranges):
         self.min_length, self.bounce, self.min_ranges = min_length, bounce, min_ranges
         self.range_pcts = deque(maxlen=BARS_PER_SESSION)
         self.wave = None
+        self.last_time = None
 
-    def update(self, stamp, bar):
-        """The confirmed rally's high (its highest wick) when this bar confirms a turn down, else None."""
+    def turn(self, stamp, bar):
         self.range_pcts.append((bar["high"] - bar["low"]) / bar["close"])
         min_change = self.min_ranges * sum(self.range_pcts) / len(self.range_pcts)
         if self.wave is None or stamp.date() != self.wave.df.index[-1].date():
@@ -75,14 +76,26 @@ class RallyTracker:
         if not new_wave:
             return None
         new_wave.minimum_wave_length, new_wave.bounce_threshold = self.min_length, self.bounce
-        peak = float(self.wave.df["high"].max()) if before == "up" else None
-        self.wave = new_wave
-        return peak
+        ended, self.wave = self.wave, new_wave
+        if before == "up":
+            return "down", float(ended.df["high"].max())
+        if before == "down":
+            return "up", float(ended.df["low"].min())
+        return None
 
     def _new_wave(self, stamp, bar, min_change):
         wave = Wave(stamp, bar, minimum_wave_price_change=min_change)
         wave.minimum_wave_length, wave.bounce_threshold = self.min_length, self.bounce
         return wave
+
+
+class RallyTracker(TurnTracker):
+    """TurnTracker reporting only the rally high of each confirmed turn down."""
+
+    def update(self, stamp, bar):
+        """The confirmed rally's high (its highest wick) when this bar confirms a turn down, else None."""
+        turn = self.turn(stamp, bar)
+        return turn[1] if turn and turn[0] == "down" else None
 
 
 class RetestShort:

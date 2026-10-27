@@ -8,6 +8,7 @@ from alpha_tech_tracker.op_momentum_strategy.short_setups import (
     RETEST_MAX_PER_DAY,
     RallyTracker,
     RetestShort,
+    TurnTracker,
     gate_status,
     next_session_adr,
 )
@@ -67,6 +68,17 @@ class TestRallyTracker:
         tracker.update(_time(9, 30), _bar(50, 51, 49, 50))
 
         assert tracker.wave.df.index[0] == _time(9, 30)
+
+
+class TestTurnTracker:
+    def test_reports_the_dip_low_on_the_turn_up(self):
+        closes = [110 - i for i in range(10)] + [101 + i for i in range(10)]
+        tracker = TurnTracker(3, 0.236, 1.5)
+
+        turns = [tracker.turn(_time(9, 30) + timedelta(minutes=5 * i), _bar(c, c + 0.3, c - 0.3, c))
+                 for i, c in enumerate(closes)]
+
+        assert [t for t in turns if t] == [("up", pytest.approx(100.7))]
 
 
 class TestRetestShortEntry:
