@@ -93,6 +93,10 @@ earlier findings: [`WAVE_RISK_REWARD_FINDINGS.md`](WAVE_RISK_REWARD_FINDINGS.md)
   short (7 of 9 windows, +1,114 summed, big in gap-driven crashes, −211 in up-market 2026) and the drive short with one
   re-entry below the stop level (7 of 9, +318) held up. The rally-high retest short looked best until a same-bar
   look-ahead was fixed; then it lost (5 of 9, −229).
+- **$10k four-ticker portfolios in 2026 (Finding 38, 16 tickers):** drive long + the gated drive short was the best or
+  near-best plan in three of four groups (+$7,189 summed); the gated overnight short lost in all four (−$4,559) and the
+  overnight long paid only on overnight-type stocks (+$2,744 on LRCX AMAT AVGO PLTR). The drive-trail and re-entry
+  options netted about even.
 - **A ticker's intraday vs overnight split doesn't pick its setup (Finding 36):** within a window it always matches the
   better family, but measured on the previous 63 or 126 sessions it chose next month's winner 52–53% of the time
   (16 tickers, Jul 2025 – Oct 2026). Overnight holds won in H2 2025 and drive long in 2026 across the board; running
@@ -1641,6 +1645,47 @@ chosen setting (0.2 buffer, 3 / 23.6% / 3.0) went from +68.5 / +52.3 / +11.9% to
 The wave setup monitor alerts the two reliable shorts on gated sessions (`short_setups.py`; retest opt-in) and skips
 its long overnight holds on those sessions, so it never buys and shorts the same close.
 
+## Finding 38 — $10k portfolios of four tickers in 2026: which of the monitor's legs earned
+
+`analysis_scripts/setup_portfolio_check.py`. Four groups of four tickers, Jan 2 – Oct 23 2026, $10k split $2,500 per
+ticker per trade (one position per ticker at a time, not compounded), 5 bps, no borrow cost. Legs as the monitor runs
+them: drive long and its options (`--drive-trail`, `--drive-reentry`), the gated drive short + re-entry and overnight
+short (QQQ's previous close below its 50-day MA, 80 sessions), the overnight long (MA200, earnings nights skipped) on
+the other sessions. Nothing was tuned on these runs; the per-ticker best leg afterwards is only a ceiling.
+
+| Plan (return on $10k) | SNDK APP SPOT MDB | MPC FTNT QLYS SN | TSLA GOOGL AAPL META | LRCX AMAT AVGO PLTR | Sum $ |
+|---|---|---|---|---|---|
+| Buy and hold, equal weight | +83.0% | +111.1% | +1.7% | +17.5% | |
+| Monitor rules (defaults: drive long, gated shorts, overnight long / short) | +34.0% | +10.7% | −5.6% | −12.1% | +2,701 |
+| **Drive long + gated drive short** | **+51.2%** | +21.1% | **+7.4%** | −7.8% | **+7,189** |
+| Drive long only | +47.5% (−$427 DD) | +20.4% | +4.6% | −8.9% | +6,366 |
+| Drive-trail only | +46.3% (−$346 DD) | +18.8% | +3.4% | −11.0% | +5,747 |
+| Drive + re-entry only | +45.9% | +19.9% | +3.2% | −6.1% | +6,289 |
+| Drive-trail + re-entry only | +44.6% | **+22.8%** | +0.4% | −7.1% | +6,077 |
+| Overnight long on every allowed night | +2.7% | −2.2% | −9.8% | **+27.4%** | +1,813 |
+
+**$ by leg inside the monitor rules:**
+
+| Leg | Group 1 | Group 2 | Group 3 | Group 4 | Total |
+|---|---|---|---|---|---|
+| Drive long | +4,753 | +2,040 | +461 | −888 | +6,366 |
+| Gated drive short + re-entry | +364 | +70 | +276 | +113 | **+823 (up in all 4)** |
+| Overnight long (ungated sessions) | −469 | −307 | −594 | +1,440 | +70 |
+| **Overnight short (gated sessions)** | −1,244 | −735 | −706 | −1,874 | **−4,559 (down in all 4)** |
+
+- **The overnight short lost in every group** (−$4,559 on 16 tickers): the 2026 down weeks were shallow and many stocks
+  kept rising overnight while QQQ was below its 50-day MA (SNDK −$819, LRCX −$596, AVGO −$656). Its long-history
+  edge (Finding 37) came from gap-driven crashes (2020, 2022, 2025).
+- **The gated drive short was small but positive in all four groups.**
+- **Drive long earned on volatile intraday movers** (SNDK +$3,570, QLYS +$1,128, APP +$848 while APP fell 62%) and lost
+  on the overnight-type semis (LRCX AMAT AVGO PLTR: −22.6 / −8.8 / −30.2 / −5.0% intraday, +67.2 / +54.9 / +30.6 /
+  +14.2% overnight), where the overnight long made +$2,744, more than buy and hold.
+- **Low-volatility names give the intraday setups little** (TSLA GOOGL AAPL META: 2.2–3.5% daily range, drive long
+  +$461) and steady climbers are better held (MPC FTNT QLYS SN: +111% buy and hold vs +21%).
+- **The drive options net out about even:** each helped some tickers and hurt others (drive-trail best on SNDK and MPC,
+  re-entry on APP, QLYS, FTNT, LRCX, PLTR; both worst on SPOT, MDB, SN, META). Drive-trail lowered the drawdown on the
+  first group (−$346 vs −$427).
+
 ## Recommendations
 
 1. **Choose tickers before tuning settings.** The same configuration ranges from +156.66% (SNDK)
@@ -1741,6 +1786,11 @@ its long overnight holds on those sessions, so it never buys and shorts the same
     Expect thin edges (+0.06–0.15% per trade) and size the overnight short for gap risk. Don't short rallies into VWAP /
     MA20, confirmed turns down or the retest of the last rally high.
 
+33. **Run the monitor's shorts as `--short-setups drive` until a better gate is tested (Finding 38):** the overnight
+    short lost on all 16 tickers tested in 2026's shallow down weeks; keep the gated drive short. Keep the overnight
+    long for tickers that earn overnight, and expect drive long to work only on volatile intraday movers; the drive
+    options are ticker-dependent and stay opt-in.
+
 ## Reproduction
 
 ```bash
@@ -1828,6 +1878,8 @@ exactly (110 trades, +0.80%), but other settings may differ slightly.
    `wave_events(flipped, *setting, reversals=reversal_signals(flipped))`, every rider through `ride`, each trade through
    `short_pct(k, entry, exit, 5)`; the overnight short from the real bars' 15:55 close and next open; the gate from QQQ's
    daily closes shifted one session.
+   Finding 38: `python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.setup_portfolio_check SNDK APP SPOT
+   MDB --start 2026-01-02 --end 2026-10-23` (and the other three groups).
    The confirmation-lag table, the reversal-entry diagnostics, the drive long decomposition and the 11-case
    re-entry table were one-off scripts on `wave_events` / `ride` / `load_rider_bars` from `wave_rider.py`;
    intraday vs overnight from `fetch_daily_bars` (log open / previous close vs close / open).
