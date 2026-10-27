@@ -1642,8 +1642,8 @@ chosen setting (0.2 buffer, 3 / 23.6% / 3.0) went from +68.5 / +52.3 / +11.9% to
 - The gate was chosen on 2026 (it beat QQQ below its MA20, MA20 below MA50 and QQQ's trend state); it is a placeholder for
   a better market indicator.
 
-The wave setup monitor alerts the two reliable shorts on gated sessions (`short_setups.py`; retest opt-in) and skips
-its long overnight holds on those sessions, so it never buys and shorts the same close.
+The wave setup monitor alerts the two reliable shorts on gated sessions (`short_setups.py`; retest opt-in) and, when
+the overnight short is on, skips its long overnight holds on those sessions, so it never buys and shorts the same close.
 
 ## Finding 38 — $10k portfolios of four tickers in 2026: which of the monitor's legs earned
 
@@ -1685,6 +1685,25 @@ the other sessions. Nothing was tuned on these runs; the per-ticker best leg aft
 - **The drive options net out about even:** each helped some tickers and hurt others (drive-trail best on SNDK and MPC,
   re-entry on APP, QLYS, FTNT, LRCX, PLTR; both worst on SPOT, MDB, SN, META). Drive-trail lowered the drawdown on the
   first group (−$346 vs −$427).
+
+**Two more groups, and the monitor with `--short-setups drive`.** P MU DDOG SNOW (buy and hold +105.5%) and FANG BABA
+OKLO PANW (+10.8%) repeated the pattern: the gated overnight short lost again (−$1,432, −$785; 0 of 6 groups, −$6,776 on
+24 tickers), drive long earned (+$1,124, +$1,296). The monitor used to skip the long overnight hold on every gated
+session; those skipped nights would have made +$2,953 across the six groups. It now skips them only when the overnight
+short is on, so `--short-setups drive` keeps them:
+
+| Group | Monitor defaults | Monitor with `--short-setups drive` |
+|---|---|---|
+| SNDK APP SPOT MDB | +$3,405 (+34.0%) | **+$5,389 (+53.9%)** |
+| MPC FTNT QLYS SN | +$1,068 (+10.7%) | **+$1,890 (+18.9%)** |
+| TSLA GOOGL AAPL META | −$563 (−5.6%) | **−$246 (−2.5%)** |
+| LRCX AMAT AVGO PLTR | −$1,209 (−12.1%) | **+$1,969 (+19.7%)** |
+| P MU DDOG SNOW | +$83 (+0.8%) | **+$2,387 (+23.9%)** |
+| FANG BABA OKLO PANW | +$184 (+1.8%) | **+$1,305 (+13.1%)** |
+| **Total** | **+$2,968** | **+$12,694** |
+
+Better in all six groups, with a smaller drawdown in four. The case for the overnight short rests on crashes (2020,
+2022, 2025, Finding 37), which 2026 did not have; the default keeps it so a crash is covered.
 
 ## Recommendations
 

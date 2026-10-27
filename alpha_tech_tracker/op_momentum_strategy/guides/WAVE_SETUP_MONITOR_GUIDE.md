@@ -226,8 +226,11 @@ else here.
 The edges are thin (+0.06–0.15% per trade, summed at $10k per trade, 5 bps, no borrow cost) and the overnight short
 carries gap risk; `--no-short-setups` turns them all off.
 
-- **On a gated session the long overnight holds are skipped** (`SKIP ... short setups are on today`): no long setup
-  earned in a falling market, and the overnight short may be alerted for the same ticker.
+- **On a gated session with the overnight short on, the long overnight holds are skipped** (`SKIP ... short setups
+  are on today`), so the monitor never alerts BUY and SHORT at the same close. With `--short-setups drive` the long
+  holds stay on: in 2026 the overnight short lost on all 24 tickers tested (−$6,776) while the skipped long holds would
+  have made +$2,953 (ticker-tuning doc, Finding 38), so `--short-setups drive` suits shallow pullbacks; turn the
+  overnight short back on for a crash.
 - **A configured `drive short` setup** already alerts the red-first-bar short, so the monitor doesn't send a second
   one for that ticker; its stop-out still gets the re-entry.
 - **Tickers added only for shorts** (QQQ by default) get no reversal alerts and are left out of the start-up stats.

@@ -82,6 +82,13 @@ class TestPlans:
         assert self._trades()[mask].values.tolist() == [["drive long", False], ["drive long", True],
                                                          ["drive short + re-entry", True]]
 
+    def test_short_setups_drive_keeps_the_overnight_long_on_gated_days(self):
+        mask = plans()["monitor with --short-setups drive (overnight long every allowed night)"](self._trades())
+
+        assert self._trades()[mask].values.tolist() == [
+            ["drive long", False], ["drive long", True], ["drive short + re-entry", True],
+            ["overnight long", False], ["overnight long", True]]
+
 
 class TestSummarize:
     def test_totals_and_drawdown(self):

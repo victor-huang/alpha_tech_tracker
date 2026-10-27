@@ -25,7 +25,8 @@ plus a CSV log:
                default; retest (a sell limit at the retest of the last confirmed rally high, trailing stop) is
                opt-in, it did not hold up out of sample. On `--short-tickers`, default the config's tickers
                plus QQQ; `--short-setups` picks them, `--no-short-setups` turns them off. On gated sessions
-               the long overnight holds are skipped, and a configured `drive short` is not alerted twice.
+               with the overnight short on, the long overnight holds are skipped; a configured `drive short`
+               is not alerted twice.
   RAISE STOP / BUY (re-entry)
                opt-in drive long options: `--drive-trail` raises an open drive long's stop to each new
                confirmed dip low (wave setting 7 bars / 38.2% / 1.5); `--drive-reentry` buys once after a
@@ -1145,7 +1146,7 @@ class WaveSetupMonitor:
                 if self.half_day:
                     logger.info("%s: %s skipped on an early-close day (the backtest skips them)", ticker, spec.name)
                     continue
-                if self.shorts_on:
+                if self.shorts_on and "overnight" in self.short_setups:
                     self._skip_overnight_hold(ticker, spec)
                     continue
                 self._overnight_entry(ticker, spec)
@@ -1157,8 +1158,8 @@ class WaveSetupMonitor:
                 self._overnight_short_entry(ticker)
 
     def _skip_overnight_hold(self, ticker, spec):
-        """On a session the short gate is on, long overnight holds are skipped (no long setup earns in a falling
-        market, and the overnight short may be alerted for the same ticker)."""
+        """On a session the overnight short is on, long overnight holds are skipped, so the monitor never alerts BUY
+        and SHORT at the same close. With the overnight short off (`--short-setups drive`) the holds stay on."""
         key = f"{ticker}|{spec.name}|{self.session.isoformat()}"
         if key in self.alerted:
             return

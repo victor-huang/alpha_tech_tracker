@@ -832,6 +832,19 @@ class TestShortReviewFixes:
         assert alerts[0].startswith("[wave] SKIP AMD | overnight always | short setups are on today (short setups on: QQQ")
         assert [t.setup for t in monitor.trades] == ["short overnight"]
 
+    def test_gated_session_keeps_the_hold_when_the_overnight_short_is_off(self, tmp_path):
+        clock = _Clock("2026-10-06 15:50")
+        monitor, alerts = _monitor(tmp_path, {"AMD": ["overnight always"]}, clock,
+                                   history={"AMD": _history([("2026-10-06 15:45", 100.0)])},
+                                   closes={**QQQ_FALLING, "AMD": [100.0] * 250}, short_setups=("drive",))
+        monitor.prepare()
+
+        monitor.tick()
+
+        assert monitor.shorts_on
+        assert [t.setup for t in monitor.trades] == ["overnight always"]
+        assert not any("SKIP" in a for a in alerts)
+
     def test_ungated_session_keeps_the_long_overnight_hold(self, tmp_path):
         clock = _Clock("2026-10-06 15:50")
         monitor, alerts = _monitor(tmp_path, {"AMD": ["overnight always"]}, clock,

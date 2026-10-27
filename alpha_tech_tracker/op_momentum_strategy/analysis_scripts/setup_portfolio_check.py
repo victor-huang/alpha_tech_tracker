@@ -14,7 +14,8 @@ position per ticker at a time, not compounded):
 
 The short legs and the overnight long follow the monitor's market gate (QQQ's previous close below its 50-day MA):
 shorts only on gated sessions, the overnight long only on the others. Plans combine the legs; "monitor rules" is what
-the monitor alerts with its defaults (plus the chosen drive long variant).
+the monitor alerts with its defaults (plus the chosen drive long variant); with `--short-setups drive` the monitor keeps
+the overnight long on gated sessions too.
 
   python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.setup_portfolio_check SNDK APP SPOT MDB \\
     --start 2026-01-02 --end 2026-10-23
@@ -158,6 +159,8 @@ def plans():
         out[f"{variant} only"] = (lambda v: lambda x: x["leg"] == v)(variant)
         out[f"{variant} + gated drive short"] = (lambda v: lambda x: (x["leg"] == v) | (
             (x["leg"] == "drive short + re-entry") & x["gated"]))(variant)
+    out["monitor with --short-setups drive (overnight long every allowed night)"] = lambda x: (
+        (x["leg"] == "drive long") | ((x["leg"] == "drive short + re-entry") & x["gated"]) | (x["leg"] == "overnight long"))
     out["overnight long only (every allowed night)"] = lambda x: x["leg"] == "overnight long"
     out["drive long + overnight long (no shorts)"] = lambda x: x["leg"].isin(["drive long", "overnight long"])
     return out
