@@ -97,6 +97,10 @@ earlier findings: [`WAVE_RISK_REWARD_FINDINGS.md`](WAVE_RISK_REWARD_FINDINGS.md)
   near-best plan in three of four groups (+$7,189 summed); the gated overnight short lost in all four (−$4,559) and the
   overnight long paid only on overnight-type stocks (+$2,744 on LRCX AMAT AVGO PLTR). The drive-trail and re-entry
   options netted about even.
+- **Up vs down markets in 2026 on the prod tickers (Finding 39, four windows):** the overnight hold and pullback long
+  switch with the market (overnight always +0.86% / +0.25% per trade in the up windows, −0.29% / −0.81% in the down
+  windows, every ticker the same way); drive long led the up windows but was flat in Jan – Mar; the short setups paid
+  only from Oct 12, and the QQQ < MA50 gate switched about a week late at both 2026 turns.
 - **A ticker's intraday vs overnight split doesn't pick its setup (Finding 36):** within a window it always matches the
   better family, but measured on the previous 63 or 126 sessions it chose next month's winner 52–53% of the time
   (16 tickers, Jul 2025 – Oct 2026). Overnight holds won in H2 2025 and drive long in 2026 across the board; running
@@ -1708,6 +1712,63 @@ SNDK AMD SNPS. On those four, `--overnight-mode always` changed the totals by +$
 +$371 (`--short-setups drive`: +$8,887 → +$9,258), so the comparison holds. The case for the overnight short rests on crashes (2020,
 2022, 2025, Finding 37), which 2026 did not have; the default keeps it so a crash is covered.
 
+## Finding 39 — Which setups hold up in 2026's up and down markets (the prod tickers, four windows)
+
+The seven tickers the EC2 monitor watches (MRNA SNDK APP AMD MDB CRWV SNPS), every setup in four 2026 windows: two down
+(Jan 28 – Mar 30, Oct 12 – Nov 6) and two up (Mar 31 – Apr 17, Jul 27 – Oct 9). Setup report trades at the fixed exits
+(`REPORT_EXITS`), plus the monitor's drive options and the drive short + re-entry from `setup_portfolio_check`
+(`ticker_legs`); 5 bps; earnings nights skipped by the overnight setups. % per trade is the mean net return per trade
+across the seven tickers (number of trades in brackets).
+
+| Setup | Up Mar 31 – Apr 17 | Up Jul 27 – Oct 9 | Down Jan 28 – Mar 30 | Down Oct 12 – Nov 6 | Same direction in both pairs? |
+|---|---|---|---|---|---|
+| overnight always | **+0.86%** (91) | +0.25% (371) | **−0.29%** (294) | **−0.81%** (129) | yes |
+| overnight ma200 | +0.84% (44) | +0.28% (221) | −0.25% (153) | −1.04% (78) | yes |
+| pullback long | +0.79% (22) | +0.55% (107) | −0.23% (74) | −0.08% (36) | yes |
+| pullback long C1 | +0.90% (15) | +0.83% (61) | −0.20% (33) | −0.13% (18) | yes |
+| bounce long | +0.19% (27) | +0.06% (130) | −0.04% (106) | −0.06% (50) | yes, small |
+| drive long | +0.39% (51) | +0.84% (180) | **−0.05%** (160) | +0.60% (55) | no: flat in Jan – Mar |
+| drive-trail | +0.34% (51) | +0.87% (180) | +0.02% (160) | +0.48% (55) | no: flat in Jan – Mar |
+| drive long + re-entry | +0.28% (86) | +0.55% (256) | −0.14% (241) | +0.62% (73) | no |
+| drive short + re-entry, every day | −0.50% (57) | −0.09% (295) | +0.09% (215) | +0.26% (123) | yes, weak in Jan – Mar |
+| drive short + re-entry, gated (QQQ < MA50) | **−0.71%** (26) | −0.11% (98) | −0.12% (180) | +0.21% (88) | no |
+| drive short (close exit) | +0.08% (40) | −0.17% (198) | −0.06% (141) | +0.32% (84) | no |
+| pullback short | −0.22% (25) | −0.36% (88) | −0.27% (72) | +0.39% (35) | no |
+| box break | −0.25% (32) | +0.03% (156) | −0.17% (132) | +0.28% (59) | no |
+| box gap | −0.15% (18) | −0.49% (66) | −0.43% (56) | −0.02% (35) | negative in all four |
+
+**Overnight always per trade by ticker:**
+
+| Ticker | Up Mar 31 – Apr 17 | Up Jul 27 – Oct 9 | Down Jan 28 – Mar 30 | Down Oct 12 – Nov 6 |
+|---|---|---|---|---|
+| MRNA | +0.28% | +1.07% | −0.37% | −0.98% |
+| SNDK | +1.32% | +0.40% | −0.03% | −0.52% |
+| APP | +1.11% | −0.10% | −0.52% | −0.25% |
+| AMD | +0.69% | +0.27% | −0.27% | −0.85% |
+| MDB | +0.64% | −0.52% | −0.29% | −0.71% |
+| CRWV | +1.38% | +0.18% | −0.25% | −1.92% |
+| SNPS | +0.60% | +0.44% | −0.30% | −0.43% |
+
+- **The overnight hold follows the market.** All seven tickers lost overnight in both down windows (earnings nights
+  already skipped; the worst were ordinary gap-downs such as AMD −10.2% on 10/29) and all seven made money from
+  Mar 31 to Apr 17. Since Oct 12 it cost −15.0% on $10k ($1,429 a trade), more than any setup made.
+- **Pullback long (and C1) only work in uptrends:** +0.55% to +0.90% per trade in both up windows, negative in both down
+  windows.
+- **Drive long is not market-proof.** It led both up windows and held +0.60% from Oct 12, but was flat in Jan – Mar
+  (−0.05%, 29% won; MRNA, AMD and MDB lost while APP, SNDK and CRWV made +0.56% to +0.78%). Re-entry lowers the
+  per-trade return in uptrends (+0.55% vs +0.84%) and was worse in Jan – Mar (−0.14%).
+- **The short setups are not a dependable down-market replacement.** They paid from Oct 12 (drive short +0.32%,
+  pullback short +0.39%) but not across Jan – Mar, where only the every-day drive short + re-entry stayed positive
+  (+0.09%) and the gated one lost (−0.12%).
+- **The QQQ < MA50 gate is slow at turns.** It switched on Feb 4, a week into the Jan 28 decline, and stayed on through
+  Apr 8, the first six sessions of the rally; the gated drive short lost −0.71% per trade there. In the Jul 27 – Oct 9
+  uptrend it was on for 19 of 54 sessions (late Jul – early Aug, late Aug, mid Sep).
+- **The prod config (picked Oct 7 on Jul 9 – Oct 6) is an uptrend config:** MRNA's drive long (+4.28% per trade from
+  Jul 27), overnight always and pullback long, SNDK's drive long. From Oct 12 only 3 of the 21 per-ticker top-3 picks
+  were in it. Replaying the config for Nov 2–6 (its setups at the fixed exits, plus the gated drive short + re-entry
+  where the config has no drive short): +$452 on $10k (+4.5%, 65 trades, 46% won), vs +$799 for the generic
+  `--short-setups drive` mix of Finding 38.
+
 ## Recommendations
 
 1. **Choose tickers before tuning settings.** The same configuration ranges from +156.66% (SNDK)
@@ -1813,6 +1874,11 @@ SNDK AMD SNPS. On those four, `--overnight-mode always` changed the totals by +$
     long for tickers that earn overnight, and expect drive long to work only on volatile intraday movers; the drive
     options are ticker-dependent and stay opt-in.
 
+34. **Turn the overnight hold and the long pullbacks off in down markets (Finding 39):** both 2026 down windows lost on
+    every ticker overnight. Don't count on the short setups to replace them, and don't treat drive long as safe in every
+    market. Test a faster market switch than QQQ < MA50 on the Jan 28 and Mar 31 turns, and refresh the monitor config
+    when the market turns; the Oct 7 config was picked in an uptrend.
+
 ## Reproduction
 
 ```bash
@@ -1902,6 +1968,9 @@ exactly (110 trades, +0.80%), but other settings may differ slightly.
    daily closes shifted one session.
    Finding 38: `python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.setup_portfolio_check SNDK APP SPOT
    MDB --start 2026-01-02 --end 2026-10-23` (and the other three groups).
+   Finding 39: `wave_risk_reward_setup_report --tickers MRNA SNDK APP AMD MDB CRWV SNPS --start <window start> --end
+   <window end>` per window, trades at `REPORT_EXITS`; the drive options and drive short + re-entry from `ticker_legs`
+   (`setup_portfolio_check`, overnight mode always), gated by `gated_sessions`; % per trade = mean `net_pct`.
    The confirmation-lag table, the reversal-entry diagnostics, the drive long decomposition and the 11-case
    re-entry table were one-off scripts on `wave_events` / `ride` / `load_rider_bars` from `wave_rider.py`;
    intraday vs overnight from `fetch_daily_bars` (log open / previous close vs close / open).
