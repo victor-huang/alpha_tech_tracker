@@ -5,10 +5,12 @@ import pytest
 import pytz
 
 from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.setup_portfolio_check import (
+    gated_sessions,
     parse_args,
     plans,
     summarize,
     trail_reentry,
+    trend_mask,
 )
 
 ET = pytz.timezone("America/New_York")
@@ -111,3 +113,54 @@ class TestParseArgs:
 
     def test_overnight_mode_always(self):
         assert parse_args(["AMD", "--start", "2026-01-02", "--overnight-mode", "always"]).overnight_mode == "always"
+
+
+def _daily(closes, start=date(2026, 7, 1)):
+    index = [start + timedelta(days=i) for i in range(len(closes))]
+    return pd.DataFrame({"high": [c + 1.0 for c in closes], "close": closes}, index=index)
+
+
+RISING = _daily([100.0 + i for i in range(60)])
+FALLING = _daily([160.0 - i for i in range(60)])
+SESSION = date(2026, 8, 30)
+
+
+class TestTrendMask:
+    def _trades(self):
+        rows = [("AMD", SESSION, "overnight long"), ("AMD", SESSION, "drive short + re-entry"),
+                ("AMD", SESSION, "drive long"), ("META", SESSION, "drive short + re-entry")]
+        return pd.DataFrame(rows, columns=["ticker", "day", "leg"])
+
+    def test_overnight_long_dropped_when_qqq_fails(self):
+        keep = trend_mask(self._trades(), ["overnight"], {"QQQ": FALLING})
+
+        assert keep.tolist() == [False, True, True, True]
+
+    def test_drive_short_kept_only_for_the_falling_ticker(self):
+        keep = trend_mask(self._trades(), ["drive-short"], {"QQQ": FALLING, "AMD": FALLING, "META": RISING})
+
+        assert keep.tolist() == [True, True, True, False]
+
+    def test_drive_short_dropped_when_qqq_is_above_its_ema(self):
+        keep = trend_mask(self._trades(), ["drive-short"], {"QQQ": RISING, "AMD": FALLING, "META": FALLING})
+
+        assert keep.tolist() == [True, False, True, False]
+
+
+class TestGatedSessions:
+    def test_always_gates_every_day(self):
+        assert gated_sessions(date(2026, 10, 12), date(2026, 10, 14), "always") == {
+            date(2026, 10, 12), date(2026, 10, 13), date(2026, 10, 14)}
+
+
+class TestTrendArguments:
+    def test_defaults(self):
+        args = parse_args(["AMD", "--start", "2026-01-02"])
+
+        assert (args.short_gate, args.trend_filters) == ("qqq-ma50", [])
+
+    def test_filters_and_gate(self):
+        args = parse_args(["AMD", "--start", "2026-01-02", "--short-gate", "always", "--trend-filters", "overnight",
+                           "drive-short"])
+
+        assert (args.short_gate, args.trend_filters) == ("always", ["overnight", "drive-short"])

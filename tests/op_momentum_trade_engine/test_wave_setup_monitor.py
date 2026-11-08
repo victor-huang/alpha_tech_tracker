@@ -639,6 +639,19 @@ class TestLoadDailyCloseSeries:
         assert closes["META"].empty
 
 
+class TestLoadDailyBars:
+    def test_highs_and_closes_before_the_session(self, mocker):
+        daily = pd.DataFrame({"High": [10.5, 11.5, 12.5], "Close": [10.0, 11.0, 12.0]},
+                             index=pd.to_datetime(["2026-10-02", "2026-10-05", "2026-10-06"]))
+        mocker.patch.object(monitor_module, "fetch_daily_bars", return_value={"AMD": daily})
+
+        bars = monitor_module._load_daily_bars(["AMD", "META"], date(2026, 10, 6))
+
+        assert bars["AMD"].to_dict("index") == {date(2026, 10, 2): {"high": 10.5, "close": 10.0},
+                                                date(2026, 10, 5): {"high": 11.5, "close": 11.0}}
+        assert bars["META"].empty
+
+
 class TestReversalAfterErrors:
     def test_watch_error_rebuilds_the_watch(self, tmp_path, mocker):
         clock = _Clock("2026-09-01 11:00")
@@ -1093,6 +1106,128 @@ class TestShortArguments:
     def test_unknown_gate_is_rejected(self):
         with pytest.raises(SystemExit):
             parse_args(["run", "--short-gate", "vix"])
+
+
+def _daily(closes):
+    index = [date(2026, 7, 1) + pd.Timedelta(days=i) for i in range(len(closes))]
+    return pd.DataFrame({"high": [c + 1.0 for c in closes], "close": closes}, index=index)
+
+
+DAILY_RISING = _daily([100.0 + i for i in range(60)])
+DAILY_FALLING = _daily([160.0 - i for i in range(60)])
+
+
+def _daily_loader(daily):
+    return lambda tickers, session: {t: daily[t] for t in tickers if t in daily}
+
+
+class TestTrendFilters:
+    def _monitor(self, tmp_path, clock, setups, daily, closes=None, **kwargs):
+        return _monitor(tmp_path, setups, clock, closes=closes, trend_daily_loader=_daily_loader(daily), **kwargs)
+
+    def test_off_by_default(self, tmp_path):
+        monitor, alerts = _monitor(tmp_path, {"AMD": ["pullback long"]}, _Clock("2026-10-06 09:00"))
+
+        monitor.prepare()
+
+        assert (monitor.trend_blocked, alerts) == ({}, [])
+
+    def test_pullback_long_is_not_evaluated_without_a_higher_high(self, tmp_path, mocker):
+        monitor, _ = self._monitor(tmp_path, _Clock("2026-10-06 10:00"), {"AMD": ["pullback long", "drive long"]},
+                                   {"AMD": DAILY_FALLING, "QQQ": DAILY_RISING}, trend_filters=["pullback"])
+        monitor.prepare()
+        evaluate = mocker.patch.object(monitor_module, "evaluate_setup", return_value=[])
+
+        monitor._submit_evaluations("AMD", _ts("2026-10-06 09:55"))
+
+        assert [call.args[0][1].name for call in evaluate.call_args_list] == ["drive long"]
+
+    def test_pullback_long_is_evaluated_on_a_higher_high(self, tmp_path):
+        monitor, _ = self._monitor(tmp_path, _Clock("2026-10-06 09:00"), {"AMD": ["pullback long"]},
+                                   {"AMD": DAILY_RISING, "QQQ": DAILY_RISING}, trend_filters=["pullback"])
+
+        monitor.prepare()
+
+        assert monitor.trend_blocked == {}
+
+    def test_start_up_alert_lists_what_is_off(self, tmp_path):
+        monitor, alerts = self._monitor(tmp_path, _Clock("2026-10-06 09:00"), {"AMD": ["pullback long C1"]},
+                                        {"AMD": DAILY_FALLING, "QQQ": DAILY_RISING},
+                                        trend_filters=["pullback", "overnight"])
+
+        monitor.prepare()
+
+        assert alerts == ["[wave] trend filters | overnight holds on: QQQ 159.00, above its 50-day MA 134.50, +6.7% "
+                          "over 10 sessions | AMD off: pullback long C1 (10-session high 111.00 vs 121.00 before)"]
+
+    def test_overnight_hold_skipped_when_qqq_fails(self, tmp_path):
+        history = {"AMD": _history([("2026-10-06 15:45", 102.0)])}
+        clock = _Clock("2026-10-06 15:50")
+        monitor, alerts = _monitor(tmp_path, {"AMD": ["overnight always"]}, clock, history,
+                                   trend_filters=["overnight"],
+                                   trend_daily_loader=_daily_loader({"QQQ": DAILY_FALLING}))
+        monitor.prepare()
+
+        monitor.tick()
+
+        assert alerts[-1] == ("[wave] SKIP AMD | overnight always | trend filter: QQQ 101.00, below its 50-day MA "
+                              "125.50, -9.0% over 10 sessions")
+        assert monitor.trades == []
+
+    def test_drive_short_silenced_when_the_ticker_is_not_down(self, tmp_path):
+        monitor, alerts = self._monitor(tmp_path, _Clock("2026-10-06 09:35"), {"AMD": []},
+                                        {"AMD": DAILY_RISING, "QQQ": DAILY_FALLING}, closes=QQQ_FALLING,
+                                        trend_filters=["drive-short"])
+        monitor.prepare()
+
+        monitor._on_five_min_bar("AMD", _bar("2026-10-06 09:30", 100.0, 101.0, 98.5, 99.0))
+
+        assert not [a for a in alerts if "SHORT AMD" in a]
+
+    def test_drive_short_alerted_when_qqq_and_the_ticker_are_down(self, tmp_path):
+        monitor, alerts = self._monitor(tmp_path, _Clock("2026-10-06 09:35"), {"AMD": []},
+                                        {"AMD": DAILY_FALLING, "QQQ": DAILY_FALLING}, closes=QQQ_FALLING,
+                                        trend_filters=["drive-short"])
+        monitor.prepare()
+
+        monitor._on_five_min_bar("AMD", _bar("2026-10-06 09:30", 100.0, 101.0, 98.5, 99.0))
+
+        assert alerts[-1].startswith("[wave] SHORT AMD | short drive")
+
+    def test_configured_drive_short_is_not_evaluated_when_blocked(self, tmp_path, mocker):
+        monitor, _ = self._monitor(tmp_path, _Clock("2026-10-06 09:35"), {"AMD": ["drive short"]},
+                                   {"AMD": DAILY_RISING, "QQQ": DAILY_FALLING}, trend_filters=["drive-short"],
+                                   short_setups=())
+        monitor.prepare()
+        evaluate = mocker.patch.object(monitor_module, "evaluate_setup", return_value=[])
+
+        monitor._submit_evaluations("AMD", _ts("2026-10-06 09:30"))
+
+        evaluate.assert_not_called()
+
+    def test_daily_bars_failure_turns_the_filtered_setups_off(self, tmp_path):
+        def failing(tickers, session):
+            raise RuntimeError("no data")
+
+        monitor, _ = _monitor(tmp_path, {"AMD": ["pullback long"]}, _Clock("2026-10-06 09:00"),
+                              trend_filters=["pullback"], trend_daily_loader=failing)
+
+        monitor.prepare()
+
+        assert monitor.trend_blocked == {"AMD": {"pullback long": "too little daily history"}}
+
+
+class TestTrendFilterArguments:
+    def test_none_by_default(self):
+        assert parse_args(["run"]).trend_filters == []
+
+    def test_choices(self):
+        assert parse_args(["run", "--trend-filters", "pullback", "overnight", "drive-short"]).trend_filters == [
+            "pullback", "overnight", "drive-short"]
+
+    def test_unknown_filter_is_rejected(self):
+        with pytest.raises(SystemExit):
+            parse_args(["run", "--trend-filters", "vix"])
 
 
 class TestReversalArguments:

@@ -101,6 +101,10 @@ earlier findings: [`WAVE_RISK_REWARD_FINDINGS.md`](WAVE_RISK_REWARD_FINDINGS.md)
   switch with the market (overnight always +0.86% / +0.25% per trade in the up windows, −0.29% / −0.81% in the down
   windows, every ticker the same way); drive long led the up windows but was flat in Jan – Mar; the short setups paid
   only from Oct 12, and the QQQ < MA50 gate switched about a week late at both 2026 turns.
+- **Daily trend filters (Finding 40, six 2025–26 windows, in-sample):** the overnight hold kept its sign in all six
+  windows; pullback long only on a higher 10-session high (+0.58% a trade vs +0.11%), the overnight hold only while QQQ
+  is above its MA50 and up over 10 sessions (+0.21% vs −0.06%), the drive short only while QQQ is below its 10-day EMA
+  and the ticker is down over 20 sessions (+0.21% vs −0.06%). In the monitor as opt-in `--trend-filters`.
 - **A ticker's intraday vs overnight split doesn't pick its setup (Finding 36):** within a window it always matches the
   better family, but measured on the previous 63 or 126 sessions it chose next month's winner 52–53% of the time
   (16 tickers, Jul 2025 – Oct 2026). Overnight holds won in H2 2025 and drive long in 2026 across the board; running
@@ -1769,6 +1773,62 @@ across the seven tickers (number of trades in brackets).
   where the config has no drive short): +$452 on $10k (+4.5%, 65 trades, 46% won), vs +$799 for the generic
   `--short-setups drive` mix of Finding 38.
 
+## Finding 40 — 2025 up / down windows, the ticker's own trend, and daily trend filters (opt-in in the monitor)
+
+**Two 2025 windows added to Finding 39** (same seven tickers and method; SNDK from its Feb 24 2025 listing, CRWV from
+its Mar 28 IPO): down Feb 25 – Apr 7 2025 (QQQ below its MA50 all 30 sessions) and up Apr 8 – May 21 2025 (the
+gate stayed on for the first 17 of 31 sessions).
+
+| Setup, % per trade | Up Apr 8 – May 21 '25 | Down Feb 25 – Apr 7 '25 |
+|---|---|---|
+| overnight always | +0.34% (212) | **−0.69%** (185, all 7 tickers negative) |
+| drive long | +0.54% (110; CRWV's 15 trades +56% of the +60%) | −0.27% (87) |
+| pullback long / C1 | **−0.16% / −0.35%** | −0.21% / −0.03% |
+| drive short / + re-entry / gated | −0.27% / −0.36% / −0.28% | +0.03% / −0.10% / −0.10% |
+| pullback short, box break | +0.06%, −0.22% | +0.10%, +0.11% |
+
+The overnight hold kept its sign in all six windows (negative in 3 of 3 down, positive in 3 of 3 up). Pullback long
+failed the 2025 rebound (a V-shaped recovery from a crash, not a steady climb), drive long was negative in two of
+three down windows, and the shorts were thin again (Oct – Nov 2026 is still the only down window where they clearly
+paid).
+
+**The ticker's own trend.** Six of the 42 ticker-windows moved against the market (APP +41% in Oct – Nov 2026 and
+−29% in Jul – Oct 2026, MRNA +6% / +13% and SNDK +19% in 2026 down windows, CRWV +25% after its IPO). Labelled by the
+ticker's window return (hindsight), the shorts improve: drive short + re-entry on falling tickers made +0.07%, +0.27%,
++0.36% in the three down windows (−0.10%, +0.09%, +0.26% for all tickers), the plain drive short +0.13%, +0.14%,
++0.48%. Rising tickers still lost overnight in down markets (−0.20%, −0.61%, −1.45%): the overnight hold follows the
+market, not the ticker. The trend known at the time, close vs its 20-day MA and the MA's slope, separated almost
+nothing (overnight −0.13% up vs −0.05% down).
+
+**15 daily trend measures, ticker and QQQ, at the previous close** (close vs MA20 / MA50 / MA200 / EMA10, MA crosses
+and slopes, 5 / 10 / 20-session returns, higher 10-session highs / lows), scored per setup on the six windows pooled
+(% per trade kept / dropped, windows where the filter raised the per-trade return):
+
+| Setup (all trades) | Best measure | Kept / dropped | Sum of trade % | Windows |
+|---|---|---|---|---|
+| pullback long (+0.11%, 335) | ticker's 10-session high above the 10 before | **+0.58% / −0.21%** (137 kept) | +38 → +79 | 6 of 6 |
+| pullback long C1 (+0.27%, 175) | same | **+1.01% / −0.25%** (72) | +47 → +73 | 5 of 6 |
+| overnight always (−0.06%, 1,282) | QQQ above its MA50 **and** up over 10 sessions | **+0.21% / −0.18%** (403) | −75 → +83 | 4 of 6 |
+| drive short (−0.06%, 666) | QQQ below its 10-day EMA **and** the ticker down over 20 sessions | +0.21% / −0.20% (227) | −38 → +48 | 4 of 6 |
+| drive short + re-entry (−0.08%, 1,014) | the ticker down over 20 sessions | +0.01% (574) | −84 → +7 | 5 of 6 |
+| drive long (+0.36%, 643) | QQQ above its MA50 | +0.81% / +0.11% | +233 → +186 | 4 of 6 |
+
+- **Pullback long on higher highs worked in the down windows too** (C1: +0.37%, +0.34%, +1.30% kept), because it keeps
+  the tickers still rising; it did not fix the 2025 rebound (−0.54%).
+- **The overnight hold's QQQ rule** beats the MA50 gate alone (+0.03% a trade, sum +12), mostly by cutting weak nights
+  in the Jul – Oct 2026 uptrend (+0.20% → +0.48%). Neither catches the first days of a decline while QQQ is still above
+  its MA50: those nights lost −1.03% and −2.83% a trade (Jan 28 and Oct 12 2026 starts). From Oct 12 to Nov 6 2026 the
+  filtered overnight long still lost −$850 on $10k (21 trades), against −$1,497 for every night.
+- **Drive long should not be filtered:** the trades a filter drops still make +0.11%; QQQ above its MA50 is a sizing
+  signal, not a switch.
+- **No measure tracks the hindsight trend well** (57–75% agreement), so the turns stay the weak spot.
+
+**Implemented, off by default** (`trend_filters.py`): the monitor's `--trend-filters pullback overnight drive-short`
+(decided at start-up from the daily bars before the session, one alert listing what is off; a blocked overnight hold
+gets a SKIP at the close), `setup_portfolio_check --trend-filters overnight drive-short` (with `--short-gate always`
+to match the study), and `analysis_scripts/trend_filter_check.py`, which applies them to any setup report's trades and
+reproduces the kept counts above. They were chosen in-sample on these six windows; check them on other years first.
+
 ## Recommendations
 
 1. **Choose tickers before tuning settings.** The same configuration ranges from +156.66% (SNDK)
@@ -1879,6 +1939,10 @@ across the seven tickers (number of trades in brackets).
     market. Test a faster market switch than QQQ < MA50 on the Jan 28 and Mar 31 turns, and refresh the monitor config
     when the market turns; the Oct 7 config was picked in an uptrend.
 
+35. **Check the trend filters out of sample before turning them on (Finding 40):** run `trend_filter_check.py` on
+    setup reports for the 2020–24 windows (2020 crash, 2022 bear, 2023 rally) and other tickers. If they hold, start
+    with `--trend-filters pullback overnight`; leave drive long unfiltered.
+
 ## Reproduction
 
 ```bash
@@ -1971,6 +2035,9 @@ exactly (110 trades, +0.80%), but other settings may differ slightly.
    Finding 39: `wave_risk_reward_setup_report --tickers MRNA SNDK APP AMD MDB CRWV SNPS --start <window start> --end
    <window end>` per window, trades at `REPORT_EXITS`; the drive options and drive short + re-entry from `ticker_legs`
    (`setup_portfolio_check`, overnight mode always), gated by `gated_sessions`; % per trade = mean `net_pct`.
+   Finding 40: the 2025 windows the same way; the measures from `fetch_daily_bars` (one-off script, previous-close
+   values); the chosen filters: `python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.trend_filter_check
+   <the six trades.csv>`.
    The confirmation-lag table, the reversal-entry diagnostics, the drive long decomposition and the 11-case
    re-entry table were one-off scripts on `wave_events` / `ride` / `load_rider_bars` from `wave_rider.py`;
    intraday vs overnight from `fetch_daily_bars` (log open / previous close vs close / open).

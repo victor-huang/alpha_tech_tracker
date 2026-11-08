@@ -32,6 +32,13 @@ plus a CSV log:
                confirmed dip low (wave setting 7 bars / 38.2% / 1.5); `--drive-reentry` buys once after a
                drive long stop-out when a bar closes back above the stop-out level (before 15:00), stop the
                low since the stop-out, held to the close (Findings 32, 35, 36).
+  TREND FILTERS
+               opt-in (`--trend-filters`, off by default; Finding 40, in-sample), decided at start-up on the
+               daily bars before the session, listed in one start-up alert: `pullback` (pullback long / C1 only
+               while the ticker's 10-session high is above the 10 before), `overnight` (overnight holds only
+               while QQQ is above its 50-day MA and up over 10 sessions; SKIP at the close otherwise),
+               `drive-short` (drive shorts only while QQQ is below its 10-day EMA and the ticker is down over
+               20 sessions; studied with `--short-gate always`).
   Start-up    drive long and overnight hold win rates: the last 10 sessions pooled over the stats
                tickers (`--stats-tickers`), and day by day for the last 3 sessions over the monitored
                tickers (signal_stats). `--no-signal-stats` turns it off.
@@ -153,6 +160,16 @@ from alpha_tech_tracker.op_momentum_strategy.short_setups import (
     TurnTracker,
     gate_status,
     next_session_adr,
+)
+from alpha_tech_tracker.op_momentum_strategy.trend_filters import (
+    MARKET_TICKER as TREND_MARKET_TICKER,
+    PULLBACK_SETUPS,
+    TREND_FILTERS,
+    drive_short_rule,
+    market_trend,
+    overnight_rule,
+    pullback_rule,
+    ticker_trend,
 )
 from alpha_tech_tracker.op_momentum_strategy.signal_stats import (
     DEFAULT_STATS_DAYS,
@@ -488,7 +505,7 @@ class WaveSetupMonitor:
                  daily_closes_loader=None, close_decision_bar=DEFAULT_CLOSE_DECISION_BAR,
                  reversal_patterns=REVERSAL_PATTERNS, stats_tickers=DEFAULT_STATS_TICKERS,
                  stats_daily_loader=None, short_setups=DEFAULT_SHORT_SETUPS, short_gate="qqq-ma50", short_tickers=None,
-                 extra_tickers=(), drive_trail=False, drive_reentry=False):
+                 extra_tickers=(), drive_trail=False, drive_reentry=False, trend_filters=(), trend_daily_loader=None):
         self.setups = setups_by_ticker
         self.tickers = list(setups_by_ticker)
         self.client = market_data_client
@@ -516,6 +533,9 @@ class WaveSetupMonitor:
         self.drive_trail = drive_trail
         self.drive_reentry = drive_reentry
         self.drive_trackers = {}
+        self.trend_filters = tuple(trend_filters)
+        self.trend_daily_loader = trend_daily_loader or _load_daily_bars
+        self.trend_blocked = {}
         self.decision_lead = datetime.combine(date.today(), REGULAR_CLOSE) - datetime.combine(date.today(),
                                                                                                 close_decision_bar)
         self._set_session_times(_now_et().date())
@@ -578,6 +598,7 @@ class WaveSetupMonitor:
                                    f"{', '.join(short)}; their filtered overnight holds will not fire today")
         self._load_state()
         self._prepare_shorts()
+        self._prepare_trend_filters()
         self._prepare_drive_trail(through_today=False)
         self._catch_up_trades()
         self.refetch_before = period_start(now) + timedelta(minutes=BAR_MINUTES)
@@ -986,6 +1007,64 @@ class WaveSetupMonitor:
                                 and t.entry_time.date() == self.session)
             self.short_watches[ticker] = watch
 
+    # --- trend filters ---------------------------------------------------------
+
+    def _prepare_trend_filters(self):
+        """Block today's filtered setups per ticker (`trend_blocked`: {ticker: {setup: reason}}) and alert the list."""
+        self.trend_blocked = {}
+        if not self.trend_filters:
+            return
+        drive_shorts = (SHORT_NAMES["drive"], CONFIG_DRIVE_SHORT)
+        overnight = {s.name for specs in self.setups.values() for s in specs if s.overnight}
+        wanted = {}
+        if "pullback" in self.trend_filters:
+            for ticker, specs in self.setups.items():
+                wanted.setdefault(ticker, set()).update(s.name for s in specs if s.name in PULLBACK_SETUPS)
+        if "overnight" in self.trend_filters:
+            for ticker, specs in self.setups.items():
+                wanted.setdefault(ticker, set()).update(s.name for s in specs if s.name in overnight)
+        if "drive-short" in self.trend_filters:
+            monitor_shorts = self.short_tickers if "drive" in self.short_setups else []
+            for ticker, specs in self.setups.items():
+                names = wanted.setdefault(ticker, set())
+                names.update(s.name for s in specs if s.name == CONFIG_DRIVE_SHORT)
+                if ticker in monitor_shorts:
+                    names.add(SHORT_NAMES["drive"])
+        wanted = {t: names for t, names in wanted.items() if names}
+        if not wanted:
+            return
+        try:
+            daily = self.trend_daily_loader(sorted(set(wanted) | {TREND_MARKET_TICKER}), self.session)
+        except Exception:
+            logger.exception("Trend filter daily bars failed")
+            daily = {}
+        qqq = daily.get(TREND_MARKET_TICKER)
+        market = market_trend(qqq).iloc[-1] if qqq is not None and not qqq.empty else None
+        lines = []
+        night_ok, night_text = overnight_rule(market)
+        if "overnight" in self.trend_filters:
+            lines.append(f"overnight holds {'on' if night_ok else 'off'}: {night_text}")
+        for ticker in sorted(wanted):
+            frame = daily.get(ticker)
+            trend = ticker_trend(frame).iloc[-1] if frame is not None and not frame.empty else None
+            for name in sorted(wanted[ticker]):
+                if name in PULLBACK_SETUPS:
+                    ok, reason = pullback_rule(trend)
+                elif name in drive_shorts:
+                    ok, reason = drive_short_rule(market, trend)
+                else:
+                    ok, reason = night_ok, night_text
+                if not ok:
+                    self.trend_blocked.setdefault(ticker, {})[name] = reason
+        for ticker, blocked in sorted(self.trend_blocked.items()):
+            parts = [f"{name} ({reason})" for name, reason in sorted(blocked.items()) if name not in overnight]
+            if parts:
+                lines.append(f"{ticker} off: {', '.join(parts)}")
+        self._system_alert("trend filters | " + " | ".join(lines or ["every filtered setup is on"]), level=logging.INFO)
+
+    def _trend_blocked(self, ticker, setup):
+        return setup in self.trend_blocked.get(ticker, {})
+
     def _open_short(self, ticker, setup, signal, bar_time, entry, stop, message):
         trade = LiveTrade(ticker=ticker, setup=setup, signal=signal, exit_mode="eod", entry_time=bar_time, side=-1,
                           entry=entry, stop=stop, target=None, risk=None if stop is None else stop - entry,
@@ -1009,6 +1088,8 @@ class WaveSetupMonitor:
         stamp, session = bar["time"], self.session.isoformat()
         name, reentry_name = SHORT_NAMES["drive"], SHORT_NAMES["drive re-entry"]
         drives = {name, CONFIG_DRIVE_SHORT}
+        if self._trend_blocked(ticker, name) or self._trend_blocked(ticker, CONFIG_DRIVE_SHORT):
+            return
         if stamp.time() == MARKET_OPEN:
             key = f"{ticker}|{name}|{session}"
             # a configured "drive short" setup alerts the same trade; its stop-out still gets the re-entry
@@ -1088,7 +1169,7 @@ class WaveSetupMonitor:
         frame = add_moving_averages(self.bars[ticker])
         frame = frame[frame.index >= self.window_start[ticker]]
         for spec in self.setups[ticker]:
-            if spec.overnight:
+            if spec.overnight or self._trend_blocked(ticker, spec.name):
                 continue
             future = self.executor.submit(evaluate_setup, (ticker, spec, frame, self.windows[ticker], bar_time))
             self.pending = [f for f in self.pending if not f.done()] + [future]
@@ -1180,6 +1261,9 @@ class WaveSetupMonitor:
                 if self.half_day:
                     logger.info("%s: %s skipped on an early-close day (the backtest skips them)", ticker, spec.name)
                     continue
+                if self._trend_blocked(ticker, spec.name):
+                    self._skip_trend_filtered(ticker, spec)
+                    continue
                 if self.shorts_on and "overnight" in self.short_setups:
                     self._skip_overnight_hold(ticker, spec)
                     continue
@@ -1200,6 +1284,15 @@ class WaveSetupMonitor:
         self.alerted.add(key)
         self._alert(None, "SKIP", self._last_close(ticker),
                     f"SKIP {ticker} | {spec.name} | short setups are on today ({self.short_gate_text})",
+                    ticker=ticker, setup=spec.name)
+
+    def _skip_trend_filtered(self, ticker, spec):
+        key = f"{ticker}|{spec.name}|{self.session.isoformat()}"
+        if key in self.alerted:
+            return
+        self.alerted.add(key)
+        self._alert(None, "SKIP", self._last_close(ticker),
+                    f"SKIP {ticker} | {spec.name} | trend filter: {self.trend_blocked[ticker][spec.name]}",
                     ticker=ticker, setup=spec.name)
 
     def _overnight_entry(self, ticker, spec):
@@ -1383,6 +1476,23 @@ def _load_daily_close_series(tickers, session):
     return out
 
 
+def _load_daily_bars(tickers, session):
+    """Split-adjusted daily highs and closes before `session` as {ticker: DataFrame by date}, for the trend filters."""
+    daily = fetch_daily_bars(tickers, session - timedelta(days=DAILY_HISTORY_DAYS), session - timedelta(days=1))
+    out = {}
+    for ticker in tickers:
+        frame = daily.get(ticker)
+        if frame is None or frame.empty:
+            out[ticker] = pd.DataFrame(columns=["high", "close"], dtype=float)
+            continue
+        columns = {c.lower(): c for c in frame.columns}
+        dates = [pd.Timestamp(d).date() for d in frame.index]
+        bars = pd.DataFrame({"high": [float(v) for v in frame[columns["high"]]],
+                             "close": [float(v) for v in frame[columns["close"]]]}, index=dates)
+        out[ticker] = bars[[d < session for d in bars.index]]
+    return out
+
+
 def _load_daily_closes(tickers, session):
     """Split-adjusted daily closes before `session`, for the overnight moving-average filters."""
     daily = fetch_daily_bars(tickers, session - timedelta(days=DAILY_HISTORY_DAYS), session - timedelta(days=1))
@@ -1453,7 +1563,8 @@ def _run_monitor(args):
                                short_setups=short_setups, short_gate=args.short_gate,
                                short_tickers=short_tickers if short_setups else [],
                                extra_tickers=set(setups) - configured,
-                               drive_trail=args.drive_trail, drive_reentry=args.drive_reentry)
+                               drive_trail=args.drive_trail, drive_reentry=args.drive_reentry,
+                               trend_filters=args.trend_filters)
 
     def _stop(signum, frame):
         raise KeyboardInterrupt
@@ -1517,6 +1628,11 @@ def parse_args(argv=None):
                              "always, off")
     parser.add_argument("--short-tickers", nargs="+", help="Tickers for the short setups (default: the config's "
                                                            "tickers plus QQQ)")
+    parser.add_argument("--trend-filters", nargs="+", choices=TREND_FILTERS, default=[],
+                        help="Opt-in daily trend filters (default: none; in-sample, Finding 40): pullback = pullback "
+                             "longs only on a higher 10-session high; overnight = overnight holds only while QQQ is "
+                             "above its 50-day MA and up over 10 sessions; drive-short = drive shorts only while QQQ "
+                             "is below its 10-day EMA and the ticker is down over 20 sessions")
     parser.add_argument("--stats-tickers", nargs="+", default=list(DEFAULT_STATS_TICKERS),
                         help="Tickers pooled in the start-up drive long / overnight win rates (default: the 21 "
                              "setup-tape tickers)")

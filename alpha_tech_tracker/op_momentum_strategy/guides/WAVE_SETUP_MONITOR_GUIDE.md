@@ -240,6 +240,27 @@ carries gap risk; `--no-short-setups` turns them all off.
 - **An open overnight trade in the state file keeps its ticker streamed** at the next start, whatever the config or
   flags, so its next-open SELL / COVER alert and exit are not lost.
 
+## Trend filters
+
+Opt-in daily trend filters (`--trend-filters`, none by default; `trend_filters.py`, ticker-tuning doc, Finding 40).
+Each is decided once at start-up from the daily bars before the session; one start-up alert lists the result, e.g.
+`trend filters | overnight holds off: QQQ 601.20, above its 50-day MA 598.40, -1.8% over 10 sessions | AMD off:
+pullback long (10-session high 512.00 vs 540.30 before)`. A missing daily history turns the filtered setups off.
+
+| Filter | Setups | Trades only while | Six 2025–26 windows, % per trade kept / dropped |
+|---|---|---|---|
+| `pullback` | pullback long, pullback long C1 | the ticker's 10-session high is above the 10 sessions before | +0.58 / −0.21, +1.01 / −0.25 |
+| `overnight` | every overnight hold in the config | QQQ is above its 50-day MA and up over the last 10 sessions | +0.21 / −0.18 (MA50 alone: +0.03) |
+| `drive-short` | the monitor's drive short + re-entry, a configured `drive short` | QQQ is below its 10-day EMA and the ticker is down over the last 20 sessions | +0.21 / −0.20 |
+
+- A blocked pullback or configured drive short is not evaluated; a blocked overnight hold gets a `SKIP ... trend
+  filter: <reason>` at the close; a blocked monitor drive short sends nothing.
+- `drive-short` was studied without the QQQ MA50 gate: run it with `--short-gate always --short-setups drive` to match
+  (with the gate on, both must pass).
+- The filters were picked from 15 trend measures on the same six windows (in-sample). Check them on other years with
+  `analysis_scripts/trend_filter_check.py <setup report trades.csv ...>` before turning them on. None of them catches
+  the first days of a decline, while QQQ is still above its 50-day MA: the overnight holds lost most there.
+
 ## Signal stats
 
 Sent once per session when the monitor starts (with the midnight cron restart, just after
@@ -406,6 +427,7 @@ difference is the close rule below (GOOGL drive long on Sep 30 hit its stop afte
 | `--no-short-setups` | off | No short setups |
 | `--short-gate` | `qqq-ma50` | When shorts are on: `qqq-ma50`, `always`, `off` |
 | `--short-tickers ...` | config tickers + QQQ | Tickers for the short setups |
+| `--trend-filters ...` | none | Opt-in daily trend filters: `pullback`, `overnight`, `drive-short` |
 | `--stats-tickers ...` | the 21 setup-tape tickers | Tickers pooled in the start-up signal stats |
 | `--no-signal-stats` | off | No start-up signal stats |
 | `--no-notify` | off | Log and CSV only |
