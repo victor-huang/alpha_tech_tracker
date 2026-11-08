@@ -24,6 +24,7 @@ import pandas as pd
 
 from alpha_tech_tracker.research.industry_groups import IndustryCache, add_group_strength
 from alpha_tech_tracker.research.price_factors import attach_factors, factor_frames
+from alpha_tech_tracker.research.sec_fundamentals import FundamentalsCache, add_fundamental_factors
 from alpha_tech_tracker.research.top_performers import DEFAULT_CACHE_DIR, AlpacaData, DailyBarCache
 from alpha_tech_tracker.research.uptrend_formation import DEFAULT_OUT_DIR as PANEL_DIR
 from alpha_tech_tracker.research.uptrend_formation import REGIME_INDEX, market_regime
@@ -109,6 +110,19 @@ for _base, _score in (("trend+riskadj120", lambda p: p["risk_adj_120"]), ("trend
         f"{_base}+combo": Variant(_trend_ok, _score, exclude=FADED_OR_DROPPED + WEAK_GROUP,
                                   prefer=("leader_in_top_group", "turnaround")),
     })
+VARIANTS.update({
+    "trend+riskadj120+clean+prefer_growth": Variant(_trend_ok, lambda p: p["risk_adj_120"], exclude=FADED_OR_DROPPED,
+                                                    prefer=("sales_growth_25", "growth_accel_combo")),
+    "trend+riskadj120+clean+require_growth": Variant(_trend_ok, lambda p: p["risk_adj_120"],
+                                                     exclude=FADED_OR_DROPPED, require=("sales_growth_25",)),
+    "trend+riskadj120+clean+prefer_margin": Variant(_trend_ok, lambda p: p["risk_adj_120"], exclude=FADED_OR_DROPPED,
+                                                    prefer=("margin_expansion", "earnings_growth_25")),
+    "trend+composite+prefer_turnaround+no_decel": Variant(_trend_ok, lambda p: p["composite"],
+                                                          exclude=("sales_decel",), prefer=("turnaround",)),
+    "trend+composite+prefer_turnaround+accel": Variant(_trend_ok, lambda p: p["composite"],
+                                                       prefer=("turnaround", "sales_accel_2q")),
+    "trend+composite+prefer_combo": Variant(_trend_ok, lambda p: p["composite"], prefer=("growth_accel_combo",)),
+})
 VARIANTS["early_momentum_all+top_group+clean"] = Variant(
     lambda p: p["early_momentum"].astype(bool), lambda p: p["ret_60d"], take_all=True,
     exclude=FADED_OR_DROPPED, require=("group_top20_120d",))
@@ -278,6 +292,8 @@ def run(args: argparse.Namespace) -> None:
     panel = add_selection_features(panel, dv20)
     panel = attach_factors(panel, factor_frames(close[symbols], dollar_volume[symbols]))
     panel = add_group_strength(panel, IndustryCache(os.path.join(args.cache_dir, "industries.csv")).load(args.today))
+    panel = add_fundamental_factors(panel, FundamentalsCache(os.path.join(args.cache_dir, "sec")).load(symbols,
+                                                                                                     args.today))
     returns = period_returns(close, checkpoints)
 
     out_dir = os.path.join(args.out_dir, "selection_filters")

@@ -10,6 +10,7 @@ close-to-close move on heavy volume - usually an earnings or news reaction):
   * turnaround       1-year low at least 50% under the prior high, and back above the 200-day average after
                      being below it within the last 60 days
   * listed_lt_1y / listed_1_3y   trading-day age since the first cached bar (censored ages are excluded)
+  * sales / EPS growth and acceleration from SEC filings (see sec_fundamentals.py)
   * industry-group strength (see industry_groups.py): group in the top / bottom 20% of industries by median
     120- or 60-day return, group breadth >= 60% in an uptrend, and a stock in an uptrend leading a top group
 
@@ -31,6 +32,12 @@ import pandas as pd
 from alpha_tech_tracker.research import selection_filters as sf
 from alpha_tech_tracker.research.industry_groups import GROUP_FACTORS, IndustryCache, add_group_strength
 from alpha_tech_tracker.research.price_factors import attach_factors, factor_frames
+from alpha_tech_tracker.research.sec_fundamentals import (
+    FUNDAMENTAL_FACTORS,
+    FundamentalsCache,
+    add_fundamental_factors,
+    coverage,
+)
 from alpha_tech_tracker.research.top_performers import DEFAULT_CACHE_DIR, AlpacaData, DailyBarCache
 from alpha_tech_tracker.research.uptrend_formation import (
     DEFAULT_WINNERS_CSV,
@@ -40,7 +47,7 @@ from alpha_tech_tracker.research.uptrend_formation import (
 )
 
 FACTORS = ["jump_held_60d", "jump_faded_60d", "drop_60d", "jumps_250d_2plus", "turnaround", "listed_lt_1y",
-           "listed_1_3y"] + GROUP_FACTORS
+           "listed_1_3y"] + GROUP_FACTORS + FUNDAMENTAL_FACTORS
 RANKED_LISTS = {"Large": "trend+riskadj120", "Mid": "trend+riskadj120", "Small": "trend+composite"}
 RANKED_POOL = 30
 
@@ -140,6 +147,9 @@ def run(args: argparse.Namespace) -> None:
     panel = add_group_strength(panel, industries)
     print(f"industry known for {panel['industry'].notna().mean():.1%} of panel rows, "
           f"{panel['industry'].nunique()} industries", flush=True)
+    quarters = FundamentalsCache(os.path.join(args.cache_dir, "sec")).load(symbols, args.today)
+    panel = add_fundamental_factors(panel, quarters)
+    print("share of panel rows with a usable sales growth figure:\n" + coverage(panel).to_string(), flush=True)
 
     pools = {}
     for tier, variant in RANKED_LISTS.items():

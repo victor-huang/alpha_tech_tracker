@@ -180,6 +180,23 @@ Calendar-year returns (no gate):
 - **Mid:** still nothing beats the plain universe.
 - **Turnaround and the combo rescue the weak small-cap risk-adjusted list** (3.3% → 11.4%), but it still trails the composite.
 
+## SEC fundamentals rules
+
+Sales and earnings growth from SEC filings ([winner_factors_2020_2026.md](winner_factors_2020_2026.md#sales-and-earnings-growth-from-sec-filings)) were tested on top of the recommended lists. None improved them:
+
+| Tier | Variant | CAGR (no gate) | Sharpe | Max DD | Years better than base | CAGR (gated) |
+|---|---|---|---|---|---|---|
+| Large | trend+riskadj120+clean (base) | 20.1% | 0.85 | −30% | | 16.8% |
+| Large | + prefer sales growth / combo | 18.2% | 0.76 | −33% | 3/7 | 13.8% |
+| Large | + require sales growth ≥ 25% | 21.4% | 0.82 | −37% | 3/7 | 17.8% |
+| Large | + prefer margin / earnings growth | 15.6% | 0.70 | −33% | 3/7 | 13.0% |
+| Mid | trend+riskadj120+clean (base) | 1.9% | 0.21 | −47% | | 4.7% |
+| Mid | + require sales growth ≥ 25% | 4.5% | 0.30 | −41% | 5/7 | 4.7% |
+| Small | trend+composite+prefer_turnaround (base) | 15.2% | 0.73 | −39% | | 15.6% |
+| Small | + exclude sharp sales slowdown | 13.7% | 0.65 | −42% | 4/7 | 14.4% |
+| Small | + prefer two quarters of sales acceleration | 14.6% | 0.71 | −38% | 3/7 | 12.6% |
+| Small | composite + prefer growth_accel_combo | 12.8% | 0.65 | −41% | 2/7 | 11.6% |
+
 ## Suggested list for the biweekly run (≈ 30 names)
 
 - **Large:** trend filter + risk-adjusted 120-day momentum, excluding names with a faded jump or a heavy-volume drop in the last 60 days. Top 15.

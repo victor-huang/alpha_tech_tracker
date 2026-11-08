@@ -138,6 +138,81 @@ Inside the ranked top-30 lists the samples get small: 24–600 names with the fa
 - **Coarse, quirky categories:** Nasdaq's industries are broad and sometimes odd (e.g. Agilent under "Industrials").
 - **The stock counts in its own group:** each group's median includes the stock itself. For 5–10 member groups, a single big mover can lift its own group's rank.
 
+
+## Sales and earnings growth from SEC filings
+
+- **Data:**
+  - Quarterly revenue and net income come from SEC XBRL company facts: the nightly bulk `companyfacts.zip`, with ticker → CIK from `company_tickers.json`. Code: `alpha_tech_tracker/research/sec_fundamentals.py`.
+  - Requests carry the contact from the `SEC_USER_AGENT` environment variable, as SEC's fair-access policy requires.
+  - A compact extract of 2,774 companies (about 14 MB) is cached at `market_data/top_performers/sec/sec_quarters.pkl` and rebuilt after 30 days. The 1+ GB zip is deleted after extraction.
+- **Point in time:** each quarter keeps its first-filed value and filing date, and a checkpoint only sees quarters filed before it. Late filers are handled; SMCI's delayed 2024 quarters appear only from February 2025. Q4 is the annual value minus Q1–Q3, known from the 10-K date. Reports for quarters that ended more than 200 days earlier are ignored.
+- **Earnings use net income, not EPS:** first-filed EPS mixes pre- and post-split share counts. NVDA's 2024 10-for-1 split made a derived Q4 EPS negative.
+- **Coverage:** 56–74% of panel rows. Foreign filers (20-F / 6-K, many ADRs such as PDD, SE and NIO) have no quarterly US-GAAP data, and some banks use other revenue tags.
+
+| Factor | Definition (latest quarter vs the same quarter a year earlier) |
+|---|---|
+| sales_growth_25 | Revenue growth ≥ 25% |
+| sales_accel | Revenue growth > 0 and at least 5 points faster than the previous quarter's growth |
+| sales_accel_2q | Revenue growth positive and faster than the prior quarter, two quarters in a row |
+| earnings_growth_25 | Net income growth ≥ 25% from a positive base |
+| earnings_accel | Net income growth positive and faster than the previous quarter's |
+| margin_expansion | Net margin up at least 1 point year over year |
+| growth_accel_combo | Revenue growth ≥ 20% and accelerating, and net income growth ≥ 20% |
+| sales_decel | Revenue growth at least 10 points slower than the previous quarter's |
+
+**Each factor on its own.** Excess is the next 60 days' return beyond same-volatility peers; years positive is in parentheses:
+
+| Factor | Vol-matched lift (L / M / S) | Excess, Large | Excess, Mid | Excess, Small |
+|---|---|---|---|---|
+| sales_growth_25 | 1.27 / 1.17 / 1.13 | +0.6% (6/7) | +0.3% (4/7) | +0.4% (4/7) |
+| sales_accel | 1.05 / 1.08 / 1.05 | −0.0% (2/7) | +0.7% (5/7) | +0.5% (4/7) |
+| sales_accel_2q | 1.04 / 1.06 / 1.06 | +0.2% | +0.6% | +1.1% (5/7) |
+| earnings_growth_25 | 1.16 / 1.08 / 0.91 | +0.3% | +0.5% (6/7) | +0.5% |
+| earnings_accel | 1.06 / 1.10 / 0.83 | 0.0% | +0.5% | +0.5% |
+| margin_expansion | 1.10 / 1.08 / 1.04 | +0.2% | +0.3% | +0.5% |
+| **growth_accel_combo** | **1.32 / 1.40 / 1.14** | **+1.1% (5/7)** | **+1.2% (5/7)** | +0.5% (5/7) |
+| sales_decel | 1.04 / 1.07 / 1.00 | −0.3% | +0.3% | +0.6% |
+
+**Added to the candidate lists.** Excess with the factor minus without it:
+
+| List | sales_growth_25 | sales_accel_2q | margin_expansion | growth_accel_combo | sales_decel |
+|---|---|---|---|---|---|
+| early momentum, Large | **+2.6% (5/7)** | +0.1% | +1.3% (5/7) | **+2.5% (5/7)** | −0.4% |
+| early momentum, Mid | −0.0% | **+1.8% (6/7)** | +1.1% | −1.1% | −0.6% |
+| early momentum, Small | −0.3% | +1.3% (5/7) | +1.2% | +0.8% | **−1.9% (better in 1/7)** |
+| top-30 trend+riskadj120, Large | +1.7% (4/7) | −0.3% | +0.6% | +1.6% (2/7) | +0.9% |
+| top-30 trend+composite, Small | −1.0% | +0.9% (5/7) | −0.6% | +1.5% (4/7) | −1.7% |
+
+**Winners:** 61% of yearly winners with data had 25%+ sales growth at some checkpoint in January–June, against 30% of other stocks (2.0×). For growth_accel_combo it was 28% against 14% (2.0×). Earnings acceleration was no more common among winners (0.95×).
+
+**Portfolio test** (in [selection_filters_2020_2026.md](selection_filters_2020_2026.md)), top 15, no gate:
+
+| Tier | Variant | CAGR | Sharpe | Max DD | Years better than base |
+|---|---|---|---|---|---|
+| Large | trend+riskadj120+clean (base) | 20.1% | 0.85 | −30% | |
+| Large | + prefer sales growth / combo | 18.2% | 0.76 | −33% | 3/7 |
+| Large | + require sales growth ≥ 25% | 21.4% | 0.82 | −37% | 3/7 |
+| Large | + prefer margin expansion / earnings growth | 15.6% | 0.70 | −33% | 3/7 |
+| Mid | trend+riskadj120+clean (base) | 1.9% | 0.21 | −47% | |
+| Mid | + require sales growth ≥ 25% | 4.5% | 0.30 | −41% | 5/7 |
+| Small | trend+composite+prefer_turnaround (base) | 15.2% | 0.73 | −39% | |
+| Small | + exclude sales_decel | 13.7% | 0.65 | −42% | 4/7 |
+| Small | + prefer sales_accel_2q | 14.6% | 0.71 | −38% | 3/7 |
+| Small | composite + prefer growth_accel_combo | 12.8% | 0.65 | −41% | 2/7 |
+
+**Findings:**
+
+1. **Growth level matters more than acceleration.** Revenue acceleration alone, in one quarter, and earnings acceleration add almost nothing against same-volatility peers. Strong sales growth (≥ 25%), and especially growth that is high and accelerating with growing earnings (growth_accel_combo), beat peers in 5–6 of 7 years.
+2. **Fundamentals help sort the wide momentum list but not the ranked top 15.** Inside early momentum, Large names with strong sales growth or the combo did +2.5% better. Inside the ranked lists the gains shrink, and in the portfolio test no SEC rule improved the recommended Large or Small lists. Requiring growth adds a little return in Large caps at the cost of a deeper drawdown (−37%) and a lower Sharpe.
+3. **Momentum already prices most of it.** The risk-adjusted momentum ranking already favours stocks whose growth shows in the price. The same happened with industry strength: a real signal across many names, no gain once the top 15 is picked.
+4. **Mid caps:** requiring sales growth is the best Mid-cap rule so far (4.5%, better in 5 of 7 years), but it still trails simply owning the Mid universe (9.3%).
+5. **Use:** fundamentals are a good way to read or trim the wide early-momentum list (keep strong-growth and accelerating names, drop small caps with sharply slowing sales). They are not an addition to the recommended top-15 rules.
+
+**Caveats:**
+- **Coverage:** 30–40% of stock-checkpoints have no SEC data, mostly foreign filers. A "require" rule therefore also drops most ADRs.
+- **Restatements:** the first-filed value is used. Later restatements are ignored on purpose, to avoid look-ahead.
+- **Net income is noisy:** it includes one-off items such as tax charges and impairments. Operating income or adjusted EPS might give cleaner earnings signals.
+
 ## Suggested use (after the portfolio test)
 
 The portfolio results are in [selection_filters_2020_2026.md](selection_filters_2020_2026.md#factor-rules-turnaround-faded-jumps-and-industry-groups).
@@ -146,6 +221,7 @@ The portfolio results are in [selection_filters_2020_2026.md](selection_filters_
 - **Keep:** move turnaround names to the front of the Small composite list. This lifted it from 13.1% to 15.2% a year (Sharpe 0.66 → 0.73), though much of that came from 2020.
 - **Don't use industry strength as a hard filter or ranking tilt in the Large list.** Although top-industry names beat peers in the signal test, requiring a top industry cut the Large list to 7.4% a year, and favouring leaders cut it to 12.9%. Dropping bottom-20% industries was neutral. Industry strength remains useful for reading the wide early-momentum list, not for picking the top 15.
 - **Don't use:** listing age, or "had a big jump", as positive signals.
+- **SEC fundamentals:** use them to read or trim the wide early-momentum list (strong sales growth, growth_accel_combo, no sharp sales slowdown in small caps). They didn't improve the recommended top-15 lists.
 
 ## Caveats
 
