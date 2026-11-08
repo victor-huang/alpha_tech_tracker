@@ -75,10 +75,10 @@ class TestRankVariant:
 
         assert ranked["symbol"].tolist() == ["FRESH"]
 
-    def test_streak_first_promotes_long_streaks_within_the_pool(self):
+    def test_prefer_promotes_names_with_the_factor_within_the_pool(self):
         panel = pd.DataFrame(_rows(CP[0], {"TOP": 5.0, "STEADY": 4.0, "OUTSIDE": 1.0},
                                    streaks={"TOP": 1, "STEADY": 6, "OUTSIDE": 12}))
-        variant = Variant(SCORE_ALL.eligible, SCORE_ALL.score, streak_first=True)
+        variant = Variant(SCORE_ALL.eligible, SCORE_ALL.score, prefer=("streak",))
 
         ranked = rank_variant(panel, variant, n=1).set_index("symbol")
 
@@ -94,6 +94,25 @@ class TestRankVariant:
 
         assert ranked.loc["ON", "keep"]
         assert not ranked.loc["OFF", "keep"]
+
+
+    def test_exclude_drops_flagged_names_but_keeps_unknown(self):
+        panel = pd.DataFrame(_rows(CP[0], {"FADED": 5.0, "CLEAN": 2.0, "UNKNOWN": 1.0}))
+        panel["jump_faded_60d"] = [1.0, 0.0, np.nan]
+        variant = Variant(SCORE_ALL.eligible, SCORE_ALL.score, exclude=("jump_faded_60d",))
+
+        ranked = rank_variant(panel, variant, n=1)
+
+        assert ranked["symbol"].tolist() == ["CLEAN", "UNKNOWN"]
+
+    def test_require_keeps_only_flagged_names(self):
+        panel = pd.DataFrame(_rows(CP[0], {"STRONG": 1.0, "WEAK": 5.0, "UNKNOWN": 3.0}))
+        panel["group_top20_120d"] = [1.0, 0.0, np.nan]
+        variant = Variant(SCORE_ALL.eligible, SCORE_ALL.score, require=("group_top20_120d",))
+
+        ranked = rank_variant(panel, variant, n=1)
+
+        assert ranked["symbol"].tolist() == ["STRONG"]
 
 
 class TestListStreak:

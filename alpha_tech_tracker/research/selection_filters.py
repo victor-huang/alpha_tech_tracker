@@ -1,7 +1,8 @@
 """Narrow the biweekly momentum screen to a short, tradable list and test whether the cut keeps the edge.
 
 Reads the per-year checkpoint panels written by uptrend_formation.py plus the cached daily bars, then for
-each selection variant (eligibility filter + ranking score + optional persistence / liquidity rule):
+each selection variant (eligibility filter + ranking score + optional persistence / liquidity / streak rules and
+price or industry-group factors from price_factors.py / industry_groups.py):
 
   * signal test   - mean 60-day forward log return of the picks minus same checkpoint/tier/volatility-quintile
                     peers, split by the QQQ 200-day regime
@@ -16,11 +17,13 @@ import argparse
 import os
 import re
 from datetime import date
-from typing import Callable, Dict, List, NamedTuple, Optional
+from typing import Callable, Dict, List, NamedTuple, Optional, Tuple
 
 import numpy as np
 import pandas as pd
 
+from alpha_tech_tracker.research.industry_groups import IndustryCache, add_group_strength
+from alpha_tech_tracker.research.price_factors import attach_factors, factor_frames
 from alpha_tech_tracker.research.top_performers import DEFAULT_CACHE_DIR, AlpacaData, DailyBarCache
 from alpha_tech_tracker.research.uptrend_formation import DEFAULT_OUT_DIR as PANEL_DIR
 from alpha_tech_tracker.research.uptrend_formation import REGIME_INDEX, market_regime
@@ -29,7 +32,7 @@ BENCHMARKS = ["SPY", "QQQ", "IWM"]
 TIERS = ("Large", "Mid", "Small")
 LIQUID_DOLLAR_VOLUME = 20e6
 PERSIST_RANK_MULTIPLE = 2
-STREAK_POOL_MULTIPLE = 2
+PREFER_POOL_MULTIPLE = 2
 SMALL_STREAK_CAP = 8
 CHECKPOINTS_PER_YEAR = 25.2
 FUND_SPONSORS = (r"BlackRock|Gabelli|GAMCO|Invesco|Calamos|Royce|abrdn|Nuveen|XAI|Eaton Vance|Cohen & Steers|Adams|"
@@ -47,8 +50,11 @@ class Variant(NamedTuple):
     persist: bool = False
     liquid: bool = False
     max_streak: Optional[int] = None
-    streak_first: bool = False
     hold_on_list: bool = False
+    exclude: Tuple[str, ...] = ()
+    require: Tuple[str, ...] = ()
+    prefer: Tuple[str, ...] = ()
+    take_all: bool = False
 
 
 def _all(p: pd.DataFrame) -> pd.Series:
@@ -76,7 +82,7 @@ def _composite(p: pd.DataFrame) -> pd.Series:
 
 
 VARIANTS: Dict[str, Variant] = {
-    "early_momentum_all": Variant(lambda p: p["early_momentum"].astype(bool), lambda p: p["ret_60d"]),
+    "early_momentum_all": Variant(lambda p: p["early_momentum"].astype(bool), lambda p: p["ret_60d"], take_all=True),
     "mom120": Variant(_all, lambda p: p["ret_120d"]),
     "riskadj120": Variant(_all, lambda p: p["risk_adj_120"]),
     "trend+riskadj120": Variant(_trend_ok, lambda p: p["risk_adj_120"]),
@@ -85,12 +91,27 @@ VARIANTS: Dict[str, Variant] = {
     "trend+composite": Variant(_trend_ok, lambda p: p["composite"]),
     "trend+lowvol_control": Variant(_trend_ok, lambda p: -p["vol_60d"]),
     "trend+composite+persist+liquid": Variant(_trend_ok, lambda p: p["composite"], persist=True, liquid=True),
-    "trend+riskadj120+streak_first": Variant(_trend_ok, lambda p: p["risk_adj_120"], streak_first=True),
+    "trend+riskadj120+streak_first": Variant(_trend_ok, lambda p: p["risk_adj_120"], prefer=("streak",)),
     "trend+riskadj120+hold_on_list": Variant(_trend_ok, lambda p: p["risk_adj_120"], hold_on_list=True),
     "trend+riskadj120+streak_cap": Variant(_trend_ok, lambda p: p["risk_adj_120"], max_streak=SMALL_STREAK_CAP),
     "trend+composite+streak_cap": Variant(_trend_ok, lambda p: p["composite"], max_streak=SMALL_STREAK_CAP),
     "mom120+streak_cap": Variant(_all, lambda p: p["ret_120d"], max_streak=SMALL_STREAK_CAP),
 }
+FADED_OR_DROPPED = ("jump_faded_60d", "drop_60d")
+WEAK_GROUP = ("group_bottom20_120d",)
+for _base, _score in (("trend+riskadj120", lambda p: p["risk_adj_120"]), ("trend+composite", lambda p: p["composite"])):
+    VARIANTS.update({
+        f"{_base}+clean": Variant(_trend_ok, _score, exclude=FADED_OR_DROPPED),
+        f"{_base}+no_weak_group": Variant(_trend_ok, _score, exclude=WEAK_GROUP),
+        f"{_base}+top_group": Variant(_trend_ok, _score, require=("group_top20_120d",)),
+        f"{_base}+prefer_leader": Variant(_trend_ok, _score, prefer=("leader_in_top_group",)),
+        f"{_base}+prefer_turnaround": Variant(_trend_ok, _score, prefer=("turnaround",)),
+        f"{_base}+combo": Variant(_trend_ok, _score, exclude=FADED_OR_DROPPED + WEAK_GROUP,
+                                  prefer=("leader_in_top_group", "turnaround")),
+    })
+VARIANTS["early_momentum_all+top_group+clean"] = Variant(
+    lambda p: p["early_momentum"].astype(bool), lambda p: p["ret_60d"], take_all=True,
+    exclude=FADED_OR_DROPPED, require=("group_top20_120d",))
 
 
 def load_panels(panel_dir: str, years: List[int]) -> pd.DataFrame:
@@ -131,8 +152,14 @@ def add_selection_features(panel: pd.DataFrame, dollar_volume_20d: pd.DataFrame)
 
 
 def rank_variant(panel: pd.DataFrame, variant: Variant, n: int) -> pd.DataFrame:
-    """Eligible rows with their score rank within (checkpoint, tier); persistence and liquidity applied."""
+    """Eligible rows with their score rank within (checkpoint, tier), after the variant's liquidity, streak,
+    exclude (factor == 1 drops the row) and require (factor must be 1) rules; `prefer` moves names with those
+    factors to the front of the top PREFER_POOL_MULTIPLE * n."""
     eligible = variant.eligible(panel).fillna(False).astype(bool)
+    for factor in variant.exclude:
+        eligible &= panel[factor] != 1
+    for factor in variant.require:
+        eligible &= panel[factor] == 1
     if variant.liquid:
         eligible &= panel["dollar_volume_20d"] >= LIQUID_DOLLAR_VOLUME
     if variant.max_streak is not None:
@@ -148,11 +175,13 @@ def rank_variant(panel: pd.DataFrame, variant: Variant, n: int) -> pd.DataFrame:
         ranked_before["checkpoint"] = ranked_before["checkpoint"].map(next_checkpoint)
         p = p.merge(ranked_before.dropna(), on=["checkpoint", "symbol"])
         p["rank"] = p.groupby(["checkpoint", "tier"])["score"].rank(ascending=False, method="first")
-    if variant.streak_first:
-        p["in_pool"] = p["rank"] <= STREAK_POOL_MULTIPLE * n
-        p = p.sort_values(["checkpoint", "tier", "in_pool", "streak", "rank"], ascending=[True, True, False, False, True])
+    if variant.prefer:
+        p["in_pool"] = p["rank"] <= PREFER_POOL_MULTIPLE * n
+        p["preference"] = panel.loc[p.index, list(variant.prefer)].fillna(0).sum(axis=1)
+        p = p.sort_values(["checkpoint", "tier", "in_pool", "preference", "rank"],
+                          ascending=[True, True, False, False, True])
         p["rank"] = p.groupby(["checkpoint", "tier"]).cumcount() + 1.0
-        p = p.drop(columns="in_pool")
+        p = p.drop(columns=["in_pool", "preference"])
     p["keep"] = (p["streak"] > 0) if variant.hold_on_list else False
     return p
 
@@ -243,10 +272,12 @@ def run(args: argparse.Namespace) -> None:
     checkpoints = sorted(panel["checkpoint"].unique())
     symbols = sorted(panel["symbol"].unique())
     bar_cache = DailyBarCache(args.cache_dir, alpaca.daily_bars)
-    close, dollar_volume = bar_cache.load(symbols + BENCHMARKS, date(min(years) - 1, 11, 1), args.today, args.today)
+    close, dollar_volume = bar_cache.load(symbols + BENCHMARKS, date(min(years) - 2, 10, 1), args.today, args.today)
     regime = market_regime(close[REGIME_INDEX]).reindex(checkpoints).fillna(False)
     dv20 = dollar_volume[symbols].rolling(20, min_periods=15).median().reindex(checkpoints)
     panel = add_selection_features(panel, dv20)
+    panel = attach_factors(panel, factor_frames(close[symbols], dollar_volume[symbols]))
+    panel = add_group_strength(panel, IndustryCache(os.path.join(args.cache_dir, "industries.csv")).load(args.today))
     returns = period_returns(close, checkpoints)
 
     out_dir = os.path.join(args.out_dir, "selection_filters")
@@ -264,7 +295,7 @@ def run(args: argparse.Namespace) -> None:
         yearly_rows.append(yearly(r).rename(("Benchmark", b)))
 
     for name, variant in VARIANTS.items():
-        take_all = name == "early_momentum_all"
+        take_all = variant.take_all
         ranked = rank_variant(panel, variant, args.top)
         picks = pick_top(ranked, args.top, take_all)
         sig = signal_test(panel, picks, regime).assign(variant=name)
