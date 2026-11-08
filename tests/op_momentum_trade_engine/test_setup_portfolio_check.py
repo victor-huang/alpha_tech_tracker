@@ -115,14 +115,14 @@ class TestParseArgs:
         assert parse_args(["AMD", "--start", "2026-01-02", "--overnight-mode", "always"]).overnight_mode == "always"
 
 
-def _daily(closes, start=date(2026, 7, 1)):
+def _daily(closes, start=date(2025, 7, 1)):
     index = [start + timedelta(days=i) for i in range(len(closes))]
     return pd.DataFrame({"high": [c + 1.0 for c in closes], "close": closes}, index=index)
 
 
-RISING = _daily([100.0 + i for i in range(60)])
-FALLING = _daily([160.0 - i for i in range(60)])
-SESSION = date(2026, 8, 30)
+RISING = _daily([100.0 + i for i in range(220)])
+FALLING = _daily([320.0 - i for i in range(220)])
+SESSION = date(2026, 2, 7)
 
 
 class TestTrendMask:
@@ -136,15 +136,8 @@ class TestTrendMask:
 
         assert keep.tolist() == [False, True, True, True]
 
-    def test_drive_short_kept_only_for_the_falling_ticker(self):
-        keep = trend_mask(self._trades(), ["drive-short"], {"QQQ": FALLING, "AMD": FALLING, "META": RISING})
-
-        assert keep.tolist() == [True, True, True, False]
-
-    def test_drive_short_dropped_when_qqq_is_above_its_ema(self):
-        keep = trend_mask(self._trades(), ["drive-short"], {"QQQ": RISING, "AMD": FALLING, "META": FALLING})
-
-        assert keep.tolist() == [True, False, True, False]
+    def test_overnight_long_kept_when_qqq_passes(self):
+        assert trend_mask(self._trades(), ["overnight"], {"QQQ": RISING}).all()
 
 
 class TestGatedSessions:
@@ -160,7 +153,6 @@ class TestTrendArguments:
         assert (args.short_gate, args.trend_filters) == ("qqq-ma50", [])
 
     def test_filters_and_gate(self):
-        args = parse_args(["AMD", "--start", "2026-01-02", "--short-gate", "always", "--trend-filters", "overnight",
-                           "drive-short"])
+        args = parse_args(["AMD", "--start", "2026-01-02", "--short-gate", "always", "--trend-filters", "overnight"])
 
-        assert (args.short_gate, args.trend_filters) == ("always", ["overnight", "drive-short"])
+        assert (args.short_gate, args.trend_filters) == ("always", ["overnight"])

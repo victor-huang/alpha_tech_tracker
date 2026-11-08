@@ -3,7 +3,6 @@ from datetime import date, timedelta
 import pandas as pd
 
 from alpha_tech_tracker.op_momentum_strategy.trend_filters import (
-    drive_short_rule,
     market_trend,
     overnight_rule,
     pullback_rule,
@@ -11,7 +10,7 @@ from alpha_tech_tracker.op_momentum_strategy.trend_filters import (
     ticker_trend,
 )
 
-START = date(2026, 1, 1)
+START = date(2025, 1, 1)
 
 
 def _daily(closes):
@@ -19,28 +18,35 @@ def _daily(closes):
     return pd.DataFrame({"high": [c + 1.0 for c in closes], "close": closes}, index=index)
 
 
-RISING = _daily([100.0 + i for i in range(60)])
-FALLING = _daily([160.0 - i for i in range(60)])
+RISING = _daily([100.0 + i for i in range(220)])
+FALLING = _daily([320.0 - i for i in range(220)])
 
 
 class TestMarketTrend:
-    def test_overnight_ok_above_the_ma_and_up_over_10_sessions(self):
+    def test_overnight_ok_above_the_200_day_ma_and_up_over_10_sessions(self):
         assert market_trend(RISING)["overnight_ok"].iloc[-1]
 
     def test_no_overnight_when_falling(self):
         assert not market_trend(FALLING)["overnight_ok"].iloc[-1]
 
     def test_no_overnight_above_the_ma_but_down_over_10_sessions(self):
-        closes = [100.0] * 45 + [130.0] * 5 + [128.0 - i for i in range(10)]
+        closes = [100.0] * 195 + [130.0] * 15 + [128.0 - i for i in range(10)]
 
         row = market_trend(_daily(closes)).iloc[-1]
 
         assert row["close"] > row["ma"]
         assert not row["overnight_ok"]
 
-    def test_short_ok_below_the_10_day_ema(self):
-        assert market_trend(FALLING)["short_ok"].iloc[-1]
-        assert not market_trend(RISING)["short_ok"].iloc[-1]
+    def test_no_overnight_up_over_10_sessions_but_below_the_ma(self):
+        closes = [200.0] * 200 + [100.0 + i for i in range(20)]
+
+        row = market_trend(_daily(closes)).iloc[-1]
+
+        assert row["return"] > 0
+        assert not row["overnight_ok"]
+
+    def test_not_ok_without_200_closes(self):
+        assert not market_trend(_daily([100.0 + i for i in range(150)]))["overnight_ok"].iloc[-1]
 
 
 class TestTickerTrend:
@@ -50,14 +56,8 @@ class TestTickerTrend:
     def test_no_pullback_on_a_lower_10_session_high(self):
         assert not ticker_trend(FALLING)["pullback_ok"].iloc[-1]
 
-    def test_short_ok_when_down_over_20_sessions(self):
-        assert ticker_trend(FALLING)["short_ok"].iloc[-1]
-        assert not ticker_trend(RISING)["short_ok"].iloc[-1]
-
     def test_not_ok_without_enough_history(self):
-        row = ticker_trend(_daily([100.0 + i for i in range(15)])).iloc[-1]
-
-        assert (row["pullback_ok"], row["short_ok"]) == (False, False)
+        assert not ticker_trend(_daily([100.0 + i for i in range(15)]))["pullback_ok"].iloc[-1]
 
 
 class TestRules:
@@ -65,7 +65,7 @@ class TestRules:
         ok, text = overnight_rule(market_trend(RISING).iloc[-1])
 
         assert ok
-        assert text == "QQQ 159.00, above its 50-day MA 134.50, +6.7% over 10 sessions"
+        assert text == "QQQ 319.00, above its 200-day MA 219.50, +3.2% over 10 sessions"
 
     def test_overnight_rule_off_without_market_data(self):
         assert overnight_rule(None) == (False, "QQQ has too little daily history")
@@ -73,19 +73,8 @@ class TestRules:
     def test_pullback_rule_reason(self):
         assert pullback_rule(ticker_trend(FALLING).iloc[-1]) == (False, "10-session high 111.00 vs 121.00 before")
 
-    def test_drive_short_needs_qqq_below_its_ema(self):
-        ok, reason = drive_short_rule(market_trend(RISING).iloc[-1], ticker_trend(FALLING).iloc[-1])
-
-        assert not ok
-        assert reason.startswith("QQQ 159.00 above its 10-day EMA")
-
-    def test_drive_short_needs_the_ticker_down(self):
-        ok, reason = drive_short_rule(market_trend(FALLING).iloc[-1], ticker_trend(RISING).iloc[-1])
-
-        assert (ok, reason) == (False, "not down over 20 sessions (+14.4%)")
-
-    def test_drive_short_allowed(self):
-        assert drive_short_rule(market_trend(FALLING).iloc[-1], ticker_trend(FALLING).iloc[-1])[0]
+    def test_pullback_rule_off_without_history(self):
+        assert pullback_rule(None) == (False, "too little daily history")
 
 
 class TestSessionFlags:

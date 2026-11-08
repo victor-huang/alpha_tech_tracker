@@ -1109,12 +1109,12 @@ class TestShortArguments:
 
 
 def _daily(closes):
-    index = [date(2026, 7, 1) + pd.Timedelta(days=i) for i in range(len(closes))]
+    index = [date(2025, 1, 1) + pd.Timedelta(days=i) for i in range(len(closes))]
     return pd.DataFrame({"high": [c + 1.0 for c in closes], "close": closes}, index=index)
 
 
-DAILY_RISING = _daily([100.0 + i for i in range(60)])
-DAILY_FALLING = _daily([160.0 - i for i in range(60)])
+DAILY_RISING = _daily([100.0 + i for i in range(220)])
+DAILY_FALLING = _daily([320.0 - i for i in range(220)])
 
 
 def _daily_loader(daily):
@@ -1157,7 +1157,7 @@ class TestTrendFilters:
 
         monitor.prepare()
 
-        assert alerts == ["[wave] trend filters | overnight holds on: QQQ 159.00, above its 50-day MA 134.50, +6.7% "
+        assert alerts == ["[wave] trend filters | overnight holds on: QQQ 319.00, above its 200-day MA 219.50, +3.2% "
                           "over 10 sessions | AMD off: pullback long C1 (10-session high 111.00 vs 121.00 before)"]
 
     def test_overnight_hold_skipped_when_qqq_fails(self, tmp_path):
@@ -1170,40 +1170,9 @@ class TestTrendFilters:
 
         monitor.tick()
 
-        assert alerts[-1] == ("[wave] SKIP AMD | overnight always | trend filter: QQQ 101.00, below its 50-day MA "
-                              "125.50, -9.0% over 10 sessions")
+        assert alerts[-1] == ("[wave] SKIP AMD | overnight always | trend filter: QQQ 101.00, below its 200-day MA "
+                              "200.50, -9.0% over 10 sessions")
         assert monitor.trades == []
-
-    def test_drive_short_silenced_when_the_ticker_is_not_down(self, tmp_path):
-        monitor, alerts = self._monitor(tmp_path, _Clock("2026-10-06 09:35"), {"AMD": []},
-                                        {"AMD": DAILY_RISING, "QQQ": DAILY_FALLING}, closes=QQQ_FALLING,
-                                        trend_filters=["drive-short"])
-        monitor.prepare()
-
-        monitor._on_five_min_bar("AMD", _bar("2026-10-06 09:30", 100.0, 101.0, 98.5, 99.0))
-
-        assert not [a for a in alerts if "SHORT AMD" in a]
-
-    def test_drive_short_alerted_when_qqq_and_the_ticker_are_down(self, tmp_path):
-        monitor, alerts = self._monitor(tmp_path, _Clock("2026-10-06 09:35"), {"AMD": []},
-                                        {"AMD": DAILY_FALLING, "QQQ": DAILY_FALLING}, closes=QQQ_FALLING,
-                                        trend_filters=["drive-short"])
-        monitor.prepare()
-
-        monitor._on_five_min_bar("AMD", _bar("2026-10-06 09:30", 100.0, 101.0, 98.5, 99.0))
-
-        assert alerts[-1].startswith("[wave] SHORT AMD | short drive")
-
-    def test_configured_drive_short_is_not_evaluated_when_blocked(self, tmp_path, mocker):
-        monitor, _ = self._monitor(tmp_path, _Clock("2026-10-06 09:35"), {"AMD": ["drive short"]},
-                                   {"AMD": DAILY_RISING, "QQQ": DAILY_FALLING}, trend_filters=["drive-short"],
-                                   short_setups=())
-        monitor.prepare()
-        evaluate = mocker.patch.object(monitor_module, "evaluate_setup", return_value=[])
-
-        monitor._submit_evaluations("AMD", _ts("2026-10-06 09:30"))
-
-        evaluate.assert_not_called()
 
     def test_daily_bars_failure_turns_the_filtered_setups_off(self, tmp_path):
         def failing(tickers, session):
@@ -1222,12 +1191,11 @@ class TestTrendFilterArguments:
         assert parse_args(["run"]).trend_filters == []
 
     def test_choices(self):
-        assert parse_args(["run", "--trend-filters", "pullback", "overnight", "drive-short"]).trend_filters == [
-            "pullback", "overnight", "drive-short"]
+        assert parse_args(["run", "--trend-filters", "pullback", "overnight"]).trend_filters == ["pullback", "overnight"]
 
-    def test_unknown_filter_is_rejected(self):
+    def test_drive_short_filter_was_removed(self):
         with pytest.raises(SystemExit):
-            parse_args(["run", "--trend-filters", "vix"])
+            parse_args(["run", "--trend-filters", "drive-short"])
 
 
 class TestReversalArguments:

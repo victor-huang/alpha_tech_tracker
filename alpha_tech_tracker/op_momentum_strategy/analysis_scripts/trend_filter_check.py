@@ -5,11 +5,7 @@ exits of the filtered setups are split into kept / dropped by the filter decided
 close, and compared per trade:
 
   pullback     pullback long, pullback long C1: kept on a higher 10-session high
-  overnight    overnight always, overnight ma200: kept while QQQ is above its 50-day MA and up over 10 sessions
-  drive-short  drive short: kept while QQQ is below its 10-day EMA and the ticker is down over 20 sessions
-
-The filters were chosen on six 2025-2026 windows of the prod tickers; run it on other years and tickers before
-turning them on.
+  overnight    overnight always, overnight ma200: kept while QQQ is above its 200-day MA and up over 10 sessions
 
   python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.trend_filter_check \\
     backtest_result/wave_setups/2022-01-03_2022-06-30/trades.csv backtest_result/wave_setups/2023-01-03_2023-07-31/trades.csv
@@ -32,8 +28,7 @@ from alpha_tech_tracker.op_momentum_strategy.trend_filters import (
     ticker_trend,
 )
 
-FILTERED_SETUPS = {"pullback": PULLBACK_SETUPS, "overnight": ("overnight always", "overnight ma200"),
-                   "drive-short": ("drive short",)}
+FILTERED_SETUPS = {"pullback": PULLBACK_SETUPS, "overnight": ("overnight always", "overnight ma200")}
 
 
 def load_report_trades(path):
@@ -52,25 +47,19 @@ def mark_kept(trades, daily, filters):
     for name in filters:
         trades.loc[trades["setup"].isin(FILTERED_SETUPS[name]), "filter"] = name
     sessions = sorted(set(trades["day"]))
-    market = market_trend(daily[MARKET_TICKER])
-    night = session_flags(market, sessions, "overnight_ok")
-    market_short = session_flags(market, sessions, "short_ok")
+    night = session_flags(market_trend(daily[MARKET_TICKER]), sessions, "overnight_ok")
+    higher_high = {}
     kept = []
-    flags = {}
     for ticker, day, name in zip(trades["ticker"], trades["day"], trades["filter"]):
-        if name is None:
-            kept.append(True)
-            continue
-        if ticker not in flags:
-            trend = ticker_trend(daily[ticker]) if ticker in daily else None
-            flags[ticker] = {col: session_flags(trend, sessions, col) if trend is not None else {}
-                             for col in ("pullback_ok", "short_ok")}
-        if name == "pullback":
-            kept.append(flags[ticker]["pullback_ok"].get(day, False))
-        elif name == "overnight":
+        if name == "overnight":
             kept.append(night[day])
+        elif name == "pullback":
+            if ticker not in higher_high:
+                higher_high[ticker] = (session_flags(ticker_trend(daily[ticker]), sessions, "pullback_ok")
+                                       if ticker in daily else {})
+            kept.append(higher_high[ticker].get(day, False))
         else:
-            kept.append(market_short[day] and flags[ticker]["short_ok"].get(day, False))
+            kept.append(True)
     trades["kept"] = kept
     return trades
 

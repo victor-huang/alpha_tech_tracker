@@ -19,10 +19,9 @@ the monitor alerts with its defaults (plus the chosen drive long variant); with 
 the overnight long on gated sessions too.
 
 `--short-gate always` drops the market gate (shorts every session, the overnight long only where a plan keeps it), as
-the monitor's `--short-gate always`. `--trend-filters` applies the monitor's opt-in trend filters (trend_filters.py,
-Finding 40) at each session's previous daily close: `overnight` keeps the overnight long only while QQQ is above its
-50-day MA and up over 10 sessions, `drive-short` keeps the drive short + re-entry only while QQQ is below its 10-day
-EMA and the ticker is down over 20 sessions.
+the monitor's `--short-gate always`. `--trend-filters overnight` applies the monitor's opt-in overnight trend filter
+(trend_filters.py, Finding 40) at each session's previous daily close: the overnight long only while QQQ is above its
+200-day MA and up over 10 sessions.
 
 It models a generic mix: every ticker runs every leg. The monitor runs only the setups each ticker's config lists (e.g.
 drive long only where the config has `drive long`), so this compares the legs, it is not a replay of the configured
@@ -55,12 +54,7 @@ from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_rider import 
 )
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import fetch_daily_bars
 from alpha_tech_tracker.op_momentum_strategy.signal_stats import overnight_results
-from alpha_tech_tracker.op_momentum_strategy.trend_filters import (
-    MARKET_TICKER,
-    market_trend,
-    session_flags,
-    ticker_trend,
-)
+from alpha_tech_tracker.op_momentum_strategy.trend_filters import MARKET_TICKER, market_trend, session_flags
 
 DRIVE_VARIANTS = ("drive long", "drive-trail", "drive + re-entry", "drive-trail + re-entry")
 SHORT_LEGS = ("drive short + re-entry", "overnight short")
@@ -205,21 +199,11 @@ def daily_frames(tickers, start, end):
 
 def trend_mask(trades, filters, daily):
     """Rows the trend filters keep: with `overnight`, overnight long rows only on sessions QQQ passed its rule at the
-    previous close; with `drive-short`, drive short + re-entry rows only where QQQ and the ticker passed theirs."""
+    previous close."""
     keep = pd.Series(True, index=trades.index)
-    sessions = sorted(set(trades["day"]))
-    market = market_trend(daily[MARKET_TICKER])
     if "overnight" in filters:
-        night = session_flags(market, sessions, "overnight_ok")
-        rows = trades["leg"] == "overnight long"
-        keep &= ~rows | trades["day"].map(night).astype(bool)
-    if "drive-short" in filters:
-        market_ok = session_flags(market, sessions, "short_ok")
-        rows = trades["leg"] == "drive short + re-entry"
-        for ticker in set(trades.loc[rows, "ticker"]):
-            ticker_ok = session_flags(ticker_trend(daily[ticker]), sessions, "short_ok")
-            mine = rows & (trades["ticker"] == ticker)
-            keep &= ~mine | trades["day"].map(lambda d: market_ok[d] and ticker_ok[d]).astype(bool)
+        night = session_flags(market_trend(daily[MARKET_TICKER]), sorted(set(trades["day"])), "overnight_ok")
+        keep &= (trades["leg"] != "overnight long") | trades["day"].map(night).astype(bool)
     return keep
 
 
@@ -234,8 +218,8 @@ def parse_args(argv=None):
                         help="Overnight long filter: ma200 (overnight ma200) or always (overnight always)")
     parser.add_argument("--short-gate", choices=("qqq-ma50", "always"), default="qqq-ma50",
                         help="Sessions the short legs may trade: QQQ's previous close below its 50-day MA, or every one")
-    parser.add_argument("--trend-filters", nargs="+", choices=("overnight", "drive-short"), default=[],
-                        help="The monitor's opt-in trend filters applied to the overnight long / drive short legs")
+    parser.add_argument("--trend-filters", nargs="+", choices=("overnight",), default=[],
+                        help="The monitor's opt-in overnight trend filter applied to the overnight long leg")
     return parser.parse_args(argv)
 
 
@@ -250,8 +234,7 @@ def main(argv=None):
     gated = gated_sessions(args.start, end, args.short_gate)
     trades["gated"] = trades["day"].isin(gated)
     if args.trend_filters:
-        trades = trades[trend_mask(trades, args.trend_filters, daily_frames(args.tickers + [MARKET_TICKER], args.start,
-                                                                            end))]
+        trades = trades[trend_mask(trades, args.trend_filters, daily_frames([MARKET_TICKER], args.start, end))]
     trades["dollars"] = trades["pct"] / 100 * args.capital / len(args.tickers)
     pd.set_option("display.width", 250)
     filters = f"; trend filters: {' '.join(args.trend_filters)}" if args.trend_filters else ""

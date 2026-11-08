@@ -33,12 +33,11 @@ plus a CSV log:
                drive long stop-out when a bar closes back above the stop-out level (before 15:00), stop the
                low since the stop-out, held to the close (Findings 32, 35, 36).
   TREND FILTERS
-               opt-in (`--trend-filters`, off by default; Finding 40, in-sample), decided at start-up on the
+               opt-in (`--trend-filters`, off by default; Finding 40), decided at start-up on the
                daily bars before the session, listed in one start-up alert: `pullback` (pullback long / C1 only
-               while the ticker's 10-session high is above the 10 before), `overnight` (overnight holds only
-               while QQQ is above its 50-day MA and up over 10 sessions; SKIP at the close otherwise),
-               `drive-short` (drive shorts only while QQQ is below its 10-day EMA and the ticker is down over
-               20 sessions; studied with `--short-gate always`).
+               while the ticker's 10-session high is above the 10 before; mixed across years), `overnight`
+               (overnight holds only while QQQ is above its 200-day MA and up over 10 sessions; SKIP at the
+               close otherwise; the best of the tested rules over 2020, 2022, 2025 and 2026).
   Start-up    drive long and overnight hold win rates: the last 10 sessions pooled over the stats
                tickers (`--stats-tickers`), and day by day for the last 3 sessions over the monitored
                tickers (signal_stats). `--no-signal-stats` turns it off.
@@ -165,7 +164,6 @@ from alpha_tech_tracker.op_momentum_strategy.trend_filters import (
     MARKET_TICKER as TREND_MARKET_TICKER,
     PULLBACK_SETUPS,
     TREND_FILTERS,
-    drive_short_rule,
     market_trend,
     overnight_rule,
     pullback_rule,
@@ -1014,7 +1012,6 @@ class WaveSetupMonitor:
         self.trend_blocked = {}
         if not self.trend_filters:
             return
-        drive_shorts = (SHORT_NAMES["drive"], CONFIG_DRIVE_SHORT)
         overnight = {s.name for specs in self.setups.values() for s in specs if s.overnight}
         wanted = {}
         if "pullback" in self.trend_filters:
@@ -1023,13 +1020,6 @@ class WaveSetupMonitor:
         if "overnight" in self.trend_filters:
             for ticker, specs in self.setups.items():
                 wanted.setdefault(ticker, set()).update(s.name for s in specs if s.name in overnight)
-        if "drive-short" in self.trend_filters:
-            monitor_shorts = self.short_tickers if "drive" in self.short_setups else []
-            for ticker, specs in self.setups.items():
-                names = wanted.setdefault(ticker, set())
-                names.update(s.name for s in specs if s.name == CONFIG_DRIVE_SHORT)
-                if ticker in monitor_shorts:
-                    names.add(SHORT_NAMES["drive"])
         wanted = {t: names for t, names in wanted.items() if names}
         if not wanted:
             return
@@ -1048,12 +1038,7 @@ class WaveSetupMonitor:
             frame = daily.get(ticker)
             trend = ticker_trend(frame).iloc[-1] if frame is not None and not frame.empty else None
             for name in sorted(wanted[ticker]):
-                if name in PULLBACK_SETUPS:
-                    ok, reason = pullback_rule(trend)
-                elif name in drive_shorts:
-                    ok, reason = drive_short_rule(market, trend)
-                else:
-                    ok, reason = night_ok, night_text
+                ok, reason = pullback_rule(trend) if name in PULLBACK_SETUPS else (night_ok, night_text)
                 if not ok:
                     self.trend_blocked.setdefault(ticker, {})[name] = reason
         for ticker, blocked in sorted(self.trend_blocked.items()):
@@ -1088,8 +1073,6 @@ class WaveSetupMonitor:
         stamp, session = bar["time"], self.session.isoformat()
         name, reentry_name = SHORT_NAMES["drive"], SHORT_NAMES["drive re-entry"]
         drives = {name, CONFIG_DRIVE_SHORT}
-        if self._trend_blocked(ticker, name) or self._trend_blocked(ticker, CONFIG_DRIVE_SHORT):
-            return
         if stamp.time() == MARKET_OPEN:
             key = f"{ticker}|{name}|{session}"
             # a configured "drive short" setup alerts the same trade; its stop-out still gets the re-entry
@@ -1629,10 +1612,9 @@ def parse_args(argv=None):
     parser.add_argument("--short-tickers", nargs="+", help="Tickers for the short setups (default: the config's "
                                                            "tickers plus QQQ)")
     parser.add_argument("--trend-filters", nargs="+", choices=TREND_FILTERS, default=[],
-                        help="Opt-in daily trend filters (default: none; in-sample, Finding 40): pullback = pullback "
-                             "longs only on a higher 10-session high; overnight = overnight holds only while QQQ is "
-                             "above its 50-day MA and up over 10 sessions; drive-short = drive shorts only while QQQ "
-                             "is below its 10-day EMA and the ticker is down over 20 sessions")
+                        help="Opt-in daily trend filters (default: none; Finding 40): overnight = overnight holds "
+                             "only while QQQ is above its 200-day MA and up over 10 sessions; pullback = pullback "
+                             "longs only on a higher 10-session high (mixed across years)")
     parser.add_argument("--stats-tickers", nargs="+", default=list(DEFAULT_STATS_TICKERS),
                         help="Tickers pooled in the start-up drive long / overnight win rates (default: the 21 "
                              "setup-tape tickers)")

@@ -101,10 +101,11 @@ earlier findings: [`WAVE_RISK_REWARD_FINDINGS.md`](WAVE_RISK_REWARD_FINDINGS.md)
   switch with the market (overnight always +0.86% / +0.25% per trade in the up windows, −0.29% / −0.81% in the down
   windows, every ticker the same way); drive long led the up windows but was flat in Jan – Mar; the short setups paid
   only from Oct 12, and the QQQ < MA50 gate switched about a week late at both 2026 turns.
-- **Daily trend filters (Finding 40, six 2025–26 windows, in-sample):** the overnight hold kept its sign in all six
-  windows; pullback long only on a higher 10-session high (+0.58% a trade vs +0.11%), the overnight hold only while QQQ
-  is above its MA50 and up over 10 sessions (+0.21% vs −0.06%), the drive short only while QQQ is below its 10-day EMA
-  and the ticker is down over 20 sessions (+0.21% vs −0.06%). In the monitor as opt-in `--trend-filters`.
+- **Daily trend filters (Finding 40, 2020–2026):** the overnight hold kept its sign in all six 2025–26 up / down
+  windows. Over four full years (2020, 2022, 2025, 2026) holding overnight only while QQQ is above its 200-day MA and
+  up over 10 sessions summed +667% of trade return vs +181% every night (2022: −56 vs −579). The pullback and
+  drive-short filters picked on the six windows did not hold over the full years. In the monitor as opt-in
+  `--trend-filters overnight` (pullback kept as an option, drive-short removed).
 - **A ticker's intraday vs overnight split doesn't pick its setup (Finding 36):** within a window it always matches the
   better family, but measured on the previous 63 or 126 sessions it chose next month's winner 52–53% of the time
   (16 tickers, Jul 2025 – Oct 2026). Overnight holds won in H2 2025 and drive long in 2026 across the board; running
@@ -1773,7 +1774,7 @@ across the seven tickers (number of trades in brackets).
   where the config has no drive short): +$452 on $10k (+4.5%, 65 trades, 46% won), vs +$799 for the generic
   `--short-setups drive` mix of Finding 38.
 
-## Finding 40 — 2025 up / down windows, the ticker's own trend, and daily trend filters (opt-in in the monitor)
+## Finding 40 — 2025 up / down windows, the ticker's own trend, and daily trend filters (2020–2026)
 
 **Two 2025 windows added to Finding 39** (same seven tickers and method; SNDK from its Feb 24 2025 listing, CRWV from
 its Mar 28 IPO): down Feb 25 – Apr 7 2025 (QQQ below its MA50 all 30 sessions) and up Apr 8 – May 21 2025 (the
@@ -1823,11 +1824,41 @@ and slopes, 5 / 10 / 20-session returns, higher 10-session highs / lows), scored
   signal, not a switch.
 - **No measure tracks the hindsight trend well** (57–75% agreement), so the turns stay the weak spot.
 
-**Implemented, off by default** (`trend_filters.py`): the monitor's `--trend-filters pullback overnight drive-short`
-(decided at start-up from the daily bars before the session, one alert listing what is off; a blocked overnight hold
-gets a SKIP at the close), `setup_portfolio_check --trend-filters overnight drive-short` (with `--short-gate always`
-to match the study), and `analysis_scripts/trend_filter_check.py`, which applies them to any setup report's trades and
-reproduces the kept counts above. They were chosen in-sample on these six windows; check them on other years first.
+**Full years: the six-window winners mostly did not hold.** The filters were then run on whole years with the
+setup report (2025 and 2026 to Nov 6 on the prod tickers; 2020 and 2022 on MRNA AMD MDB SNPS, APP in 2022, plus META
+MSFT NFLX CRM ADBE MU, none split in those years; earnings nights skipped). % per trade, kept / dropped:
+
+| Filter | 2020 | 2022 | 2025 | 2026 outside the six windows |
+|---|---|---|---|---|
+| pullback long (higher 10-session high) | +0.03% / −0.17% | −0.03% / −0.07% | −0.09% / −0.07% | −0.10% / +0.04% |
+| pullback long C1 (same) | +0.08% / −0.22% | +0.03% / −0.12% | −0.05% / −0.01% | −0.23% / +0.15% |
+| drive short (QQQ < EMA10, ticker down 20 sessions) | **−0.64% / 0.00%** | −0.10% / +0.11% | −0.01% / +0.02% | −0.15% / −0.13% |
+
+**Overnight always by QQQ condition** (sum of trade %, trades in brackets):
+
+| QQQ condition | 2020 (COVID) | 2022 (bear) | 2025 | 2026 to Nov 6 | Four years |
+|---|---|---|---|---|---|
+| every night | +303 (2,480) | −579 (2,707) | +365 (1,628) | +92 (1,466) | +181 |
+| above its MA50 | +385 | −258 (772) | +322 | +45 | +495 |
+| up over 10 sessions | +329 | −370 (1,031) | +446 | +104 | +508 |
+| above its MA50 and up over 10 sessions | +287 | −264 (611) | +417 | +76 | +515 |
+| above its MA200 | +275 | −101 (186) | +401 | +62 | +637 |
+| **above its MA200 and up over 10 sessions** | +282 (1,844) | **−56 (77)** | +384 (924) | +57 (762) | **+667** |
+
+- **Every gate skipped the March 2020 crash** (−163 for every night); the MA50 got back in fastest in April.
+- **Only the MA200 handled 2022:** the MA50 and 10-session rules still let in 600–1,000 bear-market-rally nights, which
+  lost more per trade (−0.33% to −0.43%) than holding every night (−0.21%). Above the MA200 and up over 10 sessions
+  held 77 nights all year.
+- **The cost is a little in steady years** (2026: +57 vs +92); a drop that starts while QQQ is still up over 10
+  sessions is not caught.
+- **Drive-short failed in all four years** and was removed; **pullback** helped only in 2020 and 2022, and its kept
+  trades made +0.03 to +0.08% each.
+
+**Implemented, off by default** (`trend_filters.py`): the monitor's `--trend-filters overnight pullback` (decided at
+start-up from the daily bars before the session, one alert listing what is off; a blocked overnight hold gets a SKIP
+at the close, a blocked pullback is not evaluated) with `overnight` = QQQ above its 200-day MA and up over 10
+sessions; `setup_portfolio_check --trend-filters overnight` (and `--short-gate always`); and
+`analysis_scripts/trend_filter_check.py`, which applies them to any setup report's trades (it reproduces +181 → +667).
 
 ## Recommendations
 
@@ -1939,9 +1970,9 @@ reproduces the kept counts above. They were chosen in-sample on these six window
     market. Test a faster market switch than QQQ < MA50 on the Jan 28 and Mar 31 turns, and refresh the monitor config
     when the market turns; the Oct 7 config was picked in an uptrend.
 
-35. **Check the trend filters out of sample before turning them on (Finding 40):** run `trend_filter_check.py` on
-    setup reports for the 2020–24 windows (2020 crash, 2022 bear, 2023 rally) and other tickers. If they hold, start
-    with `--trend-filters pullback overnight`; leave drive long unfiltered.
+35. **Gate the overnight hold on QQQ above its 200-day MA and up over 10 sessions (Finding 40):** `--trend-filters
+    overnight` was the best rule across 2020, 2022, 2025 and 2026 and is the one to turn on first; expect fewer, better
+    holds and a small give-up in steady years. Leave `pullback` off (mixed across years) and drive long unfiltered.
 
 ## Reproduction
 
@@ -2036,8 +2067,10 @@ exactly (110 trades, +0.80%), but other settings may differ slightly.
    <window end>` per window, trades at `REPORT_EXITS`; the drive options and drive short + re-entry from `ticker_legs`
    (`setup_portfolio_check`, overnight mode always), gated by `gated_sessions`; % per trade = mean `net_pct`.
    Finding 40: the 2025 windows the same way; the measures from `fetch_daily_bars` (one-off script, previous-close
-   values); the chosen filters: `python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.trend_filter_check
-   <the six trades.csv>`.
+   values). Full years: `wave_risk_reward_setup_report --setups "pullback long" "pullback long C1" "overnight always"
+   "overnight ma200" "drive short"` per year, then `python -m
+   alpha_tech_tracker.op_momentum_strategy.analysis_scripts.trend_filter_check <the yearly trades.csv>`; the other
+   QQQ conditions from `market_trend` columns (one-off).
    The confirmation-lag table, the reversal-entry diagnostics, the drive long decomposition and the 11-case
    re-entry table were one-off scripts on `wave_events` / `ride` / `load_rider_bars` from `wave_rider.py`;
    intraday vs overnight from `fetch_daily_bars` (log open / previous close vs close / open).
