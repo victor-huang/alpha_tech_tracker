@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from typing import Callable, Dict, List, Optional, Tuple
 
+import numpy as np
 import pandas as pd
 import yfinance as yf
 from alpaca.data.enums import Adjustment, DataFeed
@@ -51,6 +52,8 @@ MAX_TRADING_GAP_DAYS = 10
 SHARE_JUMP_RATIO = 3.0
 DAILY_JUMP_UP = 3.0
 DAILY_JUMP_DOWN = -0.8
+RATIO_CHANGE_MOVE = 0.4
+RATIO_CHANGE_MAX_VOLUME_RATIO = 1.5
 
 
 @dataclass(frozen=True)
@@ -177,7 +180,8 @@ def market_cap_at(shares: Optional[pd.Series], day: date, raw_close: Optional[fl
     return float(window.median()) * raw_close
 
 
-def quality_flags(prices: pd.Series, shares: Optional[pd.Series], window: PeriodWindow) -> List[str]:
+def quality_flags(prices: pd.Series, shares: Optional[pd.Series], window: PeriodWindow,
+                  dollar_volume: Optional[pd.Series] = None) -> List[str]:
     """Signals that the return may be an artifact rather than a real move; flagged rows need a manual check."""
     flags = []
     t0 = pd.Timestamp(window.start) - pd.Timedelta(days=10)
@@ -189,11 +193,25 @@ def quality_flags(prices: pd.Series, shares: Optional[pd.Series], window: Period
         daily = span.pct_change().dropna()
         if (daily > DAILY_JUMP_UP).any() or (daily < DAILY_JUMP_DOWN).any():
             flags.append("price_jump")
+        if dollar_volume is not None and _has_quiet_jump(prices, dollar_volume, daily.index):
+            flags.append("ratio_change")
     if shares is not None and not shares.empty:
         around = shares[(shares.index >= t0 - pd.Timedelta(days=SHARES_WINDOW_BEFORE_DAYS)) & (shares.index <= t1)]
         if len(around) > 1 and around.min() > 0 and around.max() / around.min() > SHARE_JUMP_RATIO:
             flags.append("share_count_jump")
     return flags
+
+
+def _has_quiet_jump(prices: pd.Series, dollar_volume: pd.Series, days: pd.Index) -> bool:
+    """A large one-day move on no volume spike: an ADR-ratio change or unadjusted split, not real trading."""
+    share_volume = (dollar_volume / prices).reindex(prices.index)
+    baseline = share_volume.rolling(20, min_periods=10).mean().shift(1)
+    move = prices.pct_change(fill_method=None)
+    for day in days:
+        if abs(move.get(day, 0)) >= RATIO_CHANGE_MOVE and share_volume.get(day, np.nan) < \
+                RATIO_CHANGE_MAX_VOLUME_RATIO * baseline.get(day, np.nan):
+            return True
+    return False
 
 
 class SharesCache:
@@ -350,6 +368,7 @@ class DailyBarCache:
 
     def load(self, symbols: List[str], start: date, end: date, today: date) -> Tuple[pd.DataFrame, pd.DataFrame]:
         """Wide close / dollar volume covering [start - overlap, end], consistently adjusted as of the newest data."""
+        symbols = list(dict.fromkeys(symbols))
         months = _months_between(start, end)
         partitions = [self._partition(m, symbols, today) for m in months]
         close, dollar_volume = _stitch(partitions)
@@ -459,6 +478,7 @@ def pick_top_by_tier(
     raw_closes_for: Callable[[List[str], date], Dict[str, float]],
     close: pd.DataFrame,
     names: pd.Series,
+    dollar_volume: Optional[pd.DataFrame] = None,
     scan_batch: int = 120,
     max_scan: int = 3000,
 ) -> List[dict]:
@@ -486,7 +506,9 @@ def pick_top_by_tier(
                 "return_pct": round(row.ret * 100, 1),
                 "start_mcap_b": round(mcap / 1e9, 2),
                 "median_dollar_volume_m": round(row.median_dollar_volume / 1e6, 1),
-                "flags": ",".join(quality_flags(close[row.symbol], shares, window)),
+                "flags": ",".join(quality_flags(
+                    close[row.symbol], shares, window,
+                    None if dollar_volume is None else dollar_volume.get(row.symbol))),
             })
     return [r for tier in TIERS for r in picked[tier.name]]
 
@@ -512,7 +534,8 @@ def render_markdown(rows: pd.DataFrame, period: str, top_n: int) -> str:
         lines.append("")
     lines += ["Cells: ticker, period return, start-of-period market value. "
               "[!flags] = check by hand: trading_gap (ticker reuse), price_jump (bankruptcy/merger splice or a "
-              "real one-day move), share_count_jump (SPAC merger, restructuring, wrong share history).", ""]
+              "real one-day move), ratio_change (big move without a volume spike: ADR-ratio change or "
+              "unadjusted split), share_count_jump (SPAC merger, restructuring, wrong share history).", ""]
     return "\n".join(lines)
 
 
@@ -539,7 +562,7 @@ def run(args: argparse.Namespace) -> str:
             ranked = compute_period_returns(close, dollar_volume, window, args.min_price,
                                             args.min_dollar_volume, args.min_coverage)
             picked = pick_top_by_tier(ranked, window, args.top, lambda s: shares_cache.get(s, today),
-                                      alpaca.raw_closes, close, stocks["name"])
+                                      alpaca.raw_closes, close, stocks["name"], dollar_volume)
             print(f"{window.label}: {len(ranked)} eligible, picked {len(picked)}", flush=True)
             rows += picked
             shares_cache.save()

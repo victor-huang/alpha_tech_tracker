@@ -159,6 +159,22 @@ class TestQualityFlags:
 
         assert "price_jump" in quality_flags(prices, None, self._window())
 
+    def test_price_doubling_on_low_volume_flags_ratio_change(self):
+        days = pd.bdate_range("2026-02-02", periods=25)
+        prices = pd.Series([90.0] * 24 + [185.0], index=days)
+        dollar_volume = pd.Series([90.0 * 1e6] * 24 + [185.0 * 0.3e6], index=days)
+        window = PeriodWindow("2026-03", date(2026, 3, 1), date(2026, 3, 31), True)
+
+        assert "ratio_change" in quality_flags(prices, None, window, dollar_volume)
+
+    def test_news_jump_on_heavy_volume_is_not_a_ratio_change(self):
+        days = pd.bdate_range("2026-02-02", periods=25)
+        prices = pd.Series([60.0] * 24 + [170.0], index=days)
+        dollar_volume = pd.Series([60.0 * 1e6] * 24 + [170.0 * 30e6], index=days)
+        window = PeriodWindow("2026-03", date(2026, 3, 1), date(2026, 3, 31), True)
+
+        assert "ratio_change" not in quality_flags(prices, None, window, dollar_volume)
+
     def test_share_count_jump_flagged(self):
         prices = pd.Series([10.0, 10.5], index=pd.to_datetime(["2026-03-02", "2026-03-03"]))
         shares = pd.Series([1e8, 5e8], index=pd.to_datetime(["2026-01-01", "2026-03-15"]))
@@ -262,6 +278,14 @@ class TestDailyBarCache:
 
         assert fetch.call_count == 1
         assert close["AAA"].tolist() == [10.0, 12.0]
+
+    def test_duplicate_symbols_load_one_column(self, tmp_path, mocker):
+        fetch = mocker.Mock(return_value=_long_bars([("AAA", "2026-10-30", 12.0)]))
+
+        close, _ = DailyBarCache(str(tmp_path), fetch).load(["AAA", "AAA"], date(2026, 10, 1), date(2026, 10, 31),
+                                                            date(2026, 11, 7))
+
+        assert close.columns.tolist() == ["AAA"]
 
     def test_in_progress_month_is_refetched_next_day(self, tmp_path, mocker):
         fetch = mocker.Mock(return_value=_long_bars([("AAA", "2026-11-02", 10.0)]))
