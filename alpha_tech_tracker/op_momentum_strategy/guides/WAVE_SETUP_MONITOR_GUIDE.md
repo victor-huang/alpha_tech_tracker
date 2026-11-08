@@ -33,6 +33,23 @@ alerts move with the close and the overnight hold is skipped, as in the backtest
 the open, the overnight sell alert says "now" and the exit is priced on the first bar it sees
 (outcome `late open`).
 
+## Monthly tickers (ticker_screen)
+
+Which tickers to watch matters more than any setting (Findings 30, 38, 42). On the first trading day of each month:
+
+```bash
+python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.ticker_screen \
+  --write-config logs/wave_setup_monitor_config.json
+```
+
+It takes active NYSE / Nasdaq stocks (no funds, $10+), keeps the top 150 by six-month median dollar volume with a
+60-day average daily range of 4%+, ranks them by their last 63 sessions of drive long + overnight long (on the nights
+the overnight trend filter allows) and picks the top 5. `--write-config` writes `drive long` + `overnight always` for
+each pick; run the monitor with `--trend-filters overnight`. Monthly, on $10k: 2020 +$2,670, 2022 +$114 (QQQ −33%),
+2023 +$3,196, 2025 +$3,154, 2026 to Nov 6 +$2,408. Ranking without the volume + range screen, or on one month of
+results, lost money. It fetches daily bars for every US stock and three months of 5-min bars for each passer, so it
+takes a while; run it after the close or before the session.
+
 ## Weekly refresh (recommended recipe)
 
 Research (Findings 17–18 in the ticker-tuning doc) found the most robust way to choose the setups:

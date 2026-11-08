@@ -111,6 +111,10 @@ earlier findings: [`WAVE_RISK_REWARD_FINDINGS.md`](WAVE_RISK_REWARD_FINDINGS.md)
   gate known at the time they roughly break even over 2020–2026 (best: drive short with QQQ < MA50 and down over 10
   sessions +23, overnight short with QQQ < MA200 +139, both mostly 2022). Shorts pay in a slow bear year, not in a
   quick drop and rebound; keeping the overnight long out saved more.
+- **Picking tickers (Finding 42, 2020–2026):** most liquid stocks lose with the core setups; the ones that work trade
+  heavily and move a lot. Each month take the top 150 stocks by dollar volume with a 4%+ daily range and hold the top
+  5 by their last 63 sessions of core results: +$11,542 on $10k over 2020, 2022, 2023, 2025 and 2026, positive every
+  year (2022 +$114 while QQQ fell 33%). Ranking without the screen failed. `ticker_screen.py` runs it.
 - **A ticker's intraday vs overnight split doesn't pick its setup (Finding 36):** within a window it always matches the
   better family, but measured on the previous 63 or 126 sessions it chose next month's winner 52–53% of the time
   (16 tickers, Jul 2025 – Oct 2026). Overnight holds won in H2 2025 and drive long in 2026 across the board; running
@@ -1920,6 +1924,68 @@ MSFT CRM ADBE MU, APP in 2022), sum of trade %:
 `--overnight-short-gate` in the monitor (the overnight short and the long holds it skips follow it; the start-up alert
 shows both gates) and in `setup_portfolio_check`.
 
+## Finding 42 — Finding tickers for the core setups: a monthly volume + range screen (2020–2026)
+
+**Core setups** throughout: drive long (green first bar, stop its low, held to the close) plus the overnight long
+(15:55 close to the next open, earnings nights skipped) on the nights the overnight trend filter allows (QQQ above its
+200-day MA and up over 10 sessions, Finding 40); 5 bps a trade, split-adjusted bars (`ticker_legs`).
+
+**Universe:** active NYSE / Nasdaq stocks from Alpaca's asset list, funds removed by name, price ≥ $10 and median
+daily dollar volume ≥ $100M over the six months before the year (2026: 782 stocks, 98 in QQQ, 383 in SPY, 301 others
+standing in for the Russell 2000, whose holdings file could not be downloaded). Index labels use today's members, and
+the asset list holds today's listed stocks only (survivorship: names delisted since are missing, more so in early
+years).
+
+**2026 across the universe (Jan 2 – Nov 6):** most stocks lost with the core setups (QQQ members +0.5% a ticker, 35%
+positive; SPY −13.9%, 19% positive; others −17.6%, 20% positive). Of 13 prior traits (momentum, MAs, range, gaps,
+trend smoothness, dollar volume) only dollar volume predicted the result on its own (rank correlation +0.17 core,
++0.18 drive long). Volume and range together sorted it (mean core sum % per ticker, tickers in brackets):
+
+| $ volume \ 60-day range | < 2.5% | 2.5–4% | 4–6% | 6%+ |
+|---|---|---|---|---|
+| $100–300M | −15.2 (202) | −15.8 (171) | −17.7 (63) | −25.2 (18) |
+| $300M–1B | −12.8 (123) | −13.3 (84) | −19.3 (23) | −3.4 (19) |
+| $1B+ | −5.0 (31) | −4.2 (24) | **+4.9 (15)** | **+15.5 (9)** |
+
+Drive long per trade: +0.23% in the $1B+ / 6%+ cell, +0.09% at 4–6%, negative everywhere else; a wide range on a
+thinly traded stock was the worst cell. The 24 stocks with $1B+ and a 4%+ range at the start of 2026 made +212.7% in
+total (drive long +0.13% a trade on 18 of 24 positive; overnight −0.04%); the crypto-linked names (COIN, BMNR, HOOD,
+MSTR, CRCL, SOFI) were 6 of the bottom 9. **2025 (618 stocks, traits at the end of 2024)** pointed the same way: a 4%+
+range was positive on 78–100% of tickers (universe 35%), the $1B+ / 2.5%+ cells +27.6 to +34.8% a ticker, and
+stocks under a 2.5% range lost in both years.
+
+**Monthly re-pick without hindsight.** At each month's first session, rank the screen passers by their last 63
+sessions of core results and hold the top N for the month ($10k split N ways). A one-off quarterly version (Q2 → Q3
+2026, top 5) made +$1,280 (+0.23% a trade vs −0.04% for the universe), almost all from SNDK. Ranking alone (no
+screen) failed: the 1-month lookback lost in every year (2026 top 5 −$4,222; last month's winners reversed), the
+3-month lookback was mixed (2023 −$1,436, 2025 +$1,029, 2026 +$2,383). The screen is what made it work; a fixed $1B
+cut left 2023 nearly empty (1.7 passers a month), so the cut is relative:
+
+| $10k, monthly, 3-month lookback | 2020 | 2022 | 2023 | 2025 | 2026* | Five years | Years + | Worst DD |
+|---|---|---|---|---|---|---|---|---|
+| **Top 150 by $ volume, range 4%+, top 5** | +2,670 | **+114** | +3,196 | +3,154 | +2,408 | **+11,542** | **5** | −2,499 |
+| $1B+, range 4%+, top 5 | +3,499 | −121 | +873 | +3,800 | +3,400 | +11,451 | 4 | −2,165 |
+| Top 100 by $ volume, range 4%+, top 5 | +2,922 | −331 | +1,793 | +3,879 | +3,176 | +11,439 | 4 | −2,646 |
+| Top 150 by $ volume, range 4%+, top 10 | +3,233 | −287 | +2,009 | +2,431 | +1,875 | +9,261 | 4 | −2,468 |
+| Top 50 by $ volume, range 4%+, top 5 | +1,955 | −209 | +5 | +3,416 | +3,107 | +8,274 | 4 | −2,046 |
+| QQQ buy and hold | +47.6% | −33.1% | +53.8% | +20.2% | +6.8% | | | |
+
+(*2026 to Nov 6.) Passers a month (top 150, 4%+): 44.5, 47.6, 12.8, 23.8, 51.5. The combinations were chosen on 2023,
+2025 and 2026 (24 tried, all positive over the three years) and tested on 2020 and 2022. A 4% range beat 3% in
+nearly every pairing; top 5 beat top 10 and holding every passer.
+
+- **2020 suited it** (+$1,955 to +$3,499): the crash widened the ranges of the liquid leaders, the trend filter kept the
+  overnight longs out in March, and the 3-month lookback moved into the rebound leaders.
+- **2022 broke even with long-only setups while QQQ fell 33%** (drawdowns like any other year, −$2,000 to −$2,600):
+  the overnight filter kept the holds out and drive long only trades green opens. The gated shorts (Finding 41) are
+  what would add in such a year.
+- **Losing months are market-wide drops** (Feb–Mar and Oct 2026, Jan 2025): every version and the universe lost then.
+- **Concentration:** a few names carry a year (SNDK picked 10 of 11 months in 2026; TSLA, NVDA, AMD in 2023).
+
+**Implemented:** `analysis_scripts/ticker_screen.py` runs the procedure as of a date (default the last completed
+session): universe, top 150 by dollar volume, 4%+ range, 63-session core results, top 5; `--write-config` writes a
+wave setup monitor config (`drive long` + `overnight always` per pick) for `--trend-filters overnight`.
+
 ## Recommendations
 
 1. **Choose tickers before tuning settings.** The same configuration ranges from +156.66% (SNDK)
@@ -2039,6 +2105,11 @@ shows both gates) and in `setup_portfolio_check`.
     `--overnight-short-gate qqq-ma200` for the overnight short (keep `overnight` in `--short-setups`); expect little
     from them in a quick drop and V-shaped rebound.
 
+37. **Pick the monitor's tickers monthly with `ticker_screen.py` (Finding 42):** top 150 by dollar volume, 4%+ daily
+    range, top 5 by the last 63 sessions of drive long + filtered overnight long; write the config with
+    `--write-config` and run the monitor with `--trend-filters overnight`. Don't rank on one month of results, and
+    don't drop the screen.
+
 ## Reproduction
 
 ```bash
@@ -2141,6 +2212,10 @@ exactly (110 trades, +0.80%), but other settings may differ slightly.
    `ticker_legs` per ticker-year and `short_setups.gate_status` at each previous close (one-off scripts);
    `setup_portfolio_check MRNA APP AMD MDB SNPS --start 2022-01-03 --end 2022-12-30 --short-gate qqq-ma50-down10
    --overnight-short-gate qqq-ma200`.
+   Finding 42: universe and traits from Alpaca's asset list and split-adjusted daily SIP bars; per-ticker legs with
+   `ticker_legs` (one-off scripts, resumable per ticker); the monthly walk-forward re-implements `ticker_screen`'s
+   screen and ranking at each month start. Live: `python -m
+   alpha_tech_tracker.op_momentum_strategy.analysis_scripts.ticker_screen --as-of <date>`.
    The confirmation-lag table, the reversal-entry diagnostics, the drive long decomposition and the 11-case
    re-entry table were one-off scripts on `wave_events` / `ride` / `load_rider_bars` from `wave_rider.py`;
    intraday vs overnight from `fetch_daily_bars` (log open / previous close vs close / open).
