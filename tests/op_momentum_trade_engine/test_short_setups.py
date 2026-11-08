@@ -46,6 +46,23 @@ class TestGateStatus:
         assert gate_status("qqq-ma50", [100.0] * 10) == (
             False, "short setups off: QQQ has 10 daily closes, the gate needs 50")
 
+    def test_ma50_down10_on_below_the_ma_and_down_over_10_sessions(self):
+        on, text = gate_status("qqq-ma50-down10", [100.0] * 49 + [95.0] * 10 + [90.0])
+
+        assert on
+        assert text == "short setups on: QQQ closed 90.00, below its 50-day MA 98.80, -5.3% over 10 sessions"
+
+    def test_ma50_down10_off_when_up_over_10_sessions(self):
+        assert gate_status("qqq-ma50-down10", [100.0] * 49 + [85.0] * 10 + [90.0])[0] is False
+
+    def test_ma200_on_below_the_200_day_ma(self):
+        assert gate_status("qqq-ma200", [120.0] * 199 + [100.0]) == (
+            True, "short setups on: QQQ closed 100.00, below its 200-day MA 119.90")
+
+    def test_ma200_needs_200_closes(self):
+        assert gate_status("qqq-ma200", [100.0] * 60, "overnight short") == (
+            False, "overnight short off: QQQ has 60 daily closes, the gate needs 200")
+
     @pytest.mark.parametrize("gate,expected", [("always", True), ("off", False)])
     def test_fixed_gates(self, gate, expected):
         assert gate_status(gate, [])[0] is expected

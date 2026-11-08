@@ -24,9 +24,10 @@ plus a CSV log:
                stop-out, covered at the close) and overnight (short the close, cover at the next open) by
                default; retest (a sell limit at the retest of the last confirmed rally high, trailing stop) is
                opt-in, it did not hold up out of sample. On `--short-tickers`, default the config's tickers
-               plus QQQ; `--short-setups` picks them, `--no-short-setups` turns them off. On gated sessions
-               with the overnight short on, the long overnight holds are skipped; a configured `drive short`
-               is not alerted twice.
+               plus QQQ; `--short-setups` picks them, `--no-short-setups` turns them off. `--short-gate
+               qqq-ma50-down10` / `qqq-ma200` and `--overnight-short-gate` (default: the short gate) are opt-in
+               gates (Finding 41). On sessions the overnight short is on, the long overnight holds are skipped;
+               a configured `drive short` is not alerted twice.
   RAISE STOP / BUY (re-entry)
                opt-in drive long options: `--drive-trail` raises an open drive long's stop to each new
                confirmed dip low (wave setting 7 bars / 38.2% / 1.5); `--drive-reentry` buys once after a
@@ -503,7 +504,8 @@ class WaveSetupMonitor:
                  daily_closes_loader=None, close_decision_bar=DEFAULT_CLOSE_DECISION_BAR,
                  reversal_patterns=REVERSAL_PATTERNS, stats_tickers=DEFAULT_STATS_TICKERS,
                  stats_daily_loader=None, short_setups=DEFAULT_SHORT_SETUPS, short_gate="qqq-ma50", short_tickers=None,
-                 extra_tickers=(), drive_trail=False, drive_reentry=False, trend_filters=(), trend_daily_loader=None):
+                 extra_tickers=(), drive_trail=False, drive_reentry=False, trend_filters=(), trend_daily_loader=None,
+                 overnight_short_gate=None):
         self.setups = setups_by_ticker
         self.tickers = list(setups_by_ticker)
         self.client = market_data_client
@@ -524,6 +526,9 @@ class WaveSetupMonitor:
         self.short_tickers = [t for t in (short_tickers if short_tickers is not None else self.tickers) if t in self.setups]
         self.shorts_on = False
         self.short_gate_text = ""
+        self.overnight_short_gate = overnight_short_gate or short_gate
+        self.overnight_short_on = False
+        self.overnight_short_text = ""
         self.short_watches = {}
         self.short_adr = {}
         # streamed only for the short setups or an open overnight trade: no reversal alerts, not in the signal stats
@@ -762,8 +767,10 @@ class WaveSetupMonitor:
                            + (f"; early close at {self.close_time:%H:%M}" if self.half_day else ""), level=logging.INFO)
         logger.info("Monitoring %s", ", ".join(f"{t}: {[s.name for s in self.setups[t]]}" for t in self.tickers))
         if self.short_setups and self.short_tickers:
+            separate = self.overnight_short_gate != self.short_gate and "overnight" in self.short_setups
             self._system_alert(f"{self.short_gate_text} ({', '.join(self.short_setups)} on "
-                               f"{', '.join(self.short_tickers)})", level=logging.INFO)
+                               f"{', '.join(self.short_tickers)})"
+                               + (f" | {self.overnight_short_text}" if separate else ""), level=logging.INFO)
         try:
             while self.now().time() < self.session_end:
                 self.tick()
@@ -986,10 +993,15 @@ class WaveSetupMonitor:
         try:
             closes = self.daily_closes_loader([GATE_TICKER], self.session).get(GATE_TICKER, [])
             self.shorts_on, self.short_gate_text = gate_status(self.short_gate, closes)
+            self.overnight_short_on, self.overnight_short_text = gate_status(self.overnight_short_gate, closes,
+                                                                             "overnight short")
         except Exception:
             logger.exception("Short gate failed; short setups off today")
             self.shorts_on, self.short_gate_text = False, "short setups off: the gate's daily closes are unavailable"
+            self.overnight_short_on, self.overnight_short_text = False, "overnight short off: no daily closes"
         logger.info(self.short_gate_text)
+        if self.overnight_short_gate != self.short_gate and "overnight" in self.short_setups:
+            logger.info(self.overnight_short_text)
         if "retest" not in self.short_setups:
             return
         for ticker in self.short_tickers:
@@ -1247,16 +1259,20 @@ class WaveSetupMonitor:
                 if self._trend_blocked(ticker, spec.name):
                     self._skip_trend_filtered(ticker, spec)
                     continue
-                if self.shorts_on and "overnight" in self.short_setups:
+                if self._overnight_short_on():
                     self._skip_overnight_hold(ticker, spec)
                     continue
                 self._overnight_entry(ticker, spec)
-        if self.shorts_on and "overnight" in self.short_setups:
+        if self._overnight_short_on():
             for ticker in self.short_tickers:
                 if self.half_day:
                     logger.info("%s: short overnight skipped on an early-close day", ticker)
                     continue
                 self._overnight_short_entry(ticker)
+
+    def _overnight_short_on(self):
+        separate = self.overnight_short_gate != self.short_gate
+        return "overnight" in self.short_setups and (self.overnight_short_on if separate else self.shorts_on)
 
     def _skip_overnight_hold(self, ticker, spec):
         """On a session the overnight short is on, long overnight holds are skipped, so the monitor never alerts BUY
@@ -1266,7 +1282,7 @@ class WaveSetupMonitor:
             return
         self.alerted.add(key)
         self._alert(None, "SKIP", self._last_close(ticker),
-                    f"SKIP {ticker} | {spec.name} | short setups are on today ({self.short_gate_text})",
+                    f"SKIP {ticker} | {spec.name} | the overnight short is on today ({self.overnight_short_text})",
                     ticker=ticker, setup=spec.name)
 
     def _skip_trend_filtered(self, ticker, spec):
@@ -1544,6 +1560,7 @@ def _run_monitor(args):
                                reversal_patterns=[] if args.no_reversal_alerts else args.reversal_patterns,
                                stats_tickers=[] if args.no_signal_stats else args.stats_tickers,
                                short_setups=short_setups, short_gate=args.short_gate,
+                               overnight_short_gate=args.overnight_short_gate,
                                short_tickers=short_tickers if short_setups else [],
                                extra_tickers=set(setups) - configured,
                                drive_trail=args.drive_trail, drive_reentry=args.drive_reentry,
@@ -1607,8 +1624,12 @@ def parse_args(argv=None):
                              "opt-in, it did not hold up out of sample)")
     parser.add_argument("--no-short-setups", action="store_true", help="No short setups")
     parser.add_argument("--short-gate", choices=SHORT_GATES, default="qqq-ma50",
-                        help="When shorts are on: qqq-ma50 = QQQ's previous close below its 50-day MA (default), "
-                             "always, off")
+                        help="When shorts are on: qqq-ma50 = QQQ's previous close below its 50-day MA (default); "
+                             "qqq-ma50-down10 = below it and down over 10 sessions; qqq-ma200 = below its 200-day MA; "
+                             "always; off")
+    parser.add_argument("--overnight-short-gate", choices=SHORT_GATES,
+                        help="Gate for the overnight short alone (default: --short-gate); qqq-ma200 was its best "
+                             "over 2020-2026 (Finding 41)")
     parser.add_argument("--short-tickers", nargs="+", help="Tickers for the short setups (default: the config's "
                                                            "tickers plus QQQ)")
     parser.add_argument("--trend-filters", nargs="+", choices=TREND_FILTERS, default=[],

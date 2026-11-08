@@ -15,7 +15,9 @@ of 9 windows and lost overall.
   overnight  short the close, cover at the next open; nights into an earnings release are skipped
 
 Gate (decided on the previous daily close, for the whole session): `qqq-ma50` = QQQ closed below its 50-day MA;
-`always`; `off`. The gate is a function of the daily closes so a better market indicator can replace it.
+`qqq-ma50-down10` = below its 50-day MA and down over the last 10 sessions (the best drive short gate over 2020,
+2022, 2025 and 2026, Finding 41); `qqq-ma200` = below its 200-day MA (the best overnight short gate there; it pays
+in a slow bear year like 2022, not in quick drops); `always`; `off`.
 """
 
 from collections import deque
@@ -28,9 +30,11 @@ SHORT_SETUPS = ("retest", "drive", "overnight")
 DEFAULT_SHORT_SETUPS = ("drive", "overnight")
 SETUP_NAMES = {"retest": "short retest", "drive": "short drive", "drive re-entry": "short drive re-entry",
                "overnight": "short overnight"}
-GATES = ("qqq-ma50", "always", "off")
+GATES = ("qqq-ma50", "qqq-ma50-down10", "qqq-ma200", "always", "off")
 GATE_TICKER = "QQQ"
 GATE_MA = 50
+GATE_LONG_MA = 200
+GATE_RETURN_SESSIONS = 10
 RETEST_SETTING = (3, 0.236, 3.0)
 RETEST_OFFSET = 0.05
 RETEST_BUFFER = 0.2
@@ -40,18 +44,24 @@ REENTRY_LATEST = time(15, 0)
 ADR_SESSIONS = 20
 
 
-def gate_status(gate, closes):
+def gate_status(gate, closes, label="short setups"):
     """(on, text) for a session from the gate ticker's daily closes before it."""
     if gate == "always":
-        return True, "short setups on (gate: always)"
+        return True, f"{label} on (gate: always)"
     if gate == "off":
-        return False, "short setups off (gate: off)"
-    if len(closes) < GATE_MA:
-        return False, f"short setups off: {GATE_TICKER} has {len(closes)} daily closes, the gate needs {GATE_MA}"
-    last, ma = closes[-1], sum(closes[-GATE_MA:]) / GATE_MA
-    state = "on" if last < ma else "off"
-    relation = "below" if last < ma else "above"
-    return last < ma, f"short setups {state}: {GATE_TICKER} closed {last:.2f}, {relation} its {GATE_MA}-day MA {ma:.2f}"
+        return False, f"{label} off (gate: off)"
+    ma_length = GATE_LONG_MA if gate == "qqq-ma200" else GATE_MA
+    needed = max(ma_length, GATE_RETURN_SESSIONS + 1)
+    if len(closes) < needed:
+        return False, f"{label} off: {GATE_TICKER} has {len(closes)} daily closes, the gate needs {needed}"
+    last, ma = closes[-1], sum(closes[-ma_length:]) / ma_length
+    on = last < ma
+    text = f"{GATE_TICKER} closed {last:.2f}, {'below' if on else 'above'} its {ma_length}-day MA {ma:.2f}"
+    if gate == "qqq-ma50-down10":
+        change = last / closes[-1 - GATE_RETURN_SESSIONS] - 1
+        on = on and change < 0
+        text += f", {change * 100:+.1f}% over {GATE_RETURN_SESSIONS} sessions"
+    return on, f"{label} {'on' if on else 'off'}: {text}"
 
 
 class TurnTracker:

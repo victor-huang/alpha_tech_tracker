@@ -842,7 +842,8 @@ class TestShortReviewFixes:
 
         monitor.tick()
 
-        assert alerts[0].startswith("[wave] SKIP AMD | overnight always | short setups are on today (short setups on: QQQ")
+        assert alerts[0].startswith("[wave] SKIP AMD | overnight always | the overnight short is on today "
+                                 "(overnight short on: QQQ")
         assert [t.setup for t in monitor.trades] == ["short overnight"]
 
     def test_gated_session_keeps_the_hold_when_the_overnight_short_is_off(self, tmp_path):
@@ -908,6 +909,51 @@ class TestShortReviewFixes:
         monitor.send_signal_stats()
 
         assert stats.call_args.args[4] == ["AMD"]
+
+
+QQQ_ABOVE_MA200_BELOW_MA50 = {"QQQ": [80.0] * 150 + [120.0] * 49 + [100.0]}
+
+
+class TestOvernightShortGate:
+    def _monitor(self, tmp_path, clock, closes, **kwargs):
+        history = {"AMD": _history([("2026-10-06 15:45", 100.0)])}
+        return _monitor(tmp_path, {"AMD": ["overnight always"]}, clock, history=history,
+                        closes={**closes, "AMD": [100.0] * 250}, **kwargs)
+
+    def test_defaults_to_the_short_gate(self, tmp_path):
+        monitor, _ = self._monitor(tmp_path, _Clock("2026-10-06 09:00"), QQQ_FALLING)
+
+        monitor.prepare()
+
+        assert (monitor.overnight_short_gate, monitor.overnight_short_on) == ("qqq-ma50", True)
+
+    def test_ma200_gate_keeps_the_overnight_short_off_above_the_200_day_ma(self, tmp_path):
+        clock = _Clock("2026-10-06 15:50")
+        monitor, alerts = self._monitor(tmp_path, clock, QQQ_ABOVE_MA200_BELOW_MA50, overnight_short_gate="qqq-ma200")
+        monitor.prepare()
+
+        monitor.tick()
+
+        assert monitor.shorts_on
+        assert [t.setup for t in monitor.trades] == ["overnight always"]
+        assert alerts[0].startswith("[wave] BUY AMD | overnight always")
+
+    def test_ma200_gate_turns_the_overnight_short_on_below_the_200_day_ma(self, tmp_path):
+        monitor, _ = self._monitor(tmp_path, _Clock("2026-10-06 09:00"), {"QQQ": [120.0] * 199 + [100.0]},
+                                   overnight_short_gate="qqq-ma200")
+
+        monitor.prepare()
+
+        assert monitor.overnight_short_text == "overnight short on: QQQ closed 100.00, below its 200-day MA 119.90"
+
+    def test_drive_short_keeps_its_own_gate(self, tmp_path):
+        monitor, alerts = self._monitor(tmp_path, _Clock("2026-10-06 09:35"), QQQ_ABOVE_MA200_BELOW_MA50,
+                                        overnight_short_gate="qqq-ma200")
+        monitor.prepare()
+
+        monitor._on_five_min_bar("AMD", _bar("2026-10-06 09:30", 100.0, 101.0, 98.5, 99.0))
+
+        assert alerts[-1].startswith("[wave] SHORT AMD | short drive")
 
 
 class TestOpenOvernightTickers:
@@ -1106,6 +1152,14 @@ class TestShortArguments:
     def test_unknown_gate_is_rejected(self):
         with pytest.raises(SystemExit):
             parse_args(["run", "--short-gate", "vix"])
+
+    def test_new_gates_are_accepted(self):
+        args = parse_args(["run", "--short-gate", "qqq-ma50-down10", "--overnight-short-gate", "qqq-ma200"])
+
+        assert (args.short_gate, args.overnight_short_gate) == ("qqq-ma50-down10", "qqq-ma200")
+
+    def test_overnight_short_gate_defaults_to_none(self):
+        assert parse_args(["run"]).overnight_short_gate is None
 
 
 def _daily(closes):

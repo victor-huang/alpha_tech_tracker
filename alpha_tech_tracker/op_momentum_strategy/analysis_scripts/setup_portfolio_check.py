@@ -18,8 +18,9 @@ shorts only on gated sessions, the overnight long only on the others. Plans comb
 the monitor alerts with its defaults (plus the chosen drive long variant); with `--short-setups drive` the monitor keeps
 the overnight long on gated sessions too.
 
-`--short-gate always` drops the market gate (shorts every session, the overnight long only where a plan keeps it), as
-the monitor's `--short-gate always`. `--trend-filters overnight` applies the monitor's opt-in overnight trend filter
+`--short-gate` and `--overnight-short-gate` take the monitor's gates (short_setups.GATES: qqq-ma50, qqq-ma50-down10,
+qqq-ma200, always; Finding 41); the overnight short and the overnight long's skip follow `--overnight-short-gate`,
+default the short gate. `--trend-filters overnight` applies the monitor's opt-in overnight trend filter
 (trend_filters.py, Finding 40) at each session's previous daily close: the overnight long only while QQQ is above its
 200-day MA and up over 10 sessions.
 
@@ -44,7 +45,6 @@ from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.earnings_calendar 
     load_releases,
 )
 from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.ticker_stats_report import clamp_end_for_sip
-from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_capture import daily_context
 from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_rider import (
     flip_bars,
     load_rider_bars,
@@ -53,15 +53,15 @@ from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_rider import 
     wave_events,
 )
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import fetch_daily_bars
+from alpha_tech_tracker.op_momentum_strategy.short_setups import GATES as SHORT_GATES, gate_status
 from alpha_tech_tracker.op_momentum_strategy.signal_stats import overnight_results
 from alpha_tech_tracker.op_momentum_strategy.trend_filters import MARKET_TICKER, market_trend, session_flags
 
 DRIVE_VARIANTS = ("drive long", "drive-trail", "drive + re-entry", "drive-trail + re-entry")
-SHORT_LEGS = ("drive short + re-entry", "overnight short")
 TRAIL_SETTING = (7, 0.382, 1.5)
 REENTRY_LATEST = time(15, 0)
 OVERNIGHT_ENTRY = time(15, 55)
-GATE_TICKER, GATE_MA = "QQQ", 50
+GATE_TICKER = "QQQ"
 DAILY_HISTORY_DAYS = 420
 WARMUP_DAYS = 32
 
@@ -148,23 +148,27 @@ def ticker_legs(job):
 
 
 def gated_sessions(start, end, gate="qqq-ma50"):
-    """Sessions whose previous QQQ close was below its GATE_MA-day MA (the monitor's short gate); every session for
-    gate `always`."""
+    """Sessions the monitor's short gate (short_setups.gate_status) turned on from QQQ's closes before them; every
+    day for gate `always`."""
     if gate == "always":
         return {start + timedelta(days=n) for n in range((end - start).days + 1)}
     daily = fetch_daily_bars([GATE_TICKER], start - timedelta(days=DAILY_HISTORY_DAYS), end)[GATE_TICKER]
-    closes = pd.Series([float(c) for c in daily["Close"]], index=[pd.Timestamp(d).date() for d in daily.index])
-    context = daily_context(closes).shift(1)
-    return {d for d, r in context.iterrows() if pd.notna(r[f"ma{GATE_MA}"]) and r["close"] < r[f"ma{GATE_MA}"]}
+    days = [pd.Timestamp(d).date() for d in daily.index]
+    closes = [float(c) for c in daily["Close"]]
+    return {day for i, day in enumerate(days) if start <= day <= end and gate_status(gate, closes[:i])[0]}
 
 
 def plans():
-    """{plan name: function(trades frame with leg / gated columns) -> mask}."""
+    """{plan name: function(trades frame with leg / gated (/ gated_overnight) columns) -> mask}."""
+    def overnight_gated(x):
+        return x["gated_overnight"] if "gated_overnight" in x.columns else x["gated"]
+
     def gated_short(x):
-        return x["leg"].isin(SHORT_LEGS) & x["gated"]
+        return (((x["leg"] == "drive short + re-entry") & x["gated"])
+                | ((x["leg"] == "overnight short") & overnight_gated(x)))
 
     def overnight_long(x):
-        return (x["leg"] == "overnight long") & ~x["gated"]
+        return (x["leg"] == "overnight long") & ~overnight_gated(x)
 
     out = {}
     for variant in DRIVE_VARIANTS:
@@ -216,8 +220,10 @@ def parse_args(argv=None):
     parser.add_argument("--cost-bps", type=float, default=5.0)
     parser.add_argument("--overnight-mode", choices=("ma200", "always"), default="ma200",
                         help="Overnight long filter: ma200 (overnight ma200) or always (overnight always)")
-    parser.add_argument("--short-gate", choices=("qqq-ma50", "always"), default="qqq-ma50",
-                        help="Sessions the short legs may trade: QQQ's previous close below its 50-day MA, or every one")
+    parser.add_argument("--short-gate", choices=[g for g in SHORT_GATES if g != "off"], default="qqq-ma50",
+                        help="Sessions the short legs may trade, as the monitor's --short-gate")
+    parser.add_argument("--overnight-short-gate", choices=[g for g in SHORT_GATES if g != "off"],
+                        help="Gate for the overnight short (and the overnight long's skip); default: --short-gate")
     parser.add_argument("--trend-filters", nargs="+", choices=("overnight",), default=[],
                         help="The monitor's opt-in overnight trend filter applied to the overnight long leg")
     return parser.parse_args(argv)
@@ -233,6 +239,9 @@ def main(argv=None):
     buy_hold = {r[1]: r[2] for r in results}
     gated = gated_sessions(args.start, end, args.short_gate)
     trades["gated"] = trades["day"].isin(gated)
+    overnight_gate = args.overnight_short_gate or args.short_gate
+    if overnight_gate != args.short_gate:
+        trades["gated_overnight"] = trades["day"].isin(gated_sessions(args.start, end, overnight_gate))
     if args.trend_filters:
         trades = trades[trend_mask(trades, args.trend_filters, daily_frames([MARKET_TICKER], args.start, end))]
     trades["dollars"] = trades["pct"] / 100 * args.capital / len(args.tickers)
@@ -240,7 +249,8 @@ def main(argv=None):
     filters = f"; trend filters: {' '.join(args.trend_filters)}" if args.trend_filters else ""
     print(f"{len(args.tickers)} tickers, {args.start} to {end}, ${args.capital:,.0f} (${args.capital / len(args.tickers):,.0f} "
           f"per ticker per trade), {args.cost_bps:g} bps, overnight long {args.overnight_mode}; gated sessions "
-          f"({args.short_gate}): {len(set(trades['day']) & gated)}{filters}")
+          f"({args.short_gate}): {len(set(trades['day']) & gated)}"
+          + (f"; overnight short gate {overnight_gate}" if overnight_gate != args.short_gate else "") + filters)
     table = pd.DataFrame({name: summarize(trades[mask(trades)], args.capital) for name, mask in plans().items()}).T
     print(table.to_string(float_format=lambda v: f"{v:+,.1f}"))
     average = sum(buy_hold.values()) / len(buy_hold)

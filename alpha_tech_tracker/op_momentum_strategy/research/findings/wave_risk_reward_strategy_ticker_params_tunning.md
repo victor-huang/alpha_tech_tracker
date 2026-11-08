@@ -106,6 +106,11 @@ earlier findings: [`WAVE_RISK_REWARD_FINDINGS.md`](WAVE_RISK_REWARD_FINDINGS.md)
   up over 10 sessions summed +667% of trade return vs +181% every night (2022: −56 vs −579). The pullback and
   drive-short filters picked on the six windows did not hold over the full years. In the monitor as opt-in
   `--trend-filters overnight` (pullback kept as an option, drive-short removed).
+- **Down-market setups (Finding 41, five 2025–26 down legs, 12 tickers):** only the drive short + re-entry (5 of 5
+  legs, +373%) and the overnight short (4 of 5, +388%) paid; every other setup / exit was flat or negative. Behind a
+  gate known at the time they roughly break even over 2020–2026 (best: drive short with QQQ < MA50 and down over 10
+  sessions +23, overnight short with QQQ < MA200 +139, both mostly 2022). Shorts pay in a slow bear year, not in a
+  quick drop and rebound; keeping the overnight long out saved more.
 - **A ticker's intraday vs overnight split doesn't pick its setup (Finding 36):** within a window it always matches the
   better family, but measured on the previous 63 or 126 sessions it chose next month's winner 52–53% of the time
   (16 tickers, Jul 2025 – Oct 2026). Overnight holds won in H2 2025 and drive long in 2026 across the board; running
@@ -1860,6 +1865,61 @@ at the close, a blocked pullback is not evaluated) with `overnight` = QQQ above 
 sessions; `setup_portfolio_check --trend-filters overnight` (and `--short-gate always`); and
 `analysis_scripts/trend_filter_check.py`, which applies them to any setup report's trades (it reproduces +181 → +667).
 
+## Finding 41 — Down-market setups: what pays in the 2025–26 down legs, and which gate keeps it (2020–2026)
+
+**Sample:** QQQ's five down legs of 7% or more in 2025–26, peak to trough: Feb 20 – Apr 8 2025 (−22.9%), Oct 30 –
+Nov 20 2025 (−7.9%), Jan 29 – Mar 30 2026 (−11.8%), Jun 3 – Jul 29 2026 (−7.0% and −11.1% with a 5-day bounce),
+Oct 7 – Nov 6 2026 (−13.6%, ongoing). Twelve tickers: the prod seven (MRNA SNDK APP AMD MDB CRWV SNPS) plus META MSFT
+CRM ADBE MU (NFLX left out for its Nov 2025 split). Every setup report setup with every exit (13 setups, 26 setup /
+exit pairs with 40+ trades) plus the monitor's drive short + re-entry and overnight short (`ticker_legs`), 5 bps.
+
+| Leg (sum of trade %) | Feb–Apr '25 | Nov '25 | Feb–Mar '26 | Jun–Jul '26 | Oct–Nov '26 | Total | Per trade | Legs + | $ on $10k |
+|---|---|---|---|---|---|---|---|---|---|
+| **overnight short** | +155.3 | −2.9 | +116.7 | +12.5 | +106.6 | **+388.2** | +0.22% | 4 of 5 | +$3,235 |
+| **drive short + re-entry** | +80.3 | +122.1 | +46.8 | +54.5 | +69.1 | **+372.9** | +0.26% | **5 of 5** | +$3,108 |
+| drive short (eod) | +77.9 | +76.7 | +10.9 | −33.1 | +51.4 | +183.8 | +0.19% | 4 of 5 | |
+| drive long (giveback) | −30.3 | +8.7 | +34.7 | +21.8 | +11.3 | +46.2 | +0.05% | 4 of 5 | |
+| box gap (giveback) | −3.2 | −9.3 | +12.7 | +19.5 | +12.2 | +31.9 | +0.10% | 3 of 5 | |
+| drive long (eod) | −63.1 | −0.5 | −27.5 | +19.8 | +39.8 | −31.5 | −0.04% | 2 of 5 | |
+| overnight long | −191.8 | −14.6 | −164.9 | −57.9 | −132.4 | −561.6 | −0.32% | 0 of 5 | −$4,680 |
+
+($ on $10k: $833 a trade, 1/12 per ticker, not compounded.) Every bounce, pullback, box break / fade and drive fade
+pair was flat or negative; the two monitor shorts were positive on 11 of 12 tickers.
+
+**Behind a gate known at the time** (previous close; full years, 2020 and 2022 out of sample: MRNA AMD MDB SNPS META
+MSFT CRM ADBE MU, APP in 2022), sum of trade %:
+
+| Drive short + re-entry, gate | 2020 | 2022 | 2025 | 2026 | 4 years | Per trade |
+|---|---|---|---|---|---|---|
+| **QQQ < MA50 and down over 10 sessions** | −106 | +85 | +51 | −7 | **+23** | +0.01% |
+| QQQ < MA50 (current) | −105 | +73 | +20 | +31 | +19 | +0.01% |
+| QQQ < MA200 | −68 | +33 | −44 | +40 | −39 | −0.02% |
+| every day | −92 | +107 | −47 | −7 | −39 | 0.00% |
+
+| Overnight short, gate | 2020 | 2022 | 2025 | 2026 | 4 years | Per trade |
+|---|---|---|---|---|---|---|
+| **QQQ < MA200** | −40 | **+235** | +1 | −57 | **+139** | +0.04% |
+| QQQ < MA50 and down over 10 sessions | +89 | +88 | −52 | −89 | +36 | +0.01% |
+| QQQ < MA50 (current) | +34 | +143 | −117 | −139 | −79 | −0.02% |
+| every day | −512 | +313 | −674 | −333 | −1,206 | −0.12% |
+
+(Also tried: QQQ down over 10 sessions, below its EMA10, below both MAs, MA50 falling; all worse.)
+
+- **The peak-to-trough edge mostly disappears behind a real gate.** The gate turns on after a drop has started and
+  stays on into the rebound: in 2020 (a five-week crash, then a V) every gate lost on the drive short (−68 to −106).
+  2025 and 2026 had the same shape on a smaller scale.
+- **Shorts pay in a slow bear year:** in 2022 every gate made money (overnight short +235 behind the MA200, drive short
+  +73 to +107).
+- **Defense beats offense:** keeping the overnight long out (QQQ above its MA200 and up over 10 sessions, Finding 40)
+  added +486 over the same four years; the best short gates added +139 and +23.
+- **Portfolio check, 2022, MRNA APP AMD MDB SNPS:** the monitor's defaults (drive long, drive short + re-entry,
+  overnight short, overnight long on the other nights) made +$2,382 on $10k with the current gate and +$3,175 with
+  `--short-gate qqq-ma50-down10 --overnight-short-gate qqq-ma200`; `--short-setups drive` lost in 2022 (−$262).
+
+**Implemented, off by default:** `--short-gate qqq-ma50-down10 | qqq-ma200` (short_setups.GATES) and
+`--overnight-short-gate` in the monitor (the overnight short and the long holds it skips follow it; the start-up alert
+shows both gates) and in `setup_portfolio_check`.
+
 ## Recommendations
 
 1. **Choose tickers before tuning settings.** The same configuration ranges from +156.66% (SNDK)
@@ -1974,6 +2034,11 @@ sessions; `setup_portfolio_check --trend-filters overnight` (and `--short-gate a
     overnight` was the best rule across 2020, 2022, 2025 and 2026 and is the one to turn on first; expect fewer, better
     holds and a small give-up in steady years. Leave `pullback` off (mixed across years) and drive long unfiltered.
 
+36. **For a down market, defend first, then short with the slower gates (Finding 41):** `--trend-filters overnight`
+    first. If the decline looks like a 2022-style grind, add `--short-gate qqq-ma50-down10` for the drive short and
+    `--overnight-short-gate qqq-ma200` for the overnight short (keep `overnight` in `--short-setups`); expect little
+    from them in a quick drop and V-shaped rebound.
+
 ## Reproduction
 
 ```bash
@@ -2071,6 +2136,11 @@ exactly (110 trades, +0.80%), but other settings may differ slightly.
    "overnight ma200" "drive short"` per year, then `python -m
    alpha_tech_tracker.op_momentum_strategy.analysis_scripts.trend_filter_check <the yearly trades.csv>`; the other
    QQQ conditions from `market_trend` columns (one-off).
+   Finding 41: `wave_risk_reward_setup_report --tickers <12> --start <leg start> --end <leg end> --setups <all
+   SETUP_RUNS>` per down leg, every exit from trades.csv; the monitor legs and the full-year gate tables from
+   `ticker_legs` per ticker-year and `short_setups.gate_status` at each previous close (one-off scripts);
+   `setup_portfolio_check MRNA APP AMD MDB SNPS --start 2022-01-03 --end 2022-12-30 --short-gate qqq-ma50-down10
+   --overnight-short-gate qqq-ma200`.
    The confirmation-lag table, the reversal-entry diagnostics, the drive long decomposition and the 11-case
    re-entry table were one-off scripts on `wave_events` / `ride` / `load_rider_bars` from `wave_rider.py`;
    intraday vs overnight from `fetch_daily_bars` (log open / previous close vs close / open).

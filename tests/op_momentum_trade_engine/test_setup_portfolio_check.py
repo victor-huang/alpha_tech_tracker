@@ -140,7 +140,27 @@ class TestTrendMask:
         assert trend_mask(self._trades(), ["overnight"], {"QQQ": RISING}).all()
 
 
+class TestPlansWithASeparateOvernightGate:
+    def test_overnight_short_and_long_follow_the_overnight_gate(self):
+        trades = pd.DataFrame([("drive short + re-entry", True, False), ("overnight short", True, False),
+                               ("overnight long", True, False), ("overnight short", False, True)],
+                              columns=["leg", "gated", "gated_overnight"])
+
+        mask = plans()["monitor rules with drive long"](trades)
+
+        assert mask.tolist() == [True, False, True, True]
+
+
 class TestGatedSessions:
+    def test_uses_the_monitor_gate_on_the_closes_before_each_day(self, mocker):
+        closes = [120.0] * 199 + [100.0, 100.0]
+        index = pd.to_datetime([date(2025, 1, 1) + timedelta(days=i) for i in range(len(closes))])
+        mocker.patch("alpha_tech_tracker.op_momentum_strategy.analysis_scripts.setup_portfolio_check.fetch_daily_bars",
+                     return_value={"QQQ": pd.DataFrame({"Close": closes}, index=index)})
+        last, before = index[-1].date(), index[-2].date()
+
+        assert gated_sessions(before, last, "qqq-ma200") == {last}
+
     def test_always_gates_every_day(self):
         assert gated_sessions(date(2026, 10, 12), date(2026, 10, 14), "always") == {
             date(2026, 10, 12), date(2026, 10, 13), date(2026, 10, 14)}
@@ -150,7 +170,13 @@ class TestTrendArguments:
     def test_defaults(self):
         args = parse_args(["AMD", "--start", "2026-01-02"])
 
-        assert (args.short_gate, args.trend_filters) == ("qqq-ma50", [])
+        assert (args.short_gate, args.overnight_short_gate, args.trend_filters) == ("qqq-ma50", None, [])
+
+    def test_new_gates(self):
+        args = parse_args(["AMD", "--start", "2026-01-02", "--short-gate", "qqq-ma50-down10",
+                           "--overnight-short-gate", "qqq-ma200"])
+
+        assert (args.short_gate, args.overnight_short_gate) == ("qqq-ma50-down10", "qqq-ma200")
 
     def test_filters_and_gate(self):
         args = parse_args(["AMD", "--start", "2026-01-02", "--short-gate", "always", "--trend-filters", "overnight"])

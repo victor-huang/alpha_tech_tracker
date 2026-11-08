@@ -207,8 +207,16 @@ two shorts that held up in nine down markets 2020–2026 (ticker-tuning doc, Fin
 else here.
 
 - **Gate:** decided once per session from the previous daily close. Default `--short-gate qqq-ma50`: on when QQQ closed
-  below its 50-day moving average. `always` and `off` are the other choices; the gate is one function
-  (`short_setups.gate_status`) so a better market indicator can replace it. The start-up alert says on or off and why.
+  below its 50-day moving average. Opt-in: `qqq-ma50-down10` (below its 50-day MA and down over the last 10 sessions)
+  and `qqq-ma200` (below its 200-day MA); `always` and `off`. `--overnight-short-gate` gives the overnight short (and
+  the long holds it skips) its own gate, default the short gate. The start-up alert says on or off and why.
+- **Which gate (Finding 41, 2020 / 2022 / 2025 / 2026, 12 tickers):** in the down legs themselves the drive short +
+  re-entry and the overnight short were the only setups that paid (+373% and +388% summed over five 2025–26 legs).
+  Behind a gate known at the time most of that goes: the gate turns on after the drop starts and stays on into the
+  rebound. Best four-year totals: drive short + re-entry with `qqq-ma50-down10` +23 (current gate +19), overnight
+  short with `qqq-ma200` +139 (current gate −79), both mostly from the 2022 bear year. Shorts pay in a slow bear
+  market, not in a quick drop and V-shaped rebound like 2020; keeping the long overnight holds out of the market
+  (`--trend-filters overnight`) saved more than either short made.
 - **Tickers:** `--short-tickers`, default the config's tickers plus QQQ (added to the stream).
 - **drive:** a red first 5-min bar → `SHORT ... ~close (09:30 bar close) | stop its high | cover at the close`. If the
   stop is hit, one re-entry when a bar closes back below that high before 15:00 → `SHORT ... short drive re-entry |
@@ -432,7 +440,8 @@ difference is the close rule below (GOOGL drive long on Sep 30 hit its stop afte
 | `--drive-reentry` | off | One drive long re-entry back above the stop-out level |
 | `--short-setups ...` | `drive overnight` | Down-market shorts alerted on gated sessions (`retest` opt-in) |
 | `--no-short-setups` | off | No short setups |
-| `--short-gate` | `qqq-ma50` | When shorts are on: `qqq-ma50`, `always`, `off` |
+| `--short-gate` | `qqq-ma50` | When shorts are on: `qqq-ma50`, `qqq-ma50-down10`, `qqq-ma200`, `always`, `off` |
+| `--overnight-short-gate` | the short gate | Gate for the overnight short alone (`qqq-ma200` was its best) |
 | `--short-tickers ...` | config tickers + QQQ | Tickers for the short setups |
 | `--trend-filters ...` | none | Opt-in daily trend filters: `overnight` (QQQ above its 200-day MA and up over 10 sessions), `pullback` |
 | `--stats-tickers ...` | the 21 setup-tape tickers | Tickers pooled in the start-up signal stats |
