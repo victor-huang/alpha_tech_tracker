@@ -139,7 +139,7 @@ def fetch_daily(tickers, start, end):
     return daily
 
 
-def _legs(job):
+def legs_job(job):
     ticker, start, end = job
     try:
         return ticker_legs((ticker, start, end, 5.0, "always"))[0]
@@ -150,7 +150,7 @@ def _legs(job):
 
 def trailing_results(tickers, start, end, workers):
     with ProcessPoolExecutor(max_workers=workers) as pool:
-        legs = pd.concat(list(pool.map(_legs, [(t, start, end) for t in tickers])), ignore_index=True)
+        legs = pd.concat(list(pool.map(legs_job, [(t, start, end) for t in tickers])), ignore_index=True)
     legs = legs[legs.leg.isin(CORE_LEGS)]
     qqq = fetch_daily_bars([MARKET_TICKER], end - timedelta(days=QQQ_CALENDAR_DAYS), end)[MARKET_TICKER]
     qqq = pd.DataFrame({"close": qqq["Close"].astype(float)}, index=qqq.index)

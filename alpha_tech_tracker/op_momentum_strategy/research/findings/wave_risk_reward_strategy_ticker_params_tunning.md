@@ -1985,6 +1985,9 @@ nearly every pairing; top 5 beat top 10 and holding every passer.
 **Implemented:** `analysis_scripts/ticker_screen.py` runs the procedure as of a date (default the last completed
 session): universe, top 150 by dollar volume, 4%+ range, 63-session core results, top 5; `--write-config` writes a
 wave setup monitor config (`drive long` + `overnight always` per pick) for `--trend-filters overnight`.
+`analysis_scripts/ticker_screen_walk_forward.py --years <year ...>` replays it month by month; on 2026 it made
++$2,927 (the study's +$2,408, same −$2,337 drawdown: its universe is every stock listed today, not the liquid list at
+the start of the year, so a few picks differ). As of Nov 6 2026 the screen picked MRNA, MSTR, SNDK, CRCL, COIN.
 
 ## Recommendations
 
@@ -2214,8 +2217,8 @@ exactly (110 trades, +0.80%), but other settings may differ slightly.
    --overnight-short-gate qqq-ma200`.
    Finding 42: universe and traits from Alpaca's asset list and split-adjusted daily SIP bars; per-ticker legs with
    `ticker_legs` (one-off scripts, resumable per ticker); the monthly walk-forward re-implements `ticker_screen`'s
-   screen and ranking at each month start. Live: `python -m
-   alpha_tech_tracker.op_momentum_strategy.analysis_scripts.ticker_screen --as-of <date>`.
+   screen and ranking at each month start; `ticker_screen_walk_forward --years <year>` is the committed version.
+   Live: `python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.ticker_screen --as-of <date>`.
    The confirmation-lag table, the reversal-entry diagnostics, the drive long decomposition and the 11-case
    re-entry table were one-off scripts on `wave_events` / `ride` / `load_rider_bars` from `wave_rider.py`;
    intraday vs overnight from `fetch_daily_bars` (log open / previous close vs close / open).
