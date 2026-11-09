@@ -115,6 +115,9 @@ earlier findings: [`WAVE_RISK_REWARD_FINDINGS.md`](WAVE_RISK_REWARD_FINDINGS.md)
   heavily and move a lot. Each month take the top 150 stocks by dollar volume with a 4%+ daily range and hold the top
   5 by their last 63 sessions of core results: +$11,542 on $10k over 2020, 2022, 2023, 2025 and 2026, positive every
   year (2022 +$114 while QQQ fell 33%). Ranking without the screen failed. `ticker_screen.py` runs it.
+- **The whole monthly process (Finding 43, 2026):** screen top 5 + the monitor's setup refresh + its rules made +$4,055
+  on $10k (8 of 11 months up); without the overnight short +$4,973. Drive long made all of the profit; the overnight
+  short (−$918) and the overnight long (−$1,393) lost.
 - **A ticker's intraday vs overnight split doesn't pick its setup (Finding 36):** within a window it always matches the
   better family, but measured on the previous 63 or 126 sessions it chose next month's winner 52–53% of the time
   (16 tickers, Jul 2025 – Oct 2026). Overnight holds won in H2 2025 and drive long in 2026 across the board; running
@@ -1989,6 +1992,37 @@ wave setup monitor config (`drive long` + `overnight always` per pick) for `--tr
 +$2,927 (the study's +$2,408, same −$2,337 drawdown: its universe is every stock listed today, not the liquid list at
 the start of the year, so a few picks differ). As of Nov 6 2026 the screen picked MRNA, MSTR, SNDK, CRCL, COIN.
 
+## Finding 43 — The whole monthly process, walked forward over 2026
+
+`analysis_scripts/monthly_process_walk_forward.py`. Each month's first session, with nothing from after it: the
+`ticker_screen` top 5 (Finding 42, no manual swaps); each pick's setups from the monitor's config refresh
+(`top_setups_by_ticker`: top 3 long / overnight setups over the last 63 sessions, 3+ trades, positive); then the month
+traded with the monitor's rules: setups at their fixed exits, overnight longs only on nights the overnight trend filter
+allows (Finding 40), the drive short + re-entry behind `qqq-ma50-down10` and the overnight short behind `qqq-ma200`
+(Finding 41) on the picks plus QQQ. $10k, $2,000 a trade, 5 bps; Jan 2 – Nov 6 2026.
+
+| Plan | Trades | Won | Per trade | P&L | Max DD | Months + |
+|---|---|---|---|---|---|---|
+| Screen + setup refresh + shorts (the monitor as deployed) | 1,610 | 46.5% | +0.13% | +$4,055 | −$2,426 | 8 / 11 |
+| **Same, without the overnight short** (`--overnight-short-gate off`) | 1,538 | 46.5% | +0.16% | **+$4,973** | −$2,426 | 8 / 11 |
+| Screen + fixed setups (drive long, pullback long, overnight always) + shorts | 1,713 | 45.2% | +0.10% | +$3,373 | −$2,577 | 7 / 11 |
+| Screen + setup refresh, no shorts | 1,220 | 48.5% | +0.18% | +$4,347 | −$2,392 | 7 / 11 |
+| Screen + fixed setups, no shorts | 1,323 | 46.8% | +0.14% | +$3,665 | −$2,543 | 6 / 11 |
+| Screen, drive long + filtered overnight long only (Finding 42) | 1,059 | 44.7% | +0.14% | +$2,927 | −$2,337 | 7 / 11 |
+
+Months (first plan): Jan +1,797, Feb −595, Mar +103, Apr +1,425, May +1,809, Jun −1,792, Jul +869, Aug +360,
+Sep +729, Oct −1,496, Nov 2–6 +846. By setup: drive long +$4,349 (478 trades, +0.45% each), bounce long +$682 (70%
+won), drive short + re-entry +$626, pullback long +$377, pullback long C1 +$275, overnight ma200 +$57, **overnight short
+−$918** (72 trades, −0.64% each, mostly the April rebound), **overnight always −$1,393** (437 trades, −0.16%).
+
+- **Refreshing the setups monthly adds about $700** over fixed setups, mostly bounce long (picked for 20 of 55
+  ticker-months). The refresh picked drive long for 51 of 55.
+- **Drive long makes all of the profit**; the other setups net about −$300 together.
+- **The overnight short lost again** (as in Finding 38); dropping it gives the best plan, +$4,973. The overnight long
+  also lost: the refresh keeps it because the last three months earned, and the next month gapped against it.
+- **June and October lost in every plan** (AI and semiconductor names falling together, then the current decline):
+  monthly re-picking does not avoid market-wide drops.
+
 ## Recommendations
 
 1. **Choose tickers before tuning settings.** The same configuration ranges from +156.66% (SNDK)
@@ -2113,6 +2147,11 @@ the start of the year, so a few picks differ). As of Nov 6 2026 the screen picke
     `--write-config` and run the monitor with `--trend-filters overnight`. Don't rank on one month of results, and
     don't drop the screen.
 
+38. **Run the monitor without the overnight short in quick-dip years (Finding 43):** in the 2026 walk-forward it cost
+    $918 and its removal gave the best plan (+$4,973). Keep the drive short; check
+    `monthly_process_walk_forward --overnight-short-gate off` on other years before deciding for good (it paid in
+    2022, Finding 41).
+
 ## Reproduction
 
 ```bash
@@ -2219,6 +2258,8 @@ exactly (110 trades, +0.80%), but other settings may differ slightly.
    `ticker_legs` (one-off scripts, resumable per ticker); the monthly walk-forward re-implements `ticker_screen`'s
    screen and ranking at each month start; `ticker_screen_walk_forward --years <year>` is the committed version.
    Live: `python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.ticker_screen --as-of <date>`.
+   Finding 43: `python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.monthly_process_walk_forward
+   --year 2026 --end 2026-11-07` (and `--overnight-short-gate off`).
    The confirmation-lag table, the reversal-entry diagnostics, the drive long decomposition and the 11-case
    re-entry table were one-off scripts on `wave_events` / `ride` / `load_rider_bars` from `wave_rider.py`;
    intraday vs overnight from `fetch_daily_bars` (log open / previous close vs close / open).

@@ -111,7 +111,7 @@ def summary(trades):
 
 
 def run_year(year, universe, args):
-    end = clamp_end_for_sip(min(date(year, 12, 31), date.today()), DataFeed.SIP)
+    end = clamp_end_for_sip(min(date(year, 12, 31), args.end or date.today()), DataFeed.SIP)
     qqq = fetch_daily_bars([MARKET_TICKER], date(year - 2, 1, 1), end)[MARKET_TICKER]
     sessions = sorted(qqq.index)
     starts = month_starts(sessions, year)
@@ -130,6 +130,8 @@ def run_year(year, universe, args):
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--years", type=int, nargs="+", required=True)
+    parser.add_argument("--end", type=date.fromisoformat, help="Last session (default: today); keeps the trade cache's "
+                                                                "window stable across days")
     parser.add_argument("--top-volume", type=int, default=150)
     parser.add_argument("--min-range", type=float, default=4.0)
     parser.add_argument("--min-price", type=float, default=10.0)

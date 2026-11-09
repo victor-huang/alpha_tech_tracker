@@ -108,3 +108,6 @@ class TestParseArgs:
         args = parse_args(["--years", "2025"])
 
         assert (args.top_volume, args.min_range, args.lookback, args.picks, args.capital) == (150, 4.0, 63, 5, 10000.0)
+
+    def test_end_date(self):
+        assert parse_args(["--years", "2026", "--end", "2026-11-06"]).end == date(2026, 11, 6)
