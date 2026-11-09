@@ -1,6 +1,8 @@
+from datetime import date
+
 import pandas as pd
 
-from alpha_tech_tracker.research.exit_watch import trail_status, watch_table
+from alpha_tech_tracker.research.exit_watch import history_start, trail_status, watch_table
 
 DAYS = pd.bdate_range("2026-11-02", periods=6)
 
@@ -35,6 +37,11 @@ class TestTrailStatus:
 
         assert status["stopped_on"] == DAYS[1].date()
 
+    def test_rebuys_at_once_when_the_stop_fires_on_a_checkpoint_day(self):
+        status = trail_status(_close([100, 120, 80]), DAYS[0], [DAYS[0], DAYS[2]], 0.25)
+
+        assert (status["peak"], status["stopped_on"]) == (80, None)
+
     def test_reports_stop_price_from_peak(self):
         status = trail_status(_close([100, 120]), DAYS[0], [DAYS[0]], 0.25)
 
@@ -57,3 +64,15 @@ class TestWatchTable:
         close = pd.DataFrame({"AAA": [10.0, 8.0]}, index=DAYS[:2])
 
         assert watch_table(lists, close, [DAYS[0]])["action"].tolist() == ["SELL (stopped)"]
+
+    def test_empty_list_gives_empty_table_with_action_column(self):
+        lists = self._lists([("a", "AAA", "dropped", DAYS[0], "trail25")])
+
+        table = watch_table(lists, pd.DataFrame({"AAA": [10.0]}, index=DAYS[:1]), [DAYS[0]])
+
+        assert table.empty and "action" in table.columns
+
+
+class TestHistoryStart:
+    def test_reaches_back_before_the_first_trading_day_of_the_entry_year(self):
+        assert history_start(date(2026, 10, 19)) < date(2026, 1, 2)

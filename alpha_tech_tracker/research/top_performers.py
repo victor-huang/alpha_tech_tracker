@@ -45,6 +45,8 @@ NON_OPERATING_NAME_RE = re.compile(
 )
 BAR_BATCH_SIZE = 200
 SIP_DELAY = timedelta(minutes=16)
+BAR_FETCH_ATTEMPTS = 2
+BAR_RETRY_SECONDS = 5
 PARTITION_OVERLAP_DAYS = 14
 SHARES_CACHE_TTL_DAYS = 20
 SHARES_WINDOW_BEFORE_DAYS = 120
@@ -312,13 +314,21 @@ class AlpacaData:
                                    start=datetime.combine(start, datetime.min.time()),
                                    end=sip_request_end(end, datetime.utcnow()),
                                    adjustment=Adjustment.ALL, feed=DataFeed.SIP)
-            try:
-                frames.append(self.data.get_stock_bars(req).df[["close", "volume"]].reset_index())
-            except Exception as exc:
-                print(f"bars batch {i} failed: {exc}", flush=True)
+            frames.append(self._fetch_batch(req, i))
         if not frames:
             return pd.DataFrame(columns=["symbol", "timestamp", "close", "volume"])
         return pd.concat(frames, ignore_index=True)
+
+    def _fetch_batch(self, req: StockBarsRequest, i: int) -> pd.DataFrame:
+        """One bar request, retried once; a batch that still fails raises instead of silently dropping its symbols."""
+        for attempt in range(BAR_FETCH_ATTEMPTS):
+            try:
+                return self.data.get_stock_bars(req).df[["close", "volume"]].reset_index()
+            except Exception as exc:
+                print(f"bars batch {i} failed (attempt {attempt + 1}): {exc}", flush=True)
+                if attempt + 1 == BAR_FETCH_ATTEMPTS:
+                    raise RuntimeError(f"bars batch {i} failed after {BAR_FETCH_ATTEMPTS} attempts") from exc
+                time.sleep(BAR_RETRY_SECONDS)
 
     def raw_closes(self, symbols: List[str], day: date) -> Dict[str, float]:
         out = {}

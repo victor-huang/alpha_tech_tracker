@@ -275,7 +275,8 @@ def rank_variant(panel: pd.DataFrame, variant: Variant, n: int) -> pd.DataFrame:
         next_checkpoint = dict(zip(checkpoints[:-1], checkpoints[1:]))
         ranked_before = p.loc[p["rank"] <= PERSIST_RANK_MULTIPLE * n, ["checkpoint", "symbol"]]
         ranked_before["checkpoint"] = ranked_before["checkpoint"].map(next_checkpoint)
-        p = p.merge(ranked_before.dropna(), on=["checkpoint", "symbol"])
+        p = p.reset_index().merge(ranked_before.dropna(), on=["checkpoint", "symbol"]).set_index("index")
+        p.index.name = None
         p["rank"] = p.groupby(["checkpoint", "tier"])["score"].rank(ascending=False, method="first")
     if variant.prefer:
         p["in_pool"] = p["rank"] <= PREFER_POOL_MULTIPLE * n

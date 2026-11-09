@@ -39,10 +39,18 @@ def trail_status(close: pd.Series, entry: pd.Timestamp, checkpoints: List[pd.Tim
             continue
         peak = max(peak, price)
         if price / peak - 1 <= -trail:
-            stopped_on = day
+            if day in rebuy_days:
+                peak = price
+            else:
+                stopped_on = day
     last = c.iloc[-1]
     return {"close": last, "peak": peak, "from_peak": last / peak - 1, "stop_price": peak * (1 - trail),
             "stopped_on": stopped_on.date() if stopped_on is not None else None}
+
+
+def history_start(first_entry: date) -> date:
+    """Fetch start that includes the first trading day of the entry's year, which anchors the checkpoint grid."""
+    return date(first_entry.year, 1, 1) - timedelta(days=7)
 
 
 def latest_lists(out_dir: str) -> pd.DataFrame:
@@ -55,11 +63,12 @@ def latest_lists(out_dir: str) -> pd.DataFrame:
 def watch_table(lists: pd.DataFrame, close: pd.DataFrame, checkpoints: List[pd.Timestamp]) -> pd.DataFrame:
     held = lists[(lists["status"] != "dropped") & lists["exit_rule"].map(lambda r: EXIT_RULES[r].trail is not None)]
     rows = []
+    columns = ["list", "symbol", "entry", "trail", "close", "peak", "from_peak", "stop_price", "stopped_on"]
     for row in held.itertuples():
         trail = EXIT_RULES[row.exit_rule].trail
         status = trail_status(close[row.symbol], row.entry, checkpoints, trail)
         rows.append({"list": row.list, "symbol": row.symbol, "entry": row.entry.date(), "trail": trail, **status})
-    out = pd.DataFrame(rows)
+    out = pd.DataFrame(rows, columns=columns)
     out["action"] = out["stopped_on"].map(lambda d: "SELL (stopped)" if d is not None else "hold")
     return out
 
@@ -67,7 +76,7 @@ def watch_table(lists: pd.DataFrame, close: pd.DataFrame, checkpoints: List[pd.T
 def run(args: argparse.Namespace) -> None:
     lists = latest_lists(args.out_dir)
     symbols = sorted(set(lists.loc[lists["status"] != "dropped", "symbol"])) + [CALENDAR_SYMBOL]
-    start = lists["entry"].min().date() - timedelta(days=7)
+    start = history_start(lists["entry"].min().date())
     close, _ = pivot_bars(AlpacaData().daily_bars(symbols, start, args.today))
     days = close[CALENDAR_SYMBOL].dropna().index
     checkpoints = [d for year in sorted(set(days.year)) for d in checkpoint_days(days, year, CHECKPOINT_STEP)]

@@ -4,6 +4,7 @@ import pandas as pd
 import pytest
 
 from alpha_tech_tracker.research.top_performers import (
+    AlpacaData,
     DailyBarCache,
     PeriodWindow,
     SharesCache,
@@ -266,6 +267,35 @@ def _long_bars(rows):
         "close": [r[2] for r in rows],
         "volume": 1000.0,
     })
+
+
+class TestDailyBars:
+
+    def _client(self, mocker, outcomes):
+        mocker.patch("alpha_tech_tracker.research.top_performers.time.sleep")
+        client = AlpacaData.__new__(AlpacaData)
+        client.data = mocker.Mock()
+        client.data.get_stock_bars.side_effect = outcomes
+        return client
+
+    def _bars(self, mocker):
+        df = pd.DataFrame({"close": [10.0], "volume": [100.0]},
+                          index=pd.MultiIndex.from_tuples([("AAA", pd.Timestamp("2026-11-02", tz="UTC"))],
+                                                          names=["symbol", "timestamp"]))
+        return mocker.Mock(df=df)
+
+    def test_retries_a_failed_batch(self, mocker):
+        client = self._client(mocker, [RuntimeError("boom"), self._bars(mocker)])
+
+        bars = client.daily_bars(["AAA"], date(2026, 11, 1), date(2026, 11, 2))
+
+        assert bars["symbol"].tolist() == ["AAA"]
+
+    def test_raises_when_a_batch_keeps_failing(self, mocker):
+        client = self._client(mocker, [RuntimeError("boom"), RuntimeError("boom")])
+
+        with pytest.raises(RuntimeError):
+            client.daily_bars(["AAA"], date(2026, 11, 1), date(2026, 11, 2))
 
 
 class TestSipRequestEnd:

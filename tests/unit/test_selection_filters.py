@@ -57,6 +57,15 @@ class TestRankVariant:
         assert ranked["symbol"].tolist() == ["OLD"]
         assert ranked["checkpoint"].tolist() == [CP[1]]
 
+    def test_persistence_keeps_panel_index_for_later_rules(self):
+        panel = pd.DataFrame(_rows(CP[0], {"OLD": 3.0, "MID": 2.0}) + _rows(CP[1], {"MID": 1.0, "OLD": 2.0}))
+        panel["flag"] = (panel["symbol"] == "OLD").astype(float)
+        variant = Variant(SCORE_ALL.eligible, SCORE_ALL.score, persist=True, keep_while=("flag",))
+
+        ranked = rank_variant(panel, variant, n=1)
+
+        assert panel.loc[ranked.index, "symbol"].tolist() == ranked["symbol"].tolist()
+
     def test_liquidity_floor_drops_thin_names(self):
         panel = pd.DataFrame(_rows(CP[0], {"THIN": 5.0, "DEEP": 1.0}))
         panel.loc[panel["symbol"] == "THIN", "dollar_volume_20d"] = 1e6
