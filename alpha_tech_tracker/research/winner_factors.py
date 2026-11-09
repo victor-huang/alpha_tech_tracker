@@ -48,7 +48,9 @@ from alpha_tech_tracker.research.uptrend_formation import (
 )
 
 FACTORS = ["jump_held_60d", "jump_faded_60d", "drop_60d", "jumps_250d_2plus", "turnaround", "listed_lt_1y",
-           "listed_1_3y"] + GROUP_FACTORS + FUNDAMENTAL_FACTORS + QUALITY_FACTORS
+           "listed_1_3y", "gap_10d", "high_breakout_10d", "breakout_10d", "breakout_hold_60d",
+           "ma_rising_8_20_50", "ma_rising_8_20_50_200",
+           "base_building"] + GROUP_FACTORS + FUNDAMENTAL_FACTORS + QUALITY_FACTORS
 RANKED_LISTS = {"Large": "trend+riskadj120", "Mid": "trend+riskadj120", "Small": "trend+composite"}
 RANKED_POOL = 30
 

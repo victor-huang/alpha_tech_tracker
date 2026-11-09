@@ -56,6 +56,12 @@ class Variant(NamedTuple):
     require: Tuple[str, ...] = ()
     prefer: Tuple[str, ...] = ()
     take_all: bool = False
+    also_eligible: Tuple[str, ...] = ()
+    boost: Tuple[str, ...] = ()
+    keep_while: Tuple[str, ...] = ()
+    boost_slots: int = 0
+    boost_score: Optional[str] = None
+    boost_groups: Tuple[Tuple[str, str, int], ...] = ()
 
 
 def _all(p: pd.DataFrame) -> pd.Series:
@@ -140,6 +146,53 @@ for _base, (_score, _exclude, _prefer) in _QUALITY_BASES.items():
                                                             prefer=_prefer + ("gp_top30",)),
     })
 VARIANTS["trend+mom120+clean"] = Variant(_trend_ok, lambda p: p["ret_120d"], exclude=FADED_OR_DROPPED)
+BREAKOUT_SIGNALS = {"gap": ("gap_10d",), "high": ("high_breakout_10d",), "breakout": ("breakout_10d",),
+                    "breakout_hold": ("breakout_hold_60d",)}
+for _base, _score in (("trend+riskadj120+clean", lambda p: p["risk_adj_120"]),
+                      ("trend+mom120+clean", lambda p: p["ret_120d"])):
+    for _name, _flags in BREAKOUT_SIGNALS.items():
+        VARIANTS[f"{_base}+{_name}"] = Variant(_trend_ok, _score, exclude=FADED_OR_DROPPED, also_eligible=_flags,
+                                               boost=_flags)
+MA_RISING = ("ma_rising_8_20_50",)
+MA_RISING_200 = ("ma_rising_8_20_50_200",)
+for _base in ("trend+riskadj120+clean", "trend+mom120+clean", "trend+composite+no_dilution+prefer_gross_profit",
+              "trend+riskadj120+clean+breakout"):
+    _v = VARIANTS.get(_base)
+    if _v is None:
+        continue
+    VARIANTS[f"{_base}+hold_ma_rising"] = _v._replace(keep_while=MA_RISING)
+    VARIANTS[f"{_base}+hold_ma_rising_200"] = _v._replace(keep_while=MA_RISING_200)
+    VARIANTS[f"{_base}+require_ma_rising"] = _v._replace(require=_v.require + MA_RISING)
+    VARIANTS[f"{_base}+require_ma_rising_200"] = _v._replace(require=_v.require + MA_RISING_200)
+    VARIANTS[f"{_base}+prefer_ma_rising"] = _v._replace(prefer=_v.prefer + MA_RISING)
+    VARIANTS[f"{_base}+prefer_ma_rising_200"] = _v._replace(prefer=_v.prefer + MA_RISING_200)
+BREAKOUT_SLOTS = 5
+for _base in ("trend+riskadj120+clean", "trend+mom120+clean", "trend+composite+no_dilution+prefer_gross_profit"):
+    _v = VARIANTS[_base]
+    VARIANTS[f"{_base}+breakout5"] = _v._replace(
+        also_eligible=("breakout_10d",), boost=("breakout_10d",), boost_slots=BREAKOUT_SLOTS,
+        boost_score="breakout_strength_10d")
+    VARIANTS[f"{_base}+breakout5_hold"] = _v._replace(
+        also_eligible=("breakout_hold_60d",), boost=("breakout_hold_60d",), boost_slots=BREAKOUT_SLOTS,
+        boost_score="breakout_strength_60d")
+SPLIT_FRESH = (("gap_10d", "gap_strength_10d", 3), ("high_breakout_10d", "high_base_10d", 2))
+SPLIT_HOLD = (("gap_hold_60d", "gap_strength_60d", 3), ("high_hold_60d", "high_base_60d", 2))
+for _base in ("trend+riskadj120+clean", "trend+mom120+clean"):
+    _v = VARIANTS[_base]
+    VARIANTS[f"{_base}+gap3_high2"] = _v._replace(also_eligible=("gap_10d", "high_breakout_10d"),
+                                                  boost_groups=SPLIT_FRESH)
+    VARIANTS[f"{_base}+gap3_high2_hold"] = _v._replace(also_eligible=("gap_hold_60d", "high_hold_60d"),
+                                                       boost_groups=SPLIT_HOLD)
+BASE = ("base_building",)
+for _base in ("trend+riskadj120+clean", "trend+mom120+clean", "trend+composite+no_dilution+prefer_gross_profit"):
+    _v = VARIANTS[_base]
+    VARIANTS[f"{_base}+base_ok"] = _v._replace(also_eligible=BASE)
+    VARIANTS[f"{_base}+base_ok+prefer_ma_rising"] = _v._replace(also_eligible=BASE, prefer=_v.prefer + MA_RISING)
+    VARIANTS[f"{_base}+base_ok+breakout"] = _v._replace(also_eligible=BASE + ("breakout_10d",),
+                                                         boost=("breakout_10d",))
+VARIANTS["trend+composite+no_dilution+prefer_gross_profit+breakout"] = Variant(
+    _trend_ok, lambda p: p["composite"], exclude=("dilution_10",), prefer=("gp_top30",),
+    also_eligible=("breakout_10d",), boost=("breakout_10d",))
 VARIANTS["early_momentum_all+top_group+clean"] = Variant(
     lambda p: p["early_momentum"].astype(bool), lambda p: p["ret_60d"], take_all=True,
     exclude=FADED_OR_DROPPED, require=("group_top20_120d",))
@@ -185,8 +238,12 @@ def add_selection_features(panel: pd.DataFrame, dollar_volume_20d: pd.DataFrame)
 def rank_variant(panel: pd.DataFrame, variant: Variant, n: int) -> pd.DataFrame:
     """Eligible rows with their score rank within (checkpoint, tier), after the variant's liquidity, streak,
     exclude (factor == 1 drops the row) and require (factor must be 1) rules; `prefer` moves names with those
-    factors to the front of the top PREFER_POOL_MULTIPLE * n."""
+    factors to the front of the top PREFER_POOL_MULTIPLE * n. `also_eligible` factors (== 1) admit a row that
+    fails the eligibility filter, and `boost` factors move rows ahead of every unboosted row (by score among
+    themselves; with `boost_slots`, only that many, strongest `boost_score` first)."""
     eligible = variant.eligible(panel).fillna(False).astype(bool)
+    for factor in variant.also_eligible:
+        eligible |= panel[factor] == 1
     for factor in variant.exclude:
         eligible &= panel[factor] != 1
     for factor in variant.require:
@@ -199,6 +256,20 @@ def rank_variant(panel: pd.DataFrame, variant: Variant, n: int) -> pd.DataFrame:
     p["score"] = variant.score(panel)[eligible]
     p = p[p["score"].notna()]
     p["rank"] = p.groupby(["checkpoint", "tier"])["score"].rank(ascending=False, method="first")
+    if variant.boost:
+        p["order"] = p["rank"]
+        boosted = (panel.loc[p.index, list(variant.boost)] == 1).any(axis=1)
+        if variant.boost_slots:
+            strength = panel.loc[p.index, variant.boost_score].where(boosted)
+            p["order"] = strength.groupby([p["checkpoint"], p["tier"]]).rank(ascending=False, method="first")
+            boosted = p["order"] <= variant.boost_slots
+            p["order"] = p["order"].where(boosted, p["rank"])
+        p["boosted"] = boosted
+        p = p.sort_values(["checkpoint", "tier", "boosted", "order"], ascending=[True, True, False, True])
+        p["rank"] = p.groupby(["checkpoint", "tier"]).cumcount() + 1.0
+        p = p.drop(columns=["boosted", "order"])
+    if variant.boost_groups:
+        p = _apply_boost_groups(p, panel, variant.boost_groups)
     if variant.persist:
         checkpoints = sorted(panel["checkpoint"].unique())
         next_checkpoint = dict(zip(checkpoints[:-1], checkpoints[1:]))
@@ -214,7 +285,28 @@ def rank_variant(panel: pd.DataFrame, variant: Variant, n: int) -> pd.DataFrame:
         p["rank"] = p.groupby(["checkpoint", "tier"]).cumcount() + 1.0
         p = p.drop(columns=["in_pool", "preference"])
     p["keep"] = (p["streak"] > 0) if variant.hold_on_list else False
+    for factor in variant.keep_while:
+        p["keep"] = p["keep"] | (panel.loc[p.index, factor] == 1)
     return p
+
+
+def _apply_boost_groups(p: pd.DataFrame, panel: pd.DataFrame,
+                        groups: Tuple[Tuple[str, str, int], ...]) -> pd.DataFrame:
+    """Fill each (flag, score, slots) group in order with its strongest flagged rows, ahead of everything else."""
+    p = p.copy()
+    p["slot"] = np.nan
+    offset = 0
+    for flag, score, slots in groups:
+        open_rows = p["slot"].isna() & (panel.loc[p.index, flag] == 1)
+        strength = panel.loc[p.index, score].where(open_rows)
+        order = strength.groupby([p["checkpoint"], p["tier"]]).rank(ascending=False, method="first")
+        chosen = order <= slots
+        p.loc[chosen, "slot"] = offset + order[chosen]
+        offset += slots
+    p["order"] = p["slot"].fillna(offset + p["rank"])
+    p = p.sort_values(["checkpoint", "tier", "order"])
+    p["rank"] = p.groupby(["checkpoint", "tier"]).cumcount() + 1.0
+    return p.drop(columns=["slot", "order"])
 
 
 def pick_top(ranked: pd.DataFrame, n: int, take_all: bool = False) -> pd.DataFrame:

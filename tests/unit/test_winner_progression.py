@@ -6,7 +6,7 @@ from alpha_tech_tracker.research.winner_progression import block_reason, cell, e
 
 
 def _row(**overrides):
-    row = {"close": 100.0, "ma50": 90.0, "ma200": 80.0, "ma200_rising": True, "dilution_10": 0.0, "rank": 3.0}
+    row = {"close": 100.0, "ma50": 90.0, "ma200": 80.0, "ma200_rising": True, "dilution_10": 0.0, "rank": np.nan}
     row.update(overrides)
     return pd.Series(row)
 
@@ -55,3 +55,9 @@ class TestEpisodes:
         assert first["gain_while_held"] == pytest.approx(1.2 / 1.1 - 1)
         assert first["checkpoints_until_back"] == 2
         assert second["exit_reason"] == "still held"
+
+
+class TestBlockReasonForEventEntries:
+
+    def test_stock_admitted_by_an_event_is_held_even_when_it_fails_the_trend_filter(self):
+        assert block_reason(_row(ma50=120.0, ma200=127.0, close=144.0, rank=2.0), [], []) == "held"

@@ -237,6 +237,56 @@ The combined rule (no dilution + prefer gross profit) was added after the single
 - **Large:** excluding cash burners adds a point (21.1%, 5 of 7 years). That is too small to act on after this many tests.
 - **Mid:** nothing helps.
 
+## Breakout slots, rising moving averages and base-building (Large focus)
+
+These ideas came from the 2026 winner review in [winner_progression_2026.md](winner_progression_2026.md): DELL's 2/27 big-jump breakout, and MPC and SN making new 52-week highs.
+
+**Signals** (`price_factors.py`):
+- **Big-jump breakout:** an up-jump of ≥ max(8%, 3σ) on ≥ 3× volume, closing above the 20-, 50- and 200-day averages.
+- **Fresh 52-week high:** a 52-week-high close with no other in the prior 20 days, also above all three averages.
+- **Rising MAs:** the 8-, 20- and 50-day averages each above their level 5 days earlier.
+- **Base-building:** rising MAs, close above the 50-day, 50-day still under the 200-day.
+
+**Rules:**
+- **Breakout stocks:** a breakout in the last 10 days lets a stock skip the trend filter.
+  - **5 breakout slots:** the 5 strongest breakouts (day's move × volume ratio) go to the front of the list.
+  - **3 big-jump + 2 new-high slots:** 3 big jumps by move × volume, and 2 new highs by base length (days since the previous 52-week high).
+  - **Held 60 days:** keeps a breakout stock's priority while it closes above its 50-day average.
+- **Base builders:** may join the list (as eligible stocks, ranked normally).
+- **Rising MAs:** tried three ways: required to buy, ranked ahead within the top 30, or as a reason to keep holding.
+
+Large, top 15, no gate. "Better" counts the years each rule beat the current Large rule.
+
+| Rule | CAGR | Sharpe | Max DD | Vol | Turnover / rebalance | Better | 2020 | 2021 | 2022 | 2023 | 2024 | 2025 | 2026 |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| current: risk-adj 120d + clean | 20.1% | 0.85 | −30% | 25% | 0.47 | | 53% | 31% | −8% | 3% | 34% | 30% | 9% |
+| + 5 breakout slots | 15.6% | 0.72 | −33% | 24% | 0.63 | 3/7 | 57% | 22% | −19% | 13% | 27% | 7% | 16% |
+| + 5 breakout slots, held 60 days | 15.1% | 0.69 | −38% | 25% | 0.46 | 2/7 | 61% | 12% | −23% | 0% | 26% | 21% | 25% |
+| + 3 big-jump + 2 new-high slots | 17.1% | 0.78 | −27% | 24% | 0.62 | 2/7 | 67% | 22% | −15% | 2% | 26% | 12% | 21% |
+| plain 120-day + clean | 23.1% | 0.81 | −32% | 32% | 0.41 | 4/7 | 85% | 1% | −6% | 0% | 26% | 30% | 49% |
+| **plain 120-day + 3 big-jump + 2 new-high slots** | **23.9%** | **0.89** | −29% | 29% | 0.55 | 3/7 | 107% | 3% | −8% | 3% | 21% | 21% | 52% |
+| plain 120-day + 5 breakout slots | 22.1% | 0.83 | −33% | 29% | 0.57 | 3/7 | 84% | 6% | −12% | 11% | 22% | 14% | 52% |
+| plain 120-day + base builders | 23.6% | 0.82 | −33% | 32% | 0.41 | 3/7 | 87% | 6% | −10% | 0% | 23% | 30% | 52% |
+| risk-adj + rising MAs required | 11.2% | 0.58 | −24% | | | 1/7 | | | | | | | |
+| risk-adj + rising MAs ranked first | 11.5% | 0.58 | −30% | | | 1/7 | | | | | | | |
+| risk-adj + hold while MAs rise | 13.2% | 0.63 | −29% | | | 1/7 | | | | | | | |
+| risk-adj + base builders | 20.0% | 0.85 | −30% | | | 1/7 | | | | | | | |
+
+On the Small list, hold-while-MAs-rise gives 19.0% vs 18.6% (better in 4 of 7 years). Base builders give 15.1% with a −55% max drawdown, and 5 breakout slots give 17.0%.
+
+**Findings:**
+1. **2026 alone was misleading.**
+   - On 2026 alone, breakout slots held 60 days lifted the Large list from 10.6% to 29.1%.
+   - Over seven years they cut it to 15.1%, worse in 5 of 7 years, with 2022 at −23% vs −8%.
+   - A breakout late in a rally is often the top.
+2. **Breakout slots fit the plain 120-day ranking better.**
+   - Plain 120-day + 3 big-jump + 2 new-high slots has the best Large Sharpe so far (0.89, 23.9% a year, −29% max drawdown).
+   - But it beats the current rule in only 3 of 7 years. Its edge comes from 2020 (107% vs 53%) and 2026 (52% vs 9%), and it lags in 2021 (3% vs 31%), 2023, 2024 and 2025.
+   - Against the plain 120-day list alone, the slots add about a point a year and better risk (Sharpe 0.81 → 0.89, max drawdown −32% → −29%), at higher turnover.
+3. **Rising MAs don't work as an entry rule.** Requiring or preferring rising 8-, 20- and 50-day averages cuts the Large list to about 11%. It picks stocks just after short bursts and skips them during normal pullbacks. As a hold rule it is neutral to slightly positive for Small only.
+4. **Base builders are neutral for the risk-adjusted Large list.** They rarely rank high enough to be picked. They hurt Small (−55% drawdown).
+5. **No mechanical rule singles out MPC's or SN's new highs.** About 100 Large stocks make a fresh 52-week high every two weeks, and MPC and SN sit mid-pack on move, volume and base length.
+
 ## Suggested list for the biweekly run (≈ 30 names)
 
 - **Large:** trend filter + risk-adjusted 120-day momentum, excluding names with a faded jump or a heavy-volume drop in the last 60 days. Top 15.

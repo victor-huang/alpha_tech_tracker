@@ -193,3 +193,70 @@ class TestPerformance:
         ret = pd.Series([0.10, -0.50, 0.20])
 
         assert performance(ret)["max_dd"] == pytest.approx(-0.5)
+
+
+class TestBoostAndAlsoEligible:
+
+    def test_event_admits_a_trend_failure_and_ranks_it_first(self):
+        cp = pd.Timestamp("2026-03-03")
+        panel = pd.DataFrame({"checkpoint": [cp] * 3, "tier": ["Large"] * 3, "symbol": ["A", "B", "GAP"],
+                              "streak": [0] * 3, "score": [3.0, 2.0, 0.5], "ok": [True, True, False],
+                              "gap_10d": [0.0, 0.0, 1.0]})
+        variant = Variant(lambda p: p["ok"], lambda p: p["score"], also_eligible=("gap_10d",), boost=("gap_10d",))
+
+        ranked = rank_variant(panel, variant, 2).set_index("symbol")
+
+        assert ranked.loc["GAP", "rank"] == 1
+        assert ranked.loc["A", "rank"] == 2
+
+
+class TestKeepWhile:
+
+    def test_rows_with_the_keep_factor_are_flagged_to_keep(self):
+        cp = pd.Timestamp("2026-03-03")
+        panel = pd.DataFrame({"checkpoint": [cp] * 2, "tier": ["Large"] * 2, "symbol": ["UP", "FLAT"],
+                              "streak": [0, 0], "score": [1.0, 2.0], "ma_rising_8_20_50": [1.0, 0.0]})
+        variant = Variant(lambda p: pd.Series(True, index=p.index), lambda p: p["score"],
+                          keep_while=("ma_rising_8_20_50",))
+
+        ranked = rank_variant(panel, variant, 1).set_index("symbol")
+
+        assert ranked.loc["UP", "keep"]
+        assert not ranked.loc["FLAT", "keep"]
+
+
+class TestCappedBoost:
+
+    def test_only_the_strongest_events_take_the_boosted_slots(self):
+        cp = pd.Timestamp("2026-03-03")
+        panel = pd.DataFrame({"checkpoint": [cp] * 4, "tier": ["Large"] * 4, "symbol": ["MOM", "WEAK", "STRONG", "MID"],
+                              "streak": [0] * 4, "score": [5.0, 1.0, 0.5, 0.8], "event": [0.0, 1.0, 1.0, 1.0],
+                              "strength": [np.nan, 0.1, 1.0, 0.5]})
+        variant = Variant(lambda p: pd.Series(True, index=p.index), lambda p: p["score"], boost=("event",),
+                          boost_slots=2, boost_score="strength")
+
+        ranked = rank_variant(panel, variant, 2).set_index("symbol")["rank"]
+
+        assert ranked["STRONG"] == 1
+        assert ranked["MID"] == 2
+        assert ranked["MOM"] == 3
+        assert ranked["WEAK"] == 4
+
+
+class TestBoostGroups:
+
+    def test_each_event_type_fills_its_own_slots(self):
+        cp = pd.Timestamp("2026-03-03")
+        panel = pd.DataFrame({
+            "checkpoint": [cp] * 5, "tier": ["Large"] * 5, "symbol": ["MOM", "GAP1", "GAP2", "HIGH1", "HIGH2"],
+            "streak": [0] * 5, "score": [9.0, 1.0, 2.0, 3.0, 4.0],
+            "gap": [0.0, 1.0, 1.0, 0.0, 0.0], "gap_strength": [np.nan, 0.9, 0.3, np.nan, np.nan],
+            "high": [0.0, 0.0, 0.0, 1.0, 1.0], "base": [np.nan, np.nan, np.nan, 40.0, 200.0]})
+        variant = Variant(lambda p: pd.Series(True, index=p.index), lambda p: p["score"],
+                          boost_groups=(("gap", "gap_strength", 1), ("high", "base", 1)))
+
+        ranked = rank_variant(panel, variant, 2).set_index("symbol")["rank"]
+
+        assert ranked["GAP1"] == 1
+        assert ranked["HIGH2"] == 2
+        assert ranked["MOM"] == 3

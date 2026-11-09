@@ -8,7 +8,14 @@ the same checkpoints.
 An episodes table lists every stretch a winner was held: entry checkpoint and YTD gain, exit checkpoint, why it
 left (the first failing rule at the next checkpoint) and the gap before it came back.
 
-Rules: "current" (the recommended lists) or "mom120" (raw 120-day return + clean for every tier).
+Rules: "current" (the recommended lists), "mom120" (raw 120-day return + clean for every tier), "breakout" (current
+lists with fresh gap / 52-week-high breakouts admitted and ranked first) or "breakout_hold" (Large breakouts keep
+priority for 60 days while above the 50-day average) or "breakout+hold_ma_rising" (breakouts plus holding a name while
+its 8/20/50-day averages all rise), "prefer_ma_rising" / "require_ma_rising" (rising 8/20/50-day averages move a
+stock to the front of the top 30, or are required to be eligible), or "base_ok+breakout" (base-building rebounds
+under the 200-day average are eligible too, and fresh breakouts rank first). The breakout5 rules give at most 5
+slots to breakouts, strongest first (event-day return x volume ratio); breakout5_hold keeps them for 60 days while
+above the 50-day average.
 
 Usage:
     PYTHONPATH=. python -m alpha_tech_tracker.research.winner_progression --years 2026 --rule mom120
@@ -24,7 +31,27 @@ from alpha_tech_tracker.research.selection_filters import VARIANTS, parse_args, 
 from alpha_tech_tracker.research.uptrend_formation import DEFAULT_WINNERS_CSV
 from alpha_tech_tracker.research.winner_capture import LISTS, year_bounds
 
-RULES = {"current": LISTS, "mom120": {tier: "trend+mom120+clean" for tier in LISTS}}
+RULES = {"current": LISTS, "mom120": {tier: "trend+mom120+clean" for tier in LISTS},
+         "breakout": {"Large": "trend+riskadj120+clean+breakout", "Mid": LISTS["Mid"],
+                      "Small": "trend+composite+no_dilution+prefer_gross_profit+breakout"},
+         "breakout_hold": dict(LISTS, Large="trend+riskadj120+clean+breakout_hold"),
+         "breakout+hold_ma_rising": dict(LISTS, Large="trend+riskadj120+clean+breakout+hold_ma_rising",
+                                         Small="trend+composite+no_dilution+prefer_gross_profit+hold_ma_rising"),
+         "prefer_ma_rising": dict(LISTS, Large="trend+riskadj120+clean+prefer_ma_rising",
+                                  Small="trend+composite+no_dilution+prefer_gross_profit+prefer_ma_rising"),
+         "require_ma_rising": dict(LISTS, Large="trend+riskadj120+clean+require_ma_rising",
+                                   Small="trend+composite+no_dilution+prefer_gross_profit+require_ma_rising"),
+         "breakout5": {"Large": "trend+riskadj120+clean+breakout5", "Mid": LISTS["Mid"],
+                       "Small": "trend+composite+no_dilution+prefer_gross_profit+breakout5"},
+         "breakout5_hold": {"Large": "trend+riskadj120+clean+breakout5_hold", "Mid": LISTS["Mid"],
+                            "Small": "trend+composite+no_dilution+prefer_gross_profit+breakout5_hold"},
+         "mom120+breakout5_hold": {"Large": "trend+mom120+clean+breakout5_hold", "Mid": LISTS["Mid"],
+                                   "Small": "trend+mom120+clean+breakout5_hold"},
+         "gap3_high2": dict(LISTS, Large="trend+riskadj120+clean+gap3_high2"),
+         "gap3_high2_hold": dict(LISTS, Large="trend+riskadj120+clean+gap3_high2_hold"),
+         "mom120+gap3_high2_hold": dict(LISTS, Large="trend+mom120+clean+gap3_high2_hold"),
+         "base_ok+breakout": dict(LISTS, Large="trend+riskadj120+clean+base_ok+breakout",
+                                  Small="trend+composite+no_dilution+prefer_gross_profit+base_ok+breakout")}
 TOP = 15
 FEATURES = ["ret_20d", "ret_60d", "ret_120d", "vol_60d", "risk_adj_120", "composite", "off_52w_high",
             "up_day_share_20d", "max_1d_gain_20d", "volume_surge", "dollar_volume_20d", "jump_held_60d",
@@ -36,6 +63,8 @@ def block_reason(row: pd.Series, exclude: List[str], require: List[str]) -> str:
     """Why a stock was not in the top 15 at a checkpoint (first failing rule)."""
     if pd.isna(row.get("close")):
         return "not in tier"
+    if row.get("rank", np.nan) <= TOP:
+        return "held"
     if not row["close"] > row["ma50"]:
         return "trend: below ma50"
     if not row["ma50"] > row["ma200"]:
