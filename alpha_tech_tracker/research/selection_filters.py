@@ -139,6 +139,7 @@ for _base, (_score, _exclude, _prefer) in _QUALITY_BASES.items():
         f"{_base}+no_dilution+prefer_gross_profit": Variant(_trend_ok, _score, exclude=_exclude + ("dilution_10",),
                                                             prefer=_prefer + ("gp_top30",)),
     })
+VARIANTS["trend+mom120+clean"] = Variant(_trend_ok, lambda p: p["ret_120d"], exclude=FADED_OR_DROPPED)
 VARIANTS["early_momentum_all+top_group+clean"] = Variant(
     lambda p: p["early_momentum"].astype(bool), lambda p: p["ret_60d"], take_all=True,
     exclude=FADED_OR_DROPPED, require=("group_top20_120d",))
@@ -245,7 +246,8 @@ def run_portfolio(ranked: pd.DataFrame, returns: pd.DataFrame, regime: pd.Series
     """Equal-weight book per checkpoint: keep holdings still ranked <= buffer (or flagged `keep`), fill up to n
     from the top.
 
-    Returns one row per checkpoint: net return over the following period, names held and one-way turnover.
+    Returns one row per checkpoint: net return over the following period, names held, one-way turnover and the
+    held symbols.
     """
     by_cp = {cp: g.sort_values("rank") for cp, g in ranked.groupby("checkpoint")}
     held: List[str] = []
@@ -270,7 +272,8 @@ def run_portfolio(ranked: pd.DataFrame, returns: pd.DataFrame, regime: pd.Series
         weights = pd.Series(1.0 / len(held), index=held) if held else pd.Series(dtype=float)
         turnover = weights.subtract(weights_prev, fill_value=0).abs().sum()
         gross = returns.loc[cp, held].fillna(0).mean() if held else 0.0
-        rows.append({"checkpoint": cp, "ret": gross - cost * turnover, "names": len(held), "turnover": turnover / 2})
+        rows.append({"checkpoint": cp, "ret": gross - cost * turnover, "names": len(held), "turnover": turnover / 2,
+                     "held": list(held)})
         if held:
             drifted = weights * (1 + returns.loc[cp, held].fillna(0))
             weights_prev = drifted / drifted.sum()
