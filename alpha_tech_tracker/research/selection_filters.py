@@ -123,6 +123,22 @@ VARIANTS.update({
                                                        prefer=("turnaround", "sales_accel_2q")),
     "trend+composite+prefer_combo": Variant(_trend_ok, lambda p: p["composite"], prefer=("growth_accel_combo",)),
 })
+_QUALITY_BASES = {"trend+riskadj120+clean": (lambda p: p["risk_adj_120"], FADED_OR_DROPPED, ()),
+                  "trend+composite": (lambda p: p["composite"], (), ()),
+                  "trend+composite+prefer_turnaround": (lambda p: p["composite"], (), ("turnaround",))}
+for _base, (_score, _exclude, _prefer) in _QUALITY_BASES.items():
+    VARIANTS.update({
+        f"{_base}+no_dilution": Variant(_trend_ok, _score, exclude=_exclude + ("dilution_10",), prefer=_prefer),
+        f"{_base}+no_low_runway": Variant(_trend_ok, _score, exclude=_exclude + ("low_runway",), prefer=_prefer),
+        f"{_base}+no_cash_burn": Variant(_trend_ok, _score, exclude=_exclude + ("cash_burn",), prefer=_prefer),
+        f"{_base}+no_dilution_or_low_runway": Variant(_trend_ok, _score,
+                                                      exclude=_exclude + ("dilution_10", "low_runway"),
+                                                      prefer=_prefer),
+        f"{_base}+prefer_gross_profit": Variant(_trend_ok, _score, exclude=_exclude,
+                                                prefer=_prefer + ("gp_top30",)),
+        f"{_base}+no_dilution+prefer_gross_profit": Variant(_trend_ok, _score, exclude=_exclude + ("dilution_10",),
+                                                            prefer=_prefer + ("gp_top30",)),
+    })
 VARIANTS["early_momentum_all+top_group+clean"] = Variant(
     lambda p: p["early_momentum"].astype(bool), lambda p: p["ret_60d"], take_all=True,
     exclude=FADED_OR_DROPPED, require=("group_top20_120d",))

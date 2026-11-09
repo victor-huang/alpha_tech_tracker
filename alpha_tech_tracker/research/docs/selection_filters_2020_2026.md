@@ -197,12 +197,52 @@ Sales and earnings growth from SEC filings ([winner_factors_2020_2026.md](winner
 | Small | + prefer two quarters of sales acceleration | 14.6% | 0.71 | −38% | 3/7 | 12.6% |
 | Small | composite + prefer growth_accel_combo | 12.8% | 0.65 | −41% | 2/7 | 11.6% |
 
+## Dilution and gross-profitability rules
+
+The balance-sheet factors ([winner_factors_2020_2026.md](winner_factors_2020_2026.md#dilution-cash-burn-and-gross-profitability-from-sec-filings)) were tested on each tier's base list:
+- exclude names whose share count rose ≥ 10% in a year
+- exclude cash burners, or only those with under 4 quarters of runway
+- move top-30% gross-profitability names to the front
+
+The combined rule (no dilution + prefer gross profit) was added after the single rules had been seen. No gate.
+
+| Tier | Variant | CAGR | Sharpe | Max DD | Years better than base |
+|---|---|---|---|---|---|
+| Large | trend+riskadj120+clean (base) | 20.1% | 0.85 | −30% | |
+| Large | + no cash burn | 21.1% | 0.89 | −30% | 5/7 |
+| Large | + no dilution | 20.5% | 0.89 | −29% | 4/7 |
+| Large | + prefer gross profit | 18.8% | 0.80 | −32% | 4/7 |
+| Mid | trend+composite (base) | 4.1% | 0.32 | −32% | |
+| Mid | any of the rules | 3.3–4.0% | ≤ 0.32 | | ≤ 4/7 |
+| Small | trend+composite+prefer_turnaround (previous recommendation) | 15.2% | 0.73 | −39% | |
+| Small | + no dilution | 17.5% | 0.78 | −43% | 3/7 |
+| Small | + prefer gross profit | 17.0% | 0.79 | −38% | 4/7 |
+| Small | trend+composite (base) | 13.1% | 0.66 | −41% | |
+| Small | + no dilution | 14.8% | 0.71 | −43% | 5/7 |
+| Small | + prefer gross profit | 16.7% | 0.80 | −41% | 5/7 |
+| Small | **+ no dilution + prefer gross profit** | **18.6%** | **0.83** | **−43%** | **6/7** (5/7 vs the previous recommendation) |
+| Small | same, holding buffer 40 | 18.1% | 0.80 | −45% | 6/7 |
+| Small | trend+riskadj120+clean + no dilution | 11.4% (from 1.8%) | 0.49 | −43% | 6/7 |
+
+**Small-cap results:**
+- **The first entry rule that clearly improves Small.**
+- **Holds up across setups:**
+  - Small composite + no dilution + prefer gross profit: 18.6% a year, Sharpe 0.83, better in 6 of 7 years.
+  - It works with or without the 40-name holding buffer, where most rules fall apart.
+  - Dilution exclusion also rescues the raw Small momentum list (1.8% → 11.4%).
+- **Turnaround is no longer needed:** the gain is spread across 2021–2026, not concentrated in 2020.
+- **Drawdown is slightly deeper:** −43% vs −39%. The 2020 crash rebound came largely from diluting turnarounds.
+
+**Large and Mid:**
+- **Large:** excluding cash burners adds a point (21.1%, 5 of 7 years). That is too small to act on after this many tests.
+- **Mid:** nothing helps.
+
 ## Suggested list for the biweekly run (≈ 30 names)
 
 - **Large:** trend filter + risk-adjusted 120-day momentum, excluding names with a faded jump or a heavy-volume drop in the last 60 days. Top 15.
-- **Small:** trend filter + composite, with turnaround names moved to the front of the top 30. Top 15, with a $20M dollar-volume floor and the 8-checkpoint streak cap as safeguards.
+- **Small:** trend filter + composite, excluding names whose share count rose 10%+ in a year, with top-30% gross-profitability names moved to the front of the top 30. Top 15, with a $20M dollar-volume floor and the 8-checkpoint streak cap as safeguards. This replaces the turnaround preference: 18.6% vs 15.2% a year, Sharpe 0.83 vs 0.73. It needs the SEC data refresh, which runs automatically every 30 days.
 - **Mid:** skip.
-- **Exit rule (optional, see [ranking_exits_2020_2026.md](ranking_exits_2020_2026.md)):** for smaller drawdowns, sell Large names on a close below the 50-day average (−30% → −21% max drawdown, −1.4 points a year) and Small names on a 15% fall from their peak since entry. Use it instead of the market gate, not with it.
+- **Exit rule (optional, see [ranking_exits_2020_2026.md](ranking_exits_2020_2026.md)):** for smaller drawdowns, sell Large names on a close below the 50-day average (−30% → −21% max drawdown, −1.4 points a year) and Small names on a 15% fall from their peak since entry. The Small stop was tested on the earlier turnaround list, not the new dilution and gross-profit list. Use it instead of the market gate, not with it.
 - **Market gate:** optional. It reduces 2022-style bear-market losses but cost 0–3.5 points a year over this period by missing the 2020 rebound: Large list 17.8% → 15.3%, Small composite unchanged.
 
 ## Caveats

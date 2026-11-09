@@ -213,6 +213,46 @@ Inside the ranked top-30 lists the samples get small: 24–600 names with the fa
 - **Restatements:** the first-filed value is used. Later restatements are ignored on purpose, to avoid look-ahead.
 - **Net income is noisy:** it includes one-off items such as tax charges and impairments. Operating income or adjusted EPS might give cleaner earnings signals.
 
+## Dilution, cash burn and gross profitability from SEC filings
+
+Same SEC bulk data as the growth section, with five more fields, each taken as first filed:
+- shares outstanding (cover page, else balance sheet)
+- total assets
+- cash
+- operating cash flow (quarters derived from year-to-date totals)
+- gross profit (else revenue minus cost of revenue)
+
+| Factor | Definition |
+|---|---|
+| dilution_10 | shares outstanding up ≥ 10% from a year earlier |
+| buyback_2 | shares outstanding down ≥ 2% |
+| cash_burn | trailing-4-quarter operating cash flow below zero |
+| low_runway | burning cash with under 4 quarters of cash at the current burn rate |
+| gp_top30 | trailing gross profit / total assets in the top 30% of its checkpoint and tier |
+
+- **Splits:** share counts are not split-adjusted. A one-year change above +80% or below −45% is treated as a likely split and left unscored, so a 3-for-2 split can still read as dilution.
+- **Coverage:**
+  - Share counts and cash flow are known for 57–77% of stock-checkpoints.
+  - Gross profit for 35–45%, since banks and many service companies don't report it.
+
+### Signal results (60-day excess vs volatility peers)
+
+| Factor | Large | Mid | Small | Inside the early-momentum list |
+|---|---|---|---|---|
+| dilution_10 | −1.6% (1/7 yrs +) | −1.6% (0/7) | −1.0% (1/7) | Large −3.2%, Mid −1.5% |
+| cash_burn | −1.5% (2/7) | −2.0% (1/7) | −1.4% (2/7) | Large −5.0%, Mid −3.0%, Small −2.1% |
+| low_runway | −3.8% (2/7) | −3.0% (0/7) | −2.0% (1/7) | Large −5.1%, Mid −2.1%, Small +0.9% |
+| buyback_2 | +1.0% (7/7) | +0.3% (4/7) | +0.6% (4/7) | Small +3.2% (5/7) |
+| gp_top30 | +0.0% (5/7) | +0.6% (5/7) | +0.6% (6/7) | Mid +1.7% (6/7) |
+
+- **Lottery tickets:** diluters and cash burners make up 2–3× their share of the top-10 yearly winners, but they underperform on average. Many lottery tickets, a few big wins.
+- **Consistency:** this is the most consistent negative evidence in the study. Dilution is negative in 6–7 of 7 years in every tier.
+- **Inside the Small top-30 composite list:**
+  - dilution: −2.9%
+  - low runway: −5.9%
+  - buybacks: +2.4% (6/7)
+  - high gross profitability: +1.9% (5/7)
+
 ## Suggested use (after the portfolio test)
 
 The portfolio results are in [selection_filters_2020_2026.md](selection_filters_2020_2026.md#factor-rules-turnaround-faded-jumps-and-industry-groups).
@@ -221,7 +261,8 @@ The portfolio results are in [selection_filters_2020_2026.md](selection_filters_
 - **Keep:** move turnaround names to the front of the Small composite list. This lifted it from 13.1% to 15.2% a year (Sharpe 0.66 → 0.73), though much of that came from 2020.
 - **Don't use industry strength as a hard filter or ranking tilt in the Large list.** Although top-industry names beat peers in the signal test, requiring a top industry cut the Large list to 7.4% a year, and favouring leaders cut it to 12.9%. Dropping bottom-20% industries was neutral. Industry strength remains useful for reading the wide early-momentum list, not for picking the top 15.
 - **Don't use:** listing age, or "had a big jump", as positive signals.
-- **SEC fundamentals:** use them to read or trim the wide early-momentum list (strong sales growth, growth_accel_combo, no sharp sales slowdown in small caps). They didn't improve the recommended top-15 lists.
+- **Keep, for Small:** exclude names whose share count rose 10%+ in a year, and move high gross-profit names to the front. The Small list rises from 15.2% to 18.6% a year (see the selection study).
+- **SEC growth fundamentals:** use them to read or trim the wide early-momentum list (strong sales growth, growth_accel_combo, no sharp sales slowdown in small caps). They didn't improve the recommended top-15 lists.
 
 ## Caveats
 

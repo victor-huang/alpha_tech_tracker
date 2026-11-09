@@ -5,12 +5,17 @@ import pandas as pd
 import pytest
 
 from alpha_tech_tracker.research.sec_fundamentals import (
+    CONCEPTS,
     FundamentalsCache,
     add_fundamental_factors,
+    add_quality_factors,
     concept_facts,
     growth_table,
+    quality_table,
     quarterly_values,
     sec_user_agent,
+    share_change_table,
+    ytd_quarterly_values,
 )
 
 
@@ -18,8 +23,21 @@ def _fact(start, end, val, filed, form="10-Q"):
     return {"start": start, "end": end, "val": val, "filed": filed, "form": form}
 
 
-def _facts(concepts):
-    return {"facts": {"us-gaap": {name: {"units": {"USD": rows}} for name, rows in concepts.items()}}}
+def _facts(concepts, namespace="us-gaap", unit="USD"):
+    return {"facts": {namespace: {name: {"units": {unit: rows}} for name, rows in concepts.items()}}}
+
+
+def _dated(rows):
+    facts = pd.DataFrame(rows)
+    for col in ("start", "end", "filed"):
+        facts[col] = pd.to_datetime(facts[col])
+    return facts
+
+
+def _instants(symbol, metric, values, first_end="2023-03-31"):
+    ends = pd.date_range(first_end, periods=len(values), freq="Q")
+    return pd.DataFrame({"symbol": symbol, "metric": metric, "end": ends, "val": values,
+                         "known": ends + pd.Timedelta(days=30)})
 
 
 def _quarters(symbol, revenue, income, first_end="2023-03-31"):
@@ -48,6 +66,16 @@ class TestConceptFacts:
 
         assert result["val"].tolist() == [100]
 
+    def test_instant_concepts_come_from_their_namespace_with_start_equal_to_end(self):
+        facts = _facts({"EntityCommonStockSharesOutstanding": [
+            {"end": "2024-04-25", "val": 1000, "filed": "2024-05-01", "form": "10-Q"}]}, namespace="dei",
+            unit="shares")
+
+        result = concept_facts(facts, "shares")
+
+        assert result["val"].tolist() == [1000]
+        assert (result["start"] == result["end"]).all()
+
     def test_ignores_non_periodic_forms(self):
         facts = _facts({"Revenues": [_fact("2024-01-01", "2024-03-31", 100, "2024-05-01", form="8-K")]})
 
@@ -71,6 +99,94 @@ class TestQuarterlyValues:
         assert result.loc[pd.Timestamp("2024-12-31"), "val"] == 40
         assert result.loc[pd.Timestamp("2024-12-31"), "known"] == pd.Timestamp("2025-02-20")
         assert len(result) == 4
+
+
+class TestYtdQuarterlyValues:
+
+    def test_quarters_are_differences_of_year_to_date_totals(self):
+        facts = _dated([
+            {"start": "2024-01-01", "end": "2024-03-31", "val": 10, "filed": "2024-05-01"},
+            {"start": "2024-01-01", "end": "2024-06-30", "val": 25, "filed": "2024-08-01"},
+            {"start": "2024-01-01", "end": "2024-09-30", "val": 45, "filed": "2024-11-01"},
+            {"start": "2024-01-01", "end": "2024-12-31", "val": 70, "filed": "2025-02-20"},
+        ])
+
+        result = ytd_quarterly_values(facts)
+
+        assert result["val"].tolist() == [10, 15, 20, 25]
+        assert result["known"].iloc[-1] == pd.Timestamp("2025-02-20")
+
+
+class TestShareChangeTable:
+
+    def test_one_year_change_in_shares_outstanding(self):
+        shares = _instants("A", "shares", [100, 100, 100, 100, 115])
+
+        result = share_change_table(shares)
+
+        assert result["share_change"].iloc[-1] == pytest.approx(0.15)
+
+    def test_split_sized_change_is_left_unscored(self):
+        shares = _instants("A", "shares", [100, 100, 100, 100, 1000])
+
+        result = share_change_table(shares)
+
+        assert np.isnan(result["share_change"].iloc[-1])
+
+
+class TestQualityTable:
+
+    def test_trailing_gross_profit_over_assets_and_operating_cash_flow(self):
+        quarters = pd.concat([
+            _instants("A", "gross_profit", [10, 20, 30, 40]),
+            _instants("A", "operating_cash_flow", [-5, -5, -5, -5]),
+            _instants("A", "assets", [1000, 1000, 1000, 500]),
+            _instants("A", "cash", [100, 100, 100, 60]),
+        ])
+
+        last = quality_table(quarters).iloc[-1]
+
+        assert last["gp_assets"] == pytest.approx(100 / 500)
+        assert last["ocf_ttm"] == pytest.approx(-20)
+
+    def test_gross_profit_falls_back_to_revenue_minus_cost(self):
+        quarters = pd.concat([
+            _instants("A", "revenue", [50] * 4),
+            _instants("A", "cost_of_revenue", [30] * 4),
+            _instants("A", "assets", [400] * 4),
+        ])
+
+        assert quality_table(quarters).iloc[-1]["gp_assets"] == pytest.approx(80 / 400)
+
+
+class TestAddQualityFactors:
+
+    def _panel(self, checkpoint="2024-03-01"):
+        return pd.DataFrame({"checkpoint": [pd.Timestamp(checkpoint)], "symbol": ["A"], "tier": ["Small"]})
+
+    def test_cash_burner_with_under_four_quarters_of_cash_has_low_runway(self):
+        quarters = pd.concat([_instants("A", "operating_cash_flow", [-10] * 4), _instants("A", "cash", [30] * 4)])
+
+        row = add_quality_factors(self._panel(), quarters).iloc[0]
+
+        assert row["cash_burn"] == 1.0
+        assert row["low_runway"] == 1.0
+
+    def test_cash_generator_is_never_low_runway(self):
+        quarters = _instants("A", "operating_cash_flow", [10] * 4)
+
+        row = add_quality_factors(self._panel(), quarters).iloc[0]
+
+        assert row["cash_burn"] == 0.0
+        assert row["low_runway"] == 0.0
+
+    def test_dilution_flag_uses_shares_known_before_the_checkpoint(self):
+        quarters = _instants("A", "shares", [100, 100, 100, 100, 120])
+
+        row = add_quality_factors(self._panel("2024-05-01"), quarters).iloc[0]
+
+        assert row["dilution_10"] == 1.0
+        assert row["buyback_2"] == 0.0
 
 
 class TestGrowthTable:
@@ -123,7 +239,8 @@ class TestFundamentalsCache:
 
     def test_reuses_fresh_extract_covering_the_symbols(self, tmp_path, mocker):
         quarters = _quarters("A", [1] * 4, [1] * 4)
-        pd.to_pickle({"fetched_on": date(2026, 11, 1), "covered": ["A", "B"], "quarters": quarters},
+        pd.to_pickle({"fetched_on": date(2026, 11, 1), "covered": ["A", "B"], "metrics": sorted(CONCEPTS),
+                      "quarters": quarters},
                      str(tmp_path / "sec_quarters.pkl"))
         download = mocker.Mock()
 
@@ -140,13 +257,38 @@ class TestFundamentalsCache:
         extract = mocker.Mock(return_value=_quarters("C", [1] * 4, [1] * 4))
         cache = FundamentalsCache(str(tmp_path), user_agent_for=lambda: "Name name@example.com",
                                   download=fake_download, ticker_ciks=lambda agent: {"C": 3, "D": 4},
-                                  extract=extract)
+                                  extract=extract, keep_zip=False)
 
         cache.load(["C"], date(2026, 11, 8))
 
         extract.assert_called_once_with(str(tmp_path / "companyfacts.zip"), {"C": 3})
         assert not (tmp_path / "companyfacts.zip").exists()
         assert pd.read_pickle(str(tmp_path / "sec_quarters.pkl"))["covered"] == ["C"]
+
+
+    def test_keeps_a_fresh_zip_and_reuses_it_without_downloading(self, tmp_path, mocker):
+        (tmp_path / "companyfacts.zip").write_text("")
+        download = mocker.Mock()
+        cache = FundamentalsCache(str(tmp_path), user_agent_for=lambda: "Name name@example.com", download=download,
+                                  ticker_ciks=lambda agent: {"A": 1},
+                                  extract=mocker.Mock(return_value=_quarters("A", [1] * 4, [1] * 4)))
+
+        cache.load(["A"], date.today())
+
+        download.assert_not_called()
+        assert (tmp_path / "companyfacts.zip").exists()
+
+    def test_rebuilds_an_extract_made_before_new_metrics_were_added(self, tmp_path, mocker):
+        pd.to_pickle({"fetched_on": date(2026, 11, 1), "covered": ["A"], "metrics": ["revenue"],
+                      "quarters": _quarters("A", [1] * 4, [1] * 4)}, str(tmp_path / "sec_quarters.pkl"))
+        extract = mocker.Mock(return_value=_quarters("A", [1] * 4, [1] * 4))
+        cache = FundamentalsCache(str(tmp_path), user_agent_for=lambda: "Name name@example.com",
+                                  download=lambda path, agent: open(path, "w").close(),
+                                  ticker_ciks=lambda agent: {"A": 1}, extract=extract)
+
+        cache.load(["A"], date(2026, 11, 8))
+
+        extract.assert_called_once()
 
 
 class TestSecUserAgent:
