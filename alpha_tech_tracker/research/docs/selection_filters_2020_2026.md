@@ -289,6 +289,8 @@ On the Small list, hold-while-MAs-rise gives 19.0% vs 18.6% (better in 4 of 7 ye
 
 ## Suggested list for the biweekly run (≈ 30 names)
 
+> **Superseded** by [recommended_rules_2020_2026.md](recommended_rules_2020_2026.md): a new Large rule, trailing-stop exits for both tiers, and no $20M floor or streak cap on Small (the code never applied them; the floor cuts Small to 8.3% a year).
+
 - **Large:** trend filter + risk-adjusted 120-day momentum, excluding names with a faded jump or a heavy-volume drop in the last 60 days. Top 15.
 - **Small:** trend filter + composite, excluding names whose share count rose 10%+ in a year, with top-30% gross-profitability names moved to the front of the top 30. Top 15, with a $20M dollar-volume floor and the 8-checkpoint streak cap as safeguards. This replaces the turnaround preference: 18.6% vs 15.2% a year, Sharpe 0.83 vs 0.73. It needs the SEC data refresh, which runs automatically every 30 days.
 - **Mid:** skip.

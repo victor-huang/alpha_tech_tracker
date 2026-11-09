@@ -1,0 +1,15 @@
+,,2020,2021,2022,2023,2024,2025,2026
+Small,trend+composite+no_dilution+prefer_gross_profit,0.351,0.3897,-0.0751,0.2616,0.0531,0.1084,0.2837
+Small,trend+composite+no_dilution+prefer_gross_profit+liquid,0.1383,0.7473,-0.4144,0.037,0.2162,-0.1231,0.3514
+Small,trend+composite+no_dilution+prefer_gross_profit+streak_cap,0.364,0.3843,-0.0586,0.2421,0.0548,0.1061,0.2948
+Small,trend+composite+no_dilution+prefer_gross_profit+liquid+streak_cap,0.1415,0.7569,-0.4242,0.0676,0.2444,-0.0979,0.3296
+Large,ret180/vol^0.5+slots|exit=none,1.0164,0.1088,-0.0664,-0.0206,0.5861,0.3069,0.5224
+Large,ret180/vol^0.5+slots|exit=ma50,1.0095,0.1242,-0.1288,-0.0648,0.6288,0.2421,0.4205
+Large,ret180/vol^0.5+slots|exit=trail15,0.7845,0.1115,-0.0981,-0.0508,0.6224,0.3392,0.3438
+Large,ret180/vol^0.5+slots|exit=trail25,1.0266,0.1115,-0.0876,-0.0235,0.6045,0.3242,0.5119
+Large,ret180/vol^0.5+slots|exit=ma50+down_jump,0.9967,0.1183,-0.1288,-0.0696,0.6212,0.2408,0.4205
+Small,trend+composite+no_dilution+prefer_gross_profit|exit=none,0.351,0.3897,-0.0751,0.2616,0.0531,0.1084,0.2837
+Small,trend+composite+no_dilution+prefer_gross_profit|exit=ma50,0.6475,0.2765,-0.0997,0.1283,0.0115,0.1256,0.2927
+Small,trend+composite+no_dilution+prefer_gross_profit|exit=trail15,0.7074,0.3481,-0.0844,0.1968,0.07,0.0755,0.2561
+Small,trend+composite+no_dilution+prefer_gross_profit|exit=trail25,0.562,0.3743,-0.0777,0.1885,0.0574,0.1084,0.2837
+Small,trend+composite+no_dilution+prefer_gross_profit|exit=ma50+down_jump,0.6422,0.2594,-0.0997,0.1237,0.012,0.1241,0.2817

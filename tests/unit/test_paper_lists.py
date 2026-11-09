@@ -1,6 +1,6 @@
 import pandas as pd
 
-from alpha_tech_tracker.research.paper_lists import DETAIL_COLUMNS, latest_list, paper_rules
+from alpha_tech_tracker.research.paper_lists import DETAIL_COLUMNS, entry_checkpoints, latest_list, paper_rules
 
 CP1 = pd.Timestamp("2026-10-20")
 CP2 = pd.Timestamp("2026-11-03")
@@ -46,8 +46,32 @@ class TestLatestList:
 
         assert out["status"].tolist() == ["new"]
 
+    def test_carries_entry_checkpoint_of_held_names(self):
+        out = latest_list(_book({CP1: ["A"], CP2: ["A"]}), _ranked({"A": 1.0}), _panel(["A"]))
+
+        assert out.iloc[0]["entry"] == CP1.date()
+
+
+class TestEntryCheckpoints:
+    def test_entry_is_start_of_unbroken_holding(self):
+        cp0 = pd.Timestamp("2026-10-06")
+        book = _book({cp0: ["A"], CP1: [], CP2: ["A"]})
+
+        assert entry_checkpoints(book) == {"A": CP2}
+
+    def test_entry_reaches_back_through_consecutive_checkpoints(self):
+        cp0 = pd.Timestamp("2026-10-06")
+        book = _book({cp0: ["A"], CP1: ["A"], CP2: ["A"]})
+
+        assert entry_checkpoints(book) == {"A": cp0}
+
 
 class TestPaperRules:
-    def test_tracks_current_large_candidate_and_small_lists(self):
-        assert {name: tier for name, (tier, _) in paper_rules().items()} == {
-            "large_current": "Large", "large_candidate": "Large", "small_current": "Small"}
+    def test_tracks_recommended_lists_and_previous_large_rule(self):
+        assert {name: tier for name, (tier, _, _) in paper_rules().items()} == {
+            "large_recommended": "Large", "large_previous": "Large", "small_recommended": "Small"}
+
+    def test_recommended_lists_use_trailing_stops(self):
+        rules = paper_rules()
+
+        assert (rules["large_recommended"][2], rules["small_recommended"][2]) == ("trail25", "trail15")

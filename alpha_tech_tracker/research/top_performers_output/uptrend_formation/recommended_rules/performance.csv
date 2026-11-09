@@ -1,0 +1,15 @@
+tier,rule,turnover_per_rebalance,avg_names,cagr,vol,sharpe,max_dd,exits_per_year
+Small,trend+composite+no_dilution+prefer_gross_profit,0.6164,14.8807,0.1855,0.2441,0.8341,-0.4341,
+Small,trend+composite+no_dilution+prefer_gross_profit+liquid,0.4845,13.8125,0.0826,0.3866,0.4103,-0.5214,
+Small,trend+composite+no_dilution+prefer_gross_profit+streak_cap,0.6161,14.8807,0.1883,0.2437,0.8444,-0.4341,
+Small,trend+composite+no_dilution+prefer_gross_profit+liquid+streak_cap,0.4933,13.7045,0.0912,0.3853,0.4306,-0.5163,
+Large,ret180/vol^0.5+slots|exit=none,0.5589,14.9716,0.306,0.2871,1.0797,-0.2849,0.0
+Large,ret180/vol^0.5+slots|exit=ma50,0.4888,14.9716,0.2693,0.2557,1.062,-0.2955,90.7773
+Large,ret180/vol^0.5+slots|exit=trail15,0.539,14.9716,0.2576,0.2655,0.9977,-0.258,47.25
+Large,ret180/vol^0.5+slots|exit=trail25,0.5513,14.9716,0.3058,0.2809,1.0955,-0.2694,11.1682
+Large,ret180/vol^0.5+slots|exit=ma50+down_jump,0.4881,14.9716,0.2653,0.2551,1.0512,-0.299,92.4955
+Small,trend+composite+no_dilution+prefer_gross_profit|exit=none,0.6164,14.8807,0.1855,0.2441,0.8341,-0.4341,0.0
+Small,trend+composite+no_dilution+prefer_gross_profit|exit=ma50,0.5252,14.8807,0.1783,0.1877,0.9691,-0.2125,95.5023
+Small,trend+composite+no_dilution+prefer_gross_profit|exit=trail15,0.5927,14.8807,0.2035,0.2073,0.9999,-0.2502,20.7614
+Small,trend+composite+no_dilution+prefer_gross_profit|exit=trail25,0.6121,14.8807,0.1984,0.2224,0.9313,-0.3403,3.5795
+Small,trend+composite+no_dilution+prefer_gross_profit|exit=ma50+down_jump,0.5243,14.8807,0.1732,0.1879,0.9449,-0.2125,97.0773

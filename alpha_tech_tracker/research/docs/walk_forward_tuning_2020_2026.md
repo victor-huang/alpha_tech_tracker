@@ -77,6 +77,8 @@ These figures are in-sample, because the setting was picked partly on these year
 
 ## Suggested use
 
+Now adopted as the recommended Large rule, with a 25% trailing stop: see [recommended_rules_2020_2026.md](recommended_rules_2020_2026.md).
+
 - **Large candidate:** 180-day return / vol_60d^0.5, trend filter, with 3 big-jump + 2 new-high breakout slots. Paper-track it next to the current rule before switching. Its 2026 result is in-sample, so 2027 will be its first real out-of-sample year.
 - **Small:** keep the current rule.
 - **Mid:** still skip.
