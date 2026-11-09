@@ -50,6 +50,7 @@ RULES = {"current": LISTS, "mom120": {tier: "trend+mom120+clean" for tier in LIS
          "gap3_high2": dict(LISTS, Large="trend+riskadj120+clean+gap3_high2"),
          "gap3_high2_hold": dict(LISTS, Large="trend+riskadj120+clean+gap3_high2_hold"),
          "mom120+gap3_high2_hold": dict(LISTS, Large="trend+mom120+clean+gap3_high2_hold"),
+         "mom120+gap3_high2": dict(LISTS, Large="trend+mom120+clean+gap3_high2"),
          "base_ok+breakout": dict(LISTS, Large="trend+riskadj120+clean+base_ok+breakout",
                                   Small="trend+composite+no_dilution+prefer_gross_profit+base_ok+breakout")}
 TOP = 15
