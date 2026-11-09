@@ -16,6 +16,8 @@ A stopped-out name stays out until the next checkpoint, when it can be bought ba
 
 **Rebalance interval:** the 2-week cycle was tested against monthly, quarterly and QQQ-trend-based schedules. It stays for both tiers; see [rebalance_interval_2020_2026.md](rebalance_interval_2020_2026.md). The Small candidate to paper-track is "2 weeks while QQQ is above both its 50- and 200-day averages, otherwise hold 1 month."
 
+**List size:** holding only the top N was tested in [concentration_2020_2026.md](concentration_2020_2026.md). Large top 10 is the best risk-adjusted Large book (35.5%, Sharpe 1.16). Large top 3 ranked by the 180-day score alone (64.5% a year, worst drop −48%) is paper-tracked as `large_top3`.
+
 ## Daily and biweekly commands
 
 ```
@@ -25,7 +27,7 @@ PYTHONPATH=. python -m alpha_tech_tracker.research.paper_lists --refresh
 PYTHONPATH=. python -m alpha_tech_tracker.research.exit_watch
 ```
 
-`paper_lists` also prints the previous Large rule (`large_previous`) for comparison.
+`paper_lists` also prints the previous Large rule (`large_previous`) for comparison and the concentrated `large_top3`.
 
 ## Backtest, 2020–2026
 

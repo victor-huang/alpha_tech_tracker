@@ -1,0 +1,57 @@
+tier,exit,schedule,offset,total_return,cagr,max_dd_at_rebalances,rebalances,turnover,stops
+Large,trail25,2 weeks,0,5.4473,0.313,-0.2694,176,97.0276,78
+Large,trail25,1 month,0,2.4795,0.1998,-0.3204,88,57.3636,104
+Large,trail25,1 month,1,4.6057,0.2864,-0.3465,89,56.3616,107
+Large,trail25,3 months,0,2.1237,0.1811,-0.2527,30,21.8344,121
+Large,trail25,3 months,1,2.6935,0.2103,-0.249,31,22.3776,122
+Large,trail25,3 months,2,2.384,0.195,-0.3676,30,21.8924,120
+Large,trail25,3 months,3,2.3909,0.1953,-0.3138,30,21.2147,125
+Large,trail25,3 months,4,2.1845,0.1844,-0.3919,30,22.0594,118
+Large,trail25,3 months,5,2.5035,0.201,-0.3288,30,21.4025,127
+Large,trail25,"uptrend 1m, else 2w",0,3.716,0.2543,-0.2534,115,70.5775,79
+Large,trail25,"uptrend 3m, else 2w",0,3.6585,0.2521,-0.2417,79,50.1933,83
+Large,trail25,"uptrend 3m, above 200 1m, below 2w",0,3.6941,0.2535,-0.208,68,43.6385,92
+Large,trail25,"uptrend 2w, else 1m",0,3.2146,0.2339,-0.3149,136,77.7824,109
+Large,trail25,"uptrend 2w, else 3m",0,2.0108,0.1747,-0.4324,114,63.2239,124
+Large,none,2 weeks,0,5.4518,0.3131,-0.2849,176,98.3673,0
+Large,none,1 month,0,2.866,0.2184,-0.3563,88,59.4035,0
+Large,none,1 month,1,4.9609,0.298,-0.3608,89,58.5336,0
+Large,none,3 months,0,3.9339,0.2626,-0.2528,30,24.4739,0
+Large,none,3 months,1,5.3746,0.3108,-0.2559,31,24.4245,0
+Large,none,3 months,2,3.3066,0.2378,-0.3219,30,24.2816,0
+Large,none,3 months,3,3.8296,0.2587,-0.2793,30,23.4883,0
+Large,none,3 months,4,2.6533,0.2084,-0.4207,30,24.0938,0
+Large,none,3 months,5,2.4799,0.1998,-0.4779,30,24.0051,0
+Large,none,"uptrend 1m, else 2w",0,3.8441,0.2592,-0.2555,115,72.052,0
+Large,none,"uptrend 3m, else 2w",0,4.364,0.2781,-0.2336,79,52.0697,0
+Large,none,"uptrend 3m, above 200 1m, below 2w",0,4.2178,0.273,-0.2336,68,45.6002,0
+Large,none,"uptrend 2w, else 1m",0,2.8756,0.2189,-0.36,136,80.138,0
+Large,none,"uptrend 2w, else 3m",0,3.86,0.2598,-0.4266,114,64.8181,0
+Small,trail15,2 weeks,0,2.6458,0.208,-0.2502,176,104.3211,145
+Small,trail15,1 month,0,2.3224,0.1917,-0.2571,88,64.2286,182
+Small,trail15,1 month,1,1.5599,0.1472,-0.1922,89,64.1364,184
+Small,trail15,3 months,0,0.8378,0.093,-0.1719,30,20.9156,205
+Small,trail15,3 months,1,1.0736,0.1124,-0.1942,31,20.8416,204
+Small,trail15,3 months,2,0.7699,0.087,-0.239,30,20.742,202
+Small,trail15,3 months,3,0.5302,0.0641,-0.2091,30,21.3951,184
+Small,trail15,3 months,4,0.9527,0.1027,-0.2568,30,20.803,204
+Small,trail15,3 months,5,0.9271,0.1006,-0.1909,30,19.6812,206
+Small,trail15,"uptrend 1m, else 2w",0,1.9397,0.1706,-0.2571,115,75.9558,175
+Small,trail15,"uptrend 3m, else 2w",0,1.0087,0.1073,-0.2568,79,49.2178,179
+Small,trail15,"uptrend 3m, above 200 1m, below 2w",0,1.2109,0.1229,-0.2568,68,43.5986,181
+Small,trail15,"uptrend 2w, else 1m",0,3.0745,0.2278,-0.1797,136,85.6919,156
+Small,trail15,"uptrend 2w, else 3m",0,2.9003,0.22,-0.2144,114,70.7127,166
+Small,none,2 weeks,0,2.2829,0.1897,-0.4341,176,108.4881,0
+Small,none,1 month,0,2.877,0.2189,-0.3523,88,69.3181,0
+Small,none,1 month,1,1.28,0.128,-0.4199,89,69.5049,0
+Small,none,3 months,0,1.9255,0.1698,-0.2855,30,26.3209,0
+Small,none,3 months,1,2.1484,0.1824,-0.2737,31,26.6803,0
+Small,none,3 months,2,1.4006,0.1365,-0.2768,30,26.4795,0
+Small,none,3 months,3,1.0133,0.1076,-0.2496,30,26.5172,0
+Small,none,3 months,4,2.7642,0.2137,-0.1806,30,26.3828,0
+Small,none,3 months,5,1.0558,0.111,-0.3479,30,25.3962,0
+Small,none,"uptrend 1m, else 2w",0,1.915,0.1692,-0.434,115,81.1332,0
+Small,none,"uptrend 3m, else 2w",0,1.1487,0.1182,-0.4385,79,54.5246,0
+Small,none,"uptrend 3m, above 200 1m, below 2w",0,1.346,0.1327,-0.4385,68,48.758,0
+Small,none,"uptrend 2w, else 1m",0,2.7028,0.2108,-0.4037,136,90.3449,0
+Small,none,"uptrend 2w, else 3m",0,3.689,0.2533,-0.2656,114,75.1638,0

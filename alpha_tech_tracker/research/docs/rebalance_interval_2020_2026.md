@@ -61,10 +61,23 @@ The fixed schedules depend heavily on their start date. For example, Large on a 
 4. **Fixed longer intervals never help.** Monthly and quarterly cycles lost for both tiers over the seven years.
 5. **The trailing stops hurt slightly in 2022's choppy decline** (Large −6.3% vs −4.1% without; Small −7.9% vs −7.0%). They earn their keep in fast crashes such as 2020.
 
+## Continuous run (Jan 2020 – Nov 6 2026)
+
+The top schedules were also run as one continuous book, with positions and schedules carried across year ends (`rebalance_interval --years 2020 … 2026`, output `rebalance_interval/2020_…_2026/`):
+
+| List | Schedule | CAGR | Total | Worst drop at rebalances | Rebalances | Turnover |
+|---|---|---|---|---|---|---|
+| Large | 2 weeks | 31.3% | +545% | −27% | 176 | 97 |
+| Small | 2 weeks | 20.8% | +265% | −25% | 176 | 104 |
+| Small | **uptrend 2w, else 1m** | **22.8%** | **+307%** | **−18%** | 136 | 86 |
+| Small | uptrend 2w, else 3m | 22.0% | +290% | −21% | 114 | 71 |
+
+Continuously, the Small rule "uptrend 2w, else 1m" beat 2 weeks in 4 years, matched it in 1 and lagged in 2 (2025 −1.9, 2026 −3.8 points). It is now ahead of the 3-month version.
+
 ## Decision
 
 - **Large:** 2 weeks, unchanged.
-- **Small:** 2 weeks for now. The candidate is **"2 weeks while QQQ is above both its 50- and 200-day averages, otherwise hold 1 month."** Paper-track it next to the current Small list before switching. It is the milder of the two winners (23.3% a year, ahead in 4 of 7 years), and it depends less on when a dip happens than the 3-month version.
+- **Small:** 2 weeks for now. The candidate is **"2 weeks while QQQ is above both its 50- and 200-day averages, otherwise hold 1 month."** Paper-track it next to the current Small list before switching. It is the milder of the two winners (23.3% a year, ahead in 4 of 7 years), and it depends less on when a dip happens than the 3-month version; the continuous run favours it further (22.8% vs 20.8%, worst drop −18% vs −25%).
 
 ## Caveats
 

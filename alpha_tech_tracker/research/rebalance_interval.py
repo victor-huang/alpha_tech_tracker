@@ -10,7 +10,8 @@ rebalance):
     once that many checkpoints have passed since the last rebalance
 
 Run one year at a time (each starts in cash on the year's first checkpoint, and daily data is cut at the year's end);
-every run also refreshes summary_by_year.csv, chaining all single-year results found so far.
+every run also refreshes summary_by_year.csv, chaining all single-year results found so far. Several years in one run
+give one continuous book (positions and schedules carry across year ends), with by_year.csv per calendar year.
 
 Usage:
     PYTHONPATH=. python -m alpha_tech_tracker.research.rebalance_interval --years 2026
@@ -73,9 +74,18 @@ def dynamic_schedule(states: pd.Series, intervals: TrendIntervals) -> List[pd.Ti
     return schedule
 
 
-def book_summary(book: pd.DataFrame) -> Dict[str, float]:
-    return {"total_return": float((1 + book["ret"]).prod() - 1), "rebalances": len(book),
+def book_summary(book: pd.DataFrame, end: pd.Timestamp) -> Dict[str, float]:
+    """Total and yearly-compounded return, worst drop measured at rebalance dates, rebalances, turnover and stops."""
+    equity = pd.concat([pd.Series([1.0]), (1 + book["ret"]).cumprod().reset_index(drop=True)])
+    years = (end - book.index[0]).days / 365.25
+    return {"total_return": float(equity.iloc[-1] - 1), "cagr": float(equity.iloc[-1] ** (1 / years) - 1),
+            "max_dd_at_rebalances": float((equity / equity.cummax() - 1).min()), "rebalances": len(book),
             "turnover": float(book["turnover"].sum()), "stops": int(book["exits"].sum())}
+
+
+def returns_by_year(book: pd.DataFrame) -> pd.Series:
+    """Compounded return per calendar year, each holding period credited to the year it starts in."""
+    return (1 + book["ret"]).groupby(book.index.year).prod() - 1
 
 
 def combine_years(root: str, exit_kind: str = "recommended") -> pd.DataFrame:
@@ -110,7 +120,8 @@ def run(args) -> None:
         for name, every in FIXED_INTERVALS.items()}
     schedules.update({name: [dynamic_schedule(states, intervals)] for name, intervals in DYNAMIC.items()})
 
-    rows = []
+    end = data.dates[-1]
+    rows, yearly_rows = [], []
     for tier, (rule, variant, exit_name) in RECOMMENDED.items():
         ranked = rank_variant(panel, variant, TOP)
         ranked = ranked[ranked["tier"] == tier]
@@ -118,17 +129,22 @@ def run(args) -> None:
             for name, runs in schedules.items():
                 for i, schedule in enumerate(runs):
                     book = run_daily_book(ranked, data, schedule, TOP, TOP, EXIT_RULES[exit_label], cost)
-                    rows.append({"tier": tier, "exit": exit_label, "schedule": name, "offset": i,
-                                 **book_summary(book)})
+                    key = {"tier": tier, "exit": exit_label, "schedule": name, "offset": i}
+                    rows.append({**key, **book_summary(book, end)})
+                    yearly_rows.append({**key, **returns_by_year(book).to_dict()})
         print(f"done {tier}", flush=True)
 
     detail = pd.DataFrame(rows)
     detail.round(4).to_csv(os.path.join(out_dir, "by_offset.csv"), index=False)
     summary = detail.groupby(["tier", "exit", "schedule"], sort=False).agg(
         total_return=("total_return", "mean"), worst_offset=("total_return", "min"),
-        best_offset=("total_return", "max"), rebalances=("rebalances", "mean"), turnover=("turnover", "mean"),
-        stops=("stops", "mean")).reset_index()
+        best_offset=("total_return", "max"), cagr=("cagr", "mean"), max_dd_at_rebalances=("max_dd_at_rebalances", "mean"),
+        rebalances=("rebalances", "mean"), turnover=("turnover", "mean"), stops=("stops", "mean")).reset_index()
     summary.round(4).to_csv(os.path.join(out_dir, "summary.csv"), index=False)
+    if len(args.years) > 1:
+        by_year = pd.DataFrame(yearly_rows).groupby(["tier", "exit", "schedule"], sort=False).mean().drop(
+            columns="offset")
+        by_year.round(4).to_csv(os.path.join(out_dir, "by_year.csv"))
     states.rename("qqq_trend").to_csv(os.path.join(out_dir, "qqq_trend.csv"))
     with pd.option_context("display.width", 200, "display.max_rows", 100):
         print(summary.round(3).to_string(index=False))

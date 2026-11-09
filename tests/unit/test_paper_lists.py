@@ -68,8 +68,14 @@ class TestEntryCheckpoints:
 
 class TestPaperRules:
     def test_tracks_recommended_lists_and_previous_large_rule(self):
-        assert {name: tier for name, (tier, _, _) in paper_rules().items()} == {
-            "large_recommended": "Large", "large_previous": "Large", "small_recommended": "Small"}
+        assert {name: tier for name, (tier, _, _, _) in paper_rules().items()} == {
+            "large_recommended": "Large", "large_previous": "Large", "large_top3": "Large",
+            "small_recommended": "Small"}
+
+    def test_large_top3_holds_three_names_with_the_large_stop(self):
+        _, variant, exit_rule, n = paper_rules()["large_top3"]
+
+        assert (n, exit_rule, variant.boost_groups) == (3, "trail25", ())
 
     def test_recommended_lists_use_trailing_stops(self):
         rules = paper_rules()

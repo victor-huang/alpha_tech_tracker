@@ -1,7 +1,8 @@
 """Paper-tracking lists at the latest biweekly checkpoint: the recommended Large and Small rules
-(recommended_rules.RECOMMENDED) and the previous Large rule for comparison.
+(recommended_rules.RECOMMENDED), the previous Large rule for comparison, and the concentrated Large top 3 ranked by
+the 180-day score alone (concentration.py).
 
-Each list is the backtest book (top 15, no buffer, no market gate) at the latest checkpoint, with names new since the
+Each list is the backtest book (its top N, no buffer, no market gate) at the latest checkpoint, with names new since the
 previous checkpoint, names dropped, and the checkpoint each held name was bought at (`entry`, used by exit_watch for
 the trailing stop). Checkpoints are every 10 trading days from the first trading day of the year, so a list only
 changes on a checkpoint day; `--refresh` rebuilds the year's checkpoint panel first.
@@ -18,6 +19,7 @@ from typing import Dict, Tuple
 import pandas as pd
 
 from alpha_tech_tracker.research import uptrend_formation
+from alpha_tech_tracker.research.concentration import LISTS as CONCENTRATED
 from alpha_tech_tracker.research.recommended_rules import RECOMMENDED, prepare_recommended_panel
 from alpha_tech_tracker.research.selection_filters import (
     PANEL_DIR,
@@ -35,12 +37,14 @@ TOP = 15
 DETAIL_COLUMNS = ["close", "ret_60d", "ret_120d", "ret_180d", "off_52w_high", "gap_10d", "high_breakout_10d"]
 
 
-def paper_rules() -> Dict[str, Tuple[str, Variant, str]]:
-    """List name -> (tier, variant, exit rule name)."""
+def paper_rules() -> Dict[str, Tuple[str, Variant, str, int]]:
+    """List name -> (tier, variant, exit rule name, names held)."""
+    top3 = CONCENTRATED["large_score_only"]
     return {
-        "large_recommended": ("Large", RECOMMENDED["Large"][1], RECOMMENDED["Large"][2]),
-        "large_previous": ("Large", VARIANTS[LISTS["Large"]], "none"),
-        "small_recommended": ("Small", RECOMMENDED["Small"][1], RECOMMENDED["Small"][2]),
+        "large_recommended": ("Large", RECOMMENDED["Large"][1], RECOMMENDED["Large"][2], TOP),
+        "large_previous": ("Large", VARIANTS[LISTS["Large"]], "none", TOP),
+        "large_top3": ("Large", top3.variant, top3.exit_rule, 3),
+        "small_recommended": ("Small", RECOMMENDED["Small"][1], RECOMMENDED["Small"][2], TOP),
     }
 
 
@@ -86,10 +90,10 @@ def run(args: argparse.Namespace) -> None:
     out_dir = os.path.join(args.out_dir, "paper_lists")
     os.makedirs(out_dir, exist_ok=True)
     lists = []
-    for name, (tier, variant, exit_rule) in paper_rules().items():
+    for name, (tier, variant, exit_rule, n) in paper_rules().items():
         ranked = rank_variant(panel, variant, TOP)
         ranked = ranked[ranked["tier"] == tier]
-        book = run_portfolio(ranked, returns, inputs.regime, TOP, TOP, False, 0.0, variant.take_all)
+        book = run_portfolio(ranked, returns, inputs.regime, n, n, False, 0.0, variant.take_all)
         lists.append(latest_list(book, ranked, panel).assign(list=name, exit_rule=exit_rule))
     table = pd.concat(lists, ignore_index=True)
     checkpoint = table["checkpoint"].iloc[0]

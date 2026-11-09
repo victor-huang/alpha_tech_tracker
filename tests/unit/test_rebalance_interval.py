@@ -2,7 +2,9 @@ import pandas as pd
 
 from alpha_tech_tracker.research.rebalance_interval import (
     TrendIntervals,
+    book_summary,
     combine_years,
+    returns_by_year,
     dynamic_schedule,
     fixed_schedule,
     trend_state,
@@ -75,3 +77,30 @@ class TestCombineYears:
         table = combine_years(str(tmp_path))
 
         assert table.loc[("Large", "1 month"), "years_beat_2_weeks"] == 1
+
+
+def _book(rets, starts):
+    return pd.DataFrame({"ret": rets, "turnover": 0.5, "exits": 1}, index=pd.to_datetime(starts))
+
+
+class TestBookSummary:
+    def test_measures_worst_drop_from_the_running_peak(self):
+        book = _book([0.5, -0.4, 0.1], ["2024-01-02", "2024-07-01", "2025-01-02"])
+
+        summary = book_summary(book, pd.Timestamp("2025-12-31"))
+
+        assert round(summary["max_dd_at_rebalances"], 4) == -0.4
+
+    def test_compounds_total_over_the_years_held(self):
+        book = _book([0.21], ["2024-01-01"])
+
+        summary = book_summary(book, pd.Timestamp("2025-12-31"))
+
+        assert (round(summary["total_return"], 4), round(summary["cagr"], 2)) == (0.21, 0.10)
+
+
+class TestReturnsByYear:
+    def test_credits_each_period_to_the_year_it_starts_in(self):
+        book = _book([0.1, 0.1, -0.5], ["2024-06-03", "2024-12-16", "2025-01-02"])
+
+        assert returns_by_year(book).round(4).to_dict() == {2024: 0.21, 2025: -0.5}
