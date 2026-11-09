@@ -279,7 +279,17 @@ def yearly(ret: pd.Series) -> pd.Series:
     return (1 + ret).groupby(ret.index.year).prod() - 1
 
 
-def run(args: argparse.Namespace) -> None:
+class Inputs(NamedTuple):
+    panel: pd.DataFrame
+    close: pd.DataFrame
+    dollar_volume: pd.DataFrame
+    regime: pd.Series
+    checkpoints: List[pd.Timestamp]
+    symbols: List[str]
+
+
+def prepare_inputs(args: argparse.Namespace) -> Inputs:
+    """Checkpoint panel with selection, price, industry-group and SEC factors, plus the daily bars behind it."""
     years = args.years
     alpaca = AlpacaData()
     panel = drop_funds(load_panels(args.panel_dir, years), alpaca.listed_stocks()["name"])
@@ -294,6 +304,11 @@ def run(args: argparse.Namespace) -> None:
     panel = add_group_strength(panel, IndustryCache(os.path.join(args.cache_dir, "industries.csv")).load(args.today))
     panel = add_fundamental_factors(panel, FundamentalsCache(os.path.join(args.cache_dir, "sec")).load(symbols,
                                                                                                      args.today))
+    return Inputs(panel, close, dollar_volume, regime, checkpoints, symbols)
+
+
+def run(args: argparse.Namespace) -> None:
+    panel, close, _, regime, checkpoints, _ = prepare_inputs(args)
     returns = period_returns(close, checkpoints)
 
     out_dir = os.path.join(args.out_dir, "selection_filters")

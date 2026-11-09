@@ -202,6 +202,7 @@ Sales and earnings growth from SEC filings ([winner_factors_2020_2026.md](winner
 - **Large:** trend filter + risk-adjusted 120-day momentum, excluding names with a faded jump or a heavy-volume drop in the last 60 days. Top 15.
 - **Small:** trend filter + composite, with turnaround names moved to the front of the top 30. Top 15, with a $20M dollar-volume floor and the 8-checkpoint streak cap as safeguards.
 - **Mid:** skip.
+- **Exit rule (optional, see [ranking_exits_2020_2026.md](ranking_exits_2020_2026.md)):** for smaller drawdowns, sell Large names on a close below the 50-day average (−30% → −21% max drawdown, −1.4 points a year) and Small names on a 15% fall from their peak since entry. Use it instead of the market gate, not with it.
 - **Market gate:** optional. It reduces 2022-style bear-market losses but cost 0–3.5 points a year over this period by missing the 2020 rebound: Large list 17.8% → 15.3%, Small composite unchanged.
 
 ## Caveats
