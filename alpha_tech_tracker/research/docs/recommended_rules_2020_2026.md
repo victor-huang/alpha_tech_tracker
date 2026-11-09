@@ -14,6 +14,8 @@ All books are top 15, equal weight, rebalanced every 10 trading days (the biweek
 
 A stopped-out name stays out until the next checkpoint, when it can be bought back if it is still on the list.
 
+**Rebalance interval:** the 2-week cycle was tested against monthly, quarterly and QQQ-trend-based schedules. It stays for both tiers; see [rebalance_interval_2020_2026.md](rebalance_interval_2020_2026.md). The Small candidate to paper-track is "2 weeks while QQQ is above both its 50- and 200-day averages, otherwise hold 1 month."
+
 ## Daily and biweekly commands
 
 ```

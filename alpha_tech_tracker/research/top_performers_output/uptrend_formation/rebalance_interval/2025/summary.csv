@@ -1,0 +1,33 @@
+tier,exit,schedule,total_return,worst_offset,best_offset,rebalances,turnover,stops
+Large,trail25,2 weeks,0.2896,0.2896,0.2896,25.0,13.7659,16.0
+Large,trail25,1 month,0.2428,0.0521,0.4336,13.0,8.116,17.0
+Large,trail25,3 months,0.2776,0.0875,0.5631,5.0,3.369,19.6667
+Large,trail25,"uptrend 1m, else 2w",0.394,0.394,0.394,15.0,9.436,13.0
+Large,trail25,"uptrend 3m, else 2w",0.4707,0.4707,0.4707,11.0,7.3639,14.0
+Large,trail25,"uptrend 3m, above 200 1m, below 2w",0.4707,0.4707,0.4707,11.0,7.3639,14.0
+Large,trail25,"uptrend 2w, else 1m",0.0832,0.0832,0.0832,19.0,10.5483,21.0
+Large,trail25,"uptrend 2w, else 3m",0.2104,0.2104,0.2104,17.0,8.83,18.0
+Large,none,2 weeks,0.2727,0.2727,0.2727,25.0,14.0671,0.0
+Large,none,1 month,0.228,0.0172,0.4388,13.0,8.4298,0.0
+Large,none,3 months,0.285,0.1399,0.6247,5.0,3.7443,0.0
+Large,none,"uptrend 1m, else 2w",0.3813,0.3813,0.3813,15.0,9.6397,0.0
+Large,none,"uptrend 3m, else 2w",0.4726,0.4726,0.4726,11.0,7.589,0.0
+Large,none,"uptrend 3m, above 200 1m, below 2w",0.4726,0.4726,0.4726,11.0,7.589,0.0
+Large,none,"uptrend 2w, else 1m",0.0473,0.0473,0.0473,19.0,10.9782,0.0
+Large,none,"uptrend 2w, else 3m",0.4385,0.4385,0.4385,17.0,8.9222,0.0
+Small,trail15,2 weeks,0.0806,0.0806,0.0806,25.0,14.2953,25.0
+Small,trail15,1 month,0.0405,0.0132,0.0678,13.0,8.9284,30.0
+Small,trail15,3 months,-0.0005,-0.0485,0.0479,5.0,3.0687,32.3333
+Small,trail15,"uptrend 1m, else 2w",0.0717,0.0717,0.0717,15.0,9.457,29.0
+Small,trail15,"uptrend 3m, else 2w",-0.0794,-0.0794,-0.0794,11.0,6.2284,33.0
+Small,trail15,"uptrend 3m, above 200 1m, below 2w",-0.0794,-0.0794,-0.0794,11.0,6.2284,33.0
+Small,trail15,"uptrend 2w, else 1m",0.0653,0.0653,0.0653,19.0,11.7297,30.0
+Small,trail15,"uptrend 2w, else 3m",0.0907,0.0907,0.0907,17.0,10.0139,28.0
+Small,none,2 weeks,0.1136,0.1136,0.1136,25.0,15.0258,0.0
+Small,none,1 month,0.0639,0.015,0.1129,13.0,9.8163,0.0
+Small,none,3 months,0.0547,-0.0186,0.1775,5.0,3.9027,0.0
+Small,none,"uptrend 1m, else 2w",0.0995,0.0995,0.0995,15.0,10.3159,0.0
+Small,none,"uptrend 3m, else 2w",-0.0979,-0.0979,-0.0979,11.0,7.2395,0.0
+Small,none,"uptrend 3m, above 200 1m, below 2w",-0.0979,-0.0979,-0.0979,11.0,7.2395,0.0
+Small,none,"uptrend 2w, else 1m",0.1047,0.1047,0.1047,19.0,12.6172,0.0
+Small,none,"uptrend 2w, else 3m",0.2225,0.2225,0.2225,17.0,10.7505,0.0

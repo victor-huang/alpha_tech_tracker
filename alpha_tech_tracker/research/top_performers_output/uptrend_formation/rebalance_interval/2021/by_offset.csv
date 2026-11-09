@@ -1,0 +1,57 @@
+tier,exit,schedule,offset,total_return,rebalances,turnover,stops
+Large,trail25,2 weeks,0,0.1363,26,15.2065,13
+Large,trail25,1 month,0,0.1381,13,8.6069,14
+Large,trail25,1 month,1,0.0403,14,9.3476,17
+Large,trail25,3 months,0,0.1685,5,3.6819,14
+Large,trail25,3 months,1,0.1609,6,3.8323,18
+Large,trail25,3 months,2,0.2831,5,3.1114,17
+Large,trail25,3 months,3,0.0618,5,3.2327,22
+Large,trail25,3 months,4,0.2962,5,3.4147,17
+Large,trail25,3 months,5,0.2644,5,3.558,17
+Large,trail25,"uptrend 1m, else 2w",0,0.191,15,9.9817,13
+Large,trail25,"uptrend 3m, else 2w",0,0.1236,8,5.5072,16
+Large,trail25,"uptrend 3m, above 200 1m, below 2w",0,0.1282,7,4.6362,14
+Large,trail25,"uptrend 2w, else 1m",0,0.1332,22,13.1119,16
+Large,trail25,"uptrend 2w, else 3m",0,0.1541,21,12.4465,16
+Large,none,2 weeks,0,0.1335,26,15.3493,0
+Large,none,1 month,0,0.1375,13,8.8193,0
+Large,none,1 month,1,0.0575,14,9.6634,0
+Large,none,3 months,0,0.0931,5,4.0409,0
+Large,none,3 months,1,0.1186,6,4.3862,0
+Large,none,3 months,2,0.1232,5,3.4645,0
+Large,none,3 months,3,-0.0838,5,3.6629,0
+Large,none,3 months,4,0.2405,5,3.7017,0
+Large,none,3 months,5,0.2292,5,3.8333,0
+Large,none,"uptrend 1m, else 2w",0,0.1845,15,10.1694,0
+Large,none,"uptrend 3m, else 2w",0,0.1059,8,5.8553,0
+Large,none,"uptrend 3m, above 200 1m, below 2w",0,0.0937,7,4.8628,0
+Large,none,"uptrend 2w, else 1m",0,0.1517,22,13.3423,0
+Large,none,"uptrend 2w, else 3m",0,0.1767,21,12.6739,0
+Small,trail15,2 weeks,0,0.3562,26,15.8282,14
+Small,trail15,1 month,0,0.3869,13,9.284,16
+Small,trail15,1 month,1,0.3455,14,10.1144,21
+Small,trail15,3 months,0,0.3794,5,3.4026,18
+Small,trail15,3 months,1,0.4103,6,3.6336,22
+Small,trail15,3 months,2,0.4265,5,3.2835,20
+Small,trail15,3 months,3,0.28,5,3.3564,26
+Small,trail15,3 months,4,0.2526,5,3.3747,21
+Small,trail15,3 months,5,0.1812,5,3.3618,24
+Small,trail15,"uptrend 1m, else 2w",0,0.3405,15,10.6313,17
+Small,trail15,"uptrend 3m, else 2w",0,0.2984,8,5.6312,20
+Small,trail15,"uptrend 3m, above 200 1m, below 2w",0,0.3969,7,4.8565,16
+Small,trail15,"uptrend 2w, else 1m",0,0.3554,22,13.6286,18
+Small,trail15,"uptrend 2w, else 3m",0,0.3694,21,12.83,18
+Small,none,2 weeks,0,0.3981,26,16.2268,0
+Small,none,1 month,0,0.4611,13,9.7193,0
+Small,none,1 month,1,0.3849,14,10.7142,0
+Small,none,3 months,0,0.5031,5,3.9168,0
+Small,none,3 months,1,0.5564,6,4.3107,0
+Small,none,3 months,2,0.6419,5,3.711,0
+Small,none,3 months,3,0.4379,5,3.9776,0
+Small,none,3 months,4,0.3964,5,3.8407,0
+Small,none,3 months,5,0.2827,5,3.973,0
+Small,none,"uptrend 1m, else 2w",0,0.3756,15,11.1173,0
+Small,none,"uptrend 3m, else 2w",0,0.3615,8,6.2358,0
+Small,none,"uptrend 3m, above 200 1m, below 2w",0,0.4893,7,5.3137,0
+Small,none,"uptrend 2w, else 1m",0,0.4032,22,14.1517,0
+Small,none,"uptrend 2w, else 3m",0,0.4432,21,13.3517,0
