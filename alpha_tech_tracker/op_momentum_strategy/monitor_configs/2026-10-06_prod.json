@@ -1,0 +1,63 @@
+{
+ "generated": "2026-10-06",
+ "source": "alpha_tech_tracker/op_momentum_strategy/backtest_result/wave_setups/2026-07-06_2026-10-05",
+ "top_n": 3,
+ "tickers": {
+  "MRNA": [
+   {
+    "setup": "drive long",
+    "report_total_pct": 80.09
+   },
+   {
+    "setup": "overnight always",
+    "report_total_pct": 47.99
+   },
+   {
+    "setup": "pullback long",
+    "report_total_pct": 38.89
+   }
+  ],
+  "SNDK": [
+   {
+    "setup": "drive long",
+    "report_total_pct": 47.0
+   },
+   {
+    "setup": "drive short",
+    "report_total_pct": 20.03
+   },
+   {
+    "setup": "overnight always",
+    "report_total_pct": 14.71
+   }
+  ],
+  "APP": [
+   {
+    "setup": "drive short",
+    "report_total_pct": 8.19
+   },
+   {
+    "setup": "box gap",
+    "report_total_pct": 2.29
+   },
+   {
+    "setup": "bounce short",
+    "report_total_pct": 0.65
+   }
+  ],
+  "GOOGL": [
+   {
+    "setup": "drive short",
+    "report_total_pct": 15.08
+   },
+   {
+    "setup": "drive long",
+    "report_total_pct": 4.8
+   },
+   {
+    "setup": "overnight always",
+    "report_total_pct": 3.35
+   }
+  ]
+ }
+}
