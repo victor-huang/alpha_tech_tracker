@@ -44,6 +44,7 @@ NON_OPERATING_NAME_RE = re.compile(
     re.I,
 )
 BAR_BATCH_SIZE = 200
+SIP_DELAY = timedelta(minutes=16)
 PARTITION_OVERLAP_DAYS = 14
 SHARES_CACHE_TTL_DAYS = 20
 SHARES_WINDOW_BEFORE_DAYS = 120
@@ -309,7 +310,7 @@ class AlpacaData:
         for i in range(0, len(symbols), BAR_BATCH_SIZE):
             req = StockBarsRequest(symbol_or_symbols=symbols[i:i + BAR_BATCH_SIZE], timeframe=TimeFrame.Day,
                                    start=datetime.combine(start, datetime.min.time()),
-                                   end=datetime.combine(end + timedelta(days=1), datetime.min.time()),
+                                   end=sip_request_end(end, datetime.utcnow()),
                                    adjustment=Adjustment.ALL, feed=DataFeed.SIP)
             try:
                 frames.append(self.data.get_stock_bars(req).df[["close", "volume"]].reset_index())
@@ -330,6 +331,12 @@ class AlpacaData:
             for symbol, g in df.groupby("symbol"):
                 out[symbol] = float(g.sort_values("timestamp")["close"].iloc[-1])
         return out
+
+
+def sip_request_end(end: date, utc_now: datetime) -> datetime:
+    """Exclusive request end (naive UTC) for daily bars through `end`, held back SIP_DELAY from now: the free
+    subscription rejects any request that reaches into the most recent SIP data."""
+    return min(datetime.combine(end + timedelta(days=1), datetime.min.time()), utc_now - SIP_DELAY)
 
 
 def pivot_bars(bars: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
@@ -412,6 +419,8 @@ class DailyBarCache:
         hi = min(_month_end(month), today)
         print(f"downloading {month:%Y-%m} for {len(symbols)} symbols", flush=True)
         close, dollar_volume = pivot_bars(self.fetch_bars(symbols, lo, hi))
+        if close.empty:
+            raise RuntimeError(f"no bars returned for {month:%Y-%m}; not caching an empty partition")
         return BarPartition(month, today, list(symbols), close, dollar_volume)
 
     def _path(self, month: date) -> str:

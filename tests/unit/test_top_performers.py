@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 
 import pandas as pd
 import pytest
@@ -14,6 +14,7 @@ from alpha_tech_tracker.research.top_performers import (
     pick_top_by_tier,
     quality_flags,
     render_markdown,
+    sip_request_end,
     tier_for,
 )
 
@@ -267,7 +268,25 @@ def _long_bars(rows):
     })
 
 
+class TestSipRequestEnd:
+
+    def test_past_end_runs_to_midnight_after_it(self):
+        assert sip_request_end(date(2026, 11, 6), datetime(2026, 11, 9, 8, 0)) == datetime(2026, 11, 7)
+
+    def test_end_reaching_now_is_held_back_by_the_sip_delay(self):
+        assert sip_request_end(date(2026, 11, 9), datetime(2026, 11, 9, 8, 0)) == datetime(2026, 11, 9, 7, 44)
+
+
 class TestDailyBarCache:
+
+    def test_empty_download_raises_without_caching(self, tmp_path, mocker):
+        fetch = mocker.Mock(return_value=_long_bars([]))
+        cache = DailyBarCache(str(tmp_path), fetch)
+
+        with pytest.raises(RuntimeError):
+            cache.load(["AAA"], date(2026, 11, 1), date(2026, 11, 9), date(2026, 11, 9))
+
+        assert not (tmp_path / "daily_bars" / "2026-11.pkl").exists()
 
     def test_completed_month_is_read_from_disk_on_later_runs(self, tmp_path, mocker):
         fetch = mocker.Mock(return_value=_long_bars([("AAA", "2026-09-30", 10.0), ("AAA", "2026-10-30", 12.0)]))
