@@ -1,0 +1,538 @@
+<title>Signal Replay Desk</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=Public+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+<style>
+/* Layout: one-screen trading desk. Chart takes the main column, the monitor's alert feed and your trade ticket
+   sit in a rail on the right; the scorecard replaces the rail when the session closes. */
+:root {
+  --paper: #f3f5f8;        /* page ground, faint blue bias */
+  --panel: #ffffff;
+  --ink: #18212f;          /* text */
+  --muted: #5d6878;
+  --rule: #d9dee6;
+  --signal: #3346c9;       /* the system's alerts and markers */
+  --signal-soft: #e6e9fb;
+  --you: #c77700;          /* your trades */
+  --you-soft: #fbeed9;
+  --up: #11806a;           /* semantic: price up / profit */
+  --down: #c8433a;         /* semantic: price down / loss */
+  --grid: #e8ecf1;
+  --prev: #b9c1cc;
+  --ma9: #6f8a12;          /* moving averages of the 5-min closes */
+  --ma20: #b0459a;
+  --ma50: #1f8fb8;
+  --ma200: #3d4654;
+  --font-display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --font-body: "Public Sans", "Helvetica Neue", Arial, sans-serif;
+  --font-num: "IBM Plex Mono", ui-monospace, Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --paper: #10151d; --panel: #171e28; --ink: #e5e9ef; --muted: #98a3b3; --rule: #2a3442;
+    --signal: #8c9cff; --signal-soft: #222b4d; --you: #f0a63a; --you-soft: #3a2b14;
+    --up: #3cc4a3; --down: #f0756b; --grid: #1f2833; --prev: #3d4857;
+    --ma9: #bcd55a; --ma20: #e27fcf; --ma50: #5cc3ea; --ma200: #c9d1dc;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #10151d; --panel: #171e28; --ink: #e5e9ef; --muted: #98a3b3; --rule: #2a3442;
+  --signal: #8c9cff; --signal-soft: #222b4d; --you: #f0a63a; --you-soft: #3a2b14;
+  --up: #3cc4a3; --down: #f0756b; --grid: #1f2833; --prev: #3d4857;
+  --ma9: #bcd55a; --ma20: #e27fcf; --ma50: #5cc3ea; --ma200: #c9d1dc;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body {
+  margin: 0; background: var(--paper); color: var(--ink); font-family: var(--font-body); font-size: 14px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 14px;
+}
+.desk { display: grid; grid-template-rows: auto 1fr; gap: 12px; height: 100%; min-height: 560px; max-width: 1360px; margin: 0 auto; }
+header { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; }
+.brand { font-family: var(--font-display); font-weight: 700; font-size: 22px; letter-spacing: 0.02em; text-transform: uppercase; }
+.brand small { font-weight: 500; color: var(--muted); letter-spacing: 0.08em; font-size: 13px; margin-left: 6px; }
+.pick { display: flex; align-items: center; gap: 8px; }
+label.cap { font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); }
+select, button { font: inherit; color: var(--ink); }
+select { background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 6px 8px; max-width: 100%; }
+.clock { margin-left: auto; display: flex; gap: 16px; align-items: baseline; font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+.clock .t { font-size: 22px; font-weight: 600; }
+.clock .n { color: var(--muted); font-size: 12px; }
+.main { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 12px; min-height: 0; }
+.chartbox { background: var(--panel); border: 1px solid var(--rule); border-radius: 10px; display: grid; grid-template-rows: auto 1fr auto auto; min-height: 340px; }
+.quote { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: baseline; padding: 12px 14px 4px; }
+.quote .tk { font-family: var(--font-display); font-size: 30px; font-weight: 700; line-height: 1; }
+.quote .px { font-family: var(--font-num); font-size: 20px; font-variant-numeric: tabular-nums; }
+.quote .chg { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+.quote .meta { color: var(--muted); font-size: 12px; }
+.pill { font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; padding: 2px 8px; border-radius: 99px; border: 1px solid var(--rule); color: var(--muted); }
+.pill.on { border-color: var(--signal); color: var(--signal); }
+.canvaswrap { position: relative; min-height: 0; }
+canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; padding: 6px 14px 4px; font-size: 12px; color: var(--muted); align-items: center; }
+.legend i { display: inline-block; width: 12px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+.legend label { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+.legend input { margin: 0; accent-color: var(--ink); }
+.chartctl { display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: center; padding: 4px 14px 10px; font-size: 12px; color: var(--muted); border-top: 1px solid var(--grid); }
+.chartctl label { display: inline-flex; align-items: center; gap: 6px; }
+.chartctl input[type=range] { width: 120px; accent-color: var(--ink); }
+.chartctl output { font-family: var(--font-num); font-variant-numeric: tabular-nums; color: var(--ink); min-width: 3.5em; }
+.chartctl select { padding: 3px 6px; font-size: 12px; }
+.chartctl button { border: 1px solid var(--rule); background: var(--paper); border-radius: 6px; padding: 4px 10px; cursor: pointer; font-size: 12px; }
+.chartctl .hint { margin-left: auto; }
+.rail { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: 12px; min-height: 0; }
+.ticket { background: var(--panel); border: 1px solid var(--rule); border-radius: 10px; padding: 12px; display: grid; gap: 10px; }
+.pos { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.pos .state { font-family: var(--font-display); font-size: 20px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
+.pos .pl { font-family: var(--font-num); font-variant-numeric: tabular-nums; font-size: 16px; font-weight: 600; }
+.pos .sub { font-size: 12px; color: var(--muted); font-family: var(--font-num); }
+.btns { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.btns button, .step button { border: 1px solid var(--rule); background: var(--paper); border-radius: 8px; padding: 9px 6px; cursor: pointer; font-weight: 600; }
+.btns button kbd, .step button kbd { font-family: var(--font-num); font-size: 10px; color: var(--muted); margin-left: 4px; font-weight: 400; }
+button.buy { background: var(--up); border-color: var(--up); color: var(--panel); }
+button.short { background: var(--down); border-color: var(--down); color: var(--panel); }
+button.buy kbd, button.short kbd { color: inherit; opacity: 0.8; }
+button:disabled { opacity: 0.4; cursor: default; }
+button:focus-visible, select:focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+.step { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 8px; }
+.step .next { background: var(--ink); color: var(--panel); border-color: var(--ink); }
+.step .next kbd { color: inherit; opacity: 0.7; }
+.opts { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.feed { background: var(--panel); border: 1px solid var(--rule); border-radius: 10px; display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; }
+.feed h2, .score h2 { font-family: var(--font-display); font-size: 15px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; margin: 0; padding: 10px 12px; border-bottom: 1px solid var(--rule); color: var(--muted); }
+.msgs { overflow-y: auto; padding: 10px 12px; display: grid; gap: 8px; align-content: start; }
+.msg { border-left: 3px solid var(--signal); background: var(--signal-soft); border-radius: 0 6px 6px 0; padding: 7px 9px; font-family: var(--font-num); font-size: 12px; line-height: 1.45; overflow-wrap: anywhere; }
+.msg.you { border-color: var(--you); background: var(--you-soft); }
+.msg.sys { border-color: var(--rule); background: transparent; color: var(--muted); }
+.msg .when { display: block; font-size: 10px; color: var(--muted); letter-spacing: 0.05em; margin-bottom: 2px; }
+.msg.fresh { animation: pulse 1.2s ease-out 1; }
+@keyframes pulse { from { box-shadow: 0 0 0 3px var(--signal); } to { box-shadow: 0 0 0 0 transparent; } }
+.score { background: var(--panel); border: 1px solid var(--rule); border-radius: 10px; display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; min-height: 0; }
+.verdict { padding: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.verdict div { display: grid; gap: 2px; }
+.verdict .who { font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); }
+.verdict .amt { font-family: var(--font-num); font-variant-numeric: tabular-nums; font-size: 24px; font-weight: 600; }
+.verdict .line { grid-column: 1 / -1; font-size: 13px; }
+.tables { overflow-y: auto; padding: 0 12px 10px; display: grid; gap: 12px; align-content: start; }
+.tables h3 { font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; margin: 6px 0 4px; }
+table { width: 100%; border-collapse: collapse; font-family: var(--font-num); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+th { text-align: left; font-weight: 500; color: var(--muted); border-bottom: 1px solid var(--rule); padding: 4px 4px 4px 0; }
+td { padding: 4px 4px 4px 0; border-bottom: 1px solid var(--grid); }
+td.r, th.r { text-align: right; }
+.pos-c { color: var(--up); } .neg-c { color: var(--down); }
+.again { padding: 10px 12px 12px; display: flex; gap: 8px; flex-wrap: wrap; }
+.again button { border: 1px solid var(--rule); background: var(--paper); border-radius: 8px; padding: 8px 12px; cursor: pointer; font-weight: 600; }
+.again button.primary { background: var(--ink); color: var(--panel); border-color: var(--ink); }
+.history { font-size: 12px; color: var(--muted); padding: 0 12px 12px; }
+.empty { color: var(--muted); font-size: 12px; }
+@media (max-width: 900px) {
+  html, body { height: auto; }
+  .desk { height: auto; }
+  .main { grid-template-columns: 1fr; }
+  .chartbox { height: 520px; }
+  .chartctl .hint { display: none; }
+  .feed { height: 300px; }
+  .clock { margin-left: 0; }
+}
+@media (prefers-reduced-motion: reduce) { .msg.fresh { animation: none; } }
+</style>
+
+<div class="desk">
+  <header>
+    <div class="brand">Signal Replay Desk <small>wave setup monitor</small></div>
+    <div class="pick">
+      <label class="cap" for="scenario">Session</label>
+      <select id="scenario"></select>
+    </div>
+    <div class="clock"><span class="t" id="clock">09:35</span><span class="n" id="barno">bar 1 / 78</span></div>
+  </header>
+  <div class="main">
+    <section class="chartbox" aria-label="Price chart">
+      <div class="quote">
+        <span class="tk" id="tk">—</span>
+        <span class="px" id="px">—</span>
+        <span class="chg" id="chg">—</span>
+        <span class="meta" id="meta"></span>
+        <span class="pill" id="gate"></span>
+      </div>
+      <div class="canvaswrap"><canvas id="chart"></canvas></div>
+      <div class="legend">
+        <label for="ln-m9"><input type="checkbox" id="ln-m9" checked><i style="background:var(--ma9);height:3px"></i>MA 9</label>
+        <label for="ln-m20"><input type="checkbox" id="ln-m20" checked><i style="background:var(--ma20);height:3px"></i>MA 20</label>
+        <label for="ln-m50"><input type="checkbox" id="ln-m50" checked><i style="background:var(--ma50);height:3px"></i>MA 50</label>
+        <label for="ln-m200"><input type="checkbox" id="ln-m200" checked><i style="background:var(--ma200);height:3px"></i>MA 200</label>
+        <label for="ln-vwap"><input type="checkbox" id="ln-vwap" checked><i style="background:var(--muted);height:2px"></i>VWAP</label>
+        <span><i style="background:var(--prev)"></i>previous session</span>
+        <span><i style="background:var(--signal)"></i>system ▲ in ■ out</span>
+        <span><i style="background:var(--you)"></i>you ● in ◆ out</span>
+      </div>
+      <div class="chartctl">
+        <label for="xbars">Bars shown <input type="range" id="xbars" min="20" max="156" step="2" value="156"><output id="xbarsv">all</output></label>
+        <label for="yfit">Price scale <select id="yfit"><option value="candles">Fit candles</option><option value="all">Fit candles + lines</option></select></label>
+        <label for="yzoom">Price zoom <input type="range" id="yzoom" min="50" max="300" step="10" value="100"><output id="yzoomv">100%</output></label>
+        <button id="resetview" type="button">Reset view</button>
+        <span class="hint">Wheel over the chart: bars · Shift + wheel: price zoom</span>
+      </div>
+    </section>
+    <aside class="rail" id="rail">
+      <section class="ticket" aria-label="Your trade ticket">
+        <div class="pos">
+          <div><div class="state" id="state">Flat</div><div class="sub" id="possub">$10,000 a trade · fills at the bar close · 5 bps</div></div>
+          <div class="pl" id="pl"></div>
+        </div>
+        <div class="btns">
+          <button class="buy" id="buy">Buy<kbd>B</kbd></button>
+          <button class="short" id="short">Short<kbd>S</kbd></button>
+          <button id="close">Close<kbd>C</kbd></button>
+        </div>
+        <div class="step">
+          <button class="next" id="next">Next 5-min bar<kbd>Space</kbd></button>
+          <button id="toalert" title="Advance until the next alert or the close">Next alert<kbd>A</kbd></button>
+          <button id="toend" title="Replay to the close">To close<kbd>E</kbd></button>
+        </div>
+        <label class="opts" for="showexits"><input type="checkbox" id="showexits" checked> Show the system's exit alerts as they happen</label>
+      </section>
+      <section class="feed" aria-label="Alerts">
+        <h2>Alerts</h2>
+        <div class="msgs" id="msgs" aria-live="polite"></div>
+      </section>
+    </aside>
+  </div>
+</div>
+
+<script type="application/json" id="data">__DATA__</script>
+<script>
+const SESSIONS = JSON.parse(document.getElementById("data").textContent);
+const NOTIONAL = 10000, COST = 0.05;
+const $ = (id) => document.getElementById(id);
+const store = { get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } },
+                set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) {} } };
+let S = null;  // game state
+const MAS = [{ key: "m9", p: 7, t: 9, color: "--ma9", w: 1.2 }, { key: "m20", p: 4, t: 6, color: "--ma20", w: 1.5 },
+             { key: "m50", p: 5, t: 7, color: "--ma50", w: 1.5 }, { key: "m200", p: 6, t: 8, color: "--ma200", w: 2 }];
+const VIEW_DEFAULT = { bars: 156, fit: "candles", zoom: 100, lines: { m9: true, m20: true, m50: true, m200: true, vwap: true } };
+let V = Object.assign({}, VIEW_DEFAULT, store.get("replay.view", {}));
+V.lines = Object.assign({}, VIEW_DEFAULT.lines, V.lines || {});
+
+function fmtPx(v) { return v >= 100 ? v.toFixed(2) : v.toFixed(v >= 10 ? 2 : 3); }
+function fmtUsd(v) { const s = Math.abs(v).toLocaleString("en-US", { maximumFractionDigits: 0 }); return (v >= 0 ? "+$" : "−$") + s; }
+function fmtPct(v) { return (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(2) + "%"; }
+function cls(v) { return v >= 0 ? "pos-c" : "neg-c"; }
+function barEnd(t) { const [h, m] = t.split(":").map(Number); const x = h * 60 + m + 5; return String(Math.floor(x / 60)).padStart(2, "0") + ":" + String(x % 60).padStart(2, "0"); }
+function tradePct(side, entry, exit) { return (side === "long" ? (exit / entry - 1) : (entry / exit - 1)) * 100 - COST; }
+
+function newGame(index) {
+  const sc = SESSIONS[index];
+  S = { index, i: 0, pos: null, trades: [], msgs: [], seen: {}, done: false };
+  store.set("replay.last", index);
+  emit(0);
+  render();
+}
+
+function sysLabel(sig) { return sig.side === "long" ? "BUY" : "SHORT"; }
+function emit(i) {
+  // alerts the monitor would have sent once bar i closed
+  const sc = SESSIONS[S.index], t = sc.bars[i][0];
+  sc.signals.forEach((sig, k) => {
+    if (sig.entryBar === i && !S.seen["e" + k]) {
+      S.seen["e" + k] = true;
+      const stop = sig.stop != null ? ` | stop ${fmtPx(sig.stop)}` : "";
+      const exitText = sig.side === "long" ? sig.exitText : "cover at the close";
+      S.msgs.push({ kind: "alert", at: barEnd(t), text: `${sysLabel(sig)} ${sc.ticker} | ${sig.setup} | ~${fmtPx(sig.entry)} (${t} bar close)${stop} | ${exitText}` });
+    }
+    if (sig.exitBar === i && !S.seen["x" + k] && $("showexits").checked) {
+      S.seen["x" + k] = true;
+      const verb = sig.side === "long" ? "SELL" : "COVER";
+      const how = sig.outcome === "eod" ? "at the close (MOC)" : `${sig.outcome} hit on the ${t} bar @ ${fmtPx(sig.exitPrice)}`;
+      S.msgs.push({ kind: "alert", at: barEnd(t), text: `${verb} ${sc.ticker} | ${sig.setup} | ${how} | ${fmtPct(sig.pct)}` });
+    }
+  });
+}
+
+function price() { return SESSIONS[S.index].bars[S.i][4]; }
+function open(side) {
+  if (S.done || S.pos) return;
+  const sc = SESSIONS[S.index];
+  S.pos = { side, entry: price(), entryBar: S.i };
+  S.msgs.push({ kind: "you", at: barEnd(sc.bars[S.i][0]), text: `YOU ${side === "long" ? "BUY" : "SHORT"} ${sc.ticker} @ ${fmtPx(price())}` });
+  render();
+}
+function close(reason) {
+  if (!S.pos) return;
+  const sc = SESSIONS[S.index], px = price(), p = S.pos;
+  const pct = tradePct(p.side, p.entry, px);
+  S.trades.push({ side: p.side, entry: p.entry, entryBar: p.entryBar, exit: px, exitBar: S.i, pct });
+  S.msgs.push({ kind: "you", at: barEnd(sc.bars[S.i][0]), text: `YOU ${p.side === "long" ? "SELL" : "COVER"} ${sc.ticker} @ ${fmtPx(px)}${reason ? " (" + reason + ")" : ""} | ${fmtPct(pct)}` });
+  S.pos = null;
+  render();
+}
+function step(n) {
+  if (S.done) return;
+  const sc = SESSIONS[S.index], last = sc.bars.length - 1;
+  for (let k = 0; k < n && S.i < last; k++) {
+    S.i += 1;
+    emit(S.i);
+  }
+  if (S.i >= last) finish(); else render();
+}
+function toNextAlert() {
+  if (S.done) return;
+  const before = S.msgs.filter(m => m.kind === "alert").length, last = SESSIONS[S.index].bars.length - 1;
+  while (S.i < last) {
+    S.i += 1; emit(S.i);
+    if (S.msgs.filter(m => m.kind === "alert").length > before) break;
+  }
+  if (S.i >= last) finish(); else render();
+}
+function finish() {
+  const sc = SESSIONS[S.index];
+  if (S.pos) close("closed at the session end");
+  sc.signals.forEach((sig, k) => { if (!S.seen["x" + k] && sig.exitBar <= S.i) { S.seen["x" + k] = true; } });
+  S.done = true;
+  S.msgs.push({ kind: "sys", at: "16:00", text: "Session closed. Scorecard on the right." });
+  const you = S.trades.reduce((a, t) => a + t.pct, 0) / 100 * NOTIONAL;
+  const sys = sc.signals.reduce((a, s) => a + s.pct, 0) / 100 * NOTIONAL;
+  const hist = store.get("replay.history", []);
+  hist.unshift({ key: sc.ticker + " " + sc.date, you: Math.round(you), sys: Math.round(sys) });
+  store.set("replay.history", hist.slice(0, 12));
+  render();
+}
+
+/* ---------- rendering ---------- */
+function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+function drawChart() {
+  const cv = $("chart"), box = cv.parentElement.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  cv.width = Math.max(1, box.width * dpr); cv.height = Math.max(1, box.height * dpr);
+  const g = cv.getContext("2d"); g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const W = box.width, H = box.height; g.clearRect(0, 0, W, H);
+  const sc = SESSIONS[S.index], prev = sc.prev, bars = sc.bars, shown = bars.slice(0, S.i + 1);
+  const padL = 8, padR = 62, padT = 12, padB = 26;
+  const total = prev.length + bars.length, nowSlot = prev.length + S.i;
+  // visible window: every slot, or the last V.bars slots ending a few bars past the current one
+  let s0 = 0, s1 = total;
+  if (V.bars < total) { s1 = Math.min(total, Math.max(nowSlot + 1 + Math.round(V.bars * 0.08), V.bars)); s0 = Math.max(0, s1 - V.bars); }
+  const xw = (W - padL - padR) / (s1 - s0);
+  const inView = k => k >= s0 && k < s1;
+  const lines = MAS.filter(m => V.lines[m.key]);
+  let lo = Infinity, hi = -Infinity;
+  const take = (v) => { if (v != null) { lo = Math.min(lo, v); hi = Math.max(hi, v); } };
+  prev.forEach((b, k) => { if (!inView(k)) return; take(b[1]); take(b[2]); if (V.fit === "all") lines.forEach(m => take(b[m.p])); });
+  shown.forEach((b, k) => { if (!inView(prev.length + k)) return; take(b[2]); take(b[3]);
+    if (V.fit === "all") { lines.forEach(m => take(b[m.t])); if (V.lines.vwap) take(b[5]); } });
+  if (S.pos) take(S.pos.entry);
+  sc.signals.forEach(sig => { if (sig.entryBar <= S.i && sig.stop != null && sig.exitBar >= S.i) take(sig.stop); });
+  if (!isFinite(lo)) { lo = shown[shown.length - 1][3]; hi = shown[shown.length - 1][2]; }
+  const mid = (lo + hi) / 2, half = Math.max((hi - lo) / 2, mid * 0.001) * 1.08 / (V.zoom / 100);
+  lo = mid - half; hi = mid + half;
+  const y = v => padT + (hi - v) / (hi - lo) * (H - padT - padB);
+  const x = k => padL + (k - s0 + 0.5) * xw;
+  // grid and price axis
+  g.font = "11px " + css("--font-num"); g.fillStyle = css("--muted"); g.strokeStyle = css("--grid"); g.lineWidth = 1;
+  const stepV = niceStep((hi - lo) / 6);
+  for (let v = Math.ceil(lo / stepV) * stepV; v <= hi; v += stepV) {
+    g.beginPath(); g.moveTo(padL, y(v)); g.lineTo(W - padR, y(v)); g.stroke();
+    g.fillText(fmtPx(v), W - padR + 6, y(v) + 4);
+  }
+  // session divider and time labels
+  g.fillStyle = css("--muted");
+  if (inView(prev.length)) {
+    const divX = padL + (prev.length - s0) * xw;
+    g.strokeStyle = css("--rule"); g.setLineDash([3, 3]); g.beginPath(); g.moveTo(divX, padT); g.lineTo(divX, H - padB); g.stroke(); g.setLineDash([]);
+  }
+  if (s0 < prev.length) g.fillText(sc.prevDate.slice(5), padL + 2, H - 8);
+  const every = [3, 6, 12, 24].find(n => n * xw >= 56) || 36;
+  bars.forEach((b, k) => { const slot = prev.length + k; if (k % every === 0 && inView(slot) && (slot !== s0 || s0 >= prev.length)) g.fillText(b[0], x(slot) - 14, H - 8); });
+  // plot area: everything below is clipped to it
+  g.save(); g.beginPath(); g.rect(padL, padT, W - padL - padR, H - padT - padB); g.clip();
+  const body = Math.max(1, xw * 0.62);
+  prev.forEach((b, k) => { if (inView(k)) candle(g, x(k), y, b[0], b[1], b[2], b[3], body, css("--prev"), css("--prev")); });
+  shown.forEach((b, k) => { if (inView(prev.length + k)) candle(g, x(prev.length + k), y, b[1], b[2], b[3], b[4], body, css("--up"), css("--down")); });
+  // moving averages over the previous session and the bars shown so far
+  lines.forEach(m => {
+    const pts = prev.map((b, k) => [k, b[m.p]]).concat(shown.map((b, k) => [prev.length + k, b[m.t]]));
+    g.strokeStyle = css(m.color); g.lineWidth = m.w; g.beginPath(); let on = false;
+    pts.forEach(([k, v]) => { if (v == null || k < s0 - 1 || k > s1) { on = false; return; } on ? g.lineTo(x(k), y(v)) : g.moveTo(x(k), y(v)); on = true; });
+    g.stroke();
+  });
+  if (V.lines.vwap) {
+    g.strokeStyle = css("--muted"); g.lineWidth = 1.5; g.setLineDash([4, 3]); g.beginPath(); let on = false;
+    shown.forEach((b, k) => { const slot = prev.length + k; if (slot < s0 - 1) return; on ? g.lineTo(x(slot), y(b[5])) : g.moveTo(x(slot), y(b[5])); on = true; });
+    g.stroke(); g.setLineDash([]);
+  }
+  // system stops while a system trade is open
+  sc.signals.forEach(sig => {
+    if (sig.entryBar <= S.i && sig.stop != null && (sig.exitBar >= S.i)) hline(g, y(sig.stop), padL, W - padR, css("--signal"), "stop " + fmtPx(sig.stop));
+  });
+  if (S.pos) hline(g, y(S.pos.entry), padL, W - padR, css("--you"), "you " + fmtPx(S.pos.entry));
+  // markers
+  sc.signals.forEach(sig => {
+    if (sig.entryBar <= S.i) marker(g, "tri", x(prev.length + sig.entryBar), y(sig.entry), sig.side, css("--signal"));
+    if (sig.exitBar <= S.i && (S.done || $("showexits").checked)) marker(g, "sq", x(prev.length + sig.exitBar), y(sig.exitPrice), sig.side, css("--signal"));
+  });
+  S.trades.forEach(t => { marker(g, "dot", x(prev.length + t.entryBar), y(t.entry), t.side, css("--you")); marker(g, "dia", x(prev.length + t.exitBar), y(t.exit), t.side, css("--you")); });
+  if (S.pos) marker(g, "dot", x(prev.length + S.pos.entryBar), y(S.pos.entry), S.pos.side, css("--you"));
+  g.restore();
+  // last price tag
+  const last = shown[shown.length - 1][4];
+  const ly = Math.min(Math.max(y(last), padT + 8), H - padB - 8);
+  g.fillStyle = css("--ink"); g.fillRect(W - padR + 2, ly - 8, padR - 4, 16);
+  g.fillStyle = css("--panel"); g.fillText(fmtPx(last), W - padR + 6, ly + 4);
+}
+function niceStep(raw) { const p = Math.pow(10, Math.floor(Math.log10(raw))); const n = raw / p; return (n < 1.5 ? 1 : n < 3 ? 2 : n < 7 ? 5 : 10) * p; }
+function candle(g, cx, y, o, h, l, c, w, upC, dnC) {
+  const col = c >= o ? upC : dnC; g.strokeStyle = col; g.fillStyle = col; g.lineWidth = 1;
+  g.beginPath(); g.moveTo(cx, y(h)); g.lineTo(cx, y(l)); g.stroke();
+  const top = y(Math.max(o, c)), bot = y(Math.min(o, c));
+  g.fillRect(cx - w / 2, top, w, Math.max(1, bot - top));
+}
+function hline(g, yy, x0, x1, col, label) {
+  g.strokeStyle = col; g.setLineDash([5, 4]); g.lineWidth = 1; g.beginPath(); g.moveTo(x0, yy); g.lineTo(x1, yy); g.stroke(); g.setLineDash([]);
+  g.fillStyle = col; g.font = "10px " + css("--font-num"); g.fillText(label, x0 + 4, yy - 4);
+}
+function marker(g, shape, cx, cy, side, col) {
+  g.fillStyle = col; g.strokeStyle = css("--panel"); g.lineWidth = 1.5; g.beginPath();
+  const r = 6;
+  if (shape === "tri") { const d = side === "long" ? 1 : -1; const yy = cy + d * 9; g.moveTo(cx, yy - d * r); g.lineTo(cx - r, yy + d * r * 0.7); g.lineTo(cx + r, yy + d * r * 0.7); g.closePath(); }
+  else if (shape === "sq") { g.rect(cx - r * 0.8, cy - r * 0.8, r * 1.6, r * 1.6); }
+  else if (shape === "dot") { g.arc(cx, cy, r * 0.85, 0, Math.PI * 2); }
+  else { g.moveTo(cx, cy - r); g.lineTo(cx + r, cy); g.lineTo(cx, cy + r); g.lineTo(cx - r, cy); g.closePath(); }
+  g.fill(); g.stroke();
+}
+
+function render() {
+  const sc = SESSIONS[S.index], b = sc.bars[S.i], px = b[4], prevClose = sc.prev[sc.prev.length - 1][3];
+  $("scenario").value = String(S.index);
+  $("clock").textContent = S.done ? "16:00" : barEnd(b[0]);
+  $("barno").textContent = `bar ${S.i + 1} / ${sc.bars.length}`;
+  $("tk").textContent = sc.ticker;
+  $("px").textContent = fmtPx(px);
+  const ch = (px / prevClose - 1) * 100; $("chg").textContent = fmtPct(ch); $("chg").className = "chg " + cls(ch);
+  $("meta").textContent = new Date(sc.date + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" });
+  $("gate").textContent = sc.gate ? "short gate on" : "short gate off"; $("gate").className = "pill" + (sc.gate ? " on" : "");
+  // ticket
+  if (S.pos) {
+    const pct = tradePct(S.pos.side, S.pos.entry, px);
+    $("state").textContent = S.pos.side === "long" ? "Long" : "Short";
+    $("state").style.color = "var(--you)";
+    $("possub").textContent = `from ${fmtPx(S.pos.entry)} at ${barEnd(sc.bars[S.pos.entryBar][0])}`;
+    $("pl").textContent = `${fmtPct(pct)} · ${fmtUsd(pct / 100 * NOTIONAL)}`; $("pl").className = "pl " + cls(pct);
+  } else {
+    $("state").textContent = S.done ? "Closed" : "Flat"; $("state").style.color = "";
+    const banked = S.trades.reduce((a, t) => a + t.pct, 0) / 100 * NOTIONAL;
+    $("possub").textContent = S.trades.length ? `${S.trades.length} trade${S.trades.length > 1 ? "s" : ""} closed` : "$10,000 a trade · fills at the bar close · 5 bps";
+    $("pl").textContent = S.trades.length ? fmtUsd(banked) : ""; $("pl").className = "pl " + cls(banked);
+  }
+  ["buy", "short"].forEach(id => $(id).disabled = S.done || !!S.pos);
+  $("close").disabled = S.done || !S.pos;
+  ["next", "toalert", "toend"].forEach(id => $(id).disabled = S.done);
+  // feed
+  const box = $("msgs"), n = box.children.length;
+  box.innerHTML = "";
+  if (!S.msgs.length) box.innerHTML = '<div class="empty">The monitor\'s BUY / SELL / SHORT / COVER alerts appear here as their bars close.</div>';
+  S.msgs.forEach((m, k) => {
+    const d = document.createElement("div");
+    d.className = "msg" + (m.kind === "you" ? " you" : m.kind === "sys" ? " sys" : "") + (k >= n && m.kind === "alert" ? " fresh" : "");
+    d.innerHTML = `<span class="when">${m.at} ET${m.kind === "alert" ? " · [wave]" : m.kind === "you" ? " · you" : ""}</span>`;
+    d.appendChild(document.createTextNode(m.text));
+    box.appendChild(d);
+  });
+  box.scrollTop = box.scrollHeight;
+  drawChart();
+  renderScore();
+}
+
+function renderScore() {
+  const rail = $("rail"); let score = document.getElementById("score");
+  if (!S.done) { if (score) score.remove(); rail.querySelector(".ticket").hidden = false; rail.style.gridTemplateRows = ""; return; }
+  rail.querySelector(".ticket").hidden = true;
+  rail.style.gridTemplateRows = "minmax(0, 1.5fr) minmax(0, 1fr)";
+  const sc = SESSIONS[S.index];
+  const you = S.trades.reduce((a, t) => a + t.pct, 0) / 100 * NOTIONAL;
+  const sys = sc.signals.reduce((a, s) => a + s.pct, 0) / 100 * NOTIONAL;
+  if (!score) { score = document.createElement("section"); score.className = "score"; score.id = "score"; rail.insertBefore(score, rail.firstChild); }
+  const row = (side, eb, e, xb, x, pct, setup) => `<tr><td>${setup || side}</td><td>${barEnd(sc.bars[eb][0])}</td><td class="r">${fmtPx(e)}</td><td>${barEnd(sc.bars[xb][0])}</td><td class="r">${fmtPx(x)}</td><td class="r ${cls(pct)}">${fmtPct(pct)}</td><td class="r ${cls(pct)}">${fmtUsd(pct / 100 * NOTIONAL)}</td></tr>`;
+  const head = "<tr><th>Trade</th><th>In</th><th class=\"r\">Price</th><th>Out</th><th class=\"r\">Price</th><th class=\"r\">%</th><th class=\"r\">$</th></tr>";
+  const followed = S.trades.filter(t => sc.signals.some(s => s.side === t.side && Math.abs(s.entryBar - t.entryBar) <= 1)).length;
+  const diff = you - sys;
+  const line = !S.trades.length ? "You stayed flat. The system's trades are below."
+    : diff >= 0 ? `You beat the system by ${fmtUsd(diff).replace("+", "")} on this session.`
+    : `The system beat you by ${fmtUsd(-diff).replace("+", "")} on this session.`;
+  const hist = store.get("replay.history", []);
+  score.innerHTML = `
+    <h2>Scorecard · ${sc.ticker} ${sc.date}</h2>
+    <div class="verdict">
+      <div><span class="who">You</span><span class="amt ${cls(you)}">${fmtUsd(you)}</span><span class="who">${S.trades.length} trade${S.trades.length === 1 ? "" : "s"} · ${followed} on a signal</span></div>
+      <div><span class="who">System</span><span class="amt ${cls(sys)}">${fmtUsd(sys)}</span><span class="who">${sc.signals.length} signal${sc.signals.length === 1 ? "" : "s"}</span></div>
+      <div class="line">${line}</div>
+    </div>
+    <div class="tables">
+      <div><h3 style="color:var(--you)">Your trades</h3>${S.trades.length ? `<table>${head}${S.trades.map(t => row(t.side, t.entryBar, t.entry, t.exitBar, t.exit, t.pct)).join("")}</table>` : '<div class="empty">No trades.</div>'}</div>
+      <div><h3 style="color:var(--signal)">System trades</h3><table>${head}${sc.signals.map(s => row(s.side, s.entryBar, s.entry, s.exitBar, s.exitPrice, s.pct, s.setup + " · " + s.outcome)).join("")}</table></div>
+    </div>
+    <div>
+      <div class="again"><button class="primary" id="replay">Replay this session</button><button id="nextsession">Next session</button></div>
+      <div class="history">${hist.length ? "Recent: " + hist.slice(0, 5).map(h => `${h.key} you ${fmtUsd(h.you)} / system ${fmtUsd(h.sys)}`).join(" · ") : ""}</div>
+    </div>`;
+  $("replay").onclick = () => newGame(S.index);
+  $("nextsession").onclick = () => newGame((S.index + 1) % SESSIONS.length);
+}
+
+/* ---------- wiring ---------- */
+function start(saved) {
+  const sel = $("scenario");
+  SESSIONS.forEach((sc, k) => {
+    const o = document.createElement("option"); o.value = String(k);
+    const d = new Date(sc.date + "T12:00:00").toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+    o.textContent = `${d} · ${sc.ticker} · ${sc.signals.length} signal${sc.signals.length > 1 ? "s" : ""}`;
+    sel.appendChild(o);
+  });
+  sel.onchange = () => newGame(Number(sel.value));
+  $("buy").onclick = () => open("long");
+  $("short").onclick = () => open("short");
+  $("close").onclick = () => close();
+  $("next").onclick = () => step(1);
+  $("toalert").onclick = toNextAlert;
+  $("toend").onclick = () => step(999);
+  $("showexits").onchange = () => render();
+  const total = () => { const sc = SESSIONS[S.index]; return sc.prev.length + sc.bars.length; };
+  const syncView = () => {
+    const t = total(); V.bars = Math.max(20, Math.min(V.bars, t)); V.zoom = Math.max(50, Math.min(V.zoom, 300));
+    $("xbars").max = String(t); $("xbars").value = String(V.bars); $("xbarsv").textContent = V.bars >= t ? "all" : V.bars;
+    $("yzoom").value = String(V.zoom); $("yzoomv").textContent = V.zoom + "%"; $("yfit").value = V.fit;
+    ["m9", "m20", "m50", "m200", "vwap"].forEach(k => $("ln-" + k).checked = !!V.lines[k]);
+    store.set("replay.view", V);
+    if (S) drawChart();
+  };
+  $("xbars").oninput = e => { V.bars = Number(e.target.value); syncView(); };
+  $("yzoom").oninput = e => { V.zoom = Number(e.target.value); syncView(); };
+  $("yfit").onchange = e => { V.fit = e.target.value; syncView(); };
+  ["m9", "m20", "m50", "m200", "vwap"].forEach(k => { $("ln-" + k).onchange = e => { V.lines[k] = e.target.checked; syncView(); }; });
+  $("resetview").onclick = () => { V = JSON.parse(JSON.stringify(VIEW_DEFAULT)); syncView(); };
+  $("chart").parentElement.addEventListener("wheel", e => {
+    e.preventDefault();
+    const delta = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;  // Shift + wheel scrolls sideways on macOS
+    if (!delta) return;
+    const dir = delta > 0 ? 1 : -1;
+    if (e.shiftKey) V.zoom += dir > 0 ? -10 : 10; else V.bars += dir * 6;
+    syncView();
+  }, { passive: false });
+  document.addEventListener("keydown", e => {
+    if (e.target.tagName === "SELECT" || e.metaKey || e.ctrlKey || e.altKey) return;
+    const k = e.key.toLowerCase();
+    if (k === " " || k === "arrowright" || k === "n") { e.preventDefault(); step(1); }
+    else if (k === "b") open("long"); else if (k === "s") open("short"); else if (k === "c") close();
+    else if (k === "a") toNextAlert(); else if (k === "e") step(999);
+  });
+  new ResizeObserver(() => S && drawChart()).observe($("chart").parentElement);
+  if (saved && saved.S && SESSIONS[saved.S.index]) { S = saved.S; render(); }
+  else newGame(Math.min(store.get("replay.last", SESSIONS.length - 1), SESSIONS.length - 1));
+  syncView();
+}
+window.claude?.hot?.snapshot?.(() => ({ S }));
+window.claude?.hot?.ready ? window.claude.hot.ready(start) : start(window.claude?.hot?.data ?? {});
+</script>
