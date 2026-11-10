@@ -131,6 +131,43 @@ Three checks on whether the 64.5% top-3 result leans on hindsight. Checks 1 and 
 - **Expectation:** plan for roughly 40–50% a year for Large top 3, with −50% or worse drawdowns and occasional years like 2023's −24%.
 - **Risk:** the 15-name list is far less sensitive to the setting.
 
+## Sidestepping the Aug 2021 – Jan 2022 drop
+
+The Large top-3 book fell 46% from Aug 2021 to Jan 2022 while QQQ stayed 9–15% above its 200-day average. The loss came from the holdings: MRNA and BNTX (both COVID vaccines) held together, then NET, SYNA and DAVA. Both checks below were run from one-off scripts.
+
+**Risk-off overlays** (cash until the next checkpoint while the signal is on), Large top 3:
+
+| Signal | CAGR | Worst drop | Aug 2021–Jan 2022 |
+|---|---|---|---|
+| none | 64.5% | −48% | −46% |
+| QQQ below its 200-day | 52.0% | −59% | −46% |
+| QQQ below its 50-day | 47.8% | −40% | −40% |
+| Under 25% of Large names in an uptrend | 51.5% | −62% | −44% |
+| Book below its own 10-checkpoint average | 38.4% | −47% | −28% |
+| Book more than 20% off its peak | 45.7% | −38% | −28% |
+| 15% trailing stop instead of 25% | 57.8% | −41% | −39% |
+
+Market signals missed the drop because the market was fine. Signals on the book's own losses halved it but sat out most of 2024.
+
+**Industry cap:** one name per SEC SIC code, taking the next-ranked name instead. Codes come from `industry.py`, which uses each company's current classification.
+
+| List | Top N | No cap | 1 per 4-digit SIC | 1 per 3-digit | 1 per 2-digit |
+|---|---|---|---|---|---|
+| Large, score only | 3 | 64.7% (−48%) | 60.9% (−47%) | 59.7% (−48%) | 54.1% (−46%) |
+| Large, score only | 5 | 50.4% (−41%) | **54.0% (−37%)** | 48.8% (−39%) | 38.8% (−41%) |
+| Large, recommended | 10 | 35.8% (−26%) | 31.1% (−35%) | 28.9% (−33%) | 22.6% (−29%) |
+| Large, recommended | 15 | 31.7% (−27%) | 23.4% (−37%) | 17.6% (−29%) | 17.6% (−25%) |
+| Small | 3 | 34.1% (−33%) | 30.6% (−35%) | 29.3% (−35%) | 27.5% (−35%) |
+| Small | 15 | 23.0% (−18%) | 19.9% (−18%) | 19.9% (−19%) | 18.1% (−25%) |
+
+CAGR with the worst drop at rebalances in brackets; this run's prices extend a few days past Nov 6.
+
+- **Top 3 and 5:** the 4-digit cap cut the Aug 2021–Jan 2022 drop: top 3 from −46% to −38%, top 5 from −33% to −23%.
+- **Top 5:** it was the only setup the cap improved overall. Its yearly returns over 2020–2025 were about level with no cap, though, and most of the gain came from that drop and 2026.
+- **Ten or more names, and Small:** the cap cost return, because momentum runs in industries and the cap pushes out the strongest theme.
+
+**Decision:** no overlay and no industry cap for now. Diversification (10–15 names) is what limited this drop.
+
 ## Decision
 
 - **Main lists:** unchanged for now. Large top 10 is the safer upgrade if the account moves off 15.
