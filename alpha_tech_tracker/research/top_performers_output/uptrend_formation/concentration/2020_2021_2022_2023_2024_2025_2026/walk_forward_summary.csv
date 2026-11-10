@@ -1,0 +1,4 @@
+top,walk_forward,fixed,hindsight_best,median_setting,fixed_setting,years
+3,0.5505,0.4776,0.6521,0.0872,ret180/vol^0.5,2022-2026
+5,0.3429,0.3556,0.4494,0.0665,ret180/vol^0.5,2022-2026
+15,0.2341,0.1789,0.2341,0.1299,ret180/vol^0.5,2022-2026

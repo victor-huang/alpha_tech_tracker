@@ -6,6 +6,7 @@ Script: `alpha_tech_tracker/research/concentration.py`. Outputs: `research/top_p
 - `summary.csv`
 - `by_year.csv`
 - `top_contributors.csv`
+- `walk_forward_grid.csv`, `walk_forward.csv` and `walk_forward_summary.csv` (the hindsight check below)
 
 ## Setup
 
@@ -74,7 +75,7 @@ These figures are for the top-3 books without stops, as the sum of each stock's 
 
 ## Hindsight check
 
-Three checks on whether the 64.5% top-3 result leans on hindsight. They were run from a one-off script with the same inputs and books.
+Three checks on whether the 64.5% top-3 result leans on hindsight. Checks 1 and 2 were run from a one-off script with the same inputs and books; check 3 is part of `concentration.py`.
 
 1. **No future data enters the ranking.**
    - Every ranking input (`ret_180d`, `vol_60d`, the averages, breakout flags, SEC factors) uses data up to the checkpoint close only.
@@ -88,36 +89,58 @@ Three checks on whether the 64.5% top-3 result leans on hindsight. They were run
    | Score only | 5 | 49.9% | 46.2% |
    | Recommended (slots) | 15 | 31.3% | 28.3% |
 
-3. **The 180-day setting is a lucky peak for the top 3.** These are top-3 books for every lookback and volatility power (CAGR, worst drop at rebalances):
+3. **The 180-day choice holds up out of sample.**
+   - **Method:** all 60 walk-forward-tuning settings were run as Large books holding the top 3, 5 or 15, with a 25% trailing stop and 2-week rebalancing. The settings are 5 lookbacks × 3 volatility powers × clean filter on/off × breakout slots on/off.
+   - **Selection:** for each test year, the setting with the best compounded return over the earlier years only was chosen, and its return in the test year recorded.
+   - **Outputs:** `walk_forward_grid.csv`, `walk_forward.csv` and `walk_forward_summary.csv`.
 
-   | Lookback | vol^0 | vol^0.5 | vol^1 |
-   |---|---|---|---|
-   | 60 | 15% (−70%) | 14% (−75%) | 4% (−56%) |
-   | 90 | 42% (−62%) | 24% (−63%) | 3% (−66%) |
-   | 120 | 30% (−54%) | 32% (−46%) | 12% (−46%) |
-   | 180 | **70% (−51%)** | **65% (−48%)** | 44% (−51%) |
-   | 250 | 33% (−57%) | 24% (−51%) | 11% (−63%) |
+   Top 3, setting chosen each year:
 
-   - The median across the 15 settings is 24% a year, with worst drops around −55%.
-   - The 180-day lookback was chosen out of sample by the walk-forward study, but for the 15-name list.
-   - At three names, one setting catching SNDK, APP and TSLA, and its neighbours missing them, swings the result by 30–40 points a year.
+   | Test year | Trained on | Setting chosen | Test-year return | Its rank of 60 | Median setting |
+   |---|---|---|---|---|---|
+   | 2021 | 2020 | 180-day, vol^0, clean | 24% | 9 | −5% |
+   | 2022 | 2020–21 | 180-day / vol^0.5, clean | −3% | 6 | −22% |
+   | 2023 | 2020–22 | 180-day / vol^0.5, clean | −24% | 58 | 22% |
+   | 2024 | 2020–23 | 180-day / vol^0.5 | 147% | 9 | 35% |
+   | 2025 | 2020–24 | 180-day, vol^0, clean | 92% | 4 | −8% |
+   | 2026* | 2020–25 | 180-day, vol^0, clean | 157% | 2 | 28% |
+
+   CAGR over 2022–2026:
+
+   | Top N | Walk-forward (out of sample) | 180-day / vol^0.5, fixed (in sample) | Best setting in hindsight | Median setting |
+   |---|---|---|---|---|
+   | 3 | **55%** | 48% | 65% | 9% |
+   | 5 | **34%** | 36% | 45% | 7% |
+   | 15 | **23%** | 18% (23% with slots) | 23% | 13% |
+
+   - Every year's choice was a 180-day setting, starting from 2020 data alone. The fixed 180-day / vol^0.5 setting is therefore not a hindsight pick.
+   - At 15 names, the walk-forward chose the recommended rule (180-day / vol^0.5 + slots) every year from 2022 on, so its backtest carries almost no selection bias.
+   - The setting matters enormously: the median setting made under 10% a year at 3 or 5 names.
+   - Single years swing hard. In 2023 the top-3 choice ranked 58th of 60 and lost 24% while the median setting made 22%.
+
+\* Through Nov 6.
 
 **Conclusion:**
 - **Formula:** no look-ahead was found in the formula itself.
-- **Selection effect:** the top-3 figure is mostly a selection effect. The concentrated book is extremely sensitive to the ranking setting, and 180 days happens to be the best of 15 on these years.
-- **Expectation:** plan for roughly 20–40% a year with −50% or worse drawdowns, not 64%. Survivorship (only stocks listed today) flatters it further.
+- **Setting choice:** the 180-day setting was chosen out of sample in every test year, so the top-3 result is not mainly a lucky pick. An earlier version of this check called it one, based on how much worse the other lookbacks did. That comparison measured how sensitive the book is to the setting, not hindsight.
+- **What still flatters it:**
+  - The grid itself (lookbacks, volatility powers, slots) was designed in 2026.
+  - Survivorship (only stocks listed today) helps concentrated books most.
+  - Same-close execution adds about 4 points a year.
+  - Only 5–6 test years.
+- **Expectation:** plan for roughly 40–50% a year for Large top 3, with −50% or worse drawdowns and occasional years like 2023's −24%.
 - **Risk:** the 15-name list is far less sensitive to the setting.
 
 ## Decision
 
 - **Main lists:** unchanged for now. Large top 10 is the safer upgrade if the account moves off 15.
 - **Paper-tracked:**
-  - **Large top 3, ranked by the 180-day score alone, with a 25% trailing stop:** added to `paper_lists` as `large_top3` and checked daily by `exit_watch`. It is a candidate for a small satellite allocation only. Expect far less than the backtest (see the hindsight check).
+  - **Large top 3, ranked by the 180-day score alone, with a 25% trailing stop:** added to `paper_lists` as `large_top3` and checked daily by `exit_watch`. It is a candidate for a small satellite allocation only. Expect less than the backtest (see the hindsight check).
   - **Small:** "2 weeks in an uptrend, otherwise monthly" ([rebalance_interval_2020_2026.md](rebalance_interval_2020_2026.md)).
 
 ## Caveats
 
-- **Selection luck:** the most concentrated books rest on a handful of stocks, and the ranking variants were chosen on the same seven years.
+- **Selection luck:** the most concentrated books rest on a handful of stocks. The walk-forward check covers the choice of setting but not the design of the grid.
 - **Execution:** closing-price fills and 10 bps costs flatter concentrated positions, especially in small caps.
 - **Drawdowns understated:** they are measured at rebalance dates only.
 - **Survivorship:** the universe is stocks listed today, as in [selection_filters_2020_2026.md](selection_filters_2020_2026.md).

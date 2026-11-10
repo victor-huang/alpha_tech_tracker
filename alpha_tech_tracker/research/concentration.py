@@ -5,7 +5,9 @@ One continuous book over the given years per list and N, held day by day with th
   * Large ranked by the 180-day score alone (no slots), every 2 weeks
   * Small (recommended rule), every 2 weeks while QQQ is above both its 50- and 200-day averages, otherwise monthly
 
-Also lists, for the smallest N, which stocks the gains came from (no stops, summed per-period contributions).
+Also lists, for the smallest N, which stocks the gains came from (no stops, summed per-period contributions), and
+runs a walk-forward over the 60 walk_forward_tuning settings for Large top 3, 5 and 15: each test year uses the setting
+with the best compounded return over the earlier years only, to measure how much hindsight is in the chosen settings.
 
 Usage:
     PYTHONPATH=. python -m alpha_tech_tracker.research.concentration --years 2020 2021 2022 2023 2024 2025 2026
@@ -13,6 +15,7 @@ Usage:
 import os
 from typing import Dict, List, NamedTuple
 
+import numpy as np
 import pandas as pd
 
 from alpha_tech_tracker.research.ranking_exits import EXIT_RULES, daily_data, run_daily_book
@@ -33,12 +36,15 @@ from alpha_tech_tracker.research.selection_filters import (
     run_portfolio,
 )
 from alpha_tech_tracker.research.uptrend_formation import REGIME_INDEX
-from alpha_tech_tracker.research.walk_forward_tuning import Setting, variant_for
+from alpha_tech_tracker.research.walk_forward_tuning import Setting, add_lookback_returns, settings, variant_for
 
 TOP_NS = (3, 5, 10, 15)
 RANK_DEPTH = 15
 LARGE_SCORE_ONLY = Setting(lookback=180, vol_power=0.5, clean=False, slots=False)
 SMALL_SCHEDULE = "uptrend 2w, else 1m"
+WF_TOP_NS = (3, 5, 15)
+WF_FIRST_TEST_YEAR = 2021
+WF_SUMMARY_FROM = 2022
 
 
 class ListSpec(NamedTuple):
@@ -68,9 +74,71 @@ def top_share(contrib: pd.DataFrame, k: int = 5) -> float:
     return float(contrib["contribution"].head(k).sum() / contrib["contribution"].sum())
 
 
+def geometric_mean(returns) -> float:
+    """Average yearly return compounded: the CAGR of the given yearly returns."""
+    return float(np.exp(np.log1p(pd.Series(returns, dtype=float)).mean()) - 1)
+
+
+def setting_grid(panel: pd.DataFrame, data, checkpoints: List[pd.Timestamp], tier: str, exit_rule: str,
+                 cost: float, top_ns=WF_TOP_NS) -> pd.DataFrame:
+    """Yearly return of a continuous book for every walk_forward_tuning setting and top N."""
+    rows = []
+    for s in settings():
+        ranked = rank_variant(panel, variant_for(s), RANK_DEPTH)
+        ranked = ranked[ranked["tier"] == tier]
+        for n in top_ns:
+            book = run_daily_book(ranked, data, checkpoints, n, n, EXIT_RULES[exit_rule], cost)
+            rows += [{"setting": s.name, "top": n, "year": int(y), "ret": r} for y, r in returns_by_year(book).items()]
+    return pd.DataFrame(rows)
+
+
+def walk_forward_picks(grid: pd.DataFrame, first_test_year: int = WF_FIRST_TEST_YEAR) -> pd.DataFrame:
+    """Per top N and test year: the setting with the best compounded return over earlier years, its test-year
+    return, its rank among all settings that year, and the median and best setting that year."""
+    rows = []
+    for n, g in grid.groupby("top"):
+        table = g.pivot(index="setting", columns="year", values="ret")
+        for year in [y for y in table.columns if y >= first_test_year]:
+            train = table[[y for y in table.columns if y < year]].apply(geometric_mean, axis=1)
+            chosen = train.idxmax()
+            test = table.loc[chosen, year]
+            rows.append({"top": n, "year": year, "chosen": chosen, "train_cagr": train.max(), "test_ret": test,
+                         "rank": int((table[year] > test).sum()) + 1, "settings": len(table),
+                         "median_setting": table[year].median(), "best_setting": table[year].max()})
+    return pd.DataFrame(rows)
+
+
+def walk_forward_summary(grid: pd.DataFrame, picks: pd.DataFrame, fixed: str,
+                         from_year: int = WF_SUMMARY_FROM) -> pd.DataFrame:
+    """CAGR from `from_year` on per top N: walk-forward picks, the fixed in-sample setting, the setting best over
+    the whole period in hindsight, and the median setting each year."""
+    rows = []
+    for n, g in grid[grid["year"] >= from_year].groupby("top"):
+        table = g.pivot(index="setting", columns="year", values="ret")
+        test = picks[(picks["top"] == n) & (picks["year"] >= from_year)]
+        rows.append({"top": n, "walk_forward": geometric_mean(test["test_ret"]),
+                     "fixed": geometric_mean(table.loc[fixed]),
+                     "hindsight_best": table.apply(geometric_mean, axis=1).max(),
+                     "median_setting": geometric_mean(table.median())})
+    return pd.DataFrame(rows).assign(fixed_setting=fixed, years=f"{from_year}-{grid['year'].max()}")
+
+
+def run_walk_forward(panel: pd.DataFrame, data, checkpoints: List[pd.Timestamp], cost: float, out_dir: str) -> None:
+    spec = LISTS["large_score_only"]
+    grid = setting_grid(panel, data, checkpoints, spec.tier, spec.exit_rule, cost)
+    picks = walk_forward_picks(grid)
+    summary = walk_forward_summary(grid, picks, LARGE_SCORE_ONLY.name)
+    grid.round(4).to_csv(os.path.join(out_dir, "walk_forward_grid.csv"), index=False)
+    picks.round(4).to_csv(os.path.join(out_dir, "walk_forward.csv"), index=False)
+    summary.round(4).to_csv(os.path.join(out_dir, "walk_forward_summary.csv"), index=False)
+    with pd.option_context("display.width", 200):
+        print(picks.round(3).to_string(index=False))
+        print(summary.round(3).to_string(index=False))
+
+
 def run(args) -> None:
     inputs = prepare_inputs(args)
-    panel = prepare_recommended_panel(inputs.panel, inputs.close)
+    panel = add_lookback_returns(prepare_recommended_panel(inputs.panel, inputs.close), inputs.close)
     checkpoints: List[pd.Timestamp] = list(inputs.checkpoints)
     in_years = inputs.close.index <= pd.Timestamp(max(args.years), 12, 31)
     data = daily_data(inputs.close.loc[in_years, inputs.symbols], inputs.dollar_volume.loc[in_years, inputs.symbols])
@@ -106,6 +174,7 @@ def run(args) -> None:
                                                                index=False)
     with pd.option_context("display.width", 200):
         print(summary.round(3).to_string(index=False))
+    run_walk_forward(panel, data, checkpoints, cost, out_dir)
     print(f"wrote {out_dir}")
 
 
