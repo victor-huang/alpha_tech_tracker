@@ -6,6 +6,7 @@ import pytest
 from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.ticker_screen import (
     core_results,
     daily_stats,
+    delisted_stocks,
     fetch_daily,
     is_fund,
     monitor_config,
@@ -120,3 +121,13 @@ class TestFetchDaily:
         daily = fetch_daily(["AMD", "MU"], DAY, DAY + timedelta(days=1))
 
         assert (daily["AMD"]["Close"].tolist(), daily["MU"]["Close"].tolist()) == ([1.0, 2.0], [3.0])
+
+
+class TestDelistedStocks:
+    def test_former_nyse_and_nasdaq_stocks_not_listed_today(self):
+        assets = [{"symbol": "BBBY", "exchange": "NASDAQ", "name": "Bed Bath & Beyond"},
+                  {"symbol": "AMD", "exchange": "NASDAQ", "name": "Advanced Micro Devices"},
+                  {"symbol": "XOTC", "exchange": "OTC", "name": "Some OTC"},
+                  {"symbol": "OLDETF", "exchange": "NYSE", "name": "Old Fund ETF"}]
+
+        assert delisted_stocks(assets, ["AMD"]) == ["BBBY"]

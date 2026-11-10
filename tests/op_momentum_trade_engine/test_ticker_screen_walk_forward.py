@@ -8,6 +8,7 @@ from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.ticker_screen_walk
     month_starts,
     parse_args,
     passers_by_month,
+    ranking_trades,
     summary,
     walk,
 )
@@ -111,3 +112,22 @@ class TestParseArgs:
 
     def test_end_date(self):
         assert parse_args(["--years", "2026", "--end", "2026-11-06"]).end == date(2026, 11, 6)
+
+
+class TestRawPriceFloor:
+    def test_uses_the_raw_close_of_the_time(self):
+        days = _sessions(date(2025, 10, 1), 90)
+        adjusted = pd.DataFrame({"Close": 5.0, "High": 5.3, "Low": 5.0, "Volume": 1e9}, index=days)
+        raw = pd.DataFrame({"Close": 50.0}, index=days)
+        start = days[-1]
+
+        assert passers_by_month({"NVDA": adjusted}, [start], 10, 4.0, 10.0) == {start: []}
+        assert passers_by_month({"NVDA": adjusted}, [start], 10, 4.0, 10.0, {"NVDA": raw}) == {start: ["NVDA"]}
+
+
+class TestRankingTrades:
+    def test_leaves_out_the_overnight_hold_entered_on_the_last_session(self):
+        core = _trades([("A", JAN, "drive long", 1.0), ("A", JAN, "overnight long", 2.0),
+                        ("A", JAN - timedelta(days=1), "overnight long", 3.0)])
+
+        assert ranking_trades(core, [JAN - timedelta(days=1), JAN]).pct.tolist() == [1.0, 3.0]

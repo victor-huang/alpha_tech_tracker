@@ -6,8 +6,10 @@ dollar volume, price >= --min-price, 60-session average range >= --min-range %),
 bps) and the top --picks are held for the month, --capital split --picks ways a trade, not compounded.
 
 Per-ticker trades are cached under --cache-dir (one CSV per ticker and window), so reruns and other settings are
-quick. The universe is today's listed stocks (Alpaca's active asset list): names delisted since are missing, more so
-for early years.
+quick. The universe is today's listed stocks plus, with --include-delisted, Alpaca's inactive ones (names delisted
+since; some may lack data). The price floor uses the raw (unadjusted) close known at the time, not today's
+split-adjusted one. The ranking leaves out the overnight hold entered on the last session before the month (it exits
+at the month's first open, after the pick).
 
   python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.ticker_screen_walk_forward --years 2022 2025
 """
@@ -21,9 +23,12 @@ from pathlib import Path
 import pandas as pd
 from alpaca.data.enums import DataFeed
 
+from alpaca.data.enums import Adjustment
+
 from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.ticker_screen import (
     CORE_LEGS,
     daily_stats,
+    delisted_stocks,
     fetch_assets,
     fetch_daily,
     legs_job,
@@ -53,11 +58,31 @@ def month_starts(sessions, year):
     return [starts[m] for m in sorted(starts)]
 
 
-def passers_by_month(daily, starts, top_volume, min_range, min_price):
-    """{month start: [screen passers on the bars before it]}."""
-    return {start: screen(daily_stats({t: f[f.index < start] for t, f in daily.items()}), top_volume, min_range,
-                          min_price).index.tolist()
-            for start in starts}
+def passers_by_month(daily, starts, top_volume, min_range, min_price, raw=None):
+    """{month start: [screen passers on the bars before it]}; with `raw` (unadjusted daily bars) the price floor uses the
+    raw close then, not the split-adjusted one."""
+    out = {}
+    for start in starts:
+        stats = daily_stats({t: f[f.index < start] for t, f in daily.items()})
+        if raw is not None:
+            stats["close"] = [_last_close(raw.get(t), start) for t in stats.index]
+        out[start] = screen(stats, top_volume, min_range, min_price).index.tolist()
+    return out
+
+
+def _last_close(frame, before):
+    if frame is None:
+        return float("nan")
+    closes = frame[frame.index < before]["Close"]
+    return float(closes.iloc[-1]) if len(closes) else float("nan")
+
+
+def ranking_trades(core, past):
+    """The trades the ranking may see: the past sessions' trades, less the overnight holds entered on the last one."""
+    seen = core.day.isin(past)
+    if past:
+        seen &= ~((core.leg == "overnight long") & (core.day == past[-1]))
+    return core[seen]
 
 
 def cache_path(cache_dir, ticker, start, end):
@@ -91,7 +116,8 @@ def walk(core, passers, sessions, starts, picks, lookback, capital):
     ends = starts[1:] + [sessions[-1] + timedelta(days=1)]
     for start, stop in zip(starts, ends):
         past = [d for d in sessions if d < start][-lookback:]
-        trailing = core[core.day.isin(past) & core.ticker.isin(passers[start])].groupby("ticker").pct.agg(["sum", "size"])
+        seen = ranking_trades(core, past)
+        trailing = seen[seen.ticker.isin(passers[start])].groupby("ticker").pct.agg(["sum", "size"])
         trailing = trailing[trailing["size"] >= MIN_TRADES].sort_values("sum", ascending=False)
         chosen[start] = trailing.index[:picks].tolist()
         month = core[core.ticker.isin(chosen[start]) & (core.day >= start) & (core.day < stop)]
@@ -116,7 +142,8 @@ def run_year(year, universe, args):
     sessions = sorted(qqq.index)
     starts = month_starts(sessions, year)
     daily = by_date(fetch_daily(universe, date(year - 1, 5, 1), end))
-    passers = passers_by_month(daily, starts, args.top_volume, args.min_range, args.min_price)
+    raw = by_date(fetch_daily(universe, date(year - 1, 5, 1), end, Adjustment.RAW))
+    passers = passers_by_month(daily, starts, args.top_volume, args.min_range, args.min_price, raw)
     candidates = sorted({t for names in passers.values() for t in names})
     legs_start = [d for d in sessions if d < starts[0]][-(args.lookback + LEGS_MARGIN_SESSIONS)]
     print(f"{year}: {len(universe)} stocks, {len(candidates)} pass the screen in some month; trades {legs_start}..{end}")
@@ -127,11 +154,19 @@ def run_year(year, universe, args):
     return walk(core_trades(legs, night_ok), passers, year_sessions, starts, args.picks, args.lookback, args.capital)
 
 
+def screen_universe(include_delisted):
+    """Today's listed stocks, plus the delisted ones when include_delisted."""
+    listed = stock_universe(fetch_assets())
+    return listed + delisted_stocks(fetch_assets("inactive"), listed) if include_delisted else listed
+
+
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--years", type=int, nargs="+", required=True)
     parser.add_argument("--end", type=date.fromisoformat, help="Last session (default: today); keeps the trade cache's "
                                                                 "window stable across days")
+    parser.add_argument("--include-delisted", action="store_true",
+                        help="Add Alpaca's inactive (delisted) NYSE / Nasdaq stocks to the universe")
     parser.add_argument("--top-volume", type=int, default=150)
     parser.add_argument("--min-range", type=float, default=4.0)
     parser.add_argument("--min-price", type=float, default=10.0)
@@ -145,7 +180,7 @@ def parse_args(argv=None):
 
 def main(argv=None):
     args = parse_args(argv)
-    universe = stock_universe(fetch_assets())
+    universe = screen_universe(args.include_delisted)
     pd.set_option("display.width", 250)
     totals = {}
     for year in args.years:

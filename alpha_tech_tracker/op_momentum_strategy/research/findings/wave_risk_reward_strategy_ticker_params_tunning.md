@@ -115,9 +115,11 @@ earlier findings: [`WAVE_RISK_REWARD_FINDINGS.md`](WAVE_RISK_REWARD_FINDINGS.md)
   heavily and move a lot. Each month take the top 150 stocks by dollar volume with a 4%+ daily range and hold the top
   5 by their last 63 sessions of core results: +$11,542 on $10k over 2020, 2022, 2023, 2025 and 2026, positive every
   year (2022 +$114 while QQQ fell 33%). Ranking without the screen failed. `ticker_screen.py` runs it.
-- **The whole monthly process (Finding 43, 2026):** screen top 5 + the monitor's setup refresh + its rules made +$4,055
-  on $10k (8 of 11 months up); without the overnight short +$4,973. Drive long made all of the profit; the overnight
-  short (−$918) and the overnight long (−$1,393) lost.
+- **The whole monthly process (Finding 43, eight years 2018–2026, hindsight removed):** screen top 5 each month,
+  fixed setups (drive long, pullback long, overnight always) and the gated drive short made +$28,650, positive every
+  year: +35% a year on the ~$9.7k of capital in use on an average day (+34% in years nothing was tuned on), about
+  +18% a year on a $20k account. The overnight short and the monthly setup refresh both cost money over eight years.
+  With 5 bps of extra slippage the result roughly halves and calm years lose.
 - **A ticker's intraday vs overnight split doesn't pick its setup (Finding 36):** within a window it always matches the
   better family, but measured on the previous 63 or 126 sessions it chose next month's winner 52–53% of the time
   (16 tickers, Jul 2025 – Oct 2026). Overnight holds won in H2 2025 and drive long in 2026 across the board; running
@@ -1992,7 +1994,7 @@ wave setup monitor config (`drive long` + `overnight always` per pick) for `--tr
 +$2,927 (the study's +$2,408, same −$2,337 drawdown: its universe is every stock listed today, not the liquid list at
 the start of the year, so a few picks differ). As of Nov 6 2026 the screen picked MRNA, MSTR, SNDK, CRCL, COIN.
 
-## Finding 43 — The whole monthly process, walked forward over 2026
+## Finding 43 — The whole monthly process, walked forward over 2018–2026
 
 `analysis_scripts/monthly_process_walk_forward.py`. Each month's first session, with nothing from after it: the
 `ticker_screen` top 5 (Finding 42, no manual swaps); each pick's setups from the monitor's config refresh
@@ -2022,6 +2024,105 @@ won), drive short + re-entry +$626, pullback long +$377, pullback long C1 +$275,
   also lost: the refresh keeps it because the last three months earned, and the next month gapped against it.
 - **June and October lost in every plan** (AI and semiconductor names falling together, then the current decline):
   monthly re-picking does not avoid market-wide drops.
+
+**2025 (Jan 2 – Dec 31, same process, nothing cached from 2026):**
+
+| Plan | Trades | Won | Per trade | P&L | Max DD | Months + |
+|---|---|---|---|---|---|---|
+| Screen + setup refresh + shorts | 1,736 | 44.7% | +0.13% | +$4,541 | −$2,484 | 5 / 12 |
+| Screen + fixed setups + shorts | 2,032 | 43.8% | +0.13% | **+$5,166** | −$2,128 | 6 / 12 |
+| Screen + setup refresh, no shorts | 1,266 | 45.7% | +0.10% | +$2,510 | −$1,492 | 6 / 12 |
+| Screen + fixed setups, no shorts | 1,562 | 44.4% | +0.10% | +$3,135 | −$1,765 | 6 / 12 |
+| Setup refresh + shorts, no overnight short | 1,466 | 43.7% | +0.12% | +$3,527 | −$1,997 | 6 / 12 |
+| Fixed setups + shorts, no overnight short | 1,762 | 42.8% | +0.12% | +$4,152 | −$2,236 | 7 / 12 |
+
+Months (refresh + shorts): Jan −861, Feb −108, Mar −56, **Apr +2,792** (the tariff crash and rebound: shorts +$1,997,
+the overnight short +$1,451), May −614, Jun −938, Jul +934, Aug −348, **Sep +1,637, Oct +1,781** (CRCL, CRWV, IONQ,
+OKLO), Nov −58, Dec +381.
+
+**By setup, refresh + shorts:**
+
+| Setup | 2025 | 2026 | Two years |
+|---|---|---|---|
+| drive long | +$937 (+0.09% a trade) | +$4,349 (+0.45%) | **+$5,286** |
+| overnight always | **+$2,851** (+0.31%) | −$1,393 (−0.16%) | +$1,458 |
+| drive short + re-entry | +$1,017 | +$626 | **+$1,643** |
+| overnight short | **+$1,014** | −$918 | +$96 |
+| bounce long | −$602 | +$682 | +$80 |
+| pullback long + C1 | −$772 | +$652 | −$120 |
+| overnight ma200 | +$97 | +$57 | +$154 |
+
+**Both years:**
+
+| Plan | 2025 | 2026 | Two years |
+|---|---|---|---|
+| **Setup refresh + shorts (the monitor's rules)** | +$4,541 | +$4,055 | **+$8,596** |
+| Fixed setups + shorts | +$5,166 | +$3,373 | +$8,539 |
+| Setup refresh, no overnight short | +$3,527 | +$4,973 | +$8,500 |
+| Fixed setups, no overnight short | +$4,152 | +$4,291 | +$8,443 |
+| Setup refresh, no shorts | +$2,510 | +$4,347 | +$6,857 |
+| Fixed setups, no shorts | +$3,135 | +$3,665 | +$6,800 |
+
+- **Keep the overnight short.** It made +$1,014 in 2025 (the April crash) and lost −$918 in 2026 (quick dips): about
+  even over two years, and it is what paid in the crash. The 2026-only reading (drop it) does not hold.
+- **The gated shorts together add about +$1,700 over the two years**; the drive short + re-entry was positive in both.
+- **Refreshed vs fixed setups is a toss-up** (+$682 to the refresh in 2026, −$625 in 2025). In 2025 the refresh's
+  extra pullback and bounce picks lost $1,374 while the overnight hold and drive long carried the fixed set.
+- **The engine moves with the market:** drive long in 2026's quick dips (+$4,349), the overnight long in 2025's
+  overnight-gap trends (+$2,851, BMNR, CRWV, NBIS, IREN, where drive long made +$937). Keep both.
+- **Most months can lose** (6–7 of 12 in 2025): the year comes from a few big months.
+
+**How the fixed set was picked** (drive long, pullback long, overnight always; C1 for SNDK and APP in prod). By
+hand in November 2026, not by a rule: drive long and the overnight long are the setups the screen ranks on (Findings
+38, 42); pullback long was the only other long setup positive on all five candidates in both halves of a Sep 8 – Nov 6
+2026 setup report (+23%, 65% won); overnight always stayed despite losing there, on its longer record (Findings 13,
+40) and because the trend filter switches it off in down markets. The 2026 fixed-set result is partly in-sample (the
+choice used Sep – Nov 2026); 2025 is out of sample for it. A rule for this (each quarter, keep the setups positive in
+both halves of the last six months, pooled over the current tickers) is untested.
+
+**Eight years (2018–2022, 2024–2026; 2023 not run), after a hindsight review.** The review checked every step for data
+from after the decision:
+
+| Step | Finding | Fix | Effect |
+|---|---|---|---|
+| Universe | today's listed stocks only (survivorship) | `--include-delisted` / default in `monthly_process_walk_forward`: Alpaca's inactive NYSE / Nasdaq stocks added (7,607 vs ~6,355) | small: of 26 known collapses (BBBY, NKLA, SIVB, SPCE, …) only NKLA passed the screen (Oct 2020 – Feb 2021) and it ranked 13th or lower; the delisted passers were takeovers (XLNX, RTN, WORK) |
+| $10 price floor | used today's split-adjusted close (NVDA looked like $3 before 2021) | raw close of the time | small (0–9 borderline names a year), but it shut out some later winners |
+| Ranking and setup refresh | saw the overnight hold entered on the last session before the month, which exits after the pick | left out | negligible |
+| Setup report bars | 5-min bars not split-adjusted: an overnight hold across a 10-for-1 split read −90% | trades held across a split are dropped (split days from raw vs adjusted daily closes, a >10% jump in their ratio) | 1–7 trades a year; NVDA's June 2024 "−$1,837" was one |
+| Rules picked on the test years | screen on 2023 / 2025 / 2026, gates on 2020 / 2022 / 2025 / 2026, fixed set on Sep – Nov 2026 | cannot be undone; years tuned on are marked in-sample (`TUNED_ON`) | out-of-sample years: 2018, 2019, 2021, 2024 |
+| Capital | every signal taken: up to 8–14 positions open at once | `--max-positions` (default 10, $20k) and returns on capital in use | the cap rarely binds at 10 |
+
+Gates and the overnight trend filter use the previous close; the ranking, screen and refresh use only bars before the
+month. With all fixes, plans capped at 10 open, no extra costs ($2,000 a trade, 5 bps):
+
+| Plan | 2018 | 2019 | 2020 | 2021 | 2022 | 2024 | 2025 | 2026 | 8 years | Avg capital in use | Return on it / yr | Out of sample | On $20k / yr |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| **Fixed setups + drive short** | +2,268 | +929 | +514 | +1,079 | +4,586 | +8,255 | +5,069 | +5,950 | **+$28,650** | $9,698 | **+35.3%** | **+33.6%** | +17.9% |
+| Fixed setups + both shorts (prod Nov 9) | +1,662 | +68 | −541 | +1,079 | +5,605 | +8,255 | +6,083 | +5,032 | +$27,243 | $10,226 | +31.1% | +28.2% | +17.0% |
+| Setup refresh + drive short | +2,278 | +1,083 | −398 | −834 | +4,038 | +7,555 | +4,191 | +6,555 | +$24,468 | $8,737 | +33.1% | +30.7% | +15.3% |
+| Setup refresh + both shorts | +1,671 | +222 | −1,454 | −834 | +5,057 | +7,555 | +5,205 | +5,637 | +$23,059 | $9,360 | +28.2% | +24.2% | +14.4% |
+| Fixed setups, no shorts | −312 | +695 | +1,688 | +915 | +1,214 | +9,424 | +3,884 | +4,737 | +$22,245 | $7,870 | +31.8% | +29.5% | +13.9% |
+| Setup refresh, no shorts | −171 | +849 | +814 | −1,075 | +922 | +8,744 | +3,072 | +5,446 | +$18,601 | $6,899 | +29.8% | +25.1% | +11.6% |
+
+(Capital in use: each trading day's most money open at once, overnight holds included, averaged over the days traded.
+Fixed setups + drive short: $7.2k–$11.4k a year on average, $20k peaks in 7 of 8 years; worst drawdown −$3,192 in
+2020, a third of the average capital in use.)
+
+- **Fixed setups + the drive short is best on every measure** and positive in all eight years (+5% to +80% on the
+  capital in use; calm 2019–2021 +5% to +13%).
+- **Drop the overnight short:** over eight years it is −$1,407 (paid in 2022 and 2025, lost in the 2018, 2019, 2020
+  and 2026 rebounds); the four-year reading (2022–2026) favoured it, the longer one does not.
+- **Fixed setups beat the monthly refresh** in 6 of 8 years (+$4,182 with the drive short).
+- **The drive short adds about +$6,400** over no shorts (paid most in the 2018 Q4 and 2022 declines).
+- **The leading setup changes by year:** the overnight long led 2019, 2020, 2024 and 2025, drive long 2022 and 2026,
+  the drive short 2018. Keep the mix.
+- **Costs decide the level.** With 5 bps of extra slippage and 2 bps a day of borrow on shorts (`--extra-cost-bps 5
+  --borrow-bps 2`; off by default, real fills may land on either side of the bar close) the best plan fell to
+  +$13,736 over eight years with 3 losing years (2019–2021); trades earn only about 0.1–0.3% each, so execution
+  matters more than further rule tuning.
+- **Money use:** each trade is $2,000; an account needs about $20k for busy mornings, but only about half is working
+  on an average day.
+
 
 ## Recommendations
 
@@ -2147,10 +2248,10 @@ won), drive short + re-entry +$626, pullback long +$377, pullback long C1 +$275,
     `--write-config` and run the monitor with `--trend-filters overnight`. Don't rank on one month of results, and
     don't drop the screen.
 
-38. **Run the monitor without the overnight short in quick-dip years (Finding 43):** in the 2026 walk-forward it cost
-    $918 and its removal gave the best plan (+$4,973). Keep the drive short; check
-    `monthly_process_walk_forward --overnight-short-gate off` on other years before deciding for good (it paid in
-    2022, Finding 41).
+38. **Run the monitor with fixed setups and the drive short only (Finding 43):** over eight years the overnight short
+    cost $1,407 and the monthly setup refresh $4,182; switch EC2 to `--short-setups drive`, keep `--trend-filters
+    overnight` and the `qqq-ma50-down10` gate. Size $2,000 a trade with about $20k on hand, and judge the edge on live
+    fills: a few basis points of slippage a trade change the yearly result a lot.
 
 ## Reproduction
 
@@ -2259,7 +2360,8 @@ exactly (110 trades, +0.80%), but other settings may differ slightly.
    screen and ranking at each month start; `ticker_screen_walk_forward --years <year>` is the committed version.
    Live: `python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.ticker_screen --as-of <date>`.
    Finding 43: `python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.monthly_process_walk_forward
-   --year 2026 --end 2026-11-07` (and `--overnight-short-gate off`).
+   --year <year> --end <year>-12-31` per year (2026: `--end 2026-11-07`); all six plans in one run, capped at 10 open;
+   add `--extra-cost-bps 5 --borrow-bps 2` for the cost check.
    The confirmation-lag table, the reversal-entry diagnostics, the drive long decomposition and the 11-case
    re-entry table were one-off scripts on `wave_events` / `ride` / `load_rider_bars` from `wave_rider.py`;
    intraday vs overnight from `fetch_daily_bars` (log open / previous close vs close / open).

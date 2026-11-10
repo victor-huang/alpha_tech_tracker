@@ -60,11 +60,19 @@ def stock_universe(assets):
                   and a["symbol"].isalpha() and not is_fund(a.get("name")))
 
 
-def fetch_assets():
+def delisted_stocks(assets, listed):
+    """Former NYSE / Nasdaq stocks (inactive assets, no funds) not in `listed`: for past-year tests, so the universe
+    is not only today's survivors."""
+    listed = set(listed)
+    return sorted({a["symbol"] for a in assets if a.get("exchange") in EXCHANGES and a["symbol"].isalpha()
+                   and not is_fund(a.get("name")) and a["symbol"] not in listed})
+
+
+def fetch_assets(status="active"):
     key = os.environ.get("ALPACA_API_KEY") or os.environ.get("ALPACA_KEY_ID")
     client = TradingClient(key, os.environ.get("ALPACA_SECRET_KEY"), paper=True)
     # raw response: alpaca-py's Asset model rejects exchanges it does not know yet (e.g. TXSE)
-    return client.get("/assets", {"status": "active", "asset_class": "us_equity"})
+    return client.get("/assets", {"status": status, "asset_class": "us_equity"})
 
 
 def daily_stats(daily):
@@ -118,9 +126,9 @@ def monitor_config(picks, as_of, lookback_start):
     }
 
 
-def fetch_daily(tickers, start, end):
-    """{ticker: split-adjusted daily SIP bars (Close / High / Low / Volume)}, FETCH_BATCH symbols a request; not cached
-    (fetch_daily_bars caches one file per ticker, too slow for the whole market)."""
+def fetch_daily(tickers, start, end, adjustment=Adjustment.SPLIT):
+    """{ticker: daily SIP bars (Close / High / Low / Volume), split-adjusted by default}, FETCH_BATCH symbols a request;
+    not cached (fetch_daily_bars caches one file per ticker, too slow for the whole market)."""
     key = os.environ.get("ALPACA_API_KEY") or os.environ.get("ALPACA_KEY_ID")
     client = StockHistoricalDataClient(key, os.environ.get("ALPACA_SECRET_KEY"))
     daily = {}
@@ -128,7 +136,7 @@ def fetch_daily(tickers, start, end):
         request = StockBarsRequest(symbol_or_symbols=tickers[i:i + FETCH_BATCH], timeframe=TimeFrame.Day,
                                    start=datetime.combine(start, datetime.min.time()),
                                    end=datetime.combine(end + timedelta(days=1), datetime.min.time()),
-                                   feed=DataFeed.SIP, adjustment=Adjustment.SPLIT)
+                                   feed=DataFeed.SIP, adjustment=adjustment)
         frame = client.get_stock_bars(request).df
         if frame.empty:
             continue
