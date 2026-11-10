@@ -120,6 +120,8 @@ earlier findings: [`WAVE_RISK_REWARD_FINDINGS.md`](WAVE_RISK_REWARD_FINDINGS.md)
   year: +35% a year on the ~$9.7k of capital in use on an average day (+34% in years nothing was tuned on), about
   +18% a year on a $20k account. The overnight short and the monthly setup refresh both cost money over eight years.
   With 5 bps of extra slippage the result roughly halves and calm years lose.
+  Top 3 earns more per dollar in use (+40% a year) but less in total; as one $12k account it returned +175% at fixed
+  size and +437% compounding (worst drawdown −20% / −25%, never more than 3% below the start).
 - **A ticker's intraday vs overnight split doesn't pick its setup (Finding 36):** within a window it always matches the
   better family, but measured on the previous 63 or 126 sessions it chose next month's winner 52–53% of the time
   (16 tickers, Jul 2025 – Oct 2026). Overnight holds won in H2 2025 and drive long in 2026 across the board; running
@@ -2123,6 +2125,44 @@ Fixed setups + drive short: $7.2k–$11.4k a year on average, $20k peaks in 7 of
 - **Money use:** each trade is $2,000; an account needs about $20k for busy mornings, but only about half is working
   on an average day.
 
+**Top 3 instead of top 5** (`--picks 3 --capital 6000`: the same $2,000 trades, capped at 6 open, $12k; fixed setups
++ drive short, no extra costs):
+
+| | 2018 | 2019 | 2020 | 2021 | 2022 | 2024 | 2025 | 2026 | 8 years | Avg capital in use | Return on it / yr | Out of sample | Worst DD |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| Top 5 | +2,268 | +929 | +514 | +1,079 | +4,586 | +8,255 | +5,069 | +5,950 | **+$28,650** | $9,698 | +35.3% | +33.6% | −$3,192 |
+| Top 3 | +1,866 | +994 | −463 | +2,027 | +3,758 | +5,174 | +2,956 | +4,671 | +$20,983 | $6,400 | **+40.0%** | **+40.8%** | −$3,450 |
+
+The top 3 earn more per dollar in use (6 of 8 years) but put less to work, so they make less; one weak pick weighs
+more (2020 negative, worst drawdown half of the capital in use vs a third).
+
+**Top 3 as one account, 2018–2026** (a one-off replay of the capped trades in entry order, realized P&L booked at
+each exit; 2023 not run, the account sits flat through it):
+
+| | Fixed $2,000 trades | Compounding (each trade 1/6 of the balance) |
+|---|---|---|
+| Start → end | $12,000 → $32,983 | $12,000 → $64,444 |
+| Total return | **+175%** (~13.7% a year compounded, +22% simple) | **+437%** (~24% a year) |
+| Lowest balance | $11,618 (Feb 2018) | $11,616 (Feb 2018) |
+| Worst drawdown | −$3,481, −19.6% of the peak (Aug 12 – Dec 31 2020, recovered Mar 4 2022: 19 months) | −25.0% (same 2020 stretch); −$8,498 / −12.6% Jun – Aug 2026 |
+| Losing months | 36 of 95; longest streak 4 (−$3,359) | 35 of 95; longest streak 4 (−$5,552) |
+| Worst rolling 3 / 6 / 12 months | −$2,855 / −$2,253 / −$1,575 | −$3,922 / −$3,160 / −$2,534 |
+
+Fixed-size year ends: 2018 $13,866, 2019 $14,779, 2020 $14,307, 2021 $16,415, 2022 $20,217, 2024 $25,357, 2025
+$28,111, 2026 $32,983. Other drawdowns: Feb – Apr 2020 −12.7% (back by June), Jan – Apr 2025 −8.3%, Jun – Jul 2026
+−4.7%. Skipping trades when the free cash is short changed nothing at fixed size: the balance never fell far enough.
+
+- **No stretch came near ruin:** the account never fell more than 3% below its start, and the worst back-to-back run
+  (the COVID crash, then Aug – Dec 2020 when the meme and vaccine picks fell together and the drive short caught the
+  rebounds) was absorbed by 2018 – 2019 gains, though it took 19 months to make new highs.
+- **Compounding earned about $31,500 more** (2.5x the profit), mostly in 2024 – 2026 when trades had grown to $5k –
+  $11k; the price is larger dollar drawdowns and slightly deeper % ones (trades are largest after a winning run).
+- **What could break it** is outside this test: an overnight gap across all three picks at once, extra slippage
+  (5 bps roughly halves the eight-year result and turns calm years negative), a long bear market unlike 2018 – 2026,
+  or larger trades (twice the size, twice every drawdown). Keep trades near 1/6 of the account and stop new entries
+  after a fall of about 25% from the peak, beyond anything seen here.
+
+
 
 ## Recommendations
 
@@ -2361,7 +2401,9 @@ exactly (110 trades, +0.80%), but other settings may differ slightly.
    Live: `python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.ticker_screen --as-of <date>`.
    Finding 43: `python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.monthly_process_walk_forward
    --year <year> --end <year>-12-31` per year (2026: `--end 2026-11-07`); all six plans in one run, capped at 10 open;
-   add `--extra-cost-bps 5 --borrow-bps 2` for the cost check.
+   add `--extra-cost-bps 5 --borrow-bps 2` for the cost check. Top 3: `--picks 3 --capital 6000`. The account replay (fixed vs
+   compounding, drawdown episodes, losing streaks) was a one-off script over the capped trades from `run_plan` and
+   `cap_positions`.
    The confirmation-lag table, the reversal-entry diagnostics, the drive long decomposition and the 11-case
    re-entry table were one-off scripts on `wave_events` / `ride` / `load_rider_bars` from `wave_rider.py`;
    intraday vs overnight from `fetch_daily_bars` (log open / previous close vs close / open).
