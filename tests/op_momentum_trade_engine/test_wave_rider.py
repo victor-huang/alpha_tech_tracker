@@ -246,6 +246,20 @@ class TestSplitFactors:
 
         assert split_factors(bars, {DAY: 100.0}) == {}
 
+    def test_a_session_off_the_ratio_keeps_the_previous_sessions_divisor(self):
+        days = [date(2026, 7, 1) + timedelta(days=i) for i in range(4)]
+        bars = self._bars({days[0]: 772.0, days[1]: 850.0, days[2]: 193.7, days[3]: 250.0})
+
+        factors = split_factors(bars, {days[0]: 193.2, days[1]: 194.0, days[2]: 194.0, days[3]: 200.0})
+
+        assert factors == {days[0]: 4, days[1]: 4}
+
+    def test_a_session_off_the_ratio_before_the_first_match_takes_the_next_divisor(self):
+        days = [date(2026, 7, 1) + timedelta(days=i) for i in range(2)]
+        bars = self._bars({days[0]: 850.0, days[1]: 772.0})
+
+        assert split_factors(bars, {days[0]: 194.0, days[1]: 193.2}) == {days[0]: 4, days[1]: 4}
+
 
 class TestFlipForShorts:
     def _bars(self):

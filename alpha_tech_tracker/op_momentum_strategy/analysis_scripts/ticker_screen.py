@@ -11,6 +11,9 @@ The procedure that held up over 2020, 2022, 2023, 2025 and 2026 (monthly re-pick
                 up over 10 sessions), 5 bps a trade
   5. pick       the top --picks (default 5)
 
+The monitor's drive short + re-entry is reported too (every day, and on the days its qqq-ma50-down10 gate was on);
+`--rank-shorts gated|all` adds it to the ranking score (default none: the long-only ranking the findings are for).
+
 Run it on the first trading day of each month (it uses data through --as-of, default the last completed session).
 `--write-config PATH` writes a wave setup monitor config with `drive long` and `overnight always` for the picks; run the
 monitor with `--trend-filters overnight`.
@@ -34,7 +37,7 @@ from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame
 from alpaca.trading.client import TradingClient
 
-from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.setup_portfolio_check import ticker_legs
+from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.setup_portfolio_check import gated_sessions, ticker_legs
 from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.ticker_stats_report import clamp_end_for_sip
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import fetch_daily_bars
 from alpha_tech_tracker.op_momentum_strategy.trend_filters import MARKET_TICKER, market_trend, session_flags
@@ -48,6 +51,10 @@ EXCHANGES = ("NYSE", "NASDAQ")
 FUND_NAME = re.compile(r"\bETF\b|ProShares|Direxion|iShares|SPDR|Invesco QQQ|Trust Units|\bFund\b|2X|3X|Leveraged|"
                        r"Bitcoin|Ether", re.IGNORECASE)
 CORE_LEGS = ("drive long", "overnight long")
+SHORT_LEG = "drive short + re-entry"
+RANK_LEGS = CORE_LEGS + (SHORT_LEG,)
+SHORT_GATE = "qqq-ma50-down10"
+RANK_SHORTS = ("none", "gated", "all")
 
 
 def is_fund(name):
@@ -94,25 +101,34 @@ def screen(stats, top_volume, min_range, min_price):
     return liquid[liquid.range_pct >= min_range]
 
 
-def core_results(legs, night_ok):
-    """Per ticker over the legs: drive long and filtered overnight long trades, sums and per-trade averages."""
+def core_results(legs, night_ok, short_days=(), rank_shorts="none"):
+    """Per ticker over the legs: drive long and filtered overnight long trades (the core), the drive short + re-entry
+    every day and on the short_days its gate was on, and the ranking score: the core sum, plus the gated (rank_shorts
+    `gated`) or every-day (`all`) drive short sum."""
     drive = legs[legs.leg == "drive long"]
     night = legs[(legs.leg == "overnight long") & legs.day.map(night_ok).fillna(False).astype(bool)]
+    short = legs[legs.leg == SHORT_LEG]
+    gated = short[short.day.isin(set(short_days))]
     out = pd.DataFrame({
         "drive_trades": drive.groupby("ticker").size(), "drive_sum": drive.groupby("ticker").pct.sum(),
         "night_trades": night.groupby("ticker").size(), "night_sum": night.groupby("ticker").pct.sum(),
+        "short_trades": short.groupby("ticker").size(), "short_sum": short.groupby("ticker").pct.sum(),
+        "gated_short_trades": gated.groupby("ticker").size(), "gated_short_sum": gated.groupby("ticker").pct.sum(),
     }).fillna(0)
     out["core_sum"] = out.drive_sum + out.night_sum
     trades = out.drive_trades + out.night_trades
     out["core_per_trade"] = out.core_sum / trades.where(trades > 0)
+    short_column = {"none": None, "gated": "gated_short", "all": "short"}[rank_shorts]
+    out["score"] = out.core_sum + (out[f"{short_column}_sum"] if short_column else 0)
+    out["score_trades"] = trades + (out[f"{short_column}_trades"] if short_column else 0)
     return out
 
 
 def rank(passers, results, min_trades=10):
-    """Passers joined with their core results, best first; tickers with fewer than min_trades trades last."""
+    """Passers joined with their results, best score first; tickers with fewer than min_trades scored trades last."""
     table = passers.join(results, how="left")
-    enough = (table.drive_trades.fillna(0) + table.night_trades.fillna(0)) >= min_trades
-    return pd.concat([table[enough].sort_values("core_sum", ascending=False), table[~enough]])
+    enough = table.score_trades.fillna(0) >= min_trades
+    return pd.concat([table[enough].sort_values("score", ascending=False), table[~enough]])
 
 
 def monitor_config(picks, as_of, lookback_start):
@@ -156,14 +172,14 @@ def legs_job(job):
         return pd.DataFrame(columns=["ticker", "day", "leg", "pct"])
 
 
-def trailing_results(tickers, start, end, workers):
+def trailing_results(tickers, start, end, workers, rank_shorts="none"):
     with ProcessPoolExecutor(max_workers=workers) as pool:
         legs = pd.concat(list(pool.map(legs_job, [(t, start, end) for t in tickers])), ignore_index=True)
-    legs = legs[legs.leg.isin(CORE_LEGS)]
+    legs = legs[legs.leg.isin(RANK_LEGS)]
     qqq = fetch_daily_bars([MARKET_TICKER], end - timedelta(days=QQQ_CALENDAR_DAYS), end)[MARKET_TICKER]
     qqq = pd.DataFrame({"close": qqq["Close"].astype(float)}, index=qqq.index)
     night_ok = session_flags(market_trend(qqq), sorted(set(legs.day)), "overnight_ok")
-    return core_results(legs, night_ok)
+    return core_results(legs, night_ok, gated_sessions(start, end, SHORT_GATE), rank_shorts)
 
 
 def parse_args(argv=None):
@@ -174,6 +190,8 @@ def parse_args(argv=None):
     parser.add_argument("--min-price", type=float, default=10.0)
     parser.add_argument("--lookback", type=int, default=63, help="Sessions of core-setup results to rank on")
     parser.add_argument("--picks", type=int, default=5)
+    parser.add_argument("--rank-shorts", choices=RANK_SHORTS, default="none",
+                        help="Add the drive short + re-entry to the ranking score: on its gated days, or every day")
     parser.add_argument("--workers", type=int, default=6)
     parser.add_argument("--write-config", help="Write a wave setup monitor config for the picks to this path")
     return parser.parse_args(argv)
@@ -189,13 +207,14 @@ def main(argv=None):
           f"{args.min_range:g}%+ daily range: {len(passers)}")
     sessions = sorted(fetch_daily_bars([MARKET_TICKER], as_of - timedelta(days=120), as_of)[MARKET_TICKER].index)
     lookback_start = sessions[-args.lookback]
-    results = trailing_results(passers.index.tolist(), lookback_start, as_of, args.workers)
+    results = trailing_results(passers.index.tolist(), lookback_start, as_of, args.workers, args.rank_shorts)
     table = rank(passers, results)
     pd.set_option("display.width", 250)
-    columns = ["core_sum", "core_per_trade", "drive_sum", "drive_trades", "night_sum", "night_trades", "range_pct",
-               "dollar_vol", "close"]
+    columns = ["score", "core_sum", "core_per_trade", "drive_sum", "drive_trades", "night_sum", "night_trades",
+               "short_sum", "short_trades", "gated_short_sum", "gated_short_trades", "range_pct", "dollar_vol", "close"]
     shown = table[columns].assign(dollar_vol=table.dollar_vol / 1e6).rename(columns={"dollar_vol": "dollar_vol_m"})
-    print(f"\ncore setups {lookback_start} .. {as_of} (sum of trade %), best first:")
+    print(f"\ncore setups {lookback_start} .. {as_of} (sum of trade %), best score first (shorts in the score: "
+          f"{args.rank_shorts}; short_* = drive short + re-entry every day, gated_short_* = on its {SHORT_GATE} days):")
     print(shown.round(2).to_string())
     picks = table.head(args.picks)
     print(f"\npicks: {', '.join(picks.index)}")

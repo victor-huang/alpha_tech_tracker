@@ -162,7 +162,7 @@ class TestParseArgs:
         args = parse_args(["--year", "2026"])
 
         assert (args.picks, args.top_setups, args.refresh_lookback, args.min_trades, args.short_gate,
-                args.overnight_short_gate) == (5, 3, 63, 3, "qqq-ma50-down10", "qqq-ma200")
+                args.overnight_short_gate, args.rank_shorts) == (5, 3, 63, 3, "qqq-ma50-down10", "qqq-ma200", "none")
 
 
 class TestSplits:

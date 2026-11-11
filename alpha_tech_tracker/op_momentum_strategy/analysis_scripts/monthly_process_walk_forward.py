@@ -3,7 +3,8 @@
 At each month's first session, with no data from after it (ticker-tuning doc, Finding 43):
 
   1. tickers  ticker_screen's top --picks (ticker_screen_walk_forward: top 150 by dollar volume, 4%+ range, ranked by
-              the last 63 sessions of drive long + filtered overnight long)
+              the last 63 sessions of drive long + filtered overnight long; --rank-shorts gated|all adds the drive
+              short + re-entry to that ranking)
   2. setups   the monitor's config refresh (top_setups_by_ticker): each pick's top --top-setups long / overnight
               setups over the last --refresh-lookback sessions, with --min-trades trades and a positive total
   3. trade    for the month, the setups at their fixed exits; overnight longs only on nights the overnight trend
@@ -40,6 +41,7 @@ from alpaca.data.enums import Adjustment, DataFeed
 
 from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.setup_portfolio_check import daily_frames, gated_sessions
 from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.ticker_screen import (
+    RANK_SHORTS,
     fetch_daily,
     legs_job,
 )
@@ -252,7 +254,7 @@ def cached_setup_report(tickers, start, end, folder, workers):
 def load_data(year, args):
     end = clamp_end_for_sip(min(date(year, 12, 31), args.end or date.today()), DataFeed.SIP)
     screen_args = walk_forward_args(["--years", str(year), "--end", end.isoformat(), "--picks", str(args.picks),
-                                     "--workers", str(args.workers)])
+                                     "--rank-shorts", args.rank_shorts, "--workers", str(args.workers)])
     _, picks = run_year(year, screen_universe(not args.listed_only), screen_args)
     qqq = daily_frames([MARKET_TICKER], date(year - 2, 1, 1), end)[MARKET_TICKER]
     sessions = sorted(d for d in qqq.index if d <= end)
@@ -288,7 +290,8 @@ def report(year, picks, data, args):
     pd.set_option("display.width", 300, "display.max_colwidth", 200)
     per_trade = args.capital / args.picks
     tuned = TUNED_ON.get(year)
-    print(f"\n=== {year} to {data['end']}: top {args.picks} monthly, ${per_trade:,.0f} a trade, 5 bps; short gate "
+    print(f"\n=== {year} to {data['end']}: top {args.picks} monthly (shorts in the ranking: {args.rank_shorts}), "
+          f"${per_trade:,.0f} a trade, 5 bps; short gate "
           f"{args.short_gate}, overnight short gate {args.overnight_short_gate}; cap {args.max_positions} open, extra "
           f"{args.extra_cost_bps:g} bps, borrow {args.borrow_bps:g} bps/day; "
           + (f"IN-SAMPLE (tuned on: {tuned})" if tuned else "out of sample"))
@@ -330,6 +333,8 @@ def parse_args(argv=None):
     parser.add_argument("--year", type=int, nargs="+", required=True)
     parser.add_argument("--end", type=date.fromisoformat, help="Last session (default: today)")
     parser.add_argument("--picks", type=int, default=5)
+    parser.add_argument("--rank-shorts", choices=RANK_SHORTS, default="none",
+                        help="Add the drive short + re-entry to the ticker ranking: on its gated days, or every day")
     parser.add_argument("--top-setups", type=int, default=3, help="Setups per ticker from the refresh")
     parser.add_argument("--refresh-lookback", type=int, default=63, help="Sessions the refresh ranks setups on")
     parser.add_argument("--min-trades", type=int, default=3)

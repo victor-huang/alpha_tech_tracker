@@ -49,6 +49,9 @@ each pick; run the monitor with `--trend-filters overnight`. Monthly, on $10k: 2
 2023 +$3,196, 2025 +$3,154, 2026 to Nov 6 +$2,408. Ranking without the volume + range screen, or on one month of
 results, lost money. It fetches daily bars for every US stock and three months of 5-min bars for each passer, so it
 takes a while; run it after the close or before the session.
+The table also shows each passer's drive short + re-entry (`short_*` every day, `gated_short_*` on the days its
+`qqq-ma50-down10` gate was on) as information; ranking on it did not help out of sample (Finding 44), so leave
+`--rank-shorts none`.
 
 ## Weekly refresh (recommended recipe)
 

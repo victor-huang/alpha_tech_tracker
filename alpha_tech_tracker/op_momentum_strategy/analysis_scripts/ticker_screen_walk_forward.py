@@ -9,7 +9,9 @@ Per-ticker trades are cached under --cache-dir (one CSV per ticker and window), 
 quick. The universe is today's listed stocks plus, with --include-delisted, Alpaca's inactive ones (names delisted
 since; some may lack data). The price floor uses the raw (unadjusted) close known at the time, not today's
 split-adjusted one. The ranking leaves out the overnight hold entered on the last session before the month (it exits
-at the month's first open, after the pick).
+at the month's first open, after the pick). `--rank-shorts gated|all` adds the monitor's drive short + re-entry (on
+its gated days, or every day) to the ranking; the month's P&L here stays the core setups' (monthly_process_walk_forward
+trades the shorts).
 
   python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.ticker_screen_walk_forward --years 2022 2025
 """
@@ -21,12 +23,14 @@ from datetime import date, timedelta
 from pathlib import Path
 
 import pandas as pd
-from alpaca.data.enums import DataFeed
+from alpaca.data.enums import Adjustment, DataFeed
 
-from alpaca.data.enums import Adjustment
-
+from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.setup_portfolio_check import gated_sessions
 from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.ticker_screen import (
     CORE_LEGS,
+    RANK_SHORTS,
+    SHORT_GATE,
+    SHORT_LEG,
     daily_stats,
     delisted_stocks,
     fetch_assets,
@@ -85,19 +89,22 @@ def ranking_trades(core, past):
     return core[seen]
 
 
-def cache_path(cache_dir, ticker, start, end):
-    return cache_dir / f"{ticker}_{start}_{end}.csv"
+def cache_path(cache_dir, ticker, start, end, short=False):
+    return cache_dir / f"{ticker}_{start}_{end}{'_short' if short else ''}.csv"
 
 
-def cached_legs(tickers, start, end, cache_dir, workers):
-    """Core-leg trades per ticker over start..end, from the cache or computed (and cached)."""
+def cached_legs(tickers, start, end, cache_dir, workers, with_short=False):
+    """Core-leg trades per ticker over start..end (and the drive short + re-entry's with with_short), from the cache
+    or computed (and cached: the core legs and the short leg in their own files)."""
     cache_dir.mkdir(parents=True, exist_ok=True)
-    missing = [t for t in tickers if not cache_path(cache_dir, t, start, end).exists()]
+    kinds = (False, True) if with_short else (False,)
+    missing = [t for t in tickers if not all(cache_path(cache_dir, t, start, end, k).exists() for k in kinds)]
     if missing:
         with ProcessPoolExecutor(max_workers=workers) as pool:
             for ticker, legs in zip(missing, pool.map(legs_job, [(t, start, end) for t in missing])):
                 legs[legs.leg.isin(CORE_LEGS)].to_csv(cache_path(cache_dir, ticker, start, end), index=False)
-    paths = [cache_path(cache_dir, t, start, end) for t in tickers]
+                legs[legs.leg == SHORT_LEG].to_csv(cache_path(cache_dir, ticker, start, end, True), index=False)
+    paths = [cache_path(cache_dir, t, start, end, k) for t in tickers for k in kinds]
     frames = [pd.read_csv(p) for p in paths if os.path.getsize(p) > 1]
     legs = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame(columns=["ticker", "day", "leg", "pct"])
     legs["day"] = [date.fromisoformat(str(d)[:10]) for d in legs.day]
@@ -110,13 +117,23 @@ def core_trades(legs, night_ok):
     return legs[(legs.leg == "drive long") | night][["ticker", "day", "leg", "pct"]]
 
 
-def walk(core, passers, sessions, starts, picks, lookback, capital):
-    """(month trades with a dollars column, {month start: picks}) for the monthly re-pick."""
+def short_trades(legs, rank_shorts, start, end):
+    """The drive short + re-entry trades the ranking counts: none, those on the days its gate was on, or all."""
+    shorts = legs[legs.leg == SHORT_LEG][["ticker", "day", "leg", "pct"]]
+    if rank_shorts == "none":
+        return shorts.iloc[:0]
+    return shorts[shorts.day.isin(gated_sessions(start, end, SHORT_GATE))] if rank_shorts == "gated" else shorts
+
+
+def walk(core, passers, sessions, starts, picks, lookback, capital, ranking=None):
+    """(month trades with a dollars column, {month start: picks}) for the monthly re-pick; the ranking sees `ranking`
+    (default: the core trades), the month trades the core."""
     parts, chosen = [], {}
+    ranking = core if ranking is None else ranking
     ends = starts[1:] + [sessions[-1] + timedelta(days=1)]
     for start, stop in zip(starts, ends):
         past = [d for d in sessions if d < start][-lookback:]
-        seen = ranking_trades(core, past)
+        seen = ranking_trades(ranking, past)
         trailing = seen[seen.ticker.isin(passers[start])].groupby("ticker").pct.agg(["sum", "size"])
         trailing = trailing[trailing["size"] >= MIN_TRADES].sort_values("sum", ascending=False)
         chosen[start] = trailing.index[:picks].tolist()
@@ -147,11 +164,13 @@ def run_year(year, universe, args):
     candidates = sorted({t for names in passers.values() for t in names})
     legs_start = [d for d in sessions if d < starts[0]][-(args.lookback + LEGS_MARGIN_SESSIONS)]
     print(f"{year}: {len(universe)} stocks, {len(candidates)} pass the screen in some month; trades {legs_start}..{end}")
-    legs = cached_legs(candidates, legs_start, end, Path(args.cache_dir), args.workers)
+    legs = cached_legs(candidates, legs_start, end, Path(args.cache_dir), args.workers, args.rank_shorts != "none")
     night_ok = session_flags(market_trend(pd.DataFrame({"close": qqq["Close"].astype(float)}, index=qqq.index)),
                              sorted(set(legs.day)), "overnight_ok")
     year_sessions = [d for d in sessions if d >= legs_start]
-    return walk(core_trades(legs, night_ok), passers, year_sessions, starts, args.picks, args.lookback, args.capital)
+    core = core_trades(legs, night_ok)
+    ranking = pd.concat([core, short_trades(legs, args.rank_shorts, legs_start, end)], ignore_index=True)
+    return walk(core, passers, year_sessions, starts, args.picks, args.lookback, args.capital, ranking)
 
 
 def screen_universe(include_delisted):
@@ -172,6 +191,8 @@ def parse_args(argv=None):
     parser.add_argument("--min-price", type=float, default=10.0)
     parser.add_argument("--lookback", type=int, default=63)
     parser.add_argument("--picks", type=int, default=5)
+    parser.add_argument("--rank-shorts", choices=RANK_SHORTS, default="none",
+                        help="Add the drive short + re-entry to the ranking: on its gated days, or every day")
     parser.add_argument("--capital", type=float, default=10000.0)
     parser.add_argument("--workers", type=int, default=6)
     parser.add_argument("--cache-dir", default=str(DEFAULT_CACHE))

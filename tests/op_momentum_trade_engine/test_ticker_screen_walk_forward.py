@@ -3,12 +3,14 @@ from datetime import date, timedelta
 import pandas as pd
 
 from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.ticker_screen_walk_forward import (
+    cache_path,
     cached_legs,
     core_trades,
     month_starts,
     parse_args,
     passers_by_month,
     ranking_trades,
+    short_trades,
     summary,
     walk,
 )
@@ -81,6 +83,33 @@ class TestWalk:
 
         assert trades.pct.tolist() == [-4.0]
 
+    def test_ranking_frame_picks_while_the_core_is_traded(self):
+        sessions = sorted(set(self._core().day))
+        ranking = _trades([("A", JAN - timedelta(days=i), "drive short + re-entry", 9.0) for i in range(1, 11)])
+
+        trades, chosen = walk(self._core(), {JAN: ["A", "B"]}, sessions, [JAN], picks=1, lookback=63, capital=10000,
+                              ranking=pd.concat([self._core(), ranking]))
+
+        assert chosen == {JAN: ["A"]}
+        assert trades.leg.tolist() == ["drive long"]
+
+
+class TestShortTrades:
+    def _legs(self):
+        return _trades([("A", JAN, "drive short + re-entry", 1.0), ("A", FEB, "drive short + re-entry", 2.0),
+                        ("A", JAN, "drive long", 3.0)])
+
+    def test_none(self):
+        assert short_trades(self._legs(), "none", JAN, MAR).empty
+
+    def test_gated_days_only(self, mocker):
+        mocker.patch(f"{MODULE}.gated_sessions", return_value={FEB})
+
+        assert short_trades(self._legs(), "gated", JAN, MAR).pct.tolist() == [2.0]
+
+    def test_all_days(self):
+        assert short_trades(self._legs(), "all", JAN, MAR).pct.tolist() == [1.0, 2.0]
+
 
 class TestSummary:
     def test_pnl_drawdown_and_months(self):
@@ -103,8 +132,24 @@ class TestCachedLegs:
         assert first.leg.tolist() == second.leg.tolist() == ["drive long"]
         assert pool.call_count == 1
 
+    def test_core_only_cache_is_recomputed_when_the_short_leg_is_wanted(self, tmp_path, mocker):
+        legs = _trades([("AMD", JAN, "drive long", 1.0), ("AMD", JAN, "drive short + re-entry", 9.0)])
+        pool = mocker.patch(f"{MODULE}.ProcessPoolExecutor")
+        pool.return_value.__enter__.return_value.map.return_value = [legs]
+        _trades([("AMD", JAN, "drive long", 1.0)]).to_csv(cache_path(tmp_path, "AMD", JAN, MAR), index=False)
+
+        core_only = cached_legs(["AMD"], JAN, MAR, tmp_path, 1)
+        both = cached_legs(["AMD"], JAN, MAR, tmp_path, 1, with_short=True)
+
+        assert core_only.leg.tolist() == ["drive long"]
+        assert both.leg.tolist() == ["drive long", "drive short + re-entry"]
+        assert pool.call_count == 1
+
 
 class TestParseArgs:
+    def test_shorts_out_of_the_ranking_by_default(self):
+        assert parse_args(["--years", "2026"]).rank_shorts == "none"
+
     def test_defaults_match_the_screen(self):
         args = parse_args(["--years", "2025"])
 

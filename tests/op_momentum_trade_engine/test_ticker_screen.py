@@ -84,12 +84,28 @@ class TestCoreResults:
 
         assert (row.drive_sum, row.night_sum, row.core_sum, row.core_per_trade) == (1.0, 2.0, 3.0, 1.5)
 
+    def _legs_with_shorts(self):
+        return pd.DataFrame([("AMD", DAY, "drive long", 1.0), ("AMD", DAY, "drive short + re-entry", 4.0),
+                             ("AMD", DAY + timedelta(days=1), "drive short + re-entry", -1.0)],
+                            columns=["ticker", "day", "leg", "pct"])
+
+    def test_drive_short_every_day_and_on_gated_days(self):
+        row = core_results(self._legs_with_shorts(), {}, short_days={DAY}).loc["AMD"]
+
+        assert (row.short_trades, row.short_sum, row.gated_short_trades, row.gated_short_sum) == (2, 3.0, 1, 4.0)
+
+    def test_score_is_the_core_sum_unless_shorts_are_ranked(self):
+        scores = {mode: core_results(self._legs_with_shorts(), {}, {DAY}, mode).loc["AMD"]
+                  for mode in ("none", "gated", "all")}
+
+        assert {m: (r.score, r.score_trades) for m, r in scores.items()} == {"none": (1.0, 1), "gated": (5.0, 2),
+                                                                             "all": (4.0, 3)}
+
 
 class TestRank:
     def test_best_first_and_thin_history_last(self):
         passers = _stats([("A", 50.0, 3e9, 5.0), ("B", 50.0, 2e9, 5.0), ("NEW", 50.0, 1e9, 5.0)])
-        results = pd.DataFrame({"drive_trades": [40, 40, 3], "night_trades": [30, 30, 2], "drive_sum": [1.0, 9.0, 50.0],
-                                "night_sum": [0.0, 0.0, 0.0], "core_sum": [1.0, 9.0, 50.0]}, index=["A", "B", "NEW"])
+        results = pd.DataFrame({"score_trades": [70, 70, 5], "score": [1.0, 9.0, 50.0]}, index=["A", "B", "NEW"])
 
         assert rank(passers, results).index.tolist() == ["B", "A", "NEW"]
 
@@ -107,7 +123,8 @@ class TestParseArgs:
     def test_defaults(self):
         args = parse_args([])
 
-        assert (args.top_volume, args.min_range, args.min_price, args.lookback, args.picks) == (150, 4.0, 10.0, 63, 5)
+        assert (args.top_volume, args.min_range, args.min_price, args.lookback, args.picks,
+                args.rank_shorts) == (150, 4.0, 10.0, 63, 5, "none")
 
 
 class TestFetchDaily:

@@ -116,12 +116,12 @@ earlier findings: [`WAVE_RISK_REWARD_FINDINGS.md`](WAVE_RISK_REWARD_FINDINGS.md)
   5 by their last 63 sessions of core results: +$11,542 on $10k over 2020, 2022, 2023, 2025 and 2026, positive every
   year (2022 +$114 while QQQ fell 33%). Ranking without the screen failed. `ticker_screen.py` runs it.
 - **The whole monthly process (Finding 43, eight years 2018–2026, hindsight removed):** screen top 5 each month,
-  fixed setups (drive long, pullback long, overnight always) and the gated drive short made +$28,650, positive every
-  year: +35% a year on the ~$9.7k of capital in use on an average day (+34% in years nothing was tuned on), about
+  fixed setups (drive long, pullback long, overnight always) and the gated drive short made +$29,153, positive every
+  year: +36% a year on the ~$9.7k of capital in use on an average day (+35% in years nothing was tuned on), about
   +18% a year on a $20k account. The overnight short and the monthly setup refresh both cost money over eight years.
   With 5 bps of extra slippage the result roughly halves and calm years lose.
-  Top 3 earns more per dollar in use (+40% a year) but less in total; as one $12k account it returned +175% at fixed
-  size and +437% compounding (worst drawdown −20% / −25%, never more than 3% below the start).
+  Top 3 earns more per dollar in use (+39% a year) but less in total; as one $12k account it returned +171% at fixed
+  size and +404% compounding (worst drawdown −20% / −25%, never more than 3% below the start).
 - **A ticker's intraday vs overnight split doesn't pick its setup (Finding 36):** within a window it always matches the
   better family, but measured on the previous 63 or 126 sessions it chose next month's winner 52–53% of the time
   (16 tickers, Jul 2025 – Oct 2026). Overnight holds won in H2 2025 and drive long in 2026 across the board; running
@@ -2095,32 +2095,33 @@ from after the decision:
 | Capital | every signal taken: up to 8–14 positions open at once | `--max-positions` (default 10, $20k) and returns on capital in use | the cap rarely binds at 10 |
 
 Gates and the overnight trend filter use the previous close; the ranking, screen and refresh use only bars before the
-month. With all fixes, plans capped at 10 open, no extra costs ($2,000 a trade, 5 bps):
+month. With all fixes (and the split-rescaling fix of Finding 44, which changed 2021 only), plans capped at 10 open,
+no extra costs ($2,000 a trade, 5 bps):
 
 | Plan | 2018 | 2019 | 2020 | 2021 | 2022 | 2024 | 2025 | 2026 | 8 years | Avg capital in use | Return on it / yr | Out of sample | On $20k / yr |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| **Fixed setups + drive short** | +2,268 | +929 | +514 | +1,079 | +4,586 | +8,255 | +5,069 | +5,950 | **+$28,650** | $9,698 | **+35.3%** | **+33.6%** | +17.9% |
-| Fixed setups + both shorts (prod Nov 9) | +1,662 | +68 | −541 | +1,079 | +5,605 | +8,255 | +6,083 | +5,032 | +$27,243 | $10,226 | +31.1% | +28.2% | +17.0% |
-| Setup refresh + drive short | +2,278 | +1,083 | −398 | −834 | +4,038 | +7,555 | +4,191 | +6,555 | +$24,468 | $8,737 | +33.1% | +30.7% | +15.3% |
-| Setup refresh + both shorts | +1,671 | +222 | −1,454 | −834 | +5,057 | +7,555 | +5,205 | +5,637 | +$23,059 | $9,360 | +28.2% | +24.2% | +14.4% |
-| Fixed setups, no shorts | −312 | +695 | +1,688 | +915 | +1,214 | +9,424 | +3,884 | +4,737 | +$22,245 | $7,870 | +31.8% | +29.5% | +13.9% |
-| Setup refresh, no shorts | −171 | +849 | +814 | −1,075 | +922 | +8,744 | +3,072 | +5,446 | +$18,601 | $6,899 | +29.8% | +25.1% | +11.6% |
+| **Fixed setups + drive short** | +2,268 | +929 | +514 | +1,582 | +4,586 | +8,255 | +5,069 | +5,950 | **+$29,153** | $9,688 | **+35.9%** | **+34.9%** | +18.2% |
+| Fixed setups + both shorts (prod Nov 9) | +1,662 | +68 | −541 | +1,582 | +5,605 | +8,255 | +6,083 | +5,032 | +$27,746 | $10,216 | +31.8% | +29.4% | +17.3% |
+| Setup refresh + drive short | +2,278 | +1,083 | −398 | −626 | +4,038 | +7,555 | +4,191 | +6,555 | +$24,676 | $8,733 | +33.4% | +31.3% | +15.4% |
+| Setup refresh + both shorts | +1,671 | +222 | −1,454 | −626 | +5,057 | +7,555 | +5,205 | +5,637 | +$23,267 | $9,356 | +28.5% | +24.8% | +14.5% |
+| Fixed setups, no shorts | −312 | +695 | +1,688 | +1,392 | +1,214 | +9,424 | +3,884 | +4,737 | +$22,722 | $7,863 | +32.5% | +30.8% | +14.2% |
+| Setup refresh, no shorts | −171 | +849 | +814 | −915 | +922 | +8,744 | +3,072 | +5,446 | +$18,761 | $6,896 | +30.1% | +25.6% | +11.7% |
 
 (Capital in use: each trading day's most money open at once, overnight holds included, averaged over the days traded.
 Fixed setups + drive short: $7.2k–$11.4k a year on average, $20k peaks in 7 of 8 years; worst drawdown −$3,192 in
 2020, a third of the average capital in use.)
 
 - **Fixed setups + the drive short is best on every measure** and positive in all eight years (+5% to +80% on the
-  capital in use; calm 2019–2021 +5% to +13%).
+  capital in use; calm 2019–2021 +5% to +16%).
 - **Drop the overnight short:** over eight years it is −$1,407 (paid in 2022 and 2025, lost in the 2018, 2019, 2020
   and 2026 rebounds); the four-year reading (2022–2026) favoured it, the longer one does not.
-- **Fixed setups beat the monthly refresh** in 6 of 8 years (+$4,182 with the drive short).
+- **Fixed setups beat the monthly refresh** in 5 of 8 years (+$4,477 with the drive short).
 - **The drive short adds about +$6,400** over no shorts (paid most in the 2018 Q4 and 2022 declines).
 - **The leading setup changes by year:** the overnight long led 2019, 2020, 2024 and 2025, drive long 2022 and 2026,
   the drive short 2018. Keep the mix.
 - **Costs decide the level.** With 5 bps of extra slippage and 2 bps a day of borrow on shorts (`--extra-cost-bps 5
   --borrow-bps 2`; off by default, real fills may land on either side of the bar close) the best plan fell to
-  +$13,736 over eight years with 3 losing years (2019–2021); trades earn only about 0.1–0.3% each, so execution
+  +$14,373 over eight years with 3 losing years (2019–2021); trades earn only about 0.1–0.3% each, so execution
   matters more than further rule tuning.
 - **Money use:** each trade is $2,000; an account needs about $20k for busy mornings, but only about half is working
   on an average day.
@@ -2130,8 +2131,8 @@ Fixed setups + drive short: $7.2k–$11.4k a year on average, $20k peaks in 7 of
 
 | | 2018 | 2019 | 2020 | 2021 | 2022 | 2024 | 2025 | 2026 | 8 years | Avg capital in use | Return on it / yr | Out of sample | Worst DD |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| Top 5 | +2,268 | +929 | +514 | +1,079 | +4,586 | +8,255 | +5,069 | +5,950 | **+$28,650** | $9,698 | +35.3% | +33.6% | −$3,192 |
-| Top 3 | +1,866 | +994 | −463 | +2,027 | +3,758 | +5,174 | +2,956 | +4,671 | +$20,983 | $6,400 | **+40.0%** | **+40.8%** | −$3,450 |
+| Top 5 | +2,268 | +929 | +514 | +1,582 | +4,586 | +8,255 | +5,069 | +5,950 | **+$29,153** | $9,688 | +35.9% | +34.9% | −$3,192 |
+| Top 3 | +1,866 | +994 | −463 | +1,527 | +3,758 | +5,174 | +2,956 | +4,671 | +$20,483 | $6,400 | **+39.1%** | **+38.9%** | −$3,450 |
 
 The top 3 earn more per dollar in use (6 of 8 years) but put less to work, so they make less; one weak pick weighs
 more (2020 negative, worst drawdown half of the capital in use vs a third).
@@ -2141,21 +2142,21 @@ each exit; 2023 not run, the account sits flat through it):
 
 | | Fixed $2,000 trades | Compounding (each trade 1/6 of the balance) |
 |---|---|---|
-| Start → end | $12,000 → $32,983 | $12,000 → $64,444 |
-| Total return | **+175%** (~13.7% a year compounded, +22% simple) | **+437%** (~24% a year) |
+| Start → end | $12,000 → $32,483 | $12,000 → $60,503 |
+| Total return | **+171%** (~13.4% a year compounded, +22% simple) | **+404%** (~23% a year) |
 | Lowest balance | $11,618 (Feb 2018) | $11,616 (Feb 2018) |
-| Worst drawdown | −$3,481, −19.6% of the peak (Aug 12 – Dec 31 2020, recovered Mar 4 2022: 19 months) | −25.0% (same 2020 stretch); −$8,498 / −12.6% Jun – Aug 2026 |
-| Losing months | 36 of 95; longest streak 4 (−$3,359) | 35 of 95; longest streak 4 (−$5,552) |
-| Worst rolling 3 / 6 / 12 months | −$2,855 / −$2,253 / −$1,575 | −$3,922 / −$3,160 / −$2,534 |
+| Worst drawdown | −$3,481, −19.6% of the peak (Aug 12 – Dec 31 2020, recovered Mar 7 2022: 19 months) | −25.0% (same 2020 stretch); −$8,900 / −13.8% Jun – Aug 2026 |
+| Losing months | 36 of 95; longest streak 4 (−$3,359) | 35 of 95; longest streak 4 (−$6,069) |
+| Worst rolling 3 / 6 / 12 months | −$2,855 / −$2,253 / −$1,868 | −$3,875 / −$3,228 / −$2,974 |
 
-Fixed-size year ends: 2018 $13,866, 2019 $14,779, 2020 $14,307, 2021 $16,415, 2022 $20,217, 2024 $25,357, 2025
-$28,111, 2026 $32,983. Other drawdowns: Feb – Apr 2020 −12.7% (back by June), Jan – Apr 2025 −8.3%, Jun – Jul 2026
+Fixed-size year ends: 2018 $13,866, 2019 $14,779, 2020 $14,307, 2021 $15,878, 2022 $19,717, 2024 $24,856, 2025
+$27,610, 2026 $32,483. Other drawdowns: Feb – Apr 2020 −12.7% (back by June), Jan – Apr 2025 −8.5%, Jun – Jul 2026
 −4.7%. Skipping trades when the free cash is short changed nothing at fixed size: the balance never fell far enough.
 
 - **No stretch came near ruin:** the account never fell more than 3% below its start, and the worst back-to-back run
   (the COVID crash, then Aug – Dec 2020 when the meme and vaccine picks fell together and the drive short caught the
   rebounds) was absorbed by 2018 – 2019 gains, though it took 19 months to make new highs.
-- **Compounding earned about $31,500 more** (2.5x the profit), mostly in 2024 – 2026 when trades had grown to $5k –
+- **Compounding earned about $28,000 more** (2.4x the profit), mostly in 2024 – 2026 when trades had grown to $5k –
   $11k; the price is larger dollar drawdowns and slightly deeper % ones (trades are largest after a winning run).
 - **What could break it** is outside this test: an overnight gap across all three picks at once, extra slippage
   (5 bps roughly halves the eight-year result and turns calm years negative), a long bear market unlike 2018 – 2026,
@@ -2163,6 +2164,48 @@ $28,111, 2026 $32,983. Other drawdowns: Feb – Apr 2020 −12.7% (back by June)
   after a fall of about 25% from the peak, beyond anything seen here.
 
 
+
+## Finding 44 — The drive short in the ticker ranking (2018–2026), and a split-rescaling bug in the overnight legs
+
+**Question.** `ticker_screen` ranks the passers by drive long + the filtered overnight long. Prod also runs the gated
+drive short + re-entry on every pick (+$6,400 over eight years in Finding 43), and in a weak market the overnight long is
+mostly filtered out, so the score is nearly all drive long. Should the drive short count too? Two variants of the
+monthly process walk-forward (`--rank-shorts`): `gated` adds each stock's drive short on the days the
+`qqq-ma50-down10` gate was on in the 63-session window; `all` adds it every day (the stock's shortability as a trait,
+not the gate's timing).
+
+**Bug found on the way.** `load_rider_bars` rescales the 5-min SIP bars (not split-adjusted) by comparing each
+session's last bar with the split-adjusted daily close and dividing by the whole ratio it finds. A session whose last
+bar sat more than 2% off the daily close (a halt, a thin or partial session: SHOP had a one-bar Mar 8 2022) found no
+ratio and stayed unscaled, so an overnight leg across it read as a 10-for-1 jump: SHOP +886% (Mar 7 2022 and Apr 16
+2021), GE ±700% six times in Feb–Mar 2020, AMC +808%, GME +344%, CVNA +386%, NOW +364%/+393%, NEE +278%, HON +111%.
+Only stocks that later split were affected (the ratio is 1 otherwise). These fakes fed the screen's ranking (SHOP and
+AMC were picked for months in 2021 on them) and `ticker_legs`' shorts; the setup report was not affected (raw prices,
+and Finding 43 drops its split-night holds). Fix: `split_factors` carries the previous session's divisor across a
+session it cannot match (the divisor only changes on the split day); the 39 affected tickers' caches were rebuilt and
+all eight years rerun. **Only 2021 changed** in Finding 43's baseline: fixed setups + drive short +1,079 → +1,582, the
+eight-year total +$28,650 → +$29,153 (tables there corrected).
+
+**Result** (fixed setups + drive short, capped at 10 open, $2,000 a trade, 5 bps; capped P&L $):
+
+| Ranking | 2018 | 2019 | 2020 | 2021 | 2022 | 2024 | 2025 | 2026 | 8 years | Return on capital in use / yr | Out of sample (2018, 19, 21, 24) |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| Long-only (current) | +2,268 | +929 | +514 | +1,582 | +4,586 | +8,255 | +5,069 | +5,950 | **+$29,153** | +35.9% | +$13,034 (+34.9%/yr) |
+| + drive short, gated days | +2,244 | +1,126 | +1,945 | +693 | +6,500 | +7,801 | +4,922 | +6,401 | +$31,632 | +38.8% | +$11,864 (+32.1%/yr) |
+| + drive short, every day | +2,492 | +1,358 | +2,402 | +1,784 | +6,718 | +7,880 | +4,855 | +4,955 | +$32,444 | +40.1% | +$13,514 (+36.7%/yr) |
+
+The other plans move the same way (both shorts: +27,746 / +31,913 / +32,716; no shorts: +22,722 / +23,690 / +25,243).
+
+- **The gated variant's gain is all in-sample:** +$1,431 in 2020 and +$1,914 in 2022, the years the gate was tuned on;
+  the four out-of-sample years lose $1,170, and 2024–2026 are all lower. It ranks on when the gate happened to be on
+  in the last quarter, which does not repeat.
+- **The every-day variant is better in the five older years and worse in the three most recent** (2024 −$375, 2025
+  −$214, 2026 −$995): +$480 out of sample (+4%), within one month's noise. Counting a stock's short side picks names
+  that fall well, which in an up year are weaker longs (2026's picks lost −$1,630 on the long setups vs the long-only
+  ranking's).
+- **Keep the ranking long-only.** The screen's eight-year record is for it, neither variant shows an out-of-sample
+  edge, and the recent years go the other way. `ticker_screen` now prints the drive short's trades and sum for each
+  passer (every day and on gated days) as information; `--rank-shorts` stays `none`.
 
 ## Recommendations
 
@@ -2289,9 +2332,13 @@ $28,111, 2026 $32,983. Other drawdowns: Feb – Apr 2020 −12.7% (back by June)
     don't drop the screen.
 
 38. **Run the monitor with fixed setups and the drive short only (Finding 43):** over eight years the overnight short
-    cost $1,407 and the monthly setup refresh $4,182; switch EC2 to `--short-setups drive`, keep `--trend-filters
+    cost $1,407 and the monthly setup refresh $4,477; switch EC2 to `--short-setups drive`, keep `--trend-filters
     overnight` and the `qqq-ma50-down10` gate. Size $2,000 a trade with about $20k on hand, and judge the edge on live
     fills: a few basis points of slippage a trade change the yearly result a lot.
+
+39. **Rank the screen on the long setups only (Finding 44):** adding the gated drive short to the ranking only helped
+    the years the gate was tuned on, adding it every day helped the older years and hurt 2024–2026; keep
+    `--rank-shorts none` and read the new `short_*` / `gated_short_*` columns as a check on a pick, not as a score.
 
 ## Reproduction
 
@@ -2404,6 +2451,9 @@ exactly (110 trades, +0.80%), but other settings may differ slightly.
    add `--extra-cost-bps 5 --borrow-bps 2` for the cost check. Top 3: `--picks 3 --capital 6000`. The account replay (fixed vs
    compounding, drawdown episodes, losing streaks) was a one-off script over the capped trades from `run_plan` and
    `cap_positions`.
+   Finding 44: `monthly_process_walk_forward --year <year> --rank-shorts gated|all` (the caches gain a `_short`
+   file per ticker); the fake overnight legs were found by scanning the cached legs for |pct| > 30 and traced with
+   `load_rider_bars` / `split_factors` on SHOP around Mar 8 2022.
    The confirmation-lag table, the reversal-entry diagnostics, the drive long decomposition and the 11-case
    re-entry table were one-off scripts on `wave_events` / `ride` / `load_rider_bars` from `wave_rider.py`;
    intraday vs overnight from `fetch_daily_bars` (log open / previous close vs close / open).

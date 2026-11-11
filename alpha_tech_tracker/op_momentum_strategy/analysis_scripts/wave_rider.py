@@ -417,20 +417,31 @@ def _run_setting(job):
     return setting, {r: {s: ride(r, bars_) for s, bars_ in events.items()} for r in riders}, events
 
 
+SPLIT_TOLERANCE = 0.02
+
+
 def split_factors(bars, daily_closes):
     """{session: divisor} for sessions whose 5-min prices are not split-adjusted (off from the split-adjusted daily
-    close by a whole split ratio, e.g. 4 before a 4-for-1 split, 1/10 before a 1-for-10 reverse split)."""
+    close by a whole split ratio, e.g. 4 before a 4-for-1 split, 1/10 before a 1-for-10 reverse split). A session
+    whose last bar is not within 2% of a whole ratio (a halted or thin session) takes the previous session's divisor,
+    or the next one's before the first match: the divisor only changes on the split day."""
     last = bars.groupby(bars.index.date)["close"].last()
-    factors = {}
+    matched = {}
     for session, close in last.items():
         daily = daily_closes.get(session)
         if not daily:
             continue
         ratio = close / daily
         whole = round(ratio) if ratio >= 1 else 1 / round(1 / ratio)
-        if whole != 1 and abs(ratio / whole - 1) < 0.02:
-            factors[session] = whole
-    return factors
+        if abs(ratio / whole - 1) < SPLIT_TOLERANCE:
+            matched[session] = whole
+    if not any(f != 1 for f in matched.values()):
+        return {}
+    factors, current = {}, next(iter(matched.values()))
+    for session in last.index:
+        current = matched.get(session, current)
+        factors[session] = current
+    return {s: f for s, f in factors.items() if f != 1}
 
 
 def load_rider_bars(ticker, start, end, feed, adr_sessions):
