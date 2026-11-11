@@ -1,6 +1,12 @@
 import pandas as pd
 
-from alpha_tech_tracker.research.paper_lists import DETAIL_COLUMNS, entry_checkpoints, latest_list, paper_rules
+from alpha_tech_tracker.research.paper_lists import (
+    DETAIL_COLUMNS,
+    entry_checkpoints,
+    hedge_list,
+    latest_list,
+    paper_rules,
+)
 
 CP1 = pd.Timestamp("2026-10-20")
 CP2 = pd.Timestamp("2026-11-03")
@@ -81,3 +87,32 @@ class TestPaperRules:
         rules = paper_rules()
 
         assert (rules["large_recommended"][2], rules["small_recommended"][2]) == ("trail25", "trail15")
+
+
+class TestHedgeList:
+    def _panel(self):
+        rows = [{"checkpoint": cp, "tier": "Large", "symbol": s, "ret_180d": r, "vol_60d": 0.04,
+                 "dollar_volume_20d": 1e9, **{c: 1.0 for c in DETAIL_COLUMNS}}
+                for cp in (CP1, CP2) for s, r in (("A", -0.5), ("B", 0.3))]
+        return pd.DataFrame(rows)
+
+    def _qqq(self, last_close):
+        days = pd.bdate_range(end=CP2, periods=260)
+        close = pd.Series(100.0, index=days)
+        close.iloc[-1] = last_close
+        return close
+
+    def test_lists_weakest_names_at_the_last_checkpoint(self):
+        out = hedge_list(self._panel(), self._qqq(100.0), [CP1, CP2])
+
+        assert out["symbol"].tolist() == ["A", "B"] and out["checkpoint"].iloc[0] == CP2.date()
+
+    def test_status_short_when_qqq_below_both_averages(self):
+        out = hedge_list(self._panel(), self._qqq(50.0), [CP1, CP2])
+
+        assert out["status"].iloc[0] == "short"
+
+    def test_status_off_when_qqq_above_its_averages(self):
+        out = hedge_list(self._panel(), self._qqq(100.0), [CP1, CP2])
+
+        assert out["status"].iloc[0] == "off"

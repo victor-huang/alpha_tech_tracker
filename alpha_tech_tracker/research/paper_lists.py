@@ -1,6 +1,8 @@
 """Paper-tracking lists at the latest biweekly checkpoint: the recommended Large and Small rules
 (recommended_rules.RECOMMENDED), the previous Large rule for comparison, and the concentrated Large top 3 ranked by
-the 180-day score alone (concentration.py).
+the 180-day score alone (concentration.py), plus the short-hedge basket (short_hedge.py): the 15 weakest liquid Large
+names, status "short" while QQQ closes below both its 50- and 200-day averages (short 50% of the Large book until the
+next checkpoint), otherwise "off".
 
 Each list is the backtest book (its top N, no buffer, no market gate) at the latest checkpoint, with names new since the
 previous checkpoint, names dropped, and the checkpoint each held name was bought at (`entry`, used by exit_watch for
@@ -14,7 +16,7 @@ Usage (repo root; Alpaca keys set, and SEC_USER_AGENT when the 30-day SEC refres
 import argparse
 import os
 from datetime import date
-from typing import Dict, Tuple
+from typing import Dict, List, Tuple
 
 import pandas as pd
 
@@ -30,11 +32,14 @@ from alpha_tech_tracker.research.selection_filters import (
     rank_variant,
     run_portfolio,
 )
+from alpha_tech_tracker.research.short_hedge import HEDGE_FRACTION, downtrend, weakest
 from alpha_tech_tracker.research.top_performers import DEFAULT_CACHE_DIR
+from alpha_tech_tracker.research.uptrend_formation import REGIME_INDEX
 from alpha_tech_tracker.research.winner_capture import LISTS
 
 TOP = 15
 DETAIL_COLUMNS = ["close", "ret_60d", "ret_120d", "ret_180d", "off_52w_high", "gap_10d", "high_breakout_10d"]
+HEDGE_LIST = "large_short_hedge"
 
 
 def paper_rules() -> Dict[str, Tuple[str, Variant, str, int]]:
@@ -79,6 +84,20 @@ def latest_list(book: pd.DataFrame, ranked: pd.DataFrame, panel: pd.DataFrame) -
     return pd.concat([out, details], axis=1)
 
 
+def hedge_list(panel: pd.DataFrame, index_close: pd.Series, checkpoints: List[pd.Timestamp]) -> pd.DataFrame:
+    """The short-hedge basket at the last checkpoint (short_hedge.weakest), status "short" while QQQ closes below
+    both its 50- and 200-day averages, otherwise "off"."""
+    last = checkpoints[-1]
+    on = downtrend(index_close, checkpoints)
+    basket = weakest(panel)
+    basket = basket[basket["checkpoint"] == last]
+    out = pd.DataFrame({"checkpoint": last.date(), "symbol": basket["symbol"].values,
+                        "status": "short" if on[last] else "off", "rank": basket["rank"].values, "entry": None})
+    at = panel[panel["checkpoint"] == last].set_index("symbol")
+    details = at.reindex(out["symbol"], columns=DETAIL_COLUMNS).reset_index(drop=True)
+    return pd.concat([out, details], axis=1)
+
+
 def run(args: argparse.Namespace) -> None:
     if args.refresh:
         uptrend_formation.main(["--year", str(args.today.year), "--today", args.today.isoformat()])
@@ -95,13 +114,17 @@ def run(args: argparse.Namespace) -> None:
         ranked = ranked[ranked["tier"] == tier]
         book = run_portfolio(ranked, returns, inputs.regime, n, n, False, 0.0, variant.take_all)
         lists.append(latest_list(book, ranked, panel).assign(list=name, exit_rule=exit_rule))
+    hedge = hedge_list(panel, inputs.close[REGIME_INDEX], list(inputs.checkpoints))
+    lists.append(hedge.assign(list=HEDGE_LIST, exit_rule="none"))
     table = pd.concat(lists, ignore_index=True)
     checkpoint = table["checkpoint"].iloc[0]
     path = os.path.join(out_dir, f"{checkpoint}.csv")
     table.round(4).to_csv(path, index=False)
 
     regime = "above" if inputs.regime.iloc[-1] else "below"
-    print(f"checkpoint {checkpoint} (QQQ {regime} its 200-day average)")
+    hedge_state = hedge["status"].iloc[0] if len(hedge) else "off"
+    print(f"checkpoint {checkpoint} (QQQ {regime} its 200-day average; short hedge {hedge_state}, "
+          f"{HEDGE_FRACTION:.0%} of the Large book when on)")
     with pd.option_context("display.width", 200, "display.max_rows", 100):
         for name, g in table.groupby("list", sort=False):
             print(f"\n{name} (exit: {g['exit_rule'].iloc[0]})")

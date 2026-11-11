@@ -18,6 +18,8 @@ A stopped-out name stays out until the next checkpoint, when it can be bought ba
 
 **List size:** holding only the top N was tested in [concentration_2020_2026.md](concentration_2020_2026.md). Large top 10 is the best risk-adjusted Large book (35.5%, Sharpe 1.16). Large top 3 ranked by the 180-day score alone (64.5% a year, worst drop −48%) is paper-tracked as `large_top3`.
 
+**Short hedge:** while QQQ closes below both its 50- and 200-day averages, shorting the 15 weakest liquid Large names at 50% of the Large book turned 2022 from −9% to +19% at a cost in 2020 and early 2023 (32.9% vs 31.7% a year, worst drop −24% vs −27%): [short_hedge_2020_2026.md](short_hedge_2020_2026.md). Paper-tracked as `large_short_hedge`.
+
 ## Daily and biweekly commands
 
 ```
