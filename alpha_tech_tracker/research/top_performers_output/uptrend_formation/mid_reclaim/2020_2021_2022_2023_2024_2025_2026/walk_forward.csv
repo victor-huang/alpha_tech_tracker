@@ -1,0 +1,6 @@
+top,year,chosen,train_cagr,test_ret,rank,settings,median_setting,best_setting
+15,2022,reclaim60_growth40%_slope+1%_fresh_first,0.5668,-0.0494,6,54,-0.158,0.0857
+15,2023,reclaim60_growth40%_slope+1%_fresh_first,0.3264,0.0618,47,54,0.2448,0.9349
+15,2024,reclaim40_growth25%_slope+0%_fresh_first,0.259,0.6269,7,54,0.305,0.7626
+15,2025,reclaim40_growth25%_slope+0%_fresh_first,0.3253,0.2092,13,54,0.1266,0.3609
+15,2026,reclaim40_growth25%_slope+0%_fresh_first,0.3052,0.2419,10,54,0.1234,0.3996
