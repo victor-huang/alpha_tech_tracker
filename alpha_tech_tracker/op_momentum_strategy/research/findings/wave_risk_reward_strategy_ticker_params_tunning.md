@@ -2203,9 +2203,25 @@ The other plans move the same way (both shorts: +27,746 / +31,913 / +32,716; no 
   −$214, 2026 −$995): +$480 out of sample (+4%), within one month's noise. Counting a stock's short side picks names
   that fall well, which in an up year are weaker longs (2026's picks lost −$1,630 on the long setups vs the long-only
   ranking's).
-- **Keep the ranking long-only.** The screen's eight-year record is for it, neither variant shows an out-of-sample
-  edge, and the recent years go the other way. `ticker_screen` now prints the drive short's trades and sum for each
-  passer (every day and on gated days) as information; `--rank-shorts` stays `none`.
+- **The every-day variant has the best total (+$3,291, +11%), but the gain sits in the bear years.** All three
+  rankings trade the same setups; only the monthly picks differ. Every-day ranking minus long-only, by year:
+
+  | 2018 Q4 selloff | 2019 up | 2020 crash / rebound | 2021 up, choppy | 2022 bear | 2024 strong up | 2025 down, then up | 2026 up, late selloff | Total |
+  |---|---|---|---|---|---|---|---|---|
+  | +224 | +429 | +1,888 | +202 | +2,132 | −375 | −214 | −995 | **+3,291** |
+
+  2020 and 2022 give +$4,020; the other six years net −$729. Drawdowns are a little deeper in most years (2025
+  −$2,913 vs −$2,106, 2024 −$1,575 vs −$1,237). Those two years are in-sample for the gates, which all three rankings
+  share, not for this ranking (nothing in it was tuned), so the gain is a real down-market effect: counting the short
+  side helps when the market is weak and costs when it is strong.
+- **Decision (Nov 11 2026): keep the current setup for now.** The ranking stays long-only (`--rank-shorts none`), and
+  the drive short + re-entry keeps trading only on its `qqq-ma50-down10` gate days, as in prod. `ticker_screen` prints
+  each passer's drive short (`short_*` every day, `gated_short_*` on gate days) as information. The screen's eight-year
+  record is for the long-only ranking; neither variant has an out-of-sample edge large enough to change it, and the
+  three most recent years go the other way.
+- **Not tested yet:** a market-switched ranking, with the every-day short counted only while QQQ is below its 200-day
+  MA and long-only otherwise. It would aim to keep the 2020 / 2022 gain without the 2024–2026 cost; run it over the
+  same eight years before using it.
 
 ## Recommendations
 
@@ -2336,9 +2352,11 @@ The other plans move the same way (both shorts: +27,746 / +31,913 / +32,716; no 
     overnight` and the `qqq-ma50-down10` gate. Size $2,000 a trade with about $20k on hand, and judge the edge on live
     fills: a few basis points of slippage a trade change the yearly result a lot.
 
-39. **Rank the screen on the long setups only (Finding 44):** adding the gated drive short to the ranking only helped
-    the years the gate was tuned on, adding it every day helped the older years and hurt 2024–2026; keep
-    `--rank-shorts none` and read the new `short_*` / `gated_short_*` columns as a check on a pick, not as a score.
+39. **Rank the screen on the long setups only (Finding 44, decided Nov 11 2026):** adding the gated drive short to the
+    ranking helped only the years the gate was tuned on. Adding it every day made the most (+$3,291 over eight years)
+    but all of it in the 2020 and 2022 bear years, and it lost in 2024–2026. Keep `--rank-shorts none`, keep the drive
+    short trading behind its gate, and read the `short_*` / `gated_short_*` columns as a check on a pick, not as a
+    score. Revisit with a market-switched ranking (short counted only while QQQ is below its 200-day MA).
 
 ## Reproduction
 
