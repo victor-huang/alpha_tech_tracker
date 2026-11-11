@@ -22,6 +22,22 @@ Script: `alpha_tech_tracker/research/short_hedge.py`. Outputs: `research/top_per
 
 The book held the fading 2022 themes instead (solar, energy, steel, defensives). An equal weight of every eligible Large name made about +9% that year; the best of the 60 ranking settings made 7% and the median 0%. "Recovery mode" rules that loosen the filter or shorten the lookback when QQQ has just reclaimed its 200-day did not help (2023 between −2% and −6%).
 
+**2021 (+11%, QQQ +31%) and 2023: why the list lags QQQ in mega-cap years.** QQQ's gains in both years came from the mega-caps, which the ranking almost never holds: the 180-day / vol^0.5 score prefers the fastest, most volatile movers over a steady 40% year. In 2021 GOOGL (+61%), MSFT (+41%), AVGO (+45%) and AAPL (+34%) were eligible at 17–23 of 26 checkpoints and never held, ranking around 100–220. The book held MRNA, PLUG, LCID, NIO and AGNT instead and lost 14% in the Feb 17 period and 9% in the Nov 16 period while QQQ fell 7% and 3%. Splitting the 2021 book: breakout-slot picks +4%, score picks +18%, an equal weight of every eligible Large name +21%. In 2023 the book did hold NVDA, META and ADBE from mid-year but had already lost on 2022 themes; an equal weight of QQQ's own members made about 17% that year, so an equal-weight 15-name book cannot track a cap-weighted index in a narrow year.
+
+Levers tested against this (one-off scripts): 30 or 50 names (16.8% / 14.5% a year; 2021 4% / 13%), a full volatility adjustment (24.2%; 2021 16%), and a mega-cap-only universe (19–27%; 2021 −6% to −15%). Each helps one of the two years and costs far more in 2020, 2024 and 2025.
+
+**Mega-cap breakout sleeve.** A sleeve that buys the mega-caps on a breakout (fresh 52-week high after a 60-day base, or a high-volume gap-up, above the 50- and 200-day averages) and exits on a checkpoint close below the 50-day or a 25% trailing stop:
+
+| Universe | Exit | CAGR | Worst drop | Trades | Win rate | 2021 | 2022 | 2023 | 2026* |
+|---|---|---|---|---|---|---|---|---|---|
+| QQQ | | 18.9% | −34% | | | 31% | −34% | 53% | 11% |
+| AAPL NVDA TSLA GOOGL META MSFT AMZN | below 50-day | 16.2% | −39% | 74 | 49% | 37% | −12% | 58% | −21% |
+| same | 25% trailing stop | 26.0% | −40% | 23 | 65% | 50% | −40% | 80% | −1% |
+| those 7 + 13 big caps | 25% trailing stop | 23.9% | −25% | 50 | 74% | 38% | −20% | 38% | 16% |
+| top 20 by dollar volume | 25% trailing stop | 23.4% | −34% | 87 | 55% | 25% | −26% | 29% | 23% |
+
+Large 80% / Mag-7 sleeve 20% (50-day exit): 29.2% a year, 2021 17%, 2023 8%, 2020 76%, 2026 36%. The sleeve lifts the two mega-cap years and pays in 2020 and 2026; a plain 80/20 with QQQ gives almost the same yearly profile with no trading. The base-before-breakout entry has a slightly better win rate and average trade than any breakout, but the trailing-stop versions are close to buy-and-hold of the big caps (15 of 20 names held on average). Not adopted.
+
 ## Setup
 
 - **Long book:** the recommended Large 15 (25% trailing stop, 2 weeks), alone or 70/30 with the recommended Small 15 (15% stop), re-split every checkpoint.
@@ -77,7 +93,7 @@ Selection changes for 2023: only price above the 200-day as the trend filter gav
 ## Decision
 
 - **Adopted for paper tracking (2026-11-10):** Large + short 50% of the weakest 15 while QQQ is below both averages. `paper_lists` writes the basket as `large_short_hedge` with status `short` or `off`; `exit_watch` does not watch it (no stop).
-- **Not adopted:** the Large/Small blend (the user prefers the short hedge), cash or QQQ-short overlays, the loose trend filter (pending a walk-forward check), the mega-cap universe.
+- **Not adopted:** the mega-cap breakout sleeve and wider lists (see above), the Large/Small blend (the user prefers the short hedge), cash or QQQ-short overlays, the loose trend filter (pending a walk-forward check), the mega-cap universe.
 
 ## Caveats
 
