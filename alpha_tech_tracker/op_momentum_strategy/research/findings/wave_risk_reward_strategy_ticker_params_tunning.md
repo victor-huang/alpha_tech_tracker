@@ -2243,6 +2243,40 @@ The other plans move the same way (both shorts: +27,746 / +31,913 / +32,716; no 
     below its 200-day MA. On Nov 10 2026 QQQ closed 674.76, below its 200-day MA (681.42), so the switch would be on
     for the December pick.
 
+  **Year by year, long-only vs switched** (fixed setups + drive short, capped at 10 open, $2,000 a trade, 5 bps, no
+  extra slippage; return on capital in use = the year's P&L over the average of each trading day's most money open at
+  once, overnight holds included; return on $20k = the account the 10-position cap can need on a busy day):
+
+  | Year | Market | Long-only P&L | Switched P&L | Avg capital in use (L / S) | Return on capital in use (L / S) | Return on $20k (L / S) | Worst drawdown (L / S) |
+  |---|---|---|---|---|---|---|---|
+  | 2018 | Q4 selloff | +$2,268 | +$2,244 | $7,192 / $7,189 | 31.5% / 31.2% | 11.3% / 11.2% | −$1,316 / −$1,316 |
+  | 2019 | up | +$929 | +$1,170 | $7,265 / $7,205 | 12.8% / 16.2% | 4.6% / 5.8% | −$964 / −$938 |
+  | 2020 | crash, rebound | +$514 | +$730 | $9,510 / $9,478 | 5.4% / 7.7% | 2.6% / 3.6% | −$3,192 / −$3,192 |
+  | 2021 | up, choppy | +$1,582 | +$1,582 | $10,206 / $10,206 | 15.5% / 15.5% | 7.9% / 7.9% | −$2,659 / −$2,659 |
+  | 2022 | bear | +$4,586 | +$7,330 | $11,407 / $11,742 | 40.2% / 62.4% | 22.9% / 36.6% | −$1,752 / −$2,186 |
+  | 2024 | strong up | +$8,255 | +$8,255 | $10,368 / $10,368 | 79.6% / 79.6% | 41.3% / 41.3% | −$1,237 / −$1,237 |
+  | 2025 | down, then up | +$5,069 | +$4,929 | $10,201 / $10,193 | 49.7% / 48.4% | 25.3% / 24.6% | −$2,106 / −$2,166 |
+  | 2026 (to Nov 6) | up, late selloff | +$5,950 | +$7,090 | $11,352 / $11,390 | 52.4% / 62.2% | 29.8% / 35.5% | −$2,543 / −$2,543 |
+  | **Average / total** | | **+$29,153** | **+$33,330** | $9,688 / $9,721 | **35.9% / 40.4%** | **18.2% / 20.8%** | |
+
+  Peak capital in use reached the full $20k in every year but 2019 ($16k). Both rankings put the same money to work;
+  the switched one earns more from better bear-market picks, not larger positions.
+
+  **Total and annualized** (eight years traded, 2023 not run; trades stay $2,000, profits not reinvested):
+
+  | | Long-only | Switched |
+  |---|---|---|
+  | Total P&L | +$29,153 | **+$33,330** |
+  | Total return on a $20k account | +146% ($20k → $49,153) | **+167%** ($20k → $53,330) |
+  | Annualized, compounded on $20k | ~11.9% a year | **~13.0% a year** |
+  | Average yearly return on $20k (simple) | 18.2% | 20.8% |
+  | Average yearly return on capital in use | 35.9% | 40.4% |
+
+  The compounded rate is the one to compare with other investments; it sits below the simple average because a fixed
+  yearly profit is a shrinking share of a growing balance. Counting 2023 as a flat year (2018 – Nov 2026) the switched
+  rate falls to about 11.7% a year. Growing the trade size with the balance would raise it (the top-3 replay went from
+  +171% to +404%; not run for the switched top 5), and 5 bps of extra slippage a trade roughly halves the result.
+
 ## Recommendations
 
 1. **Choose tickers before tuning settings.** The same configuration ranges from +156.66% (SNDK)
