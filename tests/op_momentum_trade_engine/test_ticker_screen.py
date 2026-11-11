@@ -12,6 +12,7 @@ from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.ticker_screen impo
     monitor_config,
     parse_args,
     rank,
+    resolve_rank_shorts,
     screen,
     stock_universe,
 )
@@ -100,6 +101,17 @@ class TestCoreResults:
 
         assert {m: (r.score, r.score_trades) for m, r in scores.items()} == {"none": (1.0, 1), "gated": (5.0, 2),
                                                                              "all": (4.0, 3)}
+
+
+class TestResolveRankShorts:
+    def test_switched_ranks_with_shorts_below_the_200_day_ma(self):
+        assert resolve_rank_shorts("switched", [100.0] * 199 + [90.0]) == "all"
+
+    def test_switched_is_long_only_above_the_200_day_ma(self):
+        assert resolve_rank_shorts("switched", [100.0] * 199 + [110.0]) == "none"
+
+    def test_other_modes_unchanged(self):
+        assert resolve_rank_shorts("gated", []) == "gated"
 
 
 class TestRank:

@@ -50,8 +50,9 @@ each pick; run the monitor with `--trend-filters overnight`. Monthly, on $10k: 2
 results, lost money. It fetches daily bars for every US stock and three months of 5-min bars for each passer, so it
 takes a while; run it after the close or before the session.
 The table also shows each passer's drive short + re-entry (`short_*` every day, `gated_short_*` on the days its
-`qqq-ma50-down10` gate was on) as information; ranking on it did not help out of sample (Finding 44), so leave
-`--rank-shorts none`.
+`qqq-ma50-down10` gate was on) as information. The default ranking is long-only (`--rank-shorts none`);
+`--rank-shorts switched` adds the drive short only when QQQ is below its 200-day MA, which made the most over 2018–2026
+but mostly from 2022 (Finding 44).
 
 ## Weekly refresh (recommended recipe)
 

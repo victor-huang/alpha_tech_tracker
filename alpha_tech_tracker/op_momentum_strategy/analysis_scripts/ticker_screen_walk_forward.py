@@ -9,8 +9,8 @@ Per-ticker trades are cached under --cache-dir (one CSV per ticker and window), 
 quick. The universe is today's listed stocks plus, with --include-delisted, Alpaca's inactive ones (names delisted
 since; some may lack data). The price floor uses the raw (unadjusted) close known at the time, not today's
 split-adjusted one. The ranking leaves out the overnight hold entered on the last session before the month (it exits
-at the month's first open, after the pick). `--rank-shorts gated|all` adds the monitor's drive short + re-entry (on
-its gated days, or every day) to the ranking; the month's P&L here stays the core setups' (monthly_process_walk_forward
+at the month's first open, after the pick). `--rank-shorts gated|all|switched` adds the monitor's drive short + re-entry
+(on its gated days, every day, or every day in months that start with QQQ below its 200-day MA) to the ranking; the month's P&L here stays the core setups' (monthly_process_walk_forward
 trades the shorts).
 
   python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.ticker_screen_walk_forward --years 2022 2025
@@ -31,6 +31,7 @@ from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.ticker_screen impo
     RANK_SHORTS,
     SHORT_GATE,
     SHORT_LEG,
+    SWITCH_GATE,
     daily_stats,
     delisted_stocks,
     fetch_assets,
@@ -118,22 +119,32 @@ def core_trades(legs, night_ok):
 
 
 def short_trades(legs, rank_shorts, start, end):
-    """The drive short + re-entry trades the ranking counts: none, those on the days its gate was on, or all."""
+    """The drive short + re-entry trades the ranking counts: none, those on the days its gate was on, or all (also for
+    `switched`, which counts them only in some months: see short_months)."""
     shorts = legs[legs.leg == SHORT_LEG][["ticker", "day", "leg", "pct"]]
     if rank_shorts == "none":
         return shorts.iloc[:0]
     return shorts[shorts.day.isin(gated_sessions(start, end, SHORT_GATE))] if rank_shorts == "gated" else shorts
 
 
-def walk(core, passers, sessions, starts, picks, lookback, capital, ranking=None):
-    """(month trades with a dollars column, {month start: picks}) for the monthly re-pick; the ranking sees `ranking`
-    (default: the core trades), the month trades the core."""
+def short_months(rank_shorts, starts, end):
+    """The month starts whose ranking counts the short trades: all of them, or for `switched` those where QQQ closed
+    below its 200-day MA the session before (the SWITCH_GATE was on)."""
+    if rank_shorts != "switched":
+        return set(starts)
+    return set(starts) & gated_sessions(starts[0], end, SWITCH_GATE)
+
+
+def walk(core, passers, sessions, starts, picks, lookback, capital, shorts=None, short_starts=None):
+    """(month trades with a dollars column, {month start: picks}) for the monthly re-pick; the ranking sees the core
+    trades plus `shorts` in the months in short_starts (default: every month), the month trades the core."""
     parts, chosen = [], {}
-    ranking = core if ranking is None else ranking
+    with_shorts = core if shorts is None or shorts.empty else pd.concat([core, shorts], ignore_index=True)
+    short_starts = set(starts) if short_starts is None else set(short_starts)
     ends = starts[1:] + [sessions[-1] + timedelta(days=1)]
     for start, stop in zip(starts, ends):
         past = [d for d in sessions if d < start][-lookback:]
-        seen = ranking_trades(ranking, past)
+        seen = ranking_trades(with_shorts if start in short_starts else core, past)
         trailing = seen[seen.ticker.isin(passers[start])].groupby("ticker").pct.agg(["sum", "size"])
         trailing = trailing[trailing["size"] >= MIN_TRADES].sort_values("sum", ascending=False)
         chosen[start] = trailing.index[:picks].tolist()
@@ -169,8 +180,11 @@ def run_year(year, universe, args):
                              sorted(set(legs.day)), "overnight_ok")
     year_sessions = [d for d in sessions if d >= legs_start]
     core = core_trades(legs, night_ok)
-    ranking = pd.concat([core, short_trades(legs, args.rank_shorts, legs_start, end)], ignore_index=True)
-    return walk(core, passers, year_sessions, starts, args.picks, args.lookback, args.capital, ranking)
+    shorts = short_trades(legs, args.rank_shorts, legs_start, end)
+    short_starts = short_months(args.rank_shorts, starts, end)
+    if args.rank_shorts == "switched":
+        print(f"{year}: shorts in the ranking in {', '.join(f'{d:%b}' for d in sorted(short_starts)) or 'no month'}")
+    return walk(core, passers, year_sessions, starts, args.picks, args.lookback, args.capital, shorts, short_starts)
 
 
 def screen_universe(include_delisted):
@@ -192,7 +206,8 @@ def parse_args(argv=None):
     parser.add_argument("--lookback", type=int, default=63)
     parser.add_argument("--picks", type=int, default=5)
     parser.add_argument("--rank-shorts", choices=RANK_SHORTS, default="none",
-                        help="Add the drive short + re-entry to the ranking: on its gated days, or every day")
+                        help="Add the drive short + re-entry to the ranking: on its gated days, every day, or every day "
+                             "but only in months that start with QQQ below its 200-day MA (switched)")
     parser.add_argument("--capital", type=float, default=10000.0)
     parser.add_argument("--workers", type=int, default=6)
     parser.add_argument("--cache-dir", default=str(DEFAULT_CACHE))

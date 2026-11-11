@@ -3,8 +3,8 @@
 At each month's first session, with no data from after it (ticker-tuning doc, Finding 43):
 
   1. tickers  ticker_screen's top --picks (ticker_screen_walk_forward: top 150 by dollar volume, 4%+ range, ranked by
-              the last 63 sessions of drive long + filtered overnight long; --rank-shorts gated|all adds the drive
-              short + re-entry to that ranking)
+              the last 63 sessions of drive long + filtered overnight long; --rank-shorts gated|all|switched adds the
+              drive short + re-entry to that ranking)
   2. setups   the monitor's config refresh (top_setups_by_ticker): each pick's top --top-setups long / overnight
               setups over the last --refresh-lookback sessions, with --min-trades trades and a positive total
   3. trade    for the month, the setups at their fixed exits; overnight longs only on nights the overnight trend
@@ -334,7 +334,8 @@ def parse_args(argv=None):
     parser.add_argument("--end", type=date.fromisoformat, help="Last session (default: today)")
     parser.add_argument("--picks", type=int, default=5)
     parser.add_argument("--rank-shorts", choices=RANK_SHORTS, default="none",
-                        help="Add the drive short + re-entry to the ticker ranking: on its gated days, or every day")
+                        help="Add the drive short + re-entry to the ticker ranking: on its gated days, every day, or "
+                             "every day in months that start with QQQ below its 200-day MA (switched)")
     parser.add_argument("--top-setups", type=int, default=3, help="Setups per ticker from the refresh")
     parser.add_argument("--refresh-lookback", type=int, default=63, help="Sessions the refresh ranks setups on")
     parser.add_argument("--min-trades", type=int, default=3)

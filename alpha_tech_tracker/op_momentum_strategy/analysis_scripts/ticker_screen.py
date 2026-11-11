@@ -12,7 +12,8 @@ The procedure that held up over 2020, 2022, 2023, 2025 and 2026 (monthly re-pick
   5. pick       the top --picks (default 5)
 
 The monitor's drive short + re-entry is reported too (every day, and on the days its qqq-ma50-down10 gate was on);
-`--rank-shorts gated|all` adds it to the ranking score (default none: the long-only ranking the findings are for).
+`--rank-shorts gated|all` adds it to the ranking score, `switched` adds it every day but only when QQQ's last close
+is below its 200-day MA (default none: the long-only ranking the findings are for).
 
 Run it on the first trading day of each month (it uses data through --as-of, default the last completed session).
 `--write-config PATH` writes a wave setup monitor config with `drive long` and `overnight always` for the picks; run the
@@ -40,6 +41,7 @@ from alpaca.trading.client import TradingClient
 from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.setup_portfolio_check import gated_sessions, ticker_legs
 from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.ticker_stats_report import clamp_end_for_sip
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import fetch_daily_bars
+from alpha_tech_tracker.op_momentum_strategy.short_setups import gate_status
 from alpha_tech_tracker.op_momentum_strategy.trend_filters import MARKET_TICKER, market_trend, session_flags
 
 VOLUME_SESSIONS = 126
@@ -54,7 +56,8 @@ CORE_LEGS = ("drive long", "overnight long")
 SHORT_LEG = "drive short + re-entry"
 RANK_LEGS = CORE_LEGS + (SHORT_LEG,)
 SHORT_GATE = "qqq-ma50-down10"
-RANK_SHORTS = ("none", "gated", "all")
+SWITCH_GATE = "qqq-ma200"
+RANK_SHORTS = ("none", "gated", "all", "switched")
 
 
 def is_fund(name):
@@ -172,12 +175,24 @@ def legs_job(job):
         return pd.DataFrame(columns=["ticker", "day", "leg", "pct"])
 
 
+def resolve_rank_shorts(rank_shorts, closes):
+    """`switched` -> `all` when QQQ's last close (closes: its daily closes through the as-of session) is below its
+    200-day MA, else `none`; other modes unchanged."""
+    if rank_shorts != "switched":
+        return rank_shorts
+    return "all" if gate_status(SWITCH_GATE, closes)[0] else "none"
+
+
 def trailing_results(tickers, start, end, workers, rank_shorts="none"):
     with ProcessPoolExecutor(max_workers=workers) as pool:
         legs = pd.concat(list(pool.map(legs_job, [(t, start, end) for t in tickers])), ignore_index=True)
     legs = legs[legs.leg.isin(RANK_LEGS)]
     qqq = fetch_daily_bars([MARKET_TICKER], end - timedelta(days=QQQ_CALENDAR_DAYS), end)[MARKET_TICKER]
     qqq = pd.DataFrame({"close": qqq["Close"].astype(float)}, index=qqq.index)
+    if rank_shorts == "switched":
+        rank_shorts = resolve_rank_shorts(rank_shorts, qqq.close.tolist())
+        print(f"--rank-shorts switched: QQQ is {'below' if rank_shorts == 'all' else 'above'} its 200-day MA, "
+              f"ranking with {'the drive short every day' if rank_shorts == 'all' else 'the long setups only'}")
     night_ok = session_flags(market_trend(qqq), sorted(set(legs.day)), "overnight_ok")
     return core_results(legs, night_ok, gated_sessions(start, end, SHORT_GATE), rank_shorts)
 
@@ -191,7 +206,8 @@ def parse_args(argv=None):
     parser.add_argument("--lookback", type=int, default=63, help="Sessions of core-setup results to rank on")
     parser.add_argument("--picks", type=int, default=5)
     parser.add_argument("--rank-shorts", choices=RANK_SHORTS, default="none",
-                        help="Add the drive short + re-entry to the ranking score: on its gated days, or every day")
+                        help="Add the drive short + re-entry to the ranking score: on its gated days, every day, or every day "
+                             "only while QQQ is below its 200-day MA (switched)")
     parser.add_argument("--workers", type=int, default=6)
     parser.add_argument("--write-config", help="Write a wave setup monitor config for the picks to this path")
     return parser.parse_args(argv)

@@ -2219,9 +2219,29 @@ The other plans move the same way (both shorts: +27,746 / +31,913 / +32,716; no 
   each passer's drive short (`short_*` every day, `gated_short_*` on gate days) as information. The screen's eight-year
   record is for the long-only ranking; neither variant has an out-of-sample edge large enough to change it, and the
   three most recent years go the other way.
-- **Not tested yet:** a market-switched ranking, with the every-day short counted only while QQQ is below its 200-day
-  MA and long-only otherwise. It would aim to keep the 2020 / 2022 gain without the 2024–2026 cost; run it over the
-  same eight years before using it.
+- **Market-switched ranking (`--rank-shorts switched`, tested Nov 11 2026).** At each month's pick, if QQQ's previous
+  close was below its 200-day MA the ranking counts the drive short every day; otherwise it is long-only. It switched on
+  in 20 of 95 months: 2018 Nov–Dec, 2019 Jan, Feb, Jun, 2020 Apr, 2022 Feb–Dec, 2025 Apr–May, 2026 Apr; never in 2021
+  or 2024. Fixed setups + drive short, capped at 10 open:
+
+  | Ranking | 2018 | 2019 | 2020 | 2021 | 2022 | 2024 | 2025 | 2026 | 8 years | Out of sample | Return on capital in use / yr | Worst DD |
+  |---|---|---|---|---|---|---|---|---|---|---|---|---|
+  | Long-only | +2,268 | +929 | +514 | +1,582 | +4,586 | +8,255 | +5,069 | +5,950 | +$29,153 | +$13,034 | +35.9% | −$3,192 |
+  | Every day | +2,492 | +1,358 | +2,402 | +1,784 | +6,718 | +7,880 | +4,855 | +4,955 | +$32,444 | +$13,514 | +40.1% | −$3,162 |
+  | **Switched** | +2,244 | +1,170 | +730 | +1,582 | +7,330 | +8,255 | +4,929 | +7,090 | **+$33,330** | +$13,251 | **+40.4%** | −$3,192 |
+
+  Both shorts: +27,746 / +32,716 / +33,963; no shorts: +22,722 / +25,243 / +25,826 (long-only / every day /
+  switched).
+  - **Best total, and it cannot cost anything in up markets:** when QQQ is above its 200-day MA the picks are the
+    long-only ones, so 2021 and 2024 are identical and the 2024–2026 loss of the every-day ranking is gone. Yearly
+    drawdowns match long-only except 2022 (−$2,186 vs −$1,752).
+  - **The gain (+$4,177) rests on a few months:** 2022 +$2,744 over 11 months and Apr 2026 +$1,140 (CRDO and DELL
+    picked in place of ASTS and KLAC) make 93% of it. Of the 20 switched months 11 were better, 6 worse, 3 the same.
+    Out of sample (2018, 2019, 2021, 2024) only +$217, because the switch was rarely on in those years.
+  - **Mild hindsight in the rule:** it was designed after seeing the every-day ranking win in the bear years, and the
+    200-day MA line is the overnight short's gate chosen on 2022 and 2025. Its next real test is the next time QQQ is
+    below its 200-day MA. On Nov 10 2026 QQQ closed 674.76, below its 200-day MA (681.42), so the switch would be on
+    for the December pick.
 
 ## Recommendations
 
@@ -2356,7 +2376,9 @@ The other plans move the same way (both shorts: +27,746 / +31,913 / +32,716; no 
     ranking helped only the years the gate was tuned on. Adding it every day made the most (+$3,291 over eight years)
     but all of it in the 2020 and 2022 bear years, and it lost in 2024–2026. Keep `--rank-shorts none`, keep the drive
     short trading behind its gate, and read the `short_*` / `gated_short_*` columns as a check on a pick, not as a
-    score. Revisit with a market-switched ranking (short counted only while QQQ is below its 200-day MA).
+    score. The market-switched ranking (`--rank-shorts switched`: the short counts only when QQQ is below its 200-day
+    MA at the pick) made the most, +$33,330 vs +$29,153, without changing a single up-market pick, but its gain rests
+    on 2022 and Apr 2026; it is the candidate to adopt if the user chooses (as of Nov 10 2026 it would be on).
 
 ## Reproduction
 
@@ -2469,7 +2491,7 @@ exactly (110 trades, +0.80%), but other settings may differ slightly.
    add `--extra-cost-bps 5 --borrow-bps 2` for the cost check. Top 3: `--picks 3 --capital 6000`. The account replay (fixed vs
    compounding, drawdown episodes, losing streaks) was a one-off script over the capped trades from `run_plan` and
    `cap_positions`.
-   Finding 44: `monthly_process_walk_forward --year <year> --rank-shorts gated|all` (the caches gain a `_short`
+   Finding 44: `monthly_process_walk_forward --year <year> --rank-shorts gated|all|switched` (the caches gain a `_short`
    file per ticker); the fake overnight legs were found by scanning the cached legs for |pct| > 30 and traced with
    `load_rider_bars` / `split_factors` on SHOP around Mar 8 2022.
    The confirmation-lag table, the reversal-entry diagnostics, the drive long decomposition and the 11-case

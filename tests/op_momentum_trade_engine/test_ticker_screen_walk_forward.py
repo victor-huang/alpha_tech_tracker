@@ -10,6 +10,7 @@ from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.ticker_screen_walk
     parse_args,
     passers_by_month,
     ranking_trades,
+    short_months,
     short_trades,
     summary,
     walk,
@@ -83,15 +84,25 @@ class TestWalk:
 
         assert trades.pct.tolist() == [-4.0]
 
-    def test_ranking_frame_picks_while_the_core_is_traded(self):
+    def _shorts(self):
+        return _trades([("A", JAN - timedelta(days=i), "drive short + re-entry", 9.0) for i in range(1, 11)])
+
+    def test_shorts_rank_while_the_core_is_traded(self):
         sessions = sorted(set(self._core().day))
-        ranking = _trades([("A", JAN - timedelta(days=i), "drive short + re-entry", 9.0) for i in range(1, 11)])
 
         trades, chosen = walk(self._core(), {JAN: ["A", "B"]}, sessions, [JAN], picks=1, lookback=63, capital=10000,
-                              ranking=pd.concat([self._core(), ranking]))
+                              shorts=self._shorts())
 
         assert chosen == {JAN: ["A"]}
         assert trades.leg.tolist() == ["drive long"]
+
+    def test_shorts_count_only_in_the_short_months(self):
+        sessions = sorted(set(self._core().day))
+
+        _, chosen = walk(self._core(), {JAN: ["A", "B"]}, sessions, [JAN], picks=1, lookback=63, capital=10000,
+                         shorts=self._shorts(), short_starts=set())
+
+        assert chosen == {JAN: ["B"]}
 
 
 class TestShortTrades:
@@ -109,6 +120,17 @@ class TestShortTrades:
 
     def test_all_days(self):
         assert short_trades(self._legs(), "all", JAN, MAR).pct.tolist() == [1.0, 2.0]
+
+
+class TestShortMonths:
+    def test_every_month_unless_switched(self):
+        assert short_months("all", [JAN, FEB], MAR) == {JAN, FEB}
+
+    def test_switched_months_start_below_the_200_day_ma(self, mocker):
+        gated = mocker.patch(f"{MODULE}.gated_sessions", return_value={FEB, FEB + timedelta(days=1)})
+
+        assert short_months("switched", [JAN, FEB], MAR) == {FEB}
+        gated.assert_called_once_with(JAN, MAR, "qqq-ma200")
 
 
 class TestSummary:
