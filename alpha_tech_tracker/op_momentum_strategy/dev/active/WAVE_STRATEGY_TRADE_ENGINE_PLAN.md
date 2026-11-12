@@ -322,7 +322,8 @@ the monitor for about a week, comparing trades with the monitor's alert CSV dail
 |---|---|---|
 | A0 | done — baseline 2026-11-02..11 (8 sessions), `prod` 240 alert rows, `all_on` 365; replay deterministic | A0 commit |
 | A1 | done — both variants byte-identical to the baseline; full suite green except the 2 known failures | A1 commit |
-| A2 | next — `wave_strategy/intents.py` (+ tests) written, monitor not yet routed through it | |
+| A2 | done — every trading alert goes through `WaveSetupMonitor._on_intent(Intent)`; shell alerts (start-up, data outage / restored, reversal LOW? / HIGH?) still call `_alert` / `_system_alert`; byte-identical | A2 commit |
+| A3 | next | |
 
 ### How to verify a monitor step (A1–A4)
 

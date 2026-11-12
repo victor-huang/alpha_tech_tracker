@@ -151,6 +151,21 @@ from alpha_tech_tracker.op_momentum_strategy.signal_stats import (
     DEFAULT_STATS_TICKERS,
     signal_stats,
 )
+from alpha_tech_tracker.op_momentum_strategy.wave_strategy.intents import (
+    BAR_CLOSE,
+    ENTER,
+    EXIT,
+    EXIT_ORDERS,
+    INFO,
+    LIMIT,
+    MOC,
+    MOO,
+    MOVE_STOP,
+    SKIP,
+    STOP,
+    SYSTEM,
+    Intent,
+)
 from alpha_tech_tracker.op_momentum_strategy.wave_strategy.bars import (  # noqa: F401 (re-exported)
     FLUSH_GRACE_SECONDS,
     FiveMinAggregator,
@@ -320,8 +335,9 @@ class WaveSetupMonitor:
             self.daily_closes = self.daily_closes_loader(needs_daily, self.session)
             short = [t for t in needs_daily if len(self.daily_closes.get(t, [])) < OVERNIGHT_MIN_DAILY_CLOSES]
             if short:
-                self._system_alert(f"overnight moving-average filter has too little daily history for "
-                                   f"{', '.join(short)}; their filtered overnight holds will not fire today")
+                self._on_intent(Intent(SYSTEM, f"overnight moving-average filter has too little daily history for "
+                                               f"{', '.join(short)}; their filtered overnight holds will not fire "
+                                               "today"))
         self._load_state()
         self._prepare_shorts()
         self._prepare_trend_filters()
@@ -648,8 +664,9 @@ class WaveSetupMonitor:
     def _alert_raised(self, ticker, raised, why):
         for trade in self._open_drive_longs(ticker):
             if id(trade) in raised:
-                self._alert(trade, "RAISE STOP", trade.stop,
-                            f"RAISE STOP {ticker} | {trade.setup} | stop {trade.stop:.2f} ({why})")
+                self._on_intent(Intent(MOVE_STOP, f"RAISE STOP {ticker} | {trade.setup} | stop {trade.stop:.2f} "
+                                                  f"({why})",
+                                       "RAISE STOP", trade, ticker, trade.setup, trade.stop))
 
     def _drive_long_options(self, ticker, bar):
         """After the bar's stop checks: raise open drive longs' stops to a newly confirmed dip low (`--drive-trail`),
@@ -681,8 +698,9 @@ class WaveSetupMonitor:
             if turn[1] > trade.stop:
                 trade.stop = raised[id(trade)] = turn[1]
                 if alert:
-                    self._alert(trade, "RAISE STOP", turn[1],
-                                f"RAISE STOP {ticker} | {trade.setup} | stop {turn[1]:.2f} (new higher dip low)")
+                    self._on_intent(Intent(MOVE_STOP, f"RAISE STOP {ticker} | {trade.setup} | stop {turn[1]:.2f} "
+                                                      "(new higher dip low)",
+                                           "RAISE STOP", trade, ticker, trade.setup, turn[1]))
         return raised
 
     def _reenter_drive_long(self, ticker, bar):
@@ -703,9 +721,10 @@ class WaveSetupMonitor:
                           entry_time=stamp, side=1, entry=bar["close"], stop=low_since, target=None,
                           risk=bar["close"] - low_since, last_bar=stamp)
         self.trades.append(trade)
-        self._alert(trade, "BUY", trade.entry,
-                    f"BUY {ticker} | {DRIVE_REENTRY} | ~{trade.entry:.2f} ({stamp:%H:%M} bar close), back above the "
-                    f"stop-out level {level:.2f} | stop {low_since:.2f} | hold to the close")
+        self._on_intent(Intent(ENTER, f"BUY {ticker} | {DRIVE_REENTRY} | ~{trade.entry:.2f} ({stamp:%H:%M} bar close), "
+                                      f"back above the stop-out level {level:.2f} | stop {low_since:.2f} | hold to the "
+                                      "close",
+                               "BUY", trade, ticker, DRIVE_REENTRY, trade.entry, BAR_CLOSE))
 
     # --- down-market shorts --------------------------------------------------
 
@@ -780,17 +799,18 @@ class WaveSetupMonitor:
             parts = [f"{name} ({reason})" for name, reason in sorted(blocked.items()) if name not in overnight]
             if parts:
                 lines.append(f"{ticker} off: {', '.join(parts)}")
-        self._system_alert("trend filters | " + " | ".join(lines or ["every filtered setup is on"]), level=logging.INFO)
+        self._on_intent(Intent(SYSTEM, "trend filters | " + " | ".join(lines or ["every filtered setup is on"]),
+                               level=logging.INFO))
 
     def _trend_blocked(self, ticker, setup):
         return setup in self.trend_blocked.get(ticker, {})
 
-    def _open_short(self, ticker, setup, signal, bar_time, entry, stop, message):
+    def _open_short(self, ticker, setup, signal, bar_time, entry, stop, message, action="SHORT", order=BAR_CLOSE):
         trade = LiveTrade(ticker=ticker, setup=setup, signal=signal, exit_mode="eod", entry_time=bar_time, side=-1,
                           entry=entry, stop=stop, target=None, risk=None if stop is None else stop - entry,
                           last_bar=bar_time)
         self.trades.append(trade)
-        self._alert(trade, "SHORT", entry, message)
+        self._on_intent(Intent(ENTER, message, action, trade, ticker, setup, entry, order))
         return trade
 
     def _check_shorts(self, ticker, bar):
@@ -843,8 +863,9 @@ class WaveSetupMonitor:
         for event in watch.update(stamp, bar, self.short_adr.get(ticker), had_position, last):
             if event["kind"] == "trail" and open_trade is not None and event["peak"] < open_trade.stop:
                 open_trade.stop = event["peak"]
-                self._alert(open_trade, "LOWER STOP", event["peak"],
-                            f"LOWER STOP {ticker} | {name} | stop {event['peak']:.2f} (new lower rally high)")
+                self._on_intent(Intent(MOVE_STOP, f"LOWER STOP {ticker} | {name} | stop {event['peak']:.2f} (new lower "
+                                                  "rally high)",
+                                       "LOWER STOP", open_trade, ticker, name, event["peak"]))
             elif event["kind"] == "entry":
                 key = f"{ticker}|{name}|{stamp.isoformat()}"
                 if key in self.alerted:
@@ -852,17 +873,18 @@ class WaveSetupMonitor:
                 self.alerted.add(key)
                 trade = self._open_short(ticker, name, "retest_short", stamp, event["fill"], event["stop"],
                                          f"SHORTED {ticker} | {name} | limit filled ~{event['fill']:.2f} ({stamp:%H:%M}"
-                                         f" bar) | stop {event['stop']:.2f} | cover at the close")
+                                         f" bar) | stop {event['stop']:.2f} | cover at the close",
+                                         action="SHORT", order=LIMIT)
                 if event["stopped"]:
                     trade.close_at(stamp, event["stop"], "stop")
-                    self._alert(trade, "COVER", trade.exit_price,
-                                f"COVER {ticker} | {name} | stop hit on the fill bar @ {trade.exit_price:.2f} | "
-                                f"{trade.pnl_pct():+.2f}%")
+                    self._on_intent(Intent(EXIT, f"COVER {ticker} | {name} | stop hit on the fill bar @ "
+                                                 f"{trade.exit_price:.2f} | {trade.pnl_pct():+.2f}%",
+                                           "COVER", trade, ticker, name, trade.exit_price, STOP))
             elif event["kind"] == "arm":
-                self._alert(None, "SHORT LIMIT", event["level"],
-                            f"SHORT LIMIT {ticker} | {name} | sell limit {event['level']:.2f} from the next bar | stop "
-                            f"{event['stop']:.2f} once filled | cancel at {RETEST_CANCEL} or when replaced",
-                            ticker=ticker, setup=name)
+                self._on_intent(Intent(INFO, f"SHORT LIMIT {ticker} | {name} | sell limit {event['level']:.2f} from "
+                                             f"the next bar | stop {event['stop']:.2f} once filled | cancel at "
+                                             f"{RETEST_CANCEL} or when replaced",
+                                       "SHORT LIMIT", None, ticker, name, event["level"], LIMIT))
 
     def _overnight_short_entry(self, ticker):
         name = SHORT_NAMES["overnight"]
@@ -873,15 +895,16 @@ class WaveSetupMonitor:
             return
         self.alerted.add(key)
         if in_earnings_window({"signal": "overnight_long", "time": bar_time}, self.windows[ticker]):
-            self._alert(None, "SKIP", last, f"SKIP {ticker} | {name} | earnings release before the next open",
-                        ticker=ticker, setup=name)
+            self._on_intent(Intent(SKIP, f"SKIP {ticker} | {name} | earnings release before the next open",
+                                   "SKIP", None, ticker, name, last))
             return
         trade = LiveTrade(ticker=ticker, setup=name, signal="overnight_short", exit_mode="next open",
                           entry_time=bar_time, side=-1, entry=last, stop=None, target=None, risk=None,
                           status="pending", last_bar=bar_time)
         self.trades.append(trade)
-        self._alert(trade, "SHORT", last, f"SHORT {ticker} | {name} | at the close (MOC), ref {last:.2f} "
-                                          f"({bar_time:%H:%M} bar) | cover at the next open")
+        self._on_intent(Intent(ENTER, f"SHORT {ticker} | {name} | at the close (MOC), ref {last:.2f} "
+                                      f"({bar_time:%H:%M} bar) | cover at the next open",
+                               "SHORT", trade, ticker, name, last, MOC))
 
     def _submit_evaluations(self, ticker, bar_time):
         frame = add_moving_averages(self.bars[ticker])
@@ -926,9 +949,10 @@ class WaveSetupMonitor:
         self.trades.append(trade)
         action = "BUY" if side == 1 else "SHORT"
         target_text = "" if spec.exit_mode == "eod" else f", target {trade.target:.2f}"
-        self._alert(trade, action, trade.entry,
-                    f"{action} {trade.ticker} | {trade.setup} | ~{trade.entry:.2f} ({sig['time']:%H:%M} bar close) | "
-                    f"stop {trade.stop:.2f}{target_text} | {EXIT_TEXT[spec.exit_mode]}")
+        self._on_intent(Intent(ENTER, f"{action} {trade.ticker} | {trade.setup} | ~{trade.entry:.2f} "
+                                      f"({sig['time']:%H:%M} bar close) | stop {trade.stop:.2f}{target_text} | "
+                                      f"{EXIT_TEXT[spec.exit_mode]}",
+                               action, trade, trade.ticker, trade.setup, trade.entry, BAR_CLOSE))
 
     # --- exits -----------------------------------------------------------
 
@@ -946,9 +970,9 @@ class WaveSetupMonitor:
                                        ticker, f"{bar['time']:%H:%M}")
                     trade.close_at(bar["time"], bar["open"], outcome)
                     done = "SOLD" if trade.side == 1 else "COVERED"
-                    self._alert(trade, done, trade.exit_price,
-                                f"{done} {ticker} | {trade.setup} | open {trade.exit_price:.2f} | "
-                                f"{trade.pnl_pct():+.2f}% from {trade.entry:.2f}", notify=False)
+                    self._on_intent(Intent(EXIT, f"{done} {ticker} | {trade.setup} | open {trade.exit_price:.2f} | "
+                                                 f"{trade.pnl_pct():+.2f}% from {trade.entry:.2f}",
+                                           done, trade, ticker, trade.setup, trade.exit_price, MOO, notify=False))
                 continue
             if trade.status == "closing":
                 trade.last_bar = bar["time"]
@@ -958,9 +982,10 @@ class WaveSetupMonitor:
             outcome = trade.on_bar(bar)
             if outcome:
                 action = "SELL" if trade.side == 1 else "COVER"
-                self._alert(trade, action, trade.exit_price,
-                            f"{action} {ticker} | {trade.setup} | {outcome} hit on the {bar['time']:%H:%M} bar "
-                            f"@ {trade.exit_price:.2f} | {trade.pnl_pct():+.2f}%")
+                self._on_intent(Intent(EXIT, f"{action} {ticker} | {trade.setup} | {outcome} hit on the "
+                                             f"{bar['time']:%H:%M} bar @ {trade.exit_price:.2f} | "
+                                             f"{trade.pnl_pct():+.2f}%",
+                                       action, trade, ticker, trade.setup, trade.exit_price, EXIT_ORDERS[outcome]))
             elif bar["time"].time() == self.last_bar:
                 trade.close_at(bar["time"], bar["close"], "close")
 
@@ -973,7 +998,8 @@ class WaveSetupMonitor:
             last = self._last_close(trade.ticker)
             action = "SELL" if trade.side == 1 else "COVER"
             pnl = f" | {trade.pnl_pct(last):+.2f}% at {last:.2f}" if last is not None else ""
-            self._alert(trade, action, last, f"{action} {trade.ticker} | {trade.setup} | at the close (MOC){pnl}")
+            self._on_intent(Intent(EXIT, f"{action} {trade.ticker} | {trade.setup} | at the close (MOC){pnl}",
+                                   action, trade, trade.ticker, trade.setup, last, MOC))
         for ticker, specs in self.setups.items():
             for spec in (s for s in specs if s.overnight):
                 if self.half_day:
@@ -1004,18 +1030,18 @@ class WaveSetupMonitor:
         if key in self.alerted:
             return
         self.alerted.add(key)
-        self._alert(None, "SKIP", self._last_close(ticker),
-                    f"SKIP {ticker} | {spec.name} | the overnight short is on today ({self.overnight_short_text})",
-                    ticker=ticker, setup=spec.name)
+        self._on_intent(Intent(SKIP, f"SKIP {ticker} | {spec.name} | the overnight short is on today "
+                                     f"({self.overnight_short_text})",
+                               "SKIP", None, ticker, spec.name, self._last_close(ticker)))
 
     def _skip_trend_filtered(self, ticker, spec):
         key = f"{ticker}|{spec.name}|{self.session.isoformat()}"
         if key in self.alerted:
             return
         self.alerted.add(key)
-        self._alert(None, "SKIP", self._last_close(ticker),
-                    f"SKIP {ticker} | {spec.name} | trend filter: {self.trend_blocked[ticker][spec.name]}",
-                    ticker=ticker, setup=spec.name)
+        self._on_intent(Intent(SKIP, f"SKIP {ticker} | {spec.name} | trend filter: "
+                                     f"{self.trend_blocked[ticker][spec.name]}",
+                               "SKIP", None, ticker, spec.name, self._last_close(ticker)))
 
     def _overnight_entry(self, ticker, spec):
         last = self._last_close(ticker)
@@ -1029,8 +1055,8 @@ class WaveSetupMonitor:
         probe = {"signal": "overnight_long", "time": bar_time}
         if spec.params.overnight_skip_earnings and in_earnings_window(probe, self.windows[ticker]):
             self.alerted.add(key)
-            self._alert(None, "SKIP", last, f"SKIP {ticker} | {spec.name} | earnings release before the next open",
-                        ticker=ticker, setup=spec.name)
+            self._on_intent(Intent(SKIP, f"SKIP {ticker} | {spec.name} | earnings release before the next open",
+                                   "SKIP", None, ticker, spec.name, last))
             return
         closes = self.daily_closes.get(ticker, [])
         if not overnight_filter_ok(spec.params.overnight_hold, closes + [last]):
@@ -1041,8 +1067,9 @@ class WaveSetupMonitor:
                           entry_time=bar_time, side=1, entry=last, stop=None, target=None, risk=None,
                           status="pending", last_bar=bar_time)
         self.trades.append(trade)
-        self._alert(trade, "BUY", last, f"BUY {ticker} | {spec.name} | at the close (MOC), ref {last:.2f} "
-                                        f"({bar_time:%H:%M} bar) | sell at the next open")
+        self._on_intent(Intent(ENTER, f"BUY {ticker} | {spec.name} | at the close (MOC), ref {last:.2f} "
+                                      f"({bar_time:%H:%M} bar) | sell at the next open",
+                               "BUY", trade, ticker, spec.name, last, MOC))
 
     def _pre_open_alerts(self):
         before_open = self.now().time() < MARKET_OPEN
@@ -1050,8 +1077,9 @@ class WaveSetupMonitor:
             if trade.overnight and trade.status == "open" and trade.entry_time.date() < self.session:
                 when = "at the open (MOO before 09:28)" if before_open else "now (monitor started after the open)"
                 action, verb = ("SELL", "bought") if trade.side == 1 else ("COVER", "shorted")
-                self._alert(trade, action, None, f"{action} {trade.ticker} | {trade.setup} | {when}, "
-                                                 f"{verb} {trade.entry:.2f} on {trade.entry_time:%m-%d}")
+                self._on_intent(Intent(EXIT, f"{action} {trade.ticker} | {trade.setup} | {when}, "
+                                             f"{verb} {trade.entry:.2f} on {trade.entry_time:%m-%d}",
+                                       action, trade, trade.ticker, trade.setup, None, MOO))
 
     def _catch_up_trades(self):
         """Replay today's warm-up bars through trades restored from the state file: each bar's stop checks, then
@@ -1104,6 +1132,14 @@ class WaveSetupMonitor:
         if self.backfill is not None:
             gap_start, gap_end = min(gap_start, self.backfill[0]), max(gap_end, self.backfill[1])
         self.backfill = (gap_start, gap_end)
+
+    def _on_intent(self, intent):
+        """The strategy's decisions become alerts here; the trade engine's sink turns them into orders."""
+        if intent.kind == SYSTEM:
+            self._system_alert(intent.message, level=intent.level)
+            return
+        self._alert(intent.trade, intent.action, intent.price, intent.message, notify=intent.notify,
+                    ticker=intent.ticker, setup=intent.setup)
 
     def _system_alert(self, message, level=logging.WARNING):
         logger.log(level, "SYSTEM %s", message)
