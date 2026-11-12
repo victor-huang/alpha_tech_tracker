@@ -323,7 +323,31 @@ the monitor for about a week, comparing trades with the monitor's alert CSV dail
 | A0 | done — baseline 2026-11-02..11 (8 sessions), `prod` 240 alert rows, `all_on` 365; replay deterministic | A0 commit |
 | A1 | done — both variants byte-identical to the baseline; full suite green except the 2 known failures | A1 commit |
 | A2 | done — every trading alert goes through `WaveSetupMonitor._on_intent(Intent)`; shell alerts (start-up, data outage / restored, reversal LOW? / HIGH?) still call `_alert` / `_system_alert`; byte-identical | A2 commit |
-| A3 | next | |
+| A3 | code done — `WaveSetupStrategy` in `wave_strategy/strategy.py`; replay byte-identical (0 cache misses = same evaluation inputs), process-pool smoke test OK, 21 strategy tests; **shadow run on EC2 pending (needs the user)** | A3 commit |
+| A4 | next | |
+
+**A3 notes (differences from the sketch above):**
+- Session times stay plain attributes on the strategy (`close_time`, `half_day`, `close_decision_bar`, `last_bar`,
+  `close_alert_at`, `close_alert_latest`, `session_end`); no `SessionTimes` dataclass, to keep the move verbatim.
+- Lifecycle: `start_session(session, bars_by_ticker)` → `restore(state)` → `prepare()` → `catch_up()`; the caller
+  appends bars with `add_bar`. Bar handling: `on_bar_exits`, then `on_bar_entries` (= `on_bar_shorts` +
+  `submit_evaluations` while `takes_entries`). The monitor calls the two halves itself so reversal alerts stay in
+  between and tests can patch `monitor._submit_evaluations`.
+- `finish` → `close_leftovers()`; the session summary stays in the monitor (it is a notification).
+- The daily loaders `_load_daily_closes` / `_load_daily_bars` stay in the monitor (tests patch `fetch_daily_bars`
+  there); the strategy takes loaders as arguments (none = no daily data, so gates and filters fail closed). B1 must
+  pass real loaders.
+- Moved code logs under `wave_strategy.strategy` instead of `wave_setup_monitor` (log line text unchanged).
+- Shadow run before deploying A3 (needs the user's OK to touch EC2): the monitor writes its state, PID, alert CSV
+  and log under `logs/` of the checkout it runs from (`cli/daemon._LOG_DIR`), so run the A3 commit from a separate
+  checkout (`git worktree add ~/att_shadow <A3 commit>`) with the prod flags plus `--config <prod checkout>/logs/
+  wave_setup_monitor_config.json --no-notify`. After the close, compare its `logs/wave_setup_alerts_<date>.csv` with
+  prod's on every column but `time` (both depend on when bars arrive).
+  Open question for the user — the market data for the shadow: prod streams TradeStation with the session tokens in
+  the checkout's (uncommitted) `config.json`; a second checkout needs a copy, and two processes refreshing the same
+  tokens may log prod out. Options: `--market-data-source local_ts_broadcast` (one feed shared, see
+  `guides/DUAL_ENGINE_MARKET_DATA_SHARING.md`), or Alpaca SIP for the shadow (bars can differ slightly from TS, so
+  compare entries/exits rather than bytes).
 
 ### How to verify a monitor step (A1–A4)
 

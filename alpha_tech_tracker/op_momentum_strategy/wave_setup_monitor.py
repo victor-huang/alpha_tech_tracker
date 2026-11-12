@@ -91,19 +91,8 @@ from pathlib import Path
 import pandas as pd
 from alpaca.data.enums import DataFeed
 
-from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.earnings_calendar import (
-    earnings_windows,
-    in_earnings_window,
-    load_releases,
-)
-from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward import (
-    LONG_SIGNALS,
-    add_moving_averages,
-    analyze_bars,
-    overnight_filter_ok,
-    overnight_needs_history,
-    regular_hours,
-)
+from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.earnings_calendar import earnings_windows, load_releases
+from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward import analyze_bars, regular_hours
 from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward_setup_report import TYPE_CHOICES
 from alpha_tech_tracker.op_momentum_strategy.cli.clients import _build_market_data_client
 from alpha_tech_tracker.op_momentum_strategy.cli.daemon import (
@@ -122,28 +111,14 @@ from alpha_tech_tracker.op_momentum_strategy.reversal_watch import (
     ReversalWatch,
     reversal_message,
 )
-from alpha_tech_tracker.op_momentum_strategy.short_setups import (
+from alpha_tech_tracker.op_momentum_strategy.short_setups import (  # noqa: F401 (re-exported; tests patch TurnTracker)
     DEFAULT_SHORT_SETUPS,
     GATE_TICKER,
     GATES as SHORT_GATES,
-    REENTRY_LATEST,
-    RETEST_WINDOW,
-    SETUP_NAMES as SHORT_NAMES,
     SHORT_SETUPS,
-    RetestShort,
     TurnTracker,
-    gate_status,
-    next_session_adr,
 )
-from alpha_tech_tracker.op_momentum_strategy.trend_filters import (
-    MARKET_TICKER as TREND_MARKET_TICKER,
-    PULLBACK_SETUPS,
-    TREND_FILTERS,
-    market_trend,
-    overnight_rule,
-    pullback_rule,
-    ticker_trend,
-)
+from alpha_tech_tracker.op_momentum_strategy.trend_filters import TREND_FILTERS
 from alpha_tech_tracker.op_momentum_strategy.signal_stats import (
     DEFAULT_STATS_DAYS,
     DEFAULT_STATS_OVERNIGHT,
@@ -151,21 +126,7 @@ from alpha_tech_tracker.op_momentum_strategy.signal_stats import (
     DEFAULT_STATS_TICKERS,
     signal_stats,
 )
-from alpha_tech_tracker.op_momentum_strategy.wave_strategy.intents import (
-    BAR_CLOSE,
-    ENTER,
-    EXIT,
-    EXIT_ORDERS,
-    INFO,
-    LIMIT,
-    MOC,
-    MOO,
-    MOVE_STOP,
-    SKIP,
-    STOP,
-    SYSTEM,
-    Intent,
-)
+from alpha_tech_tracker.op_momentum_strategy.wave_strategy.intents import SYSTEM
 from alpha_tech_tracker.op_momentum_strategy.wave_strategy.bars import (  # noqa: F401 (re-exported)
     FLUSH_GRACE_SECONDS,
     FiveMinAggregator,
@@ -193,7 +154,19 @@ from alpha_tech_tracker.op_momentum_strategy.wave_strategy.specs import (  # noq
     load_config,
     refresh_report,
 )
-from alpha_tech_tracker.op_momentum_strategy.wave_strategy.trades import (
+from alpha_tech_tracker.op_momentum_strategy.wave_strategy.strategy import (  # noqa: F401 (re-exported)
+    CONFIG_DRIVE_SHORT,
+    DEFAULT_CLOSE_DECISION_BAR,
+    DRIVE_LONG,
+    DRIVE_REENTRY,
+    DRIVE_REENTRY_LATEST,
+    DRIVE_TRAIL_SETTING,
+    OVERNIGHT_MIN_DAILY_CLOSES,
+    RETEST_CANCEL,
+    WARMUP_SESSIONS,
+    WaveSetupStrategy,
+)
+from alpha_tech_tracker.op_momentum_strategy.wave_strategy.trades import (  # noqa: F401 (re-exported)
     InlineExecutor,
     LiveTrade,
     fired_signals,
@@ -206,19 +179,10 @@ DEFAULT_STATE = Path(_LOG_DIR) / "wave_setup_monitor_state.json"
 PID_FILE = os.path.join(_LOG_DIR, "wave_setup_monitor.pid")
 MODULE = "alpha_tech_tracker.op_momentum_strategy.wave_setup_monitor"
 REFRESH_LOOKBACK_SESSIONS = 63
-WARMUP_SESSIONS = 10
 WARMUP_CALENDAR_DAYS = 20
 DAILY_HISTORY_DAYS = 420
-DEFAULT_CLOSE_DECISION_BAR = time(15, 45)
 OUTAGE_ALERT_SECONDS = 300
-OVERNIGHT_MIN_DAILY_CLOSES = 200
 STREAM_TIMEOUT_SECONDS = 120
-RETEST_CANCEL = f"{RETEST_WINDOW[1]:%H:%M}"
-CONFIG_DRIVE_SHORT = "drive short"
-DRIVE_LONG = "drive long"
-DRIVE_REENTRY = "drive long re-entry"
-DRIVE_TRAIL_SETTING = (7, 0.382, 1.5)  # wave setting the drive-trail was chosen with (ticker-tuning doc, Finding 32)
-DRIVE_REENTRY_LATEST = time(15, 0)
 DELAYED_DATA_MINUTES = 16  # Alpaca plans without real-time SIP only serve SIP history older than 15 min
 
 
@@ -230,6 +194,15 @@ def evaluate_setup(job):
     """
     ticker, spec, frame, windows, bar_time = job
     return fired_signals(ticker, spec, analyze_bars(frame, spec.params, windows)["signals"], bar_time)
+
+
+def _evaluate_fn():
+    """The evaluation function the strategy submits, looked up here at call time so patches on this module apply."""
+    return evaluate_setup
+
+
+def _forward(name):
+    return property(lambda self: getattr(self.strategy, name), lambda self, value: setattr(self.strategy, name, value))
 
 
 # ---------------------------------------------------------------------------
@@ -244,8 +217,6 @@ class WaveSetupMonitor:
                  stats_daily_loader=None, short_setups=DEFAULT_SHORT_SETUPS, short_gate="qqq-ma50", short_tickers=None,
                  extra_tickers=(), drive_trail=False, drive_reentry=False, trend_filters=(), trend_daily_loader=None,
                  overnight_short_gate=None):
-        self.setups = setups_by_ticker
-        self.tickers = list(setups_by_ticker)
         self.client = market_data_client
         self.state_file = Path(state_file)
         self.alerts_dir = Path(alerts_dir)
@@ -253,96 +224,85 @@ class WaveSetupMonitor:
         self.notify = notify
         self.now = now
         self.releases_loader = releases_loader
-        self.daily_closes_loader = daily_closes_loader or _load_daily_closes
         self.reversal_patterns = tuple(reversal_patterns)
         self.reversal_watches = {}
         self.reversal_paused = False
         self.stats_tickers = tuple(stats_tickers)
         self.stats_daily_loader = stats_daily_loader or _load_daily_close_series
-        self.short_setups = tuple(short_setups)
-        self.short_gate = short_gate
-        self.short_tickers = [t for t in (short_tickers if short_tickers is not None else self.tickers) if t in self.setups]
-        self.shorts_on = False
-        self.short_gate_text = ""
-        self.overnight_short_gate = overnight_short_gate or short_gate
-        self.overnight_short_on = False
-        self.overnight_short_text = ""
-        self.short_watches = {}
-        self.short_adr = {}
         # streamed only for the short setups or an open overnight trade: no reversal alerts, not in the signal stats
         self.extra_tickers = set(extra_tickers)
-        self.drive_trail = drive_trail
-        self.drive_reentry = drive_reentry
-        self.drive_trackers = {}
-        self.trend_filters = tuple(trend_filters)
-        self.trend_daily_loader = trend_daily_loader or _load_daily_bars
-        self.trend_blocked = {}
-        self.decision_lead = datetime.combine(date.today(), REGULAR_CLOSE) - datetime.combine(date.today(),
-                                                                                                close_decision_bar)
-        self._set_session_times(_now_et().date())
         self.lock = threading.RLock()
         self.client_lock = threading.Lock()  # history requests share the client's session with the stats thread
+        self.strategy = WaveSetupStrategy(
+            setups_by_ticker, sink=self._on_intent, executor=self.executor, lock=self.lock, persist=self._save_state,
+            evaluate_fn=_evaluate_fn, now=now, releases_loader=releases_loader,
+            daily_closes_loader=daily_closes_loader or _load_daily_closes,
+            trend_daily_loader=trend_daily_loader or _load_daily_bars, close_decision_bar=close_decision_bar,
+            short_setups=short_setups, short_gate=short_gate, short_tickers=short_tickers,
+            overnight_short_gate=overnight_short_gate, drive_trail=drive_trail, drive_reentry=drive_reentry,
+            trend_filters=trend_filters)
         self.aggregator = FiveMinAggregator(self._on_five_min_bar)
-        self.bars = {}
-        self.window_start = {}
-        self.windows = {}
-        self.daily_closes = {}
-        self.trades = []
-        self.alerted = set()
-        self.session = None
         self.done = {"pre_open": False, "close": False}
         self.stream_started_at = None
         self.last_minute_at = None
         self.refetch_before = None
-        self.pending = []
         self.backfill = None
         self.last_reconnect_at = None
         self.outage_from = None
 
-    def _set_session_times(self, day):
-        """Close-relative times for the day: the decision bar, the last bar, the close alert, the end."""
-        close = datetime.combine(day, session_close(day))
-        self.close_time = close.time()
-        self.half_day = self.close_time < REGULAR_CLOSE
-        self.close_decision_bar = (close - self.decision_lead).time()
-        self.last_bar = (close - timedelta(minutes=BAR_MINUTES)).time()
-        self.close_alert_at = (close - self.decision_lead + timedelta(minutes=BAR_MINUTES)).time()
-        self.close_alert_latest = (close - self.decision_lead + timedelta(minutes=BAR_MINUTES + 1)).time()
-        self.session_end = (close + timedelta(minutes=AFTER_CLOSE_MINUTES)).time()
+    # strategy state, read and set through the monitor (callers and tests predate the split)
+    setups = _forward("setups")
+    tickers = _forward("tickers")
+    bars = _forward("bars")
+    window_start = _forward("window_start")
+    windows = _forward("windows")
+    daily_closes = _forward("daily_closes")
+    trades = _forward("trades")
+    alerted = _forward("alerted")
+    session = _forward("session")
+    pending = _forward("pending")
+    short_setups = _forward("short_setups")
+    short_gate = _forward("short_gate")
+    short_tickers = _forward("short_tickers")
+    shorts_on = _forward("shorts_on")
+    short_gate_text = _forward("short_gate_text")
+    overnight_short_gate = _forward("overnight_short_gate")
+    overnight_short_on = _forward("overnight_short_on")
+    overnight_short_text = _forward("overnight_short_text")
+    short_watches = _forward("short_watches")
+    short_adr = _forward("short_adr")
+    drive_trail = _forward("drive_trail")
+    drive_reentry = _forward("drive_reentry")
+    drive_trackers = _forward("drive_trackers")
+    trend_filters = _forward("trend_filters")
+    trend_blocked = _forward("trend_blocked")
+    daily_closes_loader = _forward("daily_closes_loader")
+    trend_daily_loader = _forward("trend_daily_loader")
+    close_time = _forward("close_time")
+    half_day = _forward("half_day")
+    close_decision_bar = _forward("close_decision_bar")
+    last_bar = _forward("last_bar")
+    close_alert_at = _forward("close_alert_at")
+    close_alert_latest = _forward("close_alert_latest")
+    session_end = _forward("session_end")
 
     # --- lifecycle -------------------------------------------------------
 
     def prepare(self):
         """Warm up history, earnings windows and daily closes, restore state, catch up open trades."""
         now = self.now()
-        self.session = now.date()
-        self._set_session_times(self.session)
         history = self._warmup(now)
+        bars_by_ticker = {}
         for ticker in self.tickers:
             frame = history.get(ticker)
             bars = regular_hours(frame) if frame is not None and not frame.empty else _empty_bars()
-            bars = bars[bars.index + timedelta(minutes=BAR_MINUTES) <= now]
-            self.bars[ticker] = bars
+            bars_by_ticker[ticker] = bars[bars.index + timedelta(minutes=BAR_MINUTES) <= now]
+        self.strategy.start_session(now.date(), bars_by_ticker)
+        for ticker in self.tickers:
             self._rebuild_reversal_watch(ticker)
-            prior = sorted(d for d in set(bars.index.date) if d < self.session)
-            first = prior[-WARMUP_SESSIONS] if len(prior) >= WARMUP_SESSIONS else (prior[0] if prior else self.session)
-            self.window_start[ticker] = ET.localize(datetime.combine(first, time(0, 0)))
-            sessions = prior + [self.session]
-            self.windows[ticker] = earnings_windows(self.releases_loader(ticker), sessions)
-        needs_daily = sorted({t for t, specs in self.setups.items()
-                              for s in specs if s.overnight and overnight_needs_history(s.params.overnight_hold)})
-        if needs_daily:
-            self.daily_closes = self.daily_closes_loader(needs_daily, self.session)
-            short = [t for t in needs_daily if len(self.daily_closes.get(t, [])) < OVERNIGHT_MIN_DAILY_CLOSES]
-            if short:
-                self._on_intent(Intent(SYSTEM, f"overnight moving-average filter has too little daily history for "
-                                               f"{', '.join(short)}; their filtered overnight holds will not fire "
-                                               "today"))
         self._load_state()
-        self._prepare_shorts()
-        self._prepare_trend_filters()
-        self._prepare_drive_trail(through_today=False)
-        self._catch_up_trades()
+        self.strategy.prepare()
+        self.strategy.catch_up()
         self.refetch_before = period_start(now) + timedelta(minutes=BAR_MINUTES)
         self._save_state()
 
@@ -392,7 +352,7 @@ class WaveSetupMonitor:
             if not missing.empty:
                 self.bars[ticker] = pd.concat([self.bars[ticker], missing]).sort_index()
                 self._rebuild_reversal_watch(ticker)
-                self._rebuild_drive_trail(ticker)
+                self.strategy.rebuild_drive_trail(ticker)
                 logger.info("%s: backfilled %d bars from %s", ticker, len(missing), f"{gap_start:%H:%M}")
         self._save_state()
 
@@ -469,25 +429,17 @@ class WaveSetupMonitor:
                 self._run_backfill(now)
             if not self.done["pre_open"] and now.time() >= PRE_OPEN_ALERT:
                 self.done["pre_open"] = True
-                self._pre_open_alerts()
+                self.strategy.on_pre_open()
             if not self.done["close"] and now.time() >= self.close_alert_at and (
-                    now.time() >= self.close_alert_latest or self._all_have_bar(self.close_decision_bar)):
+                    now.time() >= self.close_alert_latest or self.strategy.all_have_bar(self.close_decision_bar)):
                 self.done["close"] = True
-                self._close_alerts()
+                self.strategy.on_close_decision()
         self._watchdog(now)
 
     def finish(self):
         """End of session: close anything still open at the last close, summarize, save."""
         with self.lock:
-            for trade in self.trades:
-                if trade.overnight and trade.status == "pending":
-                    last = self._last_close(trade.ticker)
-                    if last is not None:
-                        trade.entry, trade.peak, trade.status = last, last, "open"
-                elif not trade.overnight and trade.status in ("open", "closing"):
-                    last = self._last_close(trade.ticker)
-                    if last is not None:
-                        trade.close_at(self.bars[trade.ticker].index[-1], last, "close")
+            self.strategy.close_leftovers()
             try:
                 self._session_summary()
             finally:
@@ -545,21 +497,26 @@ class WaveSetupMonitor:
     def _handle_five_min_bar(self, ticker, bar):
         if self.refetch_before is not None and bar["time"] < self.refetch_before:
             bar = self._refetch_bar(ticker, bar)
-        frame = self.bars[ticker]
-        if bar["time"] in frame.index:
+        if not self.strategy.add_bar(ticker, bar):
             return
-        self.bars[ticker] = pd.concat([frame, pd.DataFrame(
-            [[bar["open"], bar["high"], bar["low"], bar["close"]]],
-            columns=["open", "high", "low", "close"], index=pd.DatetimeIndex([bar["time"]]))])
         logger.info("5-min %-6s %s O=%.2f H=%.2f L=%.2f C=%.2f (%d min)", ticker, f"{bar['time']:%H:%M}",
                     bar["open"], bar["high"], bar["low"], bar["close"], bar.get("minutes", BAR_MINUTES))
-        self._update_trades(ticker, bar)
-        self._drive_long_options(ticker, bar)
+        self.strategy.on_bar_exits(ticker, bar)
         self._check_reversals(ticker, bar)
-        self._check_shorts(ticker, bar)
-        if bar["time"].time() < self.close_decision_bar:
+        self.strategy.on_bar_shorts(ticker, bar)
+        if self.strategy.takes_entries(bar["time"]):
             self._submit_evaluations(ticker, bar["time"])
         self._save_state()
+
+    def _submit_evaluations(self, ticker, bar_time):
+        self.strategy.submit_evaluations(ticker, bar_time)
+
+    def _update_trades(self, ticker, bar):
+        self.strategy._update_trades(ticker, bar)
+
+    def wait_pending(self):
+        """Block until every submitted evaluation has been handled (replays and tests)."""
+        self.strategy.wait_pending()
 
     def _refetch_bar(self, ticker, partial):
         """The first period after a (re)start only has the minutes streamed since; fetch it whole."""
@@ -614,500 +571,6 @@ class WaveSetupMonitor:
             self.alerted.update(s.key for s in signals)
             self._alert(None, "LOW?" if side == "bottom" else "HIGH?", signals[0].price, reversal_message(signals),
                         ticker=ticker, setup="reversal " + " + ".join(s.pattern for s in signals))
-
-    # --- drive long options ---------------------------------------------------
-
-    def _drive_tickers(self):
-        return [t for t, specs in self.setups.items() if any(spec.name == DRIVE_LONG for spec in specs)]
-
-    def _prepare_drive_trail(self, tickers=None, through_today=True):
-        """Rebuild drive long tickers' wave turns from the previous session (and today's bars, `through_today`)."""
-        if not self.drive_trail:
-            return
-        for ticker in tickers or self._drive_tickers():
-            if ticker not in self._drive_tickers():
-                continue
-            tracker = TurnTracker(*DRIVE_TRAIL_SETTING)
-            bars = self.bars[ticker].sort_index()
-            previous = [d for d in sorted(set(bars.index.date)) if d < self.session][-1:]
-            replay = bars[bars.index.date >= (previous[0] if previous else self.session)]
-            if not through_today:
-                replay = replay[replay.index.date < self.session]
-            for stamp, row in replay.iterrows():
-                tracker.turn(stamp, {k: float(row[k]) for k in ("open", "high", "low", "close")})
-            tracker.last_time = replay.index[-1] if not replay.empty else None
-            self.drive_trackers[ticker] = tracker
-
-    def _rebuild_drive_trail(self, ticker):
-        """Rebuild a ticker's turns after a backfill or an out-of-order bar, and raise open drive longs' stops to dips
-        confirmed after their entry that the live path missed (one alert per trade; affects later bars only)."""
-        if not self.drive_trail or ticker not in self._drive_tickers():
-            return
-        self._prepare_drive_trail([ticker], through_today=False)
-        tracker = self.drive_trackers[ticker]
-        raised = {}
-        for stamp, row in self.bars[ticker].sort_index().iterrows():
-            if stamp.date() != self.session:
-                continue
-            tracker.last_time = stamp
-            turn = tracker.turn(stamp, {k: float(row[k]) for k in ("open", "high", "low", "close")})
-            if turn and turn[0] == "up":
-                for trade in self._open_drive_longs(ticker):
-                    if trade.entry_time < stamp and turn[1] > trade.stop:
-                        trade.stop = raised[id(trade)] = turn[1]
-        self._alert_raised(ticker, raised, "caught up after a data gap")
-
-    def _open_drive_longs(self, ticker):
-        return [t for t in self.trades if t.ticker == ticker and t.setup in (DRIVE_LONG, DRIVE_REENTRY) and t.side == 1
-                and t.status == "open" and t.stop is not None]
-
-    def _alert_raised(self, ticker, raised, why):
-        for trade in self._open_drive_longs(ticker):
-            if id(trade) in raised:
-                self._on_intent(Intent(MOVE_STOP, f"RAISE STOP {ticker} | {trade.setup} | stop {trade.stop:.2f} "
-                                                  f"({why})",
-                                       "RAISE STOP", trade, ticker, trade.setup, trade.stop))
-
-    def _drive_long_options(self, ticker, bar):
-        """After the bar's stop checks: raise open drive longs' stops to a newly confirmed dip low (`--drive-trail`),
-        and buy once back above a drive long's stop-out level (`--drive-reentry`)."""
-        if bar["time"].date() != self.session:
-            return
-        try:
-            if self.drive_trail:
-                self._trail_drive_long(ticker, bar)
-            if self.drive_reentry:
-                self._reenter_drive_long(ticker, bar)
-        except Exception:
-            logger.exception("%s: drive long option failed on the %s bar", ticker, f"{bar['time']:%H:%M}")
-
-    def _trail_drive_long(self, ticker, bar, alert=True):
-        """Raise open drive longs' stops when this bar confirms a higher dip; returns {id(trade): new stop}."""
-        tracker = self.drive_trackers.get(ticker)
-        if tracker is None:
-            return {}
-        if tracker.last_time is not None and bar["time"] <= tracker.last_time:
-            self._rebuild_drive_trail(ticker)
-            return {}
-        tracker.last_time = bar["time"]
-        turn = tracker.turn(bar["time"], bar)
-        if not turn or turn[0] != "up":
-            return {}
-        raised = {}
-        for trade in self._open_drive_longs(ticker):
-            if turn[1] > trade.stop:
-                trade.stop = raised[id(trade)] = turn[1]
-                if alert:
-                    self._on_intent(Intent(MOVE_STOP, f"RAISE STOP {ticker} | {trade.setup} | stop {turn[1]:.2f} "
-                                                      "(new higher dip low)",
-                                           "RAISE STOP", trade, ticker, trade.setup, turn[1]))
-        return raised
-
-    def _reenter_drive_long(self, ticker, bar):
-        stamp = bar["time"]
-        key = f"{ticker}|{DRIVE_REENTRY}|{self.session.isoformat()}"
-        stopped = next((t for t in self.trades if t.ticker == ticker and t.setup == DRIVE_LONG and t.side == 1
-                        and t.outcome == "stop" and t.entry_time.date() == self.session), None)
-        if (stopped is None or key in self.alerted or stamp <= stopped.exit_time
-                or stamp.time() >= DRIVE_REENTRY_LATEST or stamp.time() >= self.close_decision_bar):
-            return
-        level = stopped.stop
-        if not bar["close"] > level:
-            return
-        frame = self.bars[ticker]
-        low_since = float(frame[(frame.index >= stopped.exit_time) & (frame.index <= stamp)]["low"].min())
-        self.alerted.add(key)
-        trade = LiveTrade(ticker=ticker, setup=DRIVE_REENTRY, signal="drive_long_reentry", exit_mode="eod",
-                          entry_time=stamp, side=1, entry=bar["close"], stop=low_since, target=None,
-                          risk=bar["close"] - low_since, last_bar=stamp)
-        self.trades.append(trade)
-        self._on_intent(Intent(ENTER, f"BUY {ticker} | {DRIVE_REENTRY} | ~{trade.entry:.2f} ({stamp:%H:%M} bar close), "
-                                      f"back above the stop-out level {level:.2f} | stop {low_since:.2f} | hold to the "
-                                      "close",
-                               "BUY", trade, ticker, DRIVE_REENTRY, trade.entry, BAR_CLOSE))
-
-    # --- down-market shorts --------------------------------------------------
-
-    def _prepare_shorts(self):
-        """Decide today's gate, and rebuild each short ticker's retest watch from the bars so far (no alerts)."""
-        if not self.short_setups or not self.short_tickers:
-            return
-        try:
-            closes = self.daily_closes_loader([GATE_TICKER], self.session).get(GATE_TICKER, [])
-            self.shorts_on, self.short_gate_text = gate_status(self.short_gate, closes)
-            self.overnight_short_on, self.overnight_short_text = gate_status(self.overnight_short_gate, closes,
-                                                                             "overnight short")
-        except Exception:
-            logger.exception("Short gate failed; short setups off today")
-            self.shorts_on, self.short_gate_text = False, "short setups off: the gate's daily closes are unavailable"
-            self.overnight_short_on, self.overnight_short_text = False, "overnight short off: no daily closes"
-        logger.info(self.short_gate_text)
-        if self.overnight_short_gate != self.short_gate and "overnight" in self.short_setups:
-            logger.info(self.overnight_short_text)
-        if "retest" not in self.short_setups:
-            return
-        for ticker in self.short_tickers:
-            bars = self.bars[ticker]
-            self.short_adr[ticker] = next_session_adr(bars, self.session)
-            watch = RetestShort(ticker)
-            previous = [d for d in sorted(set(bars.index.date)) if d < self.session][-1:]
-            for stamp, row in bars[bars.index.date >= (previous[0] if previous else self.session)].iterrows():
-                bar = {k: float(row[k]) for k in ("open", "high", "low", "close")}
-                adr = self.short_adr[ticker] if stamp.date() == self.session else None
-                watch.update(stamp, bar, adr, in_position=True)
-            watch.entries = sum(1 for t in self.trades if t.ticker == ticker and t.setup == SHORT_NAMES["retest"]
-                                and t.entry_time.date() == self.session)
-            self.short_watches[ticker] = watch
-
-    # --- trend filters ---------------------------------------------------------
-
-    def _prepare_trend_filters(self):
-        """Block today's filtered setups per ticker (`trend_blocked`: {ticker: {setup: reason}}) and alert the list."""
-        self.trend_blocked = {}
-        if not self.trend_filters:
-            return
-        overnight = {s.name for specs in self.setups.values() for s in specs if s.overnight}
-        wanted = {}
-        if "pullback" in self.trend_filters:
-            for ticker, specs in self.setups.items():
-                wanted.setdefault(ticker, set()).update(s.name for s in specs if s.name in PULLBACK_SETUPS)
-        if "overnight" in self.trend_filters:
-            for ticker, specs in self.setups.items():
-                wanted.setdefault(ticker, set()).update(s.name for s in specs if s.name in overnight)
-        wanted = {t: names for t, names in wanted.items() if names}
-        if not wanted:
-            return
-        try:
-            daily = self.trend_daily_loader(sorted(set(wanted) | {TREND_MARKET_TICKER}), self.session)
-        except Exception:
-            logger.exception("Trend filter daily bars failed")
-            daily = {}
-        qqq = daily.get(TREND_MARKET_TICKER)
-        market = market_trend(qqq).iloc[-1] if qqq is not None and not qqq.empty else None
-        lines = []
-        night_ok, night_text = overnight_rule(market)
-        if "overnight" in self.trend_filters:
-            lines.append(f"overnight holds {'on' if night_ok else 'off'}: {night_text}")
-        for ticker in sorted(wanted):
-            frame = daily.get(ticker)
-            trend = ticker_trend(frame).iloc[-1] if frame is not None and not frame.empty else None
-            for name in sorted(wanted[ticker]):
-                ok, reason = pullback_rule(trend) if name in PULLBACK_SETUPS else (night_ok, night_text)
-                if not ok:
-                    self.trend_blocked.setdefault(ticker, {})[name] = reason
-        for ticker, blocked in sorted(self.trend_blocked.items()):
-            parts = [f"{name} ({reason})" for name, reason in sorted(blocked.items()) if name not in overnight]
-            if parts:
-                lines.append(f"{ticker} off: {', '.join(parts)}")
-        self._on_intent(Intent(SYSTEM, "trend filters | " + " | ".join(lines or ["every filtered setup is on"]),
-                               level=logging.INFO))
-
-    def _trend_blocked(self, ticker, setup):
-        return setup in self.trend_blocked.get(ticker, {})
-
-    def _open_short(self, ticker, setup, signal, bar_time, entry, stop, message, action="SHORT", order=BAR_CLOSE):
-        trade = LiveTrade(ticker=ticker, setup=setup, signal=signal, exit_mode="eod", entry_time=bar_time, side=-1,
-                          entry=entry, stop=stop, target=None, risk=None if stop is None else stop - entry,
-                          last_bar=bar_time)
-        self.trades.append(trade)
-        self._on_intent(Intent(ENTER, message, action, trade, ticker, setup, entry, order))
-        return trade
-
-    def _check_shorts(self, ticker, bar):
-        if not self.shorts_on or ticker not in self.short_tickers or bar["time"].date() != self.session:
-            return
-        try:
-            if "drive" in self.short_setups:
-                self._drive_short(ticker, bar)
-            if "retest" in self.short_setups:
-                self._retest_short(ticker, bar)
-        except Exception:
-            logger.exception("%s: short check failed on the %s bar", ticker, f"{bar['time']:%H:%M}")
-
-    def _drive_short(self, ticker, bar):
-        stamp, session = bar["time"], self.session.isoformat()
-        name, reentry_name = SHORT_NAMES["drive"], SHORT_NAMES["drive re-entry"]
-        drives = {name, CONFIG_DRIVE_SHORT}
-        if stamp.time() == MARKET_OPEN:
-            key = f"{ticker}|{name}|{session}"
-            # a configured "drive short" setup alerts the same trade; its stop-out still gets the re-entry
-            has_config_drive = any(spec.name == CONFIG_DRIVE_SHORT for spec in self.setups.get(ticker, []))
-            if bar["close"] < bar["open"] and key not in self.alerted and not has_config_drive:
-                self.alerted.add(key)
-                self._open_short(ticker, name, "drive_short", stamp, bar["close"], bar["high"],
-                                 f"SHORT {ticker} | {name} | ~{bar['close']:.2f} (09:30 bar close) | stop {bar['high']:.2f}"
-                                 f" | cover at the close")
-            return
-        key = f"{ticker}|{reentry_name}|{session}"
-        stopped = next((t for t in self.trades if t.ticker == ticker and t.setup in drives and t.side == -1
-                        and t.outcome == "stop" and t.entry_time.date() == self.session), None)
-        if (stopped is None or key in self.alerted or stamp <= stopped.exit_time or stamp.time() >= REENTRY_LATEST
-                or stamp.time() >= self.close_decision_bar):
-            return
-        level = stopped.stop
-        if bar["close"] < level:
-            self.alerted.add(key)
-            self._open_short(ticker, reentry_name, "drive_short_reentry", stamp, bar["close"], None,
-                             f"SHORT {ticker} | {reentry_name} | ~{bar['close']:.2f} ({stamp:%H:%M} bar close), back "
-                             f"below the stop-out level {level:.2f} | no stop | cover at the close")
-
-    def _retest_short(self, ticker, bar):
-        watch = self.short_watches.get(ticker)
-        if watch is None:
-            return
-        stamp, name = bar["time"], SHORT_NAMES["retest"]
-        mine = [t for t in self.trades if t.ticker == ticker and t.setup == name and t.entry_time.date() == self.session]
-        open_trade = next((t for t in mine if t.status == "open"), None)
-        had_position = open_trade is not None or any(t.exit_time == stamp for t in mine)
-        last = stamp.time() >= self.last_bar or stamp.time() >= self.close_decision_bar
-        for event in watch.update(stamp, bar, self.short_adr.get(ticker), had_position, last):
-            if event["kind"] == "trail" and open_trade is not None and event["peak"] < open_trade.stop:
-                open_trade.stop = event["peak"]
-                self._on_intent(Intent(MOVE_STOP, f"LOWER STOP {ticker} | {name} | stop {event['peak']:.2f} (new lower "
-                                                  "rally high)",
-                                       "LOWER STOP", open_trade, ticker, name, event["peak"]))
-            elif event["kind"] == "entry":
-                key = f"{ticker}|{name}|{stamp.isoformat()}"
-                if key in self.alerted:
-                    continue
-                self.alerted.add(key)
-                trade = self._open_short(ticker, name, "retest_short", stamp, event["fill"], event["stop"],
-                                         f"SHORTED {ticker} | {name} | limit filled ~{event['fill']:.2f} ({stamp:%H:%M}"
-                                         f" bar) | stop {event['stop']:.2f} | cover at the close",
-                                         action="SHORT", order=LIMIT)
-                if event["stopped"]:
-                    trade.close_at(stamp, event["stop"], "stop")
-                    self._on_intent(Intent(EXIT, f"COVER {ticker} | {name} | stop hit on the fill bar @ "
-                                                 f"{trade.exit_price:.2f} | {trade.pnl_pct():+.2f}%",
-                                           "COVER", trade, ticker, name, trade.exit_price, STOP))
-            elif event["kind"] == "arm":
-                self._on_intent(Intent(INFO, f"SHORT LIMIT {ticker} | {name} | sell limit {event['level']:.2f} from "
-                                             f"the next bar | stop {event['stop']:.2f} once filled | cancel at "
-                                             f"{RETEST_CANCEL} or when replaced",
-                                       "SHORT LIMIT", None, ticker, name, event["level"], LIMIT))
-
-    def _overnight_short_entry(self, ticker):
-        name = SHORT_NAMES["overnight"]
-        last = self._last_close(ticker)
-        bar_time = self.bars[ticker].index[-1] if not self.bars[ticker].empty else None
-        key = f"{ticker}|{name}|{self.session.isoformat()}"
-        if last is None or bar_time is None or bar_time.date() != self.session or key in self.alerted:
-            return
-        self.alerted.add(key)
-        if in_earnings_window({"signal": "overnight_long", "time": bar_time}, self.windows[ticker]):
-            self._on_intent(Intent(SKIP, f"SKIP {ticker} | {name} | earnings release before the next open",
-                                   "SKIP", None, ticker, name, last))
-            return
-        trade = LiveTrade(ticker=ticker, setup=name, signal="overnight_short", exit_mode="next open",
-                          entry_time=bar_time, side=-1, entry=last, stop=None, target=None, risk=None,
-                          status="pending", last_bar=bar_time)
-        self.trades.append(trade)
-        self._on_intent(Intent(ENTER, f"SHORT {ticker} | {name} | at the close (MOC), ref {last:.2f} "
-                                      f"({bar_time:%H:%M} bar) | cover at the next open",
-                               "SHORT", trade, ticker, name, last, MOC))
-
-    def _submit_evaluations(self, ticker, bar_time):
-        frame = add_moving_averages(self.bars[ticker])
-        frame = frame[frame.index >= self.window_start[ticker]]
-        for spec in self.setups[ticker]:
-            if spec.overnight or self._trend_blocked(ticker, spec.name):
-                continue
-            future = self.executor.submit(evaluate_setup, (ticker, spec, frame, self.windows[ticker], bar_time))
-            self.pending = [f for f in self.pending if not f.done()] + [future]
-            future.add_done_callback(self._on_evaluated)
-
-    def wait_pending(self):
-        """Block until every submitted evaluation has been handled (replays and tests)."""
-        from concurrent.futures import wait
-
-        pending, self.pending = self.pending, []
-        wait(pending)
-        for future in pending:
-            future.result()
-
-    def _on_evaluated(self, future):
-        try:
-            fired = future.result()
-        except Exception:
-            logger.exception("Setup evaluation failed")
-            return
-        with self.lock:
-            for sig in fired:
-                key = f"{sig['ticker']}|{sig['setup']}|{sig['time'].isoformat()}"
-                if key in self.alerted:
-                    continue
-                self.alerted.add(key)
-                self._open_trade(sig)
-            self._save_state()
-
-    def _open_trade(self, sig):
-        spec = next(s for s in self.setups[sig["ticker"]] if s.name == sig["setup"])
-        side = 1 if sig["signal"] in LONG_SIGNALS else -1
-        trade = LiveTrade(ticker=sig["ticker"], setup=sig["setup"], signal=sig["signal"], exit_mode=spec.exit_mode,
-                          entry_time=sig["time"], side=side, entry=sig["price"], stop=sig["stop"],
-                          target=sig["target"], risk=sig["risk"], last_bar=sig["time"])
-        self.trades.append(trade)
-        action = "BUY" if side == 1 else "SHORT"
-        target_text = "" if spec.exit_mode == "eod" else f", target {trade.target:.2f}"
-        self._on_intent(Intent(ENTER, f"{action} {trade.ticker} | {trade.setup} | ~{trade.entry:.2f} "
-                                      f"({sig['time']:%H:%M} bar close) | stop {trade.stop:.2f}{target_text} | "
-                                      f"{EXIT_TEXT[spec.exit_mode]}",
-                               action, trade, trade.ticker, trade.setup, trade.entry, BAR_CLOSE))
-
-    # --- exits -----------------------------------------------------------
-
-    def _update_trades(self, ticker, bar):
-        for trade in self.trades:
-            if trade.ticker != ticker or trade.status in ("closed",) or bar["time"] <= trade.last_bar:
-                continue
-            if trade.overnight:
-                if trade.status == "pending" and bar["time"].time() == self.last_bar:
-                    trade.entry, trade.peak, trade.status, trade.last_bar = bar["close"], bar["close"], "open", bar["time"]
-                elif trade.status == "open" and trade.entry_time.date() < bar["time"].date():
-                    outcome = "next open" if bar["time"].time() == MARKET_OPEN else "late open"
-                    if outcome == "late open":
-                        logger.warning("%s: first bar today is %s, not the open; overnight exit priced there",
-                                       ticker, f"{bar['time']:%H:%M}")
-                    trade.close_at(bar["time"], bar["open"], outcome)
-                    done = "SOLD" if trade.side == 1 else "COVERED"
-                    self._on_intent(Intent(EXIT, f"{done} {ticker} | {trade.setup} | open {trade.exit_price:.2f} | "
-                                                 f"{trade.pnl_pct():+.2f}% from {trade.entry:.2f}",
-                                           done, trade, ticker, trade.setup, trade.exit_price, MOO, notify=False))
-                continue
-            if trade.status == "closing":
-                trade.last_bar = bar["time"]
-                if bar["time"].time() == self.last_bar:
-                    trade.close_at(bar["time"], bar["close"], "close")
-                continue
-            outcome = trade.on_bar(bar)
-            if outcome:
-                action = "SELL" if trade.side == 1 else "COVER"
-                self._on_intent(Intent(EXIT, f"{action} {ticker} | {trade.setup} | {outcome} hit on the "
-                                             f"{bar['time']:%H:%M} bar @ {trade.exit_price:.2f} | "
-                                             f"{trade.pnl_pct():+.2f}%",
-                                       action, trade, ticker, trade.setup, trade.exit_price, EXIT_ORDERS[outcome]))
-            elif bar["time"].time() == self.last_bar:
-                trade.close_at(bar["time"], bar["close"], "close")
-
-    def _close_alerts(self):
-        """15:50: close every open intraday trade at the close, decide the overnight holds."""
-        for trade in self.trades:
-            if trade.overnight or trade.status != "open":
-                continue
-            trade.status = "closing"
-            last = self._last_close(trade.ticker)
-            action = "SELL" if trade.side == 1 else "COVER"
-            pnl = f" | {trade.pnl_pct(last):+.2f}% at {last:.2f}" if last is not None else ""
-            self._on_intent(Intent(EXIT, f"{action} {trade.ticker} | {trade.setup} | at the close (MOC){pnl}",
-                                   action, trade, trade.ticker, trade.setup, last, MOC))
-        for ticker, specs in self.setups.items():
-            for spec in (s for s in specs if s.overnight):
-                if self.half_day:
-                    logger.info("%s: %s skipped on an early-close day (the backtest skips them)", ticker, spec.name)
-                    continue
-                if self._trend_blocked(ticker, spec.name):
-                    self._skip_trend_filtered(ticker, spec)
-                    continue
-                if self._overnight_short_on():
-                    self._skip_overnight_hold(ticker, spec)
-                    continue
-                self._overnight_entry(ticker, spec)
-        if self._overnight_short_on():
-            for ticker in self.short_tickers:
-                if self.half_day:
-                    logger.info("%s: short overnight skipped on an early-close day", ticker)
-                    continue
-                self._overnight_short_entry(ticker)
-
-    def _overnight_short_on(self):
-        separate = self.overnight_short_gate != self.short_gate
-        return "overnight" in self.short_setups and (self.overnight_short_on if separate else self.shorts_on)
-
-    def _skip_overnight_hold(self, ticker, spec):
-        """On a session the overnight short is on, long overnight holds are skipped, so the monitor never alerts BUY
-        and SHORT at the same close. With the overnight short off (`--short-setups drive`) the holds stay on."""
-        key = f"{ticker}|{spec.name}|{self.session.isoformat()}"
-        if key in self.alerted:
-            return
-        self.alerted.add(key)
-        self._on_intent(Intent(SKIP, f"SKIP {ticker} | {spec.name} | the overnight short is on today "
-                                     f"({self.overnight_short_text})",
-                               "SKIP", None, ticker, spec.name, self._last_close(ticker)))
-
-    def _skip_trend_filtered(self, ticker, spec):
-        key = f"{ticker}|{spec.name}|{self.session.isoformat()}"
-        if key in self.alerted:
-            return
-        self.alerted.add(key)
-        self._on_intent(Intent(SKIP, f"SKIP {ticker} | {spec.name} | trend filter: "
-                                     f"{self.trend_blocked[ticker][spec.name]}",
-                               "SKIP", None, ticker, spec.name, self._last_close(ticker)))
-
-    def _overnight_entry(self, ticker, spec):
-        last = self._last_close(ticker)
-        bar_time = self.bars[ticker].index[-1] if not self.bars[ticker].empty else None
-        if last is None or bar_time is None or bar_time.date() != self.session:
-            logger.warning("%s: no bars today; overnight hold skipped", ticker)
-            return
-        key = f"{ticker}|{spec.name}|{self.session.isoformat()}"
-        if key in self.alerted:
-            return
-        probe = {"signal": "overnight_long", "time": bar_time}
-        if spec.params.overnight_skip_earnings and in_earnings_window(probe, self.windows[ticker]):
-            self.alerted.add(key)
-            self._on_intent(Intent(SKIP, f"SKIP {ticker} | {spec.name} | earnings release before the next open",
-                                   "SKIP", None, ticker, spec.name, last))
-            return
-        closes = self.daily_closes.get(ticker, [])
-        if not overnight_filter_ok(spec.params.overnight_hold, closes + [last]):
-            logger.info("%s: %s filter not met at %.2f", ticker, spec.name, last)
-            return
-        self.alerted.add(key)
-        trade = LiveTrade(ticker=ticker, setup=spec.name, signal="overnight_long", exit_mode="next open",
-                          entry_time=bar_time, side=1, entry=last, stop=None, target=None, risk=None,
-                          status="pending", last_bar=bar_time)
-        self.trades.append(trade)
-        self._on_intent(Intent(ENTER, f"BUY {ticker} | {spec.name} | at the close (MOC), ref {last:.2f} "
-                                      f"({bar_time:%H:%M} bar) | sell at the next open",
-                               "BUY", trade, ticker, spec.name, last, MOC))
-
-    def _pre_open_alerts(self):
-        before_open = self.now().time() < MARKET_OPEN
-        for trade in self.trades:
-            if trade.overnight and trade.status == "open" and trade.entry_time.date() < self.session:
-                when = "at the open (MOO before 09:28)" if before_open else "now (monitor started after the open)"
-                action, verb = ("SELL", "bought") if trade.side == 1 else ("COVER", "shorted")
-                self._on_intent(Intent(EXIT, f"{action} {trade.ticker} | {trade.setup} | {when}, "
-                                             f"{verb} {trade.entry:.2f} on {trade.entry_time:%m-%d}",
-                                       action, trade, trade.ticker, trade.setup, None, MOO))
-
-    def _catch_up_trades(self):
-        """Replay today's warm-up bars through trades restored from the state file: each bar's stop checks, then
-        (`--drive-trail`) its raise, as live; one RAISE STOP alert per drive long whose stop moved."""
-        for ticker in self.tickers:
-            raised = {}
-            for stamp, row in self.bars[ticker].iterrows():
-                if stamp.date() != self.session:
-                    continue
-                bar = {"time": stamp, "open": float(row["open"]), "high": float(row["high"]), "low": float(row["low"]),
-                       "close": float(row["close"])}
-                self._update_trades(ticker, bar)
-                if self.drive_trail:
-                    raised.update(self._trail_drive_long(ticker, bar, alert=False))
-            if raised:
-                self._alert_raised(ticker, raised, "caught up after a restart")
-
-    # --- helpers ---------------------------------------------------------
-
-    def _all_have_bar(self, bar_time):
-        return all(not frame.empty and frame.index[-1].date() == self.session and frame.index[-1].time() >= bar_time
-                   for frame in self.bars.values())
-
-    def _last_close(self, ticker):
-        frame = self.bars.get(ticker)
-        if frame is None or frame.empty or frame.index[-1].date() != self.session:
-            return None
-        return float(frame["close"].iloc[-1])
 
     def _watchdog(self, now):
         """Reconnect a silent stream, and tell the user once when market data has stopped."""
@@ -1192,26 +655,16 @@ class WaveSetupMonitor:
         except (OSError, ValueError):
             logger.warning("Unreadable state file %s; starting fresh", self.state_file)
             return
-        same_session = state.get("session") == self.session.isoformat()
-        trades = [LiveTrade.from_dict(d) for d in state.get("trades", [])]
-        if same_session:
-            self.trades = trades
-            self.alerted = set(state.get("alerted", []))
+        if self.strategy.restore(state):
             self.done.update(state.get("done", {}))
-        else:
-            self.trades = [t for t in trades if t.overnight and t.status in ("open", "pending")
-                           and t.ticker in self.setups]
-            for trade in self.trades:
-                trade.status = "open"
 
     def _save_state(self):
         with self.lock:
             self.state_file.parent.mkdir(parents=True, exist_ok=True)
-            keep = [t for t in self.trades
-                    if t.status != "closed" or (t.exit_time and t.exit_time.date() == self.session)]
+            state = self.strategy.state()
             temp = self.state_file.with_name(f"{self.state_file.name}.{os.getpid()}.{threading.get_ident()}.tmp")
-            temp.write_text(json.dumps({"session": self.session.isoformat(), "alerted": sorted(self.alerted),
-                                        "done": self.done, "trades": [t.to_dict() for t in keep]}, indent=1))
+            temp.write_text(json.dumps({"session": state["session"], "alerted": state["alerted"], "done": self.done,
+                                        "trades": state["trades"]}, indent=1))
             temp.replace(self.state_file)
 
 
