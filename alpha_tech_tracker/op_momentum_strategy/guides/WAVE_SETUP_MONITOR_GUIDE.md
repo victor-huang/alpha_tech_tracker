@@ -238,7 +238,9 @@ else here.
   short with `qqq-ma200` +139 (current gate −79), both mostly from the 2022 bear year. Shorts pay in a slow bear
   market, not in a quick drop and V-shaped rebound like 2020; keeping the long overnight holds out of the market
   (`--trend-filters overnight`) saved more than either short made.
-- **Tickers:** `--short-tickers`, default the config's tickers plus QQQ (added to the stream).
+- **Tickers:** `--short-tickers`, default the config's tickers. QQQ is the gate and trend benchmark only and is not
+  traded (it was until Nov 11 2026; its drive short made about −$200 over 2018–2026); list it in `--short-tickers`
+  to trade it again.
 - **drive:** a red first 5-min bar → `SHORT ... ~close (09:30 bar close) | stop its high | cover at the close`. If the
   stop is hit, one re-entry when a bar closes back below that high before 15:00 → `SHORT ... short drive re-entry |
   no stop | cover at the close`. Both are covered by the 15:50 `COVER ... at the close (MOC)` alert.
@@ -265,7 +267,7 @@ carries gap risk; `--no-short-setups` turns them all off.
   overnight short back on for a crash.
 - **A configured `drive short` setup** already alerts the red-first-bar short, so the monitor doesn't send a second
   one for that ticker; its stop-out still gets the re-entry.
-- **Tickers added only for shorts** (QQQ by default) get no reversal alerts and are left out of the start-up stats.
+- **Tickers added only for shorts** (any `--short-tickers` not in the config) get no reversal alerts and are left out of the start-up stats.
 - **An open overnight trade in the state file keeps its ticker streamed** at the next start, whatever the config or
   flags, so its next-open SELL / COVER alert and exit are not lost.
 
@@ -463,7 +465,7 @@ difference is the close rule below (GOOGL drive long on Sep 30 hit its stop afte
 | `--no-short-setups` | off | No short setups |
 | `--short-gate` | `qqq-ma50` | When shorts are on: `qqq-ma50`, `qqq-ma50-down10`, `qqq-ma200`, `always`, `off` |
 | `--overnight-short-gate` | the short gate | Gate for the overnight short alone (`qqq-ma200` was its best) |
-| `--short-tickers ...` | config tickers + QQQ | Tickers for the short setups |
+| `--short-tickers ...` | config tickers | Tickers for the short setups (QQQ not traded) |
 | `--trend-filters ...` | none | Opt-in daily trend filters: `overnight` (QQQ above its 200-day MA and up over 10 sessions), `pullback` |
 | `--stats-tickers ...` | the 21 setup-tape tickers | Tickers pooled in the start-up signal stats |
 | `--no-signal-stats` | off | No start-up signal stats |

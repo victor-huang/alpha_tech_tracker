@@ -9,7 +9,7 @@ At each month's first session, with no data from after it (ticker-tuning doc, Fi
               setups over the last --refresh-lookback sessions, with --min-trades trades and a positive total
   3. trade    for the month, the setups at their fixed exits; overnight longs only on nights the overnight trend
               filter allows (and not when the overnight short is on); the monitor's drive short + re-entry behind
-              --short-gate and overnight short behind --overnight-short-gate on the picks plus QQQ
+              --short-gate and overnight short behind --overnight-short-gate on the picks (QQQ only gates)
 
 The setup report's 5-min bars are not split-adjusted, so its trades held across a stock split (overnight holds on the
 split night, a fake -90% on a 10-for-1) are dropped; split days come from raw vs split-adjusted daily closes.
@@ -114,7 +114,7 @@ def month_trades(fixed_exit, short_legs, setups, days, gates, drive_short, overn
             continue
         rows.append((r.ticker, r.day, r.setup, r.net_pct, _stamp(r.entry_time), _stamp(r.exit_time)))
     if drive_short or overnight_short:
-        traded = short_legs[short_legs.ticker.isin(list(setups) + [MARKET_TICKER]) & short_legs.day.isin(days)]
+        traded = short_legs[short_legs.ticker.isin(list(setups)) & short_legs.day.isin(days)]
         for r in traded.itertuples():
             if (drive_short and r.leg == SHORT_LEGS[0] and r.day in drive_gate) or \
                     (overnight_short and r.leg == SHORT_LEGS[1] and r.day in night_gate):
@@ -269,7 +269,7 @@ def load_data(year, args):
         found = {t: sorted(str(d) for d in days) for t, days in splits.items() if days}
         print(f"dropped {len(trades) - len(kept)} setup report trades held across a split ({found})")
     trades = kept
-    short_legs = cached_short_legs(tickers + [MARKET_TICKER], starts[0], end, folder / "short_legs", args.workers)
+    short_legs = cached_short_legs(tickers, starts[0], end, folder / "short_legs", args.workers)
     gates = (gate_days(args.short_gate, starts[0], end), gate_days(args.overnight_short_gate, starts[0], end),
              session_flags(market_trend(qqq), sessions, "overnight_ok"))
     fixed_exit = trades[[REPORT_EXITS.get(s) == x for s, x in zip(trades.setup, trades.exit)]]
@@ -319,7 +319,7 @@ def report(year, picks, data, args):
         month = trades[trades.month == start.strftime("%Y-%m")]
         by = month.groupby("ticker").dollars.sum()
         cells = [f"{t} [{', '.join(setups[t]) or 'no setup'}] {by.get(t, 0):+,.0f}" for t in setups]
-        print(f"{start:%b}: ${month.dollars.sum():+,.0f} | " + "; ".join(cells) + f"; {MARKET_TICKER} {by.get(MARKET_TICKER, 0):+,.0f}")
+        print(f"{start:%b}: ${month.dollars.sum():+,.0f} | " + "; ".join(cells))
     trades = variants(results[PLANS[0][0]][0], args)["capped + costs"]
     print(f"\n=== {PLANS[0][0]}: by setup, capped + costs")
     print(trades.groupby("setup").agg(trades=("pct", "size"), won_pct=("pct", lambda x: 100 * (x > 0).mean()),

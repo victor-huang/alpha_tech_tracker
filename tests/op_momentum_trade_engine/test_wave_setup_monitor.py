@@ -1607,3 +1607,27 @@ class TestConfigRefresh:
         assert monitor_module.refresh_report.call_args.args == (["AMD", "META"], 63, 1)
         assert generate.call_args.args == (str(report_dir), ["AMD", "META"], 3, ["long", "overnight"], 3, 63)
         assert json.loads(config_path.read_text())["window"] == "w"
+
+
+class TestRunMonitorShortTickers:
+    def _run(self, mocker, argv):
+        mocker.patch.object(monitor_module, "load_config", return_value={"AMD": [], "MU": []})
+        mocker.patch.object(monitor_module, "build_market_data_client")
+        mocker.patch.object(monitor_module, "open_overnight_tickers", return_value=[])
+        mocker.patch.object(monitor_module.signal_module, "signal")
+        monitor_class = mocker.patch.object(monitor_module, "WaveSetupMonitor")
+
+        monitor_module._run_monitor(monitor_module.parse_args(["run", "--workers", "0"] + argv))
+
+        return monitor_class.call_args
+
+    def test_shorts_trade_the_config_tickers_without_qqq(self, mocker):
+        call = self._run(mocker, ["--short-setups", "drive"])
+
+        assert call.kwargs["short_tickers"] == ["AMD", "MU"]
+        assert set(call.args[0]) == {"AMD", "MU"}
+
+    def test_explicit_short_tickers_are_kept(self, mocker):
+        call = self._run(mocker, ["--short-setups", "drive", "--short-tickers", "AMD", "QQQ"])
+
+        assert call.kwargs["short_tickers"] == ["AMD", "QQQ"]

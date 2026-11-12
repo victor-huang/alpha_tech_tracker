@@ -2007,7 +2007,10 @@ the start of the year, so a few picks differ). As of Nov 6 2026 the screen picke
 (`top_setups_by_ticker`: top 3 long / overnight setups over the last 63 sessions, 3+ trades, positive); then the month
 traded with the monitor's rules: setups at their fixed exits, overnight longs only on nights the overnight trend filter
 allows (Finding 40), the drive short + re-entry behind `qqq-ma50-down10` and the overnight short behind `qqq-ma200`
-(Finding 41) on the picks plus QQQ. $10k, $2,000 a trade, 5 bps; Jan 2 – Nov 6 2026.
+(Finding 41) on the picks plus QQQ. $10k, $2,000 a trade, 5 bps; Jan 2 – Nov 6 2026. (Findings 43–45 include
+QQQ's drive short; from Nov 11 2026 QQQ is only the gate and trend benchmark and is not traded. Its drive short made
+about −$200 over the eight years, uncapped: 2018 +182, 2019 −231, 2020 −168, 2021 +7, 2022 −4, 2024 −26, 2025 +18,
+2026 +7 (+$80 capped). The past runs were not redone.)
 
 | Plan | Trades | Won | Per trade | P&L | Max DD | Months + |
 |---|---|---|---|---|---|---|

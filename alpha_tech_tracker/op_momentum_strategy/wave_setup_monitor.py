@@ -24,7 +24,7 @@ plus a CSV log:
                stop-out, covered at the close) and overnight (short the close, cover at the next open) by
                default; retest (a sell limit at the retest of the last confirmed rally high, trailing stop) is
                opt-in, it did not hold up out of sample. On `--short-tickers`, default the config's tickers
-               plus QQQ; `--short-setups` picks them, `--no-short-setups` turns them off. `--short-gate
+               (QQQ is the gate and trend benchmark, not traded); `--short-setups` picks them, `--no-short-setups` turns them off. `--short-gate
                qqq-ma50-down10` / `qqq-ma200` and `--overnight-short-gate` (default: the short gate) are opt-in
                gates (Finding 41). On sessions the overnight short is on, the long overnight holds are skipped;
                a configured `drive short` is not alerted twice.
@@ -1551,7 +1551,7 @@ def _run_monitor(args):
     setups = load_config(args.config)
     configured = set(setups)
     short_setups = [] if args.no_short_setups or args.short_gate == "off" else args.short_setups
-    short_tickers = args.short_tickers or list(setups) + [GATE_TICKER]
+    short_tickers = args.short_tickers or list(setups)
     for ticker in (short_tickers if short_setups else []) + open_overnight_tickers(args.state_file):
         setups.setdefault(ticker, [])
     executor = InlineExecutor() if args.workers == 0 else ProcessPoolExecutor(max_workers=args.workers)
@@ -1631,7 +1631,7 @@ def parse_args(argv=None):
                         help="Gate for the overnight short alone (default: --short-gate); qqq-ma200 was its best "
                              "over 2020-2026 (Finding 41)")
     parser.add_argument("--short-tickers", nargs="+", help="Tickers for the short setups (default: the config's "
-                                                           "tickers plus QQQ)")
+                                                           "tickers; QQQ is not traded)")
     parser.add_argument("--trend-filters", nargs="+", choices=TREND_FILTERS, default=[],
                         help="Opt-in daily trend filters (default: none; Finding 40): overnight = overnight holds "
                              "only while QQQ is above its 200-day MA and up over 10 sessions; pullback = pullback "

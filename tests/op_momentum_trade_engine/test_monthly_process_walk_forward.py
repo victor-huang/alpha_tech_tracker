@@ -85,15 +85,23 @@ class TestMonthTrades:
 
         assert trades.day.tolist() == [JAN]
 
-    def test_gated_shorts_on_the_picks_and_qqq(self):
-        legs = _legs([("AMD", JAN, "drive short + re-entry", 1.0), ("QQQ", JAN, "overnight short", 2.0),
+    def test_gated_shorts_on_the_picks_only(self):
+        legs = _legs([("AMD", JAN, "drive short + re-entry", 1.0), ("AMD", JAN, "overnight short", 2.0),
                       ("MU", JAN, "drive short + re-entry", 3.0), ("AMD", FEB, "drive short + re-entry", 4.0)])
         gates = ({JAN}, {JAN}, {})
 
         trades = month_trades(_report([]), legs, {"AMD": []}, [JAN, FEB], gates, drive_short=True,
                               overnight_short=True)
 
-        assert trades[["ticker", "setup"]].values.tolist() == [["AMD", "drive short + re-entry"], ["QQQ", "overnight short"]]
+        assert trades[["ticker", "setup"]].values.tolist() == [["AMD", "drive short + re-entry"], ["AMD", "overnight short"]]
+
+    def test_qqq_is_not_traded(self):
+        legs = _legs([("QQQ", JAN, "drive short + re-entry", 1.0), ("QQQ", JAN, "overnight short", 2.0)])
+
+        trades = month_trades(_report([]), legs, {"AMD": []}, [JAN], ({JAN}, {JAN}, {}), drive_short=True,
+                              overnight_short=True)
+
+        assert trades.empty
 
     def test_no_shorts_when_switched_off(self):
         legs = _legs([("AMD", JAN, "drive short + re-entry", 1.0)])
