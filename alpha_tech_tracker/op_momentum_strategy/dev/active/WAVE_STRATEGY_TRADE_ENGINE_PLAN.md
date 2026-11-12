@@ -320,10 +320,10 @@ the monitor for about a week, comparing trades with the monitor's alert CSV dail
 
 | Step | Status | Commit |
 |---|---|---|
-| A0 | done — baseline 2026-11-02..11 (8 sessions), `prod` 240 alert rows, `all_on` 365; replay deterministic | A0 commit |
-| A1 | done — both variants byte-identical to the baseline; full suite green except the 2 known failures | A1 commit |
-| A2 | done — every trading alert goes through `WaveSetupMonitor._on_intent(Intent)`; shell alerts (start-up, data outage / restored, reversal LOW? / HIGH?) still call `_alert` / `_system_alert`; byte-identical | A2 commit |
-| A3 | code done — `WaveSetupStrategy` in `wave_strategy/strategy.py`; replay byte-identical (0 cache misses = same evaluation inputs), process-pool smoke test OK, 21 strategy tests; **shadow run on EC2 pending (needs the user)** | A3 commit |
+| A0 | done — baseline 2026-11-02..11 (8 sessions), `prod` 240 alert rows, `all_on` 365; replay deterministic | `1b42711` |
+| A1 | done — both variants byte-identical to the baseline; full suite green except the 2 known failures; **deployed to EC2 with A2, running fine (user, 2026-11-12)** | `2182f91` |
+| A2 | done — every trading alert goes through `WaveSetupMonitor._on_intent(Intent)`; shell alerts (start-up, data outage / restored, reversal LOW? / HIGH?) still call `_alert` / `_system_alert`; byte-identical; **deployed to EC2 (prod = `deploy-A2`)** | `f5790f3` |
+| A3 | code done — `WaveSetupStrategy` in `wave_strategy/strategy.py`; replay byte-identical (0 cache misses = same evaluation inputs), process-pool smoke test OK, 21 strategy tests; **shadow run on EC2 pending (needs the user)** | `a4776ce` |
 | A4 | next | |
 
 **A3 notes (differences from the sketch above):**
