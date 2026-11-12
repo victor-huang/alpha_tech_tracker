@@ -5,7 +5,9 @@ from alpha_tech_tracker.research.paper_lists import (
     entry_checkpoints,
     hedge_list,
     latest_list,
+    mid_list,
     paper_rules,
+    ranked_from_lists,
 )
 
 CP1 = pd.Timestamp("2026-10-20")
@@ -116,3 +118,32 @@ class TestHedgeList:
         out = hedge_list(self._panel(), self._qqq(100.0), [CP1, CP2])
 
         assert out["status"].iloc[0] == "off"
+
+
+class TestRankedFromLists:
+    def test_ranks_follow_list_order(self):
+        out = ranked_from_lists({CP2: ["B", "A"]})
+
+        assert out[["symbol", "rank"]].values.tolist() == [["B", 1], ["A", 2]]
+
+
+class TestMidList:
+    def _close(self, b_after_cp1=100.0):
+        days = pd.bdate_range(CP1, CP2)
+        b = [100.0 if d <= CP1 else b_after_cp1 for d in days]
+        return pd.DataFrame({"A": 100.0, "B": b}, index=days)
+
+    def test_keeps_a_name_still_listed_and_adds_a_new_one(self):
+        out = mid_list({CP1: ["A"], CP2: ["A", "B"]}, self._close(), [CP1, CP2], _panel(["A", "B"]))
+
+        assert dict(zip(out["symbol"], out["status"])) == {"A": "held", "B": "new"}
+
+    def test_drops_a_name_that_left_the_list(self):
+        out = mid_list({CP1: ["A", "B"], CP2: ["A"]}, self._close(), [CP1, CP2], _panel(["A", "B"]))
+
+        assert dict(zip(out["symbol"], out["status"])) == {"A": "held", "B": "dropped"}
+
+    def test_entry_is_the_first_checkpoint_held(self):
+        out = mid_list({CP1: ["A"], CP2: ["A"]}, self._close(), [CP1, CP2], _panel(["A"]))
+
+        assert out["entry"].iloc[0] == CP1.date()

@@ -10,13 +10,15 @@ All books are top 15, equal weight, rebalanced every 10 trading days (the biweek
 |---|---|---|
 | Large (≥ $10B) | Trend filter; rank by 180-day return / vol_60d^0.5. The first 5 places go to the 3 strongest big-volume gap-ups and the 2 strongest fresh 52-week highs (both above the 20/50/200-day averages, last 10 trading days). | Sell on a close 25% below the peak close since entry. |
 | Small | Trend filter; rank by composite, excluding names whose share count rose 10%+ in a year; top-30% gross-profitability names moved to the front of the top 30. | Sell on a close 15% below the peak close since entry. |
-| Mid | Skip. | |
+| Mid (paper-tracked) | Reclaimed a flat or rising 200-day within 40 trading days, above the 20/50-day, sales up 25%+ a year; never-held names bought first, sold when they leave the list. | Sell on a close 15% below the peak close since entry. |
 
 A stopped-out name stays out until the next checkpoint, when it can be bought back if it is still on the list.
 
 **Rebalance interval:** the 2-week cycle was tested against monthly, quarterly and QQQ-trend-based schedules. It stays for both tiers; see [rebalance_interval_2020_2026.md](rebalance_interval_2020_2026.md). The Small candidate to paper-track is "2 weeks while QQQ is above both its 50- and 200-day averages, otherwise hold 1 month."
 
 **List size:** holding only the top N was tested in [concentration_2020_2026.md](concentration_2020_2026.md). Large top 10 is the best risk-adjusted Large book (35.5%, Sharpe 1.16). Large top 3 ranked by the 180-day score alone (64.5% a year, worst drop −48%) is paper-tracked as `large_top3`.
+
+**Mid list:** Mid names that reclaimed a flat or rising 200-day within 40 trading days, above their 20/50-day, with sales up 25%+ a year; 15 names, 15% trailing stop, sold when they leave the list (30.3% a year 2020–2026 with never-held names first, worst drop −31%; walk-forward 19.8% on 2022–2026): [mid_reclaim_2020_2026.md](mid_reclaim_2020_2026.md). Paper-tracked as `mid_reclaim_growth`.
 
 **Short hedge:** while QQQ closes below both its 50- and 200-day averages, shorting the 15 weakest liquid Large names at 50% of the Large book turned 2022 from −9% to +19% at a cost in 2020 and early 2023 (32.9% vs 31.7% a year, worst drop −24% vs −27%): [short_hedge_2020_2026.md](short_hedge_2020_2026.md). Paper-tracked as `large_short_hedge`.
 

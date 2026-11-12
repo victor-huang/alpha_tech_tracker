@@ -112,6 +112,13 @@ class TestRunReclaimBook:
         assert book["exits"].iloc[0] == 1
         assert round(book["ret"].iloc[0], 4) == 0.0
 
+    def test_reports_names_held_at_each_checkpoint(self):
+        close = self._close(np.full(10, 100.0), np.full(10, 100.0))
+
+        book = run_reclaim_book({self.CPS[0]: ["B", "A"]}, close, self.CPS[:1], cost=0.0)
+
+        assert book["held"].iloc[0] == ["B", "A"]
+
     def test_limits_holdings_to_n(self):
         close = self._close(np.full(10, 100.0), np.full(10, 100.0))
 

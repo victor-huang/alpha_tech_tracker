@@ -52,6 +52,7 @@ class MidSetting(NamedTuple):
 
 
 RECOMMENDED = MidSetting()
+PAPER_SETTING = RECOMMENDED._replace(ranking=FRESH_FIRST)
 
 
 def reclaim_features(close: pd.DataFrame, dollar_volume: pd.DataFrame) -> Dict[str, pd.DataFrame]:
@@ -103,7 +104,8 @@ def run_reclaim_book(lists: Dict[pd.Timestamp, List[str]], close: pd.DataFrame, 
     """Hold up to n names from the list day by day. At each checkpoint sell names off the list, fill open slots
     from the list in `ranking` order and re-split equally; between checkpoints a trailing stop sells to cash.
 
-    Returns per checkpoint: return to the next checkpoint, names held, one-way turnover and stop exits."""
+    Returns per checkpoint: return to the next checkpoint, names held (count and list), one-way turnover and stop
+    exits."""
     c = close.ffill()
     price = c.values
     daily = c.pct_change(fill_method=None).fillna(0.0).values
@@ -140,7 +142,7 @@ def run_reclaim_book(lists: Dict[pd.Timestamp, List[str]], close: pd.DataFrame, 
                     peaks.pop(s)
                     exits += 1
         rows.append({"checkpoint": cp, "ret": (cash + sum(positions.values())) / start_value - 1,
-                     "names": len(held), "turnover": turnover / 2, "exits": exits})
+                     "names": len(held), "held": held, "turnover": turnover / 2, "exits": exits})
     return pd.DataFrame(rows).set_index("checkpoint")
 
 

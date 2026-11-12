@@ -2,7 +2,8 @@
 (recommended_rules.RECOMMENDED), the previous Large rule for comparison, and the concentrated Large top 3 ranked by
 the 180-day score alone (concentration.py), plus the short-hedge basket (short_hedge.py): the 15 weakest liquid Large
 names, status "short" while QQQ closes below both its 50- and 200-day averages (short 50% of the Large book until the
-next checkpoint), otherwise "off".
+next checkpoint), otherwise "off". Also the Mid reclaim + growth list (mid_reclaim.py): fresh 200-day reclaims with 25%+
+sales growth, never-held names bought first, 15% trailing stop, sold when they leave the list.
 
 Each list is the backtest book (its top N, no buffer, no market gate) at the latest checkpoint, with names new since the
 previous checkpoint, names dropped, and the checkpoint each held name was bought at (`entry`, used by exit_watch for
@@ -22,6 +23,15 @@ import pandas as pd
 
 from alpha_tech_tracker.research import uptrend_formation
 from alpha_tech_tracker.research.concentration import LISTS as CONCENTRATED
+from alpha_tech_tracker.research.mid_reclaim import (
+    PAPER_SETTING,
+    STOP,
+    TIER,
+    attach_features,
+    reclaim_features,
+    reclaim_list,
+    run_reclaim_book,
+)
 from alpha_tech_tracker.research.recommended_rules import RECOMMENDED, prepare_recommended_panel
 from alpha_tech_tracker.research.selection_filters import (
     PANEL_DIR,
@@ -40,6 +50,8 @@ from alpha_tech_tracker.research.winner_capture import LISTS
 TOP = 15
 DETAIL_COLUMNS = ["close", "ret_60d", "ret_120d", "ret_180d", "off_52w_high", "gap_10d", "high_breakout_10d"]
 HEDGE_LIST = "large_short_hedge"
+MID_LIST = "mid_reclaim_growth"
+MID_EXIT_RULE = "trail15"
 
 
 def paper_rules() -> Dict[str, Tuple[str, Variant, str, int]]:
@@ -98,6 +110,27 @@ def hedge_list(panel: pd.DataFrame, index_close: pd.Series, checkpoints: List[pd
     return pd.concat([out, details], axis=1)
 
 
+def ranked_from_lists(lists: Dict[pd.Timestamp, List[str]]) -> pd.DataFrame:
+    """Checkpoint, symbol and rank (1 = first in the list's order) for every listed name."""
+    rows = [{"checkpoint": cp, "symbol": s, "rank": i + 1} for cp, names in lists.items() for i, s in enumerate(names)]
+    return pd.DataFrame(rows, columns=["checkpoint", "symbol", "rank"])
+
+
+def mid_list(lists: Dict[pd.Timestamp, List[str]], close: pd.DataFrame, checkpoints: List[pd.Timestamp],
+             panel: pd.DataFrame) -> pd.DataFrame:
+    """The Mid reclaim + growth book at the last checkpoint, replayed day by day with its trailing stop so the
+    never-held-first order sees every earlier purchase; rank is the volume-surge order on the list."""
+    book = run_reclaim_book(lists, close, checkpoints, PAPER_SETTING.ranking, stop=STOP, cost=0.0)
+    return latest_list(book, ranked_from_lists(lists), panel)
+
+
+def mid_inputs(inputs) -> Tuple[Dict[pd.Timestamp, List[str]], pd.DataFrame]:
+    symbols = sorted(set(inputs.panel.loc[inputs.panel["tier"] == TIER, "symbol"]) & set(inputs.close.columns))
+    close = inputs.close[symbols]
+    features = reclaim_features(close, inputs.dollar_volume[symbols])
+    return reclaim_list(attach_features(inputs.panel, features), PAPER_SETTING), close
+
+
 def run(args: argparse.Namespace) -> None:
     if args.refresh:
         uptrend_formation.main(["--year", str(args.today.year), "--today", args.today.isoformat()])
@@ -114,6 +147,9 @@ def run(args: argparse.Namespace) -> None:
         ranked = ranked[ranked["tier"] == tier]
         book = run_portfolio(ranked, returns, inputs.regime, n, n, False, 0.0, variant.take_all)
         lists.append(latest_list(book, ranked, panel).assign(list=name, exit_rule=exit_rule))
+    mid_lists, mid_close = mid_inputs(inputs)
+    lists.append(mid_list(mid_lists, mid_close, list(inputs.checkpoints), panel)
+                 .assign(list=MID_LIST, exit_rule=MID_EXIT_RULE))
     hedge = hedge_list(panel, inputs.close[REGIME_INDEX], list(inputs.checkpoints))
     lists.append(hedge.assign(list=HEDGE_LIST, exit_rule="none"))
     table = pd.concat(lists, ignore_index=True)
