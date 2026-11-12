@@ -1,0 +1,33 @@
+time,ticker,setup,action,price,stop,target,message
+2026-11-10T09:35:02-05:00,AMD,drive long,BUY,509.82,500.25,518.515,BUY AMD | drive long | ~509.82 (09:30 bar close) | stop 500.25 | hold to the close (stop only)
+2026-11-10T09:35:02-05:00,APP,short drive,SHORT,403.515,408.65,,SHORT APP | short drive | ~403.51 (09:30 bar close) | stop 408.65 | cover at the close
+2026-11-10T09:35:02-05:00,MRNA,drive long,BUY,268.0453,262.55,279.7132,BUY MRNA | drive long | ~268.05 (09:30 bar close) | stop 262.55 | hold to the close (stop only)
+2026-11-10T09:35:02-05:00,SHOP,short drive,SHORT,149.45,151.2,,SHORT SHOP | short drive | ~149.45 (09:30 bar close) | stop 151.20 | cover at the close
+2026-11-10T09:35:02-05:00,SNDK,short drive,SHORT,854.34,866.0,,SHORT SNDK | short drive | ~854.34 (09:30 bar close) | stop 866.00 | cover at the close
+2026-11-10T09:35:02-05:00,SNPS,short drive,SHORT,456.605,463.48,,SHORT SNPS | short drive | ~456.61 (09:30 bar close) | stop 463.48 | cover at the close
+2026-11-10T09:45:02-05:00,MRNA,drive long,SELL,262.55,262.55,279.7132,SELL MRNA | drive long | stop hit on the 09:40 bar @ 262.55 | -2.05%
+2026-11-10T09:50:02-05:00,SNDK,short drive,COVER,866.0,866.0,,COVER SNDK | short drive | stop hit on the 09:45 bar @ 866.00 | -1.36%
+2026-11-10T10:00:02-05:00,SNPS,short drive,COVER,463.48,463.48,,COVER SNPS | short drive | stop hit on the 09:55 bar @ 463.48 | -1.51%
+2026-11-10T10:20:02-05:00,SHOP,reversal push,LOW?,150.05,,,"LOW? SHOP | push | ~150.05 (10:15 bar close) | wave down 3.3 avg bars, low 149.10"
+2026-11-10T10:20:02-05:00,SNPS,short drive re-entry,SHORT,462.57,,,"SHORT SNPS | short drive re-entry | ~462.57 (10:15 bar close), back below the stop-out level 463.48 | no stop | cover at the close"
+2026-11-10T10:30:02-05:00,SNPS,pullback long,BUY,461.075,458.5171,465.54,"BUY SNPS | pullback long | ~461.07 (10:25 bar close) | stop 458.52, target 465.54 | stop until the target, then trail (32% give-back)"
+2026-11-10T10:35:02-05:00,MRNA,reversal long_tail,HIGH?,259.795,,,"HIGH? MRNA | long tail + confirm | ~259.80 (10:30 bar close) | wave up 3.4 avg bars, high 262.97"
+2026-11-10T10:45:02-05:00,SNDK,short drive re-entry,SHORT,859.5485,,,"SHORT SNDK | short drive re-entry | ~859.55 (10:40 bar close), back below the stop-out level 866.00 | no stop | cover at the close"
+2026-11-10T11:00:02-05:00,AMD,pullback long,BUY,522.05,510.6793,538.26,"BUY AMD | pullback long | ~522.05 (10:55 bar close) | stop 510.68, target 538.26 | stop until the target, then trail (32% give-back)"
+2026-11-10T11:05:02-05:00,SNDK,reversal long_tail,LOW?,854.9606,,,"LOW? SNDK | long tail + confirm | ~854.96 (11:00 bar close) | wave down 9.4 avg bars, low 841.03"
+2026-11-10T11:25:02-05:00,AMD,reversal long_tail,HIGH?,524.785,,,"HIGH? AMD | long tail + confirm | ~524.78 (11:20 bar close) | wave up 3.4 avg bars, high 530.74"
+2026-11-10T11:40:02-05:00,SNPS,pullback long,SELL,458.5171,458.5171,465.54,SELL SNPS | pullback long | stop hit on the 11:35 bar @ 458.52 | -0.55%
+2026-11-10T11:55:02-05:00,AMD,pullback long,SELL,510.6793,510.6793,538.26,SELL AMD | pullback long | stop hit on the 11:50 bar @ 510.68 | -2.18%
+2026-11-10T12:20:02-05:00,SHOP,reversal long_tail,LOW?,144.85,,,"LOW? SHOP | long tail + confirm | ~144.85 (12:15 bar close) | wave down 12.7 avg bars, low 143.67"
+2026-11-10T13:40:02-05:00,MRNA,reversal long_tail,HIGH?,255.67,,,"HIGH? MRNA | long tail + confirm | ~255.67 (13:35 bar close) | wave up 3.0 avg bars, high 260.44"
+2026-11-10T15:50:30-05:00,AMD,drive long,SELL,514.3796,500.25,518.515,SELL AMD | drive long | at the close (MOC) | +0.89% at 514.38
+2026-11-10T15:50:30-05:00,APP,short drive,COVER,395.0,408.65,,COVER APP | short drive | at the close (MOC) | +2.11% at 395.00
+2026-11-10T15:50:30-05:00,SHOP,short drive,COVER,146.3,151.2,,COVER SHOP | short drive | at the close (MOC) | +2.11% at 146.30
+2026-11-10T15:50:30-05:00,SNPS,short drive re-entry,COVER,459.73,,,COVER SNPS | short drive re-entry | at the close (MOC) | +0.61% at 459.73
+2026-11-10T15:50:30-05:00,SNDK,short drive re-entry,COVER,853.96,,,COVER SNDK | short drive re-entry | at the close (MOC) | +0.65% at 853.96
+2026-11-10T15:50:30-05:00,MRNA,overnight always,SKIP,252.49,,,"SKIP MRNA | overnight always | trend filter: QQQ 679.35, below its 200-day MA 681.17, -4.6% over 10 sessions"
+2026-11-10T15:50:30-05:00,SNDK,overnight always,SKIP,853.96,,,"SKIP SNDK | overnight always | trend filter: QQQ 679.35, below its 200-day MA 681.17, -4.6% over 10 sessions"
+2026-11-10T15:50:30-05:00,APP,overnight always,SKIP,395.0,,,"SKIP APP | overnight always | trend filter: QQQ 679.35, below its 200-day MA 681.17, -4.6% over 10 sessions"
+2026-11-10T15:50:30-05:00,SNPS,overnight always,SKIP,459.73,,,"SKIP SNPS | overnight always | trend filter: QQQ 679.35, below its 200-day MA 681.17, -4.6% over 10 sessions"
+2026-11-10T15:50:30-05:00,SHOP,overnight always,SKIP,146.3,,,"SKIP SHOP | overnight always | trend filter: QQQ 679.35, below its 200-day MA 681.17, -4.6% over 10 sessions"
+2026-11-10T15:50:30-05:00,AMD,overnight always,SKIP,514.3796,,,"SKIP AMD | overnight always | trend filter: QQQ 679.35, below its 200-day MA 681.17, -4.6% over 10 sessions"

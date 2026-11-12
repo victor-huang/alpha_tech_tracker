@@ -1,0 +1,80 @@
+{
+ "generated": "2026-11-08",
+ "source": "balanced mix search (May 7 - Nov 6 2026) + AMD",
+ "window": "2026-05-07..2026-11-06",
+ "top_n": 3,
+ "types": [
+  "long",
+  "overnight"
+ ],
+ "min_trades": 1,
+ "note": "MRNA SNDK APP SNPS SHOP from the mix search, AMD added for spread; run with --trend-filters overnight",
+ "tickers": {
+  "MRNA": [
+   {
+    "setup": "drive long"
+   },
+   {
+    "setup": "pullback long"
+   },
+   {
+    "setup": "overnight always"
+   }
+  ],
+  "SNDK": [
+   {
+    "setup": "drive long"
+   },
+   {
+    "setup": "pullback long C1"
+   },
+   {
+    "setup": "overnight always"
+   }
+  ],
+  "APP": [
+   {
+    "setup": "drive long"
+   },
+   {
+    "setup": "pullback long C1"
+   },
+   {
+    "setup": "overnight always"
+   }
+  ],
+  "SNPS": [
+   {
+    "setup": "drive long"
+   },
+   {
+    "setup": "pullback long"
+   },
+   {
+    "setup": "overnight always"
+   }
+  ],
+  "SHOP": [
+   {
+    "setup": "drive long"
+   },
+   {
+    "setup": "pullback long"
+   },
+   {
+    "setup": "overnight always"
+   }
+  ],
+  "AMD": [
+   {
+    "setup": "drive long"
+   },
+   {
+    "setup": "pullback long"
+   },
+   {
+    "setup": "overnight always"
+   }
+  ]
+ }
+}
