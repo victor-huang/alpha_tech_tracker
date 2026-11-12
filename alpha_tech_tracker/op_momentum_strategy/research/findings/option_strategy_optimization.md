@@ -5,6 +5,10 @@ P&L from the opening-range momentum signal, and what improvements to option sele
 would make that viable.
 
 **Last updated:** 2026-05-03
+
+> **Update 2026-11-11:** the wave setup monitor's signals (monthly process, 2026) were replayed with real option
+> prints at 5% and 10% in the money: breakeven spreads, leverage and account risk are in Finding 45 of
+> [`wave_risk_reward_strategy_ticker_params_tunning.md`](wave_risk_reward_strategy_ticker_params_tunning.md).
 **Config analyzed:**
 ```
 --top 2 --weights 60 40

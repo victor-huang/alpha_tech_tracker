@@ -122,6 +122,10 @@ earlier findings: [`WAVE_RISK_REWARD_FINDINGS.md`](WAVE_RISK_REWARD_FINDINGS.md)
   With 5 bps of extra slippage the result roughly halves and calm years lose.
   Top 3 earns more per dollar in use (+39% a year) but less in total; as one $12k account it returned +171% at fixed
   size and +404% compounding (worst drawdown −20% / −25%, never more than 3% below the start).
+- **Options instead of stock (Finding 45, 2026 prints):** 10%-in-the-money options carry about 7× effective leverage
+  and beat stock only at a round-trip spread of about 2% or less (+$41.8k vs +$7.1k at 1%); at the engine's live 5–12%
+  spreads every setup loses. 5% ITM on all setups ran a $20k account down to $4,645; 10% ITM never ran short of cash.
+  Only the drive long is worth a paper trial; keep the overnight in stock.
 - **A ticker's intraday vs overnight split doesn't pick its setup (Finding 36):** within a window it always matches the
   better family, but measured on the previous 63 or 126 sessions it chose next month's winner 52–53% of the time
   (16 tickers, Jul 2025 – Oct 2026). Overnight holds won in H2 2025 and drive long in 2026 across the board; running
@@ -2277,6 +2281,107 @@ The other plans move the same way (both shorts: +27,746 / +31,913 / +32,716; no 
   rate falls to about 11.7% a year. Growing the trade size with the balance would raise it (the top-3 replay went from
   +171% to +404%; not run for the switched top 5), and 5 bps of extra slippage a trade roughly halves the result.
 
+## Finding 45 — Trading the 2026 signals with deep in-the-money options: P&L, spread cost, leverage and account risk
+
+**Question.** Would buying in-the-money calls (puts for the drive short) in place of the stock improve the 2026 result
+of the monthly process (switched ranking, fixed setups + gated drive short, capped at 10 open, $2,000 a trade:
++$7,090 in stock)? Each trade became one option position of **$2,000 of premium**, same entry and exit times, on the
+listed strike nearest **5% (then 10%) in the money** with the nearest Friday expiry 7–13 days out.
+
+**Method.** Alpaca sells no historical option quotes (only 1-min bars and trades, and the latest quote), so bid/ask
+could not be replayed. The option at each fill was priced as **intrinsic at the stock's actual raw price + time value
+read from the contract's real prints**: the median of (print VWAP − intrinsic at that minute's stock VWAP) over prints
+within 30 minutes of the fill (widened to 90, then 240). This carries the real implied volatility, the post-open IV
+drop and real decay. Fill times: drive long 09:35 → 16:00 or the stop bar; pullback at its signal bar's close;
+overnight 16:00 → next 09:30; drive short 09:35 → 16:00 (its re-entry legs approximate). Spread is charged on top as a
+round-trip % of the premium: prints are not mids, so "at prints" is the no-spread case.
+- **Coverage:** 1,266 of 1,641 trades (5% ITM) and 973 (10% ITM) had prints near both fills. The unpriced trades were
+  mostly the big trend days and held **+$7,077 of the +$7,090** stock profit, so they were filled in, not dropped:
+  entry time value from the ticker's median (time value / stock price), exit time value from how it changed on priced
+  trades of the same setup and stock-move bucket (e.g. drive long kept 0.89× on 0–2% gains, 0.60× on 5%+ gains).
+- A first Black-Scholes pass (IV = 21-day realized × 1.1) was close on drive long but **overstated overnight decay**
+  (−$41k vs +$4k from prints); the print-based numbers below replace it.
+
+**What the contracts look like.** These stocks run ~100% implied volatility, so "5% ITM" is not deep:
+
+| | 5% ITM | 10% ITM |
+|---|---|---|
+| Time value, share of the premium | 43% | **19%** |
+| Stock controlled per $ of premium | 11.4× | 8.1× (middle half 7.6–9.0×) |
+| **Effective leverage** (option % move ÷ stock % move, moves > 1%) | 9.0× | **7.2×** (≈ same up and down) |
+
+Effective leverage at 10% ITM ran ~5–7× on the most volatile names (TER, NBIS, IREN, CRDO, RKLB, CRWV, SNDK) and
+~8–10× on MSTR, INTC, AMD, SOFI, SHOP, RDDT. $2,000 of premium behaves like ~$14,000 of stock; ten open positions on
+a $20k account are ~$140k of stock-equivalent exposure (~$80k on an average day).
+
+**P&L by setup, 2026 (to Nov 6), $2,000 of premium a trade.** "Live" = the options engine's observed spreads
+([`option_strategy_optimization.md`](option_strategy_optimization.md)): 5% on AMD, MSTR, CRWV, SHOP, COIN, APP, CVNA;
+12% on SNDK, CRDO, FN, RH; 8% on the rest.
+
+| Setup | Trades | Stock | 5% ITM at prints | 5% ITM at 1% | 10% ITM at prints | 10% ITM at 1% | 10% ITM at 2% | 10% ITM at 4% | 10% ITM live |
+|---|---|---|---|---|---|---|---|---|---|
+| Drive long | 524 | +5,484 | +52,494 | +42,014 | +41,125 | **+30,645** | +20,165 | −795 | −51,375 |
+| Drive short + re-entry | 311 | +1,275 | +12,931 | +6,711 | +18,802 | +12,582 | +6,362 | −6,078 | −34,458 |
+| Pullback long | 261 | +929 | +13,365 | +8,145 | +8,897 | +3,677 | −1,543 | −11,983 | −36,623 |
+| Overnight always | 545 | −598 | +4,051 | −6,849 | +5,768 | −5,132 | −16,032 | −37,832 | −89,512 |
+| **Total** | 1,641 | **+7,090** | +82,842 | +50,021 | +74,593 | **+41,773** | +8,953 | −56,688 | **−211,968** |
+
+**Breakeven round-trip spread** (mean option return per trade at prints): 5% ITM — drive long 5.0%, pullback 2.6%,
+drive short 2.1%, overnight 0.4%, all 2.5%; 10% ITM — drive long 3.9%, drive short 3.0%, pullback 1.7%, overnight
+0.5%, all 2.3%. By liquidity group the drive long's breakeven was 9.9% / 7.8% (5% / 10% ITM) on SNDK and CRDO — whose
+live spreads are 8–16% — and about 0 on the liquid names (45 trades, which lost even at prints). At 5% ITM and a 4%
+spread the total is −$48,439; at the live spreads −$203,719.
+
+**Month by month at a 1% spread:**
+
+| Month | Stock | 5% ITM | 10% ITM |
+|---|---|---|---|
+| Jan | +1,785 | +10,944 | +11,507 |
+| Feb | −732 | **−16,085** | −2,214 |
+| Mar | +495 | +6,394 | +3,073 |
+| Apr | +2,989 | +27,345 | +18,631 |
+| May | +2,210 | +20,315 | +12,191 |
+| Jun | −1,309 | −6,926 | −9,015 |
+| Jul | +1,445 | +9,534 | +10,481 |
+| Aug | +447 | +4,165 | +4,119 |
+| Sep | +549 | +2,664 | +1,851 |
+| Oct | −1,621 | −17,453 | −14,100 |
+| Nov (to the 6th) | +833 | +9,124 | +5,248 |
+
+**As a $20k account** (trades in entry order, each booked at its exit; an entry is skipped when its premium exceeds
+the cash not tied up in open positions; fixed $2k or premium = balance ÷ 10):
+
+| Plan | Spread | 5% ITM: P&L / lowest balance / worst drawdown / skipped | 10% ITM: P&L / lowest / worst DD / skipped |
+|---|---|---|---|
+| All setups, fixed $2k | 1% | +$41,488 / **$4,645** (Mar 19) / −$32,651 / **70** | **+$41,772 / $19,474 / −$17,919 / 0** |
+| All setups, balance ÷ 10 | 1% | +$35,355 / $6,221 / −$90,683 / 3 | +$48,744 / $16,542 / −$86,366 / 7 |
+| Drive long only, fixed $2k | 1% | +$42,014 / $19,820 / −$6,746 / 0 | +$30,645 / $19,892 / **−$5,309** / 0 |
+| Drive long only, balance ÷ 10 | 1% | +$84,418 / $19,820 / −$30,829 / 0 | +$50,647 / $19,892 / −$17,352 / 0 |
+| All setups, fixed $2k | 2% | −$18,204 / $1,796 / −$33,701 / 1,295 | +$7,059 / $11,172 / −$24,833 / 11 |
+| Drive long only, fixed $2k | 2% | +$31,534 / $19,800 / −$7,566 / 0 | +$20,165 / $19,872 / −$6,169 / 0 |
+| All setups, fixed $2k | 4% | −$18,003 / $1,997 / −$29,900 / 1,386 | −$18,415 / $1,585 / −$26,680 / 917 |
+| Drive long only, fixed $2k | 4% | +$10,574 / $19,164 / −$12,828 / 0 | −$795 / $17,580 / −$14,178 / 0 |
+
+For comparison the stock version's worst drawdown was −$2,543.
+
+**Takeaways.**
+- **The spread decides it.** The signals' edge is ~0.3% of the stock price per trade; ×7–9 leverage that is only
+  ~2.3–2.5% of the premium, while the engine's live round trips cost 5–12%. At live spreads every setup loses, at
+  either strike.
+- **At a tight spread (1–2%) options multiply the result** (+$42–50k vs +$7k at 1%), but the risk scales the same way:
+  worst drawdowns of $5–33k on a $20k account against $2.5k in stock, and monthly swings of −$17k to +$27k.
+- **5% ITM ran out of money.** All setups at fixed $2k fell from ~$37k to $4,645 by Mar 19 2026 and skipped 70 trades
+  for lack of cash; a bad January instead of a good one could have emptied it. **10% ITM never did** (lowest $19,474):
+  less than half the time value means losers lose less (Feb −$2.2k vs −$16.1k) for ~30% less leverage. The same
+  dollar spread is also a smaller share of the larger premium, but deeper strikes print less, so their dollar spread
+  may be wider.
+- **The overnight should stay in stock**: it loses in options from about a 0.5% spread. The pullback and drive short
+  need 1.7–3.0%. **The drive long is the only candidate**, and at 10% ITM it needs about 2% round trip or less
+  (+$20k at 2%, −$0.8k at 4%).
+- **Limits:** prints are not quotes; 23% (5% ITM) / 41% (10% ITM) of trades used the time-value fill-in, including
+  most of the big winners; drive short timing is approximate; the chosen strikes trade thinly (median ~10–30
+  contracts a day on SNDK, CRDO, LITE, VRT). One year (2026) only; Alpaca's option history starts Feb 2024.
+
 ## Recommendations
 
 1. **Choose tickers before tuning settings.** The same configuration ranges from +156.66% (SNDK)
@@ -2414,6 +2519,14 @@ The other plans move the same way (both shorts: +27,746 / +31,913 / +32,716; no 
     MA at the pick) made the most, +$33,330 vs +$29,153, without changing a single up-market pick, but its gain rests
     on 2022 and Apr 2026; it is the candidate to adopt if the user chooses (as of Nov 10 2026 it would be on).
 
+40. **Keep the monthly process in stock; options only as a drive long paper trial (Finding 45):** with real 2026
+    option prints, 10%-ITM calls/puts beat stock only when the round trip costs about 2% of the premium or less; at
+    the options engine's live spreads (5–12%) every setup loses (−$212k on 2026's trades). If tried, use **drive long
+    only, 10% in the money, a fixed $2,000 of premium** (+$30.6k at 1% / +$20.2k at 2% in 2026, worst drawdown
+    −$5–6k, never short of cash), limit orders at mid, and measure the real round-trip cost for a few weeks first.
+    Never 5% ITM on all setups (fell to $4,645 of $20k), and keep the overnight in stock. Sizing for stock-level risk
+    is about $2,000 ÷ 7 ≈ $285 of premium a trade.
+
 ## Reproduction
 
 ```bash
@@ -2528,6 +2641,13 @@ exactly (110 trades, +0.80%), but other settings may differ slightly.
    Finding 44: `monthly_process_walk_forward --year <year> --rank-shorts gated|all|switched` (the caches gain a `_short`
    file per ticker); the fake overnight legs were found by scanning the cached legs for |pct| > 30 and traced with
    `load_rider_bars` / `split_factors` on SHOP around Mar 8 2022.
+   Finding 45: one-off scripts over the 2026 switched-ranking trades (`run_plan("fixed", True, False, ...)` with
+   `--rank-shorts switched --end 2026-11-07`, then `variants(...)["capped + costs"]`). Per trade: contracts from
+   `TradingClient.get_option_contracts` (`status` inactive and active, the Friday expiry 7–13 days out, the strike
+   nearest 5% / 10% in the money), 1-min option bars from `OptionHistoricalDataClient.get_option_bars`, raw 1-min SIP
+   stock bars; time value = median(print VWAP − intrinsic at the stock's minute VWAP) within 30 / 90 / 240 minutes of
+   the fill; the stock price at exit = entry × (1 + the trade's pct + 5 bps). The account replay books each trade at
+   its exit and skips an entry when free cash is short.
    The confirmation-lag table, the reversal-entry diagnostics, the drive long decomposition and the 11-case
    re-entry table were one-off scripts on `wave_events` / `ride` / `load_rider_bars` from `wave_rider.py`;
    intraday vs overnight from `fetch_daily_bars` (log open / previous close vs close / open).
