@@ -1,6 +1,6 @@
 # Wave Setup Strategy in the Trade Engine — Implementation Plan
 
-**Status:** Approved design, not started (written 2026-11-11). No code has been changed for this plan yet.
+**Status:** Approved design; implementation started 2026-11-11 (see Progress). Steps resequenced 2026-11-11 so each commit is deployable.
 **Owner decisions:** recorded in "Decisions" below — do not re-open them.
 **Scope:** `alpha_tech_tracker/op_momentum_strategy/` — the wave setup monitor (`wave_setup_monitor.py`) and the trade
 engine (`op_momentum_trade_engine.py` / `trade_engine.py` / `position_monitor.py`).
@@ -30,7 +30,7 @@ small modules, and keep the two programs independent:
 5. **Package name `wave_strategy/`** (not `wave_setups/`, which would clash with the output folder
    `backtest_result/wave_setups/`).
 
-Open question to confirm with the user before step 4 (recommendation in brackets): in mock / replay execution, fill
+Open question to confirm with the user before step B1 (recommendation in brackets): in mock / replay execution, fill
 entries and exits at the strategy's reference price — the signal bar's close, the stop level, the close [recommended:
 matches the monitor's alerts and the research backtests one-to-one] — rather than the engine's simulated mid-price.
 
@@ -221,7 +221,7 @@ must pass **unchanged**):
     (`logs/wave_strategy_engine_state.json`, separate from the monitor's).
   - Bars: reuse the monitor's warm-up + stream + 5-min aggregation. To share it, extract a `wave_strategy/feed.py`
     `BarFeed` from the monitor (warm-up, `on_minute_bar`, `FiveMinAggregator`, first-period refetch, backfill,
-    watchdog) in step 4, keeping monitor attribute forwards for the tests (`client`, `aggregator`, `backfill`,
+    watchdog) in step A4, keeping monitor attribute forwards for the tests (`client`, `aggregator`, `backfill`,
     `last_minute_at`, `_run_backfill`).
   - Sink `_on_intent(intent)`:
     - `enter`: skip unless a slot is free and `balance − open cost ≥ per-trade size`; size with
@@ -240,7 +240,8 @@ must pass **unchanged**):
   - Close: `on_close_decision` at the decision bar emits exits for all open intraday trades; then a final safety
     `close_all("end_of_day")` at `EOD_EXIT_TIME` for anything left.
   - Session start/stop, holidays, daemon handling: reuse `wave_strategy.session` and the engine's `cli/daemon.py`.
-- `position_monitor.py`: add an injectable **exit policy** so wave positions reuse closing / reconciliation / summary
+- `position_monitor.py` (decided: direct close — the runner calls `_close_stock_position` itself, no
+  `position_monitor.py` change; the alternative below is kept for reference): add an injectable **exit policy** so wave positions reuse closing / reconciliation / summary
   code without the OR stop rules. Default policy = today's `_evaluate_stop` (no behaviour change). The wave policy
   returns "no exit" from bar evaluation (the strategy drives exits through intents). Alternatively the runner can call
   `_close_stock_position` directly and use `PositionMonitor` only for reconciliation and summaries — pick whichever
@@ -255,23 +256,92 @@ must pass **unchanged**):
 
 ## Steps (one commit each; tests first; run the full suite each step)
 
-1. **Extract the core.** Create `wave_strategy/` (`session`, `specs`, `bars`, `trades`, `intents`, `strategy`); move the
-   code; the monitor becomes a shell with re-exports, forwards and the intent sink.
-   *Done when:* every existing test passes unchanged; a manual `wave_setup_monitor run` against a replayed day (or the
-   tests' fixtures) gives byte-identical alert CSV rows.
-2. **Strategy unit tests** (`tests/op_momentum_trade_engine/test_wave_strategy.py`): intents for drive long entry +
-   stop, pullback target-trail, drive short + re-entry (gate on/off), drive trail raise, trend-filter skip, close
-   decision, `intraday_only` skipping overnight entries, `state()` / `restore()` round trip — no streaming or
-   notification mocks.
-3. **Exit-policy hook** in `PositionMonitor` (or the direct-close alternative). *Done when:* existing position monitor
-   and trade engine tests pass unchanged; new tests cover the wave policy.
-4. **Engine runner + `BarFeed` extraction + CLI**, mock execution and replay. Tests with a mock `ExecutionClient`:
-   slot cap, balance cap, per-trade sizing, entry/exit order actions (`BUY_OPEN`/`SELL_CLOSE`, `SELL_SHORT`/`BUY_COVER`),
-   end-of-day close, restart restore. **Parity check:** replay 3–5 sessions of 2026 (include a gated short day, e.g.
-   2026-11-11, and a quiet day) through the runner in mock mode and compare entries/exits with the monitor's alerts for
-   the same days (same config and flags).
-5. **Docs:** a section in `guides/WAVE_SETUP_MONITOR_GUIDE.md` (or a new `guides/WAVE_STRATEGY_ENGINE_GUIDE.md`), rows in
-   `op_momentum_strategy/CLAUDE.md`, and a short note in the findings doc's recommendations.
+Sequenced so that **every commit leaves both the monitor and the OR trade engine deployable**. Monitor-only changes
+(A1–A4) come first, engine-additive changes (B1–B3) after, so a regression points at one program. Commits marked 🚀
+change code that a running prod process executes; tag each one (`git tag deploy-A1`, …) as the rollback point.
+
+**Deploy windows.** Monitor: after the 16:00 close and before the 00:00 ET crontab restart (code is only reloaded on
+restart; `restore()` picks up open overnight trades). OR engine: before the next `trade_engines.sh start`.
+
+**Two-way state compatibility.** The new code must read a state file written by the old code **and the old code must
+read one written by the new code**, so a 🚀 commit can be rolled back while an overnight trade is open.
+
+**Shared modules.** The monitor imports `cli/clients.py`, `cli/daemon.py` and `config.py` from the engine side; any
+edit there is a deploy of both programs. `cli/args.py` is engine-only.
+
+| # | Commit | Prod impact | Deploy | Verify |
+|---|---|---|---|---|
+| A0 | Monitor replay harness + baseline CSVs | none (tooling) | — | — |
+| A1 | Move module-level code into `wave_strategy/` | monitor imports | 🚀 low risk | harness CSVs identical; 09:25 / 09:35 alerts normal |
+| A2 | Intent seam inside the current class | monitor alert path | 🚀 | harness CSVs identical; Telegram text unchanged |
+| A3 | Extract `WaveSetupStrategy` + strategy unit tests | monitor core | 🚀 highest risk | harness identical; 1–2 day shadow run before switching the crontab |
+| A4 | Extract `BarFeed` | monitor streaming | 🚀 | watchdog / backfill / refetch logs normal for a session |
+| B1 | Strategy protocol + `WaveStrategyRunner` (mock + replay), not wired to the CLI | none reachable | anytime | parity replay vs the A0 baselines |
+| B2 | `--strategy wave-setups` CLI branch, separate PID file | OR engine CLI | 🚀 | OR engine without the flag unchanged |
+| B3 | Docs | none | anytime | — |
+
+A0. **Monitor replay harness** (`analysis_scripts/wave_monitor_replay.py`): feeds a session's cached 1-minute bars
+   through a real `WaveSetupMonitor` (`on_minute_bar` + `tick` on a fake clock, `--no-notify`, inline executor,
+   temporary state / CSV files, warm-up from cached bars instead of the network) and writes the alert CSV. Record
+   baseline CSVs for 3–5 sessions of 2026 (include a gated short day, e.g. 2026-11-11, and a quiet day) with the prod
+   config and flags into `backtest_result/wave_strategy_refactor_baseline/`. Every later monitor step must reproduce
+   them byte for byte.
+A1. **Module moves only.** Create `wave_strategy/` with `session.py`, `specs.py`, `bars.py`, `trades.py` (incl.
+   `evaluate_setup`, `InlineExecutor`); the monitor re-exports every moved name. No class changes.
+   *Done when:* every existing test passes unchanged; harness CSVs identical.
+A2. **Intent seam in place.** Add `wave_strategy/intents.py`; every trading `_alert` / `_system_alert` call in
+   `WaveSetupMonitor` builds an `Intent` and calls `self._on_intent(intent)`, which calls `_alert` / `_system_alert`
+   with the same arguments. Nothing moves between classes. *Done when:* tests unchanged; harness CSVs identical.
+A3. **Extract `WaveSetupStrategy`** (`wave_strategy/strategy.py`) with `state()` / `restore()`, the monitor's
+   forwarding properties and thin wrappers, the `evaluate_fn` provider. Add the strategy unit tests
+   (`tests/op_momentum_trade_engine/test_wave_strategy.py`): drive long entry + stop, pullback target-trail, drive short
+   + re-entry (gate on/off), drive trail raise, trend-filter skip, close decision, `intraday_only`, `state()` /
+   `restore()` round trip, and old-format state files. *Done when:* tests unchanged + new tests pass; harness CSVs
+   identical; a 1–2 session shadow run (`--no-notify`, own state / CSV / log / PID files) matches prod's CSV.
+A4. **Extract `BarFeed`** (`wave_strategy/feed.py`: warm-up, `on_minute_bar`, aggregation, first-period refetch,
+   backfill, watchdog), keeping monitor forwards (`client`, `aggregator`, `backfill`, `last_minute_at`,
+   `_run_backfill`). *Done when:* tests unchanged; harness CSVs identical.
+B1. **Engine runner** (`strategies/base.py`, `wave_strategy_runner.py`) with mock execution and replay, not reachable
+   from the CLI. Close positions with `PositionMonitor._close_stock_position` directly and use `PositionMonitor` only
+   for reconciliation / summaries (no change to `position_monitor.py`; the exit-policy hook is dropped unless that turns
+   out impossible). Needs the fill-price open question answered first. Tests with a mock `ExecutionClient`: slot cap,
+   balance cap, per-trade sizing, order actions, end-of-day close, restart restore. **Parity:** replay the A0 sessions
+   through the runner in mock mode and compare entries / exits with the baseline CSVs.
+B2. **CLI** — `--strategy wave-setups` and the wave flags in `cli/args.py`, branch in `_run_foreground` / `_run_daemon`,
+   `logs/wave_strategy_engine.pid`. *Done when:* trade engine tests unchanged; OR engine replay without the flag
+   unchanged.
+B3. **Docs:** `guides/WAVE_STRATEGY_ENGINE_GUIDE.md` (or a section in the monitor guide), rows in
+   `op_momentum_strategy/CLAUDE.md`, a note in the findings doc's recommendations.
+
+**Prod rollout of the engine** (crontab changes, not commits, each confirmed with the user): mock mode on EC2 beside
+the monitor for about a week, comparing trades with the monitor's alert CSV daily → Alpaca paper → live account.
+
+## Progress
+
+| Step | Status | Commit |
+|---|---|---|
+| A0 | done — baseline 2026-11-02..11 (8 sessions), `prod` 240 alert rows, `all_on` 365; replay deterministic | A0 commit |
+| A1 | done — both variants byte-identical to the baseline; full suite green except the 2 known failures | A1 commit |
+| A2 | next — `wave_strategy/intents.py` (+ tests) written, monitor not yet routed through it | |
+
+### How to verify a monitor step (A1–A4)
+
+```bash
+source ~/.pyenv/versions/alpha_tech_tracker/bin/activate; export PYTHONPATH=$PWD
+B=alpha_tech_tracker/op_momentum_strategy/backtest_result/wave_strategy_refactor_baseline
+M="python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_monitor_replay"
+OUT=$(mktemp -d)
+# once per machine (13 min on 9 workers); fills market_data/cache/wave_monitor_replay/
+$M warm --bundle $B/bundle
+$M run --bundle $B/bundle --out $OUT/prod -- --short-setups drive --short-gate qqq-ma50-down10 --trend-filters overnight
+$M run --bundle $B/bundle --out $OUT/all_on --restart-at 2026-11-05T11:02 2026-11-10T13:31 -- \
+  --drive-trail --drive-reentry --short-setups drive overnight retest --short-gate always --trend-filters overnight pullback
+$M compare $B/prod $OUT/prod && $M compare $B/all_on $OUT/all_on   # both must print "identical"
+```
+
+`prod` = the EC2 flags; `all_on` = every option on (drive trail / re-entry, all three shorts, gate `always`, both
+trend filters) plus two mid-session restarts (catch-up, first-period refetch, state restore). The bundle and the
+expected outputs were recorded with the pre-A1 monitor (commit bb5252b). With a warm cache a run takes ~30 s.
 
 Later (not in this plan): overnight holds in the engine (carry-over state, MOC entries / MOO exits via
 `time_in_force` CLS/OPG on Alpaca), TradeStation execution, protective stop orders at the broker.
@@ -299,7 +369,7 @@ Later (not in this plan): overnight holds in the engine (carry-over state, MOC e
 ## Risks
 
 - **Silent behaviour change in the monitor** (alert order, a missed `alerted` key, lock scope). Mitigation: tests
-  unchanged + byte-identical CSV comparison on replayed days.
+  unchanged + byte-identical CSV comparison on replayed days (A0 harness) + a shadow run before deploying A3.
 - **Patched names** no longer reaching moved code (see the `evaluate_setup` note).
 - **Threading:** `_on_evaluated` runs on executor callback threads; the strategy must take the shared lock exactly where
   the monitor did (`with self.lock:` around `_on_evaluated` body and `_on_five_min_bar`).

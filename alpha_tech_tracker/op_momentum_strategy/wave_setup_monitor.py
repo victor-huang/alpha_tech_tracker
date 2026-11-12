@@ -85,21 +85,11 @@ import sys
 import threading
 import time as time_module
 from concurrent.futures import ProcessPoolExecutor
-from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
-from typing import Optional
 
 import pandas as pd
-import pytz
 from alpaca.data.enums import DataFeed
-from pandas.tseries.holiday import (
-    AbstractHolidayCalendar,
-    Holiday,
-    USMartinLutherKingJr,
-    USPresidentsDay,
-    nearest_workday,
-)
 
 from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.earnings_calendar import (
     earnings_windows,
@@ -112,24 +102,9 @@ from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward i
     analyze_bars,
     overnight_filter_ok,
     overnight_needs_history,
-    params_from_args,
     regular_hours,
 )
-from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward_backtest import (
-    DEFAULT_GIVEBACK,
-    DEFAULT_GIVEBACK_ARM_R,
-    parse_args as parse_backtest_args,
-    signal_group,
-)
-from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward_scan import BOX_GROUPS, SETUP_RUNS
-from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.ticker_stats_report import clamp_end_for_sip
-from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward_setup_report import (
-    DEFAULT_OUT_ROOT as SETUP_REPORT_ROOT,
-    REPORT_EXITS,
-    TYPE_CHOICES,
-    main as setup_report_main,
-    top_setups_by_ticker,
-)
+from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_risk_reward_setup_report import TYPE_CHOICES
 from alpha_tech_tracker.op_momentum_strategy.cli.clients import _build_market_data_client
 from alpha_tech_tracker.op_momentum_strategy.cli.daemon import (
     _LOG_DIR,
@@ -141,7 +116,6 @@ from alpha_tech_tracker.op_momentum_strategy.cli.daemon import (
     _write_pid,
 )
 from alpha_tech_tracker.op_momentum_strategy.config import _load_config, _notify, disable_notifications
-from alpha_tech_tracker.op_momentum_strategy.contract_selector import _NYSEHolidayCalendar
 from alpha_tech_tracker.op_momentum_strategy.op_momentum_backtest import fetch_daily_bars
 from alpha_tech_tracker.op_momentum_strategy.reversal_watch import (
     PATTERNS as REVERSAL_PATTERNS,
@@ -177,28 +151,52 @@ from alpha_tech_tracker.op_momentum_strategy.signal_stats import (
     DEFAULT_STATS_TICKERS,
     signal_stats,
 )
+from alpha_tech_tracker.op_momentum_strategy.wave_strategy.bars import (  # noqa: F401 (re-exported)
+    FLUSH_GRACE_SECONDS,
+    FiveMinAggregator,
+)
+from alpha_tech_tracker.op_momentum_strategy.wave_strategy.session import (  # noqa: F401 (re-exported)
+    AFTER_CLOSE_MINUTES,
+    BAR_MINUTES,
+    EARLY_CLOSE,
+    ET,
+    MARKET_OPEN,
+    PRE_OPEN_ALERT,
+    REGULAR_CLOSE,
+    _now_et,
+    is_trading_day,
+    period_start,
+    previous_trading_day,
+    session_close,
+)
+from alpha_tech_tracker.op_momentum_strategy.wave_strategy.specs import (  # noqa: F401 (re-exported)
+    DEFAULT_REFRESH_ROOT,
+    EXIT_TEXT,
+    SetupSpec,
+    build_setup_spec,
+    generate_config,
+    load_config,
+    refresh_report,
+)
+from alpha_tech_tracker.op_momentum_strategy.wave_strategy.trades import (
+    InlineExecutor,
+    LiveTrade,
+    fired_signals,
+)
 
 logger = logging.getLogger(__name__)
 
-ET = pytz.timezone("America/New_York")
 DEFAULT_CONFIG = Path(_LOG_DIR) / "wave_setup_monitor_config.json"
 DEFAULT_STATE = Path(_LOG_DIR) / "wave_setup_monitor_state.json"
 PID_FILE = os.path.join(_LOG_DIR, "wave_setup_monitor.pid")
 MODULE = "alpha_tech_tracker.op_momentum_strategy.wave_setup_monitor"
 REFRESH_LOOKBACK_SESSIONS = 63
-DEFAULT_REFRESH_ROOT = SETUP_REPORT_ROOT / "monitor_refresh"
 WARMUP_SESSIONS = 10
 WARMUP_CALENDAR_DAYS = 20
 DAILY_HISTORY_DAYS = 420
-MARKET_OPEN = time(9, 30)
-PRE_OPEN_ALERT = time(9, 25)
-REGULAR_CLOSE = time(16, 0)
-EARLY_CLOSE = time(13, 0)
 DEFAULT_CLOSE_DECISION_BAR = time(15, 45)
-AFTER_CLOSE_MINUTES = 5
 OUTAGE_ALERT_SECONDS = 300
 OVERNIGHT_MIN_DAILY_CLOSES = 200
-FLUSH_GRACE_SECONDS = 20
 STREAM_TIMEOUT_SECONDS = 120
 RETEST_CANCEL = f"{RETEST_WINDOW[1]:%H:%M}"
 CONFIG_DRIVE_SHORT = "drive short"
@@ -207,291 +205,16 @@ DRIVE_REENTRY = "drive long re-entry"
 DRIVE_TRAIL_SETTING = (7, 0.382, 1.5)  # wave setting the drive-trail was chosen with (ticker-tuning doc, Finding 32)
 DRIVE_REENTRY_LATEST = time(15, 0)
 DELAYED_DATA_MINUTES = 16  # Alpaca plans without real-time SIP only serve SIP history older than 15 min
-BAR_MINUTES = 5
-EXIT_TEXT = {
-    "target": "exit at the target or the stop",
-    "target-trail": "stop until the target, then trail (32% give-back)",
-    "giveback": "stop, then trail once up 0.25R (32% give-back)",
-    "eod": "hold to the close (stop only)",
-}
 
-
-def _now_et():
-    return datetime.now(ET)
-
-
-class _MarketHolidayCalendar(AbstractHolidayCalendar):
-    """The repo's NYSE calendar plus the holidays it lacks (MLK, Presidents' Day, Juneteenth)."""
-
-    rules = _NYSEHolidayCalendar.rules + [
-        USMartinLutherKingJr,
-        USPresidentsDay,
-        Holiday("Juneteenth", month=6, day=19, start_date="2022-01-01", observance=nearest_workday),
-    ]
-
-
-_HOLIDAYS = _MarketHolidayCalendar()
-
-
-def is_trading_day(day):
-    if day.weekday() >= 5:
-        return False
-    return pd.Timestamp(day) not in _HOLIDAYS.holidays(start=f"{day.year}-01-01", end=f"{day.year}-12-31")
-
-
-def previous_trading_day(day):
-    day -= timedelta(days=1)
-    while not is_trading_day(day):
-        day -= timedelta(days=1)
-    return day
-
-
-def session_close(day):
-    """13:00 on NYSE early-close days (July 3 Mon-Thu, the day after Thanksgiving, Dec 24 on a
-    trading day), else 16:00."""
-    if day.month == 7 and day.day == 3 and day.weekday() <= 3:
-        return EARLY_CLOSE
-    if day.month == 11 and day.weekday() == 4 and 23 <= day.day <= 29:
-        return EARLY_CLOSE
-    if day.month == 12 and day.day == 24 and is_trading_day(day):
-        return EARLY_CLOSE
-    return REGULAR_CLOSE
-
-
-# ---------------------------------------------------------------------------
-# Setups and config
-# ---------------------------------------------------------------------------
-
-@dataclass(frozen=True)
-class SetupSpec:
-    name: str
-    exit_mode: str
-    params: object
-    groups: Optional[frozenset]
-
-    @property
-    def overnight(self):
-        return self.exit_mode == "next open"
-
-
-def build_setup_spec(name):
-    """The analyze_bars options, signal groups and fixed exit for a setup-report setup name."""
-    if name not in REPORT_EXITS:
-        raise ValueError(f"unknown setup {name!r}; choose from {', '.join(REPORT_EXITS)}")
-    box_labels = set(BOX_GROUPS.values())
-    run = "box signals" if name in box_labels else name
-    groups = frozenset(g for g, label in BOX_GROUPS.items() if label == name) if name in box_labels else None
-    params = params_from_args(parse_backtest_args(["--start", "2000-01-01"] + SETUP_RUNS[run]))
-    return SetupSpec(name, REPORT_EXITS[name], params, groups)
-
-
-def generate_config(report_dir, tickers, top_n=3, types=None, min_trades=1, lookback_sessions=None):
-    """Monitor config from a setup report folder: each ticker's top setups by fixed-exit total.
-
-    `types` limits the setup types (e.g. long, overnight), `min_trades` is the trades a setup needs,
-    and `lookback_sessions` ranks on the report's last N sessions only.
-    """
-    report_dir = Path(report_dir)
-    with (report_dir / "trades.csv").open() as handle:
-        rows = list(csv.DictReader(handle))
-    days = sorted({row["entry_time"][:10] for row in rows})
-    if lookback_sessions:
-        days = days[-lookback_sessions:]
-        rows = [row for row in rows if row["entry_time"][:10] >= days[0]]
-    ranked = top_setups_by_ticker(rows, top_n, types, min_trades)
-    missing = [t for t in tickers if t not in ranked]
-    if missing:
-        raise ValueError(f"{', '.join(missing)} not in {report_dir}; run the setup report for them first")
-    empty = [t for t in tickers if not ranked[t]]
-    if empty:
-        logger.warning("No setup made money for %s in %s; they are left out", ", ".join(empty), report_dir)
-    return {
-        "generated": date.today().isoformat(),
-        "source": str(report_dir),
-        "window": f"{days[0]}..{days[-1]}" if days else "",
-        "top_n": top_n,
-        "types": list(types) if types else "all",
-        "min_trades": min_trades,
-        "tickers": {t: [{"setup": s, "report_total_pct": round(total, 2)} for s, total in ranked[t]]
-                    for t in tickers if ranked[t]},
-    }
-
-
-def refresh_report(tickers, lookback_sessions, workers):
-    """Run the setup report over the trailing window ending today; returns its folder."""
-    end = clamp_end_for_sip(date.today(), DataFeed.SIP)
-    start = end - timedelta(days=int(lookback_sessions * 1.5) + 10)
-    out_dir = DEFAULT_REFRESH_ROOT / f"{start}_{end}"
-    print(f"Refreshing the setup report for {len(tickers)} tickers, {start}..{end} -> {out_dir}", flush=True)
-    setup_report_main(["--tickers", *tickers, "--start", start.isoformat(), "--end", end.isoformat(),
-                       "--workers", str(workers), "--out-dir", str(out_dir)])
-    return out_dir
-
-
-def load_config(path):
-    """{ticker: [SetupSpec]} from a monitor config file."""
-    config = json.loads(Path(path).read_text())
-    return {ticker: [build_setup_spec(entry["setup"] if isinstance(entry, dict) else entry) for entry in setups]
-            for ticker, setups in config["tickers"].items()}
-
-
-# ---------------------------------------------------------------------------
-# 1-min -> 5-min bars
-# ---------------------------------------------------------------------------
-
-def period_start(timestamp):
-    return timestamp.replace(second=0, microsecond=0) - timedelta(minutes=timestamp.minute % BAR_MINUTES)
-
-
-class FiveMinAggregator:
-    """Combines 1-min bars into 5-min bars and hands each finished one to `on_bar(ticker, bar)`.
-
-    A period is finished when its fifth minute arrives, when a later minute arrives, or
-    FLUSH_GRACE_SECONDS after it ends (flush_due). `bar` is a dict: time (period start), open,
-    high, low, close, minutes (1-min bars it was built from).
-    """
-
-    def __init__(self, on_bar):
-        self._on_bar = on_bar
-        self._buffers = {}
-
-    def add(self, ticker, timestamp, open_, high, low, close):
-        start = period_start(timestamp)
-        buffer = self._buffers.get(ticker)
-        if buffer and buffer["time"] != start:
-            if start < buffer["time"]:
-                return
-            self._emit(ticker)
-            buffer = None
-        if buffer is None:
-            buffer = self._buffers[ticker] = {"time": start, "open": open_, "high": high, "low": low,
-                                              "close": close, "minutes": 0}
-        buffer["high"] = max(buffer["high"], high)
-        buffer["low"] = min(buffer["low"], low)
-        buffer["close"] = close
-        buffer["minutes"] += 1
-        if timestamp.minute % BAR_MINUTES == BAR_MINUTES - 1:
-            self._emit(ticker)
-
-    def flush_due(self, now):
-        for ticker in [t for t, b in self._buffers.items()
-                       if b["time"] + timedelta(minutes=BAR_MINUTES, seconds=FLUSH_GRACE_SECONDS) <= now]:
-            self._emit(ticker)
-
-    def _emit(self, ticker):
-        bar = self._buffers.pop(ticker, None)
-        if bar:
-            self._on_bar(ticker, bar)
-
-
-# ---------------------------------------------------------------------------
-# Live trades: the backtest's exit rules, one bar at a time
-# ---------------------------------------------------------------------------
-
-class LiveTrade:
-    """One alerted trade, exited by the rules of wave_risk_reward_backtest.TradeSimulator.run."""
-
-    FIELDS = ("ticker", "setup", "signal", "exit_mode", "entry_time", "side", "entry", "stop", "target", "risk",
-              "peak", "target_reached", "status", "last_bar", "exit_time", "exit_price", "outcome")
-
-    def __init__(self, **fields):
-        for name in self.FIELDS:
-            setattr(self, name, fields.get(name))
-        self.peak = self.entry if self.peak is None else self.peak
-        self.target_reached = bool(self.target_reached)
-        self.status = self.status or "open"
-
-    @property
-    def overnight(self):
-        return self.exit_mode == "next open"
-
-    def on_bar(self, bar, giveback=DEFAULT_GIVEBACK, arm_r=DEFAULT_GIVEBACK_ARM_R):
-        """Apply one closed 5-min bar; returns the outcome when the trade exits on it, else None."""
-        self.last_bar = bar["time"]
-        if self.status != "open":
-            return None
-        side, entry, stop, target = self.side, self.entry, self.stop, self.target
-        if stop is not None and ((bar["low"] <= stop) if side == 1 else (bar["high"] >= stop)):
-            fill = min(bar["open"], stop) if side == 1 else max(bar["open"], stop)
-            return self._close(bar["time"], fill, "stop")
-        hit_target = target is not None and ((bar["high"] >= target) if side == 1 else (bar["low"] <= target))
-        if self.exit_mode == "target" and hit_target:
-            return self._close(bar["time"], target, "target")
-        self.target_reached = bool(self.target_reached or hit_target)
-        self.peak = max(self.peak, bar["close"]) if side == 1 else min(self.peak, bar["close"])
-        if self.exit_mode == "giveback" or (self.exit_mode == "target-trail" and self.target_reached):
-            move = (self.peak - entry) * side
-            if move >= arm_r * self.risk and (self.peak - bar["close"]) * side >= giveback * move:
-                return self._close(bar["time"], bar["close"], "giveback")
-        return None
-
-    def close_at(self, when, price, outcome):
-        return self._close(when, price, outcome)
-
-    def _close(self, when, price, outcome):
-        self.status, self.exit_time, self.exit_price, self.outcome = "closed", when, float(price), outcome
-        return outcome
-
-    def pnl_pct(self, price=None):
-        price = self.exit_price if price is None else price
-        return self.side * (price - self.entry) / self.entry * 100
-
-    def to_dict(self):
-        out = {}
-        for name in self.FIELDS:
-            value = getattr(self, name)
-            if isinstance(value, datetime):
-                value = value.isoformat()
-            elif hasattr(value, "item"):
-                value = value.item()
-            out[name] = value
-        return out
-
-    @classmethod
-    def from_dict(cls, data):
-        fields = dict(data)
-        for name in ("entry_time", "last_bar", "exit_time"):
-            if fields.get(name):
-                fields[name] = pd.Timestamp(fields[name]).tz_convert(ET)
-        return cls(**fields)
-
-
-# ---------------------------------------------------------------------------
-# Signal evaluation (runs in worker processes)
-# ---------------------------------------------------------------------------
 
 def evaluate_setup(job):
-    """Signals of one setup that fired on `bar_time`, from analyze_bars over the day's window."""
+    """Signals of one setup that fired on `bar_time`, from analyze_bars over the day's window.
+
+    Runs in the process pool. Looks up `analyze_bars` in this module so tests can patch it here;
+    the trade engine uses wave_strategy.trades.evaluate_setup.
+    """
     ticker, spec, frame, windows, bar_time = job
-    result = analyze_bars(frame, spec.params, windows)
-    fired = []
-    for sig in result["signals"]:
-        if sig["time"] != bar_time or not sig["risk_reward"]:
-            continue
-        if spec.groups is not None and signal_group(sig) not in spec.groups:
-            continue
-        rr = sig["risk_reward"]
-        fired.append({"ticker": ticker, "setup": spec.name, "signal": sig["signal"], "time": sig["time"],
-                      "price": float(sig["price"]), "stop": rr["stop"], "target": rr["target"], "risk": rr["risk"],
-                      "rr": rr.get("rr")})
-    return fired
-
-
-class InlineExecutor:
-    """Runs jobs in the calling thread (tests, or --workers 0)."""
-
-    def submit(self, fn, *args):
-        from concurrent.futures import Future
-
-        future = Future()
-        try:
-            future.set_result(fn(*args))
-        except Exception as error:  # surfaced through the future like a pool would
-            future.set_exception(error)
-        return future
-
-    def shutdown(self, wait=True):
-        pass
+    return fired_signals(ticker, spec, analyze_bars(frame, spec.params, windows)["signals"], bar_time)
 
 
 # ---------------------------------------------------------------------------
