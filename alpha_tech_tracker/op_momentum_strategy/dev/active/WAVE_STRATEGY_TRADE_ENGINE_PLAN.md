@@ -324,7 +324,8 @@ the monitor for about a week, comparing trades with the monitor's alert CSV dail
 | A1 | done — both variants byte-identical to the baseline; full suite green except the 2 known failures; **deployed to EC2 with A2, running fine (user, 2026-11-12)** | `2182f91` |
 | A2 | done — every trading alert goes through `WaveSetupMonitor._on_intent(Intent)`; shell alerts (start-up, data outage / restored, reversal LOW? / HIGH?) still call `_alert` / `_system_alert`; byte-identical; **deployed to EC2 (prod = `deploy-A2`)** | `f5790f3` |
 | A3 | code done — `WaveSetupStrategy` in `wave_strategy/strategy.py`; replay byte-identical (0 cache misses = same evaluation inputs), process-pool smoke test OK, 21 strategy tests; **shadow run on EC2 from 2026-11-13** (see "A3 shadow run" below) | `a4776ce` |
-| A4 | next | |
+| A4 | code done — `BarFeed` in `wave_strategy/feed.py`; monitor tests unchanged, 17 feed tests; replay byte-identical (0 cache misses); full suite green except the 2 known failures; not deployed | (this commit) |
+| B1 | next — needs the fill-price answer | |
 
 **A3 notes (differences from the sketch above):**
 - Session times stay plain attributes on the strategy (`close_time`, `half_day`, `close_decision_bar`, `last_bar`,
@@ -348,6 +349,19 @@ the monitor for about a week, comparing trades with the monitor's alert CSV dail
   tokens may log prod out. Options: `--market-data-source local_ts_broadcast` (one feed shared, see
   `guides/DUAL_ENGINE_MARKET_DATA_SHARING.md`), or Alpaca SIP for the shadow (bars can differ slightly from TS, so
   compare entries/exits rather than bytes).
+
+**A4 notes:**
+- `BarFeed(client, on_bar, on_backfill, alert, now, lock)`: `session_bars(tickers, now)` (warm-up, regular hours,
+  finished bars only; delayed-feed fallback schedules a backfill), `start_session(session, tickers, close_time, now)`
+  (also sets the first-period refetch), `start_stream` / `stop`, `on_minute_bar`, `on_five_min_bar` (refetch, then
+  `on_bar` under the lock), `flush_due`, `schedule_backfill` / `run_backfill`, `watchdog`, `history`.
+- Merging backfilled bars stays in the monitor (`_merge_backfill`: strategy bars, reversal watch, drive trail);
+  the feed hands over `{ticker: regular-hours frame}` or None when the fetch failed. B1 needs its own small merge
+  (strategy bars + `rebuild_drive_trail`).
+- Monitor forwards: `client`, `client_lock`, `aggregator`, `backfill`, `last_minute_at`, `stream_started_at`,
+  `refetch_before`, `last_reconnect_at`, `outage_from`; wrappers `start_stream`, `on_minute_bar`, `_on_five_min_bar`,
+  `_run_backfill`, `_history`. The constants `WARMUP_CALENDAR_DAYS`, `DELAYED_DATA_MINUTES`, `STREAM_TIMEOUT_SECONDS`,
+  `OUTAGE_ALERT_SECONDS` moved to `feed.py` and are re-exported. Moved log lines log under `wave_strategy.feed`.
 
 ### A3 shadow run (set up 2026-11-13)
 

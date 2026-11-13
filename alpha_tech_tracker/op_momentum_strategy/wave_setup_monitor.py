@@ -127,6 +127,13 @@ from alpha_tech_tracker.op_momentum_strategy.signal_stats import (
     signal_stats,
 )
 from alpha_tech_tracker.op_momentum_strategy.wave_strategy.intents import SYSTEM
+from alpha_tech_tracker.op_momentum_strategy.wave_strategy.feed import (  # noqa: F401 (re-exported)
+    DELAYED_DATA_MINUTES,
+    OUTAGE_ALERT_SECONDS,
+    STREAM_TIMEOUT_SECONDS,
+    WARMUP_CALENDAR_DAYS,
+    BarFeed,
+)
 from alpha_tech_tracker.op_momentum_strategy.wave_strategy.bars import (  # noqa: F401 (re-exported)
     FLUSH_GRACE_SECONDS,
     FiveMinAggregator,
@@ -179,11 +186,7 @@ DEFAULT_STATE = Path(_LOG_DIR) / "wave_setup_monitor_state.json"
 PID_FILE = os.path.join(_LOG_DIR, "wave_setup_monitor.pid")
 MODULE = "alpha_tech_tracker.op_momentum_strategy.wave_setup_monitor"
 REFRESH_LOOKBACK_SESSIONS = 63
-WARMUP_CALENDAR_DAYS = 20
 DAILY_HISTORY_DAYS = 420
-OUTAGE_ALERT_SECONDS = 300
-STREAM_TIMEOUT_SECONDS = 120
-DELAYED_DATA_MINUTES = 16  # Alpaca plans without real-time SIP only serve SIP history older than 15 min
 
 
 def evaluate_setup(job):
@@ -201,8 +204,9 @@ def _evaluate_fn():
     return evaluate_setup
 
 
-def _forward(name):
-    return property(lambda self: getattr(self.strategy, name), lambda self, value: setattr(self.strategy, name, value))
+def _forward(name, owner="strategy"):
+    return property(lambda self: getattr(getattr(self, owner), name),
+                    lambda self, value: setattr(getattr(self, owner), name, value))
 
 
 # ---------------------------------------------------------------------------
@@ -217,7 +221,6 @@ class WaveSetupMonitor:
                  stats_daily_loader=None, short_setups=DEFAULT_SHORT_SETUPS, short_gate="qqq-ma50", short_tickers=None,
                  extra_tickers=(), drive_trail=False, drive_reentry=False, trend_filters=(), trend_daily_loader=None,
                  overnight_short_gate=None):
-        self.client = market_data_client
         self.state_file = Path(state_file)
         self.alerts_dir = Path(alerts_dir)
         self.executor = executor or InlineExecutor()
@@ -232,7 +235,6 @@ class WaveSetupMonitor:
         # streamed only for the short setups or an open overnight trade: no reversal alerts, not in the signal stats
         self.extra_tickers = set(extra_tickers)
         self.lock = threading.RLock()
-        self.client_lock = threading.Lock()  # history requests share the client's session with the stats thread
         self.strategy = WaveSetupStrategy(
             setups_by_ticker, sink=self._on_intent, executor=self.executor, lock=self.lock, persist=self._save_state,
             evaluate_fn=_evaluate_fn, now=now, releases_loader=releases_loader,
@@ -241,14 +243,9 @@ class WaveSetupMonitor:
             short_setups=short_setups, short_gate=short_gate, short_tickers=short_tickers,
             overnight_short_gate=overnight_short_gate, drive_trail=drive_trail, drive_reentry=drive_reentry,
             trend_filters=trend_filters)
-        self.aggregator = FiveMinAggregator(self._on_five_min_bar)
+        self.feed = BarFeed(market_data_client, on_bar=self._handle_five_min_bar, on_backfill=self._merge_backfill,
+                            alert=self._system_alert, now=now, lock=self.lock)
         self.done = {"pre_open": False, "close": False}
-        self.stream_started_at = None
-        self.last_minute_at = None
-        self.refetch_before = None
-        self.backfill = None
-        self.last_reconnect_at = None
-        self.outage_from = None
 
     # strategy state, read and set through the monitor (callers and tests predate the split)
     setups = _forward("setups")
@@ -285,70 +282,44 @@ class WaveSetupMonitor:
     close_alert_at = _forward("close_alert_at")
     close_alert_latest = _forward("close_alert_latest")
     session_end = _forward("session_end")
+    # market data state, read and set through the monitor the same way
+    client = _forward("client", "feed")
+    client_lock = _forward("client_lock", "feed")
+    aggregator = _forward("aggregator", "feed")
+    stream_started_at = _forward("stream_started_at", "feed")
+    last_minute_at = _forward("last_minute_at", "feed")
+    refetch_before = _forward("refetch_before", "feed")
+    backfill = _forward("backfill", "feed")
+    last_reconnect_at = _forward("last_reconnect_at", "feed")
+    outage_from = _forward("outage_from", "feed")
 
     # --- lifecycle -------------------------------------------------------
 
     def prepare(self):
         """Warm up history, earnings windows and daily closes, restore state, catch up open trades."""
         now = self.now()
-        history = self._warmup(now)
-        bars_by_ticker = {}
-        for ticker in self.tickers:
-            frame = history.get(ticker)
-            bars = regular_hours(frame) if frame is not None and not frame.empty else _empty_bars()
-            bars_by_ticker[ticker] = bars[bars.index + timedelta(minutes=BAR_MINUTES) <= now]
+        bars_by_ticker = self.feed.session_bars(self.tickers, now)
         self.strategy.start_session(now.date(), bars_by_ticker)
         for ticker in self.tickers:
             self._rebuild_reversal_watch(ticker)
         self._load_state()
         self.strategy.prepare()
         self.strategy.catch_up()
-        self.refetch_before = period_start(now) + timedelta(minutes=BAR_MINUTES)
+        self.feed.start_session(self.session, self.tickers, self.close_time, now)
         self._save_state()
 
-    def _warmup(self, now):
-        """History up to now; before the open, up to the previous session's close (no recent data needed).
-
-        If the feed refuses recent data (delayed SIP plans), warm up to DELAYED_DATA_MINUTES ago and
-        backfill the gap once it can be queried (tick).
-        """
-        if now.time() < MARKET_OPEN:
-            previous = previous_trading_day(now.date())
-            end = ET.localize(datetime.combine(previous, session_close(previous)))
-        else:
-            end = now
-        start = end - timedelta(days=WARMUP_CALENDAR_DAYS)
-        try:
-            return self._history("warmup", self.tickers, start, end)
-        except Exception as error:
-            if "recent" not in str(error).lower():
-                raise
-            delayed_end = now - timedelta(minutes=DELAYED_DATA_MINUTES)
-            logger.warning("Feed refuses recent data (%s); warming up to %s and backfilling the rest later",
-                           error, f"{delayed_end:%H:%M}")
-            self._schedule_backfill(delayed_end, now)
-            return self._history("warmup", self.tickers, start, delayed_end)
-
     def _run_backfill(self, now):
-        """Insert the bars skipped at a delayed-feed start; they update history only (no alerts)."""
-        gap_start, gap_end = self.backfill
-        if now < gap_end + timedelta(minutes=DELAYED_DATA_MINUTES):
-            return
-        self.backfill = None
-        try:
-            fetched = self._history("fetch_bars", self.tickers, gap_start, gap_end)
-        except Exception:
-            logger.warning("Backfill of %s-%s failed", f"{gap_start:%H:%M}", f"{gap_end:%H:%M}", exc_info=True)
+        self.feed.run_backfill(now)
+
+    def _merge_backfill(self, gap_start, fetched):
+        """Insert the bars of a delayed-feed start or an outage; they update history only (no alerts)."""
+        if fetched is None:
             if self.reversal_watches:
                 self.reversal_paused = True
                 logger.warning("Reversal alerts paused for the session: their waves miss the gap's bars")
             return
-        for ticker in self.tickers:
-            frame = fetched.get(ticker)
-            if frame is None or frame.empty:
-                continue
-            missing = regular_hours(frame)
-            missing = missing[~missing.index.isin(self.bars[ticker].index)]
+        for ticker, frame in fetched.items():
+            missing = frame[~frame.index.isin(self.bars[ticker].index)]
             if not missing.empty:
                 self.bars[ticker] = pd.concat([self.bars[ticker], missing]).sort_index()
                 self._rebuild_reversal_watch(ticker)
@@ -357,14 +328,10 @@ class WaveSetupMonitor:
         self._save_state()
 
     def start_stream(self):
-        self.client.subscribe_bars(self.on_minute_bar, *self.tickers)
-        self.client.start()
-        self.stream_started_at = self.now()
+        self.feed.start_stream()
 
     def _history(self, method, tickers, start, end):
-        """A history request to the market data client, one at a time."""
-        with self.client_lock:
-            return getattr(self.client, method)(tickers, start, end)
+        return self.feed.history(method, tickers, start, end)
 
     def send_signal_stats(self):
         """Start-up alert, once per session: recent drive long / overnight win rates (signal_stats).
@@ -424,7 +391,7 @@ class WaveSetupMonitor:
         """Periodic work: flush late 5-min bars, scheduled alerts, stream watchdog."""
         now = self.now()
         with self.lock:
-            self.aggregator.flush_due(now)
+            self.feed.flush_due(now)
             if self.backfill is not None:
                 self._run_backfill(now)
             if not self.done["pre_open"] and now.time() >= PRE_OPEN_ALERT:
@@ -434,7 +401,7 @@ class WaveSetupMonitor:
                     now.time() >= self.close_alert_latest or self.strategy.all_have_bar(self.close_decision_bar)):
                 self.done["close"] = True
                 self.strategy.on_close_decision()
-        self._watchdog(now)
+        self.feed.watchdog(now)
 
     def finish(self):
         """End of session: close anything still open at the last close, summarize, save."""
@@ -468,35 +435,18 @@ class WaveSetupMonitor:
                 time_module.sleep(poll_seconds)
         finally:
             self.finish()
-            self.client.stop()
+            self.feed.stop()
             self.executor.shutdown(wait=False)
 
     # --- bars ------------------------------------------------------------
 
     def on_minute_bar(self, bar):
-        ticker = bar.symbol
-        if ticker not in self.setups:
-            return
-        timestamp = bar.timestamp.astimezone(ET)
-        if timestamp.date() != self.session or not (MARKET_OPEN <= timestamp.time() < self.close_time):
-            return
-        with self.lock:
-            now = self.now()
-            if self.outage_from is not None:
-                self._system_alert(f"market data restored at {now:%H:%M} after a gap from {self.outage_from:%H:%M}; "
-                                   "signals and stop checks in the gap were missed, check open positions")
-                self._schedule_backfill(self.outage_from, now)
-                self.outage_from = None
-            self.last_minute_at = now
-            self.aggregator.add(ticker, timestamp, float(bar.open), float(bar.high), float(bar.low), float(bar.close))
+        self.feed.on_minute_bar(bar)
 
     def _on_five_min_bar(self, ticker, bar):
-        with self.lock:
-            self._handle_five_min_bar(ticker, bar)
+        self.feed.on_five_min_bar(ticker, bar)
 
     def _handle_five_min_bar(self, ticker, bar):
-        if self.refetch_before is not None and bar["time"] < self.refetch_before:
-            bar = self._refetch_bar(ticker, bar)
         if not self.strategy.add_bar(ticker, bar):
             return
         logger.info("5-min %-6s %s O=%.2f H=%.2f L=%.2f C=%.2f (%d min)", ticker, f"{bar['time']:%H:%M}",
@@ -517,21 +467,6 @@ class WaveSetupMonitor:
     def wait_pending(self):
         """Block until every submitted evaluation has been handled (replays and tests)."""
         self.strategy.wait_pending()
-
-    def _refetch_bar(self, ticker, partial):
-        """The first period after a (re)start only has the minutes streamed since; fetch it whole."""
-        try:
-            fetched = self._history("fetch_bars", [ticker], partial["time"],
-                                    partial["time"] + timedelta(minutes=BAR_MINUTES))
-            frame = fetched.get(ticker)
-            if frame is not None and not frame.empty:
-                row = regular_hours(frame).loc[partial["time"]]
-                return {"time": partial["time"], "open": float(row["open"]), "high": float(row["high"]),
-                        "low": float(row["low"]), "close": float(row["close"]), "minutes": BAR_MINUTES}
-        except Exception:
-            logger.warning("%s: refetch of the %s bar failed; using the streamed minutes", ticker,
-                           f"{partial['time']:%H:%M}", exc_info=True)
-        return partial
 
     # --- signals ---------------------------------------------------------
 
@@ -571,30 +506,6 @@ class WaveSetupMonitor:
             self.alerted.update(s.key for s in signals)
             self._alert(None, "LOW?" if side == "bottom" else "HIGH?", signals[0].price, reversal_message(signals),
                         ticker=ticker, setup="reversal " + " + ".join(s.pattern for s in signals))
-
-    def _watchdog(self, now):
-        """Reconnect a silent stream, and tell the user once when market data has stopped."""
-        if not (MARKET_OPEN <= now.time() < self.close_time) or self.stream_started_at is None:
-            return
-        last = self.last_minute_at or max(self.stream_started_at, ET.localize(datetime.combine(now.date(), MARKET_OPEN)))
-        silent = (now - last).total_seconds()
-        reconnect_due = self.last_reconnect_at is None or (now - self.last_reconnect_at).total_seconds() > STREAM_TIMEOUT_SECONDS
-        if silent > STREAM_TIMEOUT_SECONDS and reconnect_due:
-            logger.warning("No 1-min bar for %.0fs; reconnecting the stream", silent)
-            self.last_reconnect_at = now
-            try:
-                self.client.reconnect()
-            except Exception:
-                logger.exception("Stream reconnect failed")
-        if silent >= OUTAGE_ALERT_SECONDS and self.outage_from is None:
-            self.outage_from = last
-            self._system_alert(f"no market data since {last:%H:%M}; no alerts until it returns "
-                               "(check the feed / data subscription, see the log)")
-
-    def _schedule_backfill(self, gap_start, gap_end):
-        if self.backfill is not None:
-            gap_start, gap_end = min(gap_start, self.backfill[0]), max(gap_end, self.backfill[1])
-        self.backfill = (gap_start, gap_end)
 
     def _on_intent(self, intent):
         """The strategy's decisions become alerts here; the trade engine's sink turns them into orders."""
@@ -666,10 +577,6 @@ class WaveSetupMonitor:
             temp.write_text(json.dumps({"session": state["session"], "alerted": state["alerted"], "done": self.done,
                                         "trades": state["trades"]}, indent=1))
             temp.replace(self.state_file)
-
-
-def _empty_bars():
-    return pd.DataFrame(columns=["open", "high", "low", "close"], index=pd.DatetimeIndex([], tz=ET), dtype=float)
 
 
 def _load_daily_close_series(tickers, session):
