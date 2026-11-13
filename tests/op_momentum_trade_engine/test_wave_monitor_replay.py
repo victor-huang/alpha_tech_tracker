@@ -167,3 +167,53 @@ class TestEvaluationCache:
                           cache=cache)
 
         assert cache.misses == no_signals.call_count > 0
+
+
+def _write_csv(path, header, rows):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join([",".join(header)] + [",".join(r) for r in rows]) + "\n")
+
+
+MONITOR_HEADER = ["time", "ticker", "setup", "action", "price", "stop", "target", "message"]
+ENGINE_HEADER = ["time", "ticker", "setup", "action", "price", "shares", "order", "pnl"]
+
+
+class TestEngineParity:
+    def _monitor(self, tmp_path):
+        _write_csv(tmp_path / "monitor" / "wave_setup_alerts_2026-11-11.csv", MONITOR_HEADER, [
+            ["2026-11-11T09:35:02", "AMD", "drive long", "BUY", "100.5", "99", "", "BUY AMD"],
+            ["2026-11-11T09:40:02", "AMD", "drive long", "SOLD", "99", "99", "", "SOLD AMD"],
+            ["2026-11-11T15:50:30", "AMD", "overnight always", "BUY", "101", "", "", "BUY AMD at the close"],
+            ["2026-11-11T10:00:02", "AMD", "reversal piercing", "LOW?", "98", "", "", "LOW? AMD"],
+        ])
+        return tmp_path / "monitor"
+
+    def test_matches_when_the_engine_traded_every_intraday_entry_and_exit(self, tmp_path):
+        _write_csv(tmp_path / "engine" / "wave_strategy_engine_trades_2026-11-11.csv", ENGINE_HEADER, [
+            ["2026-11-11T09:35:02", "AMD", "drive long", "BUY", "100.5000", "19", "bar_close", ""],
+            ["2026-11-11T09:40:02", "AMD", "drive long", "SOLD", "99.0000", "19", "stop", "-28.50"],
+        ])
+
+        assert replay.engine_parity(self._monitor(tmp_path), tmp_path / "engine") == ([], 2, 2)
+
+    def test_reports_an_alerted_trade_the_engine_did_not_take(self, tmp_path):
+        _write_csv(tmp_path / "engine" / "wave_strategy_engine_trades_2026-11-11.csv", ENGINE_HEADER, [
+            ["2026-11-11T09:35:02", "AMD", "drive long", "BUY", "100.5000", "19", "bar_close", ""],
+        ])
+
+        problems, _, _ = replay.engine_parity(self._monitor(tmp_path), tmp_path / "engine")
+
+        assert problems == ["only in the monitor: ('2026-11-11', 'AMD', 'drive long', 'SOLD', 99.0)"]
+
+
+class TestEngineReplay:
+    def test_writes_the_engines_trades_and_turns_notifications_back_on(self, tmp_path, config, no_signals, mocker):
+        enable = mocker.spy(replay, "enable_notifications")
+        engine = replay.SimpleNamespace(balance=20000, slots=10)
+
+        out = replay.run_replay(_bundle(), [SESSION], ["--config", str(config), "--no-short-setups"], tmp_path / "out",
+                                engine=engine)
+
+        state = json.loads((out / f"state_{SESSION}.json").read_text())
+        assert state["positions"] == {}
+        enable.assert_called_once()

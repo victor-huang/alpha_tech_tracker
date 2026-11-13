@@ -30,9 +30,9 @@ small modules, and keep the two programs independent:
 5. **Package name `wave_strategy/`** (not `wave_setups/`, which would clash with the output folder
    `backtest_result/wave_setups/`).
 
-Open question to confirm with the user before step B1 (recommendation in brackets): in mock / replay execution, fill
-entries and exits at the strategy's reference price — the signal bar's close, the stop level, the close [recommended:
-matches the monitor's alerts and the research backtests one-to-one] — rather than the engine's simulated mid-price.
+6. **Mock / replay fills at the strategy's reference price** (user, 2026-11-13) — the signal bar's close, the stop
+   level, the target, the close — not the engine's simulated mid, so a mock day matches the monitor's alerts and the
+   research backtests one to one.
 
 ## Context: why this strategy
 
@@ -324,8 +324,9 @@ the monitor for about a week, comparing trades with the monitor's alert CSV dail
 | A1 | done — both variants byte-identical to the baseline; full suite green except the 2 known failures; **deployed to EC2 with A2, running fine (user, 2026-11-12)** | `2182f91` |
 | A2 | done — every trading alert goes through `WaveSetupMonitor._on_intent(Intent)`; shell alerts (start-up, data outage / restored, reversal LOW? / HIGH?) still call `_alert` / `_system_alert`; byte-identical; **deployed to EC2 (prod = `deploy-A2`)** | `f5790f3` |
 | A3 | code done — `WaveSetupStrategy` in `wave_strategy/strategy.py`; replay byte-identical (0 cache misses = same evaluation inputs), process-pool smoke test OK, 21 strategy tests; **shadow run on EC2 from 2026-11-13** (see "A3 shadow run" below) | `a4776ce` |
-| A4 | code done — `BarFeed` in `wave_strategy/feed.py`; monitor tests unchanged, 17 feed tests; replay byte-identical (0 cache misses); full suite green except the 2 known failures; not deployed | (this commit) |
-| B1 | next — needs the fill-price answer | |
+| A4 | code done — `BarFeed` in `wave_strategy/feed.py`; monitor tests unchanged, 17 feed tests; replay byte-identical (0 cache misses); full suite green except the 2 known failures; not deployed; **shadow from 2026-11-16** (user: switch the A3 shadow to A4 after the 2026-11-13 session) | `c8ce383` |
+| B1 | done — `WaveStrategyRunner` (`wave_strategy_runner.py`) + `strategies/base.py`; 17 runner tests; harness `run --engine` + `parity`: prod variant 140 / 140 rows match, all_on 132 / 132 monitor rows traded + 10 exits the monitor drops after a restart (see the monitor restart bug below); not reachable from the CLI | (this commit) |
+| B2 | next | |
 
 **A3 notes (differences from the sketch above):**
 - Session times stay plain attributes on the strategy (`close_time`, `half_day`, `close_decision_bar`, `last_bar`,
@@ -344,11 +345,7 @@ the monitor for about a week, comparing trades with the monitor's alert CSV dail
   checkout (`git worktree add ~/att_shadow <A3 commit>`) with the prod flags plus `--config <prod checkout>/logs/
   wave_setup_monitor_config.json --no-notify`. After the close, compare its `logs/wave_setup_alerts_<date>.csv` with
   prod's on every column but `time` (both depend on when bars arrive).
-  Open question for the user — the market data for the shadow: prod streams TradeStation with the session tokens in
-  the checkout's (uncommitted) `config.json`; a second checkout needs a copy, and two processes refreshing the same
-  tokens may log prod out. Options: `--market-data-source local_ts_broadcast` (one feed shared, see
-  `guides/DUAL_ENGINE_MARKET_DATA_SHARING.md`), or Alpaca SIP for the shadow (bars can differ slightly from TS, so
-  compare entries/exits rather than bytes).
+  Market data for the shadow: decided 2026-11-13, `local_ts_broadcast` (see "A3 shadow run" below).
 
 **A4 notes:**
 - `BarFeed(client, on_bar, on_backfill, alert, now, lock)`: `session_bars(tickers, now)` (warm-up, regular hours,
@@ -362,6 +359,31 @@ the monitor for about a week, comparing trades with the monitor's alert CSV dail
   `refetch_before`, `last_reconnect_at`, `outage_from`; wrappers `start_stream`, `on_minute_bar`, `_on_five_min_bar`,
   `_run_backfill`, `_history`. The constants `WARMUP_CALENDAR_DAYS`, `DELAYED_DATA_MINUTES`, `STREAM_TIMEOUT_SECONDS`,
   `OUTAGE_ALERT_SECONDS` moved to `feed.py` and are re-exported. Moved log lines log under `wave_strategy.feed`.
+
+**B1 notes:**
+- `WaveStrategyRunner(setups, market_data_client, execution_client=None, mock=True, balance=20000, slots=10, ...)`
+  with the monitor's strategy options; the strategy runs `intraday_only=True`; the bars come from `BarFeed`; state in
+  `logs/wave_strategy_engine_state.json` (`strategy.state()` + `done` + `positions` as `ActivePosition.to_dict`, keyed
+  `ticker|setup|entry_time`); trades in `logs/wave_strategy_engine_trades_<date>.csv`.
+- Entries: skip when `slots` positions are open or `balance − open cost < balance / slots`; shares from
+  `PositionSizer.compute_stock(window_budget=balance / slots)`; live orders through `order_executor.place_stock_order`
+  (`BUY_OPEN` / `SELL_SHORT`). Exits: `PositionMonitor._close_position` (not `_close_stock_position`: the wrapper also
+  sets `is_closed` / `exit_reason`, reasons `wave_stop|wave_target|wave_giveback|wave_close|end_of_day` never start the
+  OR re-entry watchers). `position_monitor.py` unchanged; the runner gives it a latest-bar lookup over the strategy's
+  bars. `move_stop` updates `hard_stop_price` only.
+- The strategy keeps its reference prices in live mode too (broker fills go on the positions only), so live entries
+  and exits stay the monitor's decisions. In mock mode the runner overwrites PositionMonitor's simulated exit (rounded to
+  the cent) with the exact strategy price.
+- A stop before the session ends (restart, SIGTERM, crash) only saves the state; positions stay open and a same-session
+  restart restores them. Positions left open by an earlier session are alerted, not restored.
+- Parity commands: see "How to verify a monitor step" plus `run --engine ...` and `parity <monitor run> <engine run>`.
+
+**Monitor restart bug (found in B1, pre-existing, not fixed):** on SIGTERM / any stop mid-session the monitor's
+`run()` `finally` calls `finish()`, whose `close_leftovers()` marks every open intraday trade closed at the last bar and
+saves it; the restarted monitor then never alerts those trades' exits (baseline `all_on`, 2026-11-05 11:02 restart:
+AMD / MRNA / SHOP / SNDK / SNPS short drive and APP drive long re-entry get no COVER / SELL). Prod restarts at midnight
+after the session, so normal days are unaffected; a mid-session deploy or crash is. Fix = the runner's
+`finish(session_over)`; it changes monitor output and the `all_on` baseline, so it needs the user's go-ahead.
 
 ### A3 shadow run (set up 2026-11-13)
 
