@@ -323,7 +323,7 @@ the monitor for about a week, comparing trades with the monitor's alert CSV dail
 | A0 | done — baseline 2026-11-02..11 (8 sessions), `prod` 240 alert rows, `all_on` 365; replay deterministic | `1b42711` |
 | A1 | done — both variants byte-identical to the baseline; full suite green except the 2 known failures; **deployed to EC2 with A2, running fine (user, 2026-11-12)** | `2182f91` |
 | A2 | done — every trading alert goes through `WaveSetupMonitor._on_intent(Intent)`; shell alerts (start-up, data outage / restored, reversal LOW? / HIGH?) still call `_alert` / `_system_alert`; byte-identical; **deployed to EC2 (prod = `deploy-A2`)** | `f5790f3` |
-| A3 | code done — `WaveSetupStrategy` in `wave_strategy/strategy.py`; replay byte-identical (0 cache misses = same evaluation inputs), process-pool smoke test OK, 21 strategy tests; **shadow run on EC2 pending (needs the user)** | `a4776ce` |
+| A3 | code done — `WaveSetupStrategy` in `wave_strategy/strategy.py`; replay byte-identical (0 cache misses = same evaluation inputs), process-pool smoke test OK, 21 strategy tests; **shadow run on EC2 from 2026-11-13** (see "A3 shadow run" below) | `a4776ce` |
 | A4 | next | |
 
 **A3 notes (differences from the sketch above):**
@@ -348,6 +348,24 @@ the monitor for about a week, comparing trades with the monitor's alert CSV dail
   tokens may log prod out. Options: `--market-data-source local_ts_broadcast` (one feed shared, see
   `guides/DUAL_ENGINE_MARKET_DATA_SHARING.md`), or Alpaca SIP for the shadow (bars can differ slightly from TS, so
   compare entries/exits rather than bytes).
+
+### A3 shadow run (set up 2026-11-13)
+
+- Market data: `local_ts_broadcast`. `~/trade_engines.sh` `BB_CMD` now passes `--tickers` = the 16 V3 defaults +
+  MRNA SNDK SNPS QQQ (backup `~/trade_engines.sh.bak-20261113-shadow`); live from the 03:30 ET restart. The stock
+  engine drops symbols it did not subscribe to.
+- Code: worktree `~/att_shadow` (detached, `origin/wave-a3-shadow` = `d75dbe6`, A3 + docs) made from the prod repo;
+  its own git-ignored `config.json` (TS tokens copied from prod) and a copy of prod's state file at setup.
+- **Do not push `open_market_momentum_stategy` until A3 passes:** `trade_engines.sh restart` runs `git pull` in both
+  prod checkouts nightly at 03:30 ET, so a push deploys to the monitor at its next midnight restart.
+- Start: temporary crontab line `0 4 * * 1-5` (backup `~/crontab_backup_2026-11-13_shadow.txt`): `restart` from
+  `~/att_shadow` with the prod flags, `--market-data-source local_ts_broadcast --config
+  /home/ec2-user/alpha_tech_tracker/logs/wave_setup_monitor_config.json --no-notify`; cron output in
+  `~/att_shadow_cron.log`, logs / CSV / state / PID in `~/att_shadow/logs/`.
+- Compare after the close: `python3 ~/att_shadow_compare.py [YYYY-MM-DD]` (all columns but `time`; exit 1 on a
+  difference).
+- Teardown: delete the crontab line, stop the shadow monitor from `~/att_shadow`, `git -C ~/alpha_tech_tracker
+  worktree remove --force ~/att_shadow`, `git push origin --delete wave-a3-shadow`; the broadcaster tickers can stay.
 
 ### How to verify a monitor step (A1–A4)
 
