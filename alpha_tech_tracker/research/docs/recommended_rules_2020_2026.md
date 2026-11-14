@@ -20,7 +20,7 @@ A stopped-out name stays out until the next checkpoint, when it can be bought ba
 
 **Mid list:** Mid names that reclaimed a flat or rising 200-day within 40 trading days, above their 20/50-day, with sales up 25%+ a year; 15 names, 15% trailing stop, sold when they leave the list (30.3% a year 2020–2026 with never-held names first, worst drop −31%; walk-forward 19.8% on 2022–2026): [mid_reclaim_2020_2026.md](mid_reclaim_2020_2026.md). Paper-tracked as `mid_reclaim_growth`.
 
-**Short hedge:** while QQQ closes below both its 50- and 200-day averages, shorting the 15 weakest liquid Large names at 50% of the Large book turned 2022 from −9% to +19% at a cost in 2020 and early 2023 (32.9% vs 31.7% a year, worst drop −24% vs −27%): [short_hedge_2020_2026.md](short_hedge_2020_2026.md). Paper-tracked as `large_short_hedge`.
+**Short hedge:** while QQQ closes below both its 50- and 200-day averages, shorting the 15 weakest liquid Large names at 50% of the Large book turned 2022 from −9% to +19% at a cost in 2020 and early 2023 (32.9% vs 31.7% a year, worst drop −24% vs −27%): [short_hedge_2020_2026.md](short_hedge_2020_2026.md). Paper-tracked as `large_short_hedge`. With a 20-day rebound hold-off (`rebound_hold_off`: also off while QQQ is above a falling 20-day) and added to the yearly top 5 / top 10 books of every tier, it adds about 1.6 points a year to each book over 2018–2026, all from 2022, and deepens the worst drop through March 2020 ([top_n_by_year_2018_2026.md](top_n_by_year_2018_2026.md#with-the-short-hedge-20182026)); the paper-tracked hedge still uses the original signal.
 
 ## Daily and biweekly commands
 

@@ -1,0 +1,11 @@
+book,cagr,max_dd_at_rebalances,sharpe,worst_period
+Large,0.2711,-0.2694,1.0635,-0.1918
+Large + short 25% weakest in downtrend,0.2751,-0.2507,1.0863,-0.1918
+Large + short 50% weakest in downtrend,0.2769,-0.241,1.0805,-0.1918
+"Large + short 25% weakest in downtrend, off on a 20-day bounce",0.2805,-0.2507,1.0983,-0.1918
+"Large + short 50% weakest in downtrend, off on a 20-day bounce",0.2882,-0.241,1.1105,-0.1918
+Large 70% / Small 30%,0.2389,-0.2397,1.0979,-0.1862
+Large 70% / Small 30% + short 25% weakest in downtrend,0.2425,-0.2397,1.1218,-0.1862
+Large 70% / Small 30% + short 50% weakest in downtrend,0.2441,-0.2594,1.1047,-0.1862
+"Large 70% / Small 30% + short 25% weakest in downtrend, off on a 20-day bounce",0.248,-0.2397,1.1382,-0.1862
+"Large 70% / Small 30% + short 50% weakest in downtrend, off on a 20-day bounce",0.2555,-0.2397,1.1458,-0.1862

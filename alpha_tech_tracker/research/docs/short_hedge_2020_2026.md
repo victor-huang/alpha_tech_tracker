@@ -82,6 +82,36 @@ Large/Small blends (both books run day by day with their stops, re-split every c
 
 Selection changes for 2023: only price above the 200-day as the trend filter gave 35.7% a year (2023 +5%, 2025 +47%) but a −31% worst drop and 2022 −13%; a mega-cap-only universe fixed 2023 (+7–9%) and lost badly elsewhere; ranking by closeness to the 52-week high made 8.5%.
 
+## 20-day rebound hold-off (added 2026-11-14, 2018–2026)
+
+The hedge's losses came from shorting into sharp rebounds while QQQ was still below its 50- and 200-day averages. With `rebound_hold_off` (`downtrend(..., rebound_hold_off=True)`), the hedge also stays off at a checkpoint where QQQ closes above a falling 20-day average (20-day below its level 5 trading days earlier). Outputs: `short_hedge/2018_…_2026/` (the basket file has both signals).
+
+| Book (2018–2026, continuous) | CAGR | Worst drop | Sharpe | 2018 | 2019 | 2020 | 2022 | 2023 | 2025 |
+|---|---|---|---|---|---|---|---|---|---|
+| Large | 27.1% | −27% | 1.06 | −1% | 30% | 103% | −9% | −2% | 32% |
+| Large + short 50% | 27.7% | −24% | 1.08 | 0% | 25% | 80% | 19% | −9% | 32% |
+| **Large + short 50%, 20-day hold-off** | **28.8%** | **−24%** | **1.11** | −3% | 25% | 92% | 22% | −9% | 36% |
+| Large 70 / Small 30 + short 50% | 24.4% | −26% | 1.11 | −3% | 19% | 70% | 20% | −2% | 24% |
+| Large 70 / Small 30 + short 50%, 20-day hold-off | 25.5% | −24% | 1.15 | −6% | 19% | 81% | 22% | −2% | 28% |
+
+The hold-off changed 6 of 31 hedged checkpoints:
+
+| Checkpoint | Weakest 15 over the next period | Effect of skipping the short (at 50%) |
+|---|---|---|
+| 2020-03-30 | +13% (crash rebound) | +6.5% |
+| 2022-03-16 | +13% (bear-market rally) | +6.6% |
+| 2025-04-30 | +7% (tariff rebound) | +3.3% |
+| 2018-11-29 | −7% (selloff resumed) | −3.4% |
+| 2022-02-15 | −10% (selloff resumed) | −5.0% |
+| 2022-07-12 | 0% | 0% |
+
+- It catches V-shaped rebounds (2020, 2025) and exits too early when a bounce fails (late 2018, Feb 2022).
+- It does not fix January 2023: QQQ was still below its 20-day on Jan 3 and the weakest names rose 13%.
+- "Above the 20-day at any slope" gave identical results: whenever QQQ was below both longer averages here, its 20-day was falling.
+- About +1 point a year from 3 good and 2 bad calls; six checkpoints are too few to separate skill from luck. It only makes the hedge less active, so the downside of adopting it is small.
+
+The hedge applied to the top-5 and top-10 yearly books of every tier: [top_n_by_year_2018_2026.md](top_n_by_year_2018_2026.md).
+
 ## Findings
 
 1. **Going to cash never helped.** The signals fire after most of the damage and miss the sharp rebounds of spring 2020 and early 2023.
@@ -93,6 +123,7 @@ Selection changes for 2023: only price above the 200-day as the trend filter gav
 ## Decision
 
 - **Adopted for paper tracking (2026-11-10):** Large + short 50% of the weakest 15 while QQQ is below both averages. `paper_lists` writes the basket as `large_short_hedge` with status `short` or `off`; `exit_watch` does not watch it (no stop).
+- **20-day rebound hold-off (2026-11-14):** documented and available as `rebound_hold_off`; `paper_lists` still uses the original signal.
 - **Not adopted:** the mega-cap breakout sleeve and wider lists (see above), the Large/Small blend (the user prefers the short hedge), cash or QQQ-short overlays, the loose trend filter (pending a walk-forward check), the mega-cap universe.
 
 ## Caveats
