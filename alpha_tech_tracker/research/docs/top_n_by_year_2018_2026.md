@@ -7,6 +7,7 @@ Outputs: `research/top_performers_output/uptrend_formation/top_n_by_year/`:
 - `yearly_summary.csv`: year return, worst drop, trades, win rate, average trade
 - `top<N>_<year>_trades.pdf`: a summary page (equity curves, monthly table, trade stats), then every trade in checkpoint order, 6 per page: daily candles with the 8/20/50/200-day averages, the holding period shaded (green gain, red loss) and the trade's return and exit reason
 - `hedged_monthly_pnl.csv`, `hedged_yearly_summary.csv`: the same books with the short hedge, plain (`Large5`) and hedged (`Large5+h`)
+- `top3_monthly_pnl.csv`, `top3_yearly_summary.csv`, `top3_<year>_trades.pdf`: the `large_top3` book (top 3 Large by the 180-day score alone), plain and hedged
 - `scripts/top_n_books.py <out.pkl> <N> <year>`, `scripts/top_n_charts.py <in.pkl> <ohlc cache.pkl> <out.pdf>` and `scripts/hedge_overlay.py <dir> <year>`: one-off scripts (not in the test suite)
 
 ## Setup
@@ -85,6 +86,31 @@ The hedge was on at 25 checkpoints: Oct–Dec 2018 (4), Jan 2 2019, Mar 16 2020,
 - **Best mix with the hedge:** Large top 10, Mid top 10, Small top 5, unchanged.
 - Each year is a separate run, so the hedge starts fresh on each year's first checkpoint (Jan 2 2019 and Jan 3 2023 are on); the continuous study above has the same checkpoints on.
 
+## Large top 3 by the 180-day score alone (`large_top3`, 2018–2026)
+
+The paper-tracked `large_top3` list run the same way: the top 3 Large names by 180-day return / vol_60d^0.5 with the trend filter and no breakout slots, 25% trailing stop, one run per year, plain and with the short hedge above. Outputs: `top3_monthly_pnl.csv`, `top3_yearly_summary.csv`, `top3_<year>_trades.pdf`, `scripts/top3_book.py <dir> <year>` and `scripts/top3_charts.py <in.pkl> <ohlc cache.pkl> <out.pdf>`.
+
+| Year | large_top3 | + hedge | Worst drop | Large top 10 | QQQ | Best trades |
+|---|---|---|---|---|---|---|
+| 2018 | −6% | −8% | −25% | −5% | −2% | ONC +64% |
+| 2019 | 11% | 7% | −17% | 32% | 38% | SHOP +30% |
+| 2020 | **196%** | 178% | −44% (−51% hedged) | 140% | 46% | TSLA +133%, SE +129% |
+| 2021 | **50%** | 50% | −39% | 17% | 29% | AGNT +94%, MRNA +72% |
+| 2022 | 2% | **33%** | −32% (−30%) | −6% | −33% | DVN +31%, PBR +30% |
+| 2023 | −10% | −16% | −31% | 1% | 56% | GE +18% |
+| 2024 | **145%** | 145% | −36% | 79% | 28% | APP +256%, VRT +100% |
+| 2025 | **103%** | 109% | −31% (−25%) | 26% | 21% | RKLB +107%, HOOD +85% |
+| 2026* | 46% | 45% | −39% | 41% | 11% | SNDK +175% / +108% |
+| **2018–2026** | **30.5×** (47.0%/yr) | **34.0×** (48.8%/yr) | −44% (−51%) | 10.5× (30.4%/yr) | 4.7× | |
+
+\* Through Nov 13 (QQQ 11% to the same day; the other books run to Nov 12).
+
+- **The highest-return book tested**, about 3× Large top 10 over the nine years; chained 2020–2026 it is 29.4× (≈62% a year), in line with the continuous 64.5% in [concentration_2020_2026.md](concentration_2020_2026.md).
+- **Four years make it.** 2020, 2021, 2024 and 2025 beat Large top 10 by 24–77 points; 2018, 2019 and 2023 lag it by 1–21 points, and 2023 trails QQQ by 66. It beats Large top 10 in 6 of 9 years.
+- **A few names make each year.** 318 trades, 50% winners, average +5%. Summed over all their trades SNDK (+446%), APP (+261%), SE, VST, PDD, TSLA, PLTR and VRT (+100% to +150% each) carry the book; BNTX, VLO, DXCM, ABVX and NVDA lost 31–44%.
+- **Much rougher to hold:** the worst drop within the year is 31–44% in 7 of 9 years (Large top 10: 9–31%).
+- **The hedge helps it a little more than the other books** (+1.8 points a year): 2022 +2% → +33%, 2025 +6 points with a shallower drop, but March 2020 deepens that year's drop to −51%.
+
 ## Findings
 
 1. **Large needs 10 names.** Top 10 beat top 5 in 8 of 9 years, by 4 to 54 points (2019: within 0.5 points). In the top 5 the breakout slots take places 1–5, so the 180-day momentum leaders that make Large's year (APP, SMCI, VRT in 2024; HOOD, RKLB in 2025; SNDK, WDC in 2026) only enter at places 6–10.
@@ -95,7 +121,7 @@ The hedge was on at 25 checkpoints: Oct–Dec 2018 (4), Jan 2 2019, Mar 16 2020,
 
 ## Decision
 
-Best mix from these runs: **Large top 10, Mid top 10, Small top 5**. Over 2018–2026 only Large top 10 is clearly ahead of QQQ (10.5× vs 4.7×); Mid top 10 is somewhat ahead and Small top 5 about level. This matches the 2020–2026 concentration study, which found Large top 10 the best risk-adjusted Large book. The paper-tracked lists stay at 15; these sizes are not paper-tracked yet.
+Best mix from these runs: **Large top 10, Mid top 10, Small top 5**. Over 2018–2026 only Large top 10 is clearly ahead of QQQ (10.5× vs 4.7×); Mid top 10 is somewhat ahead and Small top 5 about level. This matches the 2020–2026 concentration study, which found Large top 10 the best risk-adjusted Large book. The paper-tracked lists stay at 15; these sizes are not paper-tracked yet. `large_top3` (30.5× over 2018–2026) is the highest-return Large option but rests on a few names a year and drops 30–45% most years; it fits as a smaller sleeve beside Large top 10, not a replacement.
 
 ## Caveats
 
