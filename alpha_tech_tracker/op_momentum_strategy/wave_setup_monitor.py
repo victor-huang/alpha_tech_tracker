@@ -113,7 +113,6 @@ from alpha_tech_tracker.op_momentum_strategy.reversal_watch import (
 )
 from alpha_tech_tracker.op_momentum_strategy.short_setups import (  # noqa: F401 (re-exported; tests patch TurnTracker)
     DEFAULT_SHORT_SETUPS,
-    GATE_TICKER,
     GATES as SHORT_GATES,
     SHORT_SETUPS,
     TurnTracker,

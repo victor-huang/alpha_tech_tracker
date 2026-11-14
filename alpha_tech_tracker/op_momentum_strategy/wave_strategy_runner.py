@@ -27,7 +27,11 @@ from alpha_tech_tracker.op_momentum_strategy.config import _notify
 from alpha_tech_tracker.op_momentum_strategy.models import ActivePosition, _D
 from alpha_tech_tracker.op_momentum_strategy.order_executor import place_stock_order
 from alpha_tech_tracker.op_momentum_strategy.position_monitor import PositionMonitor
-from alpha_tech_tracker.op_momentum_strategy.position_sizer import InsufficientSlotBudgetError, PositionSizer
+from alpha_tech_tracker.op_momentum_strategy.position_sizer import (
+    InsufficientBuyingPowerError,
+    InsufficientSlotBudgetError,
+    PositionSizer,
+)
 from alpha_tech_tracker.op_momentum_strategy.short_setups import DEFAULT_SHORT_SETUPS
 from alpha_tech_tracker.op_momentum_strategy.wave_strategy.feed import BarFeed
 from alpha_tech_tracker.op_momentum_strategy.wave_strategy.intents import (
@@ -59,6 +63,9 @@ WINDOW_LABEL = "WAVE"
 EXIT_REASONS = {STOP: "wave_stop", TARGET: "wave_target", BAR_CLOSE: "wave_giveback", MOC: "wave_close"}
 END_OF_DAY = "end_of_day"
 TRADE_COLUMNS = ["time", "ticker", "setup", "action", "price", "shares", "order", "pnl"]
+MAX_CLOSE_RETRIES = 3
+FAILED = "FAILED"
+RETRY = "RETRY"
 
 
 def trade_key(trade):
@@ -160,6 +167,7 @@ class WaveStrategyRunner:
                 last = self.strategy.last_close(pos.ticker)
                 price = last if last is not None else pos.entry_stock_price
                 self._close(pos, END_OF_DAY, price, "SELL" if pos.signal == "BULLISH" else "COVER", MOC)
+            self._retry_failed_closes(final=True)
             try:
                 self._session_summary()
             finally:
@@ -197,6 +205,7 @@ class WaveStrategyRunner:
         self.strategy.on_bar_shorts(ticker, bar)
         if self.strategy.takes_entries(bar["time"]):
             self.strategy.submit_evaluations(ticker, bar["time"])
+        self._retry_failed_closes(ticker)
         self._save_state()
 
     def _merge_backfill(self, gap_start, fetched):
@@ -250,6 +259,12 @@ class WaveStrategyRunner:
             shares, _ = self.sizer.compute_stock(trade.ticker, price, window_budget=self.per_trade, mock=self.mock)
         except InsufficientSlotBudgetError as error:
             return self._skip(intent, str(error))
+        except InsufficientBuyingPowerError as error:
+            return self._skip(intent, f"broker buying power: {error}")
+        except Exception:
+            logger.exception("WAVE sizing failed for %s", trade.ticker)
+            self._system_alert(f"ENTRY FAILED {trade.ticker} | {trade.setup} | sizing error, not traded")
+            return
         long = trade.side == 1
         action = "BUY_OPEN" if long else "SELL_SHORT"
         order_id, fill = f"mock-{trade_key(trade)}", price
@@ -286,13 +301,48 @@ class WaveStrategyRunner:
 
     def _close(self, pos, reason, price, action, order, setup=None):
         override = _D(str(price)) if price is not None else None
-        self.position_monitor._close_position(pos, reason, exit_stock_price_override=override)
+        try:
+            self.position_monitor._close_position(pos, reason, exit_stock_price_override=override)
+        except Exception:
+            logger.exception("WAVE close failed for %s", pos.ticker)
+            pos.is_closed, pos.exit_reason, pos.close_order_failed = True, reason, True
         pos.exit_time = self.now()
+        if pos.close_order_failed:
+            self._system_alert(f"CLOSE FAILED {pos.ticker} x{pos.shares} | {reason}: retried on the next bars, then "
+                               f"at the end of the session")
+            self._record(pos.ticker, setup or self._setup_of(pos), action, None, pos.shares, FAILED)
+            return
         if self.mock and override is not None:
             pos.simulated_exit_mid = override  # PositionMonitor rounds its simulated fill to the cent
         exit_price = pos.simulated_exit_mid if self.mock else (pos.exit_fill_price or override)
         self._record(pos.ticker, setup or self._setup_of(pos), action, exit_price, pos.shares, order,
                      pnl=self._pnl(pos, exit_price))
+
+    def _retry_failed_closes(self, ticker=None, final=False):
+        """Close orders that failed: again on each of the ticker's next bars (MAX_CLOSE_RETRIES times), and with a
+        market order at the end of the session whatever the count."""
+        for key, pos in list(self.positions.items()):
+            if not (pos.is_closed and pos.close_order_failed) or pos.close_order_reconciled:
+                continue
+            if ticker is not None and pos.ticker != ticker:
+                continue
+            if not final and pos.close_retry_count >= MAX_CLOSE_RETRIES:
+                if not pos.close_alert_sent:
+                    pos.close_alert_sent = True
+                    self._system_alert(f"CLOSE FAILED {pos.ticker} x{pos.shares}: {MAX_CLOSE_RETRIES} retries "
+                                       f"failed, the end of the session tries a market order; close manually now")
+                continue
+            pos.close_retry_count += 1
+            try:
+                self.position_monitor._close_stock_position(pos, END_OF_DAY if final else pos.exit_reason)
+            except Exception:
+                logger.exception("WAVE close retry failed for %s", pos.ticker)
+                pos.close_order_failed = True
+            if pos.close_order_failed:
+                continue
+            exit_price = pos.simulated_exit_mid if self.mock else pos.exit_fill_price
+            self._record(pos.ticker, key.split("|")[1], "SELL" if pos.signal == "BULLISH" else "COVER", exit_price,
+                         pos.shares, RETRY, pnl=self._pnl(pos, exit_price))
 
     def _setup_of(self, pos):
         return next((key.split("|")[1] for key, p in self.positions.items() if p is pos), "")
@@ -353,12 +403,16 @@ class WaveStrategyRunner:
             return
         positions = {key: ActivePosition.from_dict(d) for key, d in state.get("positions", {}).items()}
         if not self.strategy.restore(state):
-            left = [p for p in positions.values() if not p.is_closed]
+            failed = state.get("failed_closes", {})
+            left = [p for key, p in positions.items() if not p.is_closed or key in failed]
             if left:
                 self._system_alert("positions from an earlier session are still open in the state file, check the "
                                    "broker: " + ", ".join(f"{p.ticker} x{p.shares}" for p in left))
             return
         self.done.update(state.get("done", {}))
+        for key, retries in state.get("failed_closes", {}).items():
+            if key in positions:
+                positions[key].close_order_failed, positions[key].close_retry_count = True, int(retries)
         self.positions = positions
         for pos in positions.values():
             self.position_monitor.add_position(pos)
@@ -369,6 +423,8 @@ class WaveStrategyRunner:
             state = self.strategy.state()
             state["done"] = self.done
             state["positions"] = {key: pos.to_dict() for key, pos in self.positions.items()}
+            state["failed_closes"] = {key: pos.close_retry_count for key, pos in self.positions.items()
+                                      if pos.is_closed and pos.close_order_failed}
             temp = self.state_file.with_name(f"{self.state_file.name}.{os.getpid()}.{threading.get_ident()}.tmp")
             temp.write_text(json.dumps(state, indent=1, default=str))
             temp.replace(self.state_file)

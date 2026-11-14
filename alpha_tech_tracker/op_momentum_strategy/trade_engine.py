@@ -68,6 +68,7 @@ from .signal_engine import LiveSignalEngine
 from .selectors import (  # noqa: F401  — re-exported; imported from here by tests
     TickerSelector,
     WinRateTickerSelector,
+    _HOLD_WINDOW_MINUTES,
     _next_trading_day,
     _prior_trading_day,
     _trading_days_in_range,

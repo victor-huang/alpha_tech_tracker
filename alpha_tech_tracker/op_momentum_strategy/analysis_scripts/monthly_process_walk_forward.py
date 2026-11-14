@@ -23,8 +23,9 @@ averaged over the days traded. Years the rules were tuned on (TUNED_ON) are mark
 
 Against hindsight: the universe includes delisted stocks (--listed-only to drop them), the screen's price floor uses
 the raw close of the time, and neither the ranking nor the setup refresh sees an overnight hold that exits after the
-month starts. The setup report and the per-ticker short trades are cached under --cache-dir/<year>/, the ticker
-picks under ticker_screen_walk_forward's cache.
+month starts. The setup report and the per-ticker short trades are cached under
+--cache-dir/<year>/<setup_report|short_legs>/<start>_<end>/ (a later --end is a new window), the ticker picks under
+ticker_screen_walk_forward's cache.
 
   python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.monthly_process_walk_forward --year 2026 \\
     --end 2026-11-06 --extra-cost-bps 5 --borrow-bps 2
@@ -218,6 +219,11 @@ def gate_days(gate, start, end):
     return set() if gate == "off" else gated_sessions(start, end, gate)
 
 
+def window_folder(folder, start, end):
+    """The cache folder for one start..end window: a later --end gets its own trades, not the earlier run's."""
+    return folder / f"{start}_{end}"
+
+
 def cached_short_legs(tickers, start, end, folder, workers):
     """The monitor short legs per ticker over start..end, cached one CSV per ticker."""
     folder.mkdir(parents=True, exist_ok=True)
@@ -262,14 +268,16 @@ def load_data(year, args):
     report_start = [d for d in sessions if d < starts[0]][-(args.refresh_lookback + REPORT_MARGIN_SESSIONS)]
     tickers = sorted({t for names in picks.values() for t in names})
     folder = Path(args.cache_dir) / str(year)
-    trades = cached_setup_report(tickers, report_start, end, folder / "setup_report", args.workers)
+    trades = cached_setup_report(tickers, report_start, end, window_folder(folder / "setup_report", report_start, end),
+                                 args.workers)
     splits = split_days(fetch_daily(tickers, report_start, end, Adjustment.RAW), fetch_daily(tickers, report_start, end))
     kept = drop_split_trades(trades, splits)
     if len(kept) < len(trades):
         found = {t: sorted(str(d) for d in days) for t, days in splits.items() if days}
         print(f"dropped {len(trades) - len(kept)} setup report trades held across a split ({found})")
     trades = kept
-    short_legs = cached_short_legs(tickers, starts[0], end, folder / "short_legs", args.workers)
+    short_legs = cached_short_legs(tickers, starts[0], end, window_folder(folder / "short_legs", starts[0], end),
+                                  args.workers)
     gates = (gate_days(args.short_gate, starts[0], end), gate_days(args.overnight_short_gate, starts[0], end),
              session_flags(market_trend(qqq), sessions, "overnight_ok"))
     fixed_exit = trades[[REPORT_EXITS.get(s) == x for s, x in zip(trades.setup, trades.exit)]]

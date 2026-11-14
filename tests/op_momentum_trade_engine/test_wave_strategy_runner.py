@@ -7,6 +7,7 @@ import pandas as pd
 import pytest
 
 from alpha_tech_tracker.op_momentum_strategy import wave_strategy_runner as runner_module
+from alpha_tech_tracker.op_momentum_strategy.position_sizer import InsufficientBuyingPowerError
 from alpha_tech_tracker.op_momentum_strategy.wave_strategy.intents import (
     BAR_CLOSE,
     ENTER,
@@ -67,6 +68,24 @@ def _enter(runner, trade, order=BAR_CLOSE):
 def _exit(runner, trade, price, order=STOP):
     action = "SOLD" if trade.side == 1 else "COVERED"
     runner._on_intent(Intent(EXIT, f"{action} {trade.ticker}", action, trade, trade.ticker, trade.setup, price, order))
+
+
+def _live_runner(tmp_path, mocker, **kwargs):
+    mocker.patch.object(runner_module, "place_stock_order", return_value={"order_id": "o1", "filled_avg_price": 100.0})
+    return _runner(tmp_path, mocker, mock=False, execution_client=mocker.Mock(), **kwargs)
+
+
+def _close_outcomes(mocker, runner, outcomes):
+    """Patch the broker close: each call takes the next outcome (True fills at 99, False fails, an exception raises)."""
+    def close(pos, reason, exit_stock_price_override=None):
+        outcome = outcomes.pop(0)
+        if isinstance(outcome, Exception):
+            raise outcome
+        pos.close_order_failed = not outcome
+        if outcome:
+            pos.exit_fill_price = Decimal("99.0")
+
+    return mocker.patch.object(runner.position_monitor, "_close_stock_position", side_effect=close)
 
 
 def _rows(tmp_path):
@@ -136,6 +155,23 @@ class TestEntries:
         assert place.call_args.args[1:4] == ("AMD", 20, "SELL_SHORT")
         assert runner.open_positions()[0].entry_fill_price == Decimal("100.07")
 
+    def test_skips_when_the_broker_reports_too_little_buying_power(self, tmp_path, mocker):
+        runner, _ = _runner(tmp_path, mocker)
+        mocker.patch.object(runner.sizer, "compute_stock", side_effect=InsufficientBuyingPowerError("$500 free"))
+
+        _enter(runner, _trade())
+
+        assert runner.positions == {}
+
+    def test_a_sizing_error_is_alerted_and_not_traded(self, tmp_path, mocker):
+        runner, notes = _runner(tmp_path, mocker)
+        mocker.patch.object(runner.sizer, "compute_stock", side_effect=ConnectionError("broker down"))
+
+        _enter(runner, _trade())
+
+        assert runner.positions == {}
+        assert "ENTRY FAILED AMD" in notes[-1]
+
     def test_live_mode_needs_an_execution_client(self, tmp_path, mocker):
         with pytest.raises(ValueError):
             _runner(tmp_path, mocker, mock=False)
@@ -180,6 +216,97 @@ class TestExits:
         runner._on_intent(Intent(MOVE_STOP, "RAISE STOP AMD", "RAISE STOP", trade, "AMD", "drive long", 99.5))
 
         assert runner.open_positions()[0].hard_stop_price == Decimal("99.5")
+
+
+class TestFailedCloses:
+    def test_a_failed_close_is_flagged_alerted_and_recorded(self, tmp_path, mocker):
+        runner, notes = _live_runner(tmp_path, mocker)
+        trade = _trade()
+        _enter(runner, trade)
+        _close_outcomes(mocker, runner, [False])
+
+        _exit(runner, trade, 99.0)
+
+        pos = next(iter(runner.positions.values()))
+        assert (pos.is_closed, pos.close_order_failed) == (True, True)
+        assert "CLOSE FAILED AMD" in notes[-1]
+        assert _rows(tmp_path)[-1]["order"] == "FAILED"
+
+    def test_an_exception_while_closing_does_not_escape(self, tmp_path, mocker):
+        runner, _ = _live_runner(tmp_path, mocker)
+        trade = _trade()
+        _enter(runner, trade)
+        _close_outcomes(mocker, runner, [ConnectionError("timeout")])
+
+        _exit(runner, trade, 99.0)
+
+        assert next(iter(runner.positions.values())).close_order_failed is True
+
+    def test_the_tickers_next_bar_retries_the_close(self, tmp_path, mocker):
+        runner, _ = _live_runner(tmp_path, mocker)
+        trade = _trade()
+        _enter(runner, trade)
+        _close_outcomes(mocker, runner, [False, True])
+        _exit(runner, trade, 99.0)
+
+        runner._retry_failed_closes("AMD")
+
+        pos = next(iter(runner.positions.values()))
+        assert pos.close_order_failed is False
+        assert (_rows(tmp_path)[-1]["order"], _rows(tmp_path)[-1]["pnl"]) == ("RETRY", "-20.00")
+
+    def test_another_tickers_bar_does_not_retry(self, tmp_path, mocker):
+        runner, _ = _live_runner(tmp_path, mocker)
+        trade = _trade()
+        _enter(runner, trade)
+        close = _close_outcomes(mocker, runner, [False])
+        _exit(runner, trade, 99.0)
+
+        runner._retry_failed_closes("APP")
+
+        assert close.call_count == 1
+
+    def test_retries_stop_after_the_limit_with_one_alert(self, tmp_path, mocker):
+        runner, notes = _live_runner(tmp_path, mocker)
+        trade = _trade()
+        _enter(runner, trade)
+        close = _close_outcomes(mocker, runner, [False] * 4)
+        _exit(runner, trade, 99.0)
+
+        for _ in range(runner_module.MAX_CLOSE_RETRIES + 2):
+            runner._retry_failed_closes("AMD")
+
+        assert close.call_count == 1 + runner_module.MAX_CLOSE_RETRIES
+        assert sum("retries failed" in n for n in notes) == 1
+
+    def test_the_end_of_the_session_tries_a_market_close_past_the_limit(self, tmp_path, mocker):
+        runner, _ = _live_runner(tmp_path, mocker)
+        trade = _trade()
+        _enter(runner, trade)
+        close = _close_outcomes(mocker, runner, [False] * 4 + [True])
+        _exit(runner, trade, 99.0)
+        for _ in range(runner_module.MAX_CLOSE_RETRIES):
+            runner._retry_failed_closes("AMD")
+
+        runner.finish(session_over=True)
+
+        assert close.call_args.args[1] == "end_of_day"
+        assert next(iter(runner.positions.values())).close_order_failed is False
+
+    def test_a_failed_close_survives_a_restart(self, tmp_path, mocker):
+        first, _ = _live_runner(tmp_path, mocker)
+        trade = _trade()
+        _enter(first, trade)
+        first.strategy.trades.append(trade)
+        _close_outcomes(mocker, first, [False])
+        _exit(first, trade, 99.0)
+        first.finish(session_over=False)
+        second, _ = _live_runner(tmp_path, mocker)
+
+        second._load_state()
+
+        pos = next(iter(second.positions.values()))
+        assert (pos.close_order_failed, pos.close_retry_count) == (True, 0)
 
 
 class TestFinish:
