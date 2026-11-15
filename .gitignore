@@ -65,5 +65,7 @@ build-iPhoneSimulator/
 pip-selfcheck.json
 alpha_tech_tracker/op_momentum_strategy/config.json
 alpha_tech_tracker/op_momentum_strategy/state/*.json
-market_data/top_performers/
+market_data/top_performers
+market_data/historical
+market_data/historical_cache
 alpha_tech_tracker/research/top_performers_output/uptrend_formation/*/panel.pkl
