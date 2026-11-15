@@ -14,7 +14,8 @@ unadjusted close for market cap.
   WIKI day). A yfinance series that repeats a WIKI series under another ticker (Yahoo files a renamed company's
   history under its new ticker) has the duplicated days dropped.
 - Rows with no volume are dropped: Alpaca pads dead tickers with flat zero-volume bars (MON, SHLD) and WIKI has
-  zero-volume junk rows (DELL 2015).
+  zero-volume junk rows (DELL 2015). Days on which almost no stock traded are dropped too (WIKI's TAM has bars dated
+  on market holidays).
 - Alpaca files a company's history under its current ticker, and sometimes under its old one too (AmerisourceBergen
   is in both COR and ABC for 2017). Alpaca series that repeat another's (day, volume) pairs lose the repeated days
   from the shorter series.
@@ -51,6 +52,7 @@ RETURN_DUPLICATE_SHARE = 0.8
 RETURN_DUPLICATE_MIN_MOVE = 0.002
 PRICE_TICK = 0.015
 BENCHMARKS = ["SPY", "QQQ"]
+MIN_SYMBOLS_OPEN = 100
 COLUMNS = ["symbol", "day", "open", "high", "low", "close", "volume", "raw_close", "source"]
 PRICE_COLUMNS = ["open", "high", "low", "close"]
 
@@ -289,6 +291,13 @@ def rescale_to(older: pd.DataFrame, newer: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
+def drop_closed_days(rows: pd.DataFrame, min_symbols: int = MIN_SYMBOLS_OPEN) -> pd.DataFrame:
+    """Drop days on which fewer than min_symbols traded: the market was closed and the rows are junk (WIKI's TAM has
+    48 bars dated on holidays such as 2006-01-02, which would add a day with no price for any other stock)."""
+    counts = rows.groupby("day")["symbol"].transform("size")
+    return rows[counts >= min_symbols]
+
+
 def assign_securities(rows: pd.DataFrame) -> pd.DataFrame:
     """Relabel symbols as symbol~YYYY for earlier companies that used the ticker (see securities.trading_runs)."""
     runs = sec.label_reused(sec.trading_runs(rows[["symbol", "day", "close"]]))
@@ -325,7 +334,7 @@ def build(data_dir: str, wiki: Optional[pd.DataFrame] = None) -> Tuple[pd.DataFr
     pre = pre[pre["day"] <= WIKI_LAST_DAY]
     post = alpaca[alpaca["day"] >= ALPACA_FIRST_DAY]
     rows = pd.concat([pre, post], ignore_index=True)
-    rows = rows[rows["symbol"].str.match(sec.SYMBOL_RE, na=False)]
+    rows = drop_closed_days(rows[rows["symbol"].str.match(sec.SYMBOL_RE, na=False)])
     rows = assign_securities(rows.sort_values(["symbol", "day"]).reset_index(drop=True))
     dup_years = return_duplicate_years(rows)
     rows = drop_return_duplicates(rows, dup_years, _tiingo_start(raw), BENCHMARKS)

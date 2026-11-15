@@ -263,6 +263,22 @@ class TestRealTrades:
         assert nz._real_trades(rows).empty
 
 
+class TestDropClosedDays:
+    def test_drops_a_day_almost_no_stock_traded(self):
+        rows = pd.DataFrame({"symbol": ["A", "B", "C", "TAM"],
+                             "day": pd.to_datetime(["2006-01-03"] * 3 + ["2006-01-02"])})
+
+        out = nz.drop_closed_days(rows, min_symbols=2)
+
+        assert out["symbol"].tolist() == ["A", "B", "C"]
+
+    def test_keeps_every_open_day(self):
+        rows = pd.DataFrame({"symbol": ["A", "B", "A", "B"],
+                             "day": pd.to_datetime(["2006-01-03"] * 2 + ["2006-01-04"] * 2)})
+
+        assert len(nz.drop_closed_days(rows, min_symbols=2)) == 4
+
+
 class TestAssignSecurities:
     def test_splits_ticker_reused_across_handover(self):
         rows = pd.concat([_rows("ADT", ["2015-06-01"], 40.0), _rows("ADT", ["2018-01-19"], 14.0, source="alpaca")])
