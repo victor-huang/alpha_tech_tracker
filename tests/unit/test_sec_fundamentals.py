@@ -227,6 +227,16 @@ class TestAddFundamentalFactors:
         assert after["sales_growth_25"] == 1.0
         assert after["sales_accel"] == 1.0
 
+    def test_newest_quarter_wins_when_an_older_one_is_filed_the_same_day(self):
+        quarters = _quarters("A", revenue=[100, 100, 100, 100, 130], income=[10] * 5)
+        filed = quarters["known"].max()
+        quarters.loc[quarters["end"] == quarters["end"].min(), "known"] = filed
+        quarters = quarters.iloc[::-1].reset_index(drop=True)
+
+        row = add_fundamental_factors(self._panel(filed + pd.Timedelta(days=1)), quarters).iloc[0]
+
+        assert row["rev_yoy"] == pytest.approx(0.30)
+
     def test_stale_report_gives_no_score(self):
         quarters = _quarters("A", revenue=[100, 100, 100, 100, 130], income=[10] * 5)
 

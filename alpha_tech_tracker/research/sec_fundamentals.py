@@ -313,8 +313,9 @@ def _take(series: pd.Series, index: pd.Series) -> pd.Series:
 def add_fundamental_factors(panel: pd.DataFrame, quarters: pd.DataFrame) -> pd.DataFrame:
     """Latest quarter filed strictly before each checkpoint (and ending within MAX_REPORT_AGE_DAYS); 0/1 factor
     columns, NaN where the stock has no usable report."""
-    growth = growth_table(quarters).dropna(subset=["known"]).sort_values("known")
-    growth = growth.rename(columns={"end": "quarter_end"})
+    growth = growth_table(quarters).dropna(subset=["known"]).rename(columns={"end": "quarter_end"})
+    # a 10-K also files the year-ago quarter: on a tie in "known", the newest quarter must sort last to win
+    growth = growth.sort_values(["known", "quarter_end"], kind="mergesort")
     keys = panel[["checkpoint", "symbol"]].drop_duplicates().sort_values("checkpoint")
     keys["lookup"] = keys["checkpoint"] - pd.Timedelta(days=1)
     asof = pd.merge_asof(keys, growth, left_on="lookup", right_on="known", by="symbol", direction="backward")

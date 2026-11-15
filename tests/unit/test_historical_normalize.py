@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -121,6 +122,97 @@ class TestDropSelfDuplicates:
                           _rows("B", ["2017-06-05", "2017-06-06"], 1.0, volume=[7.0, 8.0], source="alpaca")])
 
         assert len(nz.drop_self_duplicates(rows, min_days=2)) == 6
+
+
+class TestReturnDuplicateYears:
+    def _walk(self, n, seed):
+        return list(100 * np.cumprod(1 + np.random.default_rng(seed).normal(0, 0.02, n)))
+
+    def test_finds_one_company_on_two_price_bases(self):
+        days = pd.bdate_range("2014-01-02", periods=40)
+        closes = self._walk(40, 1)
+        rows = pd.concat([_rows("SWHC", days, closes), _rows("SWBI", days, [c / 3 for c in closes], source="yfinance")])
+
+        assert nz.return_duplicate_years(rows).values.tolist() == [["SWBI", "SWHC", 2014]]
+
+    def test_cheap_stock_rounded_to_the_cent_is_still_a_duplicate(self):
+        days = pd.bdate_range("2012-01-03", periods=40)
+        closes = [c / 13 for c in self._walk(40, 1)]
+        rounded = [round(c, 2) for c in closes]
+        rows = pd.concat([_rows("ON", days, closes), _rows("TRUE", days, rounded)])
+
+        assert nz.return_duplicate_years(rows)["year"].tolist() == [2012]
+
+    def test_only_years_the_returns_agree(self):
+        early, late = pd.bdate_range("2013-01-02", periods=40), pd.bdate_range("2014-06-02", periods=40)
+        on = _rows("ON", list(early) + list(late), self._walk(80, 1))
+        true = _rows("TRUE", list(early) + list(late), on["close"].tolist()[:40] + self._walk(40, 3))
+
+        assert nz.return_duplicate_years(pd.concat([on, true]))["year"].tolist() == [2013]
+
+    def test_share_classes_are_not_duplicates(self):
+        days = pd.bdate_range("2014-01-02", periods=40)
+        closes = self._walk(40, 1)
+        noise = np.random.default_rng(2).normal(0, 0.003, 40)
+        rows = pd.concat([_rows("GOOG", days, closes), _rows("GOOGL", days, list(np.array(closes) * (1 + noise)))])
+
+        assert nz.return_duplicate_years(rows).empty
+
+    def test_too_few_shared_days_is_not_a_duplicate(self):
+        days = pd.bdate_range("2014-01-02", periods=10)
+        closes = self._walk(10, 1)
+
+        assert nz.return_duplicate_years(pd.concat([_rows("A", days, closes), _rows("B", days, closes)])).empty
+
+
+class TestDropReturnDuplicates:
+    def _dup(self, a, b, *years):
+        return pd.DataFrame([{"symbol": a, "other": b, "year": y} for y in years])
+
+    def test_series_that_ends_first_loses_the_shared_days(self):
+        rows = pd.concat([_rows("PCLN", ["2017-06-01", "2017-06-02"], 1.0),
+                          _rows("BKNG", ["2017-06-01", "2017-06-02", "2019-01-02"], 1.0)])
+
+        out = nz.drop_return_duplicates(rows, self._dup("BKNG", "PCLN", 2017))
+
+        assert out["symbol"].tolist() == ["BKNG"] * 3
+
+    def test_keeps_days_only_the_dropped_series_has(self):
+        rows = pd.concat([_rows("SWHC", ["2013-06-03", "2014-06-02"], 1.0),
+                          _rows("SWBI", ["2014-06-02", "2019-01-02"], 1.0)])
+
+        out = nz.drop_return_duplicates(rows, self._dup("SWBI", "SWHC", 2014))
+
+        assert out[out["symbol"] == "SWHC"]["day"].tolist() == [T("2013-06-03")]
+
+    def test_only_duplicated_years_are_dropped(self):
+        days = ["2013-06-03", "2014-06-02"]
+        rows = pd.concat([_rows("ON", days, 1.0), _rows("TRUE", days, 1.0)])
+        listed = pd.Series({"ON": T("2000-04-28"), "TRUE": T("2014-05-16")})
+
+        out = nz.drop_return_duplicates(rows, self._dup("ON", "TRUE", 2013), listed)
+
+        assert out[out["symbol"] == "TRUE"]["day"].tolist() == [T("2014-06-02")]
+
+    def test_when_both_trade_to_the_end_the_later_listing_loses(self):
+        rows = pd.concat([_rows("ON", ["2013-06-03"], 1.0), _rows("TRUE", ["2013-06-03"], 1.0)])
+        listed = pd.Series({"ON": T("2000-04-28"), "TRUE": T("2014-05-16")})
+
+        out = nz.drop_return_duplicates(rows, self._dup("ON", "TRUE", 2013), listed)
+
+        assert out["symbol"].tolist() == ["ON"]
+
+    def test_benchmark_is_never_dropped(self):
+        rows = pd.concat([_rows("SPY", ["2013-06-03"], 1.0), _rows("IVV", ["2013-06-03", "2013-06-04"], 1.0)])
+
+        out = nz.drop_return_duplicates(rows, self._dup("IVV", "SPY", 2013), keep=["SPY"])
+
+        assert out["symbol"].tolist() == ["SPY", "IVV"]
+
+    def test_no_pairs_leaves_rows(self):
+        rows = _rows("A", ["2014-06-02"], 1.0)
+
+        assert nz.drop_return_duplicates(rows, pd.DataFrame(columns=["symbol", "other", "year"])) is rows
 
 
 class TestHandoverMismatches:

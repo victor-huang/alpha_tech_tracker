@@ -28,7 +28,7 @@ unadjusted close for market cap.
 import argparse
 import glob
 import os
-from typing import Optional, Tuple
+from typing import Iterable, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -46,6 +46,11 @@ HANDOVER_MIN_DAYS = 10
 FIRST_DAY = pd.Timestamp("2003-01-01")
 DUPLICATE_SHARE = 0.5
 DUPLICATE_MIN_DAYS = 20
+RETURN_DUPLICATE_TOLERANCE = 0.0005
+RETURN_DUPLICATE_SHARE = 0.8
+RETURN_DUPLICATE_MIN_MOVE = 0.002
+PRICE_TICK = 0.015
+BENCHMARKS = ["SPY", "QQQ"]
 COLUMNS = ["symbol", "day", "open", "high", "low", "close", "volume", "raw_close", "source"]
 PRICE_COLUMNS = ["open", "high", "low", "close"]
 
@@ -190,6 +195,80 @@ def drop_duplicate_histories(yf: pd.DataFrame, wiki: pd.DataFrame, share: float 
     return marked[marked["_dup"].isna()].drop(columns="_dup").reset_index(drop=True)
 
 
+def _yearly_return_matches(rows: pd.DataFrame, tolerance: float, min_move: float,
+                           prefilter: float) -> pd.DataFrame:
+    """Per year, for security pairs whose daily returns look alike (cosine above `prefilter`): days where either
+    moved more than `min_move`, and how many of those the two returns agree within `tolerance`, or within
+    PRICE_TICK of the day's traded price when that is wider (two copies of a $7 stock rounded to the cent differ by
+    more than 5 bp)."""
+    out = []
+    for year, part in rows.groupby(rows["day"].dt.year):
+        r = part.pivot_table(index="day", columns="symbol", values="close").pct_change(fill_method=None)
+        r = r.loc[:, r.notna().sum() >= 2]
+        if r.shape[1] < 2:
+            continue
+        traded = part.pivot_table(index="day", columns="symbol", values="raw_close").reindex_like(r)
+        x = r.fillna(0.0).values
+        x = x / (np.linalg.norm(x, axis=0) + 1e-12)
+        cosine = np.triu(x.T @ x, k=1)
+        for a, b in zip(*np.where(cosine > prefilter)):
+            ra, rb = r.iloc[:, a], r.iloc[:, b]
+            moved = ra.notna() & rb.notna() & ((ra.abs() > min_move) | (rb.abs() > min_move))
+            price = np.fmin(traded.iloc[:, a], traded.iloc[:, b])[moved]
+            allowed = np.maximum(tolerance, PRICE_TICK / price.where(price > 0)).fillna(tolerance)
+            out.append((r.columns[a], r.columns[b], year, int(moved.sum()),
+                        int(((ra[moved] - rb[moved]).abs() < allowed).sum())))
+    return pd.DataFrame(out, columns=["symbol", "other", "year", "days", "matches"])
+
+
+def return_duplicate_years(rows: pd.DataFrame, tolerance: float = RETURN_DUPLICATE_TOLERANCE,
+                           share: float = RETURN_DUPLICATE_SHARE, min_days: int = DUPLICATE_MIN_DAYS,
+                           min_move: float = RETURN_DUPLICATE_MIN_MOVE, prefilter: float = 0.9) -> pd.DataFrame:
+    """(symbol, other, year) where the two tickers carry one company, whatever the source or price basis: their
+    daily returns agree within `tolerance` on at least `share` of the days either moved that year (SWHC and SWBI,
+    PCLN and BKNG; TRUE before TrueCar listed in 2014, where WIKI repeats ON). Share classes of one company (GOOG
+    and GOOGL, FOX and FOXA) agree on a third of those days at most."""
+    matches = _yearly_return_matches(rows, tolerance, min_move, prefilter)
+    if matches.empty:
+        return pd.DataFrame(columns=["symbol", "other", "year"])
+    dup = matches[(matches["days"] >= min_days) & (matches["matches"] >= share * matches["days"])]
+    return dup[["symbol", "other", "year"]].reset_index(drop=True)
+
+
+def drop_return_duplicates(rows: pd.DataFrame, dup_years: pd.DataFrame,
+                           listed_from: Optional[pd.Series] = None, keep: Iterable[str] = ()) -> pd.DataFrame:
+    """Per duplicate pair, drop one series' shared days in the duplicated years. The one that loses them: never a
+    symbol in `keep` (benchmarks), else the one that ends first, then the one with fewer days, then the one listed
+    later (`listed_from`: symbol -> first listing day), so the copy that carries on keeps its history."""
+    if dup_years.empty:
+        return rows
+    listed_from = listed_from if listed_from is not None else pd.Series(dtype="datetime64[ns]")
+    keep = set(keep)
+    spans = rows.groupby("symbol")["day"].agg(["max", "size"])
+    days = rows.groupby("symbol")["day"].apply(set)
+
+    def loses_first(s):
+        start = listed_from.get(s, pd.NaT)
+        return (s in keep, spans.at[s, "max"], spans.at[s, "size"],
+                -(start.value if pd.notna(start) else pd.Timestamp.min.value), s)
+
+    drop = []
+    for (a, b), g in dup_years.groupby(["symbol", "other"]):
+        loser = min((a, b), key=loses_first) if not ({a, b} <= keep) else None
+        if loser is None:
+            continue
+        winner = b if loser == a else a
+        years = set(g["year"])
+        drop += [(loser, d) for d in days[loser] & days[winner] if d.year in years]
+    drop = pd.DataFrame(drop, columns=["symbol", "day"]).drop_duplicates()
+    if drop.empty:
+        return rows
+    print(f"dropping {len(drop)} days repeating another ticker's returns from {drop['symbol'].nunique()} series, "
+          f"e.g. {dup_years[['symbol', 'other']].drop_duplicates().values.tolist()[:10]}", flush=True)
+    marked = rows.merge(drop.assign(_dup=True), on=["symbol", "day"], how="left")
+    return marked[marked["_dup"].isna()].drop(columns="_dup").reset_index(drop=True)
+
+
 def combine_pre_handover(wiki: pd.DataFrame, yf: pd.DataFrame) -> pd.DataFrame:
     """WIKI wins; yfinance adds only (symbol, day) pairs after the symbol's last WIKI day, or symbols WIKI lacks."""
     last_wiki = wiki.groupby("symbol")["day"].max()
@@ -247,7 +326,21 @@ def build(data_dir: str, wiki: Optional[pd.DataFrame] = None) -> Tuple[pd.DataFr
     post = alpaca[alpaca["day"] >= ALPACA_FIRST_DAY]
     rows = pd.concat([pre, post], ignore_index=True)
     rows = rows[rows["symbol"].str.match(sec.SYMBOL_RE, na=False)]
-    return assign_securities(rows.sort_values(["symbol", "day"]).reset_index(drop=True)), aliases
+    rows = assign_securities(rows.sort_values(["symbol", "day"]).reset_index(drop=True))
+    dup_years = return_duplicate_years(rows)
+    rows = drop_return_duplicates(rows, dup_years, _tiingo_start(raw), BENCHMARKS)
+    twins = dup_years[["symbol", "other"]].drop_duplicates()
+    aliases = pd.concat([aliases, twins], ignore_index=True).drop_duplicates()
+    return rows, aliases
+
+
+def _tiingo_start(raw_dir: str) -> pd.Series:
+    """symbol -> first listing day in Tiingo's ticker list (empty when it has not been downloaded)."""
+    path = os.path.join(raw_dir, "tiingo", "supported_tickers.zip")
+    if not os.path.exists(path):
+        return pd.Series(dtype="datetime64[ns]")
+    listings = sec.tiingo_listings(path).dropna(subset=["start"])
+    return listings.groupby("symbol")["start"].min()
 
 
 def _real_trades(rows: pd.DataFrame) -> pd.DataFrame:
