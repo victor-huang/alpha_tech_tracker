@@ -8,6 +8,7 @@ Outputs: `research/top_performers_output/uptrend_formation/top_n_by_year/`:
 - `top<N>_<year>_trades.pdf`: a summary page (equity curves, monthly table, trade stats), then every trade in checkpoint order, 6 per page: daily candles with the 8/20/50/200-day averages, the holding period shaded (green gain, red loss) and the trade's return and exit reason
 - `hedged_monthly_pnl.csv`, `hedged_yearly_summary.csv`: the same books with the short hedge, plain (`Large5`) and hedged (`Large5+h`)
 - `large_top3_monthly_pnl.csv`, `large_top3_yearly_summary.csv`, `large_top3_<year>_trades.pdf`: the `large_top3` book (top 3 Large by the 180-day score alone), plain and hedged
+- `ytd_gainers_2026.csv`: every name up 50%+ in 2026 through Nov 13 (price $5+, market cap $300M+), with its tier, price, market cap, the books that held it in 2026 (`held_in_2026`) and the books holding it now (`held_now`)
 - `scripts/top_n_books.py <out.pkl> <N> <year>`, `scripts/top_n_charts.py <in.pkl> <ohlc cache.pkl> <out.pdf>` and `scripts/hedge_overlay.py <dir> <year> [list sizes]`: one-off scripts (not in the test suite)
 
 ## Setup
@@ -151,6 +152,49 @@ The paper-tracked `large_top3` list run the same way: the top 3 Large names by 1
 - **A few names make each year.** 2018–2026: 318 trades, 50% winners, average +5%. Summed over all their trades SNDK (+446%), APP (+261%), SE, VST, PDD, TSLA, PLTR and VRT (+100% to +150% each) carry the book; BNTX, VLO, DXCM, ABVX and NVDA lost 31–44%.
 - **Much rougher to hold:** the worst drop within the year is 31–44% in 7 of 10 years (Large top 10: 9–31%).
 - **The hedge helps it a little more than the other books** (+1.8 points a year): 2022 +2% → +33%, 2025 +6 points with a shallower drop, but March 2020 deepens that year's drop to −51%.
+
+## 2026 so far (to Nov 13)
+
+The current checkpoint cycle runs from Tue Nov 3 to Tue Nov 17 (the next rebalance, after the close); the one after is Wed Dec 2 (Thanksgiving falls inside the cycle).
+
+### Since September
+
+| Book | Sep | Oct | Nov (to 13th) | Since Sep 1 | Worst drop |
+|---|---|---|---|---|---|
+| **Large 10** | +7.3% | −13.1% | −1.8% | **−8.4%** | −16.0% |
+| **Mid 10** | −7.3% | −15.1% | +5.7% | **−16.8%** | −23.4% |
+| **Small 5** | +1.4% | +9.1% | −2.5% | **+7.9%** | −5.5% |
+| **large_top3** | +7.8% | −25.8% | +0.4% | **−19.7%** | −32.1% |
+| QQQ | +3.3% | −6.7% | −0.3% | −3.9% | −14.8% |
+| Large 5 / Large 3 | +4.8% / +6.3% | +2.0% / +5.6% | −1.7% / −3.2% | +5.0% / +8.6% | −6.3% / −8.8% |
+| Mid 5 / Mid 3 | −12.6% / −8.5% | −17.7% / −11.5% | +8.5% / +10.4% | −21.9% / −10.6% | −29.9% / −21.1% |
+| Small 10 / Small 3 | 0.0% / +7.6% | +8.7% / +6.0% | −2.6% / −5.1% | +5.9% / +8.2% | −3.8% / −9.2% |
+
+- October did the damage. `large_top3` gave back about a fifth of 2026's gain (HPE −20%), and Mid had its two worst months of the year with repeated stops.
+- Since September Large 10 trailed Large 5 and Large 3, the reverse of 2017–2026. Over 2½ months this is not evidence against the 10-name book.
+- The hedge stayed off: QQQ never closed below both its 50- and 200-day, so October was a correction inside an uptrend, which the hedge does not cover.
+
+### How many names are up 50%+, and did the books hold them
+
+Of the 2,899 tracked names, 239 are under $5 and 37 are under $300M market cap. **342 of the remaining 2,622 (13.0%) are up 50% or more in 2026**; 98 are up 100%+, 16 are up 200%+, and 3 are up 300%+ (MRNA, ERAS, CDNA). The tier here is today's market cap, so names that grew from Small (ERAS, CDNA, KOD, PLSE) now count as Mid.
+
+| Tier (today) | Names | Up 50%+ | Held by any book in 2026 |
+|---|---|---|---|
+| Large | 880 | 90 (10.2%) | 34 |
+| Mid | 1,008 | 167 (16.6%) | 34 |
+| Small | 734 | 85 (11.6%) | 21 |
+| **All** | **2,622** | **342 (13.0%)** | **89** |
+
+Only 29 of the 98 names up 100%+ were held at any point. By recommended book: Large 10 held 32 of the 342, `large_top3` 15, Mid 10 20, Small 5 21.
+
+The five biggest gainers in each tier and how they were traded:
+
+- **SNDK (+273%) and MU (+173%) were caught**: SNDK +108% and +175% in two holds (Jan–Mar, Mar–Jul, both ended by the 25% stop), MU +39% (Jan) and +13% (May–Jul).
+- **MRNA (+657%) and DELL (+177%) were held but dropped too early.** MRNA rose from +137% to +669% between July and mid-October while the books held it for about four weeks (Aug 24–Sep 8, Sep 22–Oct 6), each time dropping out at the next checkpoint; it is held again since Oct 20 (−4% to −8%). DELL made most of its gain in Apr–Jun and was held two weeks of it.
+- **MPC (+158%) was bought late**: +11% Sep 22–Oct 6, −13% since Oct 20.
+- **Mid and Small leaders were almost all missed.** ETON (+278%) was held Jun 26–Jul 27 (+19%) and dropped before it rose from +114% to +275%. TXG, SYRE, PBF, RNG, INSW, ERAS, CDNA, KOD and PLSE were never held. Likely reasons (not yet checked name by name): the Small rule excludes names whose share count rose 10%+ and favors profitable ones, which removes many small biotechs, and the Mid list only takes names that recently reclaimed the 200-day with 25%+ sales growth.
+
+Leading groups: refiners and tankers (MPC, VLO, DINO, PSX, PBF, DK, FRO, INSW, DHT, TNK, STNG), memory, storage and chips (SNDK, MU, WDC, STX, AMD, MRVL, AXTI, MXL), and small and mid biotech (ERAS, CDNA, KOD, PLSE, ORKA, ABCL, SYRE).
 
 ## Findings
 
