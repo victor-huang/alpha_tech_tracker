@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 
 from alpha_tech_tracker.research.short_hedge import (
@@ -20,6 +21,28 @@ class TestDowntrend:
         on = downtrend(close, [days[-2], days[-1]])
 
         assert on.tolist() == [False, True]
+
+    def _bounce(self, last):
+        days = pd.bdate_range("2025-01-01", periods=260)
+        close = pd.Series(100.0, index=days)
+        close.iloc[-25:-2] = np.linspace(90.0, 55.0, 23)
+        close.iloc[-2:] = last
+        return close, days[-1]
+
+    def test_rebound_hold_off_turns_off_above_a_falling_20_day(self):
+        close, day = self._bounce(80.0)
+
+        assert downtrend(close, [day], rebound_hold_off=True).tolist() == [False]
+
+    def test_rebound_hold_off_stays_on_below_the_20_day(self):
+        close, day = self._bounce(50.0)
+
+        assert downtrend(close, [day], rebound_hold_off=True).tolist() == [True]
+
+    def test_without_hold_off_a_bounce_keeps_the_hedge_on(self):
+        close, day = self._bounce(80.0)
+
+        assert downtrend(close, [day]).tolist() == [True]
 
 
 class TestWeakest:

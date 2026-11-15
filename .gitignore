@@ -69,3 +69,5 @@ market_data/top_performers
 market_data/historical
 market_data/historical_cache
 alpha_tech_tracker/research/top_performers_output/uptrend_formation/*/panel.pkl
+alpha_tech_tracker/research/top_performers_output/uptrend_formation_historical/*/panel.pkl
+alpha_tech_tracker/research/top_performers_output/uptrend_formation_historical/top_n_by_year/*.pkl

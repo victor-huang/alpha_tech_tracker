@@ -4,6 +4,9 @@ Usage (repo root, Alpaca keys set; reuses the top_performers bar and share cache
 
     PYTHONPATH=. python -m alpha_tech_tracker.research.uptrend_formation --year 2026
     PYTHONPATH=. python -m alpha_tech_tracker.research.uptrend_formation --year 2020 2021 2022  # + cross-year summary
+    PYTHONPATH=. python -m alpha_tech_tracker.research.uptrend_formation --year 2018 --data-source historical \
+        --out-dir alpha_tech_tracker/research/top_performers_output/uptrend_formation_historical
+      # the 2005-2019 dataset (research/historical), dead companies included, SEC share counts
 
 Three parts, all evaluated at checkpoints every `--step` trading days using only data up to that close:
   1. winner timeline   - when each of the year's top-10 (per tier) first passed each screen, and how much
@@ -22,6 +25,7 @@ from typing import Dict, List
 import numpy as np
 import pandas as pd
 
+from alpha_tech_tracker.research.historical.data import HISTORICAL_CACHE_DIR, HistoricalData, HistoricalShares
 from alpha_tech_tracker.research.top_performers import (
     DEFAULT_CACHE_DIR,
     AlpacaData,
@@ -316,16 +320,18 @@ def summarize_years(out_dir: str, years: List[int]) -> pd.DataFrame:
 
 def run(args: argparse.Namespace) -> None:
     today = args.today or date.today()
-    alpaca = AlpacaData()
+    historical = args.data_source == "historical"
+    alpaca = HistoricalData() if historical else AlpacaData()
+    cache_dir = args.cache_dir or (HISTORICAL_CACHE_DIR if historical else DEFAULT_CACHE_DIR)
     stocks = alpaca.listed_stocks()
-    bar_cache = DailyBarCache(args.cache_dir, alpaca.daily_bars)
+    bar_cache = DailyBarCache(cache_dir, alpaca.daily_bars)
     start = date(args.year - 1, 1, 1) - timedelta(days=31 * (LOOKBACK_MONTHS - 12))
     year_end = pd.Timestamp(args.year, 12, 31)
     end = min(date(args.year + 1, 4, 30), today)
     close, dollar_volume = bar_cache.load(stocks.index.tolist() + BENCHMARKS, start, end, today)
     print(f"bars {close.shape}, {close.index.min().date()} -> {close.index.max().date()}", flush=True)
 
-    shares_cache = SharesCache(os.path.join(args.cache_dir, "shares.json"))
+    shares_cache = HistoricalShares() if historical else SharesCache(os.path.join(cache_dir, "shares.json"))
     try:
         universe = start_of_year_universe(close, dollar_volume, args.year,
                                           lambda s: shares_cache.get(s, today), alpaca.raw_closes)
@@ -363,7 +369,10 @@ def parse_args(argv=None) -> argparse.Namespace:
     p.add_argument("--step", type=int, default=10, help="trading days between checkpoints (10 = two weeks)")
     p.add_argument("--horizon", type=int, default=60, help="forward window in trading days for the forward test")
     p.add_argument("--winners-csv", default=DEFAULT_WINNERS_CSV)
-    p.add_argument("--cache-dir", default=DEFAULT_CACHE_DIR)
+    p.add_argument("--data-source", choices=["alpaca", "historical"], default="alpaca",
+                   help="historical = the 2005-2019 dataset in market_data/historical (see research/historical)")
+    p.add_argument("--cache-dir", help=f"bar partitions + share counts (default {DEFAULT_CACHE_DIR}, or "
+                                       f"{HISTORICAL_CACHE_DIR} for --data-source historical)")
     p.add_argument("--out-dir", default=DEFAULT_OUT_DIR)
     p.add_argument("--today", type=date.fromisoformat, help=argparse.SUPPRESS)
     return p.parse_args(argv)

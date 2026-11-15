@@ -1,11 +1,13 @@
 """A conditional short hedge on top of the Large book: while QQQ closes below both its 50- and 200-day averages at a
 checkpoint, short the weakest liquid Large names (lowest 180-day return / vol^0.5 among the most traded) at a fixed
 fraction of the book until the next checkpoint. The basket is rebuilt every checkpoint and carries no stop.
+With the rebound hold-off the hedge also stays off while QQQ closes above a falling 20-day average (a bounce inside
+the downtrend, where the weakest names squeeze hardest).
 
 Costs: 10 bps per unit traded on the short side (entries, exits and basket changes) plus a borrow rate while on.
 
 Usage:
-    PYTHONPATH=. python -m alpha_tech_tracker.research.short_hedge --years 2020 2021 2022 2023 2024 2025 2026
+    PYTHONPATH=. python -m alpha_tech_tracker.research.short_hedge --years 2018 2019 2020 2021 2022 2023 2024 2025 2026
 """
 import os
 from typing import List
@@ -25,13 +27,20 @@ HEDGE_FRACTION = 0.5
 BORROW_RATE = 0.01
 FRACTIONS = (0.25, 0.5)
 SMALL_WEIGHTS = (0.0, 0.3)
+REBOUND_MA = 20
+REBOUND_SLOPE_DAYS = 5
 
 
-def downtrend(index_close: pd.Series, checkpoints: List[pd.Timestamp]) -> pd.Series:
-    """True at checkpoints where the index closes below both its 50- and 200-day averages."""
+def downtrend(index_close: pd.Series, checkpoints: List[pd.Timestamp], rebound_hold_off: bool = False) -> pd.Series:
+    """True at checkpoints where the index closes below both its 50- and 200-day averages; with `rebound_hold_off`,
+    False while it closes above a falling 20-day average."""
     c = index_close.ffill()
     at = c.reindex(checkpoints)
     below = (at < c.rolling(50).mean().reindex(checkpoints)) & (at < c.rolling(200).mean().reindex(checkpoints))
+    if rebound_hold_off:
+        ma = c.rolling(REBOUND_MA).mean()
+        bounce = (at > ma.reindex(checkpoints)) & (ma < ma.shift(REBOUND_SLOPE_DAYS)).reindex(checkpoints)
+        below &= ~bounce.fillna(False)
     return below.fillna(False)
 
 
@@ -96,10 +105,11 @@ def run(args) -> None:
     out_dir = os.path.join(args.out_dir, "short_hedge", "_".join(str(y) for y in args.years))
     os.makedirs(out_dir, exist_ok=True)
 
-    on = downtrend(inputs.close[REGIME_INDEX], checkpoints)
+    signals = {"in downtrend": downtrend(inputs.close[REGIME_INDEX], checkpoints),
+               "in downtrend, off on a 20-day bounce": downtrend(inputs.close[REGIME_INDEX], checkpoints, True)}
+    on = signals["in downtrend"]
     basket = weakest(panel)
     basket_ret = basket_returns(basket, returns)
-    turnover = basket_turnover(basket, on)
     books = {}
     for name, key, exit_rule in (("Large", "large_slots", "trail25"), ("Small", "small", "trail15")):
         spec = LISTS[key]
@@ -111,9 +121,11 @@ def run(args) -> None:
     for small_weight in SMALL_WEIGHTS:
         long_book = (1 - small_weight) * books["Large"] + small_weight * books["Small"]
         base_name = "Large" if small_weight == 0 else f"Large {1 - small_weight:.0%} / Small {small_weight:.0%}"
-        for fraction in (0.0,) + FRACTIONS:
-            r = hedged_returns(long_book, basket_ret, on, fraction, cost, turnover=turnover)
-            name = base_name if fraction == 0 else f"{base_name} + short {fraction:.0%} weakest in downtrend"
+        variants = [(base_name, 0.0, on)] + [(f"{base_name} + short {f:.0%} weakest {label}", f, signal)
+                                             for label, signal in signals.items() for f in FRACTIONS]
+        for name, fraction, signal in variants:
+            r = hedged_returns(long_book, basket_ret, signal, fraction, cost,
+                               turnover=basket_turnover(basket, signal))
             rows.append(summarize(name, r, end))
             yearly.append({"book": name, **{str(k): v for k, v in returns_by_year(pd.DataFrame({"ret": r})).items()}})
     summary = pd.DataFrame(rows)
@@ -121,9 +133,12 @@ def run(args) -> None:
     pd.DataFrame(yearly).round(4).to_csv(os.path.join(out_dir, "by_year.csv"), index=False)
     basket.merge(basket_ret.rename("basket_ret"), left_on="checkpoint", right_index=True) \
         .merge(on.rename("hedge_on"), left_on="checkpoint", right_index=True) \
+        .merge(signals["in downtrend, off on a 20-day bounce"].rename("hedge_on_with_hold_off"), left_on="checkpoint",
+               right_index=True) \
         .round(4).to_csv(os.path.join(out_dir, "basket.csv"), index=False)
     with pd.option_context("display.width", 200):
-        print(f"hedge on at {int(on.sum())} of {len(on)} checkpoints")
+        for label, signal in signals.items():
+            print(f"hedge {label}: on at {int(signal.sum())} of {len(signal)} checkpoints")
         print(summary.round(3).to_string(index=False))
         print(pd.DataFrame(yearly).round(3).to_string(index=False))
     print(f"wrote {out_dir}")
