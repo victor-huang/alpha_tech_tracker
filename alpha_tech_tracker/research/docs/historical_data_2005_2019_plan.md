@@ -106,6 +106,40 @@ Build `market_data/historical/shares.json` in the format `SharesCache` reads. Ea
 3. **Spot checks:** LEH 2008, WM 2008 and SHLD 2018 should end near zero, not vanish from the data.
 4. Then run 2006–2017. Each year needs 14 months of lookback, so the bars start in late 2004. Then the downstream books.
 
+## Phases 3–7 results (2026-11-14)
+
+**Data built** (`market_data/historical/daily/<year>.pkl`): 15.9M rows, 7,239 companies, 2003-01 → 2020-06. WIKI and yfinance supply up to 2015, Alpaca from 2016-01. Securities per year: about 2,600–4,200 before 2016 (WIKI 2,047–3,154 plus yfinance 571–1,160) and about 5,000–5,400 from 2016.
+
+**Source quirks found and handled:**
+- **Alpaca drops history across identifier changes.** A request spanning a stock's identifier change returns only the part after it: TRP for 2016–2020 starts 2019-05-09, while TRP for 2017 alone has all 251 days. Bars are now fetched one month per request, as the existing cache does: 46 batches × 54 months, 24 minutes.
+- **Alpaca and Alpha Vantage file history under the current ticker**, and Alpaca sometimes under the old one too. AmerisourceBergen's 2017 bars are in both COR and ABC, and Alpha Vantage's 2016 snapshot lists Facebook as META. Alpaca series repeating another's (day, volume) pairs, at least 20 days and half the shorter series, lose the repeated days: 146,823 days from 182 series. The pairs are kept in `aliases.csv` (FB ↔ META, CTL ↔ LUMN) and used for names, CIKs and share counts.
+- **Same ticker, different company across the handover.** 68 symbols disagree on daily returns between WIKI and Alpaca in Jan–Mar 2016 (GOLD was Randgold in WIKI; B, BBT, COHR, CZR …). Their pre-2016 part becomes `symbol~YYYY`.
+- **yfinance files a renamed company's whole history under its new ticker** (AXON = TASR, BALL = BLL, CBRE = CBG, BHC = VRX). Days that repeat a WIKI series are dropped.
+- **Names come from the ticker's current owner** in Alpaca (FB is a ProShares ETF today, S is SentinelOne, HAWK is HawkEye 360). Names now come from the dated Alpha Vantage listing, then the alias's current name, then the WIKI run. The current Alpaca name and the current-ticker CIK are used only for companies still trading at the end of the data.
+- **SEC share counts are unreliable for multi-class companies.** companyfacts.zip leaves out per-class facts, leaving SPG's 8,000 class-B shares and Fox's "1". Counts under 100,000 are dropped. Companies still trading use the yfinance history already in `market_data/top_performers/shares.json` from its first date (~2015) on, as the Alpaca runs do, and SEC counts before it. Dead companies use SEC counts only. 4,509 of 7,239 companies have counts; 78% have a CIK.
+- **Stale bar cache.** `DailyBarCache` treats finished months as final, so `market_data/historical_cache/daily_bars/` must be deleted after any rebuild of `daily/`.
+
+**Overlap check, 2016-01-04 → 2018-03-27:** 2,834 symbols are in both WIKI and Alpaca, with a median of 0.18% of days off by more than 0.5%. 197 disagree on more than 1% of days, mostly tickers that changed owners or were renamed (WIKI shows the owner at the time, Alpaca the current company). Dead tickers end at their real last trade: SHLD 2018-10-23 at $0.34, CELG 2019-11-20, MON 2018-06-06, TWX 2018-06-14, DELL~2013 2013-10-29.
+
+**2018 rerun** (`uptrend_formation --year 2018 --data-source historical`, output in `top_performers_output/uptrend_formation_historical/2018`) vs the Alpaca run:
+
+| Tier | Old universe | New | Added | Dropped |
+|---|---|---|---|---|
+| Large | 574 | 619 | 47 | 6 |
+| Mid | 711 | 849 | 169 | 18 |
+| Small | 564 | 780 | 227 | 20 |
+
+- **Tiers agree for 1,788 of 1,805 shared names (99.1%).**
+- **Added (443):** 139 stopped trading by 2020-06 (AABA, ANDV, AVP, BKS …), about 277 were acquired or delisted after 2020 so today's list lacks them (ABMD, ANSS, ALXN, ALTR …), and 25 are the 2018 tickers of later-renamed companies.
+- **Dropped (44):** 28 are today's tickers of renamed companies, now carried under their 2018 tickers (ELV → ANTM, LUMN → CTL, COR → ABC, WOLF → CREE …). The other 16 are small names, plus SMCI, whose 2016–2019 history Alpaca no longer has (it moved to OTC in 2018).
+- **Forward test (lift, old → new):**
+  - trend_template: All 1.35 → 1.35, Large 1.40 → 1.39, Mid 1.46 → 1.50, Small 1.21 → 1.19.
+  - top_decile_ret_120d: All 1.81 → 1.80.
+  - early_momentum: Large 1.10 → 1.24.
+  - top_decile_ret_250d: All 1.72 → 1.79.
+
+  Adding dead companies to 2018 barely moves the screens' edge.
+
 ## What each year range can test
 
 | Years | Large rule (prices only) | Mid / Small rules (need fundamentals) |
@@ -124,3 +158,31 @@ Build `market_data/historical/shares.json` in the format `SharesCache` reads. Ea
 ## Disk
 
 WIKI zip about 0.5 GB (unzipped about 2 GB), the normalized parquet about 1 GB, the seeded cache about 2 GB (the size of the current one). All of it goes under `market_data/historical/` and `market_data/historical_cache/`. Both are in `.gitignore`.
+
+## Top-N yearly books on the historical data, 2014–2018 (2026-11-14)
+
+Universes rebuilt with `uptrend_formation --data-source historical` for 2014–2017 (2,033 / 2,011 / 2,141 / 2,248
+stocks on Jan 1; 2018 from Phase 7). The top_n_by_year scripts (from `wave-a3-shadow`) ran through `research/historical/run_top_n.py`, which
+swaps in `HistoricalData`, the historical cache, SEC CIKs from `securities.csv` (not today's tickers), benchmarks
+SPY/QQQ only (IWM is not in the data) and `--today 2020-06-30`. Results:
+`top_performers_output/uptrend_formation_historical/top_n_by_year/yearly_summary_2014_2018.csv`.
+
+Return per year (plain, no hedge):
+
+| Book | 2014 | 2015 | 2016 | 2017 | 2018 |
+|---|---|---|---|---|---|
+| Large top 3 | 8.3 | 0.1 | 8.0 | 13.9 | -19.9 |
+| Large top 5 | 7.2 | -10.3 | 12.2 | 11.6 | -11.8 |
+| Large top 10 | 19.0 | 8.0 | 8.3 | 7.0 | -7.3 |
+| Mid top 3 | 0.5 | 9.2 | -9.2 | 20.5 | -19.1 |
+| Mid top 5 | 4.7 | 11.1 | 5.0 | 20.6 | -19.7 |
+| Mid top 10 | 4.2 | 12.3 | -0.2 | 24.6 | -21.1 |
+| Small top 3 | -29.9 | 0.0 | 18.4 | 21.0 | -0.8 |
+| Small top 5 | -23.6 | 3.1 | 19.3 | 12.5 | 10.3 |
+| Small top 10 | -4.9 | 0.8 | 26.0 | 13.7 | -5.7 |
+| large_top3 | 51.6 | 1.6 | 8.4 | -8.6 | -14.3 |
+| QQQ | 20.1 | 9.8 | 9.4 | 31.5 | -1.8 |
+
+The short hedge was on at 0 / 2 / 5 / 0 / 4 checkpoints; in 2016 it cost about 10 points (the February rebound).
+2017 against the survivor-only Alpaca run: Mid books fall from about +50% to +21–25% (Wynn and Wayfair no longer
+picked, Nevro -20% in May), Large and Small move a few points either way.
