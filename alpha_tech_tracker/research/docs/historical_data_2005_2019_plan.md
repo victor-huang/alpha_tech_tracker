@@ -159,30 +159,51 @@ Build `market_data/historical/shares.json` in the format `SharesCache` reads. Ea
 
 WIKI zip about 0.5 GB (unzipped about 2 GB), the normalized parquet about 1 GB, the seeded cache about 2 GB (the size of the current one). All of it goes under `market_data/historical/` and `market_data/historical_cache/`. Both are in `.gitignore`.
 
-## Top-N yearly books on the historical data, 2014–2018 (2026-11-14)
+## Top-N yearly books on the historical data, 2014–2019 (2026-11-15)
 
-Universes rebuilt with `uptrend_formation --data-source historical` for 2014–2017 (2,033 / 2,011 / 2,141 / 2,248
-stocks on Jan 1; 2018 from Phase 7). The top_n_by_year scripts (from `wave-a3-shadow`) ran through `research/historical/run_top_n.py`, which
-swaps in `HistoricalData`, the historical cache, SEC CIKs from `securities.csv` (not today's tickers), benchmarks
-SPY/QQQ only (IWM is not in the data) and `--today 2020-06-30`. Results:
-`top_performers_output/uptrend_formation_historical/top_n_by_year/yearly_summary_2014_2018.csv`.
+Universes rebuilt with `uptrend_formation --data-source historical` for 2014–2019 (1,902 / 1,986 / 1,974 / 2,140 /
+2,249 / 2,283 stocks on Jan 1). The top_n_by_year scripts (from `wave-a3-shadow`) ran through
+`research/historical/run_top_n.py`, which swaps in `HistoricalData`, the historical cache, SEC CIKs from
+`securities.csv` (not today's tickers), benchmarks SPY/QQQ only (IWM is not in the data) and `--today 2020-06-30`.
+Results: `top_performers_output/uptrend_formation_historical/top_n_by_year/yearly_summary_2014_2019.csv`
+(`ret_alpaca` = the survivor-only Alpaca run for 2017–2019).
 
 Return per year (plain, no hedge):
 
-| Book | 2014 | 2015 | 2016 | 2017 | 2018 |
-|---|---|---|---|---|---|
-| Large top 3 | 8.3 | 0.1 | 8.0 | 13.9 | -19.9 |
-| Large top 5 | 7.2 | -10.3 | 12.2 | 11.6 | -11.8 |
-| Large top 10 | 19.0 | 8.0 | 8.3 | 7.0 | -7.3 |
-| Mid top 3 | 0.5 | 9.2 | -9.2 | 20.5 | -19.1 |
-| Mid top 5 | 4.7 | 11.1 | 5.0 | 20.6 | -19.7 |
-| Mid top 10 | 4.2 | 12.3 | -0.2 | 24.6 | -21.1 |
-| Small top 3 | -29.9 | 0.0 | 18.4 | 21.0 | -0.8 |
-| Small top 5 | -23.6 | 3.1 | 19.3 | 12.5 | 10.3 |
-| Small top 10 | -4.9 | 0.8 | 26.0 | 13.7 | -5.7 |
-| large_top3 | 51.6 | 1.6 | 8.4 | -8.6 | -14.3 |
-| QQQ | 20.1 | 9.8 | 9.4 | 31.5 | -1.8 |
+| Book | 2014 | 2015 | 2016 | 2017 | 2018 | 2019 |
+|---|---|---|---|---|---|---|
+| Large top 3 | 8.3 | 1.2 | 6.1 | 13.9 | -19.9 | 36.1 |
+| Large top 5 | 7.2 | -9.5 | 10.6 | 11.6 | -11.8 | 28.9 |
+| Large top 10 | 19.0 | 8.1 | 7.8 | 7.0 | -7.3 | 29.6 |
+| Mid top 3 | 0.5 | 5.3 | -7.6 | 17.3 | -23.6 | 43.7 |
+| Mid top 5 | 1.4 | 13.4 | 1.8 | 20.5 | -7.2 | 35.7 |
+| Mid top 10 | 4.2 | 10.1 | -2.0 | 23.6 | -11.0 | 34.2 |
+| Small top 3 | -23.6 | -8.7 | 12.6 | 21.1 | -0.3 | 19.2 |
+| Small top 5 | -21.4 | 1.0 | 14.2 | 10.0 | 10.4 | 10.8 |
+| Small top 10 | -4.8 | 0.8 | 22.6 | 14.0 | -5.0 | 5.8 |
+| large_top3 | 51.6 | 1.6 | 8.4 | -8.6 | -14.3 | 14.1 |
+| QQQ | 20.1 | 9.8 | 9.4 | 31.5 | -1.8 | 38.4 |
 
-The short hedge was on at 0 / 2 / 5 / 0 / 4 checkpoints; in 2016 it cost about 10 points (the February rebound).
-2017 against the survivor-only Alpaca run: Mid books fall from about +50% to +21–25% (Wynn and Wayfair no longer
-picked, Nevro -20% in May), Large and Small move a few points either way.
+- **Why 2014–2017 trails QQQ:** QQQ beats the average stock of every tier by 8–13 points in most years, before and
+  after 2018 alike. What differs is the books' edge over their own tier: about 0 in 2014–2017 against +10–14 points
+  a year in 2018–2026, and the 2018+ edge is concentrated in 2020 and 2024, the two strongest momentum years. The rules
+  were chosen on 2020–2026, so 2014–2017 is out of sample.
+- **Survivorship:** against the survivor-only Alpaca run, Large and Small move a few points either way in 2017–2019;
+  Mid falls 18–33 points in 2017 and 8–18 in 2019. The Mid list (fresh names first) is very sensitive to which names
+  qualify: Mid top 3 in 2019 was +70.5%, +31.6% and +43.7% across the three data fixes below.
+- **The short hedge** was on at 0 / 2 / 5 / 0 / 4 / 1 checkpoints; in 2016 it cost about 10 points (the February
+  rebound).
+
+Fixes made along the way:
+
+- **One company under two tickers** (SWHC and SWBI, PCLN and BKNG, UTX and RTX, and WIKI's ON history under TRUE
+  before TrueCar listed): `normalize.return_duplicate_years` finds pairs whose daily returns agree on 80%+ of the days
+  either moved in a year (within 5 bp, or 1.5 cents of the traded price for cheap stocks); share classes agree on a
+  third at most. `drop_return_duplicates` drops the duplicated years from the series that ends first, then has fewer
+  days, then listed later (Tiingo), never SPY or QQQ. 157 series lose 296k days; the pairs go into `aliases.csv`.
+  Before the fix the 2014–2015 books held both copies of one company 1–6 times a year.
+- **Fundamentals on a tie in the filing date** (`sec_fundamentals.add_fundamental_factors`): a 10-K also files the
+  year-ago quarter, and the unstable sort on `known` alone sometimes took that older quarter, which has no year-ago
+  growth. Sorting by (known, quarter end) gives sales growth to about 20% more 2019 checkpoint rows (ZS, OKTA, EXAS
+  among them). This also affects the Alpaca runs on `wave-a3-shadow`: Mid reclaim and any fundamentals filter there
+  should be rerun after merging.
