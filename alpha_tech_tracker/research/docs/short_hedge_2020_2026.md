@@ -110,7 +110,7 @@ The hold-off changed 6 of 31 hedged checkpoints:
 - "Above the 20-day at any slope" gave identical results: whenever QQQ was below both longer averages here, its 20-day was falling.
 - About +1 point a year from 3 good and 2 bad calls; six checkpoints are too few to separate skill from luck. It only makes the hedge less active, so the downside of adopting it is small.
 
-The hedge applied to the top-5 and top-10 yearly books of every tier: [top_n_by_year_2018_2026.md](top_n_by_year_2018_2026.md).
+The hedge applied to the top-5 and top-10 yearly books of every tier: [top_n_by_year_2017_2026.md](top_n_by_year_2017_2026.md).
 
 ## Findings
 

@@ -1,5 +1,7 @@
 """Add the short hedge (15 weakest liquid Large names at 50% of each book, while QQQ is below its 50- and 200-day
-and not bouncing above a falling 20-day) to the saved top-N yearly books, day by day."""
+and not bouncing above a falling 20-day) to the saved top-N yearly books, day by day.
+
+Usage: hedge_overlay.py <dir> <year> [list sizes, default 5,10]"""
 import pickle
 import sys
 
@@ -11,6 +13,7 @@ from alpha_tech_tracker.research.short_hedge import BORROW_RATE, HEDGE_FRACTION,
 from alpha_tech_tracker.research.uptrend_formation import REGIME_INDEX
 
 S, YEAR = sys.argv[1], int(sys.argv[2])
+NS = tuple(int(n) for n in sys.argv[3].split(",")) if len(sys.argv) > 3 else (5, 10)
 COST = 1e-3
 TIERS = ("Large", "Mid", "Small")
 
@@ -66,7 +69,7 @@ def main():
     dates = close.index[close.index >= cps[0]]
     periods = hedge_periods(close.loc[dates], cps, basket, on, dates)
     out = {"on": on}
-    for n in (5, 10):
+    for n in NS:
         d = pickle.load(open(f"{S}/top{n}_{YEAR}.pkl", "rb"))
         res = {}
         for t in TIERS:
@@ -87,9 +90,10 @@ def main():
     on_cps = [cp.date().isoformat() for cp, v in on.items() if v]
     print(f"== {YEAR}: hedge on at {len(on_cps)} checkpoints {on_cps}")
     with pd.option_context("display.width", 250):
-        for n in (5, 10):
+        for n in NS:
             print((out[f"monthly{n}"] * 100).round(1).to_string())
-    pickle.dump(out, open(f"{S}/hedged_{YEAR}.pkl", "wb"))
+    suffix = "" if NS == (5, 10) else "_top" + "_".join(map(str, NS))
+    pickle.dump(out, open(f"{S}/hedged_{YEAR}{suffix}.pkl", "wb"))
 
 
 if __name__ == "__main__":

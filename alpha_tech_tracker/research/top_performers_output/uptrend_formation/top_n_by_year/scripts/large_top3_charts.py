@@ -1,5 +1,5 @@
 """Per-trade chart PDF for the large_top3 yearly book, reusing top_n_charts.py with its own summary page.
-Usage: top3_charts.py <top3_year.pkl> <ohlc cache.pkl> <out.pdf>"""
+Usage: large_top3_charts.py <large_top3_year.pkl> <ohlc cache.pkl> <out.pdf>"""
 import importlib.util
 
 import matplotlib.pyplot as plt

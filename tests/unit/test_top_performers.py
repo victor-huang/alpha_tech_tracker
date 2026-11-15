@@ -218,6 +218,22 @@ class TestSharesCache:
         assert fetcher.call_count == 1
         assert series.iloc[0] == 5.0
 
+    def test_failed_save_keeps_the_previous_file(self, tmp_path, mocker):
+        fetcher = mocker.Mock(return_value=pd.Series([5.0], index=pd.to_datetime(["2026-01-01"])))
+        cache = SharesCache(str(tmp_path / "s.json"), fetcher=fetcher)
+        cache.get("AAA", date(2026, 11, 1))
+        cache.save()
+        cache.get("BBB", date(2026, 11, 1))
+        mocker.patch("alpha_tech_tracker.research.top_performers.json.dump", side_effect=OSError("disk full"))
+
+        with pytest.raises(OSError):
+            cache.save()
+
+        mocker.stopall()
+        reloaded = SharesCache(str(tmp_path / "s.json"), fetcher=fetcher)
+        assert reloaded.get("AAA", date(2026, 11, 7)).iloc[0] == 5.0
+        assert fetcher.call_count == 2
+
     def test_refetches_stale_entry(self, tmp_path, mocker):
         fetcher = mocker.Mock(return_value=None)
         cache = SharesCache(str(tmp_path / "s.json"), fetcher=fetcher)
@@ -317,6 +333,15 @@ class TestDailyBarCache:
             cache.load(["AAA"], date(2026, 11, 1), date(2026, 11, 9), date(2026, 11, 9))
 
         assert not (tmp_path / "daily_bars" / "2026-11.pkl").exists()
+
+    def test_months_before_the_first_bar_day_are_not_requested(self, tmp_path, mocker):
+        fetch = mocker.Mock(return_value=_long_bars([("AAA", "2016-01-04", 10.0)]))
+
+        close, _ = DailyBarCache(str(tmp_path), fetch).load(["AAA"], date(2015, 10, 1), date(2016, 1, 31),
+                                                            date(2026, 11, 14))
+
+        assert fetch.call_count == 1
+        assert close["AAA"].tolist() == [10.0]
 
     def test_completed_month_is_read_from_disk_on_later_runs(self, tmp_path, mocker):
         fetch = mocker.Mock(return_value=_long_bars([("AAA", "2026-09-30", 10.0), ("AAA", "2026-10-30", 12.0)]))

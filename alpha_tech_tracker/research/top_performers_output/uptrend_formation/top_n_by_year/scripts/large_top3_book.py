@@ -1,5 +1,5 @@
 """large_top3 (Large, 180-day / vol^0.5 score alone, no breakout slots, 25% trailing stop, 3 names) one year at a
-time, plain and with the short hedge (20-day rebound hold-off). Usage: top3_book.py <dir> <year>"""
+time, plain and with the short hedge (20-day rebound hold-off). Usage: large_top3_book.py <dir> <year>"""
 import importlib.util
 import pickle
 import sys
@@ -55,7 +55,7 @@ def main():
     top = trades.sort_values("ret", ascending=False)
     print("best:", ", ".join(f"{r.symbol} {r.ret:+.0%}" for r in top.head(3).itertuples()),
           "| worst:", ", ".join(f"{r.symbol} {r.ret:+.0%}" for r in top.tail(2).itertuples()))
-    with open(f"{S}/top3_{YEAR}.pkl", "wb") as f:
+    with open(f"{S}/large_top3_{YEAR}.pkl", "wb") as f:
         pickle.dump({"plain": eq, "hedged": hedged, "QQQ": qqq, "trades": trades, "monthly": table, "on": on,
                      "checkpoints": cps, "n": N, "year": YEAR, "Large": (eq, trades.assign(tier="Large"))}, f)
 
