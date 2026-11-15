@@ -246,7 +246,7 @@ checkpoint,tier,excess,flagged,rule,index_above_ma200
 2014-02-14,Mid,-0.013956819216008618,111,trend_template,True
 2014-02-14,Small,-0.011208458731314302,104,trend_template,True
 2014-03-03,Large,-0.022178831796020978,74,trend_template,True
-2014-03-03,Mid,-0.015375680325373326,112,trend_template,True
+2014-03-03,Mid,-0.015719641478008698,111,trend_template,True
 2014-03-03,Small,-0.01137230347670245,136,trend_template,True
 2014-03-17,Large,-0.023889491884526645,64,trend_template,True
 2014-03-17,Mid,-0.01813905260538806,108,trend_template,True

@@ -62,6 +62,7 @@ Operating stocks on NYSE/NASDAQ/AMEX on Jan 2 (listings from Tiingo + Alpha Vant
 - **History is keyed by the ticker's last owner.** WIKI's `WM` is Waste Management back to 1962, not Washington Mutual; `GOLD` is Randgold, not Barrick. One ticker can hold two companies' histories with a gap between them.
 - **Stale or stray rows.** Some live companies stop updating before 2018 (AN after 2017-08, ATI after 2017-04), then get a few stray days in 2018-03. DELL ends 2013-10-29 at ~$13.85, then has 42 zero-volume rows in 2015 at a flat $31.30; a backtest would book that as a +126% jump.
 - **Renames show up as two tickers.** Some renamed companies appear under both tickers for overlapping periods (WIKI's ON Semiconductor prices also filed under TRUE before TrueCar listed; SWHC/SWBI, PCLN/BKNG, UTX/RTX, TMK/GL across the sources).
+- **Bars on market holidays.** TAM has 48 rows dated on holidays in 2003–2013 (2006-01-02, 2008-12-25 ...). Each adds a day on which no other stock has a price, which shifts checkpoints and breaks rolling features.
 - **Text tickers.** `NA`, `NAN` and `NULL` are real symbols; pandas reads them as missing unless told not to.
 - **Adjusted basis.** `adj_*` is on WIKI's 2018 basis, not today's. Do not mix it with Alpaca's adjusted prices without rescaling.
 
@@ -83,7 +84,7 @@ Code is in `alpha_tech_tracker/research/historical/`. Run each step from the rep
 **Normalize rules:**
 - **Source by date:** WIKI through 2015-12-31 (yfinance only for days WIKI lacks), Alpaca from 2016-01-01. WIKI after 2015 is used only for the overlap check.
 - **One basis:** older sources are rescaled onto Alpaca's (today's) adjusted basis by the ratio of adjusted closes on shared days in Jan–Mar 2016. When returns disagree there, the tickers are different companies and the older part becomes `symbol~YYYY`.
-- **Junk rows dropped:** every row with zero volume (Alpaca pads dead tickers with flat bars; WIKI's DELL rows).
+- **Junk rows dropped:** every row with zero volume (Alpaca pads dead tickers with flat bars; WIKI's DELL rows), and every day on which fewer than 100 stocks traded (TAM's holiday bars).
 - **Same history under two tickers dropped:** Alpaca series repeating another's (day, volume) pairs; yfinance series repeating a WIKI series; and any two tickers whose daily returns agree within 5 bp (or 1.5 cents on cheap stocks) on 80%+ of moving days in a year. The series that ends first, or listed later, loses its shared days in that year. Share classes (GOOG/GOOGL) agree on a third of days at most and are kept. SPY and QQQ are never dropped. The pairs are kept in `aliases.csv`.
 
 **Checks passed (2026-11-14/15):**
@@ -145,14 +146,14 @@ Read `securities.csv` with `keep_default_na=False, na_values=["", "null"]` (the 
 | Years | Price-only rules (e.g. Large) | Rules needing fundamentals (Mid reclaim, Small factors) | Trust |
 |---|---|---|---|
 | 2005–2008 | Yes; tiers use each company's first SEC share count back-filled | **No.** SEC XBRL filings start in 2009; Mid makes no trades, Small's fundamentals checks switch off | Upper bound: deaths before 2014 missing |
-| 2009–2010 | Yes | Partial (296 → 777 XBRL filers) | Upper bound |
+| 2009–2010 | Yes | 2009: no (no year-ago growth yet, Mid makes no trades). 2010: yes, 296 → 777 XBRL filers | Upper bound |
 | 2011–2013 | Yes | Yes | Upper bound |
 | 2014–2019 | Yes | Yes | Good: delisted names covered (WIKI to 2015, Alpaca from 2016) |
 | 2020-01 → 2020-06 | Partial year only; use the Alpaca data for 2020+ | | |
 
 Also not in the data: IWM (use SPY/QQQ), intraday bars, options, and anything after 2020-06-30.
 
-Top-N book results already run on this data (2008–2010 and 2014–2019) are in `historical_data_2005_2019_plan.md` and `top_performers_output/uptrend_formation_historical/top_n_by_year/yearly_summary_*.csv`.
+Top-N book results already run on this data (2005–2019) are in `historical_data_2005_2019_plan.md` and `top_performers_output/uptrend_formation_historical/top_n_by_year/yearly_summary_*.csv`.
 
 ## 6. Checklist before trusting a result
 

@@ -208,42 +208,56 @@ Fixes made along the way:
   among them). This also affects the Alpaca runs on `wave-a3-shadow`: Mid reclaim and any fundamentals filter there
   should be rerun after merging.
 
-## Top-N yearly books, 2008–2010: the crash and the rebound (2026-11-15)
+## Top-N yearly books, 2005–2013 (2026-11-15)
 
-Same scripts and wrapper as 2014–2019. Universes on Jan 1: 1,501 (2008), 1,334 (2009), 1,377 (2010). Results:
-`top_n_by_year/yearly_summary_2008_2010.csv`. How to use the data and its limits: `wiki_dataset_guide.md`.
+Same scripts and wrapper as 2014–2019, on the data after the closed-day fix below. Universes on Jan 1: 1,061 (2005),
+1,191, 1,364, 1,498, 1,334, 1,377, 1,512, 1,575, 1,614 (2013). Results:
+`top_n_by_year/yearly_summary_2005_2013.csv` (the row `hedge_on_checkpoints` gives the number of checkpoints the
+hedge was on). How to use the data and its limits: `wiki_dataset_guide.md`.
 
-Return per year (plain / with the short hedge):
+Return per year (plain, no hedge):
 
-| Book | 2008 | 2009 | 2010 |
-|---|---|---|---|
-| Large top 3 | -61.2 / -60.9 | -34.0 / -39.2 | 13.1 / 0.8 |
-| Large top 5 | -57.4 / -57.3 | -30.6 / -36.1 | 10.9 / -1.1 |
-| Large top 10 | -56.1 / -56.4 | -29.2 / -34.8 | 16.7 / 4.2 |
-| Mid top 3 / 5 / 10 | no trades | no trades | 10.7 / 8.9 / 8.9 (3–5 trades, from November) |
-| Small top 3 | -48.3 / -51.5 | -26.7 / -32.1 | 23.8 / 10.5 |
-| Small top 5 | -47.5 / -50.1 | -18.5 / -25.0 | 19.8 / 6.8 |
-| Small top 10 | -46.7 / -48.1 | -25.4 / -31.4 | 27.5 / 13.6 |
-| large_top3 | -53.2 / -54.6 | -29.2 / -34.9 | 14.5 / 2.2 |
-| QQQ | -40.8 | 48.3 | 18.4 |
+| Book | 2005 | 2006 | 2007 | 2008 | 2009 | 2010 | 2011 | 2012 | 2013 |
+|---|---|---|---|---|---|---|---|---|---|
+| Large top 3 | 41.6 | 4.2 | -3.9 | -55.7 | -21.0 | -8.7 | -12.9 | 27.1 | 36.6 |
+| Large top 5 | 51.1 | -16.4 | 12.2 | -59.1 | -33.5 | 1.4 | -11.1 | 24.5 | 26.0 |
+| Large top 10 | 39.8 | -3.3 | 26.1 | -51.2 | -28.7 | 9.8 | -24.0 | 15.8 | 26.7 |
+| Mid top 3 | – | – | – | – | – | 19.4 | -30.9 | -30.3 | 22.3 |
+| Mid top 5 | – | – | – | – | – | 13.4 | -34.0 | -15.8 | 27.8 |
+| Mid top 10 | – | – | – | – | – | 15.4 | -36.1 | -23.7 | 26.0 |
+| Small top 3 | -8.5 | 5.0 | 7.2 | -53.3 | -31.7 | 0.6 | 8.8 | -3.3 | 9.3 |
+| Small top 5 | -2.0 | 18.4 | 1.1 | -50.8 | -29.9 | 6.9 | 1.2 | -5.7 | 18.6 |
+| Small top 10 | -1.2 | 16.1 | 10.8 | -50.1 | -29.3 | 10.5 | -4.6 | 2.0 | 27.2 |
+| large_top3 | 39.5 | -20.0 | 21.8 | -55.6 | -33.7 | 27.4 | -23.3 | 15.5 | 20.4 |
+| QQQ | 2.6 | 4.8 | 18.8 | -40.8 | 48.2 | 18.4 | 1.9 | 15.9 | 32.4 |
+| hedge on (of 26 checkpoints) | 2 | 7 | 0 | 14 | 2 | 2 | 5 | 1 | 0 |
 
-- **2008: worse than QQQ.** In mid-2008 the strongest names were materials and energy (CLF, MOS, PBR), which then fell
-  harder than the index: Large top 10 lost 33.6% in October against QQQ's 15.5%. The hedge was on at 13 of 26
-  checkpoints but moved the year by less than 3 points.
-- **2009: a momentum crash.** The names still trending after 2008 were the defensive ones (AMGN, APOL, CHT, ALK); when
-  the market turned in March, money went to the beaten-down names. Large top 10 lost 34% in January–April while QQQ
-  rose 10%, then roughly matched QQQ for the rest of the year. The losses are spread over many trades (Large top 10:
-  108 trades, 44% won), not one bad print. The hedge switched on once, on 2009-03-02, the market bottom, and cost
-  another 5–7 points.
-- **2010: normal again.** Small beat QQQ (top 10 +27.5%), Large trailed it by 2–8 points. The hedge was on at three
-  checkpoints in June–August after the flash crash and cost 12–14 points as the market rebounded.
-- **Mid cannot be tested before 2010.** Its rule needs sales growth ≥ 25%, and SEC XBRL filings start in 2009, so a
-  year-ago growth figure exists only from late 2010. Its 2008–2009 hedged numbers (-5.8 / -7.9) are the short hedge
-  alone on an empty book. Small's fundamentals checks (no dilution, prefer gross profit) switch off without data, so
-  Small runs on prices alone before 2010.
-- **Survivorship:** none of the companies that died before 2014 are in the data (no LEH, BSC, WaMu). Tiers before 2009
-  use each company's first SEC share count back-filled. Read all three years as best cases.
+– = no trades: the Mid rule needs sales growth ≥ 25%, and a year-over-year figure from SEC XBRL filings (which start in
+2009) exists only from 2010. Small's fundamentals checks (no dilution, prefer gross profit) switch off without data,
+so Small runs on prices alone before 2010.
 
-Takeaway: the price rules lost in both directions of the 2008–2009 cycle, more than QQQ on the way down and while QQQ
-recovered. The hedge did not help in either year. A rule that pauses buying (or holds the index) after a deep
-drawdown until new leaders form is the obvious thing to test next.
+- **2005–2007 (pre-crisis):** Large beat QQQ by about 40 points in 2005 (housing, energy, Google) and Large top 10 by
+  7 in 2007, but lost in the May–July 2006 commodity selloff. Small led in 2006. The spread between book sizes is
+  large (2007: Large top 3 -3.9 vs top 10 +26.1), so one book's number says little on its own.
+- **2008:** every book lost 9–18 points more than QQQ, holding materials and energy (MOS, CLF, CNX) into the second
+  half. The hedge was on at 14 checkpoints and saved only 2–3 points.
+- **2009, a momentum crash:** all books lost 21–34% while QQQ gained 48%. The names still trending after 2008 were
+  defensive (APOL, ALK); when the market turned in March, money went to the beaten-down ones.
+- **2010–2012:** mixed to bad. Large trailed QQQ in 2010 and 2011, beat it in 2012. Mid lost 16–36% in 2011 and 2012:
+  it bleeds when only one or two names qualify, because the book puts equal weight on whatever qualifies. In 2011 the
+  hedge cost another 8–13 points (August–December rebounds).
+- **2013:** a calm uptrend; every book made 9–37% with 58–68% of trades winning, but only Large top 3 beat QQQ.
+- **Survivorship:** none of the companies that died before 2014 are in the data (no LEH, BSC, WaMu), and tiers before
+  2009 use each company's first SEC share count back-filled. The universe is also smaller (1,061–1,614 against
+  1,900–2,300 from 2014). Read all of 2005–2013 as best cases.
+
+Takeaway: before 2014 the rules have no reliable edge over QQQ. Large beats it in strong trending years (2005, 2007,
+2012, 2013 top 3) and loses badly in the crash, the rebound and choppy years (2008, 2009, 2011). Mid, outside the
+2020–2026 years it was tuned on, loses more often than not. The short hedge rarely helps: it is on in sharp dips that
+reverse. A rule that pauses buying (or holds the index) after a deep drawdown is the obvious thing to test next.
+
+**Closed-day fix (normalize.drop_closed_days):** WIKI's TAM has 48 bars dated on market holidays in 2003–2013
+(e.g. 2006-01-02). Each one added a day on which no other stock had a price: checkpoints landed on it, QQQ's first
+2006 price was blank, and the Mid reclaim features broke (2011 Mid made 9 trades instead of 65). Days on which fewer
+than 100 stocks traded are now dropped; the rebuild removed exactly those 48 rows. 2014 reran unchanged, so 2014–2019
+are unaffected. The first 2008–2010 results (commit 90d3f45) were on the bad data and are replaced by the table above.
