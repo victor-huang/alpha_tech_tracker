@@ -4,13 +4,14 @@ research/docs/historical_data_2005_2019_plan.md).
 Usage (from the repo root, with the keys in .env exported):
 
     python -m alpha_tech_tracker.research.historical.download wiki
-    python -m alpha_tech_tracker.research.historical.download tiingo sec_cik alphavantage
+    python -m alpha_tech_tracker.research.historical.download tiingo sec_cik sec_tickers alphavantage alpaca_assets
     python -m alpha_tech_tracker.research.historical.download all
 
 Each source lands untouched in market_data/historical/raw/<source>/; files that already exist are skipped, so a rerun
 only fetches what is missing. Downloads stream to a .part file and are renamed only once complete.
 
-Keys: NASDAQ_DATA_LINK_API_KEY (wiki), ALPHAVANTAGE_API_KEY (alphavantage), SEC_USER_AGENT (sec_cik).
+Keys: NASDAQ_DATA_LINK_API_KEY (wiki), ALPHAVANTAGE_API_KEY (alphavantage), SEC_USER_AGENT (sec_cik, sec_tickers),
+ALPACA_API_KEY / ALPACA_SECRET_KEY (alpaca_assets).
 """
 import argparse
 import os
@@ -18,13 +19,18 @@ import time
 from datetime import date
 from typing import Callable, Dict, List, Optional
 
+import pandas as pd
 import requests
+from alpaca.trading.client import TradingClient
+from alpaca.trading.enums import AssetClass
+from alpaca.trading.requests import GetAssetsRequest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 DEFAULT_RAW_DIR = os.path.join(REPO_ROOT, "market_data", "historical", "raw")
 WIKI_EXPORT_URL = "https://data.nasdaq.com/api/v3/datatables/WIKI/PRICES.json"
 TIINGO_TICKERS_URL = "https://apimedia.tiingo.com/docs/tiingo/daily/supported_tickers.zip"
 SEC_CIK_LOOKUP_URL = "https://www.sec.gov/Archives/edgar/cik-lookup-data.txt"
+SEC_COMPANY_TICKERS_URL = "https://www.sec.gov/files/company_tickers.json"
 ALPHAVANTAGE_URL = "https://www.alphavantage.co/query"
 ALPHAVANTAGE_FIRST_YEAR = 2013
 ALPHAVANTAGE_LAST_YEAR = 2020
@@ -96,12 +102,37 @@ def download_tiingo_tickers(raw_dir: str) -> None:
     download_file(TIINGO_TICKERS_URL, os.path.join(raw_dir, "tiingo", "supported_tickers.zip"))
 
 
-def download_sec_cik_lookup(raw_dir: str) -> None:
+def _sec_headers() -> dict:
     agent = os.environ.get("SEC_USER_AGENT", "").strip()
     if "@" not in agent:
         raise RuntimeError("set SEC_USER_AGENT to 'Your Name your.email@example.com' (SEC fair-access policy)")
-    download_file(SEC_CIK_LOOKUP_URL, os.path.join(raw_dir, "sec", "cik-lookup-data.txt"),
-                  headers={"User-Agent": agent, "Accept-Encoding": "gzip, deflate"})
+    return {"User-Agent": agent, "Accept-Encoding": "gzip, deflate"}
+
+
+def download_sec_cik_lookup(raw_dir: str) -> None:
+    download_file(SEC_CIK_LOOKUP_URL, os.path.join(raw_dir, "sec", "cik-lookup-data.txt"), headers=_sec_headers())
+
+
+def download_sec_tickers(raw_dir: str) -> None:
+    download_file(SEC_COMPANY_TICKERS_URL, os.path.join(raw_dir, "sec", "company_tickers.json"), headers=_sec_headers())
+
+
+def alpaca_asset_rows(assets: List[dict]) -> pd.DataFrame:
+    return pd.DataFrame([{"symbol": a["symbol"], "name": a["name"], "exchange": a["exchange"],
+                          "status": a["status"], "tradable": a["tradable"]} for a in assets])
+
+
+def download_alpaca_assets(raw_dir: str) -> None:
+    """Every US equity Alpaca knows, active and inactive (inactive names keep the last owner's name)."""
+    path = os.path.join(raw_dir, "alpaca", "assets.csv")
+    if os.path.exists(path):
+        print(f"exists, skipping {path}", flush=True)
+        return
+    client = TradingClient(os.environ["ALPACA_API_KEY"], os.environ["ALPACA_SECRET_KEY"], paper=True, raw_data=True)
+    rows = alpaca_asset_rows(client.get_all_assets(GetAssetsRequest(asset_class=AssetClass.US_EQUITY)))
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    rows.to_csv(path, index=False)
+    print(f"wrote {path} ({len(rows)} assets)", flush=True)
 
 
 def alphavantage_snapshot_dates(first_year: int = ALPHAVANTAGE_FIRST_YEAR,
@@ -138,6 +169,8 @@ SOURCES: Dict[str, Callable[[str], None]] = {
     "wiki": download_wiki,
     "tiingo": download_tiingo_tickers,
     "sec_cik": download_sec_cik_lookup,
+    "sec_tickers": download_sec_tickers,
+    "alpaca_assets": download_alpaca_assets,
     "alphavantage": download_alphavantage,
 }
 

@@ -52,11 +52,27 @@ Each source goes in its own folder under `market_data/historical/raw/<source>/`.
 - Script: `research/historical/download.py <source>`. It skips files that already exist and retries with backoff.
 
 ### Phase 2: security master (1 day)
-`market_data/historical/securities.parquet`, one row per security: `security_id, symbol, name, exchange, asset_type, first_day, last_day, cik, sources`.
+`market_data/historical/wiki_runs.pkl` + `listings.pkl` (pickle like the other caches; no pyarrow in the env), one row per security: `security_id, symbol, name, exchange, asset_type, first_day, last_day, cik, sources`.
 - Join the Alpha Vantage snapshots, the Tiingo ticker list and the WIKI symbols on symbol plus overlapping date ranges.
 - **Ticker reuse:** when two companies used the same symbol within 2005–2019, the older one gets `symbol~YYYY` (its last year). The research code only ever sees `symbol`, so the two never merge into one price series.
 - Drop non-operating names with the existing `NON_OPERATING_NAME_RE` and `asset_type == Stock`.
 - Fill CIK from `company_tickers.json` (current tickers), then name-match against `cik-lookup-data.txt` for dead names.
+
+- **Phase 2 result (2026-11-14, `historical/securities.py`):**
+  - **WIKI hands over to Alpaca on 2016-01-01**, not 2016-10. Alpaca has every stock, dead ones included, from 2016-01. WIKI went stale for some live companies before its end (AN stops 2017-08 and ATI 2017-04, then both have 5 stray days in 2018-03), so its data after 2015 is used only for the Phase 7 overlap check.
+  - **Same company or new one:** a ticker becomes a new company after a gap of over 365 days, or over 30 days with the adjusted price more than 2× off. A plain 30-day rule split 551 tickers, mostly thinly traded names with holes; the new rule splits 24, including the real 2015 Energizer spin-off (ENR) and HERO's change into an ETF.
+  - **Names:** 89% of WIKI tickers get a name; 75% get a CIK, from the current SEC ticker list or an exact name match. Only plain-letter symbols count. Tickers spelled NA, NAN or NULL must be read as text, not as missing values.
+  - **Coverage (Jan 2, operating stocks on NYSE/NASDAQ/AMEX):**
+
+    | Year | Listed | In WIKI | Missing, still listed today (→ yfinance) | Missing, gone (no free source) |
+    |---|---|---|---|---|
+    | 2005 | 3,050 | 1,805 | 718 | 527 |
+    | 2008 | 3,824 | 2,091 | 896 | 837 |
+    | 2010 | 4,008 | 2,174 | 961 | 873 |
+    | 2013 | 4,512 | 2,440 | 1,105 | 967 |
+    | 2015 | 4,954 | 2,554 | 1,327 | 1,073 |
+
+    "Listed" uses Tiingo's dates, plus Alpha Vantage listings Tiingo lacks. Alpha Vantage's own dates overcount: 7,089 in 2019 against Tiingo's 5,492.
 
 ### Phase 3: fill price gaps (1 day of work + Tiingo pull time)
 - Gap list = securities listed for any day in 2005–2019 whose days WIKI doesn't cover (before 2018-03) and Alpaca doesn't cover (after 2016-10).
@@ -68,7 +84,7 @@ Each source goes in its own folder under `market_data/historical/raw/<source>/`.
 - `close/open/high/low` are split + dividend adjusted, to match Alpaca `Adjustment.ALL`. `raw_close` is unadjusted.
 - yfinance `Close` is split-adjusted but not raw, so rebuild `raw_close` from its split history.
 - **Cut every series at its last bar with volume above zero**, for every source. Alpaca pads delisted names with flat zero-volume bars (MON, SHLD). WIKI has stray zero-volume rows after the real end: DELL trades until 2013-10-29 at ~$13.85, then has 42 rows in 2015-01..03 at a flat $31.30, which a backtest would book as a +126% jump. Also drop zero-volume rows inside a series when the close differs from the previous close (stale or bad prints).
-- Source priority for any one day: WIKI → Alpaca → Tiingo → yfinance. Rescale each source onto the newest source's basis where they overlap (the same chain-link idea as `_link_factors`).
+- Source by date: WIKI through 2015-12-31, Alpaca from 2016-01-01; yfinance (and the Tiingo free tier) only for gaps before 2016. Rescale each source onto the newest source's basis where they overlap (the same chain-link idea as `_link_factors`).
 
 ### Phase 5: shares outstanding (1 day)
 Build `market_data/historical/shares.json` in the format `SharesCache` reads. Each dated share count is taken from `dei:EntityCommonStockSharesOutstanding` in companyfacts, keyed by filing date. The research code reads that date only, so it never sees a count before it was public.

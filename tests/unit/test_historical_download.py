@@ -124,3 +124,12 @@ class TestDownloadSecCikLookup:
 
         with pytest.raises(RuntimeError):
             dl.download_sec_cik_lookup(str(tmp_path))
+
+
+class TestAlpacaAssetRows:
+    def test_keeps_inactive_assets_with_name_and_status(self):
+        rows = dl.alpaca_asset_rows([{"symbol": "CELG", "name": "Celgene", "exchange": "NASDAQ",
+                                      "status": "inactive", "tradable": False, "id": "x"}])
+
+        assert rows.to_dict("records") == [{"symbol": "CELG", "name": "Celgene", "exchange": "NASDAQ",
+                                            "status": "inactive", "tradable": False}]
