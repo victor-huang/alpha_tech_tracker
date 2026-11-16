@@ -9,9 +9,11 @@ from common import HIST_YEARS, OUT, close, exchanges_on, market_caps, panel, sec
 
 PROXY_SIZE = 100
 MAX_CAP_TO_DOLLAR_VOLUME = 5000  # above this the share count or raw price is junk (FTR, ETFC, COL ...)
-# large companies that moved from the NYSE to NASDAQ after 2005; listings only carry today's exchange
-NASDAQ_FROM = {"TXN": 2012, "ADP": 2013, "PEP": 2018, "CSX": 2018, "EXC": 2019, "KDP": 2020, "XEL": 2021,
-               "WMT": 2022, "HON": 2022, "AEP": 2022, "LIN": 2023, "ROP": 2023, "AZN": 2024}
+# listings only carry today's exchange: large companies that moved from the NYSE to NASDAQ after 2005 (Kraft became
+# Mondelez on NASDAQ in Oct 2012), and those that left NASDAQ for the NYSE (Oracle in Jul 2013)
+NASDAQ_FROM = {"TXN": 2012, "ADP": 2013, "MDLZ": 2013, "PEP": 2018, "CSX": 2018, "EXC": 2019, "KDP": 2020,
+               "XEL": 2021, "WMT": 2022, "HON": 2022, "AEP": 2022, "LIN": 2023, "ROP": 2023, "AZN": 2024}
+NASDAQ_UNTIL = {"ORCL": 2013}
 
 flagged = pd.read_csv(f"{OUT}/cap_flagged.csv")
 junk = {y: set(g["symbol"]) for y, g in flagged[flagged["ratio"] > MAX_CAP_TO_DOLLAR_VOLUME].groupby("year")}
@@ -27,7 +29,8 @@ for year in HIST_YEARS:
     info["exchange"] = [ex.get(s.split("~")[0]) for s in info.index]
     info["sector"] = [sector_of(s) for s in info.index]
     info = info.dropna(subset=["cap", "ret"])
-    info["nasdaq"] = [e == "NASDAQ" and NASDAQ_FROM.get(s.split("~")[0], 0) <= year
+    info["nasdaq"] = [(e == "NASDAQ" and NASDAQ_FROM.get(s.split("~")[0], 0) <= year)
+                      or year <= NASDAQ_UNTIL.get(s.split("~")[0], 0)
                       for s, e in zip(info.index, info["exchange"])]
     info["plausible"] = info.index.map(lambda s: s not in junk.get(year, set()))
 

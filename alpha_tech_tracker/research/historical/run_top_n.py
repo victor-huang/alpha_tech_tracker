@@ -42,7 +42,7 @@ def install(ciks: Dict[str, int]) -> None:
     sf.BENCHMARKS = BENCHMARKS
     sf.FundamentalsCache = lambda root: FundamentalsCache(root, user_agent_for=lambda: "unused",
                                                           ticker_ciks=lambda agent: ciks)
-    sf.parse_args = lambda argv=None: parse(historical_args(argv or []))
+    sf.parse_args = lambda argv=None: parse(historical_args(sys.argv[1:] if argv is None else argv))
 
 
 def main() -> None:

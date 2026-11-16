@@ -10,8 +10,8 @@ source. open/high/low/close/volume are split + dividend adjusted on Alpaca's (to
 unadjusted close for market cap.
 
 - Sources by date: WIKI and yfinance through WIKI_LAST_DAY, Alpaca from ALPACA_FIRST_DAY. For one symbol, WIKI wins
-  over yfinance; yfinance fills only days WIKI lacks (names WIKI never had, and stale WIKI tickers after their last
-  WIKI day). A yfinance series that repeats a WIKI series under another ticker (Yahoo files a renamed company's
+  over yfinance; yfinance adds names WIKI never had, and the days after a stale WIKI ticker's last WIKI day (gaps
+  inside a WIKI series are not filled). A yfinance series that repeats a WIKI series under another ticker (Yahoo files a renamed company's
   history under its new ticker) has the duplicated days dropped.
 - Rows with no volume are dropped: Alpaca pads dead tickers with flat zero-volume bars (MON, SHLD) and WIKI has
   zero-volume junk rows (DELL 2015). Days on which almost no stock traded are dropped too (WIKI's TAM has bars dated
@@ -55,6 +55,7 @@ BENCHMARKS = ["SPY", "QQQ"]
 MIN_SYMBOLS_OPEN = 100
 COLUMNS = ["symbol", "day", "open", "high", "low", "close", "volume", "raw_close", "source"]
 PRICE_COLUMNS = ["open", "high", "low", "close"]
+COSINE_BLOCK = 2000
 
 
 def wiki_rows(zip_path: str, last_day: pd.Timestamp = OVERLAP_END) -> pd.DataFrame:
@@ -176,8 +177,11 @@ def split_mismatched(older: pd.DataFrame, mismatched: set) -> pd.DataFrame:
     return out
 
 
-def drop_duplicate_histories(yf: pd.DataFrame, wiki: pd.DataFrame, share: float = DUPLICATE_SHARE) -> pd.DataFrame:
-    """Drop yfinance days that repeat a WIKI series under another ticker, matched on (day, rounded volume)."""
+def drop_duplicate_histories(yf: pd.DataFrame, wiki: pd.DataFrame, share: float = DUPLICATE_SHARE,
+                             min_days: int = DUPLICATE_MIN_DAYS) -> pd.DataFrame:
+    """Drop yfinance days that repeat a WIKI series under another ticker, matched on (day, rounded volume) on at
+    least `share` of the yfinance days and at least `min_days` days (QCLS's single day matched CFNB's volume by
+    chance)."""
     if yf.empty or wiki.empty:
         return yf
     key = ["day", "vol"]
@@ -187,7 +191,7 @@ def drop_duplicate_histories(yf: pd.DataFrame, wiki: pd.DataFrame, share: float 
     hits = hits[hits["symbol"] != hits["wiki_symbol"]]
     counts = hits.groupby(["symbol", "wiki_symbol"]).size().rename("hits").reset_index()
     counts["days"] = counts["symbol"].map(y.groupby("symbol").size())
-    dup = counts[counts["hits"] >= share * counts["days"]]
+    dup = counts[(counts["hits"] >= share * counts["days"]) & (counts["hits"] >= min_days)]
     if dup.empty:
         return yf
     wiki_days = wiki[wiki["symbol"].isin(dup["wiki_symbol"])][["symbol", "day"]]
@@ -197,8 +201,18 @@ def drop_duplicate_histories(yf: pd.DataFrame, wiki: pd.DataFrame, share: float 
     return marked[marked["_dup"].isna()].drop(columns="_dup").reset_index(drop=True)
 
 
+def _similar_pairs(x: np.ndarray, prefilter: float, block: int):
+    """(a, b) column pairs, a < b, whose cosine similarity is above `prefilter`, computed in column blocks so memory
+    stays at block x columns instead of columns x columns."""
+    for start in range(0, x.shape[1], block):
+        sims = x[:, start:start + block].T @ x
+        for i, j in zip(*np.where(sims > prefilter)):
+            if start + i < j:
+                yield start + i, j
+
+
 def _yearly_return_matches(rows: pd.DataFrame, tolerance: float, min_move: float,
-                           prefilter: float) -> pd.DataFrame:
+                           prefilter: float, block: int = COSINE_BLOCK) -> pd.DataFrame:
     """Per year, for security pairs whose daily returns look alike (cosine above `prefilter`): days where either
     moved more than `min_move`, and how many of those the two returns agree within `tolerance`, or within
     PRICE_TICK of the day's traded price when that is wider (two copies of a $7 stock rounded to the cent differ by
@@ -212,8 +226,7 @@ def _yearly_return_matches(rows: pd.DataFrame, tolerance: float, min_move: float
         traded = part.pivot_table(index="day", columns="symbol", values="raw_close").reindex_like(r)
         x = r.fillna(0.0).values
         x = x / (np.linalg.norm(x, axis=0) + 1e-12)
-        cosine = np.triu(x.T @ x, k=1)
-        for a, b in zip(*np.where(cosine > prefilter)):
+        for a, b in _similar_pairs(x, prefilter, block):
             ra, rb = r.iloc[:, a], r.iloc[:, b]
             moved = ra.notna() & rb.notna() & ((ra.abs() > min_move) | (rb.abs() > min_move))
             price = np.fmin(traded.iloc[:, a], traded.iloc[:, b])[moved]
@@ -225,12 +238,13 @@ def _yearly_return_matches(rows: pd.DataFrame, tolerance: float, min_move: float
 
 def return_duplicate_years(rows: pd.DataFrame, tolerance: float = RETURN_DUPLICATE_TOLERANCE,
                            share: float = RETURN_DUPLICATE_SHARE, min_days: int = DUPLICATE_MIN_DAYS,
-                           min_move: float = RETURN_DUPLICATE_MIN_MOVE, prefilter: float = 0.9) -> pd.DataFrame:
+                           min_move: float = RETURN_DUPLICATE_MIN_MOVE, prefilter: float = 0.9,
+                           block: int = COSINE_BLOCK) -> pd.DataFrame:
     """(symbol, other, year) where the two tickers carry one company, whatever the source or price basis: their
     daily returns agree within `tolerance` on at least `share` of the days either moved that year (SWHC and SWBI,
     PCLN and BKNG; TRUE before TrueCar listed in 2014, where WIKI repeats ON). Share classes of one company (GOOG
     and GOOGL, FOX and FOXA) agree on a third of those days at most."""
-    matches = _yearly_return_matches(rows, tolerance, min_move, prefilter)
+    matches = _yearly_return_matches(rows, tolerance, min_move, prefilter, block)
     if matches.empty:
         return pd.DataFrame(columns=["symbol", "other", "year"])
     dup = matches[(matches["days"] >= min_days) & (matches["matches"] >= share * matches["days"])]
@@ -279,7 +293,9 @@ def combine_pre_handover(wiki: pd.DataFrame, yf: pd.DataFrame) -> pd.DataFrame:
 
 
 def rescale_to(older: pd.DataFrame, newer: pd.DataFrame) -> pd.DataFrame:
-    """Scale older prices per symbol by median(newer close / older close) over their shared days."""
+    """Scale older prices per symbol by median(newer close / older close) over their shared days. Volume is divided
+    by the same factor, which includes dividends as well as splits: close x volume stays the traded dollar volume,
+    which is what the liquidity filters use (share volume on old rows is understated for dividend payers)."""
     shared = older[["symbol", "day", "close"]].merge(newer[["symbol", "day", "close"]], on=["symbol", "day"],
                                                      suffixes=("_old", "_new"))
     ratio = (shared["close_new"] / shared["close_old"]).groupby(shared["symbol"]).median()

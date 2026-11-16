@@ -2,7 +2,7 @@
 import sys
 import pandas as pd
 sys.path.insert(0, "/Users/victorhuang/work/alpha_tech_tracker_hist")
-from common import HIST_YEARS, OUT, books, close, market_caps, panel, _hist_year  # noqa: E402
+from common import HIST_YEARS, OUT, books, market_caps, panel, _hist_year  # noqa: E402
 
 rows, flagged = [], []
 for year in HIST_YEARS:

@@ -95,15 +95,35 @@ class TestDropDuplicateHistories:
         wiki = _rows("FB", days, 20.0, volume=[111.0, 222.0])
         yf = _rows("META", days + ["2016-01-04"], 20.0, volume=[111.0, 222.0, 333.0], source="yfinance")
 
-        out = nz.drop_duplicate_histories(yf, wiki)
+        out = nz.drop_duplicate_histories(yf, wiki, min_days=2)
 
         assert out["day"].tolist() == [T("2016-01-04")]
+
+    def test_keeps_a_series_matching_on_fewer_than_min_days(self):
+        wiki = _rows("CFNB", ["2012-01-03"], 20.0, volume=111.0)
+        yf = _rows("QCLS", ["2012-01-03"], 5.0, volume=111.0, source="yfinance")
+
+        assert len(nz.drop_duplicate_histories(yf, wiki)) == 1
 
     def test_keeps_unrelated_series(self):
         wiki = _rows("A", ["2012-01-03"], 20.0, volume=111.0)
         yf = _rows("B", ["2012-01-03"], 20.0, volume=999.0, source="yfinance")
 
         assert len(nz.drop_duplicate_histories(yf, wiki)) == 1
+
+
+class TestSimilarPairs:
+    def test_finds_pairs_across_column_blocks(self):
+        x = np.array([[1.0, 0.0, 1.0], [0.0, 1.0, 0.0]])
+
+        assert list(nz._similar_pairs(x, 0.9, block=1)) == [(0, 2)]
+
+    def test_block_size_does_not_change_the_pairs(self):
+        x = np.random.default_rng(0).normal(size=(30, 12))
+        x[:, 7] = x[:, 2]
+        x = x / np.linalg.norm(x, axis=0)
+
+        assert sorted(nz._similar_pairs(x, 0.9, block=5)) == sorted(nz._similar_pairs(x, 0.9, block=100))
 
 
 class TestDropSelfDuplicates:

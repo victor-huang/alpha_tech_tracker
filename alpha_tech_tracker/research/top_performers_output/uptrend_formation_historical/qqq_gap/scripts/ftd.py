@@ -1,7 +1,8 @@
 """O'Neil follow-through-day re-entry, 2005-2026.
 
 In cash, track the rally attempt: the correction low is the lowest close since the exit; day 1 is the first up close
-after a new low; a close below the low resets the attempt. A follow-through day is day FTD_FROM..FTD_TO of the
+after it; a close below the low resets the attempt, and an attempt with no follow-through by day FTD_TO is dropped,
+so the next up close starts a new one (O'Neil keeps the attempt alive until the low is undercut). A follow-through day is day FTD_FROM..FTD_TO of the
 attempt with a gain of at least GAIN on volume above the day before; re-enter at that close (act next day). With
 `fail_exit`, a close below the rally attempt's low before the uptrend is confirmed (QQQ above both averages, 50-day above
 200-day) sends the book back to cash. Distribution days are counted only since the last re-entry.
@@ -51,7 +52,7 @@ def machine(exit_kind, ftd_to, gain, fail_exit, ftd_from=4):
                     in_cash, last_entry, armed_low = False, i + 1, low
                     events.append(dict(day=day.date(), event=f"FTD day {k}", close=round(C[i], 2)))
                 elif k > ftd_to:
-                    day1 = None  # attempt went stale; wait for a new low and day 1
+                    day1 = None  # stale attempt: the next up close starts a new day 1
         off.iloc[i] = in_cash
     return off, pd.DataFrame(events)
 

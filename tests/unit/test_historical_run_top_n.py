@@ -29,6 +29,12 @@ class TestInstall:
         assert (args.panel_dir, args.cache_dir, args.today.isoformat()) == (rt.PANEL_DIR, HISTORICAL_CACHE_DIR,
                                                                               rt.DATA_END)
 
+    def test_parse_args_without_argv_reads_the_command_line(self, restore_selection_filters, mocker):
+        mocker.patch("sys.argv", ["script.py", "--years", "2012"])
+        rt.install({})
+
+        assert sf.parse_args().years == [2012]
+
     def test_swaps_in_historical_data(self, restore_selection_filters):
         rt.install({})
 

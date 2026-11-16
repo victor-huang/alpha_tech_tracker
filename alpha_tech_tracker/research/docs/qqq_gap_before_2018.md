@@ -17,11 +17,11 @@ Scope: the up years 2006, 2007 and 2010–2017, with 2005 and 2018–2026 for co
 
 | Year | QQQ | Large 10 | gap | tier vs QQQ | picks vs tier | QQQ top 5 | book Tech | mega-caps held | doublers |
 |---|---|---|---|---|---|---|---|---|---|
-| 2006 | 4.8 | -3.3 | -8.1 | +11.2 | -10.0 | 56% | 12% | 11% | 3 |
-| 2007 | 18.8 | 26.1 | +7.3 | -5.6 | +32.1 | 92% | 16% | 11% | 16 |
-| 2010 | 18.4 | 9.8 | -8.6 | -4.2 | +7.3 | 86% | 20% | 17% | 1 |
-| 2011 | 1.9 | -24.0 | -25.9 | -6.2 | -28.6 | 135% | 5% | 6% | 0 |
-| 2012 | 15.9 | 15.8 | -0.1 | -2.2 | +4.0 | 48% | 8% | 13% | 2 |
+| 2006 | 4.8 | -3.3 | -8.1 | +11.2 | -10.0 | 55% | 12% | 12% | 3 |
+| 2007 | 18.8 | 26.1 | +7.3 | -5.6 | +32.1 | 87% | 16% | 10% | 16 |
+| 2010 | 18.4 | 9.8 | -8.6 | -4.2 | +7.3 | 86% | 20% | 18% | 1 |
+| 2011 | 1.9 | -24.0 | -25.9 | -6.2 | -28.6 | 215% | 5% | 9% | 0 |
+| 2012 | 15.9 | 15.8 | -0.1 | -2.2 | +4.0 | 47% | 8% | 12% | 2 |
 | 2013 | 32.4 | 26.7 | -5.7 | -5.4 | -1.3 | 42% | 16% | 10% | 5 |
 | 2014 | 20.1 | 19.0 | -1.1 | -6.6 | +9.6 | 61% | 15% | 5% | 2 |
 | 2015 | 9.8 | 8.1 | -1.7 | -12.9 | +20.8 | 97% | 14% | 16% | 3 |
@@ -69,8 +69,8 @@ Large top 10 rerun with one setting changed at a time, 2005–2026 (`variants_al
 
 ### 2. Something that drove QQQ in particular years? Yes: mega-cap Tech, every year
 
-- Technology is about 50% of the stand-in in every year and contributes most of its return: 15.8 of 17.9 points in 2007, 16.8 of 35.9 in 2013, 9.6 of 14.6 in 2014, 19.7 of 30.9 in 2017 (`sectors.csv`).
-- In narrow years, 5 stocks make most or all of QQQ's return (`qqq_top_contributors.csv`): 2007 92% (Google, Apple, Baidu, Microsoft, Intel), 2010 86% (Baidu, Apple, Amazon), 2011 135% (Apple, Google, Intel), 2015 97% (Amazon, Alphabet, Microsoft). Those are the years QQQ beats the equal-weighted tier by 4–13 points.
+- Technology is about 50% of the stand-in in every year and contributes most of its return: 16.6 of 18.7 points in 2007, 16.2 of 34.5 in 2013, 9.6 of 14.6 in 2014, 19.7 of 30.9 in 2017 (`sectors.csv`).
+- In narrow years, 5 stocks make most or all of QQQ's return (`qqq_top_contributors.csv`): 2007 87% (Google, Apple, Baidu, Microsoft, Intel), 2010 86% (Baidu, Apple, Oracle, Amazon), 2011 215% (Apple, Google, Intel; the rest of the stand-in lost money), 2015 97% (Amazon, Alphabet, Microsoft). Those are the years QQQ beats the equal-weighted tier by 4–13 points.
 - In our Large tier the average Tech stock did no better than other sectors in those years. QQQ's edge came from a few names, weighted by size.
 - The books held those names about 10% of the year before 2018, and a fixed list of mega-caps about 4% of position-days in 2020–2026: the score prefers fast, volatile movers, and a mega-cap rising 30–50% rarely ranks in the top 10.
 
@@ -131,9 +131,9 @@ The ideas below were tested on the Large top-10 book's daily equity, 2005–2026
 |---|---|---|---|---|---|---|
 | QQQ | 0 | 11.1% | 18.5% | 14.1% | – | -49% |
 | Large top 10 book | -7.0 | 0.6% | 29.3% | 11.5% | 7 | -56% |
-| Top 7 alone | +2.1 | 14.0% | 23.8% | 17.9% | 14 | -49% |
+| Top 7 alone | +2.1 | 13.8% | 23.8% | 17.8% | 13 | -49% |
 | **Switch: book / QQQ** | -1.6 | 11.8% | 34.6% | **20.6%** | 11 | -51% |
-| **Switch: book / top 7** | -0.4 | 13.8% | 38.2% | **23.2%** | 12 | -46% |
+| **Switch: book / top 7** | -0.5 | 13.4% | 38.2% | **23.0%** | 11 | -48% |
 | 50% book / 50% QQQ | -3.5 | 6.1% | 24.5% | 13.2% | 8 | -51% |
 | Rebound rule (QQQ 40 days after a 10% dip) | -4.1 | 6.2% | 16.4% | 10.3% | – | -60% |
 
@@ -141,9 +141,9 @@ The ideas below were tested on the Large top-10 book's daily equity, 2005–2026
 - **Its gains come from avoiding the book's bad years:** 2009 (-28.7% → +33.3%), 2011 (-24.0% → -2.2%), 2022 (-5.5% → -24.2% with QQQ, but better than QQQ's -33%), 2023 (+0.5% → +60.2% with QQQ, +119% with the top 7). The pre-2018 up years still trail QQQ slightly with QQQ as the alternative; with the top 7 they roughly match it.
 - **Fixed blends and the rebound rule don't work.** A fixed split only averages the two sides; the rebound rule helps 2006 and 2009 but costs too much in 2020 and 2026.
 - **The hindsight Mag 7 is not a fair test.** AAPL, MSFT, GOOGL, AMZN, NVDA, META and TSLA held since 2005 make 31.1% a year, but the names were chosen in 2023 because they had won. The point-in-time top 7 is the fair version; it equals the Mag 7 in 2021–2025, and AVGO replaces TSLA in 2026.
-- **Basket size:** top 3 / 5 / 7 / 10 make 16.9% / 17.2% / 17.9% / 16.1% a year alone, and 21.8% / 21.8% / 23.2% / 22.6% as the switch's alternative. Seven is the best balance; fewer names only add drawdown (top 3: -57%). The top 5 missed NVDA and META in 2023–2024.
+- **Basket size:** top 3 / 5 / 7 / 10 make 16.9% / 16.9% / 17.8% / 15.8% a year alone, and 21.8% / 21.4% / 23.0% / 22.8% as the switch's alternative. Seven is the best balance, with ten close behind; fewer names only add drawdown (top 3: -57%). The top 5 missed NVDA and META in 2023–2024.
 - **Choice:** the top 7 earns more; QQQ is a single ticker and easier to run. Both are kept as options.
-- **Risks:** seven names are concentrated (2022: -47% vs QQQ -33%); 2005–2026 favoured mega-caps, and 2000–2002, when the largest NASDAQ names fell 60–80%, is not in the data; 2026 so far has the top 7 at +5.8% vs QQQ +11.3%. The top-7 lists before 2020 come from the QQQ stand-in with ADRs and known bad caps removed (MDLZ in 2008 may not have been on NASDAQ yet). 2020–2026 caps use yfinance closes with splits undone and the SEC share counts in `market_data/top_performers/shares.json`; gaps for NVDA (2021–2023) and META (before mid-2022) were filled from the nearest stored count.
+- **Risks:** seven names are concentrated (2022: -47% vs QQQ -33%); 2005–2026 favoured mega-caps, and 2000–2002, when the largest NASDAQ names fell 60–80%, is not in the data; 2026 so far has the top 7 at +5.8% vs QQQ +11.3%. The top-7 lists before 2020 come from the QQQ stand-in with ADRs and known bad caps removed; listings carry only today's exchange, so movers are patched by hand (Oracle on NASDAQ until 2013, Mondelez from 2013, plus the NYSE-to-NASDAQ moves in `benchmark.py`). Other moves between the two exchanges may still be missing. 2020–2026 caps use yfinance closes with splits undone and the SEC share counts in `market_data/top_performers/shares.json`; gaps for NVDA (2021–2023) and META (before mid-2022) were filled from the nearest stored count.
 - **Paper tracking:** the main repo's `research/paper_lists.py` prints the doubler share and the switch's side at each checkpoint and lists the year's top 7 as `large_switch_top7` (status "hold" when the switch is on the top 7, "off" when on the book). `TOP7_BY_YEAR` must be refreshed each January. On 2026-11-03 the share was 2.4% (21 of 877), down from 5.5% in August, so the switch is still on the book. Paper tracking uses the top-15 Large list, while this test used the top 10.
 
 ## Down years (2008, 2018, 2022): the market cash rule (2026-11-15 / 16)
@@ -165,7 +165,7 @@ The ideas below were tested on the Large top-10 book's daily equity, 2005–2026
 | No cash rule | 20.6% | -55% | -39.9 | -5.9 | -24.2 | – |
 | Previous rule: cash while QQQ < 50d and < 200d | 20.0% | -26% | +9.0 | -10.0 | -15.1 | 6.6 |
 | **Default rule** | **21.8%** | **-23%** | -2.3 | +3.6 | -9.7 | 2.9 |
-| Default rule, switch with top 7 | 23.7% | -23% | -4.0 | +3.3 | -9.4 | 2.9 |
+| Default rule, switch with top 7 | 23.8% | -23% | -4.1 | +3.3 | -9.4 | 2.9 |
 
 QQQ alone: 14.1% / -54% with no rule, 12.1% / -25% with the previous rule, 14.5% / -21% with the default rule. The default rule was the best of about 50 variants on the same 22 years, so part of its edge over the previous rule may be luck; expect about 21%. Minimum stays of 0–12 days all give 21.0–21.8%; at 0.3% a switch every variant loses 0.6–0.9 points a year and the order holds.
 
@@ -193,6 +193,10 @@ Items 1, 3 and 4 are covered by the follow-up above.
 3. **A mega-cap allowance:** let the largest names (or a cap-weighted sleeve) into the Large book so a mega-cap-led rally is not missed entirely.
 4. **A rebound rule** after a 7%+ QQQ pullback (hold the index for a few weeks), tested against the 2009, 2010, 2011, 2015 and 2019 rebounds and against 2020–2026.
 5. **Fix the junk market caps** and rerun the tiers.
+
+## Corrections (2026-11-16)
+
+A code review found the QQQ stand-in used today's exchange for every year, so Oracle (NASDAQ until July 2013) was missing and Mondelez (NYSE as Kraft until October 2012) was included in 2005-2012. With both fixed and everything rerun, the stand-in tracks QQQ slightly better (mean gap 3.0 points a year, was 3.2) and Oracle joins the 2007-2013 top 7. The top-7 results move by 0.1-0.4 points a year and the QQQ-based results not at all; the figures above are the corrected ones. `dist_days_*.csv` (the first, near-flat distribution-day test) was not rerun; its top-7 rows predate this fix.
 
 ## Files
 

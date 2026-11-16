@@ -115,7 +115,7 @@ class TestHistoricalShares:
         assert shares.get("X").tolist() == [100.0, 999.0]
 
     def test_uses_yfinance_entry_of_an_alias(self, tmp_path):
-        shares = self._shares(tmp_path, {}, {"META": {"2016-03-31": 2900}}, {"FB": "2020-06-29"})
+        self._shares(tmp_path, {}, {"META": {"2016-03-31": 2900}}, {"FB": "2020-06-29"})
         pd.DataFrame([{"symbol": "META", "other": "FB"}]).to_csv(tmp_path / "aliases.csv", index=False)
 
         assert hd.HistoricalShares(str(tmp_path), str(tmp_path / "yf_shares.json")).get("FB").tolist() == [2900.0]
