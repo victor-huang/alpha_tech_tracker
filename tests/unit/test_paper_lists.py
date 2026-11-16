@@ -170,6 +170,9 @@ class TestDoublerShare:
 
         assert doubler_share(panel, CP2) == (0.0, 0, 1)
 
+    def test_keeps_names_without_a_250_day_return_in_the_tier_size(self):
+        assert doubler_share(_tier_panel([1.5, float("nan"), float("nan"), 0.1]), CP2) == (0.25, 1, 4)
+
     def test_is_zero_without_large_names(self):
         assert doubler_share(_tier_panel([2.0], tier="Mid"), CP2) == (0.0, 0, 0)
 
@@ -195,6 +198,13 @@ class TestSwitchList:
         out = switch_list(_tier_panel([0.1]), CP2)
 
         assert (out["symbol"].tolist(), out["rank"].tolist()) == (["A", "B"], [1, 2])
+
+    def test_is_off_at_exactly_the_threshold(self, mocker):
+        mocker.patch("alpha_tech_tracker.research.paper_lists.TOP7_BY_YEAR", {2026: ["A"]})
+
+        out = switch_list(_tier_panel([1.0] * 3 + [0.1] * 197), CP2)
+
+        assert out["status"].unique().tolist() == ["off"]
 
     def test_is_empty_when_the_year_has_no_top7(self, mocker):
         mocker.patch("alpha_tech_tracker.research.paper_lists.TOP7_BY_YEAR", {})

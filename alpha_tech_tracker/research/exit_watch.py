@@ -12,7 +12,7 @@ Usage (repo root; Alpaca keys set; run after the close):
 import argparse
 import glob
 import os
-from datetime import date, timedelta
+from datetime import date, time, timedelta
 from typing import Dict, List, Optional
 
 import pandas as pd
@@ -20,12 +20,14 @@ import pandas as pd
 from alpha_tech_tracker.research import cash_rule
 from alpha_tech_tracker.research.ranking_exits import EXIT_RULES
 from alpha_tech_tracker.research.selection_filters import PANEL_DIR
-from alpha_tech_tracker.research.top_performers import AlpacaData, pivot_bars
+from alpha_tech_tracker.research.top_performers import SIP_DELAY, AlpacaData, pivot_bars
 from alpha_tech_tracker.research.uptrend_formation import checkpoint_days
 
 CHECKPOINT_STEP = 10
 CALENDAR_SYMBOL = "SPY"
 CASH_RULE_HISTORY_DAYS = 3 * 365
+MARKET_TZ = "America/New_York"
+MARKET_CLOSE = time(16, 0)
 
 
 def trail_status(close: pd.Series, entry: pd.Timestamp, checkpoints: List[pd.Timestamp],
@@ -76,16 +78,36 @@ def watch_table(lists: pd.DataFrame, close: pd.DataFrame, checkpoints: List[pd.T
     return out
 
 
-def cash_rule_state(today: date) -> pd.DataFrame:
+def completed_days(index: pd.DatetimeIndex, now: pd.Timestamp) -> pd.DatetimeIndex:
+    """Drop today's bar until the close is final (market close plus the SIP delay): a partial day's close and
+    volume must not trigger the cash rule."""
+    final = pd.Timestamp.combine(now.date(), MARKET_CLOSE).tz_localize(now.tz) + SIP_DELAY
+    if len(index) and index[-1].date() == now.date() and now < final:
+        return index[:-1]
+    return index
+
+
+def cash_rule_state(today: date, now: pd.Timestamp) -> pd.DataFrame:
     """The cash rule replayed on about three years of fresh QQQ bars (enough to settle the averages and its state)."""
     close, dollar_volume = pivot_bars(AlpacaData().daily_bars([cash_rule.INDEX], today - timedelta(
         days=CASH_RULE_HISTORY_DAYS), today))
+    if cash_rule.INDEX not in close.columns:
+        raise ValueError(f"no {cash_rule.INDEX} bars returned")
     qqq = close[cash_rule.INDEX].dropna()
+    qqq = qqq.loc[completed_days(qqq.index, now)]
     return cash_rule.cash_rule(qqq, dollar_volume[cash_rule.INDEX].reindex(qqq.index) / qqq)
 
 
+def cash_rule_line(today: date, now: pd.Timestamp) -> str:
+    """The cash rule's status line; a data failure is reported instead of stopping the trailing-stop check."""
+    try:
+        return cash_rule.status_line(cash_rule_state(today, now))
+    except Exception as exc:
+        return f"market cash rule: UNAVAILABLE ({exc}); check it by hand before acting"
+
+
 def run(args: argparse.Namespace) -> None:
-    print(cash_rule.status_line(cash_rule_state(args.today)))
+    print(cash_rule_line(args.today, pd.Timestamp.now(tz=MARKET_TZ)))
     lists = latest_lists(args.out_dir)
     symbols = sorted(set(lists.loc[lists["status"] != "dropped", "symbol"])) + [CALENDAR_SYMBOL]
     start = history_start(lists["entry"].min().date())

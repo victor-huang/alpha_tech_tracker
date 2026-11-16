@@ -119,19 +119,20 @@ def hedge_list(panel: pd.DataFrame, index_close: pd.Series, checkpoints: List[pd
 
 
 def doubler_share(panel: pd.DataFrame, checkpoint: pd.Timestamp) -> Tuple[float, int, int]:
-    """Share of the Large tier up DOUBLER_RETURN or more over 250 days at `checkpoint`, with the count and tier size."""
-    tier = panel[(panel["checkpoint"] == checkpoint) & (panel["tier"] == "Large")]["ret_250d"].dropna()
+    """Share of the Large tier up DOUBLER_RETURN or more over 250 days at `checkpoint`, with the count and tier size.
+    Names without a 250-day return (recent listings) stay in the tier size, as in the backtest."""
+    tier = panel[(panel["checkpoint"] == checkpoint) & (panel["tier"] == "Large")]["ret_250d"]
     count = int((tier >= DOUBLER_RETURN).sum())
     return (count / len(tier) if len(tier) else 0.0), count, len(tier)
 
 
 def switch_list(panel: pd.DataFrame, checkpoint: pd.Timestamp) -> pd.DataFrame:
     """The doubler switch's off-side basket: the year's top 7, status "hold" when the doubler share is below
-    DOUBLER_SHARE_MIN (hold them instead of the Large book), "off" when the Large book is on, "missing" when the
-    year's top 7 is not set."""
+    DOUBLER_SHARE_MIN (hold them instead of the Large book), "off" when the Large book is on; empty when the year's
+    top 7 is not set (run() warns)."""
     share, _, _ = doubler_share(panel, checkpoint)
     members = TOP7_BY_YEAR.get(checkpoint.year, [])
-    status = "missing" if not members else ("off" if share >= DOUBLER_SHARE_MIN else "hold")
+    status = "off" if share >= DOUBLER_SHARE_MIN else "hold"
     out = pd.DataFrame({"checkpoint": checkpoint.date(), "symbol": members, "status": status,
                         "rank": range(1, len(members) + 1), "entry": None})
     at = panel[panel["checkpoint"] == checkpoint].drop_duplicates("symbol").set_index("symbol")
