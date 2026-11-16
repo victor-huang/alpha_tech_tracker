@@ -1,0 +1,2339 @@
+day,event,close,rule
+2003-08-05,exit,25.43,dist 6/25 & <50d | FTD d4-7 +1.25%
+2003-08-18,FTD day 6,26.91,dist 6/25 & <50d | FTD d4-7 +1.25%
+2003-09-30,exit,27.29,dist 6/25 & <50d | FTD d4-7 +1.25%
+2003-11-03,FTD day 7,30.1,dist 6/25 & <50d | FTD d4-7 +1.25%
+2003-12-09,exit,28.98,dist 6/25 & <50d | FTD d4-7 +1.25%
+2003-12-18,FTD day 7,29.93,dist 6/25 & <50d | FTD d4-7 +1.25%
+2004-02-04,exit,30.59,dist 6/25 & <50d | FTD d4-7 +1.25%
+2004-03-29,FTD day 4,30.14,dist 6/25 & <50d | FTD d4-7 +1.25%
+2004-05-10,exit,29.2,dist 6/25 & <50d | FTD d4-7 +1.25%
+2004-05-25,FTD day 6,30.28,dist 6/25 & <50d | FTD d4-7 +1.25%
+2004-07-16,exit,29.2,dist 6/25 & <50d | FTD d4-7 +1.25%
+2004-08-18,FTD day 4,28.5,dist 6/25 & <50d | FTD d4-7 +1.25%
+2005-01-05,exit,32.76,dist 6/25 & <50d | FTD d4-7 +1.25%
+2005-05-18,FTD day 4,31.63,dist 6/25 & <50d | FTD d4-7 +1.25%
+2005-06-30,exit,31.3,dist 6/25 & <50d | FTD d4-7 +1.25%
+2005-10-19,FTD day 5,32.91,dist 6/25 & <50d | FTD d4-7 +1.25%
+2006-01-25,exit,35.19,dist 6/25 & <50d | FTD d4-7 +1.25%
+2006-02-22,FTD day 6,35.19,dist 6/25 & <50d | FTD d4-7 +1.25%
+2006-03-16,exit,35.29,dist 6/25 & <50d | FTD d4-7 +1.25%
+2006-03-29,FTD day 4,35.78,dist 6/25 & <50d | FTD d4-7 +1.25%
+2006-05-11,exit,34.78,dist 6/25 & <50d | FTD d4-7 +1.25%
+2006-06-21,FTD day 6,33.04,dist 6/25 & <50d | FTD d4-7 +1.25%
+2006-12-22,exit,36.74,dist 6/25 & <50d | FTD d4-7 +1.25%
+2007-02-14,FTD day 6,38.16,dist 6/25 & <50d | FTD d4-7 +1.25%
+2007-08-09,exit,40.88,dist 6/25 & <50d | FTD d4-7 +1.25%
+2007-08-22,FTD day 4,40.84,dist 6/25 & <50d | FTD d4-7 +1.25%
+2007-11-08,exit,44.35,dist 6/25 & <50d | FTD d4-7 +1.25%
+2007-12-05,FTD day 7,44.22,dist 6/25 & <50d | FTD d4-7 +1.25%
+2008-01-16,exit,39.52,dist 6/25 & <50d | FTD d4-7 +1.25%
+2008-01-31,FTD day 4,38.73,dist 6/25 & <50d | FTD d4-7 +1.25%
+2008-06-11,exit,40.69,dist 6/25 & <50d | FTD d4-7 +1.25%
+2008-06-19,FTD day 6,41.89,dist 6/25 & <50d | FTD d4-7 +1.25%
+2008-09-02,exit,39.15,dist 6/25 & <50d | FTD d4-7 +1.25%
+2008-11-04,FTD day 6,29.03,dist 6/25 & <50d | FTD d4-7 +1.25%
+2009-02-17,exit,25.17,dist 6/25 & <50d | FTD d4-7 +1.25%
+2009-03-18,FTD day 7,25.58,dist 6/25 & <50d | FTD d4-7 +1.25%
+2009-10-28,exit,35.79,dist 6/25 & <50d | FTD d4-7 +1.25%
+2009-11-05,FTD day 4,36.62,dist 6/25 & <50d | FTD d4-7 +1.25%
+2010-01-22,exit,38.25,dist 6/25 & <50d | FTD d4-7 +1.25%
+2010-03-05,FTD day 4,40.22,dist 6/25 & <50d | FTD d4-7 +1.25%
+2010-05-06,exit,40.38,dist 6/25 & <50d | FTD d4-7 +1.25%
+2010-06-15,FTD day 4,40.5,dist 6/25 & <50d | FTD d4-7 +1.25%
+2010-08-24,exit,37.99,dist 6/25 & <50d | FTD d4-7 +1.25%
+2010-09-20,FTD day 5,42.6,dist 6/25 & <50d | FTD d4-7 +1.25%
+2011-03-10,exit,49.07,dist 6/25 & <50d | FTD d4-7 +1.25%
+2011-03-24,FTD day 6,49.63,dist 6/25 & <50d | FTD d4-7 +1.25%
+2011-06-03,exit,49.33,dist 6/25 & <50d | FTD d4-7 +1.25%
+2011-07-07,FTD day 5,51.93,dist 6/25 & <50d | FTD d4-7 +1.25%
+2011-08-02,exit,49.37,dist 6/25 & <50d | FTD d4-7 +1.25%
+2011-09-12,FTD day 5,47.25,dist 6/25 & <50d | FTD d4-7 +1.25%
+2012-04-23,exit,57.52,dist 6/25 & <50d | FTD d4-7 +1.25%
+2012-05-29,FTD day 6,55.56,dist 6/25 & <50d | FTD d4-7 +1.25%
+2012-07-25,exit,55.4,dist 6/25 & <50d | FTD d4-7 +1.25%
+2012-08-03,FTD day 7,58.11,dist 6/25 & <50d | FTD d4-7 +1.25%
+2012-10-18,exit,59.78,dist 6/25 & <50d | FTD d4-7 +1.25%
+2012-12-17,FTD day 5,58.23,dist 6/25 & <50d | FTD d4-7 +1.25%
+2013-02-25,exit,59.24,dist 6/25 & <50d | FTD d4-7 +1.25%
+2013-03-05,FTD day 6,61.35,dist 6/25 & <50d | FTD d4-7 +1.25%
+2013-04-17,exit,60.99,dist 6/25 & <50d | FTD d4-7 +1.25%
+2013-07-11,FTD day 4,67.34,dist 6/25 & <50d | FTD d4-7 +1.25%
+2013-10-09,exit,69.35,dist 6/25 & <50d | FTD d4-7 +1.25%
+2013-10-18,FTD day 7,74.01,dist 6/25 & <50d | FTD d4-7 +1.25%
+2014-01-29,exit,76.76,dist 6/25 & <50d | FTD d4-7 +1.25%
+2014-02-07,FTD day 4,78.9,dist 6/25 & <50d | FTD d4-7 +1.25%
+2014-03-26,exit,79.47,dist 6/25 & <50d | FTD d4-7 +1.25%
+2014-10-08,FTD day 7,90.01,dist 6/25 & <50d | FTD d4-7 +1.25%
+2014-12-16,exit,91.41,dist 6/25 & <50d | FTD d4-7 +1.25%
+2015-02-10,FTD day 7,95.8,dist 6/25 & <50d | FTD d4-7 +1.25%
+2015-03-26,exit,96.67,dist 6/25 & <50d | FTD d4-7 +1.25%
+2015-06-18,FTD day 7,101.81,dist 6/25 & <50d | FTD d4-7 +1.25%
+2015-08-19,exit,101.53,dist 6/25 & <50d | FTD d4-7 +1.25%
+2015-10-22,FTD day 6,101.38,dist 6/25 & <50d | FTD d4-7 +1.25%
+2015-12-11,exit,102.38,dist 6/25 & <50d | FTD d4-7 +1.25%
+2015-12-29,FTD day 6,105.95,dist 6/25 & <50d | FTD d4-7 +1.25%
+2016-01-15,exit,93.47,dist 6/25 & <50d | FTD d4-7 +1.25%
+2016-02-17,FTD day 5,95.01,dist 6/25 & <50d | FTD d4-7 +1.25%
+2016-04-29,exit,98.29,dist 6/25 & <50d | FTD d4-7 +1.25%
+2016-05-24,FTD day 5,100.83,dist 6/25 & <50d | FTD d4-7 +1.25%
+2016-09-09,exit,106.53,dist 6/25 & <50d | FTD d4-7 +1.25%
+2016-09-15,FTD day 4,109.66,dist 6/25 & <50d | FTD d4-7 +1.25%
+2016-10-28,exit,109.43,dist 6/25 & <50d | FTD d4-7 +1.25%
+2017-10-27,FTD day 4,142.75,dist 6/25 & <50d | FTD d4-7 +1.25%
+2018-02-05,exit,149.55,dist 6/25 & <50d | FTD d4-7 +1.25%
+2018-02-14,FTD day 4,153.86,dist 6/25 & <50d | FTD d4-7 +1.25%
+2018-03-22,exit,154.23,dist 6/25 & <50d | FTD d4-7 +1.25%
+2018-04-10,FTD day 6,152.72,dist 6/25 & <50d | FTD d4-7 +1.25%
+2018-10-05,exit,171.34,dist 6/25 & <50d | FTD d4-7 +1.25%
+2018-11-07,FTD day 7,166.99,dist 6/25 & <50d | FTD d4-7 +1.25%
+2018-12-19,exit,146.97,dist 6/25 & <50d | FTD d4-7 +1.25%
+2019-01-15,FTD day 6,154.88,dist 6/25 & <50d | FTD d4-7 +1.25%
+2019-05-13,exit,170.64,dist 6/25 & <50d | FTD d4-7 +1.25%
+2019-06-07,FTD day 4,172.99,dist 6/25 & <50d | FTD d4-7 +1.25%
+2019-08-05,exit,173.08,dist 6/25 & <50d | FTD d4-7 +1.25%
+2019-08-13,FTD day 6,180.41,dist 6/25 & <50d | FTD d4-7 +1.25%
+2019-10-02,exit,176.61,dist 6/25 & <50d | FTD d4-7 +1.25%
+2019-10-11,FTD day 7,183.39,dist 6/25 & <50d | FTD d4-7 +1.25%
+2020-02-25,exit,207.11,dist 6/25 & <50d | FTD d4-7 +1.25%
+2020-04-02,FTD day 4,179.26,dist 6/25 & <50d | FTD d4-7 +1.25%
+2020-09-11,exit,261.09,dist 6/25 & <50d | FTD d4-7 +1.25%
+2020-10-01,FTD day 6,272.48,dist 6/25 & <50d | FTD d4-7 +1.25%
+2021-02-25,exit,302.55,dist 6/25 & <50d | FTD d4-7 +1.25%
+2021-06-17,FTD day 4,334.41,dist 6/25 & <50d | FTD d4-7 +1.25%
+2021-09-20,exit,354.93,dist 6/25 & <50d | FTD d4-7 +1.25%
+2021-11-04,FTD day 7,386.49,dist 6/25 & <50d | FTD d4-7 +1.25%
+2021-12-17,exit,373.58,dist 6/25 & <50d | FTD d4-7 +1.25%
+2021-12-27,FTD day 4,392.1,dist 6/25 & <50d | FTD d4-7 +1.25%
+2022-01-19,exit,356.14,dist 6/25 & <50d | FTD d4-7 +1.25%
+2022-03-02,FTD day 5,337.43,dist 6/25 & <50d | FTD d4-7 +1.25%
+2022-04-22,exit,316.61,dist 6/25 & <50d | FTD d4-7 +1.25%
+2022-06-24,FTD day 5,287.21,dist 6/25 & <50d | FTD d4-7 +1.25%
+2022-09-13,exit,286.32,dist 6/25 & <50d | FTD d4-7 +1.25%
+2022-10-21,FTD day 5,268.98,dist 6/25 & <50d | FTD d4-7 +1.25%
+2023-03-10,exit,282.48,dist 6/25 & <50d | FTD d4-7 +1.25%
+2023-03-16,FTD day 4,300.35,dist 6/25 & <50d | FTD d4-7 +1.25%
+2023-08-11,exit,359.58,dist 6/25 & <50d | FTD d4-7 +1.25%
+2023-08-29,FTD day 7,367.96,dist 6/25 & <50d | FTD d4-7 +1.25%
+2023-10-03,exit,348.97,dist 6/25 & <50d | FTD d4-7 +1.25%
+2023-11-01,FTD day 4,350.98,dist 6/25 & <50d | FTD d4-7 +1.25%
+2024-04-15,exit,425.47,dist 6/25 & <50d | FTD d4-7 +1.25%
+2024-08-13,FTD day 6,457.3,dist 6/25 & <50d | FTD d4-7 +1.25%
+2025-01-10,exit,502.92,dist 6/25 & <50d | FTD d4-7 +1.25%
+2025-01-22,FTD day 5,527.03,dist 6/25 & <50d | FTD d4-7 +1.25%
+2025-02-27,exit,496.06,dist 6/25 & <50d | FTD d4-7 +1.25%
+2025-03-19,FTD day 4,476.84,dist 6/25 & <50d | FTD d4-7 +1.25%
+2025-11-17,exit,600.84,dist 6/25 & <50d | FTD d4-7 +1.25%
+2026-02-25,FTD day 4,614.59,dist 6/25 & <50d | FTD d4-7 +1.25%
+2026-03-20,exit,580.08,dist 6/25 & <50d | FTD d4-7 +1.25%
+2026-04-08,FTD day 6,604.79,dist 6/25 & <50d | FTD d4-7 +1.25%
+2026-07-07,exit,708.69,dist 6/25 & <50d | FTD d4-7 +1.25%
+2026-08-04,FTD day 4,723.1,dist 6/25 & <50d | FTD d4-7 +1.25%
+2026-09-14,exit,708.44,dist 6/25 & <50d | FTD d4-7 +1.25%
+2026-11-11,FTD day 4,690.38,dist 6/25 & <50d | FTD d4-7 +1.25%
+2003-08-05,exit,25.43,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2003-08-18,FTD day 6,26.91,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2003-09-30,exit,27.29,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2003-11-03,FTD day 7,30.1,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2003-12-09,exit,28.98,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2003-12-18,FTD day 7,29.93,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2004-02-04,exit,30.59,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2004-03-29,FTD day 4,30.14,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2004-05-10,exit,29.2,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2004-05-25,FTD day 6,30.28,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2004-07-16,exit,29.2,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2004-08-18,FTD day 4,28.5,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2005-01-05,exit,32.76,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2005-05-18,FTD day 4,31.63,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2005-06-30,exit,31.3,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2005-10-19,FTD day 5,32.91,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2006-01-25,exit,35.19,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2006-02-22,FTD day 6,35.19,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2006-03-16,exit,35.29,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2006-03-29,FTD day 4,35.78,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2006-05-11,exit,34.78,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2006-06-21,FTD day 6,33.04,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2006-07-12,failed FTD,31.54,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2006-09-25,FTD day 4,34.67,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2006-12-22,exit,36.74,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2007-02-14,FTD day 6,38.16,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2007-08-09,exit,40.88,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2007-08-22,FTD day 4,40.84,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2007-11-08,exit,44.35,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2007-12-05,FTD day 7,44.22,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2008-01-16,exit,39.52,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2008-01-31,FTD day 4,38.73,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2008-02-05,failed FTD,37.48,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2008-02-13,FTD day 5,38.43,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2008-03-03,failed FTD,36.62,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2008-03-18,FTD day 6,37.19,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2008-06-11,exit,40.69,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2008-06-19,FTD day 6,41.89,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2008-06-23,failed FTD,40.44,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2008-07-23,FTD day 7,39.0,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2008-09-02,exit,39.15,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2008-11-04,FTD day 6,29.03,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2008-11-17,failed FTD,24.4,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2008-12-02,FTD day 7,23.94,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2009-02-17,exit,25.17,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2009-03-18,FTD day 7,25.58,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2009-10-28,exit,35.79,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2009-11-05,FTD day 4,36.62,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2010-01-22,exit,38.25,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2010-03-05,FTD day 4,40.22,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2010-05-06,exit,40.38,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2010-06-15,FTD day 4,40.5,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2010-06-29,failed FTD,37.75,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2010-07-13,FTD day 6,39.45,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2010-08-24,exit,37.99,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2010-09-20,FTD day 5,42.6,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2011-03-10,exit,49.07,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2011-03-24,FTD day 6,49.63,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2011-06-03,exit,49.33,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2011-07-07,FTD day 5,51.93,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2011-08-02,exit,49.37,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2011-09-12,FTD day 5,47.25,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2012-04-23,exit,57.52,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2012-05-29,FTD day 6,55.56,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2012-06-01,failed FTD,53.39,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2012-07-18,FTD day 4,57.04,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2012-10-18,exit,59.78,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2012-12-17,FTD day 5,58.23,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2013-02-25,exit,59.24,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2013-03-05,FTD day 6,61.35,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2013-04-17,exit,60.99,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2013-07-11,FTD day 4,67.34,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2013-10-09,exit,69.35,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2013-10-18,FTD day 7,74.01,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2014-01-29,exit,76.76,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2014-02-07,FTD day 4,78.9,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2014-03-26,exit,79.47,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2014-10-08,FTD day 7,90.01,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2014-12-16,exit,91.41,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2015-02-10,FTD day 7,95.8,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2015-03-26,exit,96.67,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2015-06-18,FTD day 7,101.81,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2015-08-19,exit,101.53,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2015-10-22,FTD day 6,101.38,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2015-12-11,exit,102.38,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2015-12-29,FTD day 6,105.95,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2016-01-15,exit,93.47,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2016-02-17,FTD day 5,95.01,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2016-04-29,exit,98.29,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2016-05-24,FTD day 5,100.83,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2016-09-09,exit,106.53,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2016-09-15,FTD day 4,109.66,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2016-10-28,exit,109.43,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2017-10-27,FTD day 4,142.75,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2018-02-05,exit,149.55,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2018-02-14,FTD day 4,153.86,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2018-03-22,exit,154.23,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2018-04-10,FTD day 6,152.72,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2018-10-05,exit,171.34,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2018-11-07,FTD day 7,166.99,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2018-11-19,failed FTD,154.13,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2018-11-28,FTD day 5,160.45,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2018-12-17,failed FTD,149.73,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2019-01-15,FTD day 6,154.88,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2019-05-13,exit,170.64,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2019-06-07,FTD day 4,172.99,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2019-08-05,exit,173.08,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2019-08-13,FTD day 6,180.41,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2019-10-02,exit,176.61,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2019-10-11,FTD day 7,183.39,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2020-02-25,exit,207.11,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2020-04-02,FTD day 4,179.26,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2020-09-11,exit,261.09,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2020-10-01,FTD day 6,272.48,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2021-02-25,exit,302.55,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2021-06-17,FTD day 4,334.41,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2021-09-20,exit,354.93,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2021-11-04,FTD day 7,386.49,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2021-12-17,exit,373.58,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2021-12-27,FTD day 4,392.1,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2022-01-19,exit,356.14,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2022-03-02,FTD day 5,337.43,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2022-03-07,failed FTD,315.7,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2022-03-18,FTD day 4,341.58,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2022-04-22,exit,316.61,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2022-06-24,FTD day 5,287.21,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2022-09-13,exit,286.32,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2022-10-21,FTD day 5,268.98,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2022-11-03,failed FTD,254.4,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2022-11-10,FTD day 5,276.14,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2023-03-10,exit,282.48,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2023-03-16,FTD day 4,300.35,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2023-08-11,exit,359.58,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2023-08-29,FTD day 7,367.96,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2023-10-03,exit,348.97,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2023-11-01,FTD day 4,350.98,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2024-04-15,exit,425.47,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2024-08-13,FTD day 6,457.3,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2025-01-10,exit,502.92,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2025-01-22,FTD day 5,527.03,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2025-02-27,exit,496.06,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2025-03-19,FTD day 4,476.84,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2025-04-03,failed FTD,447.53,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2025-05-12,FTD day 7,504.32,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2025-11-17,exit,600.84,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2026-02-25,FTD day 4,614.59,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2026-03-20,exit,580.08,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2026-04-08,FTD day 6,604.79,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2026-07-07,exit,708.69,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2026-08-04,FTD day 4,723.1,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2026-09-14,exit,708.44,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2026-11-11,FTD day 4,690.38,dist 6/25 & <50d | FTD d4-7 +1.25% +fail exit
+2003-08-05,exit,25.43,dist 6/25 & <50d | FTD d4-7 +1.70%
+2003-08-18,FTD day 6,26.91,dist 6/25 & <50d | FTD d4-7 +1.70%
+2003-09-30,exit,27.29,dist 6/25 & <50d | FTD d4-7 +1.70%
+2003-11-12,FTD day 6,30.14,dist 6/25 & <50d | FTD d4-7 +1.70%
+2003-12-09,exit,28.98,dist 6/25 & <50d | FTD d4-7 +1.70%
+2003-12-18,FTD day 7,29.93,dist 6/25 & <50d | FTD d4-7 +1.70%
+2004-02-04,exit,30.59,dist 6/25 & <50d | FTD d4-7 +1.70%
+2004-04-22,FTD day 4,31.09,dist 6/25 & <50d | FTD d4-7 +1.70%
+2004-05-17,exit,28.98,dist 6/25 & <50d | FTD d4-7 +1.70%
+2004-05-25,FTD day 6,30.28,dist 6/25 & <50d | FTD d4-7 +1.70%
+2004-07-16,exit,29.2,dist 6/25 & <50d | FTD d4-7 +1.70%
+2004-08-18,FTD day 4,28.5,dist 6/25 & <50d | FTD d4-7 +1.70%
+2005-01-05,exit,32.76,dist 6/25 & <50d | FTD d4-7 +1.70%
+2005-12-01,FTD day 7,35.75,dist 6/25 & <50d | FTD d4-7 +1.70%
+2006-01-25,exit,35.19,dist 6/25 & <50d | FTD d4-7 +1.70%
+2006-03-29,FTD day 6,35.78,dist 6/25 & <50d | FTD d4-7 +1.70%
+2006-05-11,exit,34.78,dist 6/25 & <50d | FTD d4-7 +1.70%
+2006-06-29,FTD day 4,33.28,dist 6/25 & <50d | FTD d4-7 +1.70%
+2006-12-22,exit,36.74,dist 6/25 & <50d | FTD d4-7 +1.70%
+2007-08-29,FTD day 4,41.2,dist 6/25 & <50d | FTD d4-7 +1.70%
+2007-11-08,exit,44.35,dist 6/25 & <50d | FTD d4-7 +1.70%
+2007-12-05,FTD day 7,44.22,dist 6/25 & <50d | FTD d4-7 +1.70%
+2008-01-16,exit,39.52,dist 6/25 & <50d | FTD d4-7 +1.70%
+2008-01-31,FTD day 4,38.73,dist 6/25 & <50d | FTD d4-7 +1.70%
+2008-06-11,exit,40.69,dist 6/25 & <50d | FTD d4-7 +1.70%
+2008-11-04,FTD day 6,29.03,dist 6/25 & <50d | FTD d4-7 +1.70%
+2009-02-17,exit,25.17,dist 6/25 & <50d | FTD d4-7 +1.70%
+2009-04-09,FTD day 6,28.42,dist 6/25 & <50d | FTD d4-7 +1.70%
+2009-10-28,exit,35.79,dist 6/25 & <50d | FTD d4-7 +1.70%
+2009-11-05,FTD day 4,36.62,dist 6/25 & <50d | FTD d4-7 +1.70%
+2010-01-22,exit,38.25,dist 6/25 & <50d | FTD d4-7 +1.70%
+2010-06-15,FTD day 4,40.5,dist 6/25 & <50d | FTD d4-7 +1.70%
+2010-08-24,exit,37.99,dist 6/25 & <50d | FTD d4-7 +1.70%
+2010-09-20,FTD day 5,42.6,dist 6/25 & <50d | FTD d4-7 +1.70%
+2011-03-10,exit,49.07,dist 6/25 & <50d | FTD d4-7 +1.70%
+2011-03-24,FTD day 6,49.63,dist 6/25 & <50d | FTD d4-7 +1.70%
+2011-06-03,exit,49.33,dist 6/25 & <50d | FTD d4-7 +1.70%
+2011-07-19,FTD day 5,51.63,dist 6/25 & <50d | FTD d4-7 +1.70%
+2011-08-05,exit,47.23,dist 6/25 & <50d | FTD d4-7 +1.70%
+2011-10-24,FTD day 7,51.41,dist 6/25 & <50d | FTD d4-7 +1.70%
+2012-04-23,exit,57.52,dist 6/25 & <50d | FTD d4-7 +1.70%
+2012-08-03,FTD day 7,58.11,dist 6/25 & <50d | FTD d4-7 +1.70%
+2012-10-18,exit,59.78,dist 6/25 & <50d | FTD d4-7 +1.70%
+2013-04-10,FTD day 7,62.7,dist 6/25 & <50d | FTD d4-7 +1.70%
+2013-06-20,exit,63.6,dist 6/25 & <50d | FTD d4-7 +1.70%
+2013-07-11,FTD day 4,67.34,dist 6/25 & <50d | FTD d4-7 +1.70%
+2013-10-09,exit,69.35,dist 6/25 & <50d | FTD d4-7 +1.70%
+2014-02-07,FTD day 7,78.9,dist 6/25 & <50d | FTD d4-7 +1.70%
+2014-03-26,exit,79.47,dist 6/25 & <50d | FTD d4-7 +1.70%
+2014-10-08,FTD day 7,90.01,dist 6/25 & <50d | FTD d4-7 +1.70%
+2014-12-16,exit,91.41,dist 6/25 & <50d | FTD d4-7 +1.70%
+2015-10-22,FTD day 6,101.38,dist 6/25 & <50d | FTD d4-7 +1.70%
+2015-12-11,exit,102.38,dist 6/25 & <50d | FTD d4-7 +1.70%
+2016-02-17,FTD day 5,95.01,dist 6/25 & <50d | FTD d4-7 +1.70%
+2016-04-29,exit,98.29,dist 6/25 & <50d | FTD d4-7 +1.70%
+2016-05-24,FTD day 5,100.83,dist 6/25 & <50d | FTD d4-7 +1.70%
+2016-09-09,exit,106.53,dist 6/25 & <50d | FTD d4-7 +1.70%
+2017-10-27,FTD day 4,142.75,dist 6/25 & <50d | FTD d4-7 +1.70%
+2018-02-05,exit,149.55,dist 6/25 & <50d | FTD d4-7 +1.70%
+2018-02-14,FTD day 4,153.86,dist 6/25 & <50d | FTD d4-7 +1.70%
+2018-03-22,exit,154.23,dist 6/25 & <50d | FTD d4-7 +1.70%
+2018-04-10,FTD day 6,152.72,dist 6/25 & <50d | FTD d4-7 +1.70%
+2018-10-05,exit,171.34,dist 6/25 & <50d | FTD d4-7 +1.70%
+2018-11-07,FTD day 7,166.99,dist 6/25 & <50d | FTD d4-7 +1.70%
+2018-12-19,exit,146.97,dist 6/25 & <50d | FTD d4-7 +1.70%
+2019-01-15,FTD day 6,154.88,dist 6/25 & <50d | FTD d4-7 +1.70%
+2019-05-13,exit,170.64,dist 6/25 & <50d | FTD d4-7 +1.70%
+2019-06-07,FTD day 4,172.99,dist 6/25 & <50d | FTD d4-7 +1.70%
+2019-08-05,exit,173.08,dist 6/25 & <50d | FTD d4-7 +1.70%
+2019-08-13,FTD day 6,180.41,dist 6/25 & <50d | FTD d4-7 +1.70%
+2019-10-02,exit,176.61,dist 6/25 & <50d | FTD d4-7 +1.70%
+2020-02-04,FTD day 6,218.75,dist 6/25 & <50d | FTD d4-7 +1.70%
+2020-02-27,exit,197.76,dist 6/25 & <50d | FTD d4-7 +1.70%
+2020-04-02,FTD day 4,179.26,dist 6/25 & <50d | FTD d4-7 +1.70%
+2020-09-11,exit,261.09,dist 6/25 & <50d | FTD d4-7 +1.70%
+2020-10-12,FTD day 4,284.33,dist 6/25 & <50d | FTD d4-7 +1.70%
+2021-02-25,exit,302.55,dist 6/25 & <50d | FTD d4-7 +1.70%
+2022-01-28,FTD day 5,341.88,dist 6/25 & <50d | FTD d4-7 +1.70%
+2022-04-22,exit,316.61,dist 6/25 & <50d | FTD d4-7 +1.70%
+2022-06-24,FTD day 5,287.21,dist 6/25 & <50d | FTD d4-7 +1.70%
+2022-09-13,exit,286.32,dist 6/25 & <50d | FTD d4-7 +1.70%
+2022-10-21,FTD day 5,268.98,dist 6/25 & <50d | FTD d4-7 +1.70%
+2023-03-10,exit,282.48,dist 6/25 & <50d | FTD d4-7 +1.70%
+2023-03-16,FTD day 4,300.35,dist 6/25 & <50d | FTD d4-7 +1.70%
+2023-08-11,exit,359.58,dist 6/25 & <50d | FTD d4-7 +1.70%
+2023-08-29,FTD day 7,367.96,dist 6/25 & <50d | FTD d4-7 +1.70%
+2023-10-03,exit,348.97,dist 6/25 & <50d | FTD d4-7 +1.70%
+2023-11-01,FTD day 4,350.98,dist 6/25 & <50d | FTD d4-7 +1.70%
+2024-04-15,exit,425.47,dist 6/25 & <50d | FTD d4-7 +1.70%
+2024-08-13,FTD day 6,457.3,dist 6/25 & <50d | FTD d4-7 +1.70%
+2025-01-10,exit,502.92,dist 6/25 & <50d | FTD d4-7 +1.70%
+2025-05-12,FTD day 7,504.32,dist 6/25 & <50d | FTD d4-7 +1.70%
+2025-11-17,exit,600.84,dist 6/25 & <50d | FTD d4-7 +1.70%
+2026-04-08,FTD day 6,604.79,dist 6/25 & <50d | FTD d4-7 +1.70%
+2026-07-07,exit,708.69,dist 6/25 & <50d | FTD d4-7 +1.70%
+2026-08-04,FTD day 4,723.1,dist 6/25 & <50d | FTD d4-7 +1.70%
+2026-09-14,exit,708.44,dist 6/25 & <50d | FTD d4-7 +1.70%
+2026-11-11,FTD day 4,690.38,dist 6/25 & <50d | FTD d4-7 +1.70%
+2003-08-05,exit,25.43,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2003-08-18,FTD day 6,26.91,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2003-09-30,exit,27.29,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2003-11-12,FTD day 6,30.14,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2003-12-09,exit,28.98,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2003-12-18,FTD day 7,29.93,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2004-02-04,exit,30.59,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2004-04-22,FTD day 4,31.09,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2004-05-17,exit,28.98,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2004-05-25,FTD day 6,30.28,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2004-07-16,exit,29.2,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2004-08-18,FTD day 4,28.5,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2005-01-05,exit,32.76,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2005-12-01,FTD day 7,35.75,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2006-01-25,exit,35.19,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2006-03-29,FTD day 6,35.78,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2006-05-11,exit,34.78,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2006-06-29,FTD day 4,33.28,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2006-07-12,failed FTD,31.54,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2006-09-25,FTD day 4,34.67,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2006-12-22,exit,36.74,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2007-08-29,FTD day 4,41.2,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2007-11-08,exit,44.35,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2007-12-05,FTD day 7,44.22,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2008-01-16,exit,39.52,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2008-01-31,FTD day 4,38.73,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2008-02-05,failed FTD,37.48,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2008-02-13,FTD day 5,38.43,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2008-03-03,failed FTD,36.62,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2008-03-18,FTD day 6,37.19,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2008-06-11,exit,40.69,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2008-11-04,FTD day 6,29.03,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2008-11-17,failed FTD,24.4,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2008-12-02,FTD day 7,23.94,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2009-02-17,exit,25.17,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2009-04-09,FTD day 6,28.42,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2009-10-28,exit,35.79,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2009-11-05,FTD day 4,36.62,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2010-01-22,exit,38.25,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2010-06-15,FTD day 4,40.5,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2010-08-24,exit,37.99,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2010-09-20,FTD day 5,42.6,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2011-03-10,exit,49.07,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2011-03-24,FTD day 6,49.63,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2011-06-03,exit,49.33,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2011-07-19,FTD day 5,51.63,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2011-08-05,exit,47.23,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2011-10-24,FTD day 7,51.41,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2012-04-23,exit,57.52,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2012-08-03,FTD day 7,58.11,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2012-10-18,exit,59.78,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2013-04-10,FTD day 7,62.7,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2013-06-20,exit,63.6,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2013-07-11,FTD day 4,67.34,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2013-10-09,exit,69.35,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2014-02-07,FTD day 7,78.9,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2014-03-26,exit,79.47,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2014-10-08,FTD day 7,90.01,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2014-12-16,exit,91.41,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2015-10-22,FTD day 6,101.38,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2015-12-11,exit,102.38,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2016-02-17,FTD day 5,95.01,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2016-04-29,exit,98.29,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2016-05-24,FTD day 5,100.83,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2016-09-09,exit,106.53,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2017-10-27,FTD day 4,142.75,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2018-02-05,exit,149.55,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2018-02-14,FTD day 4,153.86,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2018-03-22,exit,154.23,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2018-04-10,FTD day 6,152.72,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2018-10-05,exit,171.34,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2018-11-07,FTD day 7,166.99,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2018-11-19,failed FTD,154.13,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2018-11-28,FTD day 5,160.45,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2018-12-17,failed FTD,149.73,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2019-01-15,FTD day 6,154.88,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2019-05-13,exit,170.64,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2019-06-07,FTD day 4,172.99,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2019-08-05,exit,173.08,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2019-08-13,FTD day 6,180.41,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2019-10-02,exit,176.61,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2020-02-04,FTD day 6,218.75,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2020-02-27,exit,197.76,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2020-04-02,FTD day 4,179.26,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2020-09-11,exit,261.09,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2020-10-12,FTD day 4,284.33,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2021-02-25,exit,302.55,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2022-01-28,FTD day 5,341.88,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2022-04-22,exit,316.61,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2022-06-24,FTD day 5,287.21,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2022-09-13,exit,286.32,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2022-10-21,FTD day 5,268.98,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2022-11-03,failed FTD,254.4,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2022-11-10,FTD day 5,276.14,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2023-03-10,exit,282.48,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2023-03-16,FTD day 4,300.35,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2023-08-11,exit,359.58,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2023-08-29,FTD day 7,367.96,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2023-10-03,exit,348.97,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2023-11-01,FTD day 4,350.98,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2024-04-15,exit,425.47,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2024-08-13,FTD day 6,457.3,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2025-01-10,exit,502.92,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2025-05-12,FTD day 7,504.32,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2025-11-17,exit,600.84,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2026-04-08,FTD day 6,604.79,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2026-07-07,exit,708.69,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2026-08-04,FTD day 4,723.1,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2026-09-14,exit,708.44,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2026-11-11,FTD day 4,690.38,dist 6/25 & <50d | FTD d4-7 +1.70% +fail exit
+2003-08-05,exit,25.43,dist 6/25 & <50d | FTD d4-10 +1.25%
+2003-08-18,FTD day 6,26.91,dist 6/25 & <50d | FTD d4-10 +1.25%
+2003-09-30,exit,27.29,dist 6/25 & <50d | FTD d4-10 +1.25%
+2003-10-28,FTD day 9,29.76,dist 6/25 & <50d | FTD d4-10 +1.25%
+2003-12-09,exit,28.98,dist 6/25 & <50d | FTD d4-10 +1.25%
+2003-12-18,FTD day 7,29.93,dist 6/25 & <50d | FTD d4-10 +1.25%
+2004-02-04,exit,30.59,dist 6/25 & <50d | FTD d4-10 +1.25%
+2004-03-29,FTD day 4,30.14,dist 6/25 & <50d | FTD d4-10 +1.25%
+2004-05-10,exit,29.2,dist 6/25 & <50d | FTD d4-10 +1.25%
+2004-05-25,FTD day 6,30.28,dist 6/25 & <50d | FTD d4-10 +1.25%
+2004-07-16,exit,29.2,dist 6/25 & <50d | FTD d4-10 +1.25%
+2004-08-18,FTD day 4,28.5,dist 6/25 & <50d | FTD d4-10 +1.25%
+2005-01-05,exit,32.76,dist 6/25 & <50d | FTD d4-10 +1.25%
+2005-02-04,FTD day 9,32.09,dist 6/25 & <50d | FTD d4-10 +1.25%
+2005-03-09,exit,31.94,dist 6/25 & <50d | FTD d4-10 +1.25%
+2005-05-18,FTD day 9,31.63,dist 6/25 & <50d | FTD d4-10 +1.25%
+2005-06-30,exit,31.3,dist 6/25 & <50d | FTD d4-10 +1.25%
+2005-09-06,FTD day 8,33.48,dist 6/25 & <50d | FTD d4-10 +1.25%
+2005-10-05,exit,32.98,dist 6/25 & <50d | FTD d4-10 +1.25%
+2005-10-19,FTD day 5,32.91,dist 6/25 & <50d | FTD d4-10 +1.25%
+2006-01-25,exit,35.19,dist 6/25 & <50d | FTD d4-10 +1.25%
+2006-02-22,FTD day 6,35.19,dist 6/25 & <50d | FTD d4-10 +1.25%
+2006-03-16,exit,35.29,dist 6/25 & <50d | FTD d4-10 +1.25%
+2006-03-29,FTD day 4,35.78,dist 6/25 & <50d | FTD d4-10 +1.25%
+2006-05-11,exit,34.78,dist 6/25 & <50d | FTD d4-10 +1.25%
+2006-06-21,FTD day 6,33.04,dist 6/25 & <50d | FTD d4-10 +1.25%
+2006-12-22,exit,36.74,dist 6/25 & <50d | FTD d4-10 +1.25%
+2007-03-14,FTD day 7,36.79,dist 6/25 & <50d | FTD d4-10 +1.25%
+2007-08-09,exit,40.88,dist 6/25 & <50d | FTD d4-10 +1.25%
+2007-08-22,FTD day 4,40.84,dist 6/25 & <50d | FTD d4-10 +1.25%
+2007-11-08,exit,44.35,dist 6/25 & <50d | FTD d4-10 +1.25%
+2007-11-27,FTD day 10,42.83,dist 6/25 & <50d | FTD d4-10 +1.25%
+2008-01-16,exit,39.52,dist 6/25 & <50d | FTD d4-10 +1.25%
+2008-01-31,FTD day 4,38.73,dist 6/25 & <50d | FTD d4-10 +1.25%
+2008-06-11,exit,40.69,dist 6/25 & <50d | FTD d4-10 +1.25%
+2008-06-19,FTD day 6,41.89,dist 6/25 & <50d | FTD d4-10 +1.25%
+2008-09-02,exit,39.15,dist 6/25 & <50d | FTD d4-10 +1.25%
+2008-11-04,FTD day 6,29.03,dist 6/25 & <50d | FTD d4-10 +1.25%
+2009-02-17,exit,25.17,dist 6/25 & <50d | FTD d4-10 +1.25%
+2009-03-18,FTD day 7,25.58,dist 6/25 & <50d | FTD d4-10 +1.25%
+2009-10-28,exit,35.79,dist 6/25 & <50d | FTD d4-10 +1.25%
+2009-11-05,FTD day 4,36.62,dist 6/25 & <50d | FTD d4-10 +1.25%
+2010-01-22,exit,38.25,dist 6/25 & <50d | FTD d4-10 +1.25%
+2010-03-01,FTD day 4,39.33,dist 6/25 & <50d | FTD d4-10 +1.25%
+2010-05-06,exit,40.38,dist 6/25 & <50d | FTD d4-10 +1.25%
+2010-06-15,FTD day 4,40.5,dist 6/25 & <50d | FTD d4-10 +1.25%
+2010-08-24,exit,37.99,dist 6/25 & <50d | FTD d4-10 +1.25%
+2010-10-15,FTD day 9,44.92,dist 6/25 & <50d | FTD d4-10 +1.25%
+2011-03-10,exit,49.07,dist 6/25 & <50d | FTD d4-10 +1.25%
+2011-03-24,FTD day 6,49.63,dist 6/25 & <50d | FTD d4-10 +1.25%
+2011-06-03,exit,49.33,dist 6/25 & <50d | FTD d4-10 +1.25%
+2011-07-01,FTD day 10,50.81,dist 6/25 & <50d | FTD d4-10 +1.25%
+2011-08-02,exit,49.37,dist 6/25 & <50d | FTD d4-10 +1.25%
+2011-09-12,FTD day 4,47.25,dist 6/25 & <50d | FTD d4-10 +1.25%
+2012-04-23,exit,57.52,dist 6/25 & <50d | FTD d4-10 +1.25%
+2012-05-29,FTD day 6,55.56,dist 6/25 & <50d | FTD d4-10 +1.25%
+2012-07-25,exit,55.4,dist 6/25 & <50d | FTD d4-10 +1.25%
+2012-08-03,FTD day 7,58.11,dist 6/25 & <50d | FTD d4-10 +1.25%
+2012-10-18,exit,59.78,dist 6/25 & <50d | FTD d4-10 +1.25%
+2012-12-11,FTD day 4,58.61,dist 6/25 & <50d | FTD d4-10 +1.25%
+2013-02-25,exit,59.24,dist 6/25 & <50d | FTD d4-10 +1.25%
+2013-03-05,FTD day 6,61.35,dist 6/25 & <50d | FTD d4-10 +1.25%
+2013-04-17,exit,60.99,dist 6/25 & <50d | FTD d4-10 +1.25%
+2013-05-02,FTD day 10,63.82,dist 6/25 & <50d | FTD d4-10 +1.25%
+2013-06-20,exit,63.6,dist 6/25 & <50d | FTD d4-10 +1.25%
+2014-02-07,FTD day 7,78.9,dist 6/25 & <50d | FTD d4-10 +1.25%
+2014-03-26,exit,79.47,dist 6/25 & <50d | FTD d4-10 +1.25%
+2014-05-12,FTD day 9,80.26,dist 6/25 & <50d | FTD d4-10 +1.25%
+2014-10-01,exit,88.87,dist 6/25 & <50d | FTD d4-10 +1.25%
+2014-10-23,FTD day 5,89.43,dist 6/25 & <50d | FTD d4-10 +1.25%
+2014-12-16,exit,91.41,dist 6/25 & <50d | FTD d4-10 +1.25%
+2015-04-24,FTD day 5,101.67,dist 6/25 & <50d | FTD d4-10 +1.25%
+2015-06-09,exit,99.34,dist 6/25 & <50d | FTD d4-10 +1.25%
+2015-06-18,FTD day 7,101.81,dist 6/25 & <50d | FTD d4-10 +1.25%
+2015-08-19,exit,101.53,dist 6/25 & <50d | FTD d4-10 +1.25%
+2015-10-22,FTD day 6,101.38,dist 6/25 & <50d | FTD d4-10 +1.25%
+2015-12-11,exit,102.38,dist 6/25 & <50d | FTD d4-10 +1.25%
+2015-12-29,FTD day 6,105.95,dist 6/25 & <50d | FTD d4-10 +1.25%
+2016-01-15,exit,93.47,dist 6/25 & <50d | FTD d4-10 +1.25%
+2016-02-17,FTD day 5,95.01,dist 6/25 & <50d | FTD d4-10 +1.25%
+2016-04-29,exit,98.29,dist 6/25 & <50d | FTD d4-10 +1.25%
+2016-07-08,FTD day 8,102.82,dist 6/25 & <50d | FTD d4-10 +1.25%
+2016-09-09,exit,106.53,dist 6/25 & <50d | FTD d4-10 +1.25%
+2016-09-15,FTD day 4,109.66,dist 6/25 & <50d | FTD d4-10 +1.25%
+2016-10-28,exit,109.43,dist 6/25 & <50d | FTD d4-10 +1.25%
+2016-12-13,FTD day 4,112.57,dist 6/25 & <50d | FTD d4-10 +1.25%
+2017-06-27,exit,129.99,dist 6/25 & <50d | FTD d4-10 +1.25%
+2017-11-16,FTD day 4,145.86,dist 6/25 & <50d | FTD d4-10 +1.25%
+2018-02-05,exit,149.55,dist 6/25 & <50d | FTD d4-10 +1.25%
+2018-02-14,FTD day 4,153.86,dist 6/25 & <50d | FTD d4-10 +1.25%
+2018-03-22,exit,154.23,dist 6/25 & <50d | FTD d4-10 +1.25%
+2018-04-10,FTD day 6,152.72,dist 6/25 & <50d | FTD d4-10 +1.25%
+2018-10-05,exit,171.34,dist 6/25 & <50d | FTD d4-10 +1.25%
+2018-11-07,FTD day 7,166.99,dist 6/25 & <50d | FTD d4-10 +1.25%
+2018-12-19,exit,146.97,dist 6/25 & <50d | FTD d4-10 +1.25%
+2019-02-12,FTD day 9,162.99,dist 6/25 & <50d | FTD d4-10 +1.25%
+2019-05-13,exit,170.64,dist 6/25 & <50d | FTD d4-10 +1.25%
+2019-06-07,FTD day 4,172.99,dist 6/25 & <50d | FTD d4-10 +1.25%
+2019-08-05,exit,173.08,dist 6/25 & <50d | FTD d4-10 +1.25%
+2019-08-13,FTD day 6,180.41,dist 6/25 & <50d | FTD d4-10 +1.25%
+2019-10-02,exit,176.61,dist 6/25 & <50d | FTD d4-10 +1.25%
+2019-10-11,FTD day 7,183.39,dist 6/25 & <50d | FTD d4-10 +1.25%
+2020-02-25,exit,207.11,dist 6/25 & <50d | FTD d4-10 +1.25%
+2020-04-14,FTD day 8,204.17,dist 6/25 & <50d | FTD d4-10 +1.25%
+2020-09-11,exit,261.09,dist 6/25 & <50d | FTD d4-10 +1.25%
+2020-10-01,FTD day 6,272.48,dist 6/25 & <50d | FTD d4-10 +1.25%
+2021-02-25,exit,302.55,dist 6/25 & <50d | FTD d4-10 +1.25%
+2021-03-31,FTD day 4,309.03,dist 6/25 & <50d | FTD d4-10 +1.25%
+2021-05-12,exit,306.86,dist 6/25 & <50d | FTD d4-10 +1.25%
+2021-06-04,FTD day 5,324.98,dist 6/25 & <50d | FTD d4-10 +1.25%
+2021-09-20,exit,354.93,dist 6/25 & <50d | FTD d4-10 +1.25%
+2021-10-14,FTD day 8,355.83,dist 6/25 & <50d | FTD d4-10 +1.25%
+2021-12-17,exit,373.58,dist 6/25 & <50d | FTD d4-10 +1.25%
+2021-12-27,FTD day 4,392.1,dist 6/25 & <50d | FTD d4-10 +1.25%
+2022-01-19,exit,356.14,dist 6/25 & <50d | FTD d4-10 +1.25%
+2022-03-02,FTD day 5,337.43,dist 6/25 & <50d | FTD d4-10 +1.25%
+2022-04-22,exit,316.61,dist 6/25 & <50d | FTD d4-10 +1.25%
+2022-06-24,FTD day 5,287.21,dist 6/25 & <50d | FTD d4-10 +1.25%
+2022-09-13,exit,286.32,dist 6/25 & <50d | FTD d4-10 +1.25%
+2022-10-21,FTD day 5,268.98,dist 6/25 & <50d | FTD d4-10 +1.25%
+2023-03-10,exit,282.48,dist 6/25 & <50d | FTD d4-10 +1.25%
+2023-03-16,FTD day 4,300.35,dist 6/25 & <50d | FTD d4-10 +1.25%
+2023-08-11,exit,359.58,dist 6/25 & <50d | FTD d4-10 +1.25%
+2023-08-29,FTD day 7,367.96,dist 6/25 & <50d | FTD d4-10 +1.25%
+2023-10-03,exit,348.97,dist 6/25 & <50d | FTD d4-10 +1.25%
+2023-11-01,FTD day 4,350.98,dist 6/25 & <50d | FTD d4-10 +1.25%
+2024-04-15,exit,425.47,dist 6/25 & <50d | FTD d4-10 +1.25%
+2024-05-03,FTD day 10,429.83,dist 6/25 & <50d | FTD d4-10 +1.25%
+2024-07-24,exit,458.09,dist 6/25 & <50d | FTD d4-10 +1.25%
+2024-08-13,FTD day 4,457.3,dist 6/25 & <50d | FTD d4-10 +1.25%
+2025-01-10,exit,502.92,dist 6/25 & <50d | FTD d4-10 +1.25%
+2025-01-22,FTD day 5,527.03,dist 6/25 & <50d | FTD d4-10 +1.25%
+2025-02-27,exit,496.06,dist 6/25 & <50d | FTD d4-10 +1.25%
+2025-03-19,FTD day 4,476.84,dist 6/25 & <50d | FTD d4-10 +1.25%
+2025-11-17,exit,600.84,dist 6/25 & <50d | FTD d4-10 +1.25%
+2025-12-18,FTD day 8,606.26,dist 6/25 & <50d | FTD d4-10 +1.25%
+2026-02-03,exit,614.43,dist 6/25 & <50d | FTD d4-10 +1.25%
+2026-03-09,FTD day 10,605.7,dist 6/25 & <50d | FTD d4-10 +1.25%
+2026-07-07,exit,708.69,dist 6/25 & <50d | FTD d4-10 +1.25%
+2026-08-04,FTD day 4,723.1,dist 6/25 & <50d | FTD d4-10 +1.25%
+2026-09-14,exit,708.44,dist 6/25 & <50d | FTD d4-10 +1.25%
+2026-11-11,FTD day 4,690.38,dist 6/25 & <50d | FTD d4-10 +1.25%
+2003-08-05,exit,25.43,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2003-08-18,FTD day 6,26.91,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2003-09-30,exit,27.29,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2003-10-28,FTD day 9,29.76,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2003-12-09,exit,28.98,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2003-12-18,FTD day 7,29.93,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2004-02-04,exit,30.59,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2004-03-29,FTD day 4,30.14,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2004-05-10,exit,29.2,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2004-05-25,FTD day 6,30.28,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2004-07-16,exit,29.2,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2004-08-18,FTD day 4,28.5,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2005-01-05,exit,32.76,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2005-02-04,FTD day 9,32.09,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2005-03-09,exit,31.94,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2005-05-18,FTD day 9,31.63,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2005-06-30,exit,31.3,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2005-09-06,FTD day 8,33.48,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2005-10-05,exit,32.98,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2005-10-19,FTD day 5,32.91,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2006-01-25,exit,35.19,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2006-02-22,FTD day 6,35.19,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2006-03-16,exit,35.29,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2006-03-29,FTD day 4,35.78,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2006-05-11,exit,34.78,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2006-06-21,FTD day 6,33.04,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2006-07-12,failed FTD,31.54,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2006-08-15,FTD day 5,32.2,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2006-12-22,exit,36.74,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2007-03-14,FTD day 7,36.79,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2007-08-09,exit,40.88,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2007-08-22,FTD day 4,40.84,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2007-11-08,exit,44.35,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2007-11-27,FTD day 10,42.83,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2008-01-16,exit,39.52,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2008-01-31,FTD day 4,38.73,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2008-02-05,failed FTD,37.48,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2008-02-13,FTD day 5,38.43,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2008-03-03,failed FTD,36.62,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2008-03-18,FTD day 6,37.19,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2008-06-11,exit,40.69,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2008-06-19,FTD day 6,41.89,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2008-06-23,failed FTD,40.44,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2008-07-23,FTD day 7,39.0,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2008-09-02,exit,39.15,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2008-11-04,FTD day 6,29.03,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2008-11-17,failed FTD,24.4,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2008-12-02,FTD day 7,23.94,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2009-02-17,exit,25.17,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2009-03-18,FTD day 7,25.58,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2009-10-28,exit,35.79,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2009-11-05,FTD day 4,36.62,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2010-01-22,exit,38.25,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2010-03-01,FTD day 4,39.33,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2010-05-06,exit,40.38,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2010-06-15,FTD day 4,40.5,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2010-06-29,failed FTD,37.75,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2010-07-13,FTD day 6,39.45,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2010-08-24,exit,37.99,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2010-10-15,FTD day 9,44.92,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2011-03-10,exit,49.07,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2011-03-24,FTD day 6,49.63,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2011-06-03,exit,49.33,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2011-07-01,FTD day 10,50.81,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2011-08-02,exit,49.37,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2011-09-12,FTD day 4,47.25,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2012-04-23,exit,57.52,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2012-05-29,FTD day 6,55.56,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2012-06-01,failed FTD,53.39,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2012-07-18,FTD day 10,57.04,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2012-10-18,exit,59.78,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2012-12-11,FTD day 4,58.61,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2013-02-25,exit,59.24,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2013-03-05,FTD day 6,61.35,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2013-04-17,exit,60.99,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2013-05-02,FTD day 10,63.82,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2013-06-20,exit,63.6,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2014-02-07,FTD day 7,78.9,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2014-03-26,exit,79.47,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2014-05-12,FTD day 9,80.26,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2014-10-01,exit,88.87,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2014-10-23,FTD day 5,89.43,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2014-12-16,exit,91.41,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2015-04-24,FTD day 5,101.67,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2015-06-09,exit,99.34,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2015-06-18,FTD day 7,101.81,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2015-08-19,exit,101.53,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2015-10-22,FTD day 6,101.38,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2015-12-11,exit,102.38,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2015-12-29,FTD day 6,105.95,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2016-01-15,exit,93.47,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2016-02-17,FTD day 5,95.01,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2016-04-29,exit,98.29,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2016-07-08,FTD day 8,102.82,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2016-09-09,exit,106.53,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2016-09-15,FTD day 4,109.66,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2016-10-28,exit,109.43,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2016-12-13,FTD day 4,112.57,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2017-06-27,exit,129.99,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2017-11-16,FTD day 4,145.86,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2018-02-05,exit,149.55,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2018-02-14,FTD day 4,153.86,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2018-03-22,exit,154.23,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2018-04-10,FTD day 6,152.72,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2018-10-05,exit,171.34,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2018-11-07,FTD day 7,166.99,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2018-11-19,failed FTD,154.13,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2018-11-28,FTD day 5,160.45,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2018-12-17,failed FTD,149.73,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2019-02-12,FTD day 9,162.99,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2019-05-13,exit,170.64,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2019-06-07,FTD day 4,172.99,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2019-08-05,exit,173.08,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2019-08-13,FTD day 6,180.41,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2019-10-02,exit,176.61,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2019-10-11,FTD day 7,183.39,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2020-02-25,exit,207.11,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2020-04-14,FTD day 8,204.17,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2020-09-11,exit,261.09,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2020-10-01,FTD day 6,272.48,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2021-02-25,exit,302.55,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2021-03-31,FTD day 4,309.03,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2021-05-12,exit,306.86,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2021-06-04,FTD day 5,324.98,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2021-09-20,exit,354.93,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2021-10-14,FTD day 8,355.83,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2021-12-17,exit,373.58,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2021-12-27,FTD day 4,392.1,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2022-01-19,exit,356.14,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2022-03-02,FTD day 5,337.43,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2022-03-07,failed FTD,315.7,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2022-03-18,FTD day 4,341.58,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2022-04-22,exit,316.61,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2022-06-24,FTD day 5,287.21,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2022-09-13,exit,286.32,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2022-10-21,FTD day 5,268.98,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2022-11-03,failed FTD,254.4,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2022-11-10,FTD day 5,276.14,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2023-03-10,exit,282.48,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2023-03-16,FTD day 4,300.35,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2023-08-11,exit,359.58,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2023-08-29,FTD day 7,367.96,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2023-10-03,exit,348.97,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2023-11-01,FTD day 4,350.98,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2024-04-15,exit,425.47,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2024-05-03,FTD day 10,429.83,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2024-07-24,exit,458.09,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2024-08-13,FTD day 4,457.3,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2025-01-10,exit,502.92,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2025-01-22,FTD day 5,527.03,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2025-02-27,exit,496.06,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2025-03-19,FTD day 4,476.84,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2025-04-03,failed FTD,447.53,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2025-04-22,FTD day 9,441.39,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2025-11-17,exit,600.84,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2025-12-18,FTD day 8,606.26,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2026-02-03,exit,614.43,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2026-03-09,FTD day 10,605.7,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2026-03-13,failed FTD,591.7,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2026-04-08,FTD day 6,604.79,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2026-07-07,exit,708.69,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2026-08-04,FTD day 4,723.1,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2026-09-14,exit,708.44,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2026-11-11,FTD day 4,690.38,dist 6/25 & <50d | FTD d4-10 +1.25% +fail exit
+2003-08-05,exit,25.43,dist 6/25 & <50d | FTD d4-10 +1.70%
+2003-08-18,FTD day 6,26.91,dist 6/25 & <50d | FTD d4-10 +1.70%
+2003-09-30,exit,27.29,dist 6/25 & <50d | FTD d4-10 +1.70%
+2003-10-28,FTD day 9,29.76,dist 6/25 & <50d | FTD d4-10 +1.70%
+2003-12-09,exit,28.98,dist 6/25 & <50d | FTD d4-10 +1.70%
+2003-12-18,FTD day 7,29.93,dist 6/25 & <50d | FTD d4-10 +1.70%
+2004-02-04,exit,30.59,dist 6/25 & <50d | FTD d4-10 +1.70%
+2004-04-02,FTD day 8,31.24,dist 6/25 & <50d | FTD d4-10 +1.70%
+2004-05-10,exit,29.2,dist 6/25 & <50d | FTD d4-10 +1.70%
+2004-05-25,FTD day 6,30.28,dist 6/25 & <50d | FTD d4-10 +1.70%
+2004-07-16,exit,29.2,dist 6/25 & <50d | FTD d4-10 +1.70%
+2004-08-18,FTD day 4,28.5,dist 6/25 & <50d | FTD d4-10 +1.70%
+2005-01-05,exit,32.76,dist 6/25 & <50d | FTD d4-10 +1.70%
+2005-10-19,FTD day 9,32.91,dist 6/25 & <50d | FTD d4-10 +1.70%
+2006-01-25,exit,35.19,dist 6/25 & <50d | FTD d4-10 +1.70%
+2006-03-29,FTD day 9,35.78,dist 6/25 & <50d | FTD d4-10 +1.70%
+2006-05-11,exit,34.78,dist 6/25 & <50d | FTD d4-10 +1.70%
+2006-08-15,FTD day 5,32.2,dist 6/25 & <50d | FTD d4-10 +1.70%
+2006-12-22,exit,36.74,dist 6/25 & <50d | FTD d4-10 +1.70%
+2007-08-29,FTD day 9,41.2,dist 6/25 & <50d | FTD d4-10 +1.70%
+2007-11-08,exit,44.35,dist 6/25 & <50d | FTD d4-10 +1.70%
+2007-11-27,FTD day 10,42.83,dist 6/25 & <50d | FTD d4-10 +1.70%
+2008-01-16,exit,39.52,dist 6/25 & <50d | FTD d4-10 +1.70%
+2008-01-31,FTD day 4,38.73,dist 6/25 & <50d | FTD d4-10 +1.70%
+2008-06-11,exit,40.69,dist 6/25 & <50d | FTD d4-10 +1.70%
+2008-08-05,FTD day 5,39.48,dist 6/25 & <50d | FTD d4-10 +1.70%
+2008-09-04,exit,37.53,dist 6/25 & <50d | FTD d4-10 +1.70%
+2008-11-04,FTD day 6,29.03,dist 6/25 & <50d | FTD d4-10 +1.70%
+2009-02-17,exit,25.17,dist 6/25 & <50d | FTD d4-10 +1.70%
+2009-03-23,FTD day 10,26.66,dist 6/25 & <50d | FTD d4-10 +1.70%
+2009-10-28,exit,35.79,dist 6/25 & <50d | FTD d4-10 +1.70%
+2009-11-05,FTD day 4,36.62,dist 6/25 & <50d | FTD d4-10 +1.70%
+2010-01-22,exit,38.25,dist 6/25 & <50d | FTD d4-10 +1.70%
+2010-06-15,FTD day 10,40.5,dist 6/25 & <50d | FTD d4-10 +1.70%
+2010-08-24,exit,37.99,dist 6/25 & <50d | FTD d4-10 +1.70%
+2010-10-15,FTD day 9,44.92,dist 6/25 & <50d | FTD d4-10 +1.70%
+2011-03-10,exit,49.07,dist 6/25 & <50d | FTD d4-10 +1.70%
+2011-03-24,FTD day 6,49.63,dist 6/25 & <50d | FTD d4-10 +1.70%
+2011-06-03,exit,49.33,dist 6/25 & <50d | FTD d4-10 +1.70%
+2011-07-19,FTD day 10,51.63,dist 6/25 & <50d | FTD d4-10 +1.70%
+2011-08-05,exit,47.23,dist 6/25 & <50d | FTD d4-10 +1.70%
+2011-10-04,FTD day 8,45.87,dist 6/25 & <50d | FTD d4-10 +1.70%
+2012-04-23,exit,57.52,dist 6/25 & <50d | FTD d4-10 +1.70%
+2012-08-03,FTD day 7,58.11,dist 6/25 & <50d | FTD d4-10 +1.70%
+2012-10-18,exit,59.78,dist 6/25 & <50d | FTD d4-10 +1.70%
+2013-07-11,FTD day 9,67.34,dist 6/25 & <50d | FTD d4-10 +1.70%
+2013-10-09,exit,69.35,dist 6/25 & <50d | FTD d4-10 +1.70%
+2014-02-07,FTD day 7,78.9,dist 6/25 & <50d | FTD d4-10 +1.70%
+2014-03-26,exit,79.47,dist 6/25 & <50d | FTD d4-10 +1.70%
+2014-10-08,FTD day 4,90.01,dist 6/25 & <50d | FTD d4-10 +1.70%
+2014-12-16,exit,91.41,dist 6/25 & <50d | FTD d4-10 +1.70%
+2015-10-22,FTD day 6,101.38,dist 6/25 & <50d | FTD d4-10 +1.70%
+2015-12-11,exit,102.38,dist 6/25 & <50d | FTD d4-10 +1.70%
+2016-02-17,FTD day 5,95.01,dist 6/25 & <50d | FTD d4-10 +1.70%
+2016-04-29,exit,98.29,dist 6/25 & <50d | FTD d4-10 +1.70%
+2017-10-27,FTD day 10,142.75,dist 6/25 & <50d | FTD d4-10 +1.70%
+2018-02-05,exit,149.55,dist 6/25 & <50d | FTD d4-10 +1.70%
+2018-02-14,FTD day 4,153.86,dist 6/25 & <50d | FTD d4-10 +1.70%
+2018-03-22,exit,154.23,dist 6/25 & <50d | FTD d4-10 +1.70%
+2018-04-10,FTD day 6,152.72,dist 6/25 & <50d | FTD d4-10 +1.70%
+2018-10-05,exit,171.34,dist 6/25 & <50d | FTD d4-10 +1.70%
+2018-11-07,FTD day 7,166.99,dist 6/25 & <50d | FTD d4-10 +1.70%
+2018-12-19,exit,146.97,dist 6/25 & <50d | FTD d4-10 +1.70%
+2019-06-07,FTD day 7,172.99,dist 6/25 & <50d | FTD d4-10 +1.70%
+2019-08-05,exit,173.08,dist 6/25 & <50d | FTD d4-10 +1.70%
+2019-08-13,FTD day 6,180.41,dist 6/25 & <50d | FTD d4-10 +1.70%
+2019-10-02,exit,176.61,dist 6/25 & <50d | FTD d4-10 +1.70%
+2020-04-14,FTD day 8,204.17,dist 6/25 & <50d | FTD d4-10 +1.70%
+2020-09-11,exit,261.09,dist 6/25 & <50d | FTD d4-10 +1.70%
+2020-11-03,FTD day 6,265.14,dist 6/25 & <50d | FTD d4-10 +1.70%
+2021-02-25,exit,302.55,dist 6/25 & <50d | FTD d4-10 +1.70%
+2021-04-01,FTD day 5,314.3,dist 6/25 & <50d | FTD d4-10 +1.70%
+2021-05-12,exit,306.86,dist 6/25 & <50d | FTD d4-10 +1.70%
+2021-10-14,FTD day 7,355.83,dist 6/25 & <50d | FTD d4-10 +1.70%
+2021-12-17,exit,373.58,dist 6/25 & <50d | FTD d4-10 +1.70%
+2022-03-18,FTD day 4,341.58,dist 6/25 & <50d | FTD d4-10 +1.70%
+2022-04-22,exit,316.61,dist 6/25 & <50d | FTD d4-10 +1.70%
+2022-06-24,FTD day 5,287.21,dist 6/25 & <50d | FTD d4-10 +1.70%
+2022-09-13,exit,286.32,dist 6/25 & <50d | FTD d4-10 +1.70%
+2022-10-21,FTD day 5,268.98,dist 6/25 & <50d | FTD d4-10 +1.70%
+2023-03-10,exit,282.48,dist 6/25 & <50d | FTD d4-10 +1.70%
+2023-03-16,FTD day 4,300.35,dist 6/25 & <50d | FTD d4-10 +1.70%
+2023-08-11,exit,359.58,dist 6/25 & <50d | FTD d4-10 +1.70%
+2023-08-29,FTD day 7,367.96,dist 6/25 & <50d | FTD d4-10 +1.70%
+2023-10-03,exit,348.97,dist 6/25 & <50d | FTD d4-10 +1.70%
+2023-11-01,FTD day 4,350.98,dist 6/25 & <50d | FTD d4-10 +1.70%
+2024-04-15,exit,425.47,dist 6/25 & <50d | FTD d4-10 +1.70%
+2024-05-03,FTD day 10,429.83,dist 6/25 & <50d | FTD d4-10 +1.70%
+2024-07-24,exit,458.09,dist 6/25 & <50d | FTD d4-10 +1.70%
+2024-08-13,FTD day 4,457.3,dist 6/25 & <50d | FTD d4-10 +1.70%
+2025-01-10,exit,502.92,dist 6/25 & <50d | FTD d4-10 +1.70%
+2025-04-22,FTD day 9,441.39,dist 6/25 & <50d | FTD d4-10 +1.70%
+2025-11-17,exit,600.84,dist 6/25 & <50d | FTD d4-10 +1.70%
+2026-04-08,FTD day 6,604.79,dist 6/25 & <50d | FTD d4-10 +1.70%
+2026-07-07,exit,708.69,dist 6/25 & <50d | FTD d4-10 +1.70%
+2026-08-04,FTD day 4,723.1,dist 6/25 & <50d | FTD d4-10 +1.70%
+2026-09-14,exit,708.44,dist 6/25 & <50d | FTD d4-10 +1.70%
+2026-11-11,FTD day 4,690.38,dist 6/25 & <50d | FTD d4-10 +1.70%
+2003-08-05,exit,25.43,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2003-08-18,FTD day 6,26.91,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2003-09-30,exit,27.29,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2003-10-28,FTD day 9,29.76,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2003-12-09,exit,28.98,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2003-12-18,FTD day 7,29.93,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2004-02-04,exit,30.59,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2004-04-02,FTD day 8,31.24,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2004-05-10,exit,29.2,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2004-05-25,FTD day 6,30.28,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2004-07-16,exit,29.2,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2004-08-18,FTD day 4,28.5,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2005-01-05,exit,32.76,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2005-10-19,FTD day 9,32.91,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2006-01-25,exit,35.19,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2006-03-29,FTD day 9,35.78,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2006-05-11,exit,34.78,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2006-08-15,FTD day 5,32.2,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2006-12-22,exit,36.74,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2007-08-29,FTD day 9,41.2,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2007-11-08,exit,44.35,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2007-11-27,FTD day 10,42.83,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2008-01-16,exit,39.52,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2008-01-31,FTD day 4,38.73,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2008-02-05,failed FTD,37.48,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2008-02-13,FTD day 5,38.43,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2008-03-03,failed FTD,36.62,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2008-03-18,FTD day 6,37.19,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2008-06-11,exit,40.69,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2008-08-05,FTD day 5,39.48,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2008-09-04,exit,37.53,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2008-11-04,FTD day 6,29.03,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2008-11-17,failed FTD,24.4,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2008-12-02,FTD day 7,23.94,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2009-02-17,exit,25.17,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2009-03-23,FTD day 10,26.66,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2009-10-28,exit,35.79,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2009-11-05,FTD day 4,36.62,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2010-01-22,exit,38.25,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2010-06-15,FTD day 10,40.5,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2010-08-24,exit,37.99,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2010-10-15,FTD day 9,44.92,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2011-03-10,exit,49.07,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2011-03-24,FTD day 6,49.63,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2011-06-03,exit,49.33,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2011-07-19,FTD day 10,51.63,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2011-08-05,exit,47.23,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2011-10-04,FTD day 8,45.87,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2012-04-23,exit,57.52,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2012-08-03,FTD day 7,58.11,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2012-10-18,exit,59.78,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2013-07-11,FTD day 9,67.34,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2013-10-09,exit,69.35,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2014-02-07,FTD day 7,78.9,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2014-03-26,exit,79.47,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2014-10-08,FTD day 4,90.01,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2014-12-16,exit,91.41,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2015-10-22,FTD day 6,101.38,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2015-12-11,exit,102.38,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2016-02-17,FTD day 5,95.01,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2016-04-29,exit,98.29,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2017-10-27,FTD day 10,142.75,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2018-02-05,exit,149.55,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2018-02-14,FTD day 4,153.86,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2018-03-22,exit,154.23,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2018-04-10,FTD day 6,152.72,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2018-10-05,exit,171.34,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2018-11-07,FTD day 7,166.99,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2018-11-19,failed FTD,154.13,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2018-11-28,FTD day 5,160.45,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2018-12-17,failed FTD,149.73,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2019-06-07,FTD day 7,172.99,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2019-08-05,exit,173.08,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2019-08-13,FTD day 6,180.41,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2019-10-02,exit,176.61,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2020-04-14,FTD day 8,204.17,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2020-09-11,exit,261.09,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2020-11-03,FTD day 6,265.14,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2021-02-25,exit,302.55,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2021-04-01,FTD day 5,314.3,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2021-05-12,exit,306.86,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2021-10-14,FTD day 7,355.83,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2021-12-17,exit,373.58,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2022-03-18,FTD day 4,341.58,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2022-04-22,exit,316.61,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2022-06-24,FTD day 5,287.21,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2022-09-13,exit,286.32,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2022-10-21,FTD day 5,268.98,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2022-11-03,failed FTD,254.4,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2022-11-10,FTD day 5,276.14,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2023-03-10,exit,282.48,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2023-03-16,FTD day 4,300.35,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2023-08-11,exit,359.58,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2023-08-29,FTD day 7,367.96,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2023-10-03,exit,348.97,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2023-11-01,FTD day 4,350.98,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2024-04-15,exit,425.47,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2024-05-03,FTD day 10,429.83,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2024-07-24,exit,458.09,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2024-08-13,FTD day 4,457.3,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2025-01-10,exit,502.92,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2025-04-22,FTD day 9,441.39,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2025-11-17,exit,600.84,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2026-04-08,FTD day 6,604.79,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2026-07-07,exit,708.69,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2026-08-04,FTD day 4,723.1,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2026-09-14,exit,708.44,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2026-11-11,FTD day 4,690.38,dist 6/25 & <50d | FTD d4-10 +1.70% +fail exit
+2004-03-23,exit,28.66,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2004-03-29,FTD day 4,30.14,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2004-05-10,exit,29.2,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2004-05-25,FTD day 6,30.28,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2004-07-16,exit,29.2,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2004-08-18,FTD day 4,28.5,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2005-03-18,exit,31.04,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2005-05-18,FTD day 4,31.63,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2005-06-30,exit,31.3,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2005-10-19,FTD day 5,32.91,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2006-05-12,exit,34.31,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2006-06-21,FTD day 6,33.04,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2008-01-16,exit,39.52,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2008-01-31,FTD day 4,38.73,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2008-06-11,exit,40.69,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2008-06-19,FTD day 6,41.89,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2008-09-02,exit,39.15,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2008-11-04,FTD day 6,29.03,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2009-02-17,exit,25.17,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2009-03-18,FTD day 7,25.58,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2010-05-20,exit,38.45,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2010-06-15,FTD day 4,40.5,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2010-08-24,exit,37.99,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2010-09-20,FTD day 5,42.6,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2011-06-15,exit,47.52,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2011-07-07,FTD day 5,51.93,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2011-08-04,exit,47.53,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2011-09-12,FTD day 5,47.25,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2012-11-07,exit,57.01,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2012-12-17,FTD day 5,58.23,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2015-08-21,exit,94.4,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2015-10-22,FTD day 6,101.38,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2016-01-06,exit,100.35,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2016-02-17,FTD day 5,95.01,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2016-04-29,exit,98.29,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2016-05-24,FTD day 5,100.83,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2018-10-11,exit,161.3,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2018-11-07,FTD day 7,166.99,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2018-12-19,exit,146.97,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2019-01-15,FTD day 6,154.88,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2019-06-03,exit,162.56,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2019-06-07,FTD day 4,172.99,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2020-03-09,exit,186.15,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2020-04-02,FTD day 4,179.26,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2022-01-20,exit,351.52,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2022-03-02,FTD day 5,337.43,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2022-04-22,exit,316.61,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2022-06-24,FTD day 5,287.21,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2022-09-13,exit,286.32,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2022-10-21,FTD day 5,268.98,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2023-03-10,exit,282.48,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2023-03-16,FTD day 4,300.35,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2025-03-06,exit,484.09,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2025-03-19,FTD day 4,476.84,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2026-03-20,exit,580.08,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2026-04-08,FTD day 6,604.79,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2026-11-05,exit,647.05,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2026-11-11,FTD day 4,690.38,dist 6/25 & <50d & <200d | FTD d4-7 +1.25%
+2004-03-23,exit,28.66,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2004-03-29,FTD day 4,30.14,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2004-05-10,exit,29.2,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2004-05-25,FTD day 6,30.28,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2004-07-16,exit,29.2,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2004-08-18,FTD day 4,28.5,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2005-03-18,exit,31.04,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2005-05-18,FTD day 4,31.63,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2005-06-30,exit,31.3,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2005-10-19,FTD day 5,32.91,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2006-05-12,exit,34.31,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2006-06-21,FTD day 6,33.04,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2006-07-12,failed FTD,31.54,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2006-09-25,FTD day 4,34.67,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2008-01-16,exit,39.52,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2008-01-31,FTD day 4,38.73,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2008-02-05,failed FTD,37.48,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2008-02-13,FTD day 5,38.43,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2008-03-03,failed FTD,36.62,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2008-03-18,FTD day 6,37.19,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2008-06-11,exit,40.69,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2008-06-19,FTD day 6,41.89,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2008-06-23,failed FTD,40.44,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2008-07-23,FTD day 7,39.0,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2008-09-02,exit,39.15,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2008-11-04,FTD day 6,29.03,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2008-11-17,failed FTD,24.4,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2008-12-02,FTD day 7,23.94,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2009-02-17,exit,25.17,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2009-03-18,FTD day 7,25.58,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2010-05-20,exit,38.45,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2010-06-15,FTD day 4,40.5,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2010-06-29,failed FTD,37.75,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2010-07-13,FTD day 6,39.45,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2010-08-24,exit,37.99,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2010-09-20,FTD day 5,42.6,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2011-06-15,exit,47.52,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2011-07-07,FTD day 5,51.93,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2011-08-04,exit,47.53,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2011-09-12,FTD day 5,47.25,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2012-11-07,exit,57.01,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2012-12-17,FTD day 5,58.23,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2015-08-21,exit,94.4,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2015-10-22,FTD day 6,101.38,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2016-01-06,exit,100.35,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2016-02-17,FTD day 5,95.01,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2016-04-29,exit,98.29,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2016-05-24,FTD day 5,100.83,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2018-10-11,exit,161.3,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2018-11-07,FTD day 7,166.99,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2018-11-19,failed FTD,154.13,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2018-11-28,FTD day 5,160.45,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2018-12-17,failed FTD,149.73,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2019-01-15,FTD day 6,154.88,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2019-06-03,exit,162.56,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2019-06-07,FTD day 4,172.99,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2020-03-09,exit,186.15,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2020-04-02,FTD day 4,179.26,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2022-01-20,exit,351.52,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2022-03-02,FTD day 5,337.43,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2022-03-07,failed FTD,315.7,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2022-03-18,FTD day 4,341.58,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2022-04-22,exit,316.61,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2022-06-24,FTD day 5,287.21,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2022-09-13,exit,286.32,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2022-10-21,FTD day 5,268.98,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2022-11-03,failed FTD,254.4,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2022-11-10,FTD day 5,276.14,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2023-03-10,exit,282.48,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2023-03-16,FTD day 4,300.35,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2025-03-06,exit,484.09,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2025-03-19,FTD day 4,476.84,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2025-04-03,failed FTD,447.53,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2025-05-12,FTD day 7,504.32,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2026-03-20,exit,580.08,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2026-04-08,FTD day 6,604.79,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2026-11-05,exit,647.05,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2026-11-11,FTD day 4,690.38,dist 6/25 & <50d & <200d | FTD d4-7 +1.25% +fail exit
+2004-03-23,exit,28.66,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2004-04-22,FTD day 4,31.09,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2004-05-17,exit,28.98,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2004-05-25,FTD day 6,30.28,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2004-07-16,exit,29.2,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2004-08-18,FTD day 4,28.5,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2005-03-18,exit,31.04,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2005-12-01,FTD day 7,35.75,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2006-05-12,exit,34.31,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2006-06-29,FTD day 4,33.28,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2008-01-16,exit,39.52,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2008-01-31,FTD day 4,38.73,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2008-06-11,exit,40.69,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2008-11-04,FTD day 6,29.03,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2009-02-17,exit,25.17,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2009-04-09,FTD day 6,28.42,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2010-05-20,exit,38.45,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2010-06-15,FTD day 4,40.5,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2010-08-24,exit,37.99,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2010-09-20,FTD day 5,42.6,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2011-06-15,exit,47.52,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2011-07-19,FTD day 5,51.63,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2011-08-05,exit,47.23,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2011-10-24,FTD day 7,51.41,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2012-11-07,exit,57.01,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2013-04-10,FTD day 7,62.7,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2015-08-21,exit,94.4,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2015-10-22,FTD day 6,101.38,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2016-01-06,exit,100.35,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2016-02-17,FTD day 5,95.01,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2016-04-29,exit,98.29,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2016-05-24,FTD day 5,100.83,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2018-10-11,exit,161.3,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2018-11-07,FTD day 7,166.99,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2018-12-19,exit,146.97,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2019-01-15,FTD day 6,154.88,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2019-06-03,exit,162.56,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2019-06-07,FTD day 4,172.99,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2020-03-09,exit,186.15,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2020-04-02,FTD day 4,179.26,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2022-01-20,exit,351.52,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2022-03-18,FTD day 4,341.58,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2022-04-22,exit,316.61,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2022-06-24,FTD day 5,287.21,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2022-09-13,exit,286.32,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2022-10-21,FTD day 5,268.98,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2023-03-10,exit,282.48,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2023-03-16,FTD day 4,300.35,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2025-03-06,exit,484.09,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2025-05-12,FTD day 7,504.32,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2026-03-20,exit,580.08,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2026-04-08,FTD day 6,604.79,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2026-11-05,exit,647.05,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2026-11-11,FTD day 4,690.38,dist 6/25 & <50d & <200d | FTD d4-7 +1.70%
+2004-03-23,exit,28.66,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2004-04-22,FTD day 4,31.09,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2004-05-17,exit,28.98,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2004-05-25,FTD day 6,30.28,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2004-07-16,exit,29.2,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2004-08-18,FTD day 4,28.5,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2005-03-18,exit,31.04,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2005-12-01,FTD day 7,35.75,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2006-05-12,exit,34.31,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2006-06-29,FTD day 4,33.28,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2006-07-12,failed FTD,31.54,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2006-09-25,FTD day 4,34.67,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2008-01-16,exit,39.52,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2008-01-31,FTD day 4,38.73,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2008-02-05,failed FTD,37.48,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2008-02-13,FTD day 5,38.43,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2008-03-03,failed FTD,36.62,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2008-03-18,FTD day 6,37.19,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2008-06-11,exit,40.69,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2008-11-04,FTD day 6,29.03,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2008-11-17,failed FTD,24.4,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2008-12-02,FTD day 7,23.94,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2009-02-17,exit,25.17,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2009-04-09,FTD day 6,28.42,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2010-05-20,exit,38.45,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2010-06-15,FTD day 4,40.5,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2010-06-29,failed FTD,37.75,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2010-09-01,FTD day 4,38.96,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2011-06-15,exit,47.52,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2011-07-19,FTD day 5,51.63,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2011-08-05,exit,47.23,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2011-10-24,FTD day 7,51.41,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2012-11-07,exit,57.01,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2013-04-10,FTD day 7,62.7,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2015-08-21,exit,94.4,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2015-10-22,FTD day 6,101.38,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2016-01-06,exit,100.35,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2016-02-17,FTD day 5,95.01,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2016-04-29,exit,98.29,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2016-05-24,FTD day 5,100.83,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2018-10-11,exit,161.3,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2018-11-07,FTD day 7,166.99,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2018-11-19,failed FTD,154.13,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2018-11-28,FTD day 5,160.45,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2018-12-17,failed FTD,149.73,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2019-01-15,FTD day 6,154.88,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2019-06-03,exit,162.56,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2019-06-07,FTD day 4,172.99,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2020-03-09,exit,186.15,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2020-04-02,FTD day 4,179.26,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2022-01-20,exit,351.52,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2022-03-18,FTD day 4,341.58,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2022-04-22,exit,316.61,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2022-06-24,FTD day 5,287.21,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2022-09-13,exit,286.32,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2022-10-21,FTD day 5,268.98,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2022-11-03,failed FTD,254.4,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2022-11-10,FTD day 5,276.14,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2023-03-10,exit,282.48,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2023-03-16,FTD day 4,300.35,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2025-03-06,exit,484.09,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2025-05-12,FTD day 7,504.32,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2026-03-20,exit,580.08,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2026-04-08,FTD day 6,604.79,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2026-11-05,exit,647.05,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2026-11-11,FTD day 4,690.38,dist 6/25 & <50d & <200d | FTD d4-7 +1.70% +fail exit
+2004-03-23,exit,28.66,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2004-03-29,FTD day 4,30.14,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2004-05-10,exit,29.2,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2004-05-25,FTD day 6,30.28,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2004-07-16,exit,29.2,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2004-08-18,FTD day 4,28.5,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2005-03-18,exit,31.04,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2005-05-18,FTD day 9,31.63,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2005-06-30,exit,31.3,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2005-09-06,FTD day 8,33.48,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2005-10-12,exit,31.9,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2005-10-19,FTD day 5,32.91,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2006-05-12,exit,34.31,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2006-06-21,FTD day 6,33.04,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2008-01-16,exit,39.52,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2008-01-31,FTD day 4,38.73,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2008-06-11,exit,40.69,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2008-06-19,FTD day 6,41.89,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2008-09-02,exit,39.15,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2008-11-04,FTD day 6,29.03,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2009-02-17,exit,25.17,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2009-03-18,FTD day 7,25.58,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2010-05-20,exit,38.45,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2010-06-15,FTD day 4,40.5,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2010-08-24,exit,37.99,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2010-10-15,FTD day 9,44.92,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2011-06-15,exit,47.52,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2011-07-01,FTD day 10,50.81,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2011-08-04,exit,47.53,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2011-09-12,FTD day 4,47.25,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2012-11-07,exit,57.01,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2012-12-11,FTD day 4,58.61,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2015-08-21,exit,94.4,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2015-10-22,FTD day 6,101.38,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2016-01-06,exit,100.35,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2016-02-17,FTD day 5,95.01,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2016-04-29,exit,98.29,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2016-07-08,FTD day 8,102.82,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2018-10-11,exit,161.3,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2018-11-07,FTD day 7,166.99,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2018-12-19,exit,146.97,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2019-02-12,FTD day 9,162.99,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2019-06-03,exit,162.56,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2019-06-07,FTD day 4,172.99,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2020-03-09,exit,186.15,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2020-04-14,FTD day 8,204.17,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2022-01-20,exit,351.52,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2022-03-02,FTD day 5,337.43,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2022-04-22,exit,316.61,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2022-06-24,FTD day 5,287.21,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2022-09-13,exit,286.32,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2022-10-21,FTD day 5,268.98,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2023-03-10,exit,282.48,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2023-03-16,FTD day 4,300.35,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2025-03-06,exit,484.09,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2025-03-19,FTD day 4,476.84,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2026-03-20,exit,580.08,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2026-04-08,FTD day 6,604.79,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2026-11-05,exit,647.05,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2026-11-11,FTD day 4,690.38,dist 6/25 & <50d & <200d | FTD d4-10 +1.25%
+2004-03-23,exit,28.66,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2004-03-29,FTD day 4,30.14,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2004-05-10,exit,29.2,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2004-05-25,FTD day 6,30.28,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2004-07-16,exit,29.2,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2004-08-18,FTD day 4,28.5,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2005-03-18,exit,31.04,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2005-05-18,FTD day 9,31.63,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2005-06-30,exit,31.3,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2005-09-06,FTD day 8,33.48,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2005-10-12,exit,31.9,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2005-10-19,FTD day 5,32.91,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2006-05-12,exit,34.31,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2006-06-21,FTD day 6,33.04,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2006-07-12,failed FTD,31.54,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2006-08-15,FTD day 5,32.2,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2008-01-16,exit,39.52,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2008-01-31,FTD day 4,38.73,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2008-02-05,failed FTD,37.48,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2008-02-13,FTD day 5,38.43,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2008-03-03,failed FTD,36.62,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2008-03-18,FTD day 6,37.19,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2008-06-11,exit,40.69,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2008-06-19,FTD day 6,41.89,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2008-06-23,failed FTD,40.44,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2008-07-23,FTD day 7,39.0,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2008-09-02,exit,39.15,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2008-11-04,FTD day 6,29.03,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2008-11-17,failed FTD,24.4,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2008-12-02,FTD day 7,23.94,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2009-02-17,exit,25.17,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2009-03-18,FTD day 7,25.58,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2010-05-20,exit,38.45,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2010-06-15,FTD day 4,40.5,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2010-06-29,failed FTD,37.75,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2010-07-13,FTD day 6,39.45,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2010-08-24,exit,37.99,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2010-10-15,FTD day 9,44.92,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2011-06-15,exit,47.52,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2011-07-01,FTD day 10,50.81,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2011-08-04,exit,47.53,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2011-09-12,FTD day 4,47.25,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2012-11-07,exit,57.01,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2012-12-11,FTD day 4,58.61,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2015-08-21,exit,94.4,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2015-10-22,FTD day 6,101.38,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2016-01-06,exit,100.35,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2016-02-17,FTD day 5,95.01,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2016-04-29,exit,98.29,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2016-07-08,FTD day 8,102.82,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2018-10-11,exit,161.3,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2018-11-07,FTD day 7,166.99,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2018-11-19,failed FTD,154.13,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2018-11-28,FTD day 5,160.45,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2018-12-17,failed FTD,149.73,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2019-02-12,FTD day 9,162.99,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2019-06-03,exit,162.56,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2019-06-07,FTD day 4,172.99,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2020-03-09,exit,186.15,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2020-04-14,FTD day 8,204.17,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2022-01-20,exit,351.52,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2022-03-02,FTD day 5,337.43,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2022-03-07,failed FTD,315.7,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2022-03-18,FTD day 4,341.58,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2022-04-22,exit,316.61,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2022-06-24,FTD day 5,287.21,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2022-09-13,exit,286.32,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2022-10-21,FTD day 5,268.98,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2022-11-03,failed FTD,254.4,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2022-11-10,FTD day 5,276.14,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2023-03-10,exit,282.48,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2023-03-16,FTD day 4,300.35,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2025-03-06,exit,484.09,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2025-03-19,FTD day 4,476.84,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2025-04-03,failed FTD,447.53,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2025-04-22,FTD day 9,441.39,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2026-03-20,exit,580.08,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2026-04-08,FTD day 6,604.79,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2026-11-05,exit,647.05,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2026-11-11,FTD day 4,690.38,dist 6/25 & <50d & <200d | FTD d4-10 +1.25% +fail exit
+2004-03-23,exit,28.66,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2004-04-02,FTD day 8,31.24,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2004-05-10,exit,29.2,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2004-05-25,FTD day 6,30.28,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2004-07-16,exit,29.2,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2004-08-18,FTD day 4,28.5,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2005-03-18,exit,31.04,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2005-10-19,FTD day 9,32.91,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2006-05-12,exit,34.31,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2006-08-15,FTD day 5,32.2,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2008-01-16,exit,39.52,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2008-01-31,FTD day 4,38.73,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2008-06-11,exit,40.69,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2008-08-05,FTD day 5,39.48,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2008-09-04,exit,37.53,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2008-11-04,FTD day 6,29.03,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2009-02-17,exit,25.17,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2009-03-23,FTD day 10,26.66,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2010-05-20,exit,38.45,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2010-06-15,FTD day 4,40.5,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2010-08-24,exit,37.99,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2010-10-15,FTD day 9,44.92,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2011-06-15,exit,47.52,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2011-07-19,FTD day 10,51.63,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2011-08-05,exit,47.23,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2011-10-04,FTD day 8,45.87,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2012-11-07,exit,57.01,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2013-07-11,FTD day 9,67.34,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2015-08-21,exit,94.4,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2015-10-22,FTD day 6,101.38,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2016-01-06,exit,100.35,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2016-02-17,FTD day 5,95.01,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2016-04-29,exit,98.29,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2017-10-27,FTD day 10,142.75,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2018-10-11,exit,161.3,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2018-11-07,FTD day 7,166.99,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2018-12-19,exit,146.97,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2019-06-07,FTD day 7,172.99,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2020-03-09,exit,186.15,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2020-04-14,FTD day 8,204.17,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2022-01-20,exit,351.52,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2022-03-18,FTD day 4,341.58,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2022-04-22,exit,316.61,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2022-06-24,FTD day 5,287.21,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2022-09-13,exit,286.32,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2022-10-21,FTD day 5,268.98,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2023-03-10,exit,282.48,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2023-03-16,FTD day 4,300.35,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2025-03-06,exit,484.09,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2025-04-22,FTD day 9,441.39,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2026-03-20,exit,580.08,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2026-04-08,FTD day 6,604.79,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2026-11-05,exit,647.05,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2026-11-11,FTD day 4,690.38,dist 6/25 & <50d & <200d | FTD d4-10 +1.70%
+2004-03-23,exit,28.66,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2004-04-02,FTD day 8,31.24,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2004-05-10,exit,29.2,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2004-05-25,FTD day 6,30.28,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2004-07-16,exit,29.2,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2004-08-18,FTD day 4,28.5,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2005-03-18,exit,31.04,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2005-10-19,FTD day 9,32.91,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2006-05-12,exit,34.31,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2006-08-15,FTD day 5,32.2,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2008-01-16,exit,39.52,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2008-01-31,FTD day 4,38.73,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2008-02-05,failed FTD,37.48,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2008-02-13,FTD day 5,38.43,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2008-03-03,failed FTD,36.62,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2008-03-18,FTD day 6,37.19,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2008-06-11,exit,40.69,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2008-08-05,FTD day 5,39.48,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2008-09-04,exit,37.53,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2008-11-04,FTD day 6,29.03,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2008-11-17,failed FTD,24.4,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2008-12-02,FTD day 7,23.94,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2009-02-17,exit,25.17,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2009-03-23,FTD day 10,26.66,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2010-05-20,exit,38.45,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2010-06-15,FTD day 4,40.5,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2010-06-29,failed FTD,37.75,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2010-09-01,FTD day 6,38.96,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2011-06-15,exit,47.52,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2011-07-19,FTD day 10,51.63,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2011-08-05,exit,47.23,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2011-10-04,FTD day 8,45.87,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2012-11-07,exit,57.01,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2013-07-11,FTD day 9,67.34,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2015-08-21,exit,94.4,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2015-10-22,FTD day 6,101.38,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2016-01-06,exit,100.35,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2016-02-17,FTD day 5,95.01,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2016-04-29,exit,98.29,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2017-10-27,FTD day 10,142.75,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2018-10-11,exit,161.3,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2018-11-07,FTD day 7,166.99,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2018-11-19,failed FTD,154.13,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2018-11-28,FTD day 5,160.45,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2018-12-17,failed FTD,149.73,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2019-06-07,FTD day 7,172.99,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2020-03-09,exit,186.15,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2020-04-14,FTD day 8,204.17,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2022-01-20,exit,351.52,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2022-03-18,FTD day 4,341.58,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2022-04-22,exit,316.61,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2022-06-24,FTD day 5,287.21,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2022-09-13,exit,286.32,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2022-10-21,FTD day 5,268.98,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2022-11-03,failed FTD,254.4,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2022-11-10,FTD day 5,276.14,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2023-03-10,exit,282.48,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2023-03-16,FTD day 4,300.35,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2025-03-06,exit,484.09,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2025-04-22,FTD day 9,441.39,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2026-03-20,exit,580.08,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2026-04-08,FTD day 6,604.79,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2026-11-05,exit,647.05,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2026-11-11,FTD day 4,690.38,dist 6/25 & <50d & <200d | FTD d4-10 +1.70% +fail exit
+2004-03-23,exit,28.66,50/200 rule exit | FTD d4-7 +1.25%
+2004-03-29,FTD day 4,30.14,50/200 rule exit | FTD d4-7 +1.25%
+2004-04-30,exit,29.28,50/200 rule exit | FTD d4-7 +1.25%
+2004-05-25,FTD day 6,30.28,50/200 rule exit | FTD d4-7 +1.25%
+2004-07-08,exit,30.06,50/200 rule exit | FTD d4-7 +1.25%
+2004-08-18,FTD day 4,28.5,50/200 rule exit | FTD d4-7 +1.25%
+2004-08-19,exit,28.35,50/200 rule exit | FTD d4-7 +1.25%
+2004-08-25,FTD day 4,29.09,50/200 rule exit | FTD d4-7 +1.25%
+2004-08-26,exit,28.97,50/200 rule exit | FTD d4-7 +1.25%
+2004-10-01,FTD day 4,30.4,50/200 rule exit | FTD d4-7 +1.25%
+2005-03-18,exit,31.04,50/200 rule exit | FTD d4-7 +1.25%
+2005-05-18,FTD day 4,31.63,50/200 rule exit | FTD d4-7 +1.25%
+2005-06-30,exit,31.3,50/200 rule exit | FTD d4-7 +1.25%
+2005-10-19,FTD day 5,32.91,50/200 rule exit | FTD d4-7 +1.25%
+2006-05-12,exit,34.31,50/200 rule exit | FTD d4-7 +1.25%
+2006-06-21,FTD day 6,33.04,50/200 rule exit | FTD d4-7 +1.25%
+2006-06-22,exit,32.62,50/200 rule exit | FTD d4-7 +1.25%
+2006-09-25,FTD day 4,34.67,50/200 rule exit | FTD d4-7 +1.25%
+2008-01-04,exit,41.54,50/200 rule exit | FTD d4-7 +1.25%
+2008-01-31,FTD day 4,38.73,50/200 rule exit | FTD d4-7 +1.25%
+2008-02-01,exit,39.13,50/200 rule exit | FTD d4-7 +1.25%
+2008-02-13,FTD day 5,38.43,50/200 rule exit | FTD d4-7 +1.25%
+2008-02-14,exit,37.74,50/200 rule exit | FTD d4-7 +1.25%
+2008-03-18,FTD day 6,37.19,50/200 rule exit | FTD d4-7 +1.25%
+2008-03-19,exit,36.27,50/200 rule exit | FTD d4-7 +1.25%
+2008-04-18,FTD day 4,40.12,50/200 rule exit | FTD d4-7 +1.25%
+2008-06-11,exit,40.69,50/200 rule exit | FTD d4-7 +1.25%
+2008-06-19,FTD day 6,41.89,50/200 rule exit | FTD d4-7 +1.25%
+2008-06-20,exit,40.76,50/200 rule exit | FTD d4-7 +1.25%
+2008-07-23,FTD day 7,39.0,50/200 rule exit | FTD d4-7 +1.25%
+2008-07-24,exit,38.41,50/200 rule exit | FTD d4-7 +1.25%
+2008-08-05,FTD day 6,39.48,50/200 rule exit | FTD d4-7 +1.25%
+2008-08-07,exit,39.77,50/200 rule exit | FTD d4-7 +1.25%
+2008-11-04,FTD day 6,29.03,50/200 rule exit | FTD d4-7 +1.25%
+2008-11-05,exit,27.51,50/200 rule exit | FTD d4-7 +1.25%
+2008-12-02,FTD day 7,23.94,50/200 rule exit | FTD d4-7 +1.25%
+2008-12-03,exit,24.62,50/200 rule exit | FTD d4-7 +1.25%
+2008-12-30,FTD day 7,25.4,50/200 rule exit | FTD d4-7 +1.25%
+2009-01-12,exit,25.43,50/200 rule exit | FTD d4-7 +1.25%
+2009-01-28,FTD day 6,26.14,50/200 rule exit | FTD d4-7 +1.25%
+2009-01-30,exit,25.03,50/200 rule exit | FTD d4-7 +1.25%
+2009-02-05,FTD day 4,26.33,50/200 rule exit | FTD d4-7 +1.25%
+2009-02-17,exit,25.17,50/200 rule exit | FTD d4-7 +1.25%
+2009-03-18,FTD day 7,25.58,50/200 rule exit | FTD d4-7 +1.25%
+2010-05-20,exit,38.45,50/200 rule exit | FTD d4-7 +1.25%
+2010-06-15,FTD day 4,40.5,50/200 rule exit | FTD d4-7 +1.25%
+2010-06-29,exit,37.75,50/200 rule exit | FTD d4-7 +1.25%
+2010-07-13,FTD day 6,39.45,50/200 rule exit | FTD d4-7 +1.25%
+2010-07-16,exit,38.59,50/200 rule exit | FTD d4-7 +1.25%
+2010-09-20,FTD day 5,42.6,50/200 rule exit | FTD d4-7 +1.25%
+2011-06-15,exit,47.52,50/200 rule exit | FTD d4-7 +1.25%
+2011-07-07,FTD day 5,51.93,50/200 rule exit | FTD d4-7 +1.25%
+2011-08-04,exit,47.53,50/200 rule exit | FTD d4-7 +1.25%
+2011-09-12,FTD day 5,47.25,50/200 rule exit | FTD d4-7 +1.25%
+2011-09-13,exit,47.89,50/200 rule exit | FTD d4-7 +1.25%
+2011-10-24,FTD day 7,51.41,50/200 rule exit | FTD d4-7 +1.25%
+2011-11-17,exit,49.07,50/200 rule exit | FTD d4-7 +1.25%
+2012-01-03,FTD day 7,50.21,50/200 rule exit | FTD d4-7 +1.25%
+2012-11-07,exit,57.01,50/200 rule exit | FTD d4-7 +1.25%
+2012-12-17,FTD day 5,58.23,50/200 rule exit | FTD d4-7 +1.25%
+2012-12-26,exit,57.62,50/200 rule exit | FTD d4-7 +1.25%
+2013-04-10,FTD day 7,62.7,50/200 rule exit | FTD d4-7 +1.25%
+2015-08-21,exit,94.4,50/200 rule exit | FTD d4-7 +1.25%
+2015-10-22,FTD day 6,101.38,50/200 rule exit | FTD d4-7 +1.25%
+2016-01-06,exit,100.35,50/200 rule exit | FTD d4-7 +1.25%
+2016-02-17,FTD day 5,95.01,50/200 rule exit | FTD d4-7 +1.25%
+2016-02-18,exit,93.93,50/200 rule exit | FTD d4-7 +1.25%
+2016-05-10,FTD day 7,99.78,50/200 rule exit | FTD d4-7 +1.25%
+2016-05-11,exit,98.88,50/200 rule exit | FTD d4-7 +1.25%
+2016-09-15,FTD day 4,109.66,50/200 rule exit | FTD d4-7 +1.25%
+2018-10-11,exit,161.3,50/200 rule exit | FTD d4-7 +1.25%
+2018-11-07,FTD day 7,166.99,50/200 rule exit | FTD d4-7 +1.25%
+2018-11-09,exit,163.13,50/200 rule exit | FTD d4-7 +1.25%
+2018-11-28,FTD day 5,160.45,50/200 rule exit | FTD d4-7 +1.25%
+2018-11-29,exit,159.92,50/200 rule exit | FTD d4-7 +1.25%
+2019-01-15,FTD day 6,154.88,50/200 rule exit | FTD d4-7 +1.25%
+2019-06-03,exit,162.56,50/200 rule exit | FTD d4-7 +1.25%
+2019-06-07,FTD day 4,172.99,50/200 rule exit | FTD d4-7 +1.25%
+2020-03-09,exit,186.15,50/200 rule exit | FTD d4-7 +1.25%
+2020-04-02,FTD day 4,179.26,50/200 rule exit | FTD d4-7 +1.25%
+2020-04-03,exit,176.72,50/200 rule exit | FTD d4-7 +1.25%
+2020-04-14,FTD day 6,204.17,50/200 rule exit | FTD d4-7 +1.25%
+2022-01-20,exit,351.52,50/200 rule exit | FTD d4-7 +1.25%
+2022-03-02,FTD day 5,337.43,50/200 rule exit | FTD d4-7 +1.25%
+2022-03-03,exit,332.61,50/200 rule exit | FTD d4-7 +1.25%
+2022-03-18,FTD day 4,341.58,50/200 rule exit | FTD d4-7 +1.25%
+2022-03-21,exit,340.63,50/200 rule exit | FTD d4-7 +1.25%
+2022-03-29,FTD day 6,361.17,50/200 rule exit | FTD d4-7 +1.25%
+2022-04-08,exit,339.72,50/200 rule exit | FTD d4-7 +1.25%
+2022-06-24,FTD day 5,287.21,50/200 rule exit | FTD d4-7 +1.25%
+2022-06-27,exit,285.1,50/200 rule exit | FTD d4-7 +1.25%
+2022-07-20,FTD day 5,295.41,50/200 rule exit | FTD d4-7 +1.25%
+2022-08-30,exit,293.45,50/200 rule exit | FTD d4-7 +1.25%
+2022-10-21,FTD day 5,268.98,50/200 rule exit | FTD d4-7 +1.25%
+2022-10-24,exit,271.94,50/200 rule exit | FTD d4-7 +1.25%
+2022-11-10,FTD day 5,276.14,50/200 rule exit | FTD d4-7 +1.25%
+2022-12-15,exit,270.42,50/200 rule exit | FTD d4-7 +1.25%
+2023-01-06,FTD day 6,263.14,50/200 rule exit | FTD d4-7 +1.25%
+2023-01-09,exit,264.85,50/200 rule exit | FTD d4-7 +1.25%
+2023-01-26,FTD day 4,287.17,50/200 rule exit | FTD d4-7 +1.25%
+2023-03-10,exit,282.48,50/200 rule exit | FTD d4-7 +1.25%
+2023-03-16,FTD day 4,300.35,50/200 rule exit | FTD d4-7 +1.25%
+2025-03-06,exit,484.09,50/200 rule exit | FTD d4-7 +1.25%
+2025-03-19,FTD day 4,476.84,50/200 rule exit | FTD d4-7 +1.25%
+2025-03-20,exit,475.22,50/200 rule exit | FTD d4-7 +1.25%
+2025-05-12,FTD day 7,504.32,50/200 rule exit | FTD d4-7 +1.25%
+2026-03-20,exit,580.08,50/200 rule exit | FTD d4-7 +1.25%
+2026-04-08,FTD day 6,604.79,50/200 rule exit | FTD d4-7 +1.25%
+2026-11-05,exit,647.05,50/200 rule exit | FTD d4-7 +1.25%
+2026-11-11,FTD day 4,690.38,50/200 rule exit | FTD d4-7 +1.25%
+2026-11-13,exit,679.89,50/200 rule exit | FTD d4-7 +1.25%
+2004-03-23,exit,28.66,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2004-03-29,FTD day 4,30.14,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2004-04-30,exit,29.28,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2004-05-25,FTD day 6,30.28,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2004-07-08,exit,30.06,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2004-08-18,FTD day 4,28.5,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2004-08-19,exit,28.35,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2004-08-25,FTD day 4,29.09,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2004-08-26,exit,28.97,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2004-10-01,FTD day 4,30.4,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2005-03-18,exit,31.04,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2005-05-18,FTD day 4,31.63,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2005-06-30,exit,31.3,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2005-10-19,FTD day 5,32.91,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2006-05-12,exit,34.31,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2006-06-21,FTD day 6,33.04,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2006-06-22,exit,32.62,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2006-09-25,FTD day 4,34.67,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2008-01-04,exit,41.54,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2008-01-31,FTD day 4,38.73,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2008-02-01,exit,39.13,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2008-02-13,FTD day 5,38.43,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2008-02-14,exit,37.74,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2008-03-18,FTD day 6,37.19,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2008-03-19,exit,36.27,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2008-04-18,FTD day 4,40.12,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2008-06-11,exit,40.69,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2008-06-19,FTD day 6,41.89,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2008-06-20,exit,40.76,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2008-07-23,FTD day 7,39.0,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2008-07-24,exit,38.41,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2008-08-05,FTD day 6,39.48,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2008-08-07,exit,39.77,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2008-11-04,FTD day 6,29.03,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2008-11-05,exit,27.51,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2008-12-02,FTD day 7,23.94,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2008-12-03,exit,24.62,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2008-12-30,FTD day 7,25.4,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2009-01-12,exit,25.43,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2009-01-28,FTD day 6,26.14,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2009-01-30,exit,25.03,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2009-02-05,FTD day 4,26.33,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2009-02-17,exit,25.17,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2009-03-18,FTD day 7,25.58,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2010-05-20,exit,38.45,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2010-06-15,FTD day 4,40.5,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2010-06-29,exit,37.75,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2010-07-13,FTD day 6,39.45,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2010-07-16,exit,38.59,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2010-09-20,FTD day 5,42.6,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2011-06-15,exit,47.52,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2011-07-07,FTD day 5,51.93,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2011-08-04,exit,47.53,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2011-09-12,FTD day 5,47.25,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2011-09-13,exit,47.89,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2011-10-24,FTD day 7,51.41,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2011-11-17,exit,49.07,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2012-01-03,FTD day 7,50.21,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2012-11-07,exit,57.01,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2012-12-17,FTD day 5,58.23,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2012-12-26,exit,57.62,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2013-04-10,FTD day 7,62.7,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2015-08-21,exit,94.4,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2015-10-22,FTD day 6,101.38,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2016-01-06,exit,100.35,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2016-02-17,FTD day 5,95.01,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2016-02-18,exit,93.93,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2016-05-10,FTD day 7,99.78,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2016-05-11,exit,98.88,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2016-09-15,FTD day 4,109.66,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2018-10-11,exit,161.3,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2018-11-07,FTD day 7,166.99,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2018-11-09,exit,163.13,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2018-11-28,FTD day 5,160.45,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2018-11-29,exit,159.92,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2019-01-15,FTD day 6,154.88,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2019-06-03,exit,162.56,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2019-06-07,FTD day 4,172.99,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2020-03-09,exit,186.15,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2020-04-02,FTD day 4,179.26,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2020-04-03,exit,176.72,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2020-04-14,FTD day 6,204.17,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2022-01-20,exit,351.52,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2022-03-02,FTD day 5,337.43,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2022-03-03,exit,332.61,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2022-03-18,FTD day 4,341.58,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2022-03-21,exit,340.63,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2022-03-29,FTD day 6,361.17,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2022-04-08,exit,339.72,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2022-06-24,FTD day 5,287.21,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2022-06-27,exit,285.1,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2022-07-20,FTD day 5,295.41,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2022-08-30,exit,293.45,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2022-10-21,FTD day 5,268.98,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2022-10-24,exit,271.94,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2022-11-10,FTD day 5,276.14,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2022-12-15,exit,270.42,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2023-01-06,FTD day 6,263.14,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2023-01-09,exit,264.85,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2023-01-26,FTD day 4,287.17,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2023-03-10,exit,282.48,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2023-03-16,FTD day 4,300.35,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2025-03-06,exit,484.09,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2025-03-19,FTD day 4,476.84,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2025-03-20,exit,475.22,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2025-05-12,FTD day 7,504.32,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2026-03-20,exit,580.08,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2026-04-08,FTD day 6,604.79,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2026-11-05,exit,647.05,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2026-11-11,FTD day 4,690.38,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2026-11-13,exit,679.89,50/200 rule exit | FTD d4-7 +1.25% +fail exit
+2004-03-23,exit,28.66,50/200 rule exit | FTD d4-7 +1.70%
+2004-04-22,FTD day 4,31.09,50/200 rule exit | FTD d4-7 +1.70%
+2004-04-30,exit,29.28,50/200 rule exit | FTD d4-7 +1.70%
+2004-05-25,FTD day 6,30.28,50/200 rule exit | FTD d4-7 +1.70%
+2004-07-08,exit,30.06,50/200 rule exit | FTD d4-7 +1.70%
+2004-08-18,FTD day 4,28.5,50/200 rule exit | FTD d4-7 +1.70%
+2004-08-19,exit,28.35,50/200 rule exit | FTD d4-7 +1.70%
+2004-10-01,FTD day 4,30.4,50/200 rule exit | FTD d4-7 +1.70%
+2005-03-18,exit,31.04,50/200 rule exit | FTD d4-7 +1.70%
+2005-12-01,FTD day 7,35.75,50/200 rule exit | FTD d4-7 +1.70%
+2006-05-12,exit,34.31,50/200 rule exit | FTD d4-7 +1.70%
+2006-06-29,FTD day 4,33.28,50/200 rule exit | FTD d4-7 +1.70%
+2006-06-30,exit,33.12,50/200 rule exit | FTD d4-7 +1.70%
+2006-09-25,FTD day 4,34.67,50/200 rule exit | FTD d4-7 +1.70%
+2008-01-04,exit,41.54,50/200 rule exit | FTD d4-7 +1.70%
+2008-01-31,FTD day 4,38.73,50/200 rule exit | FTD d4-7 +1.70%
+2008-02-01,exit,39.13,50/200 rule exit | FTD d4-7 +1.70%
+2008-02-13,FTD day 5,38.43,50/200 rule exit | FTD d4-7 +1.70%
+2008-02-14,exit,37.74,50/200 rule exit | FTD d4-7 +1.70%
+2008-03-18,FTD day 6,37.19,50/200 rule exit | FTD d4-7 +1.70%
+2008-03-19,exit,36.27,50/200 rule exit | FTD d4-7 +1.70%
+2008-04-18,FTD day 4,40.12,50/200 rule exit | FTD d4-7 +1.70%
+2008-06-11,exit,40.69,50/200 rule exit | FTD d4-7 +1.70%
+2008-11-04,FTD day 6,29.03,50/200 rule exit | FTD d4-7 +1.70%
+2008-11-05,exit,27.51,50/200 rule exit | FTD d4-7 +1.70%
+2008-12-02,FTD day 7,23.94,50/200 rule exit | FTD d4-7 +1.70%
+2008-12-03,exit,24.62,50/200 rule exit | FTD d4-7 +1.70%
+2008-12-30,FTD day 7,25.4,50/200 rule exit | FTD d4-7 +1.70%
+2009-01-12,exit,25.43,50/200 rule exit | FTD d4-7 +1.70%
+2009-01-28,FTD day 6,26.14,50/200 rule exit | FTD d4-7 +1.70%
+2009-01-30,exit,25.03,50/200 rule exit | FTD d4-7 +1.70%
+2009-02-05,FTD day 4,26.33,50/200 rule exit | FTD d4-7 +1.70%
+2009-02-17,exit,25.17,50/200 rule exit | FTD d4-7 +1.70%
+2009-04-09,FTD day 6,28.42,50/200 rule exit | FTD d4-7 +1.70%
+2010-05-20,exit,38.45,50/200 rule exit | FTD d4-7 +1.70%
+2010-06-15,FTD day 4,40.5,50/200 rule exit | FTD d4-7 +1.70%
+2010-06-29,exit,37.75,50/200 rule exit | FTD d4-7 +1.70%
+2010-09-01,FTD day 4,38.96,50/200 rule exit | FTD d4-7 +1.70%
+2011-06-15,exit,47.52,50/200 rule exit | FTD d4-7 +1.70%
+2011-07-19,FTD day 5,51.63,50/200 rule exit | FTD d4-7 +1.70%
+2011-08-04,exit,47.53,50/200 rule exit | FTD d4-7 +1.70%
+2011-10-24,FTD day 7,51.41,50/200 rule exit | FTD d4-7 +1.70%
+2011-11-17,exit,49.07,50/200 rule exit | FTD d4-7 +1.70%
+2012-01-03,FTD day 7,50.21,50/200 rule exit | FTD d4-7 +1.70%
+2012-11-07,exit,57.01,50/200 rule exit | FTD d4-7 +1.70%
+2013-04-10,FTD day 7,62.7,50/200 rule exit | FTD d4-7 +1.70%
+2015-08-21,exit,94.4,50/200 rule exit | FTD d4-7 +1.70%
+2015-10-22,FTD day 6,101.38,50/200 rule exit | FTD d4-7 +1.70%
+2016-01-06,exit,100.35,50/200 rule exit | FTD d4-7 +1.70%
+2016-02-17,FTD day 5,95.01,50/200 rule exit | FTD d4-7 +1.70%
+2016-02-18,exit,93.93,50/200 rule exit | FTD d4-7 +1.70%
+2016-05-24,FTD day 7,100.83,50/200 rule exit | FTD d4-7 +1.70%
+2016-06-17,exit,99.27,50/200 rule exit | FTD d4-7 +1.70%
+2017-10-27,FTD day 4,142.75,50/200 rule exit | FTD d4-7 +1.70%
+2018-10-11,exit,161.3,50/200 rule exit | FTD d4-7 +1.70%
+2018-11-07,FTD day 7,166.99,50/200 rule exit | FTD d4-7 +1.70%
+2018-11-09,exit,163.13,50/200 rule exit | FTD d4-7 +1.70%
+2018-11-28,FTD day 5,160.45,50/200 rule exit | FTD d4-7 +1.70%
+2018-11-29,exit,159.92,50/200 rule exit | FTD d4-7 +1.70%
+2019-01-15,FTD day 6,154.88,50/200 rule exit | FTD d4-7 +1.70%
+2019-06-03,exit,162.56,50/200 rule exit | FTD d4-7 +1.70%
+2019-06-07,FTD day 4,172.99,50/200 rule exit | FTD d4-7 +1.70%
+2020-03-09,exit,186.15,50/200 rule exit | FTD d4-7 +1.70%
+2020-04-02,FTD day 4,179.26,50/200 rule exit | FTD d4-7 +1.70%
+2020-04-03,exit,176.72,50/200 rule exit | FTD d4-7 +1.70%
+2020-04-14,FTD day 6,204.17,50/200 rule exit | FTD d4-7 +1.70%
+2022-01-20,exit,351.52,50/200 rule exit | FTD d4-7 +1.70%
+2022-03-18,FTD day 4,341.58,50/200 rule exit | FTD d4-7 +1.70%
+2022-03-21,exit,340.63,50/200 rule exit | FTD d4-7 +1.70%
+2022-03-29,FTD day 6,361.17,50/200 rule exit | FTD d4-7 +1.70%
+2022-04-08,exit,339.72,50/200 rule exit | FTD d4-7 +1.70%
+2022-06-24,FTD day 5,287.21,50/200 rule exit | FTD d4-7 +1.70%
+2022-06-27,exit,285.1,50/200 rule exit | FTD d4-7 +1.70%
+2022-08-03,FTD day 6,314.77,50/200 rule exit | FTD d4-7 +1.70%
+2022-08-30,exit,293.45,50/200 rule exit | FTD d4-7 +1.70%
+2022-10-21,FTD day 5,268.98,50/200 rule exit | FTD d4-7 +1.70%
+2022-10-24,exit,271.94,50/200 rule exit | FTD d4-7 +1.70%
+2022-11-10,FTD day 5,276.14,50/200 rule exit | FTD d4-7 +1.70%
+2022-12-15,exit,270.42,50/200 rule exit | FTD d4-7 +1.70%
+2023-01-06,FTD day 6,263.14,50/200 rule exit | FTD d4-7 +1.70%
+2023-01-09,exit,264.85,50/200 rule exit | FTD d4-7 +1.70%
+2023-01-26,FTD day 4,287.17,50/200 rule exit | FTD d4-7 +1.70%
+2023-03-10,exit,282.48,50/200 rule exit | FTD d4-7 +1.70%
+2023-03-16,FTD day 4,300.35,50/200 rule exit | FTD d4-7 +1.70%
+2025-03-06,exit,484.09,50/200 rule exit | FTD d4-7 +1.70%
+2025-05-12,FTD day 7,504.32,50/200 rule exit | FTD d4-7 +1.70%
+2026-03-20,exit,580.08,50/200 rule exit | FTD d4-7 +1.70%
+2026-04-08,FTD day 6,604.79,50/200 rule exit | FTD d4-7 +1.70%
+2026-11-05,exit,647.05,50/200 rule exit | FTD d4-7 +1.70%
+2026-11-11,FTD day 4,690.38,50/200 rule exit | FTD d4-7 +1.70%
+2026-11-13,exit,679.89,50/200 rule exit | FTD d4-7 +1.70%
+2004-03-23,exit,28.66,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2004-04-22,FTD day 4,31.09,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2004-04-30,exit,29.28,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2004-05-25,FTD day 6,30.28,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2004-07-08,exit,30.06,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2004-08-18,FTD day 4,28.5,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2004-08-19,exit,28.35,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2004-10-01,FTD day 4,30.4,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2005-03-18,exit,31.04,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2005-12-01,FTD day 7,35.75,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2006-05-12,exit,34.31,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2006-06-29,FTD day 4,33.28,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2006-06-30,exit,33.12,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2006-09-25,FTD day 4,34.67,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2008-01-04,exit,41.54,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2008-01-31,FTD day 4,38.73,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2008-02-01,exit,39.13,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2008-02-13,FTD day 5,38.43,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2008-02-14,exit,37.74,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2008-03-18,FTD day 6,37.19,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2008-03-19,exit,36.27,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2008-04-18,FTD day 4,40.12,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2008-06-11,exit,40.69,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2008-11-04,FTD day 6,29.03,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2008-11-05,exit,27.51,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2008-12-02,FTD day 7,23.94,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2008-12-03,exit,24.62,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2008-12-30,FTD day 7,25.4,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2009-01-12,exit,25.43,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2009-01-28,FTD day 6,26.14,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2009-01-30,exit,25.03,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2009-02-05,FTD day 4,26.33,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2009-02-17,exit,25.17,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2009-04-09,FTD day 6,28.42,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2010-05-20,exit,38.45,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2010-06-15,FTD day 4,40.5,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2010-06-29,exit,37.75,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2010-09-01,FTD day 4,38.96,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2011-06-15,exit,47.52,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2011-07-19,FTD day 5,51.63,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2011-08-04,exit,47.53,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2011-10-24,FTD day 7,51.41,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2011-11-17,exit,49.07,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2012-01-03,FTD day 7,50.21,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2012-11-07,exit,57.01,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2013-04-10,FTD day 7,62.7,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2015-08-21,exit,94.4,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2015-10-22,FTD day 6,101.38,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2016-01-06,exit,100.35,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2016-02-17,FTD day 5,95.01,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2016-02-18,exit,93.93,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2016-05-24,FTD day 7,100.83,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2016-06-17,exit,99.27,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2017-10-27,FTD day 4,142.75,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2018-10-11,exit,161.3,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2018-11-07,FTD day 7,166.99,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2018-11-09,exit,163.13,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2018-11-28,FTD day 5,160.45,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2018-11-29,exit,159.92,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2019-01-15,FTD day 6,154.88,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2019-06-03,exit,162.56,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2019-06-07,FTD day 4,172.99,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2020-03-09,exit,186.15,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2020-04-02,FTD day 4,179.26,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2020-04-03,exit,176.72,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2020-04-14,FTD day 6,204.17,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2022-01-20,exit,351.52,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2022-03-18,FTD day 4,341.58,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2022-03-21,exit,340.63,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2022-03-29,FTD day 6,361.17,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2022-04-08,exit,339.72,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2022-06-24,FTD day 5,287.21,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2022-06-27,exit,285.1,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2022-08-03,FTD day 6,314.77,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2022-08-30,exit,293.45,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2022-10-21,FTD day 5,268.98,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2022-10-24,exit,271.94,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2022-11-10,FTD day 5,276.14,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2022-12-15,exit,270.42,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2023-01-06,FTD day 6,263.14,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2023-01-09,exit,264.85,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2023-01-26,FTD day 4,287.17,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2023-03-10,exit,282.48,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2023-03-16,FTD day 4,300.35,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2025-03-06,exit,484.09,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2025-05-12,FTD day 7,504.32,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2026-03-20,exit,580.08,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2026-04-08,FTD day 6,604.79,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2026-11-05,exit,647.05,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2026-11-11,FTD day 4,690.38,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2026-11-13,exit,679.89,50/200 rule exit | FTD d4-7 +1.70% +fail exit
+2004-03-23,exit,28.66,50/200 rule exit | FTD d4-10 +1.25%
+2004-03-29,FTD day 4,30.14,50/200 rule exit | FTD d4-10 +1.25%
+2004-04-30,exit,29.28,50/200 rule exit | FTD d4-10 +1.25%
+2004-05-25,FTD day 6,30.28,50/200 rule exit | FTD d4-10 +1.25%
+2004-07-08,exit,30.06,50/200 rule exit | FTD d4-10 +1.25%
+2004-08-18,FTD day 4,28.5,50/200 rule exit | FTD d4-10 +1.25%
+2004-08-19,exit,28.35,50/200 rule exit | FTD d4-10 +1.25%
+2004-08-25,FTD day 4,29.09,50/200 rule exit | FTD d4-10 +1.25%
+2004-08-26,exit,28.97,50/200 rule exit | FTD d4-10 +1.25%
+2004-09-10,FTD day 8,29.57,50/200 rule exit | FTD d4-10 +1.25%
+2005-03-18,exit,31.04,50/200 rule exit | FTD d4-10 +1.25%
+2005-05-18,FTD day 9,31.63,50/200 rule exit | FTD d4-10 +1.25%
+2005-06-30,exit,31.3,50/200 rule exit | FTD d4-10 +1.25%
+2005-09-06,FTD day 8,33.48,50/200 rule exit | FTD d4-10 +1.25%
+2005-10-12,exit,31.9,50/200 rule exit | FTD d4-10 +1.25%
+2005-10-19,FTD day 5,32.91,50/200 rule exit | FTD d4-10 +1.25%
+2006-05-12,exit,34.31,50/200 rule exit | FTD d4-10 +1.25%
+2006-06-21,FTD day 6,33.04,50/200 rule exit | FTD d4-10 +1.25%
+2006-06-22,exit,32.62,50/200 rule exit | FTD d4-10 +1.25%
+2006-08-15,FTD day 5,32.2,50/200 rule exit | FTD d4-10 +1.25%
+2008-01-04,exit,41.54,50/200 rule exit | FTD d4-10 +1.25%
+2008-01-31,FTD day 4,38.73,50/200 rule exit | FTD d4-10 +1.25%
+2008-02-01,exit,39.13,50/200 rule exit | FTD d4-10 +1.25%
+2008-02-13,FTD day 5,38.43,50/200 rule exit | FTD d4-10 +1.25%
+2008-02-14,exit,37.74,50/200 rule exit | FTD d4-10 +1.25%
+2008-03-18,FTD day 6,37.19,50/200 rule exit | FTD d4-10 +1.25%
+2008-03-19,exit,36.27,50/200 rule exit | FTD d4-10 +1.25%
+2008-04-01,FTD day 8,39.16,50/200 rule exit | FTD d4-10 +1.25%
+2008-06-11,exit,40.69,50/200 rule exit | FTD d4-10 +1.25%
+2008-06-19,FTD day 6,41.89,50/200 rule exit | FTD d4-10 +1.25%
+2008-06-20,exit,40.76,50/200 rule exit | FTD d4-10 +1.25%
+2008-07-23,FTD day 7,39.0,50/200 rule exit | FTD d4-10 +1.25%
+2008-07-24,exit,38.41,50/200 rule exit | FTD d4-10 +1.25%
+2008-08-05,FTD day 6,39.48,50/200 rule exit | FTD d4-10 +1.25%
+2008-08-07,exit,39.77,50/200 rule exit | FTD d4-10 +1.25%
+2008-11-04,FTD day 6,29.03,50/200 rule exit | FTD d4-10 +1.25%
+2008-11-05,exit,27.51,50/200 rule exit | FTD d4-10 +1.25%
+2008-12-02,FTD day 7,23.94,50/200 rule exit | FTD d4-10 +1.25%
+2008-12-03,exit,24.62,50/200 rule exit | FTD d4-10 +1.25%
+2008-12-16,FTD day 8,26.28,50/200 rule exit | FTD d4-10 +1.25%
+2008-12-17,exit,25.97,50/200 rule exit | FTD d4-10 +1.25%
+2009-01-28,FTD day 6,26.14,50/200 rule exit | FTD d4-10 +1.25%
+2009-01-30,exit,25.03,50/200 rule exit | FTD d4-10 +1.25%
+2009-02-05,FTD day 4,26.33,50/200 rule exit | FTD d4-10 +1.25%
+2009-02-17,exit,25.17,50/200 rule exit | FTD d4-10 +1.25%
+2009-03-18,FTD day 7,25.58,50/200 rule exit | FTD d4-10 +1.25%
+2010-05-20,exit,38.45,50/200 rule exit | FTD d4-10 +1.25%
+2010-06-15,FTD day 4,40.5,50/200 rule exit | FTD d4-10 +1.25%
+2010-06-29,exit,37.75,50/200 rule exit | FTD d4-10 +1.25%
+2010-07-13,FTD day 6,39.45,50/200 rule exit | FTD d4-10 +1.25%
+2010-07-16,exit,38.59,50/200 rule exit | FTD d4-10 +1.25%
+2010-08-17,FTD day 10,39.49,50/200 rule exit | FTD d4-10 +1.25%
+2010-08-19,exit,39.05,50/200 rule exit | FTD d4-10 +1.25%
+2010-10-15,FTD day 9,44.92,50/200 rule exit | FTD d4-10 +1.25%
+2011-06-15,exit,47.52,50/200 rule exit | FTD d4-10 +1.25%
+2011-07-01,FTD day 10,50.81,50/200 rule exit | FTD d4-10 +1.25%
+2011-08-04,exit,47.53,50/200 rule exit | FTD d4-10 +1.25%
+2011-09-12,FTD day 4,47.25,50/200 rule exit | FTD d4-10 +1.25%
+2011-09-13,exit,47.89,50/200 rule exit | FTD d4-10 +1.25%
+2011-10-14,FTD day 9,51.14,50/200 rule exit | FTD d4-10 +1.25%
+2011-11-17,exit,49.07,50/200 rule exit | FTD d4-10 +1.25%
+2011-12-09,FTD day 10,50.12,50/200 rule exit | FTD d4-10 +1.25%
+2011-12-13,exit,49.01,50/200 rule exit | FTD d4-10 +1.25%
+2012-01-03,FTD day 9,50.21,50/200 rule exit | FTD d4-10 +1.25%
+2012-11-07,exit,57.01,50/200 rule exit | FTD d4-10 +1.25%
+2012-12-11,FTD day 4,58.61,50/200 rule exit | FTD d4-10 +1.25%
+2012-12-13,exit,58.02,50/200 rule exit | FTD d4-10 +1.25%
+2013-05-02,FTD day 6,63.82,50/200 rule exit | FTD d4-10 +1.25%
+2015-08-21,exit,94.4,50/200 rule exit | FTD d4-10 +1.25%
+2015-10-22,FTD day 6,101.38,50/200 rule exit | FTD d4-10 +1.25%
+2016-01-06,exit,100.35,50/200 rule exit | FTD d4-10 +1.25%
+2016-02-17,FTD day 5,95.01,50/200 rule exit | FTD d4-10 +1.25%
+2016-02-18,exit,93.93,50/200 rule exit | FTD d4-10 +1.25%
+2016-03-01,FTD day 8,98.06,50/200 rule exit | FTD d4-10 +1.25%
+2016-04-28,exit,98.81,50/200 rule exit | FTD d4-10 +1.25%
+2016-07-08,FTD day 8,102.82,50/200 rule exit | FTD d4-10 +1.25%
+2018-10-11,exit,161.3,50/200 rule exit | FTD d4-10 +1.25%
+2018-11-07,FTD day 7,166.99,50/200 rule exit | FTD d4-10 +1.25%
+2018-11-09,exit,163.13,50/200 rule exit | FTD d4-10 +1.25%
+2018-11-28,FTD day 5,160.45,50/200 rule exit | FTD d4-10 +1.25%
+2018-11-29,exit,159.92,50/200 rule exit | FTD d4-10 +1.25%
+2019-02-12,FTD day 9,162.99,50/200 rule exit | FTD d4-10 +1.25%
+2019-06-03,exit,162.56,50/200 rule exit | FTD d4-10 +1.25%
+2019-06-07,FTD day 4,172.99,50/200 rule exit | FTD d4-10 +1.25%
+2020-03-09,exit,186.15,50/200 rule exit | FTD d4-10 +1.25%
+2020-04-14,FTD day 8,204.17,50/200 rule exit | FTD d4-10 +1.25%
+2022-01-20,exit,351.52,50/200 rule exit | FTD d4-10 +1.25%
+2022-03-02,FTD day 5,337.43,50/200 rule exit | FTD d4-10 +1.25%
+2022-03-03,exit,332.61,50/200 rule exit | FTD d4-10 +1.25%
+2022-03-18,FTD day 4,341.58,50/200 rule exit | FTD d4-10 +1.25%
+2022-03-21,exit,340.63,50/200 rule exit | FTD d4-10 +1.25%
+2022-03-29,FTD day 6,361.17,50/200 rule exit | FTD d4-10 +1.25%
+2022-04-08,exit,339.72,50/200 rule exit | FTD d4-10 +1.25%
+2022-06-24,FTD day 5,287.21,50/200 rule exit | FTD d4-10 +1.25%
+2022-06-27,exit,285.1,50/200 rule exit | FTD d4-10 +1.25%
+2022-07-15,FTD day 10,284.53,50/200 rule exit | FTD d4-10 +1.25%
+2022-07-18,exit,282.13,50/200 rule exit | FTD d4-10 +1.25%
+2022-07-27,FTD day 7,299.1,50/200 rule exit | FTD d4-10 +1.25%
+2022-08-30,exit,293.45,50/200 rule exit | FTD d4-10 +1.25%
+2022-10-21,FTD day 5,268.98,50/200 rule exit | FTD d4-10 +1.25%
+2022-10-24,exit,271.94,50/200 rule exit | FTD d4-10 +1.25%
+2022-11-10,FTD day 5,276.14,50/200 rule exit | FTD d4-10 +1.25%
+2022-12-15,exit,270.42,50/200 rule exit | FTD d4-10 +1.25%
+2023-01-06,FTD day 6,263.14,50/200 rule exit | FTD d4-10 +1.25%
+2023-01-09,exit,264.85,50/200 rule exit | FTD d4-10 +1.25%
+2023-01-20,FTD day 8,276.73,50/200 rule exit | FTD d4-10 +1.25%
+2023-03-10,exit,282.48,50/200 rule exit | FTD d4-10 +1.25%
+2023-03-16,FTD day 4,300.35,50/200 rule exit | FTD d4-10 +1.25%
+2025-03-06,exit,484.09,50/200 rule exit | FTD d4-10 +1.25%
+2025-03-19,FTD day 4,476.84,50/200 rule exit | FTD d4-10 +1.25%
+2025-03-20,exit,475.22,50/200 rule exit | FTD d4-10 +1.25%
+2025-04-22,FTD day 9,441.39,50/200 rule exit | FTD d4-10 +1.25%
+2025-04-23,exit,451.4,50/200 rule exit | FTD d4-10 +1.25%
+2025-08-12,FTD day 5,576.67,50/200 rule exit | FTD d4-10 +1.25%
+2026-03-20,exit,580.08,50/200 rule exit | FTD d4-10 +1.25%
+2026-04-08,FTD day 6,604.79,50/200 rule exit | FTD d4-10 +1.25%
+2026-11-05,exit,647.05,50/200 rule exit | FTD d4-10 +1.25%
+2026-11-11,FTD day 4,690.38,50/200 rule exit | FTD d4-10 +1.25%
+2026-11-13,exit,679.89,50/200 rule exit | FTD d4-10 +1.25%
+2004-03-23,exit,28.66,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2004-03-29,FTD day 4,30.14,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2004-04-30,exit,29.28,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2004-05-25,FTD day 6,30.28,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2004-07-08,exit,30.06,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2004-08-18,FTD day 4,28.5,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2004-08-19,exit,28.35,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2004-08-25,FTD day 4,29.09,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2004-08-26,exit,28.97,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2004-09-10,FTD day 8,29.57,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2005-03-18,exit,31.04,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2005-05-18,FTD day 9,31.63,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2005-06-30,exit,31.3,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2005-09-06,FTD day 8,33.48,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2005-10-12,exit,31.9,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2005-10-19,FTD day 5,32.91,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2006-05-12,exit,34.31,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2006-06-21,FTD day 6,33.04,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2006-06-22,exit,32.62,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2006-08-15,FTD day 5,32.2,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2008-01-04,exit,41.54,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2008-01-31,FTD day 4,38.73,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2008-02-01,exit,39.13,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2008-02-13,FTD day 5,38.43,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2008-02-14,exit,37.74,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2008-03-18,FTD day 6,37.19,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2008-03-19,exit,36.27,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2008-04-01,FTD day 8,39.16,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2008-06-11,exit,40.69,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2008-06-19,FTD day 6,41.89,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2008-06-20,exit,40.76,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2008-07-23,FTD day 7,39.0,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2008-07-24,exit,38.41,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2008-08-05,FTD day 6,39.48,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2008-08-07,exit,39.77,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2008-11-04,FTD day 6,29.03,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2008-11-05,exit,27.51,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2008-12-02,FTD day 7,23.94,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2008-12-03,exit,24.62,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2008-12-16,FTD day 8,26.28,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2008-12-17,exit,25.97,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2009-01-28,FTD day 6,26.14,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2009-01-30,exit,25.03,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2009-02-05,FTD day 4,26.33,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2009-02-17,exit,25.17,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2009-03-18,FTD day 7,25.58,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2010-05-20,exit,38.45,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2010-06-15,FTD day 4,40.5,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2010-06-29,exit,37.75,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2010-07-13,FTD day 6,39.45,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2010-07-16,exit,38.59,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2010-08-17,FTD day 10,39.49,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2010-08-19,exit,39.05,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2010-10-15,FTD day 9,44.92,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2011-06-15,exit,47.52,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2011-07-01,FTD day 10,50.81,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2011-08-04,exit,47.53,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2011-09-12,FTD day 4,47.25,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2011-09-13,exit,47.89,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2011-10-14,FTD day 9,51.14,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2011-11-17,exit,49.07,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2011-12-09,FTD day 10,50.12,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2011-12-13,exit,49.01,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2012-01-03,FTD day 9,50.21,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2012-11-07,exit,57.01,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2012-12-11,FTD day 4,58.61,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2012-12-13,exit,58.02,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2013-05-02,FTD day 6,63.82,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2015-08-21,exit,94.4,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2015-10-22,FTD day 6,101.38,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2016-01-06,exit,100.35,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2016-02-17,FTD day 5,95.01,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2016-02-18,exit,93.93,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2016-03-01,FTD day 8,98.06,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2016-04-28,exit,98.81,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2016-07-08,FTD day 8,102.82,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2018-10-11,exit,161.3,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2018-11-07,FTD day 7,166.99,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2018-11-09,exit,163.13,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2018-11-28,FTD day 5,160.45,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2018-11-29,exit,159.92,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2019-02-12,FTD day 9,162.99,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2019-06-03,exit,162.56,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2019-06-07,FTD day 4,172.99,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2020-03-09,exit,186.15,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2020-04-14,FTD day 8,204.17,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2022-01-20,exit,351.52,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2022-03-02,FTD day 5,337.43,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2022-03-03,exit,332.61,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2022-03-18,FTD day 4,341.58,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2022-03-21,exit,340.63,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2022-03-29,FTD day 6,361.17,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2022-04-08,exit,339.72,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2022-06-24,FTD day 5,287.21,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2022-06-27,exit,285.1,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2022-07-15,FTD day 10,284.53,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2022-07-18,exit,282.13,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2022-07-27,FTD day 7,299.1,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2022-08-30,exit,293.45,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2022-10-21,FTD day 5,268.98,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2022-10-24,exit,271.94,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2022-11-10,FTD day 5,276.14,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2022-12-15,exit,270.42,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2023-01-06,FTD day 6,263.14,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2023-01-09,exit,264.85,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2023-01-20,FTD day 8,276.73,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2023-03-10,exit,282.48,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2023-03-16,FTD day 4,300.35,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2025-03-06,exit,484.09,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2025-03-19,FTD day 4,476.84,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2025-03-20,exit,475.22,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2025-04-22,FTD day 9,441.39,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2025-04-23,exit,451.4,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2025-08-12,FTD day 5,576.67,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2026-03-20,exit,580.08,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2026-04-08,FTD day 6,604.79,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2026-11-05,exit,647.05,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2026-11-11,FTD day 4,690.38,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2026-11-13,exit,679.89,50/200 rule exit | FTD d4-10 +1.25% +fail exit
+2004-03-23,exit,28.66,50/200 rule exit | FTD d4-10 +1.70%
+2004-04-02,FTD day 8,31.24,50/200 rule exit | FTD d4-10 +1.70%
+2004-04-30,exit,29.28,50/200 rule exit | FTD d4-10 +1.70%
+2004-05-25,FTD day 6,30.28,50/200 rule exit | FTD d4-10 +1.70%
+2004-07-08,exit,30.06,50/200 rule exit | FTD d4-10 +1.70%
+2004-08-18,FTD day 4,28.5,50/200 rule exit | FTD d4-10 +1.70%
+2004-08-19,exit,28.35,50/200 rule exit | FTD d4-10 +1.70%
+2004-10-01,FTD day 4,30.4,50/200 rule exit | FTD d4-10 +1.70%
+2005-03-18,exit,31.04,50/200 rule exit | FTD d4-10 +1.70%
+2005-10-19,FTD day 9,32.91,50/200 rule exit | FTD d4-10 +1.70%
+2006-05-12,exit,34.31,50/200 rule exit | FTD d4-10 +1.70%
+2006-08-15,FTD day 5,32.2,50/200 rule exit | FTD d4-10 +1.70%
+2008-01-04,exit,41.54,50/200 rule exit | FTD d4-10 +1.70%
+2008-01-31,FTD day 4,38.73,50/200 rule exit | FTD d4-10 +1.70%
+2008-02-01,exit,39.13,50/200 rule exit | FTD d4-10 +1.70%
+2008-02-13,FTD day 5,38.43,50/200 rule exit | FTD d4-10 +1.70%
+2008-02-14,exit,37.74,50/200 rule exit | FTD d4-10 +1.70%
+2008-03-18,FTD day 6,37.19,50/200 rule exit | FTD d4-10 +1.70%
+2008-03-19,exit,36.27,50/200 rule exit | FTD d4-10 +1.70%
+2008-04-01,FTD day 8,39.16,50/200 rule exit | FTD d4-10 +1.70%
+2008-06-11,exit,40.69,50/200 rule exit | FTD d4-10 +1.70%
+2008-08-05,FTD day 5,39.48,50/200 rule exit | FTD d4-10 +1.70%
+2008-08-07,exit,39.77,50/200 rule exit | FTD d4-10 +1.70%
+2008-11-04,FTD day 6,29.03,50/200 rule exit | FTD d4-10 +1.70%
+2008-11-05,exit,27.51,50/200 rule exit | FTD d4-10 +1.70%
+2008-12-02,FTD day 7,23.94,50/200 rule exit | FTD d4-10 +1.70%
+2008-12-03,exit,24.62,50/200 rule exit | FTD d4-10 +1.70%
+2008-12-16,FTD day 8,26.28,50/200 rule exit | FTD d4-10 +1.70%
+2008-12-17,exit,25.97,50/200 rule exit | FTD d4-10 +1.70%
+2009-01-28,FTD day 6,26.14,50/200 rule exit | FTD d4-10 +1.70%
+2009-01-30,exit,25.03,50/200 rule exit | FTD d4-10 +1.70%
+2009-02-05,FTD day 4,26.33,50/200 rule exit | FTD d4-10 +1.70%
+2009-02-17,exit,25.17,50/200 rule exit | FTD d4-10 +1.70%
+2009-03-23,FTD day 10,26.66,50/200 rule exit | FTD d4-10 +1.70%
+2010-05-20,exit,38.45,50/200 rule exit | FTD d4-10 +1.70%
+2010-06-15,FTD day 4,40.5,50/200 rule exit | FTD d4-10 +1.70%
+2010-06-29,exit,37.75,50/200 rule exit | FTD d4-10 +1.70%
+2010-09-01,FTD day 6,38.96,50/200 rule exit | FTD d4-10 +1.70%
+2011-06-15,exit,47.52,50/200 rule exit | FTD d4-10 +1.70%
+2011-07-19,FTD day 10,51.63,50/200 rule exit | FTD d4-10 +1.70%
+2011-08-04,exit,47.53,50/200 rule exit | FTD d4-10 +1.70%
+2011-10-04,FTD day 8,45.87,50/200 rule exit | FTD d4-10 +1.70%
+2011-10-05,exit,47.05,50/200 rule exit | FTD d4-10 +1.70%
+2011-10-14,FTD day 7,51.14,50/200 rule exit | FTD d4-10 +1.70%
+2011-11-17,exit,49.07,50/200 rule exit | FTD d4-10 +1.70%
+2013-07-11,FTD day 9,67.34,50/200 rule exit | FTD d4-10 +1.70%
+2015-08-21,exit,94.4,50/200 rule exit | FTD d4-10 +1.70%
+2015-10-22,FTD day 6,101.38,50/200 rule exit | FTD d4-10 +1.70%
+2016-01-06,exit,100.35,50/200 rule exit | FTD d4-10 +1.70%
+2016-02-17,FTD day 5,95.01,50/200 rule exit | FTD d4-10 +1.70%
+2016-02-18,exit,93.93,50/200 rule exit | FTD d4-10 +1.70%
+2016-03-01,FTD day 8,98.06,50/200 rule exit | FTD d4-10 +1.70%
+2016-04-28,exit,98.81,50/200 rule exit | FTD d4-10 +1.70%
+2017-10-27,FTD day 10,142.75,50/200 rule exit | FTD d4-10 +1.70%
+2018-10-11,exit,161.3,50/200 rule exit | FTD d4-10 +1.70%
+2018-11-07,FTD day 7,166.99,50/200 rule exit | FTD d4-10 +1.70%
+2018-11-09,exit,163.13,50/200 rule exit | FTD d4-10 +1.70%
+2018-11-28,FTD day 5,160.45,50/200 rule exit | FTD d4-10 +1.70%
+2018-11-29,exit,159.92,50/200 rule exit | FTD d4-10 +1.70%
+2019-06-07,FTD day 7,172.99,50/200 rule exit | FTD d4-10 +1.70%
+2020-03-09,exit,186.15,50/200 rule exit | FTD d4-10 +1.70%
+2020-04-14,FTD day 8,204.17,50/200 rule exit | FTD d4-10 +1.70%
+2022-01-20,exit,351.52,50/200 rule exit | FTD d4-10 +1.70%
+2022-03-18,FTD day 4,341.58,50/200 rule exit | FTD d4-10 +1.70%
+2022-03-21,exit,340.63,50/200 rule exit | FTD d4-10 +1.70%
+2022-03-29,FTD day 6,361.17,50/200 rule exit | FTD d4-10 +1.70%
+2022-04-08,exit,339.72,50/200 rule exit | FTD d4-10 +1.70%
+2022-06-24,FTD day 5,287.21,50/200 rule exit | FTD d4-10 +1.70%
+2022-06-27,exit,285.1,50/200 rule exit | FTD d4-10 +1.70%
+2022-07-15,FTD day 10,284.53,50/200 rule exit | FTD d4-10 +1.70%
+2022-07-18,exit,282.13,50/200 rule exit | FTD d4-10 +1.70%
+2022-07-27,FTD day 7,299.1,50/200 rule exit | FTD d4-10 +1.70%
+2022-08-30,exit,293.45,50/200 rule exit | FTD d4-10 +1.70%
+2022-10-21,FTD day 5,268.98,50/200 rule exit | FTD d4-10 +1.70%
+2022-10-24,exit,271.94,50/200 rule exit | FTD d4-10 +1.70%
+2022-11-10,FTD day 5,276.14,50/200 rule exit | FTD d4-10 +1.70%
+2022-12-15,exit,270.42,50/200 rule exit | FTD d4-10 +1.70%
+2023-01-06,FTD day 6,263.14,50/200 rule exit | FTD d4-10 +1.70%
+2023-01-09,exit,264.85,50/200 rule exit | FTD d4-10 +1.70%
+2023-01-20,FTD day 8,276.73,50/200 rule exit | FTD d4-10 +1.70%
+2023-03-10,exit,282.48,50/200 rule exit | FTD d4-10 +1.70%
+2023-03-16,FTD day 4,300.35,50/200 rule exit | FTD d4-10 +1.70%
+2025-03-06,exit,484.09,50/200 rule exit | FTD d4-10 +1.70%
+2025-04-22,FTD day 9,441.39,50/200 rule exit | FTD d4-10 +1.70%
+2025-04-23,exit,451.4,50/200 rule exit | FTD d4-10 +1.70%
+2026-04-08,FTD day 6,604.79,50/200 rule exit | FTD d4-10 +1.70%
+2026-11-05,exit,647.05,50/200 rule exit | FTD d4-10 +1.70%
+2026-11-11,FTD day 4,690.38,50/200 rule exit | FTD d4-10 +1.70%
+2026-11-13,exit,679.89,50/200 rule exit | FTD d4-10 +1.70%
+2004-03-23,exit,28.66,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2004-04-02,FTD day 8,31.24,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2004-04-30,exit,29.28,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2004-05-25,FTD day 6,30.28,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2004-07-08,exit,30.06,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2004-08-18,FTD day 4,28.5,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2004-08-19,exit,28.35,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2004-10-01,FTD day 4,30.4,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2005-03-18,exit,31.04,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2005-10-19,FTD day 9,32.91,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2006-05-12,exit,34.31,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2006-08-15,FTD day 5,32.2,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2008-01-04,exit,41.54,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2008-01-31,FTD day 4,38.73,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2008-02-01,exit,39.13,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2008-02-13,FTD day 5,38.43,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2008-02-14,exit,37.74,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2008-03-18,FTD day 6,37.19,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2008-03-19,exit,36.27,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2008-04-01,FTD day 8,39.16,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2008-06-11,exit,40.69,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2008-08-05,FTD day 5,39.48,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2008-08-07,exit,39.77,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2008-11-04,FTD day 6,29.03,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2008-11-05,exit,27.51,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2008-12-02,FTD day 7,23.94,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2008-12-03,exit,24.62,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2008-12-16,FTD day 8,26.28,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2008-12-17,exit,25.97,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2009-01-28,FTD day 6,26.14,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2009-01-30,exit,25.03,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2009-02-05,FTD day 4,26.33,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2009-02-17,exit,25.17,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2009-03-23,FTD day 10,26.66,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2010-05-20,exit,38.45,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2010-06-15,FTD day 4,40.5,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2010-06-29,exit,37.75,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2010-09-01,FTD day 6,38.96,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2011-06-15,exit,47.52,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2011-07-19,FTD day 10,51.63,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2011-08-04,exit,47.53,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2011-10-04,FTD day 8,45.87,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2011-10-05,exit,47.05,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2011-10-14,FTD day 7,51.14,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2011-11-17,exit,49.07,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2013-07-11,FTD day 9,67.34,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2015-08-21,exit,94.4,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2015-10-22,FTD day 6,101.38,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2016-01-06,exit,100.35,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2016-02-17,FTD day 5,95.01,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2016-02-18,exit,93.93,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2016-03-01,FTD day 8,98.06,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2016-04-28,exit,98.81,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2017-10-27,FTD day 10,142.75,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2018-10-11,exit,161.3,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2018-11-07,FTD day 7,166.99,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2018-11-09,exit,163.13,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2018-11-28,FTD day 5,160.45,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2018-11-29,exit,159.92,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2019-06-07,FTD day 7,172.99,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2020-03-09,exit,186.15,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2020-04-14,FTD day 8,204.17,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2022-01-20,exit,351.52,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2022-03-18,FTD day 4,341.58,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2022-03-21,exit,340.63,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2022-03-29,FTD day 6,361.17,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2022-04-08,exit,339.72,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2022-06-24,FTD day 5,287.21,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2022-06-27,exit,285.1,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2022-07-15,FTD day 10,284.53,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2022-07-18,exit,282.13,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2022-07-27,FTD day 7,299.1,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2022-08-30,exit,293.45,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2022-10-21,FTD day 5,268.98,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2022-10-24,exit,271.94,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2022-11-10,FTD day 5,276.14,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2022-12-15,exit,270.42,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2023-01-06,FTD day 6,263.14,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2023-01-09,exit,264.85,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2023-01-20,FTD day 8,276.73,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2023-03-10,exit,282.48,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2023-03-16,FTD day 4,300.35,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2025-03-06,exit,484.09,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2025-04-22,FTD day 9,441.39,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2025-04-23,exit,451.4,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2026-04-08,FTD day 6,604.79,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2026-11-05,exit,647.05,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2026-11-11,FTD day 4,690.38,50/200 rule exit | FTD d4-10 +1.70% +fail exit
+2026-11-13,exit,679.89,50/200 rule exit | FTD d4-10 +1.70% +fail exit

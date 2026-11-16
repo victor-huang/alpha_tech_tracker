@@ -1,0 +1,1865 @@
+day,event,close,rule
+2003-08-05,exit,25.43,disarm: never (no re-exit)
+2003-08-15,re-enter,26.24,disarm: never (no re-exit)
+2003-09-30,exit,27.29,disarm: never (no re-exit)
+2003-10-01,re-enter,27.9,disarm: never (no re-exit)
+2003-11-18,exit,28.52,disarm: never (no re-exit)
+2003-11-24,re-enter,29.61,disarm: never (no re-exit)
+2004-02-04,exit,30.59,disarm: never (no re-exit)
+2004-02-06,re-enter,31.27,disarm: never (no re-exit)
+2004-03-09,exit,30.03,disarm: never (no re-exit)
+2004-04-02,re-enter,31.24,disarm: never (no re-exit)
+2004-05-10,exit,29.2,disarm: never (no re-exit)
+2004-05-25,re-enter,30.28,disarm: never (no re-exit)
+2004-07-16,exit,29.2,disarm: never (no re-exit)
+2004-09-02,re-enter,29.29,disarm: never (no re-exit)
+2005-01-05,exit,32.76,disarm: never (no re-exit)
+2005-03-07,re-enter,32.36,disarm: never (no re-exit)
+2005-03-22,exit,30.72,disarm: never (no re-exit)
+2005-05-13,re-enter,30.81,disarm: never (no re-exit)
+2005-06-30,exit,31.3,disarm: never (no re-exit)
+2005-07-05,re-enter,31.58,disarm: never (no re-exit)
+2005-09-19,exit,33.26,disarm: never (no re-exit)
+2005-09-29,re-enter,33.36,disarm: never (no re-exit)
+2005-10-27,exit,32.36,disarm: never (no re-exit)
+2005-10-31,re-enter,33.08,disarm: never (no re-exit)
+2006-01-25,exit,35.19,disarm: never (no re-exit)
+2006-01-27,re-enter,35.92,disarm: never (no re-exit)
+2006-03-10,exit,34.6,disarm: never (no re-exit)
+2006-03-15,re-enter,35.59,disarm: never (no re-exit)
+2006-05-11,exit,34.78,disarm: never (no re-exit)
+2006-08-15,re-enter,32.2,disarm: never (no re-exit)
+2006-12-22,exit,36.74,disarm: never (no re-exit)
+2006-12-27,re-enter,37.08,disarm: never (no re-exit)
+2007-01-25,exit,37.42,disarm: never (no re-exit)
+2007-01-31,re-enter,37.71,disarm: never (no re-exit)
+2007-08-09,exit,40.88,disarm: never (no re-exit)
+2007-08-24,re-enter,41.3,disarm: never (no re-exit)
+2007-11-08,exit,44.35,disarm: never (no re-exit)
+2007-12-06,re-enter,44.86,disarm: never (no re-exit)
+2008-01-16,exit,39.52,disarm: never (no re-exit)
+2008-03-24,re-enter,38.29,disarm: never (no re-exit)
+2008-06-11,exit,40.69,disarm: never (no re-exit)
+2008-06-13,re-enter,41.55,disarm: never (no re-exit)
+2008-09-02,exit,39.15,disarm: never (no re-exit)
+2008-12-16,re-enter,26.28,disarm: never (no re-exit)
+2009-02-17,exit,25.17,disarm: never (no re-exit)
+2009-03-17,re-enter,25.26,disarm: never (no re-exit)
+2009-10-28,exit,35.79,disarm: never (no re-exit)
+2009-10-29,re-enter,36.39,disarm: never (no re-exit)
+2010-01-22,exit,38.25,disarm: never (no re-exit)
+2010-02-18,re-enter,38.84,disarm: never (no re-exit)
+2010-05-06,exit,40.38,disarm: never (no re-exit)
+2010-05-12,re-enter,42.16,disarm: never (no re-exit)
+2010-06-08,exit,38.31,disarm: never (no re-exit)
+2010-07-14,re-enter,39.65,disarm: never (no re-exit)
+2010-08-24,exit,37.99,disarm: never (no re-exit)
+2010-09-02,re-enter,39.39,disarm: never (no re-exit)
+2011-03-10,exit,49.07,disarm: never (no re-exit)
+2011-03-25,re-enter,49.76,disarm: never (no re-exit)
+2011-06-03,exit,49.33,disarm: never (no re-exit)
+2011-06-30,re-enter,50.05,disarm: never (no re-exit)
+2011-08-02,exit,49.37,disarm: never (no re-exit)
+2011-09-14,re-enter,48.57,disarm: never (no re-exit)
+2012-04-23,exit,57.52,disarm: never (no re-exit)
+2012-04-25,re-enter,58.73,disarm: never (no re-exit)
+2012-05-18,exit,53.75,disarm: never (no re-exit)
+2012-06-19,re-enter,56.91,disarm: never (no re-exit)
+2012-07-25,exit,55.4,disarm: never (no re-exit)
+2012-07-26,re-enter,56.14,disarm: never (no re-exit)
+2012-10-18,exit,59.78,disarm: never (no re-exit)
+2012-12-11,re-enter,58.61,disarm: never (no re-exit)
+2013-02-25,exit,59.24,disarm: never (no re-exit)
+2013-02-27,re-enter,60.07,disarm: never (no re-exit)
+2013-04-17,exit,60.99,disarm: never (no re-exit)
+2013-04-22,re-enter,61.6,disarm: never (no re-exit)
+2013-06-20,exit,63.6,disarm: never (no re-exit)
+2013-07-05,re-enter,65.19,disarm: never (no re-exit)
+2013-10-09,exit,69.35,disarm: never (no re-exit)
+2013-10-10,re-enter,70.82,disarm: never (no re-exit)
+2014-01-29,exit,76.76,disarm: never (no re-exit)
+2014-01-30,re-enter,78.18,disarm: never (no re-exit)
+2014-03-26,exit,79.47,disarm: never (no re-exit)
+2014-04-01,re-enter,81.15,disarm: never (no re-exit)
+2014-10-01,exit,88.87,disarm: never (no re-exit)
+2014-10-03,re-enter,89.75,disarm: never (no re-exit)
+2014-12-16,exit,91.41,disarm: never (no re-exit)
+2014-12-17,re-enter,93.07,disarm: never (no re-exit)
+2015-03-26,exit,96.67,disarm: never (no re-exit)
+2015-03-27,re-enter,97.05,disarm: never (no re-exit)
+2015-06-09,exit,99.34,disarm: never (no re-exit)
+2015-06-10,re-enter,100.7,disarm: never (no re-exit)
+2015-08-19,exit,101.53,disarm: never (no re-exit)
+2015-10-08,re-enter,98.0,disarm: never (no re-exit)
+2015-12-11,exit,102.38,disarm: never (no re-exit)
+2015-12-15,re-enter,103.79,disarm: never (no re-exit)
+2016-01-08,exit,96.41,disarm: never (no re-exit)
+2016-03-01,re-enter,98.06,disarm: never (no re-exit)
+2016-04-29,exit,98.29,disarm: never (no re-exit)
+2016-05-24,re-enter,100.83,disarm: never (no re-exit)
+2016-09-09,exit,106.53,disarm: never (no re-exit)
+2016-09-12,re-enter,108.44,disarm: never (no re-exit)
+2016-10-28,exit,109.43,disarm: never (no re-exit)
+2016-11-09,re-enter,109.94,disarm: never (no re-exit)
+2017-06-27,exit,129.99,disarm: never (no re-exit)
+2017-06-28,re-enter,131.87,disarm: never (no re-exit)
+2018-02-05,exit,149.55,disarm: never (no re-exit)
+2018-02-06,re-enter,153.51,disarm: never (no re-exit)
+2018-03-22,exit,154.23,disarm: never (no re-exit)
+2018-04-17,re-enter,157.35,disarm: never (no re-exit)
+2018-10-05,exit,171.34,disarm: never (no re-exit)
+2019-01-15,re-enter,154.88,disarm: never (no re-exit)
+2019-05-13,exit,170.64,disarm: never (no re-exit)
+2019-05-15,re-enter,174.95,disarm: never (no re-exit)
+2019-08-05,exit,173.08,disarm: never (no re-exit)
+2019-08-08,re-enter,180.29,disarm: never (no re-exit)
+2019-10-02,exit,176.61,disarm: never (no re-exit)
+2019-10-04,re-enter,181.18,disarm: never (no re-exit)
+2020-02-25,exit,207.11,disarm: never (no re-exit)
+2020-04-14,re-enter,204.17,disarm: never (no re-exit)
+2020-09-11,exit,261.09,disarm: never (no re-exit)
+2020-09-14,re-enter,265.64,disarm: never (no re-exit)
+2021-02-25,exit,302.55,disarm: never (no re-exit)
+2021-03-01,re-enter,312.95,disarm: never (no re-exit)
+2021-05-12,exit,306.86,disarm: never (no re-exit)
+2021-05-20,re-enter,318.42,disarm: never (no re-exit)
+2021-09-20,exit,354.93,disarm: never (no re-exit)
+2021-09-22,re-enter,358.69,disarm: never (no re-exit)
+2021-12-17,exit,373.58,disarm: never (no re-exit)
+2021-12-21,re-enter,378.23,disarm: never (no re-exit)
+2022-01-19,exit,356.14,disarm: never (no re-exit)
+2022-03-22,re-enter,347.32,disarm: never (no re-exit)
+2022-04-22,exit,316.61,disarm: never (no re-exit)
+2022-07-19,re-enter,290.8,disarm: never (no re-exit)
+2022-09-13,exit,286.32,disarm: never (no re-exit)
+2022-11-10,re-enter,276.14,disarm: never (no re-exit)
+2023-03-10,exit,282.48,disarm: never (no re-exit)
+2023-03-13,re-enter,284.57,disarm: never (no re-exit)
+2023-08-11,exit,359.58,disarm: never (no re-exit)
+2023-08-14,re-enter,363.62,disarm: never (no re-exit)
+2023-10-03,exit,348.97,disarm: never (no re-exit)
+2023-10-10,re-enter,362.41,disarm: never (no re-exit)
+2023-10-26,exit,337.9,disarm: never (no re-exit)
+2023-11-03,re-enter,361.55,disarm: never (no re-exit)
+2024-04-15,exit,425.47,disarm: never (no re-exit)
+2024-05-06,re-enter,434.54,disarm: never (no re-exit)
+2024-07-24,exit,458.09,disarm: never (no re-exit)
+2024-08-15,re-enter,469.01,disarm: never (no re-exit)
+2025-01-10,exit,502.92,disarm: never (no re-exit)
+2025-01-15,re-enter,512.35,disarm: never (no re-exit)
+2025-02-27,exit,496.06,disarm: never (no re-exit)
+2025-05-01,re-enter,478.33,disarm: never (no re-exit)
+2025-11-17,exit,600.84,disarm: never (no re-exit)
+2025-11-25,re-enter,606.04,disarm: never (no re-exit)
+2026-01-20,exit,606.0,disarm: never (no re-exit)
+2026-01-21,re-enter,614.19,disarm: never (no re-exit)
+2026-02-26,exit,607.17,disarm: never (no re-exit)
+2026-04-08,re-enter,604.79,disarm: never (no re-exit)
+2026-07-07,exit,708.69,disarm: never (no re-exit)
+2026-07-09,re-enter,722.53,disarm: never (no re-exit)
+2026-09-14,exit,708.44,disarm: never (no re-exit)
+2026-09-17,re-enter,716.17,disarm: never (no re-exit)
+2026-10-29,exit,715.34,disarm: never (no re-exit)
+2003-08-05,exit,25.43,disarm: new 52-week high
+2003-08-15,re-enter,26.24,disarm: new 52-week high
+2003-09-30,exit,27.29,disarm: new 52-week high
+2003-10-01,re-enter,27.9,disarm: new 52-week high
+2003-11-18,exit,28.52,disarm: new 52-week high
+2003-11-24,re-enter,29.61,disarm: new 52-week high
+2003-12-09,re-exit,28.98,disarm: new 52-week high
+2003-12-11,re-enter,29.71,disarm: new 52-week high
+2003-12-15,re-exit,29.28,disarm: new 52-week high
+2003-12-18,re-enter,29.93,disarm: new 52-week high
+2004-02-04,exit,30.59,disarm: new 52-week high
+2004-02-06,re-enter,31.27,disarm: new 52-week high
+2004-02-23,re-exit,30.69,disarm: new 52-week high
+2004-04-02,re-enter,31.24,disarm: new 52-week high
+2004-04-15,re-exit,30.44,disarm: new 52-week high
+2004-04-19,re-enter,30.76,disarm: new 52-week high
+2004-04-20,re-exit,30.05,disarm: new 52-week high
+2004-04-22,re-enter,31.09,disarm: new 52-week high
+2004-04-29,re-exit,30.01,disarm: new 52-week high
+2004-05-25,re-enter,30.28,disarm: new 52-week high
+2004-07-06,re-exit,30.34,disarm: new 52-week high
+2004-07-07,re-enter,30.4,disarm: new 52-week high
+2004-07-08,re-exit,30.06,disarm: new 52-week high
+2004-09-02,re-enter,29.29,disarm: new 52-week high
+2004-09-03,re-exit,28.75,disarm: new 52-week high
+2004-09-09,re-enter,29.13,disarm: new 52-week high
+2005-01-05,exit,32.76,disarm: new 52-week high
+2005-03-07,re-enter,32.36,disarm: new 52-week high
+2005-03-08,re-exit,32.03,disarm: new 52-week high
+2005-05-13,re-enter,30.81,disarm: new 52-week high
+2005-06-30,exit,31.3,disarm: new 52-week high
+2005-07-05,re-enter,31.58,disarm: new 52-week high
+2005-07-06,re-exit,31.43,disarm: new 52-week high
+2005-07-07,re-enter,31.54,disarm: new 52-week high
+2005-09-19,exit,33.26,disarm: new 52-week high
+2005-09-29,re-enter,33.36,disarm: new 52-week high
+2005-10-05,re-exit,32.98,disarm: new 52-week high
+2005-10-24,re-enter,33.32,disarm: new 52-week high
+2005-10-27,re-exit,32.36,disarm: new 52-week high
+2005-10-31,re-enter,33.08,disarm: new 52-week high
+2006-01-25,exit,35.19,disarm: new 52-week high
+2006-01-27,re-enter,35.92,disarm: new 52-week high
+2006-02-02,re-exit,35.34,disarm: new 52-week high
+2006-02-27,re-enter,35.59,disarm: new 52-week high
+2006-02-28,re-exit,35.06,disarm: new 52-week high
+2006-03-01,re-enter,35.54,disarm: new 52-week high
+2006-03-03,re-exit,35.36,disarm: new 52-week high
+2006-03-15,re-enter,35.59,disarm: new 52-week high
+2006-03-16,re-exit,35.29,disarm: new 52-week high
+2006-03-20,re-enter,35.47,disarm: new 52-week high
+2006-03-21,re-exit,35.09,disarm: new 52-week high
+2006-03-29,re-enter,35.78,disarm: new 52-week high
+2006-05-01,re-exit,35.37,disarm: new 52-week high
+2006-05-04,re-enter,35.71,disarm: new 52-week high
+2006-05-10,re-exit,35.57,disarm: new 52-week high
+2006-08-15,re-enter,32.2,disarm: new 52-week high
+2006-12-22,exit,36.74,disarm: new 52-week high
+2006-12-27,re-enter,37.08,disarm: new 52-week high
+2006-12-28,re-exit,36.9,disarm: new 52-week high
+2007-01-04,re-enter,37.7,disarm: new 52-week high
+2007-02-09,exit,37.55,disarm: new 52-week high
+2007-02-14,re-enter,38.16,disarm: new 52-week high
+2007-08-09,exit,40.88,disarm: new 52-week high
+2007-08-24,re-enter,41.3,disarm: new 52-week high
+2007-08-27,re-exit,41.03,disarm: new 52-week high
+2007-08-30,re-enter,41.41,disarm: new 52-week high
+2007-09-07,re-exit,41.33,disarm: new 52-week high
+2007-09-11,re-enter,41.93,disarm: new 52-week high
+2007-11-08,exit,44.35,disarm: new 52-week high
+2007-12-06,re-enter,44.86,disarm: new 52-week high
+2007-12-11,re-exit,44.0,disarm: new 52-week high
+2007-12-21,re-enter,44.5,disarm: new 52-week high
+2007-12-31,re-exit,43.96,disarm: new 52-week high
+2008-03-24,re-enter,38.29,disarm: new 52-week high
+2008-03-27,re-exit,37.54,disarm: new 52-week high
+2008-03-31,re-enter,37.55,disarm: new 52-week high
+2008-06-11,exit,40.69,disarm: new 52-week high
+2008-06-13,re-enter,41.55,disarm: new 52-week high
+2008-06-20,re-exit,40.76,disarm: new 52-week high
+2008-08-06,re-enter,40.08,disarm: new 52-week high
+2008-08-07,re-exit,39.77,disarm: new 52-week high
+2008-08-08,re-enter,40.67,disarm: new 52-week high
+2008-09-02,re-exit,39.15,disarm: new 52-week high
+2008-12-16,re-enter,26.28,disarm: new 52-week high
+2008-12-17,re-exit,25.97,disarm: new 52-week high
+2008-12-31,re-enter,25.62,disarm: new 52-week high
+2009-01-12,re-exit,25.43,disarm: new 52-week high
+2009-01-16,re-enter,25.34,disarm: new 52-week high
+2009-01-20,re-exit,24.08,disarm: new 52-week high
+2009-01-27,re-enter,25.25,disarm: new 52-week high
+2009-01-30,re-exit,25.03,disarm: new 52-week high
+2009-02-02,re-enter,25.33,disarm: new 52-week high
+2009-02-17,re-exit,25.17,disarm: new 52-week high
+2009-03-17,re-enter,25.26,disarm: new 52-week high
+2009-07-07,re-exit,29.83,disarm: new 52-week high
+2009-07-13,re-enter,30.74,disarm: new 52-week high
+2009-10-28,exit,35.79,disarm: new 52-week high
+2009-10-29,re-enter,36.39,disarm: new 52-week high
+2009-10-30,re-exit,35.42,disarm: new 52-week high
+2009-11-05,re-enter,36.62,disarm: new 52-week high
+2010-01-22,exit,38.25,disarm: new 52-week high
+2010-02-18,re-enter,38.84,disarm: new 52-week high
+2010-02-22,re-exit,38.75,disarm: new 52-week high
+2010-03-01,re-enter,39.33,disarm: new 52-week high
+2010-05-06,exit,40.38,disarm: new 52-week high
+2010-05-12,re-enter,42.16,disarm: new 52-week high
+2010-05-13,re-exit,41.49,disarm: new 52-week high
+2010-07-14,re-enter,39.65,disarm: new 52-week high
+2010-07-16,re-exit,38.59,disarm: new 52-week high
+2010-07-22,re-enter,39.84,disarm: new 52-week high
+2010-08-12,re-exit,39.2,disarm: new 52-week high
+2010-08-17,re-enter,39.49,disarm: new 52-week high
+2010-08-19,re-exit,39.05,disarm: new 52-week high
+2010-09-02,re-enter,39.39,disarm: new 52-week high
+2011-03-10,exit,49.07,disarm: new 52-week high
+2011-03-25,re-enter,49.76,disarm: new 52-week high
+2011-03-28,re-exit,49.49,disarm: new 52-week high
+2011-03-29,re-enter,49.97,disarm: new 52-week high
+2011-04-08,re-exit,49.85,disarm: new 52-week high
+2011-04-20,re-enter,50.67,disarm: new 52-week high
+2011-06-03,exit,49.33,disarm: new 52-week high
+2011-06-30,re-enter,50.05,disarm: new 52-week high
+2011-08-02,exit,49.37,disarm: new 52-week high
+2011-09-14,re-enter,48.57,disarm: new 52-week high
+2011-09-22,re-exit,47.1,disarm: new 52-week high
+2011-09-27,re-enter,48.65,disarm: new 52-week high
+2011-09-28,re-exit,47.93,disarm: new 52-week high
+2011-10-06,re-enter,47.84,disarm: new 52-week high
+2011-11-17,re-exit,49.07,disarm: new 52-week high
+2011-11-30,re-enter,49.57,disarm: new 52-week high
+2011-12-08,re-exit,49.33,disarm: new 52-week high
+2011-12-09,re-enter,50.12,disarm: new 52-week high
+2011-12-12,re-exit,49.56,disarm: new 52-week high
+2012-01-03,re-enter,50.21,disarm: new 52-week high
+2012-04-23,exit,57.52,disarm: new 52-week high
+2012-04-25,re-enter,58.73,disarm: new 52-week high
+2012-05-04,re-exit,57.18,disarm: new 52-week high
+2012-06-19,re-enter,56.91,disarm: new 52-week high
+2012-06-21,re-exit,55.53,disarm: new 52-week high
+2012-06-29,re-enter,56.84,disarm: new 52-week high
+2012-07-11,re-exit,55.83,disarm: new 52-week high
+2012-07-13,re-enter,56.15,disarm: new 52-week high
+2012-07-25,re-exit,55.4,disarm: new 52-week high
+2012-07-26,re-enter,56.14,disarm: new 52-week high
+2012-10-18,exit,59.78,disarm: new 52-week high
+2012-12-11,re-enter,58.61,disarm: new 52-week high
+2012-12-13,re-exit,58.02,disarm: new 52-week high
+2012-12-17,re-enter,58.23,disarm: new 52-week high
+2012-12-26,re-exit,57.62,disarm: new 52-week high
+2012-12-31,re-enter,58.18,disarm: new 52-week high
+2013-02-21,re-exit,59.38,disarm: new 52-week high
+2013-02-22,re-enter,59.98,disarm: new 52-week high
+2013-02-25,re-exit,59.24,disarm: new 52-week high
+2013-02-27,re-enter,60.07,disarm: new 52-week high
+2013-04-17,exit,60.99,disarm: new 52-week high
+2013-04-22,re-enter,61.6,disarm: new 52-week high
+2013-06-20,exit,63.6,disarm: new 52-week high
+2013-07-05,re-enter,65.19,disarm: new 52-week high
+2013-10-09,exit,69.35,disarm: new 52-week high
+2013-10-10,re-enter,70.82,disarm: new 52-week high
+2014-01-29,exit,76.76,disarm: new 52-week high
+2014-01-30,re-enter,78.18,disarm: new 52-week high
+2014-02-03,re-exit,76.18,disarm: new 52-week high
+2014-02-07,re-enter,78.9,disarm: new 52-week high
+2014-03-26,exit,79.47,disarm: new 52-week high
+2014-04-01,re-enter,81.15,disarm: new 52-week high
+2014-04-04,re-exit,78.56,disarm: new 52-week high
+2014-05-12,re-enter,80.26,disarm: new 52-week high
+2014-05-15,re-exit,79.26,disarm: new 52-week high
+2014-05-16,re-enter,79.78,disarm: new 52-week high
+2014-10-01,exit,88.87,disarm: new 52-week high
+2014-10-03,re-enter,89.75,disarm: new 52-week high
+2014-10-07,re-exit,88.29,disarm: new 52-week high
+2014-10-08,re-enter,90.01,disarm: new 52-week high
+2014-10-09,re-exit,88.55,disarm: new 52-week high
+2014-10-24,re-enter,90.16,disarm: new 52-week high
+2014-12-16,exit,91.41,disarm: new 52-week high
+2014-12-17,re-enter,93.07,disarm: new 52-week high
+2015-01-05,re-exit,93.08,disarm: new 52-week high
+2015-01-08,re-enter,94.79,disarm: new 52-week high
+2015-01-09,re-exit,94.17,disarm: new 52-week high
+2015-01-22,re-enter,95.46,disarm: new 52-week high
+2015-01-27,re-exit,93.09,disarm: new 52-week high
+2015-02-05,re-enter,95.22,disarm: new 52-week high
+2015-02-09,re-exit,94.33,disarm: new 52-week high
+2015-02-10,re-enter,95.8,disarm: new 52-week high
+2015-03-26,exit,96.67,disarm: new 52-week high
+2015-03-27,re-enter,97.05,disarm: new 52-week high
+2015-04-01,re-exit,96.62,disarm: new 52-week high
+2015-04-06,re-enter,97.48,disarm: new 52-week high
+2015-04-17,re-exit,97.5,disarm: new 52-week high
+2015-04-20,re-enter,98.97,disarm: new 52-week high
+2015-06-09,exit,99.34,disarm: new 52-week high
+2015-06-10,re-enter,100.7,disarm: new 52-week high
+2015-06-15,re-exit,99.53,disarm: new 52-week high
+2015-06-16,re-enter,100.07,disarm: new 52-week high
+2015-08-19,exit,101.53,disarm: new 52-week high
+2015-10-08,re-enter,98.0,disarm: new 52-week high
+2015-12-11,exit,102.38,disarm: new 52-week high
+2015-12-15,re-enter,103.79,disarm: new 52-week high
+2015-12-18,re-exit,101.81,disarm: new 52-week high
+2015-12-23,re-enter,104.38,disarm: new 52-week high
+2015-12-31,re-exit,103.69,disarm: new 52-week high
+2016-03-01,re-enter,98.06,disarm: new 52-week high
+2016-04-28,re-exit,98.81,disarm: new 52-week high
+2016-05-24,re-enter,100.83,disarm: new 52-week high
+2016-06-13,re-exit,100.43,disarm: new 52-week high
+2016-06-23,re-enter,101.39,disarm: new 52-week high
+2016-06-24,re-exit,97.22,disarm: new 52-week high
+2016-06-30,re-enter,100.25,disarm: new 52-week high
+2016-09-09,exit,106.53,disarm: new 52-week high
+2016-09-12,re-enter,108.44,disarm: new 52-week high
+2016-10-28,exit,109.43,disarm: new 52-week high
+2016-11-09,re-enter,109.94,disarm: new 52-week high
+2016-11-10,re-exit,108.17,disarm: new 52-week high
+2016-11-17,re-enter,110.05,disarm: new 52-week high
+2016-11-30,re-exit,109.8,disarm: new 52-week high
+2016-12-07,re-enter,110.61,disarm: new 52-week high
+2017-06-27,exit,129.99,disarm: new 52-week high
+2017-06-28,re-enter,131.87,disarm: new 52-week high
+2017-06-29,re-exit,129.58,disarm: new 52-week high
+2017-07-12,re-enter,132.51,disarm: new 52-week high
+2018-02-05,exit,149.55,disarm: new 52-week high
+2018-02-06,re-enter,153.51,disarm: new 52-week high
+2018-02-07,re-exit,151.53,disarm: new 52-week high
+2018-02-14,re-enter,153.86,disarm: new 52-week high
+2018-03-22,exit,154.23,disarm: new 52-week high
+2018-04-17,re-enter,157.35,disarm: new 52-week high
+2018-04-20,re-exit,153.75,disarm: new 52-week high
+2018-05-04,re-enter,156.19,disarm: new 52-week high
+2018-10-05,exit,171.34,disarm: new 52-week high
+2019-01-15,re-enter,154.88,disarm: new 52-week high
+2019-05-13,exit,170.64,disarm: new 52-week high
+2019-05-15,re-enter,174.95,disarm: new 52-week high
+2019-05-17,re-exit,174.9,disarm: new 52-week high
+2019-06-17,re-enter,175.57,disarm: new 52-week high
+2019-08-05,exit,173.08,disarm: new 52-week high
+2019-08-08,re-enter,180.29,disarm: new 52-week high
+2019-08-09,re-exit,178.59,disarm: new 52-week high
+2019-08-13,re-enter,180.41,disarm: new 52-week high
+2019-08-14,re-exit,175.02,disarm: new 52-week high
+2019-09-05,re-enter,183.66,disarm: new 52-week high
+2019-09-24,re-exit,180.37,disarm: new 52-week high
+2019-09-25,re-enter,182.4,disarm: new 52-week high
+2019-09-27,re-exit,179.47,disarm: new 52-week high
+2019-09-30,re-enter,181.18,disarm: new 52-week high
+2019-10-01,re-exit,179.7,disarm: new 52-week high
+2019-10-04,re-enter,181.18,disarm: new 52-week high
+2019-10-08,re-exit,177.93,disarm: new 52-week high
+2019-10-10,re-enter,181.05,disarm: new 52-week high
+2020-02-25,exit,207.11,disarm: new 52-week high
+2020-04-14,re-enter,204.17,disarm: new 52-week high
+2020-09-11,exit,261.09,disarm: new 52-week high
+2020-09-14,re-enter,265.64,disarm: new 52-week high
+2020-09-17,re-exit,260.96,disarm: new 52-week high
+2020-09-28,re-enter,267.6,disarm: new 52-week high
+2020-10-02,re-exit,264.81,disarm: new 52-week high
+2020-10-05,re-enter,270.46,disarm: new 52-week high
+2020-10-06,re-exit,265.64,disarm: new 52-week high
+2020-10-07,re-enter,270.23,disarm: new 52-week high
+2020-10-26,re-exit,270.76,disarm: new 52-week high
+2020-10-27,re-enter,272.88,disarm: new 52-week high
+2020-10-28,re-exit,262.24,disarm: new 52-week high
+2020-11-04,re-enter,276.98,disarm: new 52-week high
+2021-02-25,exit,302.55,disarm: new 52-week high
+2021-03-01,re-enter,312.95,disarm: new 52-week high
+2021-03-02,re-exit,307.94,disarm: new 52-week high
+2021-03-17,re-enter,311.32,disarm: new 52-week high
+2021-03-18,re-exit,301.78,disarm: new 52-week high
+2021-04-01,re-enter,314.3,disarm: new 52-week high
+2021-05-12,exit,306.86,disarm: new 52-week high
+2021-05-20,re-enter,318.42,disarm: new 52-week high
+2021-05-21,re-exit,316.66,disarm: new 52-week high
+2021-05-24,re-enter,321.99,disarm: new 52-week high
+2021-06-03,re-exit,319.56,disarm: new 52-week high
+2021-06-04,re-enter,324.98,disarm: new 52-week high
+2021-09-20,exit,354.93,disarm: new 52-week high
+2021-09-22,re-enter,358.69,disarm: new 52-week high
+2021-09-28,re-exit,349.27,disarm: new 52-week high
+2021-10-18,re-enter,361.68,disarm: new 52-week high
+2021-12-17,exit,373.58,disarm: new 52-week high
+2021-12-21,re-enter,378.23,disarm: new 52-week high
+2022-01-19,exit,356.14,disarm: new 52-week high
+2022-03-22,re-enter,347.32,disarm: new 52-week high
+2022-04-08,re-exit,339.72,disarm: new 52-week high
+2022-07-19,re-enter,290.8,disarm: new 52-week high
+2022-08-30,re-exit,293.45,disarm: new 52-week high
+2022-09-09,re-enter,299.37,disarm: new 52-week high
+2022-09-13,re-exit,286.32,disarm: new 52-week high
+2022-11-10,re-enter,276.14,disarm: new 52-week high
+2022-12-15,re-exit,270.42,disarm: new 52-week high
+2023-01-11,re-enter,271.71,disarm: new 52-week high
+2023-01-19,re-exit,269.36,disarm: new 52-week high
+2023-01-20,re-enter,276.73,disarm: new 52-week high
+2023-03-10,exit,282.48,disarm: new 52-week high
+2023-03-13,re-enter,284.57,disarm: new 52-week high
+2023-08-11,exit,359.58,disarm: new 52-week high
+2023-08-14,re-enter,363.62,disarm: new 52-week high
+2023-08-15,re-exit,359.76,disarm: new 52-week high
+2023-08-29,re-enter,367.96,disarm: new 52-week high
+2023-09-07,re-exit,365.29,disarm: new 52-week high
+2023-09-08,re-enter,365.8,disarm: new 52-week high
+2023-09-15,re-exit,364.07,disarm: new 52-week high
+2023-10-10,re-enter,362.41,disarm: new 52-week high
+2023-10-13,re-exit,359.16,disarm: new 52-week high
+2023-10-16,re-enter,363.22,disarm: new 52-week high
+2023-10-18,re-exit,357.28,disarm: new 52-week high
+2023-11-03,re-enter,361.55,disarm: new 52-week high
+2024-04-15,exit,425.47,disarm: new 52-week high
+2024-05-06,re-enter,434.54,disarm: new 52-week high
+2024-07-24,exit,458.09,disarm: new 52-week high
+2024-08-15,re-enter,469.01,disarm: new 52-week high
+2024-08-28,re-exit,465.97,disarm: new 52-week high
+2024-08-30,re-enter,470.84,disarm: new 52-week high
+2024-09-03,re-exit,456.54,disarm: new 52-week high
+2024-09-12,re-enter,467.82,disarm: new 52-week high
+2025-01-10,exit,502.92,disarm: new 52-week high
+2025-01-15,re-enter,512.35,disarm: new 52-week high
+2025-01-16,re-exit,508.76,disarm: new 52-week high
+2025-01-17,re-enter,517.35,disarm: new 52-week high
+2025-01-27,re-exit,509.88,disarm: new 52-week high
+2025-01-28,re-enter,517.41,disarm: new 52-week high
+2025-02-03,re-exit,513.75,disarm: new 52-week high
+2025-02-04,re-enter,520.05,disarm: new 52-week high
+2025-03-10,exit,468.75,disarm: new 52-week high
+2025-05-01,re-enter,478.33,disarm: new 52-week high
+2025-11-17,exit,600.84,disarm: new 52-week high
+2025-11-25,re-enter,606.04,disarm: new 52-week high
+2025-12-15,re-exit,607.68,disarm: new 52-week high
+2025-12-19,re-enter,614.16,disarm: new 52-week high
+2025-12-31,re-exit,612.22,disarm: new 52-week high
+2026-01-05,re-enter,615.89,disarm: new 52-week high
+2026-01-20,re-exit,606.0,disarm: new 52-week high
+2026-01-21,re-enter,614.19,disarm: new 52-week high
+2026-02-03,re-exit,614.43,disarm: new 52-week high
+2026-02-25,re-enter,614.59,disarm: new 52-week high
+2026-02-26,re-exit,607.17,disarm: new 52-week high
+2026-04-08,re-enter,604.79,disarm: new 52-week high
+2026-07-07,exit,708.69,disarm: new 52-week high
+2026-07-09,re-enter,722.53,disarm: new 52-week high
+2026-07-13,re-exit,711.0,disarm: new 52-week high
+2026-07-14,re-enter,718.94,disarm: new 52-week high
+2026-07-16,re-exit,705.21,disarm: new 52-week high
+2026-08-04,re-enter,723.1,disarm: new 52-week high
+2026-08-20,re-exit,710.19,disarm: new 52-week high
+2026-08-21,re-enter,712.7,disarm: new 52-week high
+2026-08-24,re-exit,705.58,disarm: new 52-week high
+2026-08-27,re-enter,720.36,disarm: new 52-week high
+2026-09-01,re-exit,706.9,disarm: new 52-week high
+2026-09-03,re-enter,716.92,disarm: new 52-week high
+2026-09-10,re-exit,707.95,disarm: new 52-week high
+2026-09-11,re-enter,714.14,disarm: new 52-week high
+2026-09-14,re-exit,708.44,disarm: new 52-week high
+2026-09-17,re-enter,716.17,disarm: new 52-week high
+2026-10-29,exit,715.34,disarm: new 52-week high
+2003-08-05,exit,25.43,disarm: 20 days above 50d
+2003-08-15,re-enter,26.24,disarm: 20 days above 50d
+2003-09-30,exit,27.29,disarm: 20 days above 50d
+2003-10-01,re-enter,27.9,disarm: 20 days above 50d
+2003-11-18,exit,28.52,disarm: 20 days above 50d
+2003-11-24,re-enter,29.61,disarm: 20 days above 50d
+2003-12-09,re-exit,28.98,disarm: 20 days above 50d
+2003-12-11,re-enter,29.71,disarm: 20 days above 50d
+2003-12-15,re-exit,29.28,disarm: 20 days above 50d
+2003-12-18,re-enter,29.93,disarm: 20 days above 50d
+2004-02-04,exit,30.59,disarm: 20 days above 50d
+2004-02-06,re-enter,31.27,disarm: 20 days above 50d
+2004-02-23,re-exit,30.69,disarm: 20 days above 50d
+2004-04-02,re-enter,31.24,disarm: 20 days above 50d
+2004-04-15,re-exit,30.44,disarm: 20 days above 50d
+2004-04-19,re-enter,30.76,disarm: 20 days above 50d
+2004-04-20,re-exit,30.05,disarm: 20 days above 50d
+2004-04-22,re-enter,31.09,disarm: 20 days above 50d
+2004-04-29,re-exit,30.01,disarm: 20 days above 50d
+2004-05-25,re-enter,30.28,disarm: 20 days above 50d
+2004-07-16,exit,29.2,disarm: 20 days above 50d
+2004-09-02,re-enter,29.29,disarm: 20 days above 50d
+2004-09-03,re-exit,28.75,disarm: 20 days above 50d
+2004-09-09,re-enter,29.13,disarm: 20 days above 50d
+2005-01-05,exit,32.76,disarm: 20 days above 50d
+2005-03-07,re-enter,32.36,disarm: 20 days above 50d
+2005-03-08,re-exit,32.03,disarm: 20 days above 50d
+2005-05-13,re-enter,30.81,disarm: 20 days above 50d
+2005-06-30,exit,31.3,disarm: 20 days above 50d
+2005-07-05,re-enter,31.58,disarm: 20 days above 50d
+2005-07-06,re-exit,31.43,disarm: 20 days above 50d
+2005-07-07,re-enter,31.54,disarm: 20 days above 50d
+2005-09-19,exit,33.26,disarm: 20 days above 50d
+2005-09-29,re-enter,33.36,disarm: 20 days above 50d
+2005-10-05,re-exit,32.98,disarm: 20 days above 50d
+2005-10-24,re-enter,33.32,disarm: 20 days above 50d
+2005-10-27,re-exit,32.36,disarm: 20 days above 50d
+2005-10-31,re-enter,33.08,disarm: 20 days above 50d
+2006-01-25,exit,35.19,disarm: 20 days above 50d
+2006-01-27,re-enter,35.92,disarm: 20 days above 50d
+2006-02-02,re-exit,35.34,disarm: 20 days above 50d
+2006-02-27,re-enter,35.59,disarm: 20 days above 50d
+2006-02-28,re-exit,35.06,disarm: 20 days above 50d
+2006-03-01,re-enter,35.54,disarm: 20 days above 50d
+2006-03-03,re-exit,35.36,disarm: 20 days above 50d
+2006-03-15,re-enter,35.59,disarm: 20 days above 50d
+2006-03-16,re-exit,35.29,disarm: 20 days above 50d
+2006-03-20,re-enter,35.47,disarm: 20 days above 50d
+2006-03-21,re-exit,35.09,disarm: 20 days above 50d
+2006-03-29,re-enter,35.78,disarm: 20 days above 50d
+2006-05-11,exit,34.78,disarm: 20 days above 50d
+2006-08-15,re-enter,32.2,disarm: 20 days above 50d
+2006-12-22,exit,36.74,disarm: 20 days above 50d
+2006-12-27,re-enter,37.08,disarm: 20 days above 50d
+2006-12-28,re-exit,36.9,disarm: 20 days above 50d
+2007-01-04,re-enter,37.7,disarm: 20 days above 50d
+2007-01-22,re-exit,37.39,disarm: 20 days above 50d
+2007-01-24,re-enter,37.91,disarm: 20 days above 50d
+2007-01-25,re-exit,37.42,disarm: 20 days above 50d
+2007-01-31,re-enter,37.71,disarm: 20 days above 50d
+2007-02-09,re-exit,37.55,disarm: 20 days above 50d
+2007-02-14,re-enter,38.16,disarm: 20 days above 50d
+2007-02-27,re-exit,36.96,disarm: 20 days above 50d
+2007-03-21,re-enter,38.03,disarm: 20 days above 50d
+2007-03-28,re-exit,37.26,disarm: 20 days above 50d
+2007-04-03,re-enter,37.81,disarm: 20 days above 50d
+2007-08-09,exit,40.88,disarm: 20 days above 50d
+2007-08-24,re-enter,41.3,disarm: 20 days above 50d
+2007-08-27,re-exit,41.03,disarm: 20 days above 50d
+2007-08-30,re-enter,41.41,disarm: 20 days above 50d
+2007-09-07,re-exit,41.33,disarm: 20 days above 50d
+2007-09-11,re-enter,41.93,disarm: 20 days above 50d
+2007-11-08,exit,44.35,disarm: 20 days above 50d
+2007-12-06,re-enter,44.86,disarm: 20 days above 50d
+2007-12-11,re-exit,44.0,disarm: 20 days above 50d
+2007-12-21,re-enter,44.5,disarm: 20 days above 50d
+2007-12-31,re-exit,43.96,disarm: 20 days above 50d
+2008-03-24,re-enter,38.29,disarm: 20 days above 50d
+2008-03-27,re-exit,37.54,disarm: 20 days above 50d
+2008-03-31,re-enter,37.55,disarm: 20 days above 50d
+2008-06-11,exit,40.69,disarm: 20 days above 50d
+2008-06-13,re-enter,41.55,disarm: 20 days above 50d
+2008-06-20,re-exit,40.76,disarm: 20 days above 50d
+2008-08-06,re-enter,40.08,disarm: 20 days above 50d
+2008-08-07,re-exit,39.77,disarm: 20 days above 50d
+2008-08-08,re-enter,40.67,disarm: 20 days above 50d
+2008-09-02,re-exit,39.15,disarm: 20 days above 50d
+2008-12-16,re-enter,26.28,disarm: 20 days above 50d
+2008-12-17,re-exit,25.97,disarm: 20 days above 50d
+2008-12-31,re-enter,25.62,disarm: 20 days above 50d
+2009-01-12,re-exit,25.43,disarm: 20 days above 50d
+2009-01-16,re-enter,25.34,disarm: 20 days above 50d
+2009-01-20,re-exit,24.08,disarm: 20 days above 50d
+2009-01-27,re-enter,25.25,disarm: 20 days above 50d
+2009-01-30,re-exit,25.03,disarm: 20 days above 50d
+2009-02-02,re-enter,25.33,disarm: 20 days above 50d
+2009-02-17,re-exit,25.17,disarm: 20 days above 50d
+2009-03-17,re-enter,25.26,disarm: 20 days above 50d
+2009-10-28,exit,35.79,disarm: 20 days above 50d
+2009-10-29,re-enter,36.39,disarm: 20 days above 50d
+2009-10-30,re-exit,35.42,disarm: 20 days above 50d
+2009-11-05,re-enter,36.62,disarm: 20 days above 50d
+2010-01-22,exit,38.25,disarm: 20 days above 50d
+2010-02-18,re-enter,38.84,disarm: 20 days above 50d
+2010-02-22,re-exit,38.75,disarm: 20 days above 50d
+2010-03-01,re-enter,39.33,disarm: 20 days above 50d
+2010-05-06,exit,40.38,disarm: 20 days above 50d
+2010-05-12,re-enter,42.16,disarm: 20 days above 50d
+2010-05-13,re-exit,41.49,disarm: 20 days above 50d
+2010-07-14,re-enter,39.65,disarm: 20 days above 50d
+2010-07-16,re-exit,38.59,disarm: 20 days above 50d
+2010-07-22,re-enter,39.84,disarm: 20 days above 50d
+2010-08-12,re-exit,39.2,disarm: 20 days above 50d
+2010-08-17,re-enter,39.49,disarm: 20 days above 50d
+2010-08-19,re-exit,39.05,disarm: 20 days above 50d
+2010-09-02,re-enter,39.39,disarm: 20 days above 50d
+2011-03-10,exit,49.07,disarm: 20 days above 50d
+2011-03-25,re-enter,49.76,disarm: 20 days above 50d
+2011-03-28,re-exit,49.49,disarm: 20 days above 50d
+2011-03-29,re-enter,49.97,disarm: 20 days above 50d
+2011-04-08,re-exit,49.85,disarm: 20 days above 50d
+2011-04-20,re-enter,50.67,disarm: 20 days above 50d
+2011-06-03,exit,49.33,disarm: 20 days above 50d
+2011-06-30,re-enter,50.05,disarm: 20 days above 50d
+2011-08-02,exit,49.37,disarm: 20 days above 50d
+2011-09-14,re-enter,48.57,disarm: 20 days above 50d
+2011-09-22,re-exit,47.1,disarm: 20 days above 50d
+2011-09-27,re-enter,48.65,disarm: 20 days above 50d
+2011-09-28,re-exit,47.93,disarm: 20 days above 50d
+2011-10-06,re-enter,47.84,disarm: 20 days above 50d
+2012-04-23,exit,57.52,disarm: 20 days above 50d
+2012-04-25,re-enter,58.73,disarm: 20 days above 50d
+2012-05-04,re-exit,57.18,disarm: 20 days above 50d
+2012-06-19,re-enter,56.91,disarm: 20 days above 50d
+2012-06-21,re-exit,55.53,disarm: 20 days above 50d
+2012-06-29,re-enter,56.84,disarm: 20 days above 50d
+2012-07-11,re-exit,55.83,disarm: 20 days above 50d
+2012-07-13,re-enter,56.15,disarm: 20 days above 50d
+2012-07-25,re-exit,55.4,disarm: 20 days above 50d
+2012-07-26,re-enter,56.14,disarm: 20 days above 50d
+2012-10-18,exit,59.78,disarm: 20 days above 50d
+2012-12-11,re-enter,58.61,disarm: 20 days above 50d
+2012-12-13,re-exit,58.02,disarm: 20 days above 50d
+2012-12-17,re-enter,58.23,disarm: 20 days above 50d
+2012-12-26,re-exit,57.62,disarm: 20 days above 50d
+2012-12-31,re-enter,58.18,disarm: 20 days above 50d
+2013-02-25,exit,59.24,disarm: 20 days above 50d
+2013-02-27,re-enter,60.07,disarm: 20 days above 50d
+2013-04-17,exit,60.99,disarm: 20 days above 50d
+2013-04-22,re-enter,61.6,disarm: 20 days above 50d
+2013-06-20,exit,63.6,disarm: 20 days above 50d
+2013-07-05,re-enter,65.19,disarm: 20 days above 50d
+2013-10-09,exit,69.35,disarm: 20 days above 50d
+2013-10-10,re-enter,70.82,disarm: 20 days above 50d
+2014-01-29,exit,76.76,disarm: 20 days above 50d
+2014-01-30,re-enter,78.18,disarm: 20 days above 50d
+2014-02-03,re-exit,76.18,disarm: 20 days above 50d
+2014-02-07,re-enter,78.9,disarm: 20 days above 50d
+2014-03-26,exit,79.47,disarm: 20 days above 50d
+2014-04-01,re-enter,81.15,disarm: 20 days above 50d
+2014-04-04,re-exit,78.56,disarm: 20 days above 50d
+2014-05-12,re-enter,80.26,disarm: 20 days above 50d
+2014-05-15,re-exit,79.26,disarm: 20 days above 50d
+2014-05-16,re-enter,79.78,disarm: 20 days above 50d
+2014-10-01,exit,88.87,disarm: 20 days above 50d
+2014-10-03,re-enter,89.75,disarm: 20 days above 50d
+2014-10-07,re-exit,88.29,disarm: 20 days above 50d
+2014-10-08,re-enter,90.01,disarm: 20 days above 50d
+2014-10-09,re-exit,88.55,disarm: 20 days above 50d
+2014-10-24,re-enter,90.16,disarm: 20 days above 50d
+2014-12-16,exit,91.41,disarm: 20 days above 50d
+2014-12-17,re-enter,93.07,disarm: 20 days above 50d
+2015-01-05,re-exit,93.08,disarm: 20 days above 50d
+2015-01-08,re-enter,94.79,disarm: 20 days above 50d
+2015-01-09,re-exit,94.17,disarm: 20 days above 50d
+2015-01-22,re-enter,95.46,disarm: 20 days above 50d
+2015-01-27,re-exit,93.09,disarm: 20 days above 50d
+2015-02-05,re-enter,95.22,disarm: 20 days above 50d
+2015-02-09,re-exit,94.33,disarm: 20 days above 50d
+2015-02-10,re-enter,95.8,disarm: 20 days above 50d
+2015-03-26,exit,96.67,disarm: 20 days above 50d
+2015-03-27,re-enter,97.05,disarm: 20 days above 50d
+2015-04-01,re-exit,96.62,disarm: 20 days above 50d
+2015-04-06,re-enter,97.48,disarm: 20 days above 50d
+2015-04-17,re-exit,97.5,disarm: 20 days above 50d
+2015-04-20,re-enter,98.97,disarm: 20 days above 50d
+2015-05-06,re-exit,98.15,disarm: 20 days above 50d
+2015-05-08,re-enter,99.97,disarm: 20 days above 50d
+2015-06-15,exit,99.53,disarm: 20 days above 50d
+2015-06-16,re-enter,100.07,disarm: 20 days above 50d
+2015-06-29,re-exit,98.35,disarm: 20 days above 50d
+2015-07-13,re-enter,100.98,disarm: 20 days above 50d
+2015-08-19,exit,101.53,disarm: 20 days above 50d
+2015-10-08,re-enter,98.0,disarm: 20 days above 50d
+2015-12-11,exit,102.38,disarm: 20 days above 50d
+2015-12-15,re-enter,103.79,disarm: 20 days above 50d
+2015-12-18,re-exit,101.81,disarm: 20 days above 50d
+2015-12-23,re-enter,104.38,disarm: 20 days above 50d
+2015-12-31,re-exit,103.69,disarm: 20 days above 50d
+2016-03-01,re-enter,98.06,disarm: 20 days above 50d
+2016-04-29,exit,98.29,disarm: 20 days above 50d
+2016-05-24,re-enter,100.83,disarm: 20 days above 50d
+2016-06-13,re-exit,100.43,disarm: 20 days above 50d
+2016-06-23,re-enter,101.39,disarm: 20 days above 50d
+2016-06-24,re-exit,97.22,disarm: 20 days above 50d
+2016-06-30,re-enter,100.25,disarm: 20 days above 50d
+2016-09-09,exit,106.53,disarm: 20 days above 50d
+2016-09-12,re-enter,108.44,disarm: 20 days above 50d
+2016-10-28,exit,109.43,disarm: 20 days above 50d
+2016-11-09,re-enter,109.94,disarm: 20 days above 50d
+2016-11-10,re-exit,108.17,disarm: 20 days above 50d
+2016-11-17,re-enter,110.05,disarm: 20 days above 50d
+2016-11-30,re-exit,109.8,disarm: 20 days above 50d
+2016-12-07,re-enter,110.61,disarm: 20 days above 50d
+2017-06-27,exit,129.99,disarm: 20 days above 50d
+2017-06-28,re-enter,131.87,disarm: 20 days above 50d
+2017-06-29,re-exit,129.58,disarm: 20 days above 50d
+2017-07-12,re-enter,132.51,disarm: 20 days above 50d
+2018-02-05,exit,149.55,disarm: 20 days above 50d
+2018-02-06,re-enter,153.51,disarm: 20 days above 50d
+2018-02-07,re-exit,151.53,disarm: 20 days above 50d
+2018-02-14,re-enter,153.86,disarm: 20 days above 50d
+2018-03-22,exit,154.23,disarm: 20 days above 50d
+2018-04-17,re-enter,157.35,disarm: 20 days above 50d
+2018-04-20,re-exit,153.75,disarm: 20 days above 50d
+2018-05-04,re-enter,156.19,disarm: 20 days above 50d
+2018-10-05,exit,171.34,disarm: 20 days above 50d
+2019-01-15,re-enter,154.88,disarm: 20 days above 50d
+2019-05-13,exit,170.64,disarm: 20 days above 50d
+2019-05-15,re-enter,174.95,disarm: 20 days above 50d
+2019-05-17,re-exit,174.9,disarm: 20 days above 50d
+2019-06-17,re-enter,175.57,disarm: 20 days above 50d
+2019-08-05,exit,173.08,disarm: 20 days above 50d
+2019-08-08,re-enter,180.29,disarm: 20 days above 50d
+2019-08-09,re-exit,178.59,disarm: 20 days above 50d
+2019-08-13,re-enter,180.41,disarm: 20 days above 50d
+2019-08-14,re-exit,175.02,disarm: 20 days above 50d
+2019-09-05,re-enter,183.66,disarm: 20 days above 50d
+2019-09-24,re-exit,180.37,disarm: 20 days above 50d
+2019-09-25,re-enter,182.4,disarm: 20 days above 50d
+2019-09-27,re-exit,179.47,disarm: 20 days above 50d
+2019-09-30,re-enter,181.18,disarm: 20 days above 50d
+2019-10-01,re-exit,179.7,disarm: 20 days above 50d
+2019-10-04,re-enter,181.18,disarm: 20 days above 50d
+2019-10-08,re-exit,177.93,disarm: 20 days above 50d
+2019-10-10,re-enter,181.05,disarm: 20 days above 50d
+2020-02-25,exit,207.11,disarm: 20 days above 50d
+2020-04-14,re-enter,204.17,disarm: 20 days above 50d
+2020-09-11,exit,261.09,disarm: 20 days above 50d
+2020-09-14,re-enter,265.64,disarm: 20 days above 50d
+2020-09-17,re-exit,260.96,disarm: 20 days above 50d
+2020-09-28,re-enter,267.6,disarm: 20 days above 50d
+2020-10-02,re-exit,264.81,disarm: 20 days above 50d
+2020-10-05,re-enter,270.46,disarm: 20 days above 50d
+2020-10-06,re-exit,265.64,disarm: 20 days above 50d
+2020-10-07,re-enter,270.23,disarm: 20 days above 50d
+2020-10-26,re-exit,270.76,disarm: 20 days above 50d
+2020-10-27,re-enter,272.88,disarm: 20 days above 50d
+2020-10-28,re-exit,262.24,disarm: 20 days above 50d
+2020-11-04,re-enter,276.98,disarm: 20 days above 50d
+2021-02-25,exit,302.55,disarm: 20 days above 50d
+2021-03-01,re-enter,312.95,disarm: 20 days above 50d
+2021-03-02,re-exit,307.94,disarm: 20 days above 50d
+2021-03-17,re-enter,311.32,disarm: 20 days above 50d
+2021-03-18,re-exit,301.78,disarm: 20 days above 50d
+2021-04-01,re-enter,314.3,disarm: 20 days above 50d
+2021-05-12,exit,306.86,disarm: 20 days above 50d
+2021-05-20,re-enter,318.42,disarm: 20 days above 50d
+2021-05-21,re-exit,316.66,disarm: 20 days above 50d
+2021-05-24,re-enter,321.99,disarm: 20 days above 50d
+2021-06-03,re-exit,319.56,disarm: 20 days above 50d
+2021-06-04,re-enter,324.98,disarm: 20 days above 50d
+2021-09-20,exit,354.93,disarm: 20 days above 50d
+2021-09-22,re-enter,358.69,disarm: 20 days above 50d
+2021-09-28,re-exit,349.27,disarm: 20 days above 50d
+2021-10-18,re-enter,361.68,disarm: 20 days above 50d
+2021-12-17,exit,373.58,disarm: 20 days above 50d
+2021-12-21,re-enter,378.23,disarm: 20 days above 50d
+2022-01-05,re-exit,373.45,disarm: 20 days above 50d
+2022-03-22,re-enter,347.32,disarm: 20 days above 50d
+2022-04-08,re-exit,339.72,disarm: 20 days above 50d
+2022-07-19,re-enter,290.8,disarm: 20 days above 50d
+2022-09-13,exit,286.32,disarm: 20 days above 50d
+2022-11-10,re-enter,276.14,disarm: 20 days above 50d
+2023-03-10,exit,282.48,disarm: 20 days above 50d
+2023-03-13,re-enter,284.57,disarm: 20 days above 50d
+2023-08-11,exit,359.58,disarm: 20 days above 50d
+2023-08-14,re-enter,363.62,disarm: 20 days above 50d
+2023-08-15,re-exit,359.76,disarm: 20 days above 50d
+2023-08-29,re-enter,367.96,disarm: 20 days above 50d
+2023-09-07,re-exit,365.29,disarm: 20 days above 50d
+2023-09-08,re-enter,365.8,disarm: 20 days above 50d
+2023-09-15,re-exit,364.07,disarm: 20 days above 50d
+2023-10-10,re-enter,362.41,disarm: 20 days above 50d
+2023-10-13,re-exit,359.16,disarm: 20 days above 50d
+2023-10-16,re-enter,363.22,disarm: 20 days above 50d
+2023-10-18,re-exit,357.28,disarm: 20 days above 50d
+2023-11-03,re-enter,361.55,disarm: 20 days above 50d
+2024-04-15,exit,425.47,disarm: 20 days above 50d
+2024-05-06,re-enter,434.54,disarm: 20 days above 50d
+2024-07-24,exit,458.09,disarm: 20 days above 50d
+2024-08-15,re-enter,469.01,disarm: 20 days above 50d
+2024-08-28,re-exit,465.97,disarm: 20 days above 50d
+2024-08-30,re-enter,470.84,disarm: 20 days above 50d
+2024-09-03,re-exit,456.54,disarm: 20 days above 50d
+2024-09-12,re-enter,467.82,disarm: 20 days above 50d
+2025-01-10,exit,502.92,disarm: 20 days above 50d
+2025-01-15,re-enter,512.35,disarm: 20 days above 50d
+2025-01-16,re-exit,508.76,disarm: 20 days above 50d
+2025-01-17,re-enter,517.35,disarm: 20 days above 50d
+2025-01-27,re-exit,509.88,disarm: 20 days above 50d
+2025-01-28,re-enter,517.41,disarm: 20 days above 50d
+2025-02-03,re-exit,513.75,disarm: 20 days above 50d
+2025-02-04,re-enter,520.05,disarm: 20 days above 50d
+2025-02-24,re-exit,515.49,disarm: 20 days above 50d
+2025-05-01,re-enter,478.33,disarm: 20 days above 50d
+2025-11-17,exit,600.84,disarm: 20 days above 50d
+2025-11-25,re-enter,606.04,disarm: 20 days above 50d
+2025-12-15,re-exit,607.68,disarm: 20 days above 50d
+2025-12-19,re-enter,614.16,disarm: 20 days above 50d
+2025-12-31,re-exit,612.22,disarm: 20 days above 50d
+2026-01-05,re-enter,615.89,disarm: 20 days above 50d
+2026-01-20,re-exit,606.0,disarm: 20 days above 50d
+2026-01-21,re-enter,614.19,disarm: 20 days above 50d
+2026-02-03,re-exit,614.43,disarm: 20 days above 50d
+2026-02-25,re-enter,614.59,disarm: 20 days above 50d
+2026-02-26,re-exit,607.17,disarm: 20 days above 50d
+2026-04-08,re-enter,604.79,disarm: 20 days above 50d
+2026-07-07,exit,708.69,disarm: 20 days above 50d
+2026-07-09,re-enter,722.53,disarm: 20 days above 50d
+2026-07-13,re-exit,711.0,disarm: 20 days above 50d
+2026-07-14,re-enter,718.94,disarm: 20 days above 50d
+2026-07-16,re-exit,705.21,disarm: 20 days above 50d
+2026-08-04,re-enter,723.1,disarm: 20 days above 50d
+2026-08-20,re-exit,710.19,disarm: 20 days above 50d
+2026-08-21,re-enter,712.7,disarm: 20 days above 50d
+2026-08-24,re-exit,705.58,disarm: 20 days above 50d
+2026-08-27,re-enter,720.36,disarm: 20 days above 50d
+2026-09-01,re-exit,706.9,disarm: 20 days above 50d
+2026-09-03,re-enter,716.92,disarm: 20 days above 50d
+2026-09-10,re-exit,707.95,disarm: 20 days above 50d
+2026-09-11,re-enter,714.14,disarm: 20 days above 50d
+2026-09-14,re-exit,708.44,disarm: 20 days above 50d
+2026-09-17,re-enter,716.17,disarm: 20 days above 50d
+2026-10-29,exit,715.34,disarm: 20 days above 50d
+2003-08-05,exit,25.43,"disarm: above 50d & 200d, 50d > 200d"
+2003-08-15,re-enter,26.24,"disarm: above 50d & 200d, 50d > 200d"
+2003-09-30,exit,27.29,"disarm: above 50d & 200d, 50d > 200d"
+2003-10-01,re-enter,27.9,"disarm: above 50d & 200d, 50d > 200d"
+2003-11-18,exit,28.52,"disarm: above 50d & 200d, 50d > 200d"
+2003-11-24,re-enter,29.61,"disarm: above 50d & 200d, 50d > 200d"
+2004-02-04,exit,30.59,"disarm: above 50d & 200d, 50d > 200d"
+2004-02-06,re-enter,31.27,"disarm: above 50d & 200d, 50d > 200d"
+2004-03-09,exit,30.03,"disarm: above 50d & 200d, 50d > 200d"
+2004-04-02,re-enter,31.24,"disarm: above 50d & 200d, 50d > 200d"
+2004-05-10,exit,29.2,"disarm: above 50d & 200d, 50d > 200d"
+2004-05-25,re-enter,30.28,"disarm: above 50d & 200d, 50d > 200d"
+2004-07-16,exit,29.2,"disarm: above 50d & 200d, 50d > 200d"
+2004-09-02,re-enter,29.29,"disarm: above 50d & 200d, 50d > 200d"
+2004-09-03,re-exit,28.75,"disarm: above 50d & 200d, 50d > 200d"
+2004-09-09,re-enter,29.13,"disarm: above 50d & 200d, 50d > 200d"
+2005-01-05,exit,32.76,"disarm: above 50d & 200d, 50d > 200d"
+2005-03-07,re-enter,32.36,"disarm: above 50d & 200d, 50d > 200d"
+2005-03-08,re-exit,32.03,"disarm: above 50d & 200d, 50d > 200d"
+2005-05-13,re-enter,30.81,"disarm: above 50d & 200d, 50d > 200d"
+2005-06-30,exit,31.3,"disarm: above 50d & 200d, 50d > 200d"
+2005-07-05,re-enter,31.58,"disarm: above 50d & 200d, 50d > 200d"
+2005-07-06,re-exit,31.43,"disarm: above 50d & 200d, 50d > 200d"
+2005-07-07,re-enter,31.54,"disarm: above 50d & 200d, 50d > 200d"
+2005-09-19,exit,33.26,"disarm: above 50d & 200d, 50d > 200d"
+2005-09-29,re-enter,33.36,"disarm: above 50d & 200d, 50d > 200d"
+2005-10-27,exit,32.36,"disarm: above 50d & 200d, 50d > 200d"
+2005-10-31,re-enter,33.08,"disarm: above 50d & 200d, 50d > 200d"
+2006-01-25,exit,35.19,"disarm: above 50d & 200d, 50d > 200d"
+2006-01-27,re-enter,35.92,"disarm: above 50d & 200d, 50d > 200d"
+2006-03-10,exit,34.6,"disarm: above 50d & 200d, 50d > 200d"
+2006-03-15,re-enter,35.59,"disarm: above 50d & 200d, 50d > 200d"
+2006-03-16,re-exit,35.29,"disarm: above 50d & 200d, 50d > 200d"
+2006-03-20,re-enter,35.47,"disarm: above 50d & 200d, 50d > 200d"
+2006-03-21,re-exit,35.09,"disarm: above 50d & 200d, 50d > 200d"
+2006-03-29,re-enter,35.78,"disarm: above 50d & 200d, 50d > 200d"
+2006-05-11,exit,34.78,"disarm: above 50d & 200d, 50d > 200d"
+2006-08-15,re-enter,32.2,"disarm: above 50d & 200d, 50d > 200d"
+2006-12-22,exit,36.74,"disarm: above 50d & 200d, 50d > 200d"
+2006-12-27,re-enter,37.08,"disarm: above 50d & 200d, 50d > 200d"
+2006-12-28,re-exit,36.9,"disarm: above 50d & 200d, 50d > 200d"
+2007-01-04,re-enter,37.7,"disarm: above 50d & 200d, 50d > 200d"
+2007-02-09,exit,37.55,"disarm: above 50d & 200d, 50d > 200d"
+2007-02-14,re-enter,38.16,"disarm: above 50d & 200d, 50d > 200d"
+2007-08-09,exit,40.88,"disarm: above 50d & 200d, 50d > 200d"
+2007-08-24,re-enter,41.3,"disarm: above 50d & 200d, 50d > 200d"
+2007-08-27,re-exit,41.03,"disarm: above 50d & 200d, 50d > 200d"
+2007-08-30,re-enter,41.41,"disarm: above 50d & 200d, 50d > 200d"
+2007-11-08,exit,44.35,"disarm: above 50d & 200d, 50d > 200d"
+2007-12-06,re-enter,44.86,"disarm: above 50d & 200d, 50d > 200d"
+2008-01-16,exit,39.52,"disarm: above 50d & 200d, 50d > 200d"
+2008-03-24,re-enter,38.29,"disarm: above 50d & 200d, 50d > 200d"
+2008-03-27,re-exit,37.54,"disarm: above 50d & 200d, 50d > 200d"
+2008-03-31,re-enter,37.55,"disarm: above 50d & 200d, 50d > 200d"
+2008-06-11,exit,40.69,"disarm: above 50d & 200d, 50d > 200d"
+2008-06-13,re-enter,41.55,"disarm: above 50d & 200d, 50d > 200d"
+2008-06-20,re-exit,40.76,"disarm: above 50d & 200d, 50d > 200d"
+2008-08-06,re-enter,40.08,"disarm: above 50d & 200d, 50d > 200d"
+2008-08-07,re-exit,39.77,"disarm: above 50d & 200d, 50d > 200d"
+2008-08-08,re-enter,40.67,"disarm: above 50d & 200d, 50d > 200d"
+2008-09-02,re-exit,39.15,"disarm: above 50d & 200d, 50d > 200d"
+2008-12-16,re-enter,26.28,"disarm: above 50d & 200d, 50d > 200d"
+2008-12-17,re-exit,25.97,"disarm: above 50d & 200d, 50d > 200d"
+2008-12-31,re-enter,25.62,"disarm: above 50d & 200d, 50d > 200d"
+2009-01-12,re-exit,25.43,"disarm: above 50d & 200d, 50d > 200d"
+2009-01-16,re-enter,25.34,"disarm: above 50d & 200d, 50d > 200d"
+2009-01-20,re-exit,24.08,"disarm: above 50d & 200d, 50d > 200d"
+2009-01-27,re-enter,25.25,"disarm: above 50d & 200d, 50d > 200d"
+2009-01-30,re-exit,25.03,"disarm: above 50d & 200d, 50d > 200d"
+2009-02-02,re-enter,25.33,"disarm: above 50d & 200d, 50d > 200d"
+2009-02-17,re-exit,25.17,"disarm: above 50d & 200d, 50d > 200d"
+2009-03-17,re-enter,25.26,"disarm: above 50d & 200d, 50d > 200d"
+2009-10-28,exit,35.79,"disarm: above 50d & 200d, 50d > 200d"
+2009-10-29,re-enter,36.39,"disarm: above 50d & 200d, 50d > 200d"
+2009-10-30,re-exit,35.42,"disarm: above 50d & 200d, 50d > 200d"
+2009-11-05,re-enter,36.62,"disarm: above 50d & 200d, 50d > 200d"
+2010-01-22,exit,38.25,"disarm: above 50d & 200d, 50d > 200d"
+2010-02-18,re-enter,38.84,"disarm: above 50d & 200d, 50d > 200d"
+2010-05-06,exit,40.38,"disarm: above 50d & 200d, 50d > 200d"
+2010-05-12,re-enter,42.16,"disarm: above 50d & 200d, 50d > 200d"
+2010-05-13,re-exit,41.49,"disarm: above 50d & 200d, 50d > 200d"
+2010-07-14,re-enter,39.65,"disarm: above 50d & 200d, 50d > 200d"
+2010-08-24,exit,37.99,"disarm: above 50d & 200d, 50d > 200d"
+2010-09-02,re-enter,39.39,"disarm: above 50d & 200d, 50d > 200d"
+2011-03-10,exit,49.07,"disarm: above 50d & 200d, 50d > 200d"
+2011-03-25,re-enter,49.76,"disarm: above 50d & 200d, 50d > 200d"
+2011-03-28,re-exit,49.49,"disarm: above 50d & 200d, 50d > 200d"
+2011-03-29,re-enter,49.97,"disarm: above 50d & 200d, 50d > 200d"
+2011-06-03,exit,49.33,"disarm: above 50d & 200d, 50d > 200d"
+2011-06-30,re-enter,50.05,"disarm: above 50d & 200d, 50d > 200d"
+2011-08-02,exit,49.37,"disarm: above 50d & 200d, 50d > 200d"
+2011-09-14,re-enter,48.57,"disarm: above 50d & 200d, 50d > 200d"
+2011-09-22,re-exit,47.1,"disarm: above 50d & 200d, 50d > 200d"
+2011-09-27,re-enter,48.65,"disarm: above 50d & 200d, 50d > 200d"
+2011-09-28,re-exit,47.93,"disarm: above 50d & 200d, 50d > 200d"
+2011-10-06,re-enter,47.84,"disarm: above 50d & 200d, 50d > 200d"
+2011-11-17,re-exit,49.07,"disarm: above 50d & 200d, 50d > 200d"
+2011-11-30,re-enter,49.57,"disarm: above 50d & 200d, 50d > 200d"
+2012-04-23,exit,57.52,"disarm: above 50d & 200d, 50d > 200d"
+2012-04-25,re-enter,58.73,"disarm: above 50d & 200d, 50d > 200d"
+2012-05-18,exit,53.75,"disarm: above 50d & 200d, 50d > 200d"
+2012-06-19,re-enter,56.91,"disarm: above 50d & 200d, 50d > 200d"
+2012-07-25,exit,55.4,"disarm: above 50d & 200d, 50d > 200d"
+2012-07-26,re-enter,56.14,"disarm: above 50d & 200d, 50d > 200d"
+2012-10-18,exit,59.78,"disarm: above 50d & 200d, 50d > 200d"
+2012-12-11,re-enter,58.61,"disarm: above 50d & 200d, 50d > 200d"
+2013-02-25,exit,59.24,"disarm: above 50d & 200d, 50d > 200d"
+2013-02-27,re-enter,60.07,"disarm: above 50d & 200d, 50d > 200d"
+2013-04-17,exit,60.99,"disarm: above 50d & 200d, 50d > 200d"
+2013-04-22,re-enter,61.6,"disarm: above 50d & 200d, 50d > 200d"
+2013-06-20,exit,63.6,"disarm: above 50d & 200d, 50d > 200d"
+2013-07-05,re-enter,65.19,"disarm: above 50d & 200d, 50d > 200d"
+2013-10-09,exit,69.35,"disarm: above 50d & 200d, 50d > 200d"
+2013-10-10,re-enter,70.82,"disarm: above 50d & 200d, 50d > 200d"
+2014-01-29,exit,76.76,"disarm: above 50d & 200d, 50d > 200d"
+2014-01-30,re-enter,78.18,"disarm: above 50d & 200d, 50d > 200d"
+2014-03-26,exit,79.47,"disarm: above 50d & 200d, 50d > 200d"
+2014-04-01,re-enter,81.15,"disarm: above 50d & 200d, 50d > 200d"
+2014-10-01,exit,88.87,"disarm: above 50d & 200d, 50d > 200d"
+2014-10-03,re-enter,89.75,"disarm: above 50d & 200d, 50d > 200d"
+2014-12-16,exit,91.41,"disarm: above 50d & 200d, 50d > 200d"
+2014-12-17,re-enter,93.07,"disarm: above 50d & 200d, 50d > 200d"
+2015-03-26,exit,96.67,"disarm: above 50d & 200d, 50d > 200d"
+2015-03-27,re-enter,97.05,"disarm: above 50d & 200d, 50d > 200d"
+2015-06-09,exit,99.34,"disarm: above 50d & 200d, 50d > 200d"
+2015-06-10,re-enter,100.7,"disarm: above 50d & 200d, 50d > 200d"
+2015-08-19,exit,101.53,"disarm: above 50d & 200d, 50d > 200d"
+2015-10-08,re-enter,98.0,"disarm: above 50d & 200d, 50d > 200d"
+2015-12-11,exit,102.38,"disarm: above 50d & 200d, 50d > 200d"
+2015-12-15,re-enter,103.79,"disarm: above 50d & 200d, 50d > 200d"
+2016-01-08,exit,96.41,"disarm: above 50d & 200d, 50d > 200d"
+2016-03-01,re-enter,98.06,"disarm: above 50d & 200d, 50d > 200d"
+2016-04-28,re-exit,98.81,"disarm: above 50d & 200d, 50d > 200d"
+2016-05-24,re-enter,100.83,"disarm: above 50d & 200d, 50d > 200d"
+2016-09-09,exit,106.53,"disarm: above 50d & 200d, 50d > 200d"
+2016-09-12,re-enter,108.44,"disarm: above 50d & 200d, 50d > 200d"
+2016-10-28,exit,109.43,"disarm: above 50d & 200d, 50d > 200d"
+2016-11-09,re-enter,109.94,"disarm: above 50d & 200d, 50d > 200d"
+2016-11-10,re-exit,108.17,"disarm: above 50d & 200d, 50d > 200d"
+2016-11-17,re-enter,110.05,"disarm: above 50d & 200d, 50d > 200d"
+2017-06-27,exit,129.99,"disarm: above 50d & 200d, 50d > 200d"
+2017-06-28,re-enter,131.87,"disarm: above 50d & 200d, 50d > 200d"
+2017-06-29,re-exit,129.58,"disarm: above 50d & 200d, 50d > 200d"
+2017-07-12,re-enter,132.51,"disarm: above 50d & 200d, 50d > 200d"
+2018-02-05,exit,149.55,"disarm: above 50d & 200d, 50d > 200d"
+2018-02-06,re-enter,153.51,"disarm: above 50d & 200d, 50d > 200d"
+2018-02-07,re-exit,151.53,"disarm: above 50d & 200d, 50d > 200d"
+2018-02-14,re-enter,153.86,"disarm: above 50d & 200d, 50d > 200d"
+2018-03-22,exit,154.23,"disarm: above 50d & 200d, 50d > 200d"
+2018-04-17,re-enter,157.35,"disarm: above 50d & 200d, 50d > 200d"
+2018-10-05,exit,171.34,"disarm: above 50d & 200d, 50d > 200d"
+2019-01-15,re-enter,154.88,"disarm: above 50d & 200d, 50d > 200d"
+2019-05-13,exit,170.64,"disarm: above 50d & 200d, 50d > 200d"
+2019-05-15,re-enter,174.95,"disarm: above 50d & 200d, 50d > 200d"
+2019-08-05,exit,173.08,"disarm: above 50d & 200d, 50d > 200d"
+2019-08-08,re-enter,180.29,"disarm: above 50d & 200d, 50d > 200d"
+2019-08-09,re-exit,178.59,"disarm: above 50d & 200d, 50d > 200d"
+2019-08-13,re-enter,180.41,"disarm: above 50d & 200d, 50d > 200d"
+2019-08-14,re-exit,175.02,"disarm: above 50d & 200d, 50d > 200d"
+2019-09-05,re-enter,183.66,"disarm: above 50d & 200d, 50d > 200d"
+2019-10-02,exit,176.61,"disarm: above 50d & 200d, 50d > 200d"
+2019-10-04,re-enter,181.18,"disarm: above 50d & 200d, 50d > 200d"
+2020-02-25,exit,207.11,"disarm: above 50d & 200d, 50d > 200d"
+2020-04-14,re-enter,204.17,"disarm: above 50d & 200d, 50d > 200d"
+2020-09-11,exit,261.09,"disarm: above 50d & 200d, 50d > 200d"
+2020-09-14,re-enter,265.64,"disarm: above 50d & 200d, 50d > 200d"
+2021-02-25,exit,302.55,"disarm: above 50d & 200d, 50d > 200d"
+2021-03-01,re-enter,312.95,"disarm: above 50d & 200d, 50d > 200d"
+2021-03-02,re-exit,307.94,"disarm: above 50d & 200d, 50d > 200d"
+2021-03-17,re-enter,311.32,"disarm: above 50d & 200d, 50d > 200d"
+2021-03-18,re-exit,301.78,"disarm: above 50d & 200d, 50d > 200d"
+2021-04-01,re-enter,314.3,"disarm: above 50d & 200d, 50d > 200d"
+2021-05-12,exit,306.86,"disarm: above 50d & 200d, 50d > 200d"
+2021-05-20,re-enter,318.42,"disarm: above 50d & 200d, 50d > 200d"
+2021-05-21,re-exit,316.66,"disarm: above 50d & 200d, 50d > 200d"
+2021-05-24,re-enter,321.99,"disarm: above 50d & 200d, 50d > 200d"
+2021-09-20,exit,354.93,"disarm: above 50d & 200d, 50d > 200d"
+2021-09-22,re-enter,358.69,"disarm: above 50d & 200d, 50d > 200d"
+2021-12-17,exit,373.58,"disarm: above 50d & 200d, 50d > 200d"
+2021-12-21,re-enter,378.23,"disarm: above 50d & 200d, 50d > 200d"
+2022-01-19,exit,356.14,"disarm: above 50d & 200d, 50d > 200d"
+2022-03-22,re-enter,347.32,"disarm: above 50d & 200d, 50d > 200d"
+2022-04-08,re-exit,339.72,"disarm: above 50d & 200d, 50d > 200d"
+2022-07-19,re-enter,290.8,"disarm: above 50d & 200d, 50d > 200d"
+2022-08-30,re-exit,293.45,"disarm: above 50d & 200d, 50d > 200d"
+2022-09-09,re-enter,299.37,"disarm: above 50d & 200d, 50d > 200d"
+2022-09-13,re-exit,286.32,"disarm: above 50d & 200d, 50d > 200d"
+2022-11-10,re-enter,276.14,"disarm: above 50d & 200d, 50d > 200d"
+2022-12-15,re-exit,270.42,"disarm: above 50d & 200d, 50d > 200d"
+2023-01-11,re-enter,271.71,"disarm: above 50d & 200d, 50d > 200d"
+2023-01-19,re-exit,269.36,"disarm: above 50d & 200d, 50d > 200d"
+2023-01-20,re-enter,276.73,"disarm: above 50d & 200d, 50d > 200d"
+2023-03-10,exit,282.48,"disarm: above 50d & 200d, 50d > 200d"
+2023-03-13,re-enter,284.57,"disarm: above 50d & 200d, 50d > 200d"
+2023-08-11,exit,359.58,"disarm: above 50d & 200d, 50d > 200d"
+2023-08-14,re-enter,363.62,"disarm: above 50d & 200d, 50d > 200d"
+2023-08-15,re-exit,359.76,"disarm: above 50d & 200d, 50d > 200d"
+2023-08-29,re-enter,367.96,"disarm: above 50d & 200d, 50d > 200d"
+2023-10-03,exit,348.97,"disarm: above 50d & 200d, 50d > 200d"
+2023-10-10,re-enter,362.41,"disarm: above 50d & 200d, 50d > 200d"
+2023-10-26,exit,337.9,"disarm: above 50d & 200d, 50d > 200d"
+2023-11-03,re-enter,361.55,"disarm: above 50d & 200d, 50d > 200d"
+2024-04-15,exit,425.47,"disarm: above 50d & 200d, 50d > 200d"
+2024-05-06,re-enter,434.54,"disarm: above 50d & 200d, 50d > 200d"
+2024-07-24,exit,458.09,"disarm: above 50d & 200d, 50d > 200d"
+2024-08-15,re-enter,469.01,"disarm: above 50d & 200d, 50d > 200d"
+2025-01-10,exit,502.92,"disarm: above 50d & 200d, 50d > 200d"
+2025-01-15,re-enter,512.35,"disarm: above 50d & 200d, 50d > 200d"
+2025-01-16,re-exit,508.76,"disarm: above 50d & 200d, 50d > 200d"
+2025-01-17,re-enter,517.35,"disarm: above 50d & 200d, 50d > 200d"
+2025-02-27,exit,496.06,"disarm: above 50d & 200d, 50d > 200d"
+2025-05-01,re-enter,478.33,"disarm: above 50d & 200d, 50d > 200d"
+2025-11-17,exit,600.84,"disarm: above 50d & 200d, 50d > 200d"
+2025-11-25,re-enter,606.04,"disarm: above 50d & 200d, 50d > 200d"
+2026-01-20,exit,606.0,"disarm: above 50d & 200d, 50d > 200d"
+2026-01-21,re-enter,614.19,"disarm: above 50d & 200d, 50d > 200d"
+2026-02-26,exit,607.17,"disarm: above 50d & 200d, 50d > 200d"
+2026-04-08,re-enter,604.79,"disarm: above 50d & 200d, 50d > 200d"
+2026-07-07,exit,708.69,"disarm: above 50d & 200d, 50d > 200d"
+2026-07-09,re-enter,722.53,"disarm: above 50d & 200d, 50d > 200d"
+2026-09-14,exit,708.44,"disarm: above 50d & 200d, 50d > 200d"
+2026-09-17,re-enter,716.17,"disarm: above 50d & 200d, 50d > 200d"
+2026-10-29,exit,715.34,"disarm: above 50d & 200d, 50d > 200d"
+2003-08-05,exit,25.43,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2003-08-15,re-enter,26.24,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2003-09-30,exit,27.29,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2003-10-01,re-enter,27.9,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2003-11-18,exit,28.52,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2003-11-24,re-enter,29.61,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2004-02-04,exit,30.59,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2004-02-06,re-enter,31.27,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2004-03-09,exit,30.03,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2004-04-02,re-enter,31.24,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2004-04-15,re-exit,30.44,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2004-04-19,re-enter,30.76,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2004-04-20,re-exit,30.05,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2004-04-22,re-enter,31.09,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2004-04-29,re-exit,30.01,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2004-05-25,re-enter,30.28,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2004-07-16,exit,29.2,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2004-09-02,re-enter,29.29,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2004-09-03,re-exit,28.75,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2004-09-09,re-enter,29.13,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2005-01-05,exit,32.76,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2005-03-07,re-enter,32.36,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2005-03-08,re-exit,32.03,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2005-05-13,re-enter,30.81,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2005-06-30,exit,31.3,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2005-07-05,re-enter,31.58,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2005-07-06,re-exit,31.43,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2005-07-07,re-enter,31.54,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2005-09-19,exit,33.26,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2005-09-29,re-enter,33.36,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2005-10-05,re-exit,32.98,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2005-10-24,re-enter,33.32,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2005-10-27,re-exit,32.36,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2005-10-31,re-enter,33.08,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2006-01-25,exit,35.19,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2006-01-27,re-enter,35.92,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2006-02-02,re-exit,35.34,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2006-02-27,re-enter,35.59,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2006-02-28,re-exit,35.06,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2006-03-01,re-enter,35.54,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2006-03-03,re-exit,35.36,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2006-03-15,re-enter,35.59,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2006-03-16,re-exit,35.29,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2006-03-20,re-enter,35.47,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2006-03-21,re-exit,35.09,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2006-03-29,re-enter,35.78,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2006-05-11,exit,34.78,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2006-08-15,re-enter,32.2,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2006-12-22,exit,36.74,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2006-12-27,re-enter,37.08,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2006-12-28,re-exit,36.9,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2007-01-04,re-enter,37.7,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2007-02-09,exit,37.55,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2007-02-14,re-enter,38.16,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2007-02-27,re-exit,36.96,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2007-03-21,re-enter,38.03,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2007-03-28,re-exit,37.26,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2007-04-03,re-enter,37.81,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2007-08-09,exit,40.88,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2007-08-24,re-enter,41.3,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2007-08-27,re-exit,41.03,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2007-08-30,re-enter,41.41,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2007-09-07,re-exit,41.33,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2007-09-11,re-enter,41.93,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2007-11-08,exit,44.35,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2007-12-06,re-enter,44.86,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2007-12-11,re-exit,44.0,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2007-12-21,re-enter,44.5,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2007-12-31,re-exit,43.96,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2008-03-24,re-enter,38.29,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2008-03-27,re-exit,37.54,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2008-03-31,re-enter,37.55,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2008-06-11,exit,40.69,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2008-06-13,re-enter,41.55,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2008-06-20,re-exit,40.76,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2008-08-06,re-enter,40.08,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2008-08-07,re-exit,39.77,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2008-08-08,re-enter,40.67,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2008-09-02,re-exit,39.15,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2008-12-16,re-enter,26.28,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2008-12-17,re-exit,25.97,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2008-12-31,re-enter,25.62,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2009-01-12,re-exit,25.43,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2009-01-16,re-enter,25.34,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2009-01-20,re-exit,24.08,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2009-01-27,re-enter,25.25,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2009-01-30,re-exit,25.03,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2009-02-02,re-enter,25.33,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2009-02-17,re-exit,25.17,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2009-03-17,re-enter,25.26,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2009-10-28,exit,35.79,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2009-10-29,re-enter,36.39,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2009-10-30,re-exit,35.42,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2009-11-05,re-enter,36.62,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2010-01-22,exit,38.25,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2010-02-18,re-enter,38.84,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2010-02-22,re-exit,38.75,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2010-03-01,re-enter,39.33,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2010-05-06,exit,40.38,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2010-05-12,re-enter,42.16,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2010-05-13,re-exit,41.49,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2010-07-14,re-enter,39.65,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2010-07-16,re-exit,38.59,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2010-07-22,re-enter,39.84,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2010-08-12,re-exit,39.2,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2010-08-17,re-enter,39.49,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2010-08-19,re-exit,39.05,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2010-09-02,re-enter,39.39,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2011-03-10,exit,49.07,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2011-03-25,re-enter,49.76,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2011-03-28,re-exit,49.49,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2011-03-29,re-enter,49.97,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2011-04-08,re-exit,49.85,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2011-04-20,re-enter,50.67,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2011-06-03,exit,49.33,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2011-06-30,re-enter,50.05,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2011-08-02,exit,49.37,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2011-09-14,re-enter,48.57,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2011-09-22,re-exit,47.1,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2011-09-27,re-enter,48.65,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2011-09-28,re-exit,47.93,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2011-10-06,re-enter,47.84,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2011-11-17,re-exit,49.07,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2011-11-30,re-enter,49.57,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2011-12-08,re-exit,49.33,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2011-12-09,re-enter,50.12,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2011-12-12,re-exit,49.56,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2012-01-03,re-enter,50.21,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2012-04-23,exit,57.52,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2012-04-25,re-enter,58.73,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2012-05-04,re-exit,57.18,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2012-06-19,re-enter,56.91,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2012-06-21,re-exit,55.53,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2012-06-29,re-enter,56.84,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2012-07-11,re-exit,55.83,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2012-07-13,re-enter,56.15,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2012-07-25,re-exit,55.4,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2012-07-26,re-enter,56.14,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2012-10-18,exit,59.78,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2012-12-11,re-enter,58.61,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2012-12-13,re-exit,58.02,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2012-12-17,re-enter,58.23,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2012-12-26,re-exit,57.62,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2012-12-31,re-enter,58.18,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2013-02-25,exit,59.24,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2013-02-27,re-enter,60.07,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2013-04-17,exit,60.99,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2013-04-22,re-enter,61.6,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2013-06-20,exit,63.6,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2013-07-05,re-enter,65.19,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2013-10-09,exit,69.35,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2013-10-10,re-enter,70.82,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2014-01-29,exit,76.76,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2014-01-30,re-enter,78.18,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2014-02-03,re-exit,76.18,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2014-02-07,re-enter,78.9,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2014-03-26,exit,79.47,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2014-04-01,re-enter,81.15,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2014-04-04,re-exit,78.56,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2014-05-12,re-enter,80.26,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2014-05-15,re-exit,79.26,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2014-05-16,re-enter,79.78,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2014-10-01,exit,88.87,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2014-10-03,re-enter,89.75,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2014-10-07,re-exit,88.29,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2014-10-08,re-enter,90.01,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2014-10-09,re-exit,88.55,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2014-10-24,re-enter,90.16,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2014-12-16,exit,91.41,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2014-12-17,re-enter,93.07,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2015-03-26,exit,96.67,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2015-03-27,re-enter,97.05,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2015-04-01,re-exit,96.62,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2015-04-06,re-enter,97.48,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2015-04-17,re-exit,97.5,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2015-04-20,re-enter,98.97,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2015-06-09,exit,99.34,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2015-06-10,re-enter,100.7,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2015-06-15,re-exit,99.53,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2015-06-16,re-enter,100.07,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2015-06-29,re-exit,98.35,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2015-07-13,re-enter,100.98,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2015-08-19,exit,101.53,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2015-10-08,re-enter,98.0,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2015-12-11,exit,102.38,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2015-12-15,re-enter,103.79,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2015-12-18,re-exit,101.81,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2015-12-23,re-enter,104.38,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2015-12-31,re-exit,103.69,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2016-03-01,re-enter,98.06,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2016-04-28,re-exit,98.81,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2016-05-24,re-enter,100.83,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2016-09-09,exit,106.53,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2016-09-12,re-enter,108.44,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2016-10-28,exit,109.43,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2016-11-09,re-enter,109.94,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2016-11-10,re-exit,108.17,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2016-11-17,re-enter,110.05,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2016-11-30,re-exit,109.8,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2016-12-07,re-enter,110.61,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2017-06-27,exit,129.99,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2017-06-28,re-enter,131.87,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2017-06-29,re-exit,129.58,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2017-07-12,re-enter,132.51,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2018-02-05,exit,149.55,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2018-02-06,re-enter,153.51,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2018-02-07,re-exit,151.53,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2018-02-14,re-enter,153.86,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2018-03-22,exit,154.23,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2018-04-17,re-enter,157.35,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2018-04-20,re-exit,153.75,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2018-05-04,re-enter,156.19,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2018-10-05,exit,171.34,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2019-01-15,re-enter,154.88,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2019-05-13,exit,170.64,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2019-05-15,re-enter,174.95,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2019-05-17,re-exit,174.9,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2019-06-17,re-enter,175.57,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2019-08-05,exit,173.08,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2019-08-08,re-enter,180.29,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2019-08-09,re-exit,178.59,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2019-08-13,re-enter,180.41,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2019-08-14,re-exit,175.02,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2019-09-05,re-enter,183.66,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2019-10-02,exit,176.61,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2019-10-04,re-enter,181.18,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2019-10-08,re-exit,177.93,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2019-10-10,re-enter,181.05,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2020-02-25,exit,207.11,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2020-04-14,re-enter,204.17,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2020-09-11,exit,261.09,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2020-09-14,re-enter,265.64,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2020-09-17,re-exit,260.96,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2020-09-28,re-enter,267.6,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2020-10-02,re-exit,264.81,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2020-10-05,re-enter,270.46,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2020-10-06,re-exit,265.64,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2020-10-07,re-enter,270.23,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2021-02-25,exit,302.55,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2021-03-01,re-enter,312.95,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2021-03-02,re-exit,307.94,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2021-03-17,re-enter,311.32,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2021-03-18,re-exit,301.78,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2021-04-01,re-enter,314.3,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2021-05-12,exit,306.86,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2021-05-20,re-enter,318.42,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2021-05-21,re-exit,316.66,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2021-05-24,re-enter,321.99,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2021-06-03,re-exit,319.56,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2021-06-04,re-enter,324.98,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2021-09-20,exit,354.93,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2021-09-22,re-enter,358.69,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2021-09-28,re-exit,349.27,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2021-10-18,re-enter,361.68,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2021-12-17,exit,373.58,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2021-12-21,re-enter,378.23,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2022-01-19,exit,356.14,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2022-03-22,re-enter,347.32,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2022-04-08,re-exit,339.72,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2022-07-19,re-enter,290.8,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2022-08-30,re-exit,293.45,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2022-09-09,re-enter,299.37,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2022-09-13,re-exit,286.32,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2022-11-10,re-enter,276.14,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2022-12-15,re-exit,270.42,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2023-01-11,re-enter,271.71,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2023-01-19,re-exit,269.36,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2023-01-20,re-enter,276.73,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2023-03-10,exit,282.48,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2023-03-13,re-enter,284.57,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2023-08-11,exit,359.58,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2023-08-14,re-enter,363.62,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2023-08-15,re-exit,359.76,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2023-08-29,re-enter,367.96,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2023-09-07,re-exit,365.29,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2023-09-08,re-enter,365.8,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2023-09-15,re-exit,364.07,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2023-10-10,re-enter,362.41,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2023-10-13,re-exit,359.16,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2023-10-16,re-enter,363.22,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2023-10-18,re-exit,357.28,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2023-11-03,re-enter,361.55,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2024-04-15,exit,425.47,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2024-05-06,re-enter,434.54,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2024-07-24,exit,458.09,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2024-08-15,re-enter,469.01,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2024-08-28,re-exit,465.97,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2024-08-30,re-enter,470.84,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2024-09-03,re-exit,456.54,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2024-09-12,re-enter,467.82,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2025-01-10,exit,502.92,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2025-01-15,re-enter,512.35,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2025-01-16,re-exit,508.76,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2025-01-17,re-enter,517.35,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2025-01-27,re-exit,509.88,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2025-01-28,re-enter,517.41,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2025-02-03,re-exit,513.75,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2025-02-04,re-enter,520.05,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2025-03-10,exit,468.75,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2025-05-01,re-enter,478.33,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2025-11-17,exit,600.84,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2025-11-25,re-enter,606.04,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2026-01-20,exit,606.0,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2026-01-21,re-enter,614.19,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2026-02-03,re-exit,614.43,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2026-02-25,re-enter,614.59,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2026-02-26,re-exit,607.17,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2026-04-08,re-enter,604.79,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2026-07-07,exit,708.69,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2026-07-09,re-enter,722.53,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2026-07-13,re-exit,711.0,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2026-07-14,re-enter,718.94,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2026-07-16,re-exit,705.21,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2026-08-04,re-enter,723.1,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2026-09-14,exit,708.44,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2026-09-17,re-enter,716.17,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2026-10-29,exit,715.34,"disarm: above 50d & 200d, 50d > 200d, 10 days"
+2004-03-23,exit,28.66,[dist & below 200d] disarm: never (no re-exit)
+2004-04-02,re-enter,31.24,[dist & below 200d] disarm: never (no re-exit)
+2004-05-10,exit,29.2,[dist & below 200d] disarm: never (no re-exit)
+2004-05-25,re-enter,30.28,[dist & below 200d] disarm: never (no re-exit)
+2004-07-16,exit,29.2,[dist & below 200d] disarm: never (no re-exit)
+2004-09-02,re-enter,29.29,[dist & below 200d] disarm: never (no re-exit)
+2005-03-18,exit,31.04,[dist & below 200d] disarm: never (no re-exit)
+2005-05-13,re-enter,30.81,[dist & below 200d] disarm: never (no re-exit)
+2005-06-30,exit,31.3,[dist & below 200d] disarm: never (no re-exit)
+2005-07-05,re-enter,31.58,[dist & below 200d] disarm: never (no re-exit)
+2005-10-12,exit,31.9,[dist & below 200d] disarm: never (no re-exit)
+2005-10-24,re-enter,33.32,[dist & below 200d] disarm: never (no re-exit)
+2006-05-12,exit,34.31,[dist & below 200d] disarm: never (no re-exit)
+2006-08-15,re-enter,32.2,[dist & below 200d] disarm: never (no re-exit)
+2008-01-16,exit,39.52,[dist & below 200d] disarm: never (no re-exit)
+2008-03-24,re-enter,38.29,[dist & below 200d] disarm: never (no re-exit)
+2008-06-11,exit,40.69,[dist & below 200d] disarm: never (no re-exit)
+2008-06-13,re-enter,41.55,[dist & below 200d] disarm: never (no re-exit)
+2008-09-02,exit,39.15,[dist & below 200d] disarm: never (no re-exit)
+2008-12-16,re-enter,26.28,[dist & below 200d] disarm: never (no re-exit)
+2009-02-17,exit,25.17,[dist & below 200d] disarm: never (no re-exit)
+2009-03-17,re-enter,25.26,[dist & below 200d] disarm: never (no re-exit)
+2010-05-20,exit,38.45,[dist & below 200d] disarm: never (no re-exit)
+2010-07-14,re-enter,39.65,[dist & below 200d] disarm: never (no re-exit)
+2010-08-24,exit,37.99,[dist & below 200d] disarm: never (no re-exit)
+2010-09-02,re-enter,39.39,[dist & below 200d] disarm: never (no re-exit)
+2011-06-15,exit,47.52,[dist & below 200d] disarm: never (no re-exit)
+2011-06-30,re-enter,50.05,[dist & below 200d] disarm: never (no re-exit)
+2011-08-04,exit,47.53,[dist & below 200d] disarm: never (no re-exit)
+2011-09-14,re-enter,48.57,[dist & below 200d] disarm: never (no re-exit)
+2012-11-07,exit,57.01,[dist & below 200d] disarm: never (no re-exit)
+2012-12-11,re-enter,58.61,[dist & below 200d] disarm: never (no re-exit)
+2015-08-21,exit,94.4,[dist & below 200d] disarm: never (no re-exit)
+2015-10-08,re-enter,98.0,[dist & below 200d] disarm: never (no re-exit)
+2016-01-06,exit,100.35,[dist & below 200d] disarm: never (no re-exit)
+2016-03-01,re-enter,98.06,[dist & below 200d] disarm: never (no re-exit)
+2016-04-29,exit,98.29,[dist & below 200d] disarm: never (no re-exit)
+2016-05-24,re-enter,100.83,[dist & below 200d] disarm: never (no re-exit)
+2018-10-11,exit,161.3,[dist & below 200d] disarm: never (no re-exit)
+2019-01-15,re-enter,154.88,[dist & below 200d] disarm: never (no re-exit)
+2019-06-03,exit,162.56,[dist & below 200d] disarm: never (no re-exit)
+2019-06-17,re-enter,175.57,[dist & below 200d] disarm: never (no re-exit)
+2020-03-09,exit,186.15,[dist & below 200d] disarm: never (no re-exit)
+2020-04-14,re-enter,204.17,[dist & below 200d] disarm: never (no re-exit)
+2022-01-20,exit,351.52,[dist & below 200d] disarm: never (no re-exit)
+2022-03-22,re-enter,347.32,[dist & below 200d] disarm: never (no re-exit)
+2022-04-22,exit,316.61,[dist & below 200d] disarm: never (no re-exit)
+2022-07-19,re-enter,290.8,[dist & below 200d] disarm: never (no re-exit)
+2022-09-13,exit,286.32,[dist & below 200d] disarm: never (no re-exit)
+2022-11-10,re-enter,276.14,[dist & below 200d] disarm: never (no re-exit)
+2023-03-10,exit,282.48,[dist & below 200d] disarm: never (no re-exit)
+2023-03-13,re-enter,284.57,[dist & below 200d] disarm: never (no re-exit)
+2025-03-06,exit,484.09,[dist & below 200d] disarm: never (no re-exit)
+2025-05-01,re-enter,478.33,[dist & below 200d] disarm: never (no re-exit)
+2026-03-20,exit,580.08,[dist & below 200d] disarm: never (no re-exit)
+2026-04-08,re-enter,604.79,[dist & below 200d] disarm: never (no re-exit)
+2026-11-05,exit,647.05,[dist & below 200d] disarm: never (no re-exit)
+2004-03-23,exit,28.66,[dist & below 200d] disarm: new 52-week high
+2004-04-02,re-enter,31.24,[dist & below 200d] disarm: new 52-week high
+2004-04-15,re-exit,30.44,[dist & below 200d] disarm: new 52-week high
+2004-04-19,re-enter,30.76,[dist & below 200d] disarm: new 52-week high
+2004-04-20,re-exit,30.05,[dist & below 200d] disarm: new 52-week high
+2004-04-22,re-enter,31.09,[dist & below 200d] disarm: new 52-week high
+2004-04-29,re-exit,30.01,[dist & below 200d] disarm: new 52-week high
+2004-05-25,re-enter,30.28,[dist & below 200d] disarm: new 52-week high
+2004-07-06,re-exit,30.34,[dist & below 200d] disarm: new 52-week high
+2004-07-07,re-enter,30.4,[dist & below 200d] disarm: new 52-week high
+2004-07-08,re-exit,30.06,[dist & below 200d] disarm: new 52-week high
+2004-09-02,re-enter,29.29,[dist & below 200d] disarm: new 52-week high
+2004-09-03,re-exit,28.75,[dist & below 200d] disarm: new 52-week high
+2004-09-09,re-enter,29.13,[dist & below 200d] disarm: new 52-week high
+2005-03-18,exit,31.04,[dist & below 200d] disarm: new 52-week high
+2005-05-13,re-enter,30.81,[dist & below 200d] disarm: new 52-week high
+2005-06-30,exit,31.3,[dist & below 200d] disarm: new 52-week high
+2005-07-05,re-enter,31.58,[dist & below 200d] disarm: new 52-week high
+2005-07-06,re-exit,31.43,[dist & below 200d] disarm: new 52-week high
+2005-07-07,re-enter,31.54,[dist & below 200d] disarm: new 52-week high
+2005-10-12,exit,31.9,[dist & below 200d] disarm: new 52-week high
+2005-10-24,re-enter,33.32,[dist & below 200d] disarm: new 52-week high
+2005-10-27,re-exit,32.36,[dist & below 200d] disarm: new 52-week high
+2005-10-31,re-enter,33.08,[dist & below 200d] disarm: new 52-week high
+2006-05-12,exit,34.31,[dist & below 200d] disarm: new 52-week high
+2006-08-15,re-enter,32.2,[dist & below 200d] disarm: new 52-week high
+2008-01-16,exit,39.52,[dist & below 200d] disarm: new 52-week high
+2008-03-24,re-enter,38.29,[dist & below 200d] disarm: new 52-week high
+2008-03-27,re-exit,37.54,[dist & below 200d] disarm: new 52-week high
+2008-03-31,re-enter,37.55,[dist & below 200d] disarm: new 52-week high
+2008-06-11,exit,40.69,[dist & below 200d] disarm: new 52-week high
+2008-06-13,re-enter,41.55,[dist & below 200d] disarm: new 52-week high
+2008-06-20,re-exit,40.76,[dist & below 200d] disarm: new 52-week high
+2008-08-06,re-enter,40.08,[dist & below 200d] disarm: new 52-week high
+2008-08-07,re-exit,39.77,[dist & below 200d] disarm: new 52-week high
+2008-08-08,re-enter,40.67,[dist & below 200d] disarm: new 52-week high
+2008-09-02,re-exit,39.15,[dist & below 200d] disarm: new 52-week high
+2008-12-16,re-enter,26.28,[dist & below 200d] disarm: new 52-week high
+2008-12-17,re-exit,25.97,[dist & below 200d] disarm: new 52-week high
+2008-12-31,re-enter,25.62,[dist & below 200d] disarm: new 52-week high
+2009-01-12,re-exit,25.43,[dist & below 200d] disarm: new 52-week high
+2009-01-16,re-enter,25.34,[dist & below 200d] disarm: new 52-week high
+2009-01-20,re-exit,24.08,[dist & below 200d] disarm: new 52-week high
+2009-01-27,re-enter,25.25,[dist & below 200d] disarm: new 52-week high
+2009-01-30,re-exit,25.03,[dist & below 200d] disarm: new 52-week high
+2009-02-02,re-enter,25.33,[dist & below 200d] disarm: new 52-week high
+2009-02-17,re-exit,25.17,[dist & below 200d] disarm: new 52-week high
+2009-03-17,re-enter,25.26,[dist & below 200d] disarm: new 52-week high
+2009-07-07,re-exit,29.83,[dist & below 200d] disarm: new 52-week high
+2009-07-13,re-enter,30.74,[dist & below 200d] disarm: new 52-week high
+2010-05-20,exit,38.45,[dist & below 200d] disarm: new 52-week high
+2010-07-14,re-enter,39.65,[dist & below 200d] disarm: new 52-week high
+2010-07-16,re-exit,38.59,[dist & below 200d] disarm: new 52-week high
+2010-07-22,re-enter,39.84,[dist & below 200d] disarm: new 52-week high
+2010-08-12,re-exit,39.2,[dist & below 200d] disarm: new 52-week high
+2010-08-17,re-enter,39.49,[dist & below 200d] disarm: new 52-week high
+2010-08-19,re-exit,39.05,[dist & below 200d] disarm: new 52-week high
+2010-09-02,re-enter,39.39,[dist & below 200d] disarm: new 52-week high
+2011-06-15,exit,47.52,[dist & below 200d] disarm: new 52-week high
+2011-06-30,re-enter,50.05,[dist & below 200d] disarm: new 52-week high
+2011-08-04,exit,47.53,[dist & below 200d] disarm: new 52-week high
+2011-09-14,re-enter,48.57,[dist & below 200d] disarm: new 52-week high
+2011-09-22,re-exit,47.1,[dist & below 200d] disarm: new 52-week high
+2011-09-27,re-enter,48.65,[dist & below 200d] disarm: new 52-week high
+2011-09-28,re-exit,47.93,[dist & below 200d] disarm: new 52-week high
+2011-10-06,re-enter,47.84,[dist & below 200d] disarm: new 52-week high
+2011-11-17,re-exit,49.07,[dist & below 200d] disarm: new 52-week high
+2011-11-30,re-enter,49.57,[dist & below 200d] disarm: new 52-week high
+2011-12-08,re-exit,49.33,[dist & below 200d] disarm: new 52-week high
+2011-12-09,re-enter,50.12,[dist & below 200d] disarm: new 52-week high
+2011-12-12,re-exit,49.56,[dist & below 200d] disarm: new 52-week high
+2012-01-03,re-enter,50.21,[dist & below 200d] disarm: new 52-week high
+2012-11-07,exit,57.01,[dist & below 200d] disarm: new 52-week high
+2012-12-11,re-enter,58.61,[dist & below 200d] disarm: new 52-week high
+2012-12-13,re-exit,58.02,[dist & below 200d] disarm: new 52-week high
+2012-12-17,re-enter,58.23,[dist & below 200d] disarm: new 52-week high
+2012-12-26,re-exit,57.62,[dist & below 200d] disarm: new 52-week high
+2012-12-31,re-enter,58.18,[dist & below 200d] disarm: new 52-week high
+2013-02-21,re-exit,59.38,[dist & below 200d] disarm: new 52-week high
+2013-02-22,re-enter,59.98,[dist & below 200d] disarm: new 52-week high
+2013-02-25,re-exit,59.24,[dist & below 200d] disarm: new 52-week high
+2013-02-27,re-enter,60.07,[dist & below 200d] disarm: new 52-week high
+2015-08-21,exit,94.4,[dist & below 200d] disarm: new 52-week high
+2015-10-08,re-enter,98.0,[dist & below 200d] disarm: new 52-week high
+2016-01-06,exit,100.35,[dist & below 200d] disarm: new 52-week high
+2016-03-01,re-enter,98.06,[dist & below 200d] disarm: new 52-week high
+2016-04-28,re-exit,98.81,[dist & below 200d] disarm: new 52-week high
+2016-05-24,re-enter,100.83,[dist & below 200d] disarm: new 52-week high
+2016-06-13,re-exit,100.43,[dist & below 200d] disarm: new 52-week high
+2016-06-23,re-enter,101.39,[dist & below 200d] disarm: new 52-week high
+2016-06-24,re-exit,97.22,[dist & below 200d] disarm: new 52-week high
+2016-06-30,re-enter,100.25,[dist & below 200d] disarm: new 52-week high
+2018-10-11,exit,161.3,[dist & below 200d] disarm: new 52-week high
+2019-01-15,re-enter,154.88,[dist & below 200d] disarm: new 52-week high
+2019-06-03,exit,162.56,[dist & below 200d] disarm: new 52-week high
+2019-06-17,re-enter,175.57,[dist & below 200d] disarm: new 52-week high
+2020-03-09,exit,186.15,[dist & below 200d] disarm: new 52-week high
+2020-04-14,re-enter,204.17,[dist & below 200d] disarm: new 52-week high
+2022-01-20,exit,351.52,[dist & below 200d] disarm: new 52-week high
+2022-03-22,re-enter,347.32,[dist & below 200d] disarm: new 52-week high
+2022-04-08,re-exit,339.72,[dist & below 200d] disarm: new 52-week high
+2022-07-19,re-enter,290.8,[dist & below 200d] disarm: new 52-week high
+2022-08-30,re-exit,293.45,[dist & below 200d] disarm: new 52-week high
+2022-09-09,re-enter,299.37,[dist & below 200d] disarm: new 52-week high
+2022-09-13,re-exit,286.32,[dist & below 200d] disarm: new 52-week high
+2022-11-10,re-enter,276.14,[dist & below 200d] disarm: new 52-week high
+2022-12-15,re-exit,270.42,[dist & below 200d] disarm: new 52-week high
+2023-01-11,re-enter,271.71,[dist & below 200d] disarm: new 52-week high
+2023-01-19,re-exit,269.36,[dist & below 200d] disarm: new 52-week high
+2023-01-20,re-enter,276.73,[dist & below 200d] disarm: new 52-week high
+2023-03-10,exit,282.48,[dist & below 200d] disarm: new 52-week high
+2023-03-13,re-enter,284.57,[dist & below 200d] disarm: new 52-week high
+2025-03-06,exit,484.09,[dist & below 200d] disarm: new 52-week high
+2025-05-01,re-enter,478.33,[dist & below 200d] disarm: new 52-week high
+2026-03-20,exit,580.08,[dist & below 200d] disarm: new 52-week high
+2026-04-08,re-enter,604.79,[dist & below 200d] disarm: new 52-week high
+2026-11-05,exit,647.05,[dist & below 200d] disarm: new 52-week high
+2004-03-23,exit,28.66,[dist & below 200d] disarm: 20 days above 50d
+2004-04-02,re-enter,31.24,[dist & below 200d] disarm: 20 days above 50d
+2004-04-15,re-exit,30.44,[dist & below 200d] disarm: 20 days above 50d
+2004-04-19,re-enter,30.76,[dist & below 200d] disarm: 20 days above 50d
+2004-04-20,re-exit,30.05,[dist & below 200d] disarm: 20 days above 50d
+2004-04-22,re-enter,31.09,[dist & below 200d] disarm: 20 days above 50d
+2004-04-29,re-exit,30.01,[dist & below 200d] disarm: 20 days above 50d
+2004-05-25,re-enter,30.28,[dist & below 200d] disarm: 20 days above 50d
+2004-07-16,exit,29.2,[dist & below 200d] disarm: 20 days above 50d
+2004-09-02,re-enter,29.29,[dist & below 200d] disarm: 20 days above 50d
+2004-09-03,re-exit,28.75,[dist & below 200d] disarm: 20 days above 50d
+2004-09-09,re-enter,29.13,[dist & below 200d] disarm: 20 days above 50d
+2005-03-18,exit,31.04,[dist & below 200d] disarm: 20 days above 50d
+2005-05-13,re-enter,30.81,[dist & below 200d] disarm: 20 days above 50d
+2005-06-30,exit,31.3,[dist & below 200d] disarm: 20 days above 50d
+2005-07-05,re-enter,31.58,[dist & below 200d] disarm: 20 days above 50d
+2005-07-06,re-exit,31.43,[dist & below 200d] disarm: 20 days above 50d
+2005-07-07,re-enter,31.54,[dist & below 200d] disarm: 20 days above 50d
+2005-10-12,exit,31.9,[dist & below 200d] disarm: 20 days above 50d
+2005-10-24,re-enter,33.32,[dist & below 200d] disarm: 20 days above 50d
+2005-10-27,re-exit,32.36,[dist & below 200d] disarm: 20 days above 50d
+2005-10-31,re-enter,33.08,[dist & below 200d] disarm: 20 days above 50d
+2006-05-12,exit,34.31,[dist & below 200d] disarm: 20 days above 50d
+2006-08-15,re-enter,32.2,[dist & below 200d] disarm: 20 days above 50d
+2008-01-16,exit,39.52,[dist & below 200d] disarm: 20 days above 50d
+2008-03-24,re-enter,38.29,[dist & below 200d] disarm: 20 days above 50d
+2008-03-27,re-exit,37.54,[dist & below 200d] disarm: 20 days above 50d
+2008-03-31,re-enter,37.55,[dist & below 200d] disarm: 20 days above 50d
+2008-06-11,exit,40.69,[dist & below 200d] disarm: 20 days above 50d
+2008-06-13,re-enter,41.55,[dist & below 200d] disarm: 20 days above 50d
+2008-06-20,re-exit,40.76,[dist & below 200d] disarm: 20 days above 50d
+2008-08-06,re-enter,40.08,[dist & below 200d] disarm: 20 days above 50d
+2008-08-07,re-exit,39.77,[dist & below 200d] disarm: 20 days above 50d
+2008-08-08,re-enter,40.67,[dist & below 200d] disarm: 20 days above 50d
+2008-09-02,re-exit,39.15,[dist & below 200d] disarm: 20 days above 50d
+2008-12-16,re-enter,26.28,[dist & below 200d] disarm: 20 days above 50d
+2008-12-17,re-exit,25.97,[dist & below 200d] disarm: 20 days above 50d
+2008-12-31,re-enter,25.62,[dist & below 200d] disarm: 20 days above 50d
+2009-01-12,re-exit,25.43,[dist & below 200d] disarm: 20 days above 50d
+2009-01-16,re-enter,25.34,[dist & below 200d] disarm: 20 days above 50d
+2009-01-20,re-exit,24.08,[dist & below 200d] disarm: 20 days above 50d
+2009-01-27,re-enter,25.25,[dist & below 200d] disarm: 20 days above 50d
+2009-01-30,re-exit,25.03,[dist & below 200d] disarm: 20 days above 50d
+2009-02-02,re-enter,25.33,[dist & below 200d] disarm: 20 days above 50d
+2009-02-17,re-exit,25.17,[dist & below 200d] disarm: 20 days above 50d
+2009-03-17,re-enter,25.26,[dist & below 200d] disarm: 20 days above 50d
+2010-05-20,exit,38.45,[dist & below 200d] disarm: 20 days above 50d
+2010-07-14,re-enter,39.65,[dist & below 200d] disarm: 20 days above 50d
+2010-07-16,re-exit,38.59,[dist & below 200d] disarm: 20 days above 50d
+2010-07-22,re-enter,39.84,[dist & below 200d] disarm: 20 days above 50d
+2010-08-12,re-exit,39.2,[dist & below 200d] disarm: 20 days above 50d
+2010-08-17,re-enter,39.49,[dist & below 200d] disarm: 20 days above 50d
+2010-08-19,re-exit,39.05,[dist & below 200d] disarm: 20 days above 50d
+2010-09-02,re-enter,39.39,[dist & below 200d] disarm: 20 days above 50d
+2011-06-15,exit,47.52,[dist & below 200d] disarm: 20 days above 50d
+2011-06-30,re-enter,50.05,[dist & below 200d] disarm: 20 days above 50d
+2011-08-04,exit,47.53,[dist & below 200d] disarm: 20 days above 50d
+2011-09-14,re-enter,48.57,[dist & below 200d] disarm: 20 days above 50d
+2011-09-22,re-exit,47.1,[dist & below 200d] disarm: 20 days above 50d
+2011-09-27,re-enter,48.65,[dist & below 200d] disarm: 20 days above 50d
+2011-09-28,re-exit,47.93,[dist & below 200d] disarm: 20 days above 50d
+2011-10-06,re-enter,47.84,[dist & below 200d] disarm: 20 days above 50d
+2012-11-07,exit,57.01,[dist & below 200d] disarm: 20 days above 50d
+2012-12-11,re-enter,58.61,[dist & below 200d] disarm: 20 days above 50d
+2012-12-13,re-exit,58.02,[dist & below 200d] disarm: 20 days above 50d
+2012-12-17,re-enter,58.23,[dist & below 200d] disarm: 20 days above 50d
+2012-12-26,re-exit,57.62,[dist & below 200d] disarm: 20 days above 50d
+2012-12-31,re-enter,58.18,[dist & below 200d] disarm: 20 days above 50d
+2015-08-21,exit,94.4,[dist & below 200d] disarm: 20 days above 50d
+2015-10-08,re-enter,98.0,[dist & below 200d] disarm: 20 days above 50d
+2016-01-06,exit,100.35,[dist & below 200d] disarm: 20 days above 50d
+2016-03-01,re-enter,98.06,[dist & below 200d] disarm: 20 days above 50d
+2016-04-29,exit,98.29,[dist & below 200d] disarm: 20 days above 50d
+2016-05-24,re-enter,100.83,[dist & below 200d] disarm: 20 days above 50d
+2016-06-13,re-exit,100.43,[dist & below 200d] disarm: 20 days above 50d
+2016-06-23,re-enter,101.39,[dist & below 200d] disarm: 20 days above 50d
+2016-06-24,re-exit,97.22,[dist & below 200d] disarm: 20 days above 50d
+2016-06-30,re-enter,100.25,[dist & below 200d] disarm: 20 days above 50d
+2018-10-11,exit,161.3,[dist & below 200d] disarm: 20 days above 50d
+2019-01-15,re-enter,154.88,[dist & below 200d] disarm: 20 days above 50d
+2019-06-03,exit,162.56,[dist & below 200d] disarm: 20 days above 50d
+2019-06-17,re-enter,175.57,[dist & below 200d] disarm: 20 days above 50d
+2020-03-09,exit,186.15,[dist & below 200d] disarm: 20 days above 50d
+2020-04-14,re-enter,204.17,[dist & below 200d] disarm: 20 days above 50d
+2022-01-20,exit,351.52,[dist & below 200d] disarm: 20 days above 50d
+2022-03-22,re-enter,347.32,[dist & below 200d] disarm: 20 days above 50d
+2022-04-08,re-exit,339.72,[dist & below 200d] disarm: 20 days above 50d
+2022-07-19,re-enter,290.8,[dist & below 200d] disarm: 20 days above 50d
+2022-09-13,exit,286.32,[dist & below 200d] disarm: 20 days above 50d
+2022-11-10,re-enter,276.14,[dist & below 200d] disarm: 20 days above 50d
+2023-03-10,exit,282.48,[dist & below 200d] disarm: 20 days above 50d
+2023-03-13,re-enter,284.57,[dist & below 200d] disarm: 20 days above 50d
+2025-03-06,exit,484.09,[dist & below 200d] disarm: 20 days above 50d
+2025-05-01,re-enter,478.33,[dist & below 200d] disarm: 20 days above 50d
+2026-03-20,exit,580.08,[dist & below 200d] disarm: 20 days above 50d
+2026-04-08,re-enter,604.79,[dist & below 200d] disarm: 20 days above 50d
+2026-11-05,exit,647.05,[dist & below 200d] disarm: 20 days above 50d
+2004-03-23,exit,28.66,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2004-04-02,re-enter,31.24,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2004-05-10,exit,29.2,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2004-05-25,re-enter,30.28,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2004-07-16,exit,29.2,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2004-09-02,re-enter,29.29,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2004-09-03,re-exit,28.75,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2004-09-09,re-enter,29.13,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2005-03-18,exit,31.04,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2005-05-13,re-enter,30.81,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2005-06-30,exit,31.3,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2005-07-05,re-enter,31.58,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2005-07-06,re-exit,31.43,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2005-07-07,re-enter,31.54,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2005-10-12,exit,31.9,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2005-10-24,re-enter,33.32,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2006-05-12,exit,34.31,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2006-08-15,re-enter,32.2,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2008-01-16,exit,39.52,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2008-03-24,re-enter,38.29,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2008-03-27,re-exit,37.54,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2008-03-31,re-enter,37.55,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2008-06-11,exit,40.69,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2008-06-13,re-enter,41.55,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2008-06-20,re-exit,40.76,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2008-08-06,re-enter,40.08,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2008-08-07,re-exit,39.77,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2008-08-08,re-enter,40.67,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2008-09-02,re-exit,39.15,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2008-12-16,re-enter,26.28,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2008-12-17,re-exit,25.97,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2008-12-31,re-enter,25.62,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2009-01-12,re-exit,25.43,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2009-01-16,re-enter,25.34,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2009-01-20,re-exit,24.08,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2009-01-27,re-enter,25.25,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2009-01-30,re-exit,25.03,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2009-02-02,re-enter,25.33,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2009-02-17,re-exit,25.17,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2009-03-17,re-enter,25.26,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2010-05-20,exit,38.45,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2010-07-14,re-enter,39.65,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2010-08-24,exit,37.99,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2010-09-02,re-enter,39.39,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2011-06-15,exit,47.52,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2011-06-30,re-enter,50.05,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2011-08-04,exit,47.53,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2011-09-14,re-enter,48.57,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2011-09-22,re-exit,47.1,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2011-09-27,re-enter,48.65,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2011-09-28,re-exit,47.93,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2011-10-06,re-enter,47.84,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2011-11-17,re-exit,49.07,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2011-11-30,re-enter,49.57,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2012-11-07,exit,57.01,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2012-12-11,re-enter,58.61,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2015-08-21,exit,94.4,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2015-10-08,re-enter,98.0,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2016-01-06,exit,100.35,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2016-03-01,re-enter,98.06,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2016-04-28,re-exit,98.81,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2016-05-24,re-enter,100.83,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2018-10-11,exit,161.3,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2019-01-15,re-enter,154.88,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2019-06-03,exit,162.56,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2019-06-17,re-enter,175.57,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2020-03-09,exit,186.15,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2020-04-14,re-enter,204.17,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2022-01-20,exit,351.52,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2022-03-22,re-enter,347.32,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2022-04-08,re-exit,339.72,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2022-07-19,re-enter,290.8,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2022-08-30,re-exit,293.45,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2022-09-09,re-enter,299.37,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2022-09-13,re-exit,286.32,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2022-11-10,re-enter,276.14,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2022-12-15,re-exit,270.42,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2023-01-11,re-enter,271.71,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2023-01-19,re-exit,269.36,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2023-01-20,re-enter,276.73,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2023-03-10,exit,282.48,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2023-03-13,re-enter,284.57,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2025-03-06,exit,484.09,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2025-05-01,re-enter,478.33,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2026-03-20,exit,580.08,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2026-04-08,re-enter,604.79,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2026-11-05,exit,647.05,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d"
+2004-03-23,exit,28.66,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2004-04-02,re-enter,31.24,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2004-04-15,re-exit,30.44,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2004-04-19,re-enter,30.76,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2004-04-20,re-exit,30.05,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2004-04-22,re-enter,31.09,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2004-04-29,re-exit,30.01,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2004-05-25,re-enter,30.28,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2004-07-16,exit,29.2,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2004-09-02,re-enter,29.29,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2004-09-03,re-exit,28.75,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2004-09-09,re-enter,29.13,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2005-03-18,exit,31.04,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2005-05-13,re-enter,30.81,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2005-06-30,exit,31.3,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2005-07-05,re-enter,31.58,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2005-07-06,re-exit,31.43,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2005-07-07,re-enter,31.54,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2005-10-12,exit,31.9,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2005-10-24,re-enter,33.32,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2005-10-27,re-exit,32.36,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2005-10-31,re-enter,33.08,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2006-05-12,exit,34.31,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2006-08-15,re-enter,32.2,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2008-01-16,exit,39.52,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2008-03-24,re-enter,38.29,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2008-03-27,re-exit,37.54,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2008-03-31,re-enter,37.55,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2008-06-11,exit,40.69,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2008-06-13,re-enter,41.55,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2008-06-20,re-exit,40.76,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2008-08-06,re-enter,40.08,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2008-08-07,re-exit,39.77,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2008-08-08,re-enter,40.67,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2008-09-02,re-exit,39.15,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2008-12-16,re-enter,26.28,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2008-12-17,re-exit,25.97,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2008-12-31,re-enter,25.62,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2009-01-12,re-exit,25.43,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2009-01-16,re-enter,25.34,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2009-01-20,re-exit,24.08,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2009-01-27,re-enter,25.25,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2009-01-30,re-exit,25.03,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2009-02-02,re-enter,25.33,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2009-02-17,re-exit,25.17,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2009-03-17,re-enter,25.26,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2010-05-20,exit,38.45,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2010-07-14,re-enter,39.65,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2010-07-16,re-exit,38.59,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2010-07-22,re-enter,39.84,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2010-08-12,re-exit,39.2,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2010-08-17,re-enter,39.49,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2010-08-19,re-exit,39.05,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2010-09-02,re-enter,39.39,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2011-06-15,exit,47.52,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2011-06-30,re-enter,50.05,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2011-08-04,exit,47.53,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2011-09-14,re-enter,48.57,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2011-09-22,re-exit,47.1,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2011-09-27,re-enter,48.65,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2011-09-28,re-exit,47.93,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2011-10-06,re-enter,47.84,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2011-11-17,re-exit,49.07,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2011-11-30,re-enter,49.57,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2011-12-08,re-exit,49.33,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2011-12-09,re-enter,50.12,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2011-12-12,re-exit,49.56,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2012-01-03,re-enter,50.21,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2012-11-07,exit,57.01,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2012-12-11,re-enter,58.61,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2012-12-13,re-exit,58.02,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2012-12-17,re-enter,58.23,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2012-12-26,re-exit,57.62,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2012-12-31,re-enter,58.18,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2015-08-21,exit,94.4,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2015-10-08,re-enter,98.0,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2016-01-06,exit,100.35,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2016-03-01,re-enter,98.06,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2016-04-28,re-exit,98.81,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2016-05-24,re-enter,100.83,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2018-10-11,exit,161.3,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2019-01-15,re-enter,154.88,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2019-06-03,exit,162.56,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2019-06-17,re-enter,175.57,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2020-03-09,exit,186.15,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2020-04-14,re-enter,204.17,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2022-01-20,exit,351.52,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2022-03-22,re-enter,347.32,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2022-04-08,re-exit,339.72,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2022-07-19,re-enter,290.8,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2022-08-30,re-exit,293.45,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2022-09-09,re-enter,299.37,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2022-09-13,re-exit,286.32,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2022-11-10,re-enter,276.14,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2022-12-15,re-exit,270.42,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2023-01-11,re-enter,271.71,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2023-01-19,re-exit,269.36,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2023-01-20,re-enter,276.73,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2023-03-10,exit,282.48,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2023-03-13,re-enter,284.57,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2025-03-06,exit,484.09,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2025-05-01,re-enter,478.33,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2026-03-20,exit,580.08,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2026-04-08,re-enter,604.79,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"
+2026-11-05,exit,647.05,"[dist & below 200d] disarm: above 50d & 200d, 50d > 200d, 10 days"

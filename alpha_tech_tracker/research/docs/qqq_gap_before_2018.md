@@ -1,4 +1,4 @@
-# Why the books trail QQQ before 2018 (2026-11-16)
+# Why the books trail QQQ before 2018 (2026-11-15)
 
 **Question:** in the up years before 2018 the books rarely beat QQQ, while from 2018 they usually do. Is it the selection factor, something that drove QQQ in particular years, a technology theme, geopolitical events, something built into the strategy, or something else? Crash years (2008, 2009) are left for later.
 
@@ -121,7 +121,72 @@ The mechanism is built in: after a pullback the trend filter and the 180-day sco
 - **Universe and survivorship:** before 2014 the universe is smaller (1,061–1,614 against 1,900–2,300) and missing every company that died; 2020–2026 (Alpaca) has only today's listed names, which flatters those years somewhat (against the survivor-free data, Mid moved 8–33 points in 2017–2019, Large a few).
 - **Data quality found along the way:** a few Large-tier names have junk market caps (first SEC share counts back-filled before 2009 such as Frontier at 312 billion shares, Talend counts 1,000× too high, a few bad raw prices), which puts small and mid caps in the Large tier: 0–10 trades a year in Large top 10, worth -3 to +4 points (`cap_check.csv`, `cap_flagged.csv`). Not the cause of the gap, but worth fixing in `historical/shares.py`.
 
-## What this suggests testing next
+## Follow-up tests: the doubler switch (2026-11-15)
+
+The ideas below were tested on the Large top-10 book's daily equity, 2005–2026 (`overlays.py`, `switch_sweep.py`, `mag7.py`, `topn_caps.py`). Every signal is measured at a checkpoint close and acted on the next day; each switch costs 0.1%.
+
+**The rule (the "doubler switch").** Every 10 trading days, count the Large-tier names up 100%+ over the last 250 trading days and divide by the tier's size. If the share is **1.5% or more**, hold the Large book; otherwise hold the **alternative**: QQQ, or the **top 7**, the 7 largest US NASDAQ companies on the last close before the year, equal weight, reset each January. The book keeps running in the background; the switch only decides where the money sits. It flips about 2.5 times a year and holds the book about half the time. Use the share, not a count: the Alpaca Large tier (about 880 names in 2026) is two to three times the historical one (300–470).
+
+| Strategy | Pre-2018 up years vs QQQ | CAGR 2005–17 | CAGR 2018–26 | CAGR 2005–26 | Years beat QQQ | Worst drawdown |
+|---|---|---|---|---|---|---|
+| QQQ | 0 | 11.1% | 18.5% | 14.1% | – | -49% |
+| Large top 10 book | -7.0 | 0.6% | 29.3% | 11.5% | 7 | -56% |
+| Top 7 alone | +2.1 | 14.0% | 23.8% | 17.9% | 14 | -49% |
+| **Switch: book / QQQ** | -1.6 | 11.8% | 34.6% | **20.6%** | 11 | -51% |
+| **Switch: book / top 7** | -0.4 | 13.8% | 38.2% | **23.2%** | 12 | -46% |
+| 50% book / 50% QQQ | -3.5 | 6.1% | 24.5% | 13.2% | 8 | -51% |
+| Rebound rule (QQQ 40 days after a 10% dip) | -4.1 | 6.2% | 16.4% | 10.3% | – | -60% |
+
+- **The switch is robust to its threshold.** With QQQ as the alternative, any count from 3 to 15 names or share from 0.5% to 3% gives 18–21% a year. Picking the threshold on 2005–2017 alone gives 1.5%, which then earns 34.6% a year in 2018–2026. It is not fully out-of-sample: the idea itself came from this research.
+- **Its gains come from avoiding the book's bad years:** 2009 (-28.7% → +33.3%), 2011 (-24.0% → -2.2%), 2022 (-5.5% → -24.2% with QQQ, but better than QQQ's -33%), 2023 (+0.5% → +60.2% with QQQ, +119% with the top 7). The pre-2018 up years still trail QQQ slightly with QQQ as the alternative; with the top 7 they roughly match it.
+- **Fixed blends and the rebound rule don't work.** A fixed split only averages the two sides; the rebound rule helps 2006 and 2009 but costs too much in 2020 and 2026.
+- **The hindsight Mag 7 is not a fair test.** AAPL, MSFT, GOOGL, AMZN, NVDA, META and TSLA held since 2005 make 31.1% a year, but the names were chosen in 2023 because they had won. The point-in-time top 7 is the fair version; it equals the Mag 7 in 2021–2025, and AVGO replaces TSLA in 2026.
+- **Basket size:** top 3 / 5 / 7 / 10 make 16.9% / 17.2% / 17.9% / 16.1% a year alone, and 21.8% / 21.8% / 23.2% / 22.6% as the switch's alternative. Seven is the best balance; fewer names only add drawdown (top 3: -57%). The top 5 missed NVDA and META in 2023–2024.
+- **Choice:** the top 7 earns more; QQQ is a single ticker and easier to run. Both are kept as options.
+- **Risks:** seven names are concentrated (2022: -47% vs QQQ -33%); 2005–2026 favoured mega-caps, and 2000–2002, when the largest NASDAQ names fell 60–80%, is not in the data; 2026 so far has the top 7 at +5.8% vs QQQ +11.3%. The top-7 lists before 2020 come from the QQQ stand-in with ADRs and known bad caps removed (MDLZ in 2008 may not have been on NASDAQ yet). 2020–2026 caps use yfinance closes with splits undone and the SEC share counts in `market_data/top_performers/shares.json`; gaps for NVDA (2021–2023) and META (before mid-2022) were filled from the nearest stored count.
+- **Paper tracking:** the main repo's `research/paper_lists.py` prints the doubler share and the switch's side at each checkpoint and lists the year's top 7 as `large_switch_top7` (status "hold" when the switch is on the top 7, "off" when on the book). `TOP7_BY_YEAR` must be refreshed each January. On 2026-11-03 the share was 2.4% (21 of 877), down from 5.5% in August, so the switch is still on the book. Paper tracking uses the top-15 Large list, while this test used the top 10.
+
+## Down years (2008, 2018, 2022): the market cash rule (2026-11-15 / 16)
+
+**Question:** were there warning signals before the big drops, and does moving to cash, or shorting QQQ, pay when they fire? Tested on QQQ alone and on the doubler switch (book / QQQ, book / top 7), every year 2005–2026, so the cost of false alarms in up years counts. Signals are taken at the close and acted on the next day; cash earns the 13-week T-bill; a short pays 0.5% a year to borrow; each switch costs 0.1%. Scripts: `downside.py`, `dist_days.py`, `dist_reentry.py`, `dist_rearm.py`, `ftd.py`, `dist_rearm_smooth.py`, `min_stay_sweep.py`.
+
+**Default rule (since 2026-11-16, `research/cash_rule.py` on the main branch, printed by `exit_watch` daily and `paper_lists`):**
+
+1. **Distribution day:** QQQ closes up 0.2% or less (flat or down) on volume above its prior 20-day average and above the day before.
+2. **Exit:** 6+ distribution days in the last 25 sessions (counted only since the last re-entry) with QQQ closing below both its 50- and 200-day averages.
+3. **Re-entry:** a close back above the 50-day.
+4. **Re-exit:** after an exit, any later close below the 50-day goes back to cash, no new distribution days needed.
+5. **Minimum stay:** no re-exit or re-entry within 10 sessions of the previous switch (the first exit is not delayed).
+6. **Disarm:** once QQQ is above both averages with the 50-day above the 200-day, re-exits stop until the next exit.
+7. In cash, hold T-bills / a money-market fund, not a short.
+
+| Doubler switch with QQQ, 2005–2026 | CAGR | Worst drawdown | 2008 | 2018 | 2022 | Cash-rule switches a year |
+|---|---|---|---|---|---|---|
+| No cash rule | 20.6% | -55% | -39.9 | -5.9 | -24.2 | – |
+| Previous rule: cash while QQQ < 50d and < 200d | 20.0% | -26% | +9.0 | -10.0 | -15.1 | 6.6 |
+| **Default rule** | **21.8%** | **-23%** | -2.3 | +3.6 | -9.7 | 2.9 |
+| Default rule, switch with top 7 | 23.7% | -23% | -4.0 | +3.3 | -9.4 | 2.9 |
+
+QQQ alone: 14.1% / -54% with no rule, 12.1% / -25% with the previous rule, 14.5% / -21% with the default rule. The default rule was the best of about 50 variants on the same 22 years, so part of its edge over the previous rule may be luck; expect about 21%. Minimum stays of 0–12 days all give 21.0–21.8%; at 0.3% a switch every variant loses 0.6–0.9 points a year and the order holds.
+
+On 2026-11-05 the rule moved to cash (7 distribution days, QQQ 647 below its 50-day 722 and 200-day 680); on 2026-11-13 it was still in cash, and so was the previous rule.
+
+**What was found on the way:**
+
+- **Warning signals.** VIX over 25, an inverted 10y–3m curve and high-yield credit (HYG/LQD) under its 100-day average fired 2–3 months before the 2008 peak, and credit and VIX months before the 2022 peak, but they also fire often in normal markets: credit is "on" 36% of all days and cuts QQQ to 4% a year as a cash rule; the curve warned only in 2008, 15 months early. Trend signals (QQQ below its 50- and 200-day) fire about 10% off the peak and each time a much larger fall followed (-47%, -15%, -28%).
+- **Cash beats shorting.** Shorting QQQ on the 50/200 signal makes +50% in 2008 but costs 12–17 points in 2010, 2011 and 2019 (16.5% a year, -48% drawdown, against 20.0% / -26% in cash). Every signal did worse short than in cash.
+- **Faster average exits** (QQQ below its 20- and 200-day; 20-day below a falling 50-day) fire on the same days in the crashes but whipsaw back in during bear-market rallies: 2008 and 2018 get worse and none beats the 50/200 rule.
+- **Distribution days with a capitulation re-entry** (a worst-2% day on 1.5x volume, then +2% and +1% days on rising volume): as first specified (near-flat days only) it never fires; with flat-or-down days it exits about once a year in sensible places but the re-entry is too rare: in cash 85% of the time (2012-04 to 2015-08, 2016-09 to 2018-10, 2022-09 to 2024-05), 2.1% a year.
+- **O'Neil follow-through-day re-entry** (day 4–7 or 4–10 of a rally attempt, +1.25% or +1.7% on rising volume, with or without a failed-follow-through exit): follow-through days come in bear-market rallies (2008-01-31, 2008-06-19, 2008-11-04; 2022-03-02, 2022-06-24), so the best version is 19.6% / -38%. It helps only V-shaped bottoms (2018-11, 2019-01, 2020-04).
+- **Distribution exit + 50-day re-entry:** catches 2018 (exit 2018-10-05 on 11 distribution days) and early 2020, but about 4 exits a year in normal pullbacks and a bad 2008: 18.4%. Requiring QQQ also below its 200-day cuts the exits to 29–33 in 22 years; adding the re-exit and the uptrend disarm gives 21.4% / -24%.
+- **Damping the whipsaw around the 50-day:** bands of 1–3%, 2–3 confirming closes, weekly or checkpoint-only checks and a falling-50-day condition all cut trades but cost return and protection (they delay the re-exit in fast drops and the re-entry in V-shaped recoveries). Only a minimum stay after each switch helps: 10 days cuts switches from 3.8 to 2.9 a year at 21.8% / -23%.
+- **2018 in detail:** QQQ peaked 2018-08-29 (177.29) and bottomed 2018-12-24 (136.87, -23%). The default rule went to cash once (2018-10-11, 161.30) and came back 2019-01-15 (154.88); the previous rule switched 9 times between October and January, each time buying back higher. Over 2018–2019 together: no rule +30.2%, previous rule +15.3%, default +26.5%; a quick drop and fast recovery is the case where doing nothing still wins.
+
+**Live rule set:** the doubler switch (book vs QQQ or the top 7) plus this cash rule. Risks: tuned on one 22-year history; 2000–2002 is not in the data; slippage on the 2–4 switches a year; quick crashes followed by fast rebounds (2019, 2023) cost return.
+
+## What this suggested testing next (original list)
+
+Items 1, 3 and 4 are covered by the follow-up above.
 
 1. **A core in QQQ plus a momentum satellite**, or a switch: hold QQQ when the Large tier's right tail is thin (e.g. few names up 50%+ over 6 months) and the momentum book when it is fat. The doubler count is known only afterwards, so the test needs a signal measured at the checkpoint.
 2. **Drop the breakout slots** across tiers (the one setting that helps in both periods).
@@ -131,4 +196,4 @@ The mechanism is built in: after a pullback the trend filter and the 180-day sco
 
 ## Files
 
-`top_performers_output/uptrend_formation_historical/qqq_gap/`: `focus_years.csv` (the table above), `benchmark.csv`, `qqq_top_contributors.csv`, `sectors.csv`, `factor.csv`, `variants_<year>.csv`, `variants_all.csv`, `variants_summary.csv`, `mechanics.csv`, `book_sectors.csv`, `megacap_held.csv`, `monthly_gap.csv`, `monthly_gap_2020_2026.csv`, `right_tail.csv`, `cap_check.csv`, `cap_flagged.csv`. Scripts in `scripts/` were run from the session scratchpad (`variants.py` imports the top_n_by_year `top_n_books.py`; Alpaca years with `VARIANT_PANEL_DIR` set to the Alpaca panels and SEC CIKs from the local ticker file).
+`top_performers_output/uptrend_formation_historical/qqq_gap/`: `focus_years.csv` (the table above), `benchmark.csv`, `qqq_top_contributors.csv`, `sectors.csv`, `factor.csv`, `variants_<year>.csv`, `variants_all.csv`, `variants_summary.csv`, `mechanics.csv`, `book_sectors.csv`, `megacap_held.csv`, `monthly_gap.csv`, `monthly_gap_2020_2026.csv`, `right_tail.csv`, `cap_check.csv`, `cap_flagged.csv`; follow-up: `overlays_*.csv`, `switch_sweep*.csv`, `doubler_signal.csv`, `mag7_*.csv`, `topn_caps_*.csv`, `nasdaq_caps_2020_2026.csv`; down years: `downside_*.csv`, `dist_days_*.csv`, `dist_days_v2_*.csv`, `dist_reentry_*.csv`, `dist_rearm_*.csv`, `ftd_*.csv`, `dist_rearm_smooth_*.csv`, `min_stay_sweep.csv`. Scripts in `scripts/` were run from the session scratchpad (`variants.py` imports the top_n_by_year `top_n_books.py`; Alpaca years with `VARIANT_PANEL_DIR` set to the Alpaca panels and SEC CIKs from the local ticker file).
