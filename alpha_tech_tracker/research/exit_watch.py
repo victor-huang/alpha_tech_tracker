@@ -1,4 +1,5 @@
-"""Daily trailing-stop check for the recommended paper lists.
+"""Daily trailing-stop check for the recommended paper lists, plus the market cash rule (cash_rule.py), the default
+signal for moving the book to cash.
 
 Reads the latest paper_lists CSV and, for each held name on a list with a trailing-stop exit, replays the backtest's
 stop from its entry checkpoint: the peak close since entry, reset when a name that was stopped out is bought back at a
@@ -16,6 +17,7 @@ from typing import Dict, List, Optional
 
 import pandas as pd
 
+from alpha_tech_tracker.research import cash_rule
 from alpha_tech_tracker.research.ranking_exits import EXIT_RULES
 from alpha_tech_tracker.research.selection_filters import PANEL_DIR
 from alpha_tech_tracker.research.top_performers import AlpacaData, pivot_bars
@@ -23,6 +25,7 @@ from alpha_tech_tracker.research.uptrend_formation import checkpoint_days
 
 CHECKPOINT_STEP = 10
 CALENDAR_SYMBOL = "SPY"
+CASH_RULE_HISTORY_DAYS = 3 * 365
 
 
 def trail_status(close: pd.Series, entry: pd.Timestamp, checkpoints: List[pd.Timestamp],
@@ -73,7 +76,16 @@ def watch_table(lists: pd.DataFrame, close: pd.DataFrame, checkpoints: List[pd.T
     return out
 
 
+def cash_rule_state(today: date) -> pd.DataFrame:
+    """The cash rule replayed on about three years of fresh QQQ bars (enough to settle the averages and its state)."""
+    close, dollar_volume = pivot_bars(AlpacaData().daily_bars([cash_rule.INDEX], today - timedelta(
+        days=CASH_RULE_HISTORY_DAYS), today))
+    qqq = close[cash_rule.INDEX].dropna()
+    return cash_rule.cash_rule(qqq, dollar_volume[cash_rule.INDEX].reindex(qqq.index) / qqq)
+
+
 def run(args: argparse.Namespace) -> None:
+    print(cash_rule.status_line(cash_rule_state(args.today)))
     lists = latest_lists(args.out_dir)
     symbols = sorted(set(lists.loc[lists["status"] != "dropped", "symbol"])) + [CALENDAR_SYMBOL]
     start = history_start(lists["entry"].min().date())

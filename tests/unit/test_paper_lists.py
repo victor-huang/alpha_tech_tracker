@@ -2,12 +2,14 @@ import pandas as pd
 
 from alpha_tech_tracker.research.paper_lists import (
     DETAIL_COLUMNS,
+    doubler_share,
     entry_checkpoints,
     hedge_list,
     latest_list,
     mid_list,
     paper_rules,
     ranked_from_lists,
+    switch_list,
 )
 
 CP1 = pd.Timestamp("2026-10-20")
@@ -147,3 +149,54 @@ class TestMidList:
         out = mid_list({CP1: ["A"], CP2: ["A"]}, self._close(), [CP1, CP2], _panel(["A"]))
 
         assert out["entry"].iloc[0] == CP1.date()
+
+
+def _tier_panel(returns, tier="Large", checkpoint=CP2):
+    return pd.DataFrame([{"checkpoint": checkpoint, "symbol": f"S{i}", "tier": tier, "ret_250d": r,
+                          **{c: 1.0 for c in DETAIL_COLUMNS}} for i, r in enumerate(returns)])
+
+
+class TestDoublerShare:
+    def test_counts_large_names_up_100_percent_or_more(self):
+        assert doubler_share(_tier_panel([1.0, 1.5, 0.2, -0.1]), CP2) == (0.5, 2, 4)
+
+    def test_ignores_other_tiers(self):
+        panel = pd.concat([_tier_panel([0.1, 0.2]), _tier_panel([2.0, 3.0], tier="Mid")])
+
+        assert doubler_share(panel, CP2) == (0.0, 0, 2)
+
+    def test_ignores_other_checkpoints(self):
+        panel = pd.concat([_tier_panel([0.1]), _tier_panel([2.0], checkpoint=CP1)])
+
+        assert doubler_share(panel, CP2) == (0.0, 0, 1)
+
+    def test_is_zero_without_large_names(self):
+        assert doubler_share(_tier_panel([2.0], tier="Mid"), CP2) == (0.0, 0, 0)
+
+
+class TestSwitchList:
+    def test_holds_top7_when_doublers_are_scarce(self, mocker):
+        mocker.patch("alpha_tech_tracker.research.paper_lists.TOP7_BY_YEAR", {2026: ["A", "B"]})
+
+        out = switch_list(_tier_panel([0.1] * 100), CP2)
+
+        assert out["status"].unique().tolist() == ["hold"]
+
+    def test_is_off_when_doublers_reach_the_threshold(self, mocker):
+        mocker.patch("alpha_tech_tracker.research.paper_lists.TOP7_BY_YEAR", {2026: ["A", "B"]})
+
+        out = switch_list(_tier_panel([1.2] * 2 + [0.1] * 98), CP2)
+
+        assert out["status"].unique().tolist() == ["off"]
+
+    def test_lists_the_years_top7_in_order(self, mocker):
+        mocker.patch("alpha_tech_tracker.research.paper_lists.TOP7_BY_YEAR", {2026: ["A", "B"]})
+
+        out = switch_list(_tier_panel([0.1]), CP2)
+
+        assert (out["symbol"].tolist(), out["rank"].tolist()) == (["A", "B"], [1, 2])
+
+    def test_is_empty_when_the_year_has_no_top7(self, mocker):
+        mocker.patch("alpha_tech_tracker.research.paper_lists.TOP7_BY_YEAR", {})
+
+        assert switch_list(_tier_panel([0.1]), CP2).empty

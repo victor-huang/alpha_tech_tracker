@@ -3,7 +3,10 @@
 the 180-day score alone (concentration.py), plus the short-hedge basket (short_hedge.py): the 15 weakest liquid Large
 names, status "short" while QQQ closes below both its 50- and 200-day averages (short 50% of the Large book until the
 next checkpoint), otherwise "off". Also the Mid reclaim + growth list (mid_reclaim.py): fresh 200-day reclaims with 25%+
-sales growth, never-held names bought first, 15% trailing stop, sold when they leave the list.
+sales growth, never-held names bought first, 15% trailing stop, sold when they leave the list. Also the doubler switch
+(docs/qqq_gap_before_2018.md on the historical-data branch): hold the Large book while at least 1.5% of the Large tier is
+up 100%+ over 250 days, otherwise hold the start-of-year top 7 NASDAQ companies (equal weight) or QQQ. The market
+cash rule (cash_rule.py) is printed as the default signal for holding cash instead; exit_watch checks it daily.
 
 Each list is the backtest book (its top N, no buffer, no market gate) at the latest checkpoint, with names new since the
 previous checkpoint, names dropped, and the checkpoint each held name was bought at (`entry`, used by exit_watch for
@@ -21,7 +24,7 @@ from typing import Dict, List, Tuple
 
 import pandas as pd
 
-from alpha_tech_tracker.research import uptrend_formation
+from alpha_tech_tracker.research import cash_rule, uptrend_formation
 from alpha_tech_tracker.research.concentration import LISTS as CONCENTRATED
 from alpha_tech_tracker.research.mid_reclaim import (
     PAPER_SETTING,
@@ -52,6 +55,11 @@ DETAIL_COLUMNS = ["close", "ret_60d", "ret_120d", "ret_180d", "off_52w_high", "g
 HEDGE_LIST = "large_short_hedge"
 MID_LIST = "mid_reclaim_growth"
 MID_EXIT_RULE = "trail15"
+SWITCH_LIST = "large_switch_top7"
+DOUBLER_RETURN = 1.0
+DOUBLER_SHARE_MIN = 0.015
+# The 7 largest US NASDAQ companies on the last close before each year; refresh every January
+TOP7_BY_YEAR = {2026: ["NVDA", "AAPL", "GOOGL", "MSFT", "AMZN", "META", "AVGO"]}
 
 
 def paper_rules() -> Dict[str, Tuple[str, Variant, str, int]]:
@@ -110,6 +118,27 @@ def hedge_list(panel: pd.DataFrame, index_close: pd.Series, checkpoints: List[pd
     return pd.concat([out, details], axis=1)
 
 
+def doubler_share(panel: pd.DataFrame, checkpoint: pd.Timestamp) -> Tuple[float, int, int]:
+    """Share of the Large tier up DOUBLER_RETURN or more over 250 days at `checkpoint`, with the count and tier size."""
+    tier = panel[(panel["checkpoint"] == checkpoint) & (panel["tier"] == "Large")]["ret_250d"].dropna()
+    count = int((tier >= DOUBLER_RETURN).sum())
+    return (count / len(tier) if len(tier) else 0.0), count, len(tier)
+
+
+def switch_list(panel: pd.DataFrame, checkpoint: pd.Timestamp) -> pd.DataFrame:
+    """The doubler switch's off-side basket: the year's top 7, status "hold" when the doubler share is below
+    DOUBLER_SHARE_MIN (hold them instead of the Large book), "off" when the Large book is on, "missing" when the
+    year's top 7 is not set."""
+    share, _, _ = doubler_share(panel, checkpoint)
+    members = TOP7_BY_YEAR.get(checkpoint.year, [])
+    status = "missing" if not members else ("off" if share >= DOUBLER_SHARE_MIN else "hold")
+    out = pd.DataFrame({"checkpoint": checkpoint.date(), "symbol": members, "status": status,
+                        "rank": range(1, len(members) + 1), "entry": None})
+    at = panel[panel["checkpoint"] == checkpoint].drop_duplicates("symbol").set_index("symbol")
+    details = at.reindex(out["symbol"], columns=DETAIL_COLUMNS).reset_index(drop=True)
+    return pd.concat([out, details], axis=1)
+
+
 def ranked_from_lists(lists: Dict[pd.Timestamp, List[str]]) -> pd.DataFrame:
     """Checkpoint, symbol and rank (1 = first in the list's order) for every listed name."""
     rows = [{"checkpoint": cp, "symbol": s, "rank": i + 1} for cp, names in lists.items() for i, s in enumerate(names)]
@@ -152,15 +181,26 @@ def run(args: argparse.Namespace) -> None:
                  .assign(list=MID_LIST, exit_rule=MID_EXIT_RULE))
     hedge = hedge_list(panel, inputs.close[REGIME_INDEX], list(inputs.checkpoints))
     lists.append(hedge.assign(list=HEDGE_LIST, exit_rule="none"))
+    last = inputs.checkpoints[-1]
+    lists.append(switch_list(panel, last).assign(list=SWITCH_LIST, exit_rule="none"))
     table = pd.concat(lists, ignore_index=True)
     checkpoint = table["checkpoint"].iloc[0]
     path = os.path.join(out_dir, f"{checkpoint}.csv")
     table.round(4).to_csv(path, index=False)
 
+    qqq = inputs.close[cash_rule.INDEX].dropna()
+    qqq_volume = inputs.dollar_volume[cash_rule.INDEX].reindex(qqq.index) / qqq
+    print(cash_rule.status_line(cash_rule.cash_rule(qqq, qqq_volume)))
     regime = "above" if inputs.regime.iloc[-1] else "below"
     hedge_state = hedge["status"].iloc[0] if len(hedge) else "off"
     print(f"checkpoint {checkpoint} (QQQ {regime} its 200-day average; short hedge {hedge_state}, "
           f"{HEDGE_FRACTION:.0%} of the Large book when on)")
+    share, count, size = doubler_share(panel, last)
+    side = "Large book" if share >= DOUBLER_SHARE_MIN else "top 7 / QQQ"
+    print(f"doubler switch: {count} of {size} Large names up {DOUBLER_RETURN:.0%}+ over 250 days = {share:.1%} "
+          f"(threshold {DOUBLER_SHARE_MIN:.1%}) -> hold the {side}")
+    if last.year not in TOP7_BY_YEAR:
+        print(f"WARNING: TOP7_BY_YEAR has no {last.year} list; set it to the year's 7 largest US NASDAQ companies")
     with pd.option_context("display.width", 200, "display.max_rows", 100):
         for name, g in table.groupby("list", sort=False):
             print(f"\n{name} (exit: {g['exit_rule'].iloc[0]})")
