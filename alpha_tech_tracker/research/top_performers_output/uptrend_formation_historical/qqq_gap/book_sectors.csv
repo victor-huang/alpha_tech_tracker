@@ -1,0 +1,178 @@
+year,sector,book_share,qqq_weight
+2005,Basic Materials,0.0916,0.0
+2005,Consumer Discretionary,0.108,0.1721
+2005,Consumer Staples,0.012,0.0289
+2005,Energy,0.1558,0.008
+2005,Finance,0.0996,0.0
+2005,Health Care,0.0761,0.0545
+2005,Industrials,0.1167,0.0655
+2005,Real Estate,0.008,0.008
+2005,Technology,0.1163,0.4192
+2005,Telecommunications,0.0199,0.1496
+2005,Unknown,0.1801,0.0944
+2005,Utilities,0.0159,0.0
+2006,Basic Materials,0.06,0.0
+2006,Consumer Discretionary,0.156,0.1235
+2006,Consumer Staples,0.044,0.0242
+2006,Energy,0.024,0.0128
+2006,Finance,0.088,0.0
+2006,Health Care,0.056,0.0671
+2006,Industrials,0.196,0.0539
+2006,Real Estate,0.032,0.0085
+2006,Technology,0.124,0.516
+2006,Telecommunications,0.06,0.1021
+2006,Unknown,0.124,0.0918
+2006,Utilities,0.036,0.0
+2007,Basic Materials,0.1027,0.0
+2007,Consumer Discretionary,0.2046,0.1092
+2007,Consumer Staples,0.0,0.0273
+2007,Energy,0.0361,0.0095
+2007,Finance,0.0602,0.0
+2007,Health Care,0.0562,0.1063
+2007,Industrials,0.1404,0.0586
+2007,Real Estate,0.0,0.0104
+2007,Technology,0.1633,0.4485
+2007,Telecommunications,0.0842,0.1414
+2007,Unknown,0.1123,0.0888
+2007,Utilities,0.0401,0.0
+2008,Basic Materials,0.1153,0.0
+2008,Consumer Discretionary,0.0903,0.0728
+2008,Consumer Staples,0.0817,0.0167
+2008,Energy,0.1009,0.012
+2008,Finance,0.0769,0.0
+2008,Health Care,0.0923,0.0637
+2008,Industrials,0.1571,0.0355
+2008,Real Estate,0.0346,0.0089
+2008,Technology,0.0865,0.426
+2008,Telecommunications,0.0144,0.1083
+2008,Unknown,0.1403,0.2562
+2008,Utilities,0.0096,0.0
+2009,Basic Materials,0.131,0.0
+2009,Consumer Discretionary,0.1691,0.1037
+2009,Consumer Staples,0.0171,0.0282
+2009,Energy,0.0114,0.0186
+2009,Finance,0.2796,0.0
+2009,Health Care,0.0979,0.1304
+2009,Industrials,0.0239,0.0419
+2009,Real Estate,0.0057,0.0112
+2009,Technology,0.1042,0.4559
+2009,Telecommunications,0.0569,0.1268
+2009,Unknown,0.086,0.0815
+2009,Utilities,0.0171,0.0018
+2010,Basic Materials,0.0398,0.0
+2010,Consumer Discretionary,0.2645,0.1008
+2010,Consumer Staples,0.0239,0.0168
+2010,Energy,0.012,0.015
+2010,Finance,0.0721,0.0
+2010,Health Care,0.0837,0.0767
+2010,Industrials,0.0996,0.0307
+2010,Real Estate,0.0398,0.0085
+2010,Technology,0.1996,0.487
+2010,Telecommunications,0.0685,0.0988
+2010,Unknown,0.0486,0.1658
+2010,Utilities,0.0478,0.0
+2011,Basic Materials,0.0122,0.0
+2011,Consumer Discretionary,0.3725,0.1385
+2011,Consumer Staples,0.0286,0.0233
+2011,Energy,0.0326,0.0188
+2011,Finance,0.0245,0.0
+2011,Health Care,0.131,0.072
+2011,Industrials,0.102,0.0381
+2011,Real Estate,0.0155,0.0091
+2011,Technology,0.0534,0.5212
+2011,Telecommunications,0.0302,0.1116
+2011,Unknown,0.1428,0.0674
+2011,Utilities,0.0547,0.0
+2012,Consumer Discretionary,0.2809,0.1321
+2012,Consumer Staples,0.0801,0.0294
+2012,Energy,0.06,0.0151
+2012,Finance,0.0881,0.0
+2012,Health Care,0.0958,0.0783
+2012,Industrials,0.0523,0.0379
+2012,Miscellaneous,0.004,0.0
+2012,Real Estate,0.0439,0.0081
+2012,Technology,0.0821,0.5283
+2012,Telecommunications,0.0322,0.1048
+2012,Unknown,0.1404,0.0661
+2012,Utilities,0.0402,0.0
+2013,Basic Materials,0.004,0.0
+2013,Consumer Discretionary,0.1841,0.145
+2013,Consumer Staples,0.0677,0.0183
+2013,Energy,0.0916,0.0126
+2013,Finance,0.0725,0.0
+2013,Health Care,0.096,0.1061
+2013,Industrials,0.1243,0.0421
+2013,Real Estate,0.0,0.0151
+2013,Technology,0.1641,0.5004
+2013,Telecommunications,0.0159,0.1072
+2013,Unknown,0.1637,0.0533
+2013,Utilities,0.0159,0.0
+2014,Basic Materials,0.004,0.0
+2014,Consumer Discretionary,0.2589,0.1608
+2014,Consumer Staples,0.0408,0.0176
+2014,Energy,0.046,0.0104
+2014,Finance,0.068,0.0
+2014,Health Care,0.1052,0.1044
+2014,Industrials,0.052,0.0434
+2014,Real Estate,0.02,0.0094
+2014,Technology,0.1449,0.4895
+2014,Telecommunications,0.024,0.1101
+2014,Unknown,0.1401,0.0543
+2014,Utilities,0.096,0.0
+2015,Consumer Discretionary,0.2244,0.1539
+2015,Consumer Staples,0.0842,0.0173
+2015,Energy,0.0279,0.008
+2015,Finance,0.0683,0.0
+2015,Health Care,0.1222,0.1177
+2015,Industrials,0.0359,0.0394
+2015,Real Estate,0.004,0.0127
+2015,Technology,0.1409,0.5049
+2015,Telecommunications,0.016,0.088
+2015,Unknown,0.2643,0.0581
+2015,Utilities,0.012,0.0
+2016,Basic Materials,0.008,0.0
+2016,Consumer Discretionary,0.1478,0.1712
+2016,Consumer Staples,0.1158,0.0348
+2016,Energy,0.0363,0.0028
+2016,Finance,0.1214,0.0
+2016,Health Care,0.0599,0.112
+2016,Industrials,0.0319,0.0383
+2016,Real Estate,0.1118,0.0075
+2016,Technology,0.1649,0.496
+2016,Telecommunications,0.0359,0.0809
+2016,Unknown,0.0699,0.0565
+2016,Utilities,0.0962,0.0
+2017,Basic Materials,0.012,0.0
+2017,Consumer Discretionary,0.1244,0.1687
+2017,Consumer Staples,0.0281,0.0371
+2017,Energy,0.0161,0.0066
+2017,Finance,0.0923,0.0
+2017,Health Care,0.1008,0.0872
+2017,Industrials,0.1967,0.0402
+2017,Real Estate,0.008,0.0085
+2017,Technology,0.269,0.5106
+2017,Telecommunications,0.0161,0.0905
+2017,Unknown,0.1124,0.0507
+2017,Utilities,0.0241,0.0
+2018,Consumer Discretionary,0.237,0.1717
+2018,Consumer Staples,0.0643,0.0454
+2018,Energy,0.0723,0.0019
+2018,Finance,0.0643,0.0
+2018,Health Care,0.1487,0.073
+2018,Industrials,0.1205,0.0454
+2018,Real Estate,0.0121,0.0065
+2018,Technology,0.135,0.5245
+2018,Telecommunications,0.008,0.0808
+2018,Unknown,0.1177,0.0509
+2018,Utilities,0.0201,0.0
+2019,Consumer Discretionary,0.2677,0.1844
+2019,Consumer Staples,0.0287,0.0379
+2019,Energy,0.0159,0.0
+2019,Finance,0.1402,0.0
+2019,Health Care,0.0602,0.0853
+2019,Industrials,0.0916,0.0537
+2019,Real Estate,0.0558,0.0056
+2019,Technology,0.2402,0.518
+2019,Telecommunications,0.0239,0.0673
+2019,Unknown,0.0677,0.0426
+2019,Utilities,0.008,0.0052
