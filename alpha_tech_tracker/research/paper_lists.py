@@ -1,8 +1,8 @@
 """Paper-tracking lists at the latest biweekly checkpoint: the recommended Large and Small rules
 (recommended_rules.RECOMMENDED), the previous Large rule for comparison, and the concentrated Large top 3 ranked by
-the 180-day score alone (concentration.py), plus the short-hedge basket (short_hedge.py): the 15 weakest liquid Large
-names, status "short" while QQQ closes below both its 50- and 200-day averages (short 50% of the Large book until the
-next checkpoint), otherwise "off". Also the Mid reclaim + growth list (mid_reclaim.py): fresh 200-day reclaims with 25%+
+the 180-day score alone (concentration.py), plus the short-hedge basket (short_hedge.py, comparison only since the
+no-short cash rule became the default on 2026-11-16): the 15 weakest liquid Large names, status "short" while QQQ
+closes below both its 50- and 200-day averages (short 50% of the Large book until the next checkpoint), otherwise "off". Also the Mid reclaim + growth list (mid_reclaim.py): fresh 200-day reclaims with 25%+
 sales growth, never-held names bought first, 15% trailing stop, sold when they leave the list. Also the doubler switch
 (docs/qqq_gap_before_2018.md on the historical-data branch): hold the Large book while at least 1.5% of the Large tier is
 up 100%+ over 250 days, otherwise hold the start-of-year top 7 NASDAQ companies (equal weight) or QQQ. The market
@@ -195,7 +195,7 @@ def run(args: argparse.Namespace) -> None:
     regime = "above" if inputs.regime.iloc[-1] else "below"
     hedge_state = hedge["status"].iloc[0] if len(hedge) else "off"
     print(f"checkpoint {checkpoint} (QQQ {regime} its 200-day average; short hedge {hedge_state}, "
-          f"{HEDGE_FRACTION:.0%} of the Large book when on)")
+          f"{HEDGE_FRACTION:.0%} of the Large book when on; comparison only, not traded)")
     share, count, size = doubler_share(panel, last)
     side = "Large book" if share >= DOUBLER_SHARE_MIN else "top 7 / QQQ"
     print(f"doubler switch: {count} of {size} Large names up {DOUBLER_RETURN:.0%}+ over 250 days = {share:.1%} "
