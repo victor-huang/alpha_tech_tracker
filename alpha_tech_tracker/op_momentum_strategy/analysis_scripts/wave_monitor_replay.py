@@ -60,6 +60,7 @@ import pandas as pd
 
 from alpha_tech_tracker.op_momentum_strategy import wave_setup_monitor as wsm
 from alpha_tech_tracker.op_momentum_strategy.config import disable_notifications, enable_notifications
+from alpha_tech_tracker.op_momentum_strategy.short_setups import GATE_TICKER
 from alpha_tech_tracker.op_momentum_strategy.wave_strategy_runner import WaveStrategyRunner
 
 logger = logging.getLogger(__name__)
@@ -517,7 +518,7 @@ def parse_args(argv=None):
     sub = parser.add_subparsers(dest="action", required=True)
     fetch = sub.add_parser("fetch", help="Download the bars a replay needs into a bundle folder")
     fetch.add_argument("--config", required=True, help="Monitor config whose tickers are bundled")
-    fetch.add_argument("--extra-tickers", nargs="*", default=[wsm.GATE_TICKER],
+    fetch.add_argument("--extra-tickers", nargs="*", default=[GATE_TICKER],
                        help="Also bundled (default: QQQ, the short gate and trend benchmark)")
     fetch.add_argument("--start", required=True, type=date.fromisoformat)
     fetch.add_argument("--end", required=True, type=date.fromisoformat)
