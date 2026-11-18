@@ -225,6 +225,86 @@ class TestLocalTSBroadcastMarketDataClientCallback:
         assert after < before
 
 
+class TestLocalTSBroadcastMarketDataClientPerTickerDelivery:
+    def _client(self, tmp_socket, callback, *tickers):
+        server = _SocketServer(tmp_socket)
+        time.sleep(0.05)
+        client = LocalTSBroadcastMarketDataClient(_make_ts_client(), socket_path=tmp_socket)
+        client.subscribe_bars(callback, *tickers)
+        client.start()
+        time.sleep(0.1)
+        return server, client
+
+    def test_a_slow_callback_for_one_ticker_does_not_hold_back_another(self, tmp_socket):
+        release_amd = threading.Event()
+        meta_received = threading.Event()
+
+        def callback(bar):
+            if bar.symbol == "AMD":
+                release_amd.wait(2)
+            else:
+                meta_received.set()
+
+        server, client = self._client(tmp_socket, callback, "AMD", "META")
+        server.send(_bar_msg("AMD"))
+        server.send(_bar_msg("META"))
+
+        delivered_while_amd_busy = meta_received.wait(1)
+        release_amd.set()
+        client.stop()
+        server.close()
+
+        assert delivered_while_amd_busy
+
+    def test_a_tickers_bars_arrive_in_order(self, tmp_socket):
+        received = []
+        server, client = self._client(tmp_socket, received.append, "AMD")
+
+        for minute in range(31, 36):
+            server.send(_bar_msg("AMD", datetime(2026, 5, 2, 13, minute, tzinfo=timezone.utc)))
+        time.sleep(0.2)
+        client.stop()
+        server.close()
+
+        assert [b.timestamp.minute for b in received] == [31, 32, 33, 34, 35]
+
+    def test_a_failing_callback_does_not_stop_later_bars(self, tmp_socket):
+        received = []
+
+        def callback(bar):
+            received.append(bar)
+            if len(received) == 1:
+                raise RuntimeError("boom")
+
+        server, client = self._client(tmp_socket, callback, "AMD")
+        server.send(_bar_msg("AMD"))
+        server.send(_bar_msg("AMD"))
+        time.sleep(0.2)
+        client.stop()
+        server.close()
+
+        assert len(received) == 2
+
+    def test_bars_still_queued_at_stop_are_dropped(self, tmp_socket):
+        release = threading.Event()
+        received = []
+
+        def callback(bar):
+            received.append(bar)
+            release.wait(2)
+
+        server, client = self._client(tmp_socket, callback, "AMD")
+        server.send(_bar_msg("AMD"))
+        server.send(_bar_msg("AMD"))
+        time.sleep(0.2)
+        client.stop()
+        release.set()
+        time.sleep(0.1)
+        server.close()
+
+        assert len(received) == 1
+
+
 class TestLocalTSBroadcastMarketDataClientReconnect:
     def test_reconnect_reattaches_after_server_restart(self):
         socket_path = tempfile.mktemp(dir="/tmp", prefix="ts_reconnect_", suffix=".sock")

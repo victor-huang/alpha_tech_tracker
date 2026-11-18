@@ -1,5 +1,6 @@
 import json
 import logging
+import queue
 import socket
 import threading
 import time
@@ -48,6 +49,10 @@ class LocalTSBroadcastMarketDataClient(MarketDataClient):
 
     warmup() and fetch_bars() still call the TS REST API via ts_client.
     Live bar delivery comes from the broadcaster over the socket.
+
+    Each ticker's bars go to the callback on that ticker's own thread, as with the direct TS stream (one
+    stream thread per ticker). The socket carries every ticker, so calling back from the reader thread would
+    hold a ticker's bar until slow callbacks for the tickers ahead of it return.
     """
 
     def __init__(self, ts_client, socket_path: str = DEFAULT_SOCKET_PATH):
@@ -59,6 +64,8 @@ class LocalTSBroadcastMarketDataClient(MarketDataClient):
         self._reader_thread = None
         self._stop_event = threading.Event()
         self._last_message_at: float = 0.0
+        self._queues: dict = {}
+        self._workers: dict = {}
 
     def warmup(self, tickers: list, start_dt, end_dt) -> dict:
         return TradeStationMarketDataClient(self._ts_client).warmup(tickers, start_dt, end_dt)
@@ -72,6 +79,35 @@ class LocalTSBroadcastMarketDataClient(MarketDataClient):
 
     def start(self):
         self._stop_event.clear()
+        self._start_workers()
+        self._connect()
+
+    def _start_workers(self):
+        for ticker in self._tickers:
+            worker = self._workers.get(ticker)
+            if worker is not None and worker.is_alive():
+                continue
+            self._queues[ticker] = queue.Queue()
+            self._workers[ticker] = threading.Thread(
+                target=self._deliver_loop,
+                args=(ticker, self._queues[ticker]),
+                name=f"local-ts-broadcast-{ticker}",
+                daemon=True,
+            )
+            self._workers[ticker].start()
+
+    def _deliver_loop(self, ticker, bars):
+        while True:
+            bar = bars.get()
+            if bar is None:
+                return
+            try:
+                if self._callback:
+                    self._callback(bar)
+            except Exception:
+                logger.exception("LocalTSBroadcast: callback error [%s]", ticker)
+
+    def _connect(self):
         self._sock = self._connect_with_retry()
         self._reader_thread = threading.Thread(
             target=self._reader_loop,
@@ -148,18 +184,34 @@ class LocalTSBroadcastMarketDataClient(MarketDataClient):
                 except (KeyError, ValueError):
                     logger.warning("LocalTSBroadcast: malformed bar message: %s", msg)
                     continue
-                if self._callback:
-                    self._callback(bar)
+                self._queues[bar.symbol].put(bar)
         except Exception:
             if not self._stop_event.is_set():
                 logger.exception("LocalTSBroadcast: reader loop error")
 
     def reconnect(self):
+        """Reconnect the socket; the ticker threads keep their queued bars and carry on."""
         logger.warning("LocalTSBroadcast: reconnecting to broadcaster")
-        self.stop()
-        self.start()
+        self._disconnect()
+        self._stop_event.clear()
+        self._start_workers()
+        self._connect()
 
     def stop(self):
+        """Disconnect and end the ticker threads, dropping bars not yet delivered. A callback already running
+        finishes on its own; stop() does not wait for it (the caller may hold a lock the callback needs)."""
+        self._disconnect()
+        for bars in self._queues.values():
+            while True:
+                try:
+                    bars.get_nowait()
+                except queue.Empty:
+                    break
+            bars.put(None)
+        self._queues = {}
+        self._workers = {}
+
+    def _disconnect(self):
         self._stop_event.set()
         if self._sock:
             try:

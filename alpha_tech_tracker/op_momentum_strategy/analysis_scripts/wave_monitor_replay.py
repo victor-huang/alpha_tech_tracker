@@ -30,9 +30,17 @@ regression. `warm` fills it in parallel for the jobs a fresh 09:00 start of each
 
   # 4. Compare two runs file by file
   python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_monitor_replay compare <dir_a> <dir_b>
+
+  # 5. The trade engine's wave runner (mock fills at the strategy's prices) on the same flags, then check that it
+  #    trades every intraday entry / exit the monitor alerted (overnight setups are not traded by the engine)
+  python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_monitor_replay run --engine \\
+    --bundle <dir>/bundle --out <dir>/engine -- --short-setups drive --short-gate qqq-ma50-down10 \\
+    --trend-filters overnight
+  python -m alpha_tech_tracker.op_momentum_strategy.analysis_scripts.wave_monitor_replay parity <dir>/prod <dir>/engine
 """
 
 import argparse
+import csv
 import filecmp
 import hashlib
 import json
@@ -51,6 +59,8 @@ from unittest import mock
 import pandas as pd
 
 from alpha_tech_tracker.op_momentum_strategy import wave_setup_monitor as wsm
+from alpha_tech_tracker.op_momentum_strategy.config import disable_notifications, enable_notifications
+from alpha_tech_tracker.op_momentum_strategy.wave_strategy_runner import WaveStrategyRunner
 
 logger = logging.getLogger(__name__)
 
@@ -60,6 +70,7 @@ POLL_SECONDS = 30
 MINUTE_BAR_DELAY_SECONDS = 2
 DAILY_HISTORY_DAYS = wsm.DAILY_HISTORY_DAYS
 WARMUP_CALENDAR_DAYS = wsm.WARMUP_CALENDAR_DAYS
+TRADE_ACTIONS = ("BUY", "SHORT", "SHORTED", "SELL", "COVER", "SOLD", "COVERED")
 DEFAULT_CACHE = Path(__file__).resolve().parents[3] / "market_data" / "cache" / "wave_monitor_replay"
 
 
@@ -384,8 +395,28 @@ def build_monitor(args, bundle, clock, client, out_dir, notify):
         trend_daily_loader=bundle.trend_daily_loader)
 
 
-def run_replay(bundle, sessions, monitor_argv, out_dir, restarts=(), start_time=DEFAULT_START_TIME, cache=None):
-    """Replay `sessions` in order through fresh monitors sharing one state file; returns the output folder."""
+def build_runner(args, bundle, clock, client, out_dir, notify, evaluate, engine):
+    """The trade engine's wave runner in mock mode with the monitor's strategy flags and the replay's I/O."""
+    setups = wsm.load_config(args.config)
+    short_setups = [] if args.no_short_setups or args.short_gate == "off" else args.short_setups
+    short_tickers = args.short_tickers or list(setups)
+    for ticker in short_tickers if short_setups else []:
+        setups.setdefault(ticker, [])
+    return WaveStrategyRunner(
+        setups, client, mock=True, balance=engine.balance, slots=engine.slots, state_file=args.state_file,
+        trades_dir=out_dir, executor=wsm.InlineExecutor(), notify=notify, now=clock,
+        releases_loader=bundle.releases_loader, daily_closes_loader=bundle.daily_closes_loader,
+        trend_daily_loader=bundle.trend_daily_loader, evaluate_fn=lambda: evaluate,
+        close_decision_bar=datetime.strptime(args.close_decision_bar, "%H:%M").time(), short_setups=short_setups,
+        short_gate=args.short_gate, short_tickers=short_tickers if short_setups else [],
+        drive_trail=args.drive_trail, drive_reentry=args.drive_reentry, trend_filters=args.trend_filters)
+
+
+def run_replay(bundle, sessions, monitor_argv, out_dir, restarts=(), start_time=DEFAULT_START_TIME, cache=None,
+               engine=None):
+    """Replay `sessions` in order through fresh monitors sharing one state file; returns the output folder.
+
+    `engine` (balance, slots) replays the trade engine's wave runner instead of the monitor."""
     out_dir = Path(out_dir)
     if out_dir.exists():
         shutil.rmtree(out_dir)
@@ -399,14 +430,14 @@ def run_replay(bundle, sessions, monitor_argv, out_dir, restarts=(), start_time=
         starts += [r for r in restarts if r.date() == session]
         for index, start in enumerate(starts):
             stop_at = starts[index + 1] if index + 1 < len(starts) else None
-            _run_process(args, bundle, session, start, stop_at, out_dir, notifications, cache)
+            _run_process(args, bundle, session, start, stop_at, out_dir, notifications, cache, engine)
         shutil.copyfile(state_file, out_dir / f"state_{session}.json")
     (out_dir / "notifications.txt").write_text("".join(f"{at} {message}\n" for at, message in notifications))
     shutil.rmtree(out_dir / "work")
     return out_dir
 
 
-def _run_process(args, bundle, session, start, stop_at, out_dir, notifications, cache):
+def _run_process(args, bundle, session, start, stop_at, out_dir, notifications, cache, engine=None):
     clock = FakeClock(start)
     client = ReplayClient(bundle)
     replay = SessionReplay(bundle, session, clock, client, stop_at)
@@ -414,15 +445,22 @@ def _run_process(args, bundle, session, start, stop_at, out_dir, notifications, 
     def notify(message):
         notifications.append((clock.current.isoformat(timespec="seconds"), message))
 
-    monitor = build_monitor(args, bundle, clock, client, out_dir, notify)
-    notify(f"[replay] process start {start:%Y-%m-%d %H:%M}")
     evaluate = cache.wrap(wsm.evaluate_setup) if cache is not None else wsm.evaluate_setup
+    if engine is None:
+        process = build_monitor(args, bundle, clock, client, out_dir, notify)
+    else:
+        process = build_runner(args, bundle, clock, client, out_dir, notify, evaluate, engine)
+        disable_notifications()  # PositionMonitor notifies its closes itself
+    notify(f"[replay] process start {start:%Y-%m-%d %H:%M}")
     with mock.patch.object(time_module, "sleep", replay.sleep), \
          mock.patch.object(wsm, "evaluate_setup", evaluate):
         try:
-            monitor.run(poll_seconds=POLL_SECONDS)
+            process.run(poll_seconds=POLL_SECONDS)
         except _Restart:
             notify(f"[replay] process stop {clock.current:%Y-%m-%d %H:%M}")
+        finally:
+            if engine is not None:
+                enable_notifications()
 
 
 def compare_runs(left, right):
@@ -437,6 +475,23 @@ def compare_runs(left, right):
         elif not filecmp.cmp(a, b, shallow=False):
             problems.append(f"{name}: differs")
     return problems
+
+
+def _trade_rows(path):
+    with open(path, newline="") as handle:
+        for row in csv.DictReader(handle):
+            if row["action"] in TRADE_ACTIONS and "overnight" not in row["setup"]:
+                yield (row["time"][:10], row["ticker"], row["setup"], row["action"], round(float(row["price"]), 4))
+
+
+def engine_parity(monitor_dir, engine_dir):
+    """Intraday entries / exits the monitor alerted vs the ones the engine traded; returns the differences."""
+    monitor = sorted(r for p in sorted(Path(monitor_dir).glob("wave_setup_alerts_*.csv")) for r in _trade_rows(p))
+    engine = sorted(r for p in sorted(Path(engine_dir).glob("wave_strategy_engine_trades_*.csv"))
+                    for r in _trade_rows(p))
+    problems = [f"only in the monitor: {r}" for r in monitor if r not in engine]
+    problems += [f"only in the engine: {r}" for r in engine if r not in monitor]
+    return problems, len(monitor), len(engine)
 
 
 # ---------------------------------------------------------------------------
@@ -479,9 +534,17 @@ def parse_args(argv=None):
     run.add_argument("--end", type=date.fromisoformat)
     run.add_argument("--restart-at", nargs="*", default=[],
                      help="Stop and restart the monitor at these ET times (YYYY-MM-DDTHH:MM)")
+    run.add_argument("--engine", action="store_true",
+                     help="Replay the trade engine's wave runner (mock fills) instead of the monitor")
+    run.add_argument("--balance", type=float, default=20000, help="Engine balance (default 20000)")
+    run.add_argument("--slots", type=int, default=10, help="Engine slots (default 10)")
     compare = sub.add_parser("compare", help="Byte-compare two replay output folders")
     compare.add_argument("left")
     compare.add_argument("right")
+    parity = sub.add_parser("parity", help="Check an engine run traded every intraday entry / exit a monitor run "
+                                           "alerted")
+    parity.add_argument("monitor")
+    parity.add_argument("engine")
     args = parser.parse_args(argv)
     args.monitor_argv = monitor_argv
     return args
@@ -502,6 +565,11 @@ def main(argv=None):
         problems = compare_runs(args.left, args.right)
         print("\n".join(problems) if problems else "identical")
         sys.exit(1 if problems else 0)
+    if args.action == "parity":
+        problems, alerted, traded = engine_parity(args.monitor, args.engine)
+        print("\n".join(problems + [f"{alerted} monitor rows, {traded} engine rows: "
+                                    + ("MATCH" if not problems else f"{len(problems)} differences")]))
+        sys.exit(1 if problems else 0)
     bundle_dir = Path(args.bundle)
     sessions = [date.fromisoformat(s) for s in json.loads((bundle_dir / "sessions.json").read_text())]
     if args.action == "warm":
@@ -514,8 +582,10 @@ def main(argv=None):
         monitor_argv = ["--config", str(bundle_dir / "config.json")] + monitor_argv
     restarts = [ET.localize(datetime.fromisoformat(r)) for r in args.restart_at]
     cache = None if args.cache == "off" else EvaluationCache(args.cache)
-    out = run_replay(Bundle.load(bundle_dir), sessions, monitor_argv, args.out, restarts, cache=cache)
-    alerts = sum(max(0, len(p.read_text().splitlines()) - 1) for p in out.glob("wave_setup_alerts_*.csv"))
+    engine = SimpleNamespace(balance=args.balance, slots=args.slots) if args.engine else None
+    out = run_replay(Bundle.load(bundle_dir), sessions, monitor_argv, args.out, restarts, cache=cache, engine=engine)
+    pattern = "wave_strategy_engine_trades_*.csv" if args.engine else "wave_setup_alerts_*.csv"
+    alerts = sum(max(0, len(p.read_text().splitlines()) - 1) for p in out.glob(pattern))
     cached = f"; evaluation cache {cache.hits} hits, {cache.misses} misses" if cache is not None else ""
     print(f"{len(sessions)} sessions replayed, {alerts} alert rows -> {out}{cached}")
 

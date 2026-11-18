@@ -48,6 +48,7 @@ SIP_DELAY = timedelta(minutes=16)
 BAR_FETCH_ATTEMPTS = 2
 BAR_RETRY_SECONDS = 5
 PARTITION_OVERLAP_DAYS = 14
+FIRST_BAR_DAY = date(2016, 1, 4)
 SHARES_CACHE_TTL_DAYS = 20
 SHARES_WINDOW_BEFORE_DAYS = 120
 SHARES_WINDOW_AFTER_DAYS = 60
@@ -235,9 +236,12 @@ class SharesCache:
         return {}
 
     def save(self) -> None:
+        """Write to a temporary file and swap it in, so a failed or overlapping write never leaves a mixed file."""
         os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
-        with open(self.path, "w") as fh:
+        tmp = f"{self.path}.{os.getpid()}.tmp"
+        with open(tmp, "w") as fh:
             json.dump(self._data, fh)
+        os.replace(tmp, self.path)
 
     def get(self, symbol: str, today: date) -> Optional[pd.Series]:
         entry = self._data.get(symbol)
@@ -384,9 +388,10 @@ class DailyBarCache:
         self.fetch_bars = fetch_bars
 
     def load(self, symbols: List[str], start: date, end: date, today: date) -> Tuple[pd.DataFrame, pd.DataFrame]:
-        """Wide close / dollar volume covering [start - overlap, end], consistently adjusted as of the newest data."""
+        """Wide close / dollar volume covering [start - overlap, end], consistently adjusted as of the newest data.
+        Months before FIRST_BAR_DAY (the start of Alpaca's daily history) are skipped."""
         symbols = list(dict.fromkeys(symbols))
-        months = _months_between(start, end)
+        months = [m for m in _months_between(start, end) if _month_end(m) >= FIRST_BAR_DAY]
         partitions = [self._partition(m, symbols, today) for m in months]
         close, dollar_volume = _stitch(partitions)
         wanted = [s for s in symbols if s in close.columns]

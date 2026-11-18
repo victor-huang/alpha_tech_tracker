@@ -126,6 +126,12 @@ earlier findings: [`WAVE_RISK_REWARD_FINDINGS.md`](WAVE_RISK_REWARD_FINDINGS.md)
   and beat stock only at a round-trip spread of about 2% or less (+$41.8k vs +$7.1k at 1%); at the engine's live 5–12%
   spreads every setup loses. 5% ITM on all setups ran a $20k account down to $4,645; 10% ITM never ran short of cash.
   Only the drive long is worth a paper trial; keep the overnight in stock.
+- **The prod monthly process over nine years, QQQ not traded (Finding 46):** +$34,829 over 2018–2026 (2023 included,
+  2026 to Nov 6), every year positive: 38.9% a year on the ~$9.5k of capital in use on an average day (36.4% out of
+  sample), 19.4% a year on $20k. Calm years make 4–10% on $20k, years with many volatile large stocks 24–42%. Taking
+  QQQ out of the trade was neutral (−$258 over eight years). The overnight long made +$15,220 of the nine years'
+  +$34,509 (2026 rerun to Nov 11): without it 11% a year on $20k instead of 19%, and 2019–2020 lose. Time-weighted
+  over market hours only ~$4.3k of the $20k is open on average, but every year from 2020 reaches the $20k peak.
 - **A ticker's intraday vs overnight split doesn't pick its setup (Finding 36):** within a window it always matches the
   better family, but measured on the previous 63 or 126 sessions it chose next month's winner 52–53% of the time
   (16 tickers, Jul 2025 – Oct 2026). Overnight holds won in H2 2025 and drive long in 2026 across the board; running
@@ -2010,7 +2016,7 @@ allows (Finding 40), the drive short + re-entry behind `qqq-ma50-down10` and the
 (Finding 41) on the picks plus QQQ. $10k, $2,000 a trade, 5 bps; Jan 2 – Nov 6 2026. (Findings 43–45 include
 QQQ's drive short; from Nov 11 2026 QQQ is only the gate and trend benchmark and is not traded. Its drive short made
 about −$200 over the eight years, uncapped: 2018 +182, 2019 −231, 2020 −168, 2021 +7, 2022 −4, 2024 −26, 2025 +18,
-2026 +7 (+$80 capped). The past runs were not redone.)
+2026 +7 (+$80 capped). The past runs were redone without QQQ in Finding 46: −$258 over the eight years.)
 
 | Plan | Trades | Won | Per trade | P&L | Max DD | Months + |
 |---|---|---|---|---|---|---|
@@ -2385,6 +2391,154 @@ For comparison the stock version's worst drawdown was −$2,543.
   most of the big winners; drive short timing is approximate; the chosen strikes trade thinly (median ~10–30
   contracts a day on SNDK, CRDO, LITE, VRT). One year (2026) only; Alpaca's option history starts Feb 2024.
 
+## Finding 46 — The prod monthly process over 2018–2026 with QQQ out of the trade: monthly P&L, picks and capital in use
+
+**What was run.** The plan prod trades: each month `ticker_screen`'s top 5 with the **switched** ranking (drive short
+counted only while QQQ is below its 200-day MA, Finding 44), **fixed setups** (drive long, pullback long, overnight
+always behind the overnight trend filter) plus the **drive short + re-entry behind `qqq-ma50-down10`**, no overnight
+short, **QQQ not traded** (gate and trend benchmark only). $2,000 a trade, capped at 10 open, 5 bps, no extra
+slippage. Each year Jan – Dec; 2026 to Nov 6 (the setup report cache ended there; rerun to Nov 11 in the note below). 2023, never
+run in Findings 43–44, is included.
+
+**Year by year.** Return on capital in use = the year's P&L over the average of each trading day's most money open
+at once (overnight holds included); return on $20k = the account the 10-position cap can need on a busy day.
+
+| Year | Market | P&L | Months + / − | Avg capital in use | Peak | Return on capital in use | Return on $20k | Status |
+|---|---|---|---|---|---|---|---|---|
+| 2018 | Q4 selloff | +$1,988 | 7 / 5 | $6,836 | $18,000 | 29.1% | 9.9% | out of sample |
+| 2019 | up | +$1,271 | 8 / 3 (May: no picks) | $7,130 | $14,000 | 17.8% | 6.4% | out of sample |
+| 2020 | crash, rebound | +$800 | 7 / 5 | $9,289 | $20,000 | 8.6% | 4.0% | in sample (gates) |
+| 2021 | up, choppy | +$1,642 | 6 / 6 | $10,063 | $20,000 | 16.3% | 8.2% | out of sample |
+| 2022 | bear | +$7,200 | 7 / 5 | $10,917 | $20,000 | 66.0% | 36.0% | in sample (gates) |
+| 2023 | up | +$1,757 | 7 / 5 | $10,065 | $20,000 | 17.5% | 8.8% | in sample (screen) |
+| 2024 | strong up | +$8,322 | 10 / 2 | $10,128 | $20,000 | 82.2% | 41.6% | out of sample |
+| 2025 | down, then up | +$4,870 | 7 / 5 | $9,936 | $20,000 | 49.0% | 24.4% | in sample (screen, gates) |
+| 2026 (to Nov 6) | up, late selloff | +$6,979 | 8 / 3 | $10,995 | $20,000 | 63.5% | 34.9% | in sample (all) |
+| **Nine years** | | **+$34,829** | 67 / 39 | **$9,484** | | **38.9% / yr** | **19.4% / yr** | |
+
+Every year made money. Out of sample (2018, 2019, 2021, 2024): 36.4% a year on capital in use, 16.5% on $20k.
+The years split in two: **4–10% on $20k** when few large stocks moved 4%+ a day (2018–2021, 2023; only 16 and 25
+stocks passed the screen in any month of 2018 and 2019, so months often had 1–4 picks and capital sat idle), and
+**24–42%** when many did (2022, 2024–2026). From 2020 on every year reached the $20k peak at least once, so the
+full account must be available although about half of it is idle on an average day.
+
+**Month by month ($, capped + costs).**
+
+| Year | Jan | Feb | Mar | Apr | May | Jun | Jul | Aug | Sep | Oct | Nov | Dec |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| 2018 | −94 | +63 | +142 | +644 | +302 | −111 | +68 | −209 | −2 | +1,190 | +291 | −296 |
+| 2019 | +548 | −262 | +313 | +456 | 0 | +127 | +103 | −151 | −396 | +24 | +60 | +451 |
+| 2020 | +722 | −46 | −1,643 | +845 | +678 | +1,100 | +328 | +1,669 | **−2,060** | +326 | −610 | −508 |
+| 2021 | +1,596 | −577 | −251 | −636 | +1,131 | +334 | −79 | +206 | +219 | +320 | −215 | −407 |
+| 2022 | +198 | +1,640 | +1,969 | −493 | +1,739 | +2,048 | +1,524 | −802 | −565 | −8 | +116 | −165 |
+| 2023 | −70 | −512 | +185 | +22 | +262 | +1,196 | −273 | −119 | −1,047 | +438 | +761 | +913 |
+| 2024 | −219 | +2,795 | +1,084 | −756 | +874 | +153 | +96 | +564 | +129 | +715 | +1,692 | +1,196 |
+| 2025 | −860 | +42 | −494 | +1,653 | +439 | −313 | +848 | −154 | +1,329 | +2,105 | −119 | +397 |
+| 2026 | +1,807 | −719 | +456 | **+2,989** | +2,210 | −1,310 | +1,498 | +479 | +566 | −1,621 | +622 (to 6th) | |
+
+(Month cells are rounded per ticker and can differ from the yearly P&L by a few dollars.)
+
+- **Losing months cluster in sharp selloffs and in chop after a run:** Mar and Sep 2020 (−$3,703 together), Feb–Apr
+  2021 (−$1,464 after the January meme run), Aug–Oct 2022 (bear-market rallies), Sep 2023, Jun and Oct 2026.
+- **The year is made by a few months:** Feb 2024 (crypto: MARA, ARM, SMCI, COIN), Feb–Jul 2022 (the gated drive
+  short while most picks fell 10–40%; in Jun 2022 every pick but one fell 18–39% and all five made money), Sep–Oct
+  2025 (CRWV, CRCL, QBTS, IONQ), Apr–May 2026 (INTC, CRDO, ALAB, NBIS).
+- **The stock's move over the month does not tell the strategy's result:** Jun 2026 every pick rose 13–47% and four
+  lost; Jul 2026 SNDK −42% and NBIS −21% made +$475 and +$965; Dec 2024 MSTR −26% made +$706; Jun 2025 HOOD +42%
+  lost $55.
+- **The picks follow the market's theme of the moment:** crypto (2021 Q2, 2024, early 2025), vaccine names
+  2020–21 (MRNA, BNTX, NVAX), 2022 beaten-down growth (SHOP in 11 of 12 months, ~+$3,000), power and AI hardware
+  2024–25 (CEG, VST, GEV, VRT), quantum and new listings late 2025, memory and optics 2026 (SNDK, CRDO, ALAB, LITE).
+
+**Taking QQQ out of the trade changed each year by −$256 to +$101.** With QQQ's drive short put back, today's code
+reproduces Finding 44's switched row exactly (2020 +730, 2021 +1,582, 2022 +7,330, 2024 +8,255, 2025 +4,929). The
+change is more than QQQ's own trades: under the 10-position cap a QQQ short took a slot a pick's trade would otherwise
+get, and dropping it let 17–96 more pick trades in a year.
+
+| Year | Finding 44 (QQQ traded) | QQQ not traded | Change | QQQ's own drive short (capped) |
+|---|---|---|---|---|
+| 2018 | +2,244 | +1,988 | −256 | |
+| 2019 | +1,170 | +1,271 | +101 | |
+| 2020 | +730 | +800 | +70 | 26 trades, −$103 |
+| 2021 | +1,582 | +1,642 | +60 | 24 trades, +$7 |
+| 2022 | +7,330 | +7,200 | −130 | 126 trades, −$165 |
+| 2024 | +8,255 | +8,322 | +67 | 33 trades, −$28 |
+| 2025 | +4,929 | +4,870 | −59 | 39 trades, −$40 |
+| 2026 | +7,090 | +6,979 | −111 | |
+| Eight years | +$33,330 | +$33,072 | −$258 | |
+
+So the decision to stop trading QQQ is neutral (−0.8% over eight years); it removes a trade that never earned its
+slot.
+
+**Charts.** `analysis_scripts/monthly_picks_charts.py` writes one PDF a year (`charts/top5_picks_<year>.pdf`, not
+committed): a page per monthly checkpoint, the five picks as daily candles with MA 8/20/50/200, 90 sessions before
+and 10 after, the held month shaded, each title with the stock's % move over the month and the strategy's $ on it.
+
+**Cache note.** Until commit f5bfcb3, `monthly_process_walk_forward`'s setup report and short-leg caches were keyed by
+ticker only, so moving `--end` later reused trades that stopped at the first run's end: the 2026 figures above stop at
+Nov 6 although run to Nov 11. The caches are now kept per window (`<year>/<setup_report|short_legs>/<start>_<end>/`).
+Rerun to Nov 11 with the fixed cache, **2026 is +$6,659** (Nov 9–11 lost ~$320; November +$302); the sections below
+use that figure, nine years +$34,509.
+
+### Without the overnight long
+
+The same plan with `--fixed-setups "drive long" "pullback long"`. Overnight holds exit at the 09:30 bar and intraday
+trades enter at 09:30 or later and exit by the 15:55 bar, so under the 10-position cap the two never compete for a slot:
+dropping the overnight long removes exactly its own P&L.
+
+| Year | With overnight | Overnight long alone | Without | Return on $20k (with → without) |
+|---|---|---|---|---|
+| 2018 | +$1,988 | −$143 | +$2,131 | 9.9% → 10.7% |
+| 2019 | +$1,271 | **+$1,455** | **−$184** | 6.4% → −0.9% |
+| 2020 | +$800 | **+$3,265** | **−$2,465** | 4.0% → −12.3% |
+| 2021 | +$1,642 | +$519 | +$1,123 | 8.2% → 5.6% |
+| 2022 | +$7,200 | −$268 | +$7,468 | 36.0% → 37.3% |
+| 2023 | +$1,757 | −$824 | +$2,580 | 8.8% → 12.9% |
+| 2024 | +$8,322 | **+$7,670** | +$652 | 41.6% → 3.3% |
+| 2025 | +$4,870 | **+$4,144** | +$727 | 24.4% → 3.6% |
+| 2026 (to Nov 11) | +$6,659 | −$598 | +$7,257 | 33.3% → 36.3% |
+| **Nine years** | **+$34,509** | **+$15,220** | **+$19,289** | 19.2% → 10.7% a year |
+
+- **The overnight long is the up-market engine:** 92% of 2024's profit and 85% of 2025's; without it those years make
+  about 3%. It also keeps the calm years positive (2019 and 2020 lose without it).
+- **Its losing years are small:** −$1,833 over 2018, 2022, 2023 and 2026 against +$17,053 in the other five; the trend
+  filter kept it out of most of 2022.
+- **The intraday setups carry the volatile years:** the drive short 2018 and 2022, drive long 2026. Keep the overnight
+  long; dropping it gives up ~$15k over nine years to avoid ~$1.8k of losses.
+
+### Three ways to measure the capital in use
+
+The "capital in use" above (A) is each trading day's busiest moment (most trades open at once × $2,000, overnight holds
+counted on the afternoon bought and the morning sold), averaged over the days with a trade open. Two alternatives:
+**B** the same daily figure averaged over every session of the year (idle days as 0), and **C** time-weighted: the
+money open averaged over every minute of regular hours (09:30–16:00), overnight holds counting only their market
+minutes. The P&L in each return is the capped + costs P&L (trades taken under the 10-position cap, 5 bps).
+
+| Year | P&L | A | B | C | Return on A | on B | on C | on $20k |
+|---|---|---|---|---|---|---|---|---|
+| 2018 | +$1,988 | $6,836 | $6,645 | $3,326 | 29.1% | 29.9% | 59.8% | 9.9% |
+| 2019 | +$1,271 | $7,130 | $6,476 | $2,434 | 17.8% | 19.6% | 52.2% | 6.4% |
+| 2020 | +$800 | $9,289 | $9,249 | $3,527 | 8.6% | 8.7% | 22.7% | 4.0% |
+| 2021 | +$1,642 | $10,063 | $10,024 | $4,025 | 16.3% | 16.4% | 40.8% | 8.2% |
+| 2022 | +$7,200 | $10,917 | $10,438 | $7,014 | 66.0% | 69.0% | 102.7% | 36.0% |
+| 2023 | +$1,757 | $10,065 | $9,944 | $4,223 | 17.5% | 17.7% | 41.6% | 8.8% |
+| 2024 | +$8,322 | $10,128 | $10,048 | $4,048 | 82.2% | 82.8% | 205.6% | 41.6% |
+| 2025 | +$4,870 | $9,936 | $9,856 | $4,054 | 49.0% | 49.4% | 120.1% | 24.4% |
+| 2026 (to Nov 11) | +$6,659 | $11,046 | $10,995 | $5,954 | 60.3% | 60.6% | 111.8% | 33.3% |
+| **Average** | +$3,834 / yr | **$9,490** | **$9,297** | **$4,289** | **40.4%** | **41.2%** | **89.4%** | **19.2%** |
+
+Without the overnight long: A $7,399, B $7,002, C $4,227; returns 29.0% / 30.6% / 50.7% / 10.7% on $20k.
+
+- **Idle days barely matter:** 230–253 of ~251 sessions had a trade open (only 2018–2019 had a few idle days), so B is
+  within 1–10% of A.
+- **The busiest moment overstates the money at work about 2×:** time-weighted, about $4.3k (a fifth of the account) is
+  open during market hours; pullbacks and stopped-out drive longs are short, and the day's peak is brief.
+- **C makes the overnight long look free** (its money is open outside market hours), while A charges it its afternoon
+  peak; neither shows the cash committed overnight.
+- **The account still needs $20k:** every year from 2020 reached the $20k peak. C suggests room for a larger size or more
+  slots on the same money, but busy days would run short of cash; that needs the cap replayed at the larger size first.
+  For planning, use the return on $20k: **19% a year with the overnight long, 11% without**.
+
 ## Recommendations
 
 1. **Choose tickers before tuning settings.** The same configuration ranges from +156.66% (SNDK)
@@ -2651,6 +2805,12 @@ exactly (110 trades, +0.80%), but other settings may differ slightly.
    stock bars; time value = median(print VWAP − intrinsic at the stock's minute VWAP) within 30 / 90 / 240 minutes of
    the fill; the stock price at exit = entry × (1 + the trade's pct + 5 bps). The account replay books each trade at
    its exit and skips an entry when free cash is short.
+   Finding 46: `analysis_scripts/monthly_picks_charts.py --year <year> --end <year>-12-31 --out
+   charts/top5_picks_<year>.pdf` for each year (P&L, monthly table, capital in use, the PDF); the QQQ comparison
+   added QQQ's cached `short_legs/QQQ.csv` back into `month_trades` for the same plan. Without the overnight long:
+   the same plan with `args.fixed_setups = ["drive long", "pullback long"]`. Capital measures B and C: one-off script
+   over `variants(...)["capped"]` (daily busiest moment over all sessions; position-minutes inside 09:30–16:00 over
+   sessions × 390 minutes).
    The confirmation-lag table, the reversal-entry diagnostics, the drive long decomposition and the 11-case
    re-entry table were one-off scripts on `wave_events` / `ride` / `load_rider_bars` from `wave_rider.py`;
    intraday vs overnight from `fetch_daily_bars` (log open / previous close vs close / open).

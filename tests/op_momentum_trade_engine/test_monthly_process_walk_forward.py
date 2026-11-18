@@ -17,6 +17,7 @@ from alpha_tech_tracker.op_momentum_strategy.analysis_scripts.monthly_process_wa
     run_plan,
     split_days,
     summary,
+    window_folder,
     with_costs,
 )
 
@@ -158,6 +159,17 @@ class TestCachedShortLegs:
 
         assert first.leg.tolist() == second.leg.tolist() == ["drive short + re-entry"]
         assert pool.call_count == 1
+
+    def test_a_later_end_is_computed_again_not_read_from_the_earlier_window(self, tmp_path, mocker):
+        legs = _legs([("AMD", JAN, "drive short + re-entry", 1.0)])
+        pool = mocker.patch(f"{MODULE}.ProcessPoolExecutor")
+        pool.return_value.__enter__.return_value.map.return_value = [legs]
+        later = FEB + timedelta(days=28)
+
+        cached_short_legs(["AMD"], JAN, FEB, window_folder(tmp_path, JAN, FEB), 1)
+        cached_short_legs(["AMD"], JAN, later, window_folder(tmp_path, JAN, later), 1)
+
+        assert pool.call_count == 2
 
 
 class TestParseArgs:
