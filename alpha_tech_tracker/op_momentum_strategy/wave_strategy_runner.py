@@ -7,7 +7,7 @@ the strategy's exit intents drive every close). Mock execution fills at the stra
 stop, target, close), so a mock day matches the monitor's alert CSV one to one. The strategy keeps its reference
 prices in live mode too; broker fills are recorded on the positions only.
 
-Not reachable from the trade engine CLI yet (step B2 of dev/active/WAVE_STRATEGY_TRADE_ENGINE_PLAN.md).
+Run it with `op_momentum_trade_engine run|start --strategy wave-setups` (`cli/wave.py`).
 """
 
 import csv

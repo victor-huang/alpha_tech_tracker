@@ -323,10 +323,11 @@ the monitor for about a week, comparing trades with the monitor's alert CSV dail
 | A0 | done — baseline 2026-11-02..11 (8 sessions), `prod` 240 alert rows, `all_on` 365; replay deterministic | `1b42711` |
 | A1 | done — both variants byte-identical to the baseline; full suite green except the 2 known failures; **deployed to EC2 with A2, running fine (user, 2026-11-12)** | `2182f91` |
 | A2 | done — every trading alert goes through `WaveSetupMonitor._on_intent(Intent)`; shell alerts (start-up, data outage / restored, reversal LOW? / HIGH?) still call `_alert` / `_system_alert`; byte-identical; **deployed to EC2 (prod = `deploy-A2`)** | `f5790f3` |
-| A3 | code done — `WaveSetupStrategy` in `wave_strategy/strategy.py`; replay byte-identical (0 cache misses = same evaluation inputs), process-pool smoke test OK, 21 strategy tests; **shadow run on EC2 2026-11-13; `d75dbe6` was pushed to `open_market_momentum_stategy` 2026-11-12 22:33 PT, so the 03:30 ET pull puts it on prod and the monitor runs A3 from the 2026-11-14 00:00 ET restart (user: keep it, roll back to `deploy-A2` before midnight if the 2026-11-13 shadow comparison differs)** | `a4776ce` |
-| A4 | code done — `BarFeed` in `wave_strategy/feed.py`; monitor tests unchanged, 17 feed tests; replay byte-identical (0 cache misses); full suite green except the 2 known failures; not deployed; **shadow from 2026-11-16** (user: switch the A3 shadow to A4 after the 2026-11-13 session) | `c8ce383` |
+| A3 | done — `WaveSetupStrategy` in `wave_strategy/strategy.py`; replay byte-identical, 21 strategy tests; shadow 2026-11-13 differed only through the broadcaster feed's short bars (A2 vs A3 replay of that day identical); **in prod since 2026-11-16 (`deploy-A3` = `d75dbe6`)** | `a4776ce` |
+| A4 | done — `BarFeed` in `wave_strategy/feed.py`; replay byte-identical, 17 feed tests; shadow identical to prod 2026-11-16 (TS feed), 11-17 and 11-18 (broadcaster feed with the per-ticker fix `7cde008`); merged as `815e5b7`, **monitor on A4 from 2026-11-19 00:00 ET** (tag `deploy-A4` = `18ae735` after a clean session) | `c8ce383` |
 | B1 | done — `WaveStrategyRunner` (`wave_strategy_runner.py`) + `strategies/base.py`; 17 runner tests; harness `run --engine` + `parity`: prod variant 140 / 140 rows match, all_on 132 / 132 monitor rows traded + 10 exits the monitor drops after a restart (see the monitor restart bug below); not reachable from the CLI | (this commit) |
-| B2 | next | |
+| B2 | done — `--strategy wave-setups` (`cli/args.py`, `cli/wave.py`, branch in `_run_foreground` / `_run_daemon`); 14 CLI tests; full suite green; OR replay 2026-11-13 without the flag unchanged (same log lines, P&L $11,859.83); mock smoke run on the TS feed (warm-up, stream, SIGTERM keeps the state) | (this commit) |
+| B3 | next | |
 
 **A3 notes (differences from the sketch above):**
 - Session times stay plain attributes on the strategy (`close_time`, `half_day`, `close_decision_bar`, `last_bar`,
@@ -359,6 +360,20 @@ the monitor for about a week, comparing trades with the monitor's alert CSV dail
   `refetch_before`, `last_reconnect_at`, `outage_from`; wrappers `start_stream`, `on_minute_bar`, `_on_five_min_bar`,
   `_run_backfill`, `_history`. The constants `WARMUP_CALENDAR_DAYS`, `DELAYED_DATA_MINUTES`, `STREAM_TIMEOUT_SECONDS`,
   `OUTAGE_ALERT_SECONDS` moved to `feed.py` and are re-exported. Moved log lines log under `wave_strategy.feed`.
+
+**B2 notes:**
+- `python -m alpha_tech_tracker.op_momentum_strategy.op_momentum_trade_engine start --strategy wave-setups
+  [--mock-trade-execution] [--live] --market-data-source tradestation --wave-config <monitor config>
+  --short-setups drive --short-gate qqq-ma50-down10 --trend-filters overnight` (the monitor's flag names; defaults
+  match the monitor's except `--workers 0`). `--wave-balance` (20000), `--wave-slots` (10), `--wave-state-file`.
+- Own files: `logs/wave_strategy_engine.pid` (unless `--pid-file` is given), `logs/wave_strategy_engine_<date>.log`,
+  `logs/wave_strategy_engine_state.json`, `logs/wave_strategy_engine_trades_<date>.csv`; runs beside the OR engine.
+- Mock mode builds no broker client (fills at the strategy's prices); paper / live builds the configured
+  `--execution-broker` client like the OR engine. `--replay-*` is refused (replay with
+  `wave_monitor_replay.py run --engine`).
+- The config's overnight setups stay in the strategy (`intraday_only`, as in the parity replays) and are logged as
+  not traded. SIGTERM (`stop` / `restart`) ends the session like a crash: open positions stay in the state file for a
+  same-session restart.
 
 **B1 notes:**
 - `WaveStrategyRunner(setups, market_data_client, execution_client=None, mock=True, balance=20000, slots=10, ...)`

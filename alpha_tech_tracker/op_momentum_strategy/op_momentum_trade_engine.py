@@ -29,6 +29,8 @@ from .cli import (  # noqa: F401  — re-exported for backward compatibility
     build_engine,
     parse_args,
 )
+from .cli.args import WAVE_STRATEGY
+from .cli.wave import run_wave_strategy, wave_log_file
 from .config import _CONFIG_FILE, _load_config, build_execution_client, disable_notifications
 from .op_momentum_selector import ACTIVELY_TRADE_TICKERS, DEFAULT_TICKERS
 from .trade_engine import OpMomentumTradeEngine  # noqa: F401
@@ -73,8 +75,22 @@ def _configure_logging(log_file: str, log_level: str, to_stream: bool):
         logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
+def _wave_execution_client(args, mock):
+    """None in mock mode (fills at the strategy's prices, no broker needed); else the configured broker."""
+    if mock:
+        return None
+    return build_execution_client(
+        is_paper=_resolve_is_paper(args), broker=args.execution_broker,
+        sip_quote_client=_build_sip_quote_client(args),
+    )
+
+
 def _run_foreground(args, windows, log_file):
     _configure_logging(log_file, args.log_level, to_stream=True)
+    if args.strategy == WAVE_STRATEGY:
+        mock = args.mock_trade_execution
+        run_wave_strategy(args, _wave_execution_client(args, mock), mock)
+        return
     is_replay = bool(args.replay_date) or bool(args.replay_start and args.replay_end)
     mock_trade_execution = args.mock_trade_execution or is_replay
     if args.trade_type is None:
@@ -150,6 +166,10 @@ def _run_daemon(args, windows, log_file):
     )
 
     try:
+        if args.strategy == WAVE_STRATEGY:
+            mock = args.mock_trade_execution
+            run_wave_strategy(args, _wave_execution_client(args, mock), mock)
+            return
         is_paper = _resolve_is_paper(args)
         sip_quote_client = _build_sip_quote_client(args)
         client = build_execution_client(
@@ -178,7 +198,7 @@ def main():
     if args.no_notify:
         disable_notifications()
 
-    log_file = args.log_file or _dated_log_file()
+    log_file = args.log_file or (wave_log_file() if args.strategy == WAVE_STRATEGY else _dated_log_file())
     os.makedirs(os.path.dirname(os.path.abspath(log_file)), exist_ok=True)
 
     windows = _parse_windows(args)

@@ -4,6 +4,7 @@
 set, defaults, help text, and cross-flag validation are unchanged.
 """
 import argparse
+import os
 
 from ..config import (
     ARMED_MA20_EXIT,
@@ -22,9 +23,17 @@ from ..config import (
     WS_RECONNECT_TIMEOUT_SECONDS,
 )
 from ..op_momentum_selector import ROLLING_LOOKBACK_DAYS as _DEFAULT_LOOKBACK_DAYS
-from .daemon import _PID_FILE
+from ..short_setups import DEFAULT_SHORT_SETUPS, GATES as SHORT_GATES, SHORT_SETUPS
+from ..trend_filters import TREND_FILTERS
+from .daemon import _LOG_DIR, _PID_FILE
 
-def parse_args():
+OR_STRATEGY = "or"
+WAVE_STRATEGY = "wave-setups"
+WAVE_PID_FILE = os.path.join(_LOG_DIR, "wave_strategy_engine.pid")
+WAVE_CONFIG = os.path.join(_LOG_DIR, "wave_setup_monitor_config.json")
+WAVE_STATE = os.path.join(_LOG_DIR, "wave_strategy_engine_state.json")
+
+def parse_args(argv=None):
     parser = argparse.ArgumentParser(description="OpMomentum live trade engine")
     parser.add_argument(
         "action",
@@ -721,10 +730,49 @@ def parse_args():
             "backtest behavior (permanently block once window N+1 has ever opened)."
         ),
     )
-    args = parser.parse_args()
+    _add_wave_arguments(parser)
+    args = parser.parse_args(argv)
+    if args.strategy == WAVE_STRATEGY:
+        if args.replay_date or args.replay_start or args.replay_end:
+            parser.error("--strategy wave-setups has no --replay-*; replay it with analysis_scripts/"
+                         "wave_monitor_replay.py run --engine")
+        if args.pid_file == _PID_FILE:
+            args.pid_file = WAVE_PID_FILE
     if args.rank_weighted_sizing and len(args.rank_weighted_sizing) != args.top:
         parser.error(
             f"--rank-weighted-sizing requires exactly --top weights "
             f"(got {len(args.rank_weighted_sizing)} weights, --top {args.top})"
         )
     return args
+
+
+def _add_wave_arguments(parser):
+    parser.add_argument(
+        "--strategy",
+        choices=[OR_STRATEGY, WAVE_STRATEGY],
+        default=OR_STRATEGY,
+        help="or: the opening-range engine (default). wave-setups: trade the wave setup monitor's intraday "
+        "signals (drive long, pullback long, drive short + re-entry) with stock orders; overnight setups are "
+        "not traded. Own PID file (logs/wave_strategy_engine.pid), log, state and trades CSV, so it runs "
+        "beside the OR engine. Paper / live / --mock-trade-execution and --market-data-source apply as usual.",
+    )
+    wave = parser.add_argument_group("wave-setups strategy (--strategy wave-setups only; same names as the monitor)")
+    wave.add_argument("--wave-config", default=WAVE_CONFIG,
+                      help=f"Monitor config with the tickers and setups (default: {WAVE_CONFIG})")
+    wave.add_argument("--wave-balance", type=float, default=20000,
+                      help="Total balance; each trade gets balance / slots (default: 20000)")
+    wave.add_argument("--wave-slots", type=int, default=10, help="Open positions at most (default: 10)")
+    wave.add_argument("--wave-state-file", default=WAVE_STATE, help=f"Default: {WAVE_STATE}")
+    wave.add_argument("--workers", type=int, default=0,
+                      help="Processes evaluating setups (default: 0 = in the main process)")
+    wave.add_argument("--close-decision-bar", default="15:45", choices=["15:40", "15:45"],
+                      help="Bar whose close decides the close alerts (default: 15:45)")
+    wave.add_argument("--drive-trail", action="store_true", help="Raise an open drive long's stop to each new dip low")
+    wave.add_argument("--drive-reentry", action="store_true", help="Buy back once above a drive long's stop-out level")
+    wave.add_argument("--short-setups", nargs="+", choices=SHORT_SETUPS, default=list(DEFAULT_SHORT_SETUPS),
+                      help="Shorts on gated sessions (the overnight short is never traded by the engine)")
+    wave.add_argument("--no-short-setups", action="store_true", help="No short setups")
+    wave.add_argument("--short-gate", choices=SHORT_GATES, default="qqq-ma50", help="Gate for the shorts")
+    wave.add_argument("--short-tickers", nargs="+", help="Tickers for the shorts (default: the config's tickers)")
+    wave.add_argument("--trend-filters", nargs="+", choices=TREND_FILTERS, default=[],
+                      help="Daily trend filters (pullback applies; overnight setups are not traded)")
