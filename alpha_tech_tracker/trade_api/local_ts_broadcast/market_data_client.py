@@ -66,6 +66,7 @@ class LocalTSBroadcastMarketDataClient(MarketDataClient):
         self._last_message_at: float = 0.0
         self._queues: dict = {}
         self._workers: dict = {}
+        self._sock_lock = threading.Lock()
 
     def warmup(self, tickers: list, start_dt, end_dt) -> dict:
         return TradeStationMarketDataClient(self._ts_client).warmup(tickers, start_dt, end_dt)
@@ -152,42 +153,75 @@ class LocalTSBroadcastMarketDataClient(MarketDataClient):
                 time.sleep(wait)
 
     def _reader_loop(self):
+        """Read until stopped. When the broadcaster closes the connection (it restarts with the engines), connect
+        again by itself every _CONNECT_RETRY_INTERVAL seconds: outside market hours no watchdog would notice."""
+        sock = self._sock
+        while sock is not None and not self._stop_event.is_set():
+            closed = self._read(sock)
+            if not closed or self._stop_event.is_set():
+                return
+            logger.warning("LocalTSBroadcast: connection closed by broadcaster; reconnecting")
+            sock = self._reconnect_socket()
+
+    def _read(self, sock):
+        """Hand the socket's bars to the ticker threads. True when the broadcaster closed the connection."""
         try:
-            reader = self._sock.makefile("r", encoding="utf-8")
+            reader = sock.makefile("r", encoding="utf-8")
             while not self._stop_event.is_set():
                 try:
                     line = reader.readline()
                 except OSError:
-                    break
+                    return False
                 if not line:
-                    if not self._stop_event.is_set():
-                        logger.warning("LocalTSBroadcast: connection closed by broadcaster")
-                    break
-                line = line.strip()
-                if not line:
-                    continue
-                self._last_message_at = time.monotonic()
-                try:
-                    msg = json.loads(line)
-                except (ValueError, TypeError):
-                    logger.warning("LocalTSBroadcast: malformed message: %s", line[:120])
-                    continue
-                if msg.get("type") == "heartbeat":
-                    logger.debug("LocalTSBroadcast: heartbeat received")
-                    continue
-                if msg.get("type") != "bar":
-                    continue
-                if msg.get("symbol") not in self._tickers:
-                    continue
-                try:
-                    bar = _BroadcastBar.from_json(msg)
-                except (KeyError, ValueError):
-                    logger.warning("LocalTSBroadcast: malformed bar message: %s", msg)
-                    continue
-                self._queues[bar.symbol].put(bar)
+                    return True
+                self._handle_line(line)
         except Exception:
             if not self._stop_event.is_set():
                 logger.exception("LocalTSBroadcast: reader loop error")
+        return False
+
+    def _handle_line(self, line):
+        line = line.strip()
+        if not line:
+            return
+        self._last_message_at = time.monotonic()
+        try:
+            msg = json.loads(line)
+        except (ValueError, TypeError):
+            logger.warning("LocalTSBroadcast: malformed message: %s", line[:120])
+            return
+        if msg.get("type") == "heartbeat":
+            logger.debug("LocalTSBroadcast: heartbeat received")
+            return
+        if msg.get("type") != "bar" or msg.get("symbol") not in self._tickers:
+            return
+        try:
+            bar = _BroadcastBar.from_json(msg)
+        except (KeyError, ValueError):
+            logger.warning("LocalTSBroadcast: malformed bar message: %s", msg)
+            return
+        self._queues[bar.symbol].put(bar)
+
+    def _reconnect_socket(self):
+        attempts = 0
+        while not self._stop_event.wait(_CONNECT_RETRY_INTERVAL):
+            attempts += 1
+            sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            try:
+                sock.connect(self._socket_path)
+            except OSError:
+                sock.close()
+                if attempts == 1 or attempts % 30 == 0:
+                    logger.warning("LocalTSBroadcast: broadcaster not back yet (%d attempts)", attempts)
+                continue
+            with self._sock_lock:
+                if self._stop_event.is_set():
+                    sock.close()
+                    return None
+                self._sock = sock
+            logger.info("LocalTSBroadcast: reconnected to %s after %d attempt(s)", self._socket_path, attempts)
+            return sock
+        return None
 
     def reconnect(self):
         """Reconnect the socket; the ticker threads keep their queued bars and carry on."""
@@ -213,16 +247,17 @@ class LocalTSBroadcastMarketDataClient(MarketDataClient):
 
     def _disconnect(self):
         self._stop_event.set()
-        if self._sock:
+        with self._sock_lock:
+            sock, self._sock = self._sock, None
+        if sock:
             try:
-                self._sock.shutdown(socket.SHUT_RDWR)
+                sock.shutdown(socket.SHUT_RDWR)
             except OSError:
                 pass
             try:
-                self._sock.close()
+                sock.close()
             except OSError:
                 pass
-            self._sock = None
         if self._reader_thread and self._reader_thread.is_alive():
             self._reader_thread.join(timeout=3)
         self._reader_thread = None

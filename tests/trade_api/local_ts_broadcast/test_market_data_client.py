@@ -15,6 +15,9 @@ from alpha_tech_tracker.trade_api.local_ts_broadcast.market_data_client import (
 )
 
 
+_MODULE = "alpha_tech_tracker.trade_api.local_ts_broadcast.market_data_client"
+
+
 def _iso(dt: datetime) -> str:
     return dt.isoformat()
 
@@ -333,6 +336,45 @@ class TestLocalTSBroadcastMarketDataClientReconnect:
         server2.close()
 
         assert len(received) == 1
+
+
+class TestLocalTSBroadcastMarketDataClientAutoReconnect:
+    def test_reconnects_by_itself_when_the_broadcaster_restarts(self, tmp_socket, mocker):
+        mocker.patch(f"{_MODULE}._CONNECT_RETRY_INTERVAL", 0.05)
+        server = _SocketServer(tmp_socket)
+        time.sleep(0.05)
+        received = []
+        client = LocalTSBroadcastMarketDataClient(_make_ts_client(), socket_path=tmp_socket)
+        client.subscribe_bars(received.append, "AMD")
+        client.start()
+        time.sleep(0.1)
+
+        server.close()
+        time.sleep(0.1)
+        restarted = _SocketServer(tmp_socket)
+        time.sleep(0.3)
+        restarted.send(_bar_msg("AMD"))
+        time.sleep(0.2)
+        client.stop()
+        restarted.close()
+
+        assert len(received) == 1
+
+    def test_stop_ends_the_reconnect_attempts(self, tmp_socket, mocker):
+        mocker.patch(f"{_MODULE}._CONNECT_RETRY_INTERVAL", 0.05)
+        server = _SocketServer(tmp_socket)
+        time.sleep(0.05)
+        client = LocalTSBroadcastMarketDataClient(_make_ts_client(), socket_path=tmp_socket)
+        client.subscribe_bars(lambda bar: None, "AMD")
+        client.start()
+        time.sleep(0.1)
+        reader = client._reader_thread
+        server.close()
+        time.sleep(0.2)
+
+        client.stop()
+
+        assert not reader.is_alive()
 
 
 class TestLocalTSBroadcastMarketDataClientWarmup:
