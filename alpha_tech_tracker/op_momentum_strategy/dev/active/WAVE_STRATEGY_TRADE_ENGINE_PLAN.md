@@ -327,7 +327,7 @@ the monitor for about a week, comparing trades with the monitor's alert CSV dail
 | A4 | done — `BarFeed` in `wave_strategy/feed.py`; replay byte-identical, 17 feed tests; shadow identical to prod 2026-11-16 (TS feed), 11-17 and 11-18 (broadcaster feed with the per-ticker fix `7cde008`); merged as `815e5b7`, **monitor on A4 from 2026-11-19 00:00 ET** (tag `deploy-A4` = `18ae735` after a clean session) | `c8ce383` |
 | B1 | done — `WaveStrategyRunner` (`wave_strategy_runner.py`) + `strategies/base.py`; 17 runner tests; harness `run --engine` + `parity`: prod variant 140 / 140 rows match, all_on 132 / 132 monitor rows traded + 10 exits the monitor drops after a restart (see the monitor restart bug below); not reachable from the CLI | (this commit) |
 | B2 | done — `--strategy wave-setups` (`cli/args.py`, `cli/wave.py`, branch in `_run_foreground` / `_run_daemon`); 14 CLI tests; full suite green; OR replay 2026-11-13 without the flag unchanged (same log lines, P&L $11,859.83); mock smoke run on the TS feed (warm-up, stream, SIGTERM keeps the state) | (this commit) |
-| B3 | next | |
+| B3 | done — `guides/WAVE_STRATEGY_ENGINE_GUIDE.md`, rows in `op_momentum_strategy/CLAUDE.md`, recommendation 41 in the ticker-tuning doc. **B2 deployed** (pushed 2026-11-19, `b9dd986`); the engine runs in mock mode on EC2 from 2026-11-20 (crontab 04:00 ET, `local_ts_broadcast`, `--no-notify`), compared daily with the monitor's alerts | (this commit) |
 
 **A3 notes (differences from the sketch above):**
 - Session times stay plain attributes on the strategy (`close_time`, `half_day`, `close_decision_bar`, `last_bar`,

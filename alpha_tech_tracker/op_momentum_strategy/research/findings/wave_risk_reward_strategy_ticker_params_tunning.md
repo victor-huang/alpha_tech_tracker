@@ -2684,6 +2684,13 @@ Without the overnight long: A $7,399, B $7,002, C $4,227; returns 29.0% / 30.6% 
     Never 5% ITM on all setups (fell to $4,645 of $20k), and keep the overnight in stock. Sizing for stock-level risk
     is about $2,000 ÷ 7 ≈ $285 of premium a trade.
 
+41. **Trade the signals with the wave strategy engine, mock first (Nov 19 2026):** `op_momentum_trade_engine
+    --strategy wave-setups` runs the monitor's own strategy code and trades its intraday signals in stock, $20k in 10
+    slots of $2,000 (the sizing of recommendation 38), overnight setups not traded. Replays of 2026-11-02..11 traded
+    every entry and exit the monitor alerted. It runs in mock mode beside the monitor on EC2 from Nov 20 2026; compare
+    it with the monitor's alerts daily for about a week, then Alpaca paper, then live, and judge the edge on the paper
+    fills (recommendation 38). See `guides/WAVE_STRATEGY_ENGINE_GUIDE.md`.
+
 ## Reproduction
 
 ```bash
