@@ -5,6 +5,7 @@ from datetime import datetime
 from unittest.mock import MagicMock
 
 from alpha_tech_tracker.trade_api.tradestation.market_data_client import (
+    WARMUP_FAILED,
     TradeStationMarketDataClient,
     _validate_open_timestamps,
 )
@@ -161,3 +162,46 @@ class TestTradeStationMarketDataClientWarmup:
             end = ET.localize(datetime(2026, 4, 16, 16, 0))
             with pytest.raises(RuntimeError, match="09:35"):
                 client.fetch_bars(["TSLA"], start, end)
+
+
+class TestTradeStationMarketDataClientWarmupRetry:
+    _MODULE = "alpha_tech_tracker.trade_api.tradestation.market_data_client"
+    START = ET.localize(datetime(2026, 11, 24, 9, 30))
+    END = ET.localize(datetime(2026, 11, 24, 16, 0))
+
+    @pytest.fixture(autouse=True)
+    def sleep(self, mocker):
+        return mocker.patch(f"{self._MODULE}.time.sleep")
+
+    @pytest.fixture
+    def bars_df(self, mocker):
+        df = _make_df(_session_open_timestamps("2026-11-24"))
+        mocker.patch(f"{self._MODULE}._ts_bars_to_df", return_value=df)
+        return df
+
+    def test_a_failed_fetch_is_retried(self, bars_df, sleep):
+        ts_client = MagicMock()
+        ts_client.get_historical_bars.side_effect = [ValueError("Expecting value"), [MagicMock()]]
+
+        result = TradeStationMarketDataClient(ts_client).warmup(["SNDK"], self.START, self.END)
+
+        assert len(result["SNDK"]) == len(bars_df)
+        sleep.assert_called_once_with(5)
+
+    def test_gives_an_empty_frame_after_three_failed_attempts(self, bars_df):
+        ts_client = MagicMock()
+        ts_client.get_historical_bars.side_effect = ValueError("Expecting value")
+
+        result = TradeStationMarketDataClient(ts_client).warmup(["SNDK"], self.START, self.END)
+
+        assert (result["SNDK"].empty, result["SNDK"].attrs.get(WARMUP_FAILED), ts_client.get_historical_bars.call_count) == (
+            True, True, 3)
+
+    def test_one_tickers_failure_does_not_stop_the_others(self, bars_df):
+        ts_client = MagicMock()
+        ts_client.get_historical_bars.side_effect = lambda ticker, *a, **k: (
+            (_ for _ in ()).throw(ValueError("Expecting value")) if ticker == "SNDK" else [MagicMock()])
+
+        result = TradeStationMarketDataClient(ts_client).warmup(["SNDK", "AMD"], self.START, self.END)
+
+        assert (result["SNDK"].empty, len(result["AMD"])) == (True, len(bars_df))

@@ -18,6 +18,7 @@ from alpha_tech_tracker.op_momentum_strategy.wave_strategy.session import (
     previous_trading_day,
     session_close,
 )
+from alpha_tech_tracker.trade_api.tradestation.market_data_client import WARMUP_FAILED
 
 logger = logging.getLogger(__name__)
 
@@ -73,6 +74,10 @@ class BarFeed:
             frame = history.get(ticker)
             bars = regular_hours(frame) if frame is not None and not frame.empty else empty_bars()
             bars_by_ticker[ticker] = bars[bars.index + timedelta(minutes=BAR_MINUTES) <= now]
+        failed = [ticker for ticker in tickers if ticker in history and history[ticker].attrs.get(WARMUP_FAILED)]
+        if failed:
+            self.alert(f"warm-up history failed to load for {', '.join(failed)}: today runs on the session's bars "
+                       f"only, so setups that need past bars may not fire")
         return bars_by_ticker
 
     def warmup(self, tickers, now):

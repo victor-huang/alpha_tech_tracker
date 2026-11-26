@@ -1,4 +1,5 @@
 import logging
+import time
 from datetime import timezone
 
 import pandas as pd
@@ -10,6 +11,9 @@ from alpha_tech_tracker.trade_api.tradestation.bar_stream import TradeStationBar
 logger = logging.getLogger(__name__)
 
 ET = pytz.timezone("America/New_York")
+WARMUP_ATTEMPTS = 3
+WARMUP_RETRY_SECONDS = 5
+WARMUP_FAILED = "warmup_failed"  # DataFrame.attrs flag on a ticker whose history could not be fetched
 
 
 def _validate_open_timestamps(df: pd.DataFrame, ticker: str) -> None:
@@ -102,26 +106,37 @@ class TradeStationMarketDataClient(MarketDataClient):
         start_utc = start_dt.astimezone(timezone.utc)
         end_utc = end_dt.astimezone(timezone.utc)
         for ticker in tickers:
+            result[ticker] = self._warmup_ticker(ticker, start_utc, end_utc)
+        return result
+
+    def _warmup_ticker(self, ticker, start_utc, end_utc) -> pd.DataFrame:
+        """One ticker's history, retried WARMUP_ATTEMPTS times (TradeStation now and then answers with a body that
+        isn't JSON); an empty frame flagged attrs[WARMUP_FAILED] when every attempt fails."""
+        for attempt in range(1, WARMUP_ATTEMPTS + 1):
             try:
                 bars = self._ts_client.get_historical_bars(
                     ticker, start_utc, end_utc, interval=5, unit="Minute"
                 )
                 df = _ts_bars_to_df(bars)
                 _validate_open_timestamps(df, ticker)
-                result[ticker] = df
-                last_close = df["Close"].iloc[-1] if not df.empty else float("nan")
-                logger.info(
-                    "TS warmup %-6s — %d bars, last close=%.2f",
-                    ticker, len(df), last_close,
-                )
             except RuntimeError:
                 raise
             except Exception:
-                logger.exception("TS warmup failed for %s", ticker)
-                result[ticker] = pd.DataFrame(
-                    columns=["Open", "High", "Low", "Close", "Volume"]
-                )
-        return result
+                if attempt == WARMUP_ATTEMPTS:
+                    logger.exception("TS warmup failed for %s after %d attempts", ticker, attempt)
+                    failed = pd.DataFrame(columns=["Open", "High", "Low", "Close", "Volume"])
+                    failed.attrs[WARMUP_FAILED] = True
+                    return failed
+                logger.warning("TS warmup failed for %s (attempt %d of %d); retrying in %ds",
+                               ticker, attempt, WARMUP_ATTEMPTS, WARMUP_RETRY_SECONDS, exc_info=True)
+                time.sleep(WARMUP_RETRY_SECONDS)
+                continue
+            last_close = df["Close"].iloc[-1] if not df.empty else float("nan")
+            logger.info(
+                "TS warmup %-6s — %d bars, last close=%.2f",
+                ticker, len(df), last_close,
+            )
+            return df
 
     def fetch_bars(self, tickers: list, start_dt, end_dt) -> dict:
         start_utc = start_dt.astimezone(timezone.utc)

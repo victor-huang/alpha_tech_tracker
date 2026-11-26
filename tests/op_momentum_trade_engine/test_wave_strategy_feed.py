@@ -6,6 +6,7 @@ import pytest
 
 from alpha_tech_tracker.op_momentum_strategy.wave_strategy.feed import BarFeed
 from alpha_tech_tracker.op_momentum_strategy.wave_strategy.session import ET
+from alpha_tech_tracker.trade_api.tradestation.market_data_client import WARMUP_FAILED
 
 SESSION = date(2026, 10, 6)
 
@@ -77,6 +78,22 @@ class TestSessionBars:
         bars = _feed(client, clock, received).session_bars(["AMD"], clock())
 
         assert bars["AMD"].empty
+
+    def test_alerts_the_tickers_whose_warmup_failed(self, client, clock, received):
+        failed = _frame([])
+        failed.attrs[WARMUP_FAILED] = True
+        client.warmup.return_value = {"AMD": _frame([("2026-10-05 15:55", 100.0)]), "SNDK": failed, "APP": failed}
+
+        _feed(client, clock, received).session_bars(["AMD", "SNDK", "APP"], clock())
+
+        assert len(received["alerts"]) == 1 and "failed to load for SNDK, APP" in received["alerts"][0]
+
+    def test_no_alert_for_a_ticker_that_simply_has_no_history(self, client, clock, received):
+        client.warmup.return_value = {"AMD": _frame([])}
+
+        _feed(client, clock, received).session_bars(["AMD"], clock())
+
+        assert received["alerts"] == []
 
     def test_delayed_feed_warms_up_to_16_minutes_ago_and_schedules_a_backfill(self, client, clock, received):
         client.warmup.side_effect = [RuntimeError("subscription does not permit querying recent SIP data"), {}]
