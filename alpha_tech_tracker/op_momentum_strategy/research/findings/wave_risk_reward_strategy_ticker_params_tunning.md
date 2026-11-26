@@ -132,6 +132,12 @@ earlier findings: [`WAVE_RISK_REWARD_FINDINGS.md`](WAVE_RISK_REWARD_FINDINGS.md)
   QQQ out of the trade was neutral (−$258 over eight years). The overnight long made +$15,220 of the nine years'
   +$34,509 (2026 rerun to Nov 11): without it 11% a year on $20k instead of 19%, and 2019–2020 lose. Time-weighted
   over market hours only ~$4.3k of the $20k is open on average, but every year from 2020 reaches the $20k peak.
+- **2026 against QQQ, margin leverage and live fill cost (Finding 47):** 2026 to Nov 20 +$6,513 (+32.6% on $20k)
+  against QQQ held −0.95%, the drive short hedging July and November. 3× intraday / 2× overnight (the stock-margin
+  limits) makes +$87.9k over 2018–2026 (49.5% a year on $20k, 24.6% at +5 bps); no start blows the account out, but
+  the worst (Aug 28, 2020) bottoms at $10,871 (−46%) nine months later, and at +5 bps 2019–2021 lose. The live stock
+  engine's limit fills cost ~4.5 bps a round trip, supporting 5 bps; the wave plan's 09:35 entries and stop-outs should
+  cost more.
 - **A ticker's intraday vs overnight split doesn't pick its setup (Finding 36):** within a window it always matches the
   better family, but measured on the previous 63 or 126 sessions it chose next month's winner 52–53% of the time
   (16 tickers, Jul 2025 – Oct 2026). Overnight holds won in H2 2025 and drive long in 2026 across the board; running
@@ -2539,6 +2545,114 @@ Without the overnight long: A $7,399, B $7,002, C $4,227; returns 29.0% / 30.6% 
   slots on the same money, but busy days would run short of cash; that needs the cap replayed at the larger size first.
   For planning, use the return on $20k: **19% a year with the overnight long, 11% without**.
 
+## Finding 47 — 2026 to Nov 20 against QQQ, margin leverage (3× intraday / 2× overnight) over 2018–2026 from every start date, and the live fill cost
+
+**Question.** How has the prod plan of Finding 46 done in 2026 day by day and against QQQ, what would stock-margin
+leverage do to its P&L and drawdown (including starting right before the worst losing streak), and does the live
+stock engine's fill cost support the backtest's 5 bps?
+
+**What was run.** The prod plan as in Finding 46 (switched ranking, top 5, fixed setups drive long + pullback long +
+overnight always behind the trend filter, drive short + re-entry behind `qqq-ma50-down10`, $2,000 a trade, capped at
+10 open, 5 bps), 2018–2025 to Dec 31 and 2026 to Nov 20, one row per session. QQQ = $20,000 bought at the previous
+year's last close and held. Capital in use = each day's most trades open at once × trade size, an overnight hold
+counted on the day bought (slightly below Finding 46's A, which also counts it the morning sold).
+
+### 2026 to Nov 20 against QQQ
+
+| Month | Picks | P&L | Cumulative | QQQ |
+|---|---|---|---|---|
+| Jan | QBTS, SNDK, IREN, AMD, ASTS | +$1,807 | +$1,807 | +1.2% |
+| Feb | SNDK, INTC, LITE, IREN, BE | −$718 | +$1,089 | −2.3% |
+| Mar | INTC, LITE, ASTS, SNDK, QBTS | +$457 | +$1,546 | −5.0% |
+| Apr | INTC, SNDK, CRDO, DELL, ALAB | +$2,989 | +$4,535 | +15.7% |
+| May | CRDO, NBIS, ALAB, TER, OKLO | +$2,210 | +$6,745 | +10.6% |
+| Jun | NBIS, CRDO, ALAB, SNDK, RKLB | −$1,309 | +$5,436 | −0.3% |
+| Jul | SNDK, ALAB, MRVL, NBIS, CRDO | +$1,498 | +$6,934 | −6.6% |
+| Aug | MRVL, MU, SNDK, NOW, NBIS | +$478 | +$7,412 | +4.2% |
+| Sep | SNDK, INTU, PANW, MRVL, SHOP | +$566 | +$7,978 | +3.2% |
+| Oct | SNDK, MSTR, CRWV, SOFI, VRT | −$1,621 | +$6,357 | −6.7% |
+| Nov (to 20th) | MSTR, SNDK, CRCL, RDDT, SPCX | +$156 | **+$6,513** | −11.9% |
+
+- **+$6,513 (+32.6% on $20k) against QQQ held −$191 (−0.95%)**; 1,675 trades, 8 of 11 months up, 27 of 47 weeks and
+  117 of 223 traded days up, best / worst day +$808 / −$918. Average capital in use $11,139 (+58.5% on it).
+- Worst drawdown −$2,529, bottoming Mar 18 (Feb–Mar). The year's high was +$8,296 on Oct 5; October and November
+  gave back ~$1,800.
+- **The shorts hedge the falls:** July +$1,498 against QQQ −6.6% (drive short +$889), November +$156 against −11.9%
+  (drive short +$974, drive long −$442, pullback −$376); on QQQ's −6.5% and −5.7% days (Nov 5, Nov 20) the plan made
+  +$717 and +$88 while $20k of QQQ lost $1,301 and $1,059.
+- **The losing months are overnight gap-downs before the trend filter turns off:** June (overnight −$1,394) and
+  October (−$1,257, all of it Oct 1–14; the filter waits for QQQ to be down over 10 sessions). No overnight long ran
+  in November.
+
+### Margin leverage: 3× intraday, 2× overnight
+
+Each day's intraday P&L × 3 ($6,000 a trade) plus its overnight P&L × 2 ($4,000 a trade), on a $20,000 account, not
+compounded (2× is the Reg T overnight limit; 4× is the day-trading limit). The +5 bps column charges 5 bps more per
+trade at $6,000 (slightly overstated for overnight trades).
+
+| Year | 1× P&L | **3×/2× P&L** | Worst drawdown | Worst start | Lowest equity from it | P&L from it to year end | Starts ending the year down | 3×/2× at +5 bps |
+|---|---|---|---|---|---|---|---|---|
+| 2018 | +$1,988 | +$6,108 | −$3,738 | Oct 31 | $16,262 | −$298 | 23 / 251 | +$2,658 |
+| 2019 | +$1,271 | +$2,358 | −$2,723 | Jul 10 | $17,277 | −$670 | 61 / 252 | −$1,338 |
+| 2020 | +$800 | **−$864** | **−$8,443** | **Aug 28** | **$11,557** | −$7,928 | 195 / 253 | **−$6,279** |
+| 2021 | +$1,642 | +$4,406 | −$6,958 | Feb 11 | $13,042 | −$1,351 | 94 / 252 | −$1,369 |
+| 2022 | +$7,200 | +$21,867 | −$6,483 | Aug 4 | $13,517 | −$5,847 | 110 / 251 | +$17,394 |
+| 2023 | +$1,756 | +$6,093 | −$4,692 | Jul 19 | $15,308 | +$1,517 | 3 / 250 | +$495 |
+| 2024 | +$8,322 | +$17,295 | −$3,217 | Mar 13 | $16,783 | +$8,391 | 3 / 252 | +$11,604 |
+| 2025 | +$4,870 | +$10,467 | −$5,605 | Jan 6 | $14,395 | +$8,805 | 7 / 250 | +$5,289 |
+| 2026 (to Nov 20) | +$6,513 | +$20,136 | −$5,590 | Feb 3 | $14,410 | +$14,080 | 64 / 224 | +$15,111 |
+| **2018–2026** | **+$34,362** | **+$87,867** | **−$9,129** | **Aug 28, 2020** | **$10,871** (May 10, 2021) | +$72,337 to now | | **+$43,566** |
+
+- **Overall:** 8.87 years, 14,767 trades. 1×: 19.4% a year on $20k, **41.7% a year on the $9,294 of average capital
+  in use**, net edge **11.6 bps a trade** after the 5 bps. 3×/2×: **49.5% a year on $20k** (24.6% at +5 bps), about
+  35.5% on the ~$27.9k of stock it puts to work: leverage raises the return on the account, not on the money at work
+  (the overnight long, the best per dollar, is levered only 2×). The overnight long made $15,219 of the 1× $34,362.
+- **Continuous from each January to Nov 20, 2026:** from 2018 +$87.9k (lowest equity $19,306), 2019 +$81.8k, 2020
+  +$79.4k (lowest $16,023), 2021 +$80.3k, 2022 +$75.9k, 2023 +$54.0k, 2024 +$47.9k, 2025 +$30.6k (lowest $16,057).
+- **The account never blows out, but the worst start is deep:** from Aug 28, 2020 it falls to **$10,871 (−46%) on May
+  10, 2021** and recovers to +$72k; at +5 bps the same start reaches **$6,842 (−66%)**. At ~$10.9k ten intraday slots
+  are $60k (5.5×), past the 4× day-trading limit, so a broker would refuse trades there; the real path would lose less
+  and recover more slowly.
+- **2020 is the weak year at this leverage:** at 1× it was carried by the overnight long (+$3,265), which is levered
+  only 2× while the losing intraday setups are levered 3×. **Cost decides it:** at +5 bps, 2019, 2020 and 2021 lose,
+  and each 5 bps costs ~$4,800 a year at this size.
+- **2026 by start month** (P&L to Nov 20): Jan +$20,136, Feb +$15,300, Mar +$17,024, Apr +$14,416, May +$6,657, Jun
+  +$911, Jul +$3,444, Aug −$700, Sep −$1,616, Oct −$3,140 (Oct 5, the high: −$3,730), Nov +$467; lowest equity of any
+  2026 start $14,410 (Feb 3), worst drawdown −$4,500 to −$5,600 from any start.
+- **Linear leverage (5× everything)** for comparison, 2026: +$32,563 but a −$12,645 (−63%) drawdown; the account
+  stayed above $19.1k only because January's gains came first; started on Feb 2 the same drawdown leaves ~$7,400.
+  5× is not available on stock margin (2× overnight, 4× intraday); for options see Finding 45.
+- **Account rules:** brokers set 30–100% maintenance on names like MSTR, small caps and crypto-linked stocks, which
+  cuts the buying power below 4× / 2×, and the drive short needs shares to borrow.
+
+### The live stock engine's fill cost (Nov 16–25, 2026)
+
+Alpaca FILL activities of the OR momentum stock engine's account (54 fills over 8 sessions), matched by order id to
+the bid / ask the engine logged when placing each order (`STOCK FILL_ESC`); about $15k an order. Cost = fill against
+the quote mid (buys above it, sells below it are costs), dollar-weighted.
+
+| | Orders | Cost vs mid | Half the spread at placement |
+|---|---|---|---|
+| Entries | 18 | 0.3 bps | 9.1 bps |
+| Exits | 13 | 4.2 bps | 6.3 bps |
+| Limit at the mid, filled (step 1) | 24 | 0.2 bps | 8.0 bps |
+| Crossed the spread (step 2) | 7 | 8.8 bps | 9.2 bps |
+| **Round trip** | | **≈ 4.5 bps** (+ ~0.3 bps fees on sells) | |
+
+- **Supports 5 bps as the base case** for limit fills on liquid stocks at $15k or less: 24 of 31 orders filled at the
+  mid. Fill vs the signal bar's close ranged −88 to +158 bps (median +3): the price path in the second or so before
+  the order, not a cost.
+- **A lower bound for the wave plan:** these entries came at 09:46 or later and the exits were mostly calm limit
+  closes. The wave plan enters on the 09:35 close (widest spreads; CLS's half spread was 25–36 bps even at 09:46) and
+  its drive long / drive short stop-outs fill near market in fast moves; unfilled mid orders (often the winners) are not
+  in the sample, and 23 manual covers could not be priced. Treat **+5 bps as the realistic stress case** for the
+  leveraged plan until the wave strategy engine trades real fills (it runs mock fills).
+
+**Takeaway.** Unlevered the plan beat QQQ by ~$6.7k in 2026 with the shorts hedging its falls. 3× intraday / 2×
+overnight is the most stock margin allows and roughly 2.5× the nine-year P&L, but its worst start leaves the account
+46% down for nine months and 5 bps of extra cost turns three of nine years negative. Measure the wave plan's own
+fills first, and keep 1–2× until they confirm ~5 bps.
+
 ## Recommendations
 
 1. **Choose tickers before tuning settings.** The same configuration ranges from +156.66% (SNDK)
@@ -2818,6 +2932,12 @@ exactly (110 trades, +0.80%), but other settings may differ slightly.
    the same plan with `args.fixed_setups = ["drive long", "pullback long"]`. Capital measures B and C: one-off script
    over `variants(...)["capped"]` (daily busiest moment over all sessions; position-minutes inside 09:30–16:00 over
    sessions × 390 minutes).
+   Finding 47: one-off scripts over the same plan (`run_plan("fixed", True, False, ...)`, `variants(...)["capped +
+   costs"]`) writing one row per session (P&L, trades, wins, busiest moment, P&L by setup, QQQ close) for 2018–2025
+   (`--end <year>-12-31`) and 2026 (`--end 2026-11-20`); leverage = 3 × (day P&L − overnight long P&L) + 2 × overnight
+   long P&L, every session tried as a start. Fill cost: Alpaca `/v2/account/activities/FILL` of the stock engine's
+   account (via `fetch_broker_pnl._fetch_alpaca_activities`, run on EC2), matched by order id to the `STOCK FILL_ESC`
+   quote lines in `logs/op_momentum_<date>.log`.
    The confirmation-lag table, the reversal-entry diagnostics, the drive long decomposition and the 11-case
    re-entry table were one-off scripts on `wave_events` / `ride` / `load_rider_bars` from `wave_rider.py`;
    intraday vs overnight from `fetch_daily_bars` (log open / previous close vs close / open).
