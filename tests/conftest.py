@@ -361,6 +361,12 @@ def pytest_collection_modifyitems(config, items):
     - Skip tests based on conditions
     - Modify test execution order
     """
+    if not (os.environ.get("ETRADE_API_KEY_ID") and os.environ.get("ETRADE_API_SECRET_KEY")):
+        skip_etrade = pytest.mark.skip(reason="needs ETRADE_API_KEY_ID and ETRADE_API_SECRET_KEY")
+        for item in items:
+            if item.get_closest_marker("etrade"):
+                item.add_marker(skip_etrade)
+
     # Skip integration tests unless explicitly selected via -m integration.
     if config.option.markexpr and "integration" in config.option.markexpr:
         return
